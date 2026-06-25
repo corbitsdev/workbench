@@ -69,6 +69,7 @@ export function registerFramerMotionMock(): void {
     motion: motionProxy,
     AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
+    useReducedMotion: () => false,
   }));
 }
 
