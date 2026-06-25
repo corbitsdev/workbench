@@ -125,7 +125,17 @@ export function isUIBlock(value: unknown): value is UIBlock {
     case "error":
       return typeof block.message === "string";
     case "choice":
-      return Array.isArray(block.options) && block.options.length > 0;
+      return (
+        Array.isArray(block.options) &&
+        block.options.length > 0 &&
+        (block.options as unknown[]).every(
+          (opt) =>
+            typeof opt === "object" &&
+            opt !== null &&
+            typeof (opt as Record<string, unknown>).id === "string" &&
+            typeof (opt as Record<string, unknown>).label === "string",
+        )
+      );
     case "canvas":
       return (
         Array.isArray(block.blocks) &&
