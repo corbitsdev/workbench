@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { DB } from "@intx/db";
 import type { ToolDefinition } from "@intx/types/runtime";
@@ -15,21 +16,26 @@ export {
 } from "./principals";
 export type { ListPrincipalsContext } from "./principals";
 
+const AgentInstanceStatusSchema = type(
+  "'deployed' | 'running' | 'updating' | 'error' | 'stopped'",
+);
+export type AgentInstanceStatus = typeof AgentInstanceStatusSchema.infer;
+
 export const AGENT_INSTANCE_STATUSES = [
   "deployed",
   "running",
   "updating",
   "error",
   "stopped",
-] as const;
-export type AgentInstanceStatus = (typeof AGENT_INSTANCE_STATUSES)[number];
+] as const satisfies readonly AgentInstanceStatus[];
 
-const DEFAULT_STATUS: AgentInstanceStatus = "running";
 const ALL_STATUSES = "all";
 const STATUS_VALUES = [...AGENT_INSTANCE_STATUSES, ALL_STATUSES] as const;
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
+
+const PrincipalIdsSchema = type("string[] > 0");
 
 /**
  * Resolve the agent-instance status filter. Defaults to `running` (the agents
@@ -39,15 +45,16 @@ const MAX_LIMIT = 200;
 export function resolveStatusFilter(
   value: unknown,
 ): AgentInstanceStatus | undefined {
-  if (value === undefined) return DEFAULT_STATUS;
+  if (value === undefined) return "running";
   if (typeof value !== "string") {
     throw new Error("status must be a string");
   }
   if (value === ALL_STATUSES) return undefined;
-  if (!AGENT_INSTANCE_STATUSES.includes(value as AgentInstanceStatus)) {
+  const parsed = AgentInstanceStatusSchema(value);
+  if (parsed instanceof type.errors) {
     throw new Error(`status must be one of: ${STATUS_VALUES.join(", ")}`);
   }
-  return value as AgentInstanceStatus;
+  return parsed;
 }
 
 /**
@@ -62,10 +69,11 @@ export function parsePrincipalIds(value: unknown): string[] | undefined {
   if (value.length === 0) {
     throw new Error("principals must be a non-empty array of principal ids");
   }
-  if (!value.every((id) => typeof id === "string")) {
+  const parsed = PrincipalIdsSchema(value);
+  if (parsed instanceof type.errors) {
     throw new Error("principals must contain only strings");
   }
-  return value as string[];
+  return parsed;
 }
 
 export function parseListLimit(value: unknown): number {
