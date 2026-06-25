@@ -3,6 +3,14 @@ export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
 export { PagePanel } from "./PagePanel";
 export {
+  CatalogGlyph,
+  CATALOG_GLYPH_KINDS,
+  CATALOG_GLYPH_FILLS,
+  catalogCardClassName,
+  hashString,
+  type CatalogGlyphKind,
+} from "./CatalogGlyph";
+export {
   Steps,
   Step,
   StepIndicator,
