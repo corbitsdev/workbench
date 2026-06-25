@@ -1008,6 +1008,19 @@ export function createSidecarDeployRouter(deps: {
         WORKFLOW_DEFINITION_REF: "refs/heads/main",
         WORKFLOW_RUN_REPO_ID: deploymentId,
         WORKFLOW_RUN_REF: "refs/heads/main",
+        // WORKBENCH-LOCAL (CL-2199): per-deploy tenant scope the step harness
+        // needs to resolve tenant-owned tool credentials + tool-package
+        // tarballs from the hub, and which keys the durable-conversation
+        // substrate. Not present in the boot-edge `multistepSubstrateEnv`
+        // (sidecar-process constants only); threaded per-deploy from the
+        // validated `HarnessConfig` the frame carried, the same mechanism
+        // STEP_INFERENCE_SOURCES uses. `SubstrateConfig` in
+        // workflow-substrate-factory.ts REQUIRES this key and the
+        // workflow-child's `filterSubstrateConfig` throws without it, so
+        // dropping this line breaks every workflow-child spawn at runtime
+        // (not compile time — the hand-off is duck-typed). MUST be preserved
+        // across interchange pin-bump re-syncs of this file.
+        TENANT_ID: frame.config.tenantId,
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
 
