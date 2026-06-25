@@ -1,7 +1,6 @@
 import {
   buildSystemPrompt,
   HUMANIZER_SECTION,
-  SPECIALIST_MAIL_SECTION,
   type PromptFormat,
 } from "../prompt-builder";
 
@@ -37,7 +36,6 @@ export function buildFirecrawlSystemPrompt(
 - Respect robots.txt and terms of service.
 - Be concise. Do not add commentary unless asked.`,
       },
-      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format,

@@ -7,15 +7,9 @@ type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
 export function buildPersonalAgentGrantRequirements(
-  workbenchTenantId: string,
+  _workbenchTenantId: string,
 ): GrantRequirementType[] {
-  return [
-    {
-      source: "invoker",
-      resource: `tenant:${workbenchTenantId}`,
-      action: "deliver",
-    },
-  ];
+  return [];
 }
 
 export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] =

@@ -18,8 +18,6 @@ const researchTools = [
   "bluesky_search",
   "scrapecreators_tiktok",
   "write_artifact",
-  "mail_search",
-  "mail_reply",
   "read_file",
   "write_file",
 ];
@@ -49,13 +47,9 @@ describe("Freddie definition", () => {
     expect(FREDDIE_CAPABILITIES.tools).not.toContain("mail_send");
   });
 
-  it("appends Workbench mail-vs-chat guidance onto the base prompt", () => {
+  it("appends Workbench operating context guidance onto the base prompt", () => {
     expect(FREDDIE_DEPLOY_PROMPT).toContain("# Claude Fable 5");
     expect(FREDDIE_DEPLOY_PROMPT).toContain("Workbench operating context");
-    expect(FREDDIE_DEPLOY_PROMPT).toContain(
-      "Do not call a mail tool to answer the user",
-    );
-    expect(FREDDIE_DEPLOY_PROMPT).toContain("never pass `uid: 0`");
     expect(FREDDIE_DEPLOY_DESCRIPTOR.systemPrompt).toBe(FREDDIE_DEPLOY_PROMPT);
   });
 

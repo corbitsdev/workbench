@@ -1,7 +1,6 @@
 import {
   buildSystemPrompt,
   HUMANIZER_SECTION,
-  SPECIALIST_MAIL_SECTION,
   type PromptFormat,
 } from "../prompt-builder";
 
@@ -21,7 +20,7 @@ export function buildGranolaSystemPrompt(
 - Document calls using the fixed markdown schema below.
 - Answer questions about specific calls or patterns across calls.
 - Run as a background poller that fetches and summarises call data from the Granola API.
-- Respond to inbound mail when asked for information about calls.`,
+- Answer questions about specific calls or call patterns.`,
       },
       {
         tag: "call_document_schema",
@@ -70,7 +69,6 @@ Emit only valid JSON inside the fence — no trailing commas, no comments. Any p
 
 If you cannot produce valid JSON, fall back to the plain markdown schema.`,
       },
-      SPECIALIST_MAIL_SECTION,
       HUMANIZER_SECTION,
     ],
     format,

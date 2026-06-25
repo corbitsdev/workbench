@@ -52,8 +52,8 @@ describe("agent system prompts", () => {
   });
 });
 
-describe("specialist agent dispatch-reply contract", () => {
-  const dispatchSpecialists: [string, (name: string) => string][] = [
+describe("specialist agent prompts have no mail tool references", () => {
+  const specialists: [string, (name: string) => string][] = [
     ["granola", (name) => buildGranolaSystemPrompt(name, { xml: true })],
     ["firecrawl", (name) => buildFirecrawlSystemPrompt(name, { xml: true })],
     ["walter", (name) => buildWalterSystemPrompt(name, { xml: true })],
@@ -62,23 +62,11 @@ describe("specialist agent dispatch-reply contract", () => {
     ["lincoln", (_name) => buildLincolnSystemPrompt("Lincoln")],
   ];
 
-  for (const [agentName, buildPrompt] of dispatchSpecialists) {
-    it(`${agentName} instructs search-then-reply for agent-dispatched turns`, () => {
+  for (const [agentName, buildPrompt] of specialists) {
+    it(`${agentName} does not reference mail_search or mail_reply`, () => {
       const prompt = buildPrompt(agentName);
-      expect(prompt).toContain("mail_search");
-      expect(prompt).toContain("mail_reply");
-      expect(prompt).toContain("ins_");
-    });
-
-    it(`${agentName} distinguishes user turns (usr_) from agent turns (ins_)`, () => {
-      const prompt = buildPrompt(agentName);
-      expect(prompt).toContain("usr_");
-    });
-
-    it(`${agentName} does not instruct guessing a ref`, () => {
-      const prompt = buildPrompt(agentName);
-      expect(prompt).not.toContain("uid: 1");
-      expect(prompt).toContain("Never construct a message ref from scratch");
+      expect(prompt).not.toContain("mail_search");
+      expect(prompt).not.toContain("mail_reply");
     });
   }
 });

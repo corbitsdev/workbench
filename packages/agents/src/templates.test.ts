@@ -32,8 +32,8 @@ describe("AGENT_TEMPLATES", () => {
     expect(freddie).toBeDefined();
     expect(freddie?.name).toBe("Freddie");
     expect(freddie?.modelConfig).toEqual({ defaultModel: "claude-opus-4-8" });
-    expect(freddie?.capabilities.tools).toContain("mail_reply");
     expect(freddie?.capabilities.tools).not.toContain("mail_send");
+    expect(freddie?.capabilities.tools).not.toContain("mail_reply");
   });
 
   it("every template has a non-empty name, systemPrompt, and credentialRequirements", () => {
@@ -64,56 +64,19 @@ describe("AGENT_TEMPLATES", () => {
     }
   });
 
-  it("drops the mail_send static grant (mail tools removed) and never bakes in the deliver grant", () => {
-    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
-    expect(myra).toBeDefined();
-    const resources = myra?.grantRequirements.map((g) => g.resource) ?? [];
-    expect(resources).not.toContain("tool:mail_send");
-    // The dynamic per-workbench tenant:<id> deliver grant is computed at launch,
-    // never seeded into the static definition.
-    expect(resources.some((r) => r.startsWith("tenant:"))).toBe(false);
-  });
-
-  it("Myra capabilities carry the read-only domain tools and no mail tools", () => {
-    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
-    expect(myra).toBeDefined();
-    const tools = myra?.capabilities.tools ?? [];
-    expect(tools.some((t) => t.startsWith("mail_"))).toBe(false);
-    expect(tools).toContain(
-      "@workbench/tools-granola/granola:granola_list_notes",
-    );
-    expect(tools).toContain(
-      "@workbench/tools-linear/linear:linear_list_issues",
-    );
-    expect(tools).toContain("@workbench/tools-attio/attio:attio_query_records");
-  });
-
-  it("every dispatch-capable specialist has mail_search and mail_reply grants", () => {
-    // A specialist that can reply to a dispatcher MUST be able to search for
-    // the message ref first — granting mail_reply without mail_search leaves
-    // "never construct a ref from scratch" impossible to obey, which produced
-    // fabricated recipient addresses (CL-1808).
-    const specialists = AGENT_TEMPLATES.filter((t) => t.key !== "myra");
-    for (const template of specialists) {
-      const resources = template.grantRequirements.map((g) => g.resource);
-      expect(resources).toContain("tool:mail_search");
-      expect(resources).toContain("tool:mail_reply");
-    }
-  });
-
-  it("every dispatch-capable specialist exposes mail_search and mail_reply as enabled tools", () => {
-    const specialists = AGENT_TEMPLATES.filter((t) => t.key !== "myra");
-    for (const template of specialists) {
-      expect(template.capabilities.tools).toContain("mail_search");
-      expect(template.capabilities.tools).toContain("mail_reply");
-    }
-  });
-
-  it("no template exposes mail_reply without mail_search (search-then-reply must be followable)", () => {
+  it("no template has any mail tools", () => {
     for (const template of AGENT_TEMPLATES) {
-      const tools = template.capabilities.tools;
-      if (tools.includes("mail_reply")) {
-        expect(tools).toContain("mail_search");
+      expect(template.capabilities.tools).not.toContain("mail_send");
+      expect(template.capabilities.tools).not.toContain("mail_reply");
+      expect(template.capabilities.tools).not.toContain("mail_search");
+      expect(template.capabilities.tools).not.toContain("mail_read");
+    }
+  });
+
+  it("no template has any mail grants", () => {
+    for (const template of AGENT_TEMPLATES) {
+      for (const grant of template.grantRequirements) {
+        expect(grant.resource.startsWith("tool:mail")).toBe(false);
       }
     }
   });

@@ -14,8 +14,6 @@ describe("browser premade agents", () => {
         "edit_file",
         "search_files",
         "@workbench/tools-artifact/artifact:artifact_link_file",
-        "mail_search",
-        "mail_reply",
       ],
       requiredTools: [
         "read_file",
@@ -23,8 +21,6 @@ describe("browser premade agents", () => {
         "edit_file",
         "search_files",
         "@workbench/tools-artifact/artifact:artifact_link_file",
-        "mail_search",
-        "mail_reply",
       ],
     });
     expect(WALTER_DEPLOY_DESCRIPTOR.systemPrompt).toContain(

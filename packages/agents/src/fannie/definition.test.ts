@@ -16,8 +16,6 @@ const researchTools = [
   "bluesky_search",
   "scrapecreators_tiktok",
   "write_artifact",
-  "mail_search",
-  "mail_reply",
   "read_file",
   "write_file",
 ];

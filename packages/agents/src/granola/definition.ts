@@ -7,16 +7,7 @@ import { LLM_CREDENTIAL_NAME } from "../constants";
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
 
-/**
- * Grant requirements for the Granola agent.
- *
- * Oat must be able to reply to inbound mail from Myra. It must never
- * initiate outbound mail — tool:mail.send is not granted.
- */
-export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [
-  { source: "invoker", resource: "tool:mail_search", action: "invoke" },
-  { source: "invoker", resource: "tool:mail_reply", action: "invoke" },
-];
+export const GRANOLA_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
 
 /**
  * Credential requirements for the Granola agent.
@@ -49,8 +40,6 @@ export const GRANOLA_CAPABILITIES = {
     "granola_list_notes",
     "granola_get_note",
     "granola_list_folders",
-    "mail_search",
-    "mail_reply",
   ]),
 } as const;
 
