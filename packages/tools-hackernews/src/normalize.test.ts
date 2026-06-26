@@ -25,19 +25,37 @@ describe("normalizeHNPost", () => {
   });
 
   test("falls back to HN item URL when url is undefined", () => {
-    const noUrl: HNPost = { ...fixture, url: undefined };
+    const noUrl: HNPost = {
+      objectID: "12345",
+      title: "Show HN: A new approach to AI",
+      created_at_i: 1717200000,
+      points: 342,
+      num_comments: 87,
+    };
     const item = normalizeHNPost(noUrl);
     expect(item.url).toBe("https://news.ycombinator.com/item?id=12345");
   });
 
   test("uses 0 for missing points", () => {
-    const noPoints: HNPost = { ...fixture, points: undefined };
+    const noPoints: HNPost = {
+      objectID: "12345",
+      title: "Show HN: A new approach to AI",
+      url: "https://example.com/ai",
+      created_at_i: 1717200000,
+      num_comments: 87,
+    };
     const item = normalizeHNPost(noPoints);
     expect(item.engagement.upvotes).toBe(0);
   });
 
   test("uses 0 for missing num_comments", () => {
-    const noComments: HNPost = { ...fixture, num_comments: undefined };
+    const noComments: HNPost = {
+      objectID: "12345",
+      title: "Show HN: A new approach to AI",
+      url: "https://example.com/ai",
+      created_at_i: 1717200000,
+      points: 342,
+    };
     const item = normalizeHNPost(noComments);
     expect(item.engagement.comments).toBe(0);
   });
