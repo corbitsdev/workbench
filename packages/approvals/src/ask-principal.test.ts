@@ -325,6 +325,44 @@ describe("poll failure modes", () => {
   });
 });
 
+describe("invalid hub response shapes", () => {
+  test("poll returns permanent error immediately when body is empty object {}", async () => {
+    stubFetch((i) =>
+      i === 0
+        ? makeResponse(201, { id: "a", status: "pending", message: null })
+        : makeResponse(200, {}),
+    );
+    const t = getTool();
+    const result = await t.handler(CALL, new AbortController().signal);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("permanently");
+    // create + 1 poll — must not loop indefinitely
+    expect(calls).toHaveLength(2);
+  });
+
+  test("poll returns permanent error immediately when status is wrong type", async () => {
+    stubFetch((i) =>
+      i === 0
+        ? makeResponse(201, { id: "a", status: "pending", message: null })
+        : makeResponse(200, { id: "a", status: 42, message: null }),
+    );
+    const t = getTool();
+    const result = await t.handler(CALL, new AbortController().signal);
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("permanently");
+    expect(calls).toHaveLength(2);
+  });
+
+  test("create phase returns error (not throw) when POST response has invalid shape", async () => {
+    stubFetch(() => makeResponse(201, { not: "an approval record" }));
+    const t = getTool();
+    const result = await t.handler(CALL, new AbortController().signal);
+    expect(result.isError).toBe(true);
+    // No poll should happen.
+    expect(calls).toHaveLength(1);
+  });
+});
+
 describe("cancellation", () => {
   test("returns a cancelled error result when the signal aborts during the poll wait", async () => {
     stubFetch((i) =>
