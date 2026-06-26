@@ -44,7 +44,7 @@ describe("normalizeGitHubRepo", () => {
   });
 
   test("handles missing description", () => {
-    const noDesc: GitHubRepo = { ...repoFixture, description: undefined };
+    const noDesc: GitHubRepo = { ...repoFixture, description: null };
     const item = normalizeGitHubRepo(noDesc);
     expect(item.title).toBe("openai/openai-python: ");
   });
