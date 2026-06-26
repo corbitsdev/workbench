@@ -220,6 +220,36 @@ describe("WorkflowsPage", () => {
     screen.getByText("Last30days", { selector: "span" });
   });
 
+  it("searches the run list by workflow kind", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    render(React.createElement(WorkflowsPage));
+
+    fireEvent.change(screen.getByLabelText("Search runs"), {
+      target: { value: "last30" },
+    });
+
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    screen.getByText("Last30days", { selector: "span" });
+  });
+
   it("opens the catalog on New run, and starting a run selects it", () => {
     activeTenantId = "ten-7";
     runsResult = {

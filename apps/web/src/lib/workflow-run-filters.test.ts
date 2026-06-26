@@ -81,6 +81,42 @@ describe("applyRunFilters", () => {
     expect(out.map((r) => r.runId)).toEqual(["c"]);
   });
 
+  it("matches runs by a case-insensitive kind substring search", () => {
+    const out = applyRunFilters(runs, {
+      ...DEFAULT_RUN_FILTERS,
+      search: "LAST30",
+    });
+    expect(out.map((r) => r.runId)).toEqual(["b"]);
+  });
+
+  it("matches runs by a case-insensitive runId substring search", () => {
+    const withIds: WorkflowRun[] = [
+      run({ runId: "run_abc123", kind: "deck-build" }),
+      run({ runId: "run_xyz789", kind: "deck-build" }),
+    ];
+    const out = applyRunFilters(withIds, {
+      ...DEFAULT_RUN_FILTERS,
+      search: "ABC123",
+    });
+    expect(out.map((r) => r.runId)).toEqual(["run_abc123"]);
+  });
+
+  it("treats a whitespace-only search as no search", () => {
+    const out = applyRunFilters(runs, {
+      ...DEFAULT_RUN_FILTERS,
+      search: "   ",
+    });
+    expect(out).toHaveLength(runs.length);
+  });
+
+  it("returns nothing when the search matches no kind", () => {
+    const out = applyRunFilters(runs, {
+      ...DEFAULT_RUN_FILTERS,
+      search: "nomatch",
+    });
+    expect(out).toHaveLength(0);
+  });
+
   it("does not mutate the input array", () => {
     const before = runs.map((r) => r.runId);
     applyRunFilters(runs, { ...DEFAULT_RUN_FILTERS, sort: "oldest" });

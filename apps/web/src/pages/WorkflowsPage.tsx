@@ -144,53 +144,65 @@ export function WorkflowsPage() {
           </Button>
         </div>
         {!isLoading && !isError && allRuns.length > 0 && (
-          <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2">
-            <select
-              aria-label="Filter by status"
-              className={filterSelectClass}
-              value={filters.status}
+          <div className="flex flex-col gap-2 border-b border-border px-4 py-2">
+            <input
+              type="search"
+              aria-label="Search runs"
+              placeholder="Search runs…"
+              className="w-full rounded border border-border bg-page px-2 py-1 text-xs text-text placeholder:text-text-3"
+              value={filters.search}
               onChange={(e) =>
-                setFilters((f) => ({
-                  ...f,
-                  status: e.target.value as RunStatusFilter,
-                }))
+                setFilters((f) => ({ ...f, search: e.target.value }))
               }
-            >
-              {STATUS_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Filter by workflow kind"
-              className={filterSelectClass}
-              value={filters.kind}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, kind: e.target.value }))
-              }
-            >
-              <option value={ALL_KINDS}>All workflows</option>
-              {kindOptions.map((kind) => (
-                <option key={kind} value={kind}>
-                  {kind}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="Sort runs"
-              className={filterSelectClass}
-              value={filters.sort}
-              onChange={(e) =>
-                setFilters((f) => ({ ...f, sort: e.target.value as RunSort }))
-              }
-            >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+            />
+            <div className="flex flex-wrap gap-2">
+              <select
+                aria-label="Filter by status"
+                className={filterSelectClass}
+                value={filters.status}
+                onChange={(e) =>
+                  setFilters((f) => ({
+                    ...f,
+                    status: e.target.value as RunStatusFilter,
+                  }))
+                }
+              >
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Filter by workflow kind"
+                className={filterSelectClass}
+                value={filters.kind}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, kind: e.target.value }))
+                }
+              >
+                <option value={ALL_KINDS}>All workflows</option>
+                {kindOptions.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Sort runs"
+                className={filterSelectClass}
+                value={filters.sort}
+                onChange={(e) =>
+                  setFilters((f) => ({ ...f, sort: e.target.value as RunSort }))
+                }
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-auto">
