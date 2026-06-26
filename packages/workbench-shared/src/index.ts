@@ -213,6 +213,9 @@ export const MemberPreferences = type({
   "theme?": ThemeSchema,
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": ToolSummaryStyleSchema,
+  // Run ids the member has archived (hidden by default) from the workflow-runs
+  // list. Persisted per-member so the choice follows them across devices.
+  "archivedWorkflowRuns?": "string[]",
   "[string]": "unknown",
 });
 export type MemberPreferences = typeof MemberPreferences.infer;

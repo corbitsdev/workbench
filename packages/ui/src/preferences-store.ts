@@ -18,7 +18,21 @@ export const PREFERENCE_KEYS = {
   theme: "cw-theme",
   compactToolActivity: "cw-compact-tools",
   toolSummaryStyle: "cw-tool-summary-style",
+  archivedWorkflowRuns: "cw-archived-workflow-runs",
 } as const;
+
+// Parses the JSON-encoded string-array stored under a list-valued preference,
+// degrading a malformed/legacy blob to an empty list rather than throwing.
+export function parseStringList(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
+}
 
 type Persister = (key: string, value: string) => void;
 
@@ -105,6 +119,7 @@ export const ServerPreferencesSchema = type({
   "theme?": "string",
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": "string",
+  "archivedWorkflowRuns?": "string[]",
 });
 
 export type ServerPreferences = typeof ServerPreferencesSchema.infer;
@@ -127,6 +142,12 @@ export function hydrateServerPreferences(prefs: unknown): void {
       parsed.toolSummaryStyle,
     );
   }
+  if (parsed.archivedWorkflowRuns !== undefined) {
+    hydratePreference(
+      PREFERENCE_KEYS.archivedWorkflowRuns,
+      JSON.stringify(parsed.archivedWorkflowRuns),
+    );
+  }
 }
 
 /**
@@ -144,5 +165,7 @@ export function serverPatchForRawChange(
   }
   if (key === PREFERENCE_KEYS.toolSummaryStyle)
     return { toolSummaryStyle: value };
+  if (key === PREFERENCE_KEYS.archivedWorkflowRuns)
+    return { archivedWorkflowRuns: parseStringList(value) };
   return null;
 }

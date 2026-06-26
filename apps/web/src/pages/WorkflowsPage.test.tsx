@@ -81,6 +81,7 @@ const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   activeTenantId = "ten-1";
   lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
@@ -127,7 +128,7 @@ describe("WorkflowsPage", () => {
     };
     render(React.createElement(WorkflowsPage));
     expect(lastRunsTenantId).toBe("ten-42");
-    fireEvent.click(screen.getByText("Deck Build"));
+    fireEvent.click(screen.getByText("Deck build"));
     expect(lastPaneTenantId).toBe("ten-42");
   });
 
@@ -146,10 +147,45 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     render(React.createElement(WorkflowsPage));
-    expect(screen.getByText("Deck Build")).toBeDefined();
+    expect(screen.getByText("Deck build")).toBeDefined();
     expect(screen.queryByTestId("run-pane")).toBeNull();
-    fireEvent.click(screen.getByText("Deck Build"));
+    fireEvent.click(screen.getByText("Deck build"));
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
+  });
+
+  it("archives a run (hidden by default) and reveals it via Show archived", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    render(React.createElement(WorkflowsPage));
+
+    // Archive the first run via its row action.
+    const archiveButtons = screen.getAllByLabelText("Archive run");
+    fireEvent.click(archiveButtons[0]);
+
+    // It is now hidden from the default list; the other run stays.
+    expect(screen.queryByText("Deck build")).toBeNull();
+    screen.getByText("Last30days");
+
+    // Reveal archived runs, then the archived run is shown again.
+    fireEvent.click(screen.getByText(/show 1 archived/i));
+    screen.getByText("Deck build");
   });
 
   it("opens the catalog on New run, and starting a run selects it", () => {

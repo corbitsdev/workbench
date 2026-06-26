@@ -48,6 +48,7 @@ export {
   type Theme,
 } from "./use-theme";
 export { useCompactToolActivity } from "./use-compact-tool-activity";
+export { useArchivedWorkflowRuns } from "./use-archived-workflow-runs";
 export {
   useToolSummaryStyle,
   type ToolSummaryStyle,
