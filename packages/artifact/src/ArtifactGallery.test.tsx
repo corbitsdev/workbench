@@ -63,6 +63,18 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText("1 items")).toBeDefined();
   });
 
+  it("does not declare its own panel frame (single PagePanel frame owns it)", () => {
+    const { container } = render(
+      React.createElement(ArtifactGallery, { artifacts: [artifact] }),
+    );
+    const root = container.querySelector("section");
+    if (!root) throw new Error("gallery root section not rendered");
+    expect(root.className).not.toContain("rounded-panel");
+    expect(root.className).not.toContain("border-border");
+    expect(root.className).not.toContain("bg-bg");
+    expect(root.className).not.toContain("shadow-");
+  });
+
   it("shows the loading state", () => {
     render(
       React.createElement(ArtifactGallery, { artifacts: [], isLoading: true }),

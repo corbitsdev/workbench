@@ -36,7 +36,7 @@ export function ArtifactsPage() {
 
   return (
     <ErrorBoundary>
-      <PagePanel className="px-4 pb-10 pt-2">
+      <PagePanel>
         <ArtifactGallery
           tenantId={activeTenantId}
           onOpenArtifact={(artifact) => navigate(`/artifacts/${artifact.id}`)}

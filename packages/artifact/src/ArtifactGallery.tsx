@@ -69,7 +69,7 @@ export function ArtifactGallery({
   const isSearching = query.trim().length > 0;
 
   return (
-    <section className="flex min-h-full flex-col rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+    <section className="flex min-h-full flex-col">
       <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
         {onOpenLibrary && (
           <button
