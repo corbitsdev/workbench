@@ -1,10 +1,13 @@
-export type EntitySet = {
-  handles: string[];
-  repos: string[];
-  subreddits: string[];
-  hashtags: string[];
-  keywords: string[];
-};
+import { type } from "arktype";
+
+export const EntitySet = type({
+  handles: "string[]",
+  repos: "string[]",
+  subreddits: "string[]",
+  hashtags: "string[]",
+  keywords: "string[]",
+});
+export type EntitySet = typeof EntitySet.infer;
 
 const STOP_WORDS = new Set([
   "a",
