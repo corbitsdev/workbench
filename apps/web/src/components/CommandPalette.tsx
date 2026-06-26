@@ -1,19 +1,19 @@
-import {
-  Fragment,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search } from "lucide-react";
 import {
   fuzzyMatch,
   rankPaletteItems,
   type PaletteResultItem,
   type RankedPaletteItem,
 } from "@workbench/shared";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "./ui/command";
 import {
   PALETTE_CATEGORY_LABELS,
   PALETTE_CATEGORY_ORDER,
@@ -49,16 +49,10 @@ interface PaletteGroup {
   category: PaletteResultItem["category"];
   label: string;
   items: RankedPaletteItem[];
-  // Index of this group's first row in the flat keyboard-navigation order.
-  startIndex: number;
 }
 
-function buildGroups(ranked: RankedPaletteItem[]): {
-  groups: PaletteGroup[];
-  flat: RankedPaletteItem[];
-} {
+function buildGroups(ranked: RankedPaletteItem[]): PaletteGroup[] {
   const groups: PaletteGroup[] = [];
-  const flat: RankedPaletteItem[] = [];
   for (const category of PALETTE_CATEGORY_ORDER) {
     const inCategory = ranked.filter((r) => r.item.category === category);
     if (inCategory.length === 0) continue;
@@ -66,11 +60,9 @@ function buildGroups(ranked: RankedPaletteItem[]): {
       category,
       label: PALETTE_CATEGORY_LABELS[category],
       items: inCategory,
-      startIndex: flat.length,
     });
-    flat.push(...inCategory);
   }
-  return { groups, flat };
+  return groups;
 }
 
 function Highlight({ text, indices }: { text: string; indices: number[] }) {
@@ -91,6 +83,17 @@ function Highlight({ text, indices }: { text: string; indices: number[] }) {
   );
 }
 
+function emptyMessage(
+  loading: boolean,
+  error: boolean,
+  trimmed: string,
+): string {
+  if (loading) return "Searching…";
+  if (error) return "Search failed. Please try again.";
+  if (trimmed) return `No matches for “${trimmed}”.`;
+  return "Type to search.";
+}
+
 export function CommandPalette({
   open,
   onClose,
@@ -104,16 +107,13 @@ export function CommandPalette({
   hasMore = false,
   onLoadMore,
 }: CommandPaletteProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
 
   // Nav commands are ranked client-side (fuzzy); entity results already arrive
   // query-matched and ordered from the server, so they are highlight-only.
-  const { groups, flat } = useMemo(() => {
+  const groups = useMemo(() => {
     const navRanked = rankPaletteItems(query, navItems);
     const entityRanked: RankedPaletteItem[] = entityItems.map((item) => ({
       item,
@@ -123,19 +123,12 @@ export function CommandPalette({
     return buildGroups([...navRanked, ...entityRanked]);
   }, [query, navItems, entityItems]);
 
-  // Keep the active row valid as results shrink/grow with the query.
-  const clampedIndex =
-    flat.length === 0 ? 0 : Math.min(activeIndex, flat.length - 1);
-  const activeItem = flat[clampedIndex];
-  const activeOptionId = activeItem
-    ? `palette-option-${activeItem.item.id}`
-    : undefined;
-
   // The provider keeps this component mounted across open/close, so the focus
   // handoff must key off `open`, not mount. When it opens, capture the element
   // that had focus and move focus into the search input; the cleanup restores
   // that element when it closes (or on unmount while open). A DOM mutation that
-  // must run before paint — the canonical useLayoutEffect case.
+  // must run before paint — the canonical useLayoutEffect case. cmdk owns
+  // listbox/combobox semantics and keyboard navigation, but not this handoff.
   useLayoutEffect(() => {
     if (!open) return;
     restoreFocusRef.current = document.activeElement as HTMLElement | null;
@@ -146,78 +139,24 @@ export function CommandPalette({
     };
   }, [open]);
 
-  useEffect(() => {
-    const list = listRef.current;
-    if (!list || !activeOptionId || typeof CSS === "undefined") return;
-    const el = list.querySelector<HTMLElement>(
-      `#${CSS.escape(activeOptionId)}`,
-    );
-    el?.scrollIntoView?.({ block: "nearest" });
-  }, [activeOptionId]);
-
-  const isComposing = (event: React.KeyboardEvent) =>
-    composingRef.current || event.nativeEvent.isComposing;
-
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "ArrowDown") {
-      // preventDefault first so the text caret never moves, then bail on IME.
-      event.preventDefault();
-      if (isComposing(event)) return;
-      setActiveIndex(() =>
-        clampedIndex + 1 >= flat.length ? clampedIndex : clampedIndex + 1,
-      );
-      return;
-    }
-    if (event.key === "ArrowUp") {
-      event.preventDefault();
-      if (isComposing(event)) return;
-      setActiveIndex(() => (clampedIndex <= 0 ? 0 : clampedIndex - 1));
-      return;
-    }
-    if (event.key === "Enter") {
-      if (isComposing(event)) return;
-      if (!activeItem) return;
-      event.preventDefault();
-      onSelect(activeItem.item);
-      return;
-    }
+  // cmdk drives arrow/Enter navigation from a single keydown handler on the
+  // Command root. We intercept on the input — which bubbles to that root — to
+  // (1) close on Escape (cmdk has no concept of a closable surface) and (2)
+  // swallow keys mid-IME-composition so an Enter that commits a candidate never
+  // also selects a row. Stopping propagation keeps cmdk's handler from acting.
+  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
       onClose();
+      return;
     }
-  };
-
-  // Trap Tab/Shift+Tab inside the panel so focus can't escape to the page
-  // behind the scrim. Row navigation is arrow-driven; Tab just cycles the
-  // focusable controls (input, rows, load-more) within the modal.
-  const handlePanelKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key !== "Tab") return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const focusable = panel.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), input, [tabindex]:not([tabindex="-1"])',
-    );
-    if (focusable.length === 0) return;
-    const first = focusable[0]!;
-    const last = focusable[focusable.length - 1]!;
-    const active = document.activeElement;
-    if (event.shiftKey && active === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault();
-      first.focus();
+    if (composingRef.current || event.nativeEvent.isComposing) {
+      event.stopPropagation();
     }
   };
 
   const trimmed = query.trim();
-  let emptyMessage: string | null = null;
-  if (flat.length === 0) {
-    if (loading) emptyMessage = "Searching…";
-    else if (error) emptyMessage = "Search failed. Please try again.";
-    else if (trimmed) emptyMessage = `No matches for “${trimmed}”.`;
-  }
 
   return (
     <AnimatePresence initial={false}>
@@ -231,29 +170,20 @@ export function CommandPalette({
           onClick={onClose}
           data-testid="command-palette-scrim"
         >
-          <div
-            ref={panelRef}
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={handlePanelKeyDown}
-            className="flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[var(--shadow)]"
-          >
-            <div className="flex items-center gap-2.5 border-b border-border px-4 py-3">
-              <Search size={16} className="flex-none text-text-3" />
-              <input
+          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl">
+            <Command
+              // Results are server-ranked (entities) or ranked here (nav); cmdk
+              // must not re-filter or it would drop server rows whose text does
+              // not fuzzy-match its own scorer. We own the matching.
+              shouldFilter={false}
+              aria-label="Search commands and entities"
+              className="max-h-[70vh] border border-border shadow-[var(--shadow)]"
+            >
+              <CommandInput
                 ref={inputRef}
-                type="text"
-                role="combobox"
-                aria-expanded={open}
-                aria-controls="command-palette-list"
-                aria-autocomplete="list"
-                aria-activedescendant={activeOptionId}
-                aria-label="Search commands and entities"
                 value={query}
-                onChange={(e) => {
-                  onQueryChange(e.target.value);
-                  setActiveIndex(0);
-                }}
-                onKeyDown={handleKeyDown}
+                onValueChange={onQueryChange}
+                onKeyDown={handleInputKeyDown}
                 onCompositionStart={() => {
                   composingRef.current = true;
                 }}
@@ -261,54 +191,20 @@ export function CommandPalette({
                   composingRef.current = false;
                 }}
                 placeholder="Search or jump to…"
-                className="w-full rounded-sm bg-surface-2 px-3 py-2 text-sm text-text placeholder-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
               />
-            </div>
 
-            {/* Live status region — outside the listbox (a listbox may own only
-                option/group children) so screen readers announce the
-                searching/empty/no-results state and the busy flag. */}
-            <div role="status" aria-live="polite" aria-busy={loading}>
-              {emptyMessage && (
-                <p className="py-10 text-center text-xs text-text-3">
-                  {emptyMessage}
-                </p>
-              )}
-            </div>
+              <CommandList aria-busy={loading}>
+                <CommandEmpty>
+                  {emptyMessage(loading, error, trimmed)}
+                </CommandEmpty>
 
-            <div
-              ref={listRef}
-              id="command-palette-list"
-              role="listbox"
-              aria-label="Results"
-              aria-busy={loading}
-              className="flex-1 overflow-y-auto overscroll-contain p-2"
-            >
-              {groups.map((group) => (
-                <div
-                  key={group.category}
-                  role="group"
-                  aria-label={group.label}
-                  className="mb-1"
-                >
-                  <div className="px-2 pb-1 pt-2 text-xs font-medium uppercase tracking-wide text-text-3">
-                    {group.label}
-                  </div>
-                  {group.items.map((ranked, localIndex) => {
-                    const flatIndex = group.startIndex + localIndex;
-                    const isActive = flatIndex === clampedIndex;
-                    return (
-                      <button
+                {groups.map((group) => (
+                  <CommandGroup key={group.category} heading={group.label}>
+                    {group.items.map((ranked) => (
+                      <CommandItem
                         key={ranked.item.id}
-                        type="button"
-                        id={`palette-option-${ranked.item.id}`}
-                        role="option"
-                        aria-selected={isActive}
-                        onMouseEnter={() => setActiveIndex(flatIndex)}
-                        onClick={() => onSelect(ranked.item)}
-                        className={`flex min-h-[40px] w-full items-center gap-3 rounded-sm px-2.5 py-2 text-left transition-colors ${
-                          isActive ? "bg-orange/15" : "hover:bg-row-hover"
-                        }`}
+                        value={ranked.item.id}
+                        onSelect={() => onSelect(ranked.item)}
                       >
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm text-text">
@@ -323,25 +219,25 @@ export function CommandPalette({
                             </span>
                           )}
                         </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                ))}
+              </CommandList>
 
-            {hasMore && onLoadMore && (
-              <div className="border-t border-border p-2">
-                <button
-                  type="button"
-                  onClick={onLoadMore}
-                  disabled={loading}
-                  className="w-full rounded-sm px-2.5 py-2 text-center text-xs font-medium text-text-2 transition-colors hover:bg-row-hover disabled:opacity-50"
-                >
-                  {loading ? "Loading…" : "Load more"}
-                </button>
-              </div>
-            )}
+              {hasMore && onLoadMore && (
+                <div className="border-t border-border p-2">
+                  <button
+                    type="button"
+                    onClick={onLoadMore}
+                    disabled={loading}
+                    className="w-full rounded-sm px-2.5 py-2 text-center text-xs font-medium text-text-2 transition-colors hover:bg-row-hover disabled:opacity-50"
+                  >
+                    {loading ? "Loading…" : "Load more"}
+                  </button>
+                </div>
+              )}
+            </Command>
           </div>
         </motion.div>
       )}

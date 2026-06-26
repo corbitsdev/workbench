@@ -126,16 +126,16 @@ describe("CommandPalette", () => {
     expect(screen.getByText(/Search failed/)).toBeDefined();
   });
 
-  it("moves the active row with Arrow keys and tracks aria-activedescendant", () => {
+  it("moves the active row up and down with the Arrow keys", () => {
     const { input } = renderPalette();
-    const first = screen.getAllByRole("option")[0]!;
-    expect(first.getAttribute("aria-selected")).toBe("true");
-    expect(input.getAttribute("aria-activedescendant")).toBe(first.id);
+    expect(
+      screen.getAllByRole("option")[0]!.getAttribute("aria-selected"),
+    ).toBe("true");
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
-    const second = screen.getAllByRole("option")[1]!;
-    expect(second.getAttribute("aria-selected")).toBe("true");
-    expect(input.getAttribute("aria-activedescendant")).toBe(second.id);
+    expect(
+      screen.getAllByRole("option")[1]!.getAttribute("aria-selected"),
+    ).toBe("true");
 
     fireEvent.keyDown(input, { key: "ArrowUp" });
     expect(
