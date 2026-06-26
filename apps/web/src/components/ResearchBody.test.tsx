@@ -176,10 +176,9 @@ describe("ResearchBody", () => {
 
   it("renders cluster item links with titles", () => {
     render(React.createElement(ResearchBody, { brief: FIXTURE_BRIEF }));
-    const link = screen.getByText("vLLM 0.5 cuts inference cost by 40%");
-    const anchor = link.closest("a");
-    if (!anchor)
-      throw new Error("Expected item title to be wrapped in an anchor");
+    const anchor = screen.getByRole("link", {
+      name: "vLLM 0.5 cuts inference cost by 40%",
+    });
     if (anchor.getAttribute("href") !== "https://example.com/story-1") {
       throw new Error("Item link href does not match expected URL");
     }
