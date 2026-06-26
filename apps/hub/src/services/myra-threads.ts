@@ -552,6 +552,27 @@ async function runTitleTurn(
   );
   const store = await createIsogitStore(contextDir);
 
+  // The collector persists this turn to `inference_turn`, whose `session_id` is
+  // a NOT NULL FK to `agent_session`. A fabricated id would violate the FK and
+  // fail every title turn, so we key the collector to one durable, reused title
+  // session per tenant — created once, idempotently, on first use.
+  const instanceRow = await db.query.agentInstance.findFirst({
+    where: (i, { eq: ieq }) => ieq(i.id, opts.instanceId),
+  });
+  if (!instanceRow) return null;
+
+  const titleSessionId = `ses_myra-title-${opts.tenantId}`;
+  await db
+    .insert(agentSession)
+    .values({
+      id: titleSessionId,
+      tenantId: opts.tenantId,
+      agentId: instanceRow.agentId,
+      principalId: instanceRow.principalId,
+      status: "active",
+    })
+    .onConflictDoNothing({ target: agentSession.id });
+
   const def = defineAgent({
     id: `myra-title-${randomUUID()}`,
     systemPrompt: TITLE_SYSTEM_PROMPT,
@@ -582,7 +603,7 @@ async function runTitleTurn(
 
   const collector = createEventCollector({
     db,
-    sessionId: generateId("session"),
+    sessionId: titleSessionId,
     instanceId: opts.instanceId,
     tenantId: opts.tenantId,
     onTurnFinalized,
