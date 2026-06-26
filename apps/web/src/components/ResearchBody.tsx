@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { type Report, parseReport } from "@workbench/last30days-core";
+import { MarkdownBlock } from "./Markdown";
 
 // The brief contract is owned by @workbench/last30days-core; the web validates
 // the persisted artifact payload at the boundary via the package's parse helper
@@ -139,25 +141,67 @@ function CitationsSection({
   );
 }
 
-interface ResearchBodyProps {
-  brief: ResearchBrief;
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 60) || "research-report"
+  );
 }
 
-export default function ResearchBody({ brief }: ResearchBodyProps) {
+function ReportActions({
+  markdown,
+  topic,
+}: {
+  markdown: string;
+  topic: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    navigator.clipboard
+      .writeText(markdown)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
+  };
+
+  const download = () => {
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugify(topic)}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={copy}
+        className="rounded border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-2 hover:text-text"
+      >
+        {copied ? "Copied" : "Copy markdown"}
+      </button>
+      <button
+        type="button"
+        onClick={download}
+        className="rounded border border-border bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-2 hover:text-text"
+      >
+        Download .md
+      </button>
+    </div>
+  );
+}
+
+function ResearchData({ brief }: { brief: ResearchBrief }) {
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5">
-        <h1 className="text-base font-semibold text-text leading-snug">
-          {brief.topic}
-        </h1>
-        <StatsLine stats={brief.stats} />
-        {brief.leadInsight && (
-          <p className="text-sm text-text-2 leading-relaxed">
-            {brief.leadInsight}
-          </p>
-        )}
-      </div>
-
       {brief.clusters.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-text">Top Clusters</h2>
@@ -170,6 +214,65 @@ export default function ResearchBody({ brief }: ResearchBodyProps) {
       <BestTakesSection takes={brief.bestTakes} />
 
       <CitationsSection citations={brief.citations} />
+    </div>
+  );
+}
+
+interface ResearchBodyProps {
+  brief: ResearchBrief;
+  // The prose report markdown persisted alongside the structured brief. When
+  // present it is the primary deliverable; the brief becomes supporting data.
+  body?: string;
+}
+
+export default function ResearchBody({ brief, body }: ResearchBodyProps) {
+  const report = body?.trim() ?? "";
+
+  // No prose report persisted (older artifacts): fall back to the structured view.
+  if (report === "") {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1.5">
+          <h1 className="text-base font-semibold text-text leading-snug">
+            {brief.topic}
+          </h1>
+          <StatsLine stats={brief.stats} />
+          {brief.leadInsight && (
+            <p className="text-sm text-text-2 leading-relaxed">
+              {brief.leadInsight}
+            </p>
+          )}
+        </div>
+        <ResearchData brief={brief} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <h1 className="text-base font-semibold text-text leading-snug">
+            {brief.topic}
+          </h1>
+          <StatsLine stats={brief.stats} />
+        </div>
+        <ReportActions markdown={report} topic={brief.topic} />
+      </div>
+
+      <div className="prose prose-sm max-w-none">
+        <MarkdownBlock text={report} />
+      </div>
+
+      <details className="border-t border-border pt-4">
+        <summary className="cursor-pointer text-sm font-semibold text-text-2 hover:text-text">
+          Sources &amp; data ({brief.stats.sourceCount} sources ·{" "}
+          {brief.stats.itemCount} items)
+        </summary>
+        <div className="mt-4">
+          <ResearchData brief={brief} />
+        </div>
+      </details>
     </div>
   );
 }
