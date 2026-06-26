@@ -20,7 +20,10 @@ export type { ToolDefinition };
 import { and, eq } from "drizzle-orm";
 import { DISPATCH_AGENT_DEFINITION } from "./definition";
 
-const DispatchArgs = type({ agentDefinitionId: "string > 0", task: "string > 0" });
+const DispatchArgs = type({
+  agentDefinitionId: "string > 0",
+  task: "string > 0",
+});
 
 type DispatchResult = {
   instanceId: string;

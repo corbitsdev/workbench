@@ -122,7 +122,10 @@ export function hydrateServerPreferences(prefs: unknown): void {
     );
   }
   if (parsed.toolSummaryStyle !== undefined) {
-    hydratePreference(PREFERENCE_KEYS.toolSummaryStyle, parsed.toolSummaryStyle);
+    hydratePreference(
+      PREFERENCE_KEYS.toolSummaryStyle,
+      parsed.toolSummaryStyle,
+    );
   }
 }
 

@@ -40,7 +40,10 @@ export const POLYMARKET_ODDS_DEFINITION: ToolDefinition = {
   },
 };
 
-const SearchArgs = type({ query: "string > 0", "limit?": "number.integer > 0" });
+const SearchArgs = type({
+  query: "string > 0",
+  "limit?": "number.integer > 0",
+});
 
 async function searchPolymarket(
   config: PolymarketToolsConfig,
@@ -53,7 +56,9 @@ async function searchPolymarket(
   }
 
   const limit =
-    parsed.limit !== undefined ? Math.min(parsed.limit, MAX_LIMIT) : DEFAULT_LIMIT;
+    parsed.limit !== undefined
+      ? Math.min(parsed.limit, MAX_LIMIT)
+      : DEFAULT_LIMIT;
 
   const url = new URL(`${POLYMARKET_API_BASE}/markets`);
   url.searchParams.set("q", parsed.query);

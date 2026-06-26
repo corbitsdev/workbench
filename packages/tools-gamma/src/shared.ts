@@ -41,7 +41,7 @@ export const GenerationStatusSchema = type(
 );
 export type GenerationStatus = typeof GenerationStatusSchema.infer;
 
-const HttpMethodSchema = type(
+export const HttpMethodSchema = type(
   "'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'",
 );
 export type HttpMethod = typeof HttpMethodSchema.infer;

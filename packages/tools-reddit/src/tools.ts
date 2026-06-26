@@ -26,9 +26,7 @@ export type RedditToolsConfig = {
   fetcher?: RedditFetch;
 };
 
-const RedditSortLiteral = type(
-  '"relevance" | "new" | "top" | "comment_count"',
-);
+const RedditSortLiteral = type('"relevance" | "new" | "top" | "comment_count"');
 const RedditSubredditSortLiteral = type(
   '"relevance" | "hot" | "top" | "new" | "comments"',
 );

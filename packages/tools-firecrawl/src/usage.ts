@@ -39,7 +39,9 @@ async function historicalCreditUsage(
     {
       method: "GET",
       path: "/team/credit-usage/historical",
-      ...(args.byApiKey !== undefined ? { query: { byApiKey: args.byApiKey } } : {}),
+      ...(args.byApiKey !== undefined
+        ? { query: { byApiKey: args.byApiKey } }
+        : {}),
     },
     signal,
   );

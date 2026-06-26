@@ -29,8 +29,14 @@ function isUnsendableAssistantTurn(turn: ConversationTurn): boolean {
 // @intx/types/runtime (interchange, out of scope for arktype's string DSL). The
 // exported type intersection below restores the correct static type; element-level
 // validation of turns is intentionally skipped.
-const ContextRepairResult = type({ turns: "unknown[]", removedCount: "number" });
-export type ContextRepairResult = Omit<typeof ContextRepairResult.infer, "turns"> & {
+const ContextRepairResult = type({
+  turns: "unknown[]",
+  removedCount: "number",
+});
+export type ContextRepairResult = Omit<
+  typeof ContextRepairResult.infer,
+  "turns"
+> & {
   turns: ConversationTurn[];
 };
 
@@ -169,7 +175,10 @@ const ContextHealResult = type({
   toolResultsSynthesized: "number",
   danglingResultsDropped: "number",
 });
-export type ContextHealResult = Omit<typeof ContextHealResult.infer, "turns"> & {
+export type ContextHealResult = Omit<
+  typeof ContextHealResult.infer,
+  "turns"
+> & {
   turns: ConversationTurn[];
 };
 

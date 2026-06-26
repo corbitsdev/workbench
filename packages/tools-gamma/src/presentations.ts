@@ -32,7 +32,9 @@ async function duplicatePresentation(
 ): Promise<unknown> {
   const parsedArgs = DuplicatePresentationArgsSchema(args);
   if (parsedArgs instanceof type.errors) {
-    throw new Error(`Invalid duplicate presentation args: ${parsedArgs.summary}`);
+    throw new Error(
+      `Invalid duplicate presentation args: ${parsedArgs.summary}`,
+    );
   }
   const gammaId = parsedArgs.gammaId;
   const title = parsedArgs.title ?? null;

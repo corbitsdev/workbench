@@ -37,7 +37,11 @@ async function mapSite(
 
   const body: Record<string, unknown> = {
     url: args.url,
-    limit: optionalPositiveInteger(args.limit, MAP_DEFAULT_LIMIT, MAP_MAX_LIMIT),
+    limit: optionalPositiveInteger(
+      args.limit,
+      MAP_DEFAULT_LIMIT,
+      MAP_MAX_LIMIT,
+    ),
     ...(args.search !== undefined ? { search: args.search } : {}),
     ...(args.includeSubdomains !== undefined
       ? { includeSubdomains: args.includeSubdomains }

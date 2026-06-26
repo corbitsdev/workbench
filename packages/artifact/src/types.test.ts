@@ -2,7 +2,11 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import type { ArtifactWithVersions } from "./types";
-import { ArtifactVisualSchema, GalleryArtifactSchema, parseGalleryArtifact } from "./types";
+import {
+  ArtifactVisualSchema,
+  GalleryArtifactSchema,
+  parseGalleryArtifact,
+} from "./types";
 import { visualForKind } from "./artifact-visuals";
 
 describe("ArtifactWithVersions type export (CL-1552)", () => {
@@ -59,7 +63,12 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
 
 describe("ArtifactVisualSchema", () => {
   it("accepts a valid visual", () => {
-    const result = ArtifactVisualSchema({ label: "Email", viz: "lines", fill: "bg-orange", span: "row-span-3" });
+    const result = ArtifactVisualSchema({
+      label: "Email",
+      viz: "lines",
+      fill: "bg-orange",
+      span: "row-span-3",
+    });
     expect(result instanceof type.errors).toBe(false);
     if (!(result instanceof type.errors)) {
       expect(result.label).toBe("Email");
@@ -67,12 +76,22 @@ describe("ArtifactVisualSchema", () => {
   });
 
   it("rejects an invalid viz value", () => {
-    const result = ArtifactVisualSchema({ label: "X", viz: "invalid", fill: "bg-x", span: "span-1" });
+    const result = ArtifactVisualSchema({
+      label: "X",
+      viz: "invalid",
+      fill: "bg-x",
+      span: "span-1",
+    });
     expect(result instanceof type.errors).toBe(true);
   });
 
   it("span accepts any string value", () => {
-    const result = ArtifactVisualSchema({ label: "X", viz: "bars", fill: "bg-x", span: "completely-arbitrary-value" });
+    const result = ArtifactVisualSchema({
+      label: "X",
+      viz: "bars",
+      fill: "bg-x",
+      span: "completely-arbitrary-value",
+    });
     expect(result instanceof type.errors).toBe(false);
   });
 

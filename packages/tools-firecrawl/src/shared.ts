@@ -22,7 +22,7 @@ export type FirecrawlFetch = (
  */
 export const FIRECRAWL_DEFAULT_BASE_URL = "https://api.firecrawl.dev/v2";
 
-const FirecrawlToolsConfigSchema = type({
+export const FirecrawlToolsConfigSchema = type({
   apiKey: "string",
   "baseUrl?": "string",
 });
@@ -31,7 +31,7 @@ export type FirecrawlToolsConfig = typeof FirecrawlToolsConfigSchema.infer & {
   fetcher?: FirecrawlFetch;
 };
 
-const ResolvedFirecrawlConfigSchema = type({
+export const ResolvedFirecrawlConfigSchema = type({
   apiKey: "string",
   baseUrl: "string",
 });
@@ -179,7 +179,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** Parse and validate tool args at the trust boundary using an arktype schema. */
 export function parseArgs<T>(
-  schema: { (input: unknown): T | type.errors },
+  schema: (input: unknown) => T | type.errors,
   args: unknown,
   toolName: string,
 ): T {

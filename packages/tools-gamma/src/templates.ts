@@ -69,7 +69,7 @@ async function createFromTemplate(
 // Tenant-owned templates are stored in the hub DB and listed via the hub
 // ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL in apps/hub). This schema
 // describes a single template as returned to the agent at runtime.
-const GammaTemplateSchema = type({
+export const GammaTemplateSchema = type({
   id: "string",
   gammaId: "string",
   name: "string",

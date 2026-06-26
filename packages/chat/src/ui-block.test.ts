@@ -80,7 +80,9 @@ describe("isUIBlock", () => {
 
   it("rejects a choice block whose options lack id or label strings", () => {
     expect(isUIBlock({ kind: "choice", options: [null] })).toBe(false);
-    expect(isUIBlock({ kind: "choice", options: [{ id: 1, label: "A" }] })).toBe(false);
+    expect(
+      isUIBlock({ kind: "choice", options: [{ id: 1, label: "A" }] }),
+    ).toBe(false);
     expect(isUIBlock({ kind: "choice", options: [{ id: "a" }] })).toBe(false);
   });
 
@@ -100,7 +102,10 @@ describe("isUIBlock", () => {
     expect(
       isUIBlock({
         kind: "canvas",
-        blocks: [{ kind: "text", text: "ok" }, { kind: "text", text: 99 }],
+        blocks: [
+          { kind: "text", text: "ok" },
+          { kind: "text", text: 99 },
+        ],
       }),
     ).toBe(false);
   });

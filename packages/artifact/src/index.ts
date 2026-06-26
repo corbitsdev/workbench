@@ -9,7 +9,11 @@ export type {
   ArtifactVisual,
   GalleryArtifact,
 } from "./types";
-export { ArtifactVisualSchema, GalleryArtifactSchema, parseGalleryArtifact } from "./types";
+export {
+  ArtifactVisualSchema,
+  GalleryArtifactSchema,
+  parseGalleryArtifact,
+} from "./types";
 export { visualForKind, toGalleryArtifact } from "./artifact-visuals";
 export {
   WORKFLOW_ACCEPTED_ARTIFACT_KINDS,

@@ -2,7 +2,7 @@ import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { normalizeXResult } from "./normalize";
-import { XSearchResult, XSearchResponse } from "./types";
+import { XSearchResult } from "./types";
 
 const XAI_BASE_URL = "https://api.x.ai";
 const XAI_MODEL = "grok-4-1-fast";

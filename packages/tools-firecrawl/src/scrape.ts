@@ -30,11 +30,17 @@ async function scrape(
     ...(args.onlyMainContent !== undefined
       ? { onlyMainContent: args.onlyMainContent }
       : {}),
-    ...(args.includeTags !== undefined ? { includeTags: args.includeTags } : {}),
-    ...(args.excludeTags !== undefined ? { excludeTags: args.excludeTags } : {}),
+    ...(args.includeTags !== undefined
+      ? { includeTags: args.includeTags }
+      : {}),
+    ...(args.excludeTags !== undefined
+      ? { excludeTags: args.excludeTags }
+      : {}),
     ...(waitFor > 0 ? { waitFor } : {}),
     ...(timeout > 0 ? { timeout } : {}),
-    ...(args.jsonOptions !== undefined ? { jsonOptions: args.jsonOptions } : {}),
+    ...(args.jsonOptions !== undefined
+      ? { jsonOptions: args.jsonOptions }
+      : {}),
   };
 
   return firecrawlFetchJSON(

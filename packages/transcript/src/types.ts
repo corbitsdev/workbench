@@ -85,7 +85,9 @@ export type SelectedPainPointContext = typeof SelectedPainPointContext.infer;
  *
  * @throws {Error} When `value` does not conform to the {@link StructuredTranscript} schema.
  */
-export function parseStructuredTranscript(value: unknown): StructuredTranscript {
+export function parseStructuredTranscript(
+  value: unknown,
+): StructuredTranscript {
   const parsed = StructuredTranscript(value);
   if (parsed instanceof type.errors) {
     throw new Error(`StructuredTranscript: ${parsed.summary}`);

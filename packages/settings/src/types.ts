@@ -46,9 +46,8 @@ export const SettingsSelectField = type({
 });
 export type SettingsSelectField = typeof SettingsSelectField.infer;
 
-export const SettingsField = SettingsTextField.or(SettingsToggleField).or(
-  SettingsSelectField,
-);
+export const SettingsField =
+  SettingsTextField.or(SettingsToggleField).or(SettingsSelectField);
 export type SettingsField = typeof SettingsField.infer;
 
 export const SettingsSectionDescriptor = type({
@@ -57,8 +56,7 @@ export const SettingsSectionDescriptor = type({
   "description?": "string",
   fields: SettingsField.array(),
 });
-export type SettingsSectionDescriptor =
-  typeof SettingsSectionDescriptor.infer;
+export type SettingsSectionDescriptor = typeof SettingsSectionDescriptor.infer;
 
 // ── Plain types — not JSON-expressible or internal/trusted ────────────────────
 

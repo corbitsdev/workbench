@@ -186,7 +186,9 @@ describe("exa_search handler", () => {
 
   it("drops empty-string type from the request body", async () => {
     const fetcher = makeFetchStub({ results: [] });
-    const runner = createToolRunner(createExaTools({ apiKey: "test-key", fetcher }));
+    const runner = createToolRunner(
+      createExaTools({ apiKey: "test-key", fetcher }),
+    );
 
     await runner.run(
       { id: "call_1", name: "exa_search", arguments: { query: "q", type: "" } },

@@ -120,7 +120,9 @@ async function searchGitHub(
   const parsed = GithubActivityArgs(args);
   if (parsed instanceof type.errors) {
     const hasQuery =
-      "query" in args && typeof args.query === "string" && args.query.length > 0;
+      "query" in args &&
+      typeof args.query === "string" &&
+      args.query.length > 0;
     if (!hasQuery) {
       throw new Error("query is required");
     }
@@ -137,9 +139,7 @@ async function searchGitHub(
   const cutoffDate = cutoff.toISOString().slice(0, 10);
 
   const perList =
-    typeof rawLimit === "number" &&
-    Number.isInteger(rawLimit) &&
-    rawLimit > 0
+    typeof rawLimit === "number" && Number.isInteger(rawLimit) && rawLimit > 0
       ? Math.min(rawLimit, MAX_PER_LIST)
       : DEFAULT_PER_LIST;
   const perPage = String(perList);

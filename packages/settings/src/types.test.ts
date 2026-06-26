@@ -35,7 +35,11 @@ describe("SettingsTextField schema", () => {
 describe("SettingsToggleField schema", () => {
   it("accepts a valid toggle field", () => {
     expect(() =>
-      SettingsToggleField.assert({ key: "flag", label: "Flag", kind: "toggle" }),
+      SettingsToggleField.assert({
+        key: "flag",
+        label: "Flag",
+        kind: "toggle",
+      }),
     ).not.toThrow();
   });
 
@@ -60,7 +64,11 @@ describe("SettingsSelectField schema", () => {
 
   it("rejects missing options", () => {
     expect(() =>
-      SettingsSelectField.assert({ key: "theme", label: "Theme", kind: "select" }),
+      SettingsSelectField.assert({
+        key: "theme",
+        label: "Theme",
+        kind: "select",
+      }),
     ).toThrow();
   });
 });
