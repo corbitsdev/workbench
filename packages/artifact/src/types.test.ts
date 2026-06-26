@@ -1,6 +1,8 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
+import { type } from "arktype";
 import type { ArtifactWithVersions } from "./types";
+import { ArtifactVisualSchema, GalleryArtifactSchema, parseGalleryArtifact } from "./types";
 import { visualForKind } from "./artifact-visuals";
 
 describe("ArtifactWithVersions type export (CL-1552)", () => {
@@ -55,7 +57,87 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
   });
 });
 
-describe("visualForKind sanity (unrelated, ensures test file is valid)", () => {
+describe("ArtifactVisualSchema", () => {
+  it("accepts a valid visual", () => {
+    const result = ArtifactVisualSchema({ label: "Email", viz: "lines", fill: "bg-orange", span: "row-span-3" });
+    expect(result instanceof type.errors).toBe(false);
+    if (!(result instanceof type.errors)) {
+      expect(result.label).toBe("Email");
+    }
+  });
+
+  it("rejects an invalid viz value", () => {
+    const result = ArtifactVisualSchema({ label: "X", viz: "invalid", fill: "bg-x", span: "span-1" });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
+  it("span accepts any string value", () => {
+    const result = ArtifactVisualSchema({ label: "X", viz: "bars", fill: "bg-x", span: "completely-arbitrary-value" });
+    expect(result instanceof type.errors).toBe(false);
+  });
+
+  it("rejects missing required fields", () => {
+    const result = ArtifactVisualSchema({ label: "X" });
+    expect(result instanceof type.errors).toBe(true);
+  });
+});
+
+describe("GalleryArtifactSchema", () => {
+  const valid = {
+    label: "Email",
+    viz: "lines",
+    fill: "bg-orange",
+    span: "row-span-3",
+    id: "a-1",
+    title: "My Email",
+    from: "Acme Corp",
+    time: "2 days ago",
+  };
+
+  it("accepts a fully valid GalleryArtifact", () => {
+    const result = GalleryArtifactSchema(valid);
+    expect(result instanceof type.errors).toBe(false);
+    if (!(result instanceof type.errors)) {
+      expect(result.id).toBe("a-1");
+      expect(result.from).toBe("Acme Corp");
+    }
+  });
+
+  it("rejects a record missing required fields", () => {
+    const result = GalleryArtifactSchema({ label: "X", viz: "bars" });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
+  it("accepts empty-string time (formatRelativeTime overflow path)", () => {
+    const result = GalleryArtifactSchema({ ...valid, time: "" });
+    expect(result instanceof type.errors).toBe(false);
+    if (!(result instanceof type.errors)) {
+      expect(result.time).toBe("");
+    }
+  });
+});
+
+describe("parseGalleryArtifact", () => {
+  it("returns a GalleryArtifact for valid input", () => {
+    const artifact = parseGalleryArtifact({
+      label: "Tweet",
+      viz: "lines",
+      fill: "bg-blue",
+      span: "row-span-2",
+      id: "a-2",
+      title: "A Tweet",
+      from: "Startup",
+      time: "just now",
+    });
+    expect(artifact.id).toBe("a-2");
+  });
+
+  it("throws for invalid input", () => {
+    expect(() => parseGalleryArtifact({ id: 42 })).toThrow("GalleryArtifact:");
+  });
+});
+
+describe("visualForKind sanity", () => {
   it("returns a visual for email", () => {
     const v = visualForKind("email");
     expect(v.label).toBeDefined();
