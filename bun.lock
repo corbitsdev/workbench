@@ -634,6 +634,7 @@
       "dependencies": {
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
         "streamdown": "^2.5.0",
       },
       "devDependencies": {

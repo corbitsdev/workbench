@@ -78,6 +78,33 @@ describe("isUIBlock", () => {
     expect(isUIBlock({ kind: "choice", options: [] })).toBe(false);
   });
 
+  it("rejects a choice block whose options lack id or label strings", () => {
+    expect(isUIBlock({ kind: "choice", options: [null] })).toBe(false);
+    expect(isUIBlock({ kind: "choice", options: [{ id: 1, label: "A" }] })).toBe(false);
+    expect(isUIBlock({ kind: "choice", options: [{ id: "a" }] })).toBe(false);
+  });
+
+  it("accepts a canvas block with nested valid blocks", () => {
+    expect(
+      isUIBlock({
+        kind: "canvas",
+        blocks: [
+          { kind: "text", text: "hello" },
+          { kind: "markdown", source: "# Hi" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a canvas block containing an invalid nested block", () => {
+    expect(
+      isUIBlock({
+        kind: "canvas",
+        blocks: [{ kind: "text", text: "ok" }, { kind: "text", text: 99 }],
+      }),
+    ).toBe(false);
+  });
+
   it("rejects non-objects", () => {
     expect(isUIBlock("string")).toBe(false);
     expect(isUIBlock(null)).toBe(false);

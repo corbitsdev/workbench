@@ -15,12 +15,32 @@
  * the worst case is exactly the pre-existing behaviour, never a crash.
  */
 
-export interface DocumentActions {
-  copy?: boolean;
-  download?: boolean;
-  saveArtifact?: boolean;
-}
+import { type } from "arktype";
 
+export const DocumentActionsSchema = type({
+  "copy?": "boolean",
+  "download?": "boolean",
+  "saveArtifact?": "boolean",
+});
+export type DocumentActions = typeof DocumentActionsSchema.infer;
+
+export const UIResponseSchema = type({
+  blockKind: "'choice'",
+  value: "string",
+});
+/** An interactive block's response, posted back to the agent as the next turn. */
+export type UIResponse = typeof UIResponseSchema.infer;
+
+/**
+ * UIBlock is a recursive discriminated union — the "canvas" variant wraps
+ * `blocks: UIBlock[]`. Arktype 2.2.0's `scope()` compiler triggers a runtime
+ * bug (`this.CanvasBlock1Apply is not a function`) when multiple scope aliases
+ * participate in a mutual cycle via intermediate alias references: the compiled
+ * Apply methods for canvas-adjacent aliases are emitted out of order and never
+ * initialized. Keeping the type as a plain TS discriminated union and validating
+ * it with a manual structural guard sidesteps the bug entirely; the guard is
+ * recursive on `canvas.blocks`, matching the runtime behaviour exactly.
+ */
 export type UIBlock =
   | { kind: "text"; text: string }
   | { kind: "markdown"; title?: string; source: string; collapsible?: boolean }
@@ -50,6 +70,13 @@ export type UIBlock =
       }[];
     }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
+
+export type ExtractedUIBlock = {
+  /** The block parsed from the fenced region. */
+  block: UIBlock;
+  /** The message text with the fenced block removed, trimmed. */
+  text: string;
+};
 
 const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "text",
@@ -98,9 +125,22 @@ export function isUIBlock(value: unknown): value is UIBlock {
     case "error":
       return typeof block.message === "string";
     case "choice":
-      return Array.isArray(block.options) && block.options.length > 0;
+      return (
+        Array.isArray(block.options) &&
+        block.options.length > 0 &&
+        (block.options as unknown[]).every(
+          (opt) =>
+            typeof opt === "object" &&
+            opt !== null &&
+            typeof (opt as Record<string, unknown>).id === "string" &&
+            typeof (opt as Record<string, unknown>).label === "string",
+        )
+      );
     case "canvas":
-      return Array.isArray(block.blocks);
+      return (
+        Array.isArray(block.blocks) &&
+        (block.blocks as unknown[]).every(isUIBlock)
+      );
     default:
       return false;
   }
@@ -130,13 +170,6 @@ export function parseToolResult(result: string): UIBlock {
 
 const UI_FENCE = /```ui\s*\n([\s\S]*?)\n```/u;
 
-export interface ExtractedUIBlock {
-  /** The block parsed from the fenced region. */
-  block: UIBlock;
-  /** The message text with the fenced block removed, trimmed. */
-  text: string;
-}
-
 /**
  * Extract a fenced ```ui block from agent message text. Returns the parsed
  * block plus the surrounding prose (fence removed). Returns null when there is
@@ -153,11 +186,4 @@ export function extractUIBlockFromText(
   const after = content.slice(match.index + match[0].length).trim();
   const text = [before, after].filter((part) => part !== "").join("\n\n");
   return { block: parsed, text };
-}
-
-/** An interactive block's response, posted back to the agent as the next turn. */
-export interface UIResponse {
-  blockKind: "choice";
-  /** The chosen option's value (falls back to its label). */
-  value: string;
 }
