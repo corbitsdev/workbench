@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -100,24 +101,28 @@ export function hydratePreference(key: string, value: string): void {
 }
 
 /** Server bootstrap shape — structurally the shared `MemberPreferences`. */
-export interface ServerPreferences {
-  theme?: unknown;
-  compactToolActivity?: unknown;
-  toolSummaryStyle?: unknown;
-}
+export const ServerPreferencesSchema = type({
+  "theme?": "string",
+  "compactToolActivity?": "boolean",
+  "toolSummaryStyle?": "string",
+});
+
+export type ServerPreferences = typeof ServerPreferencesSchema.infer;
 
 /** Reconcile the server's persisted preferences into the store after bootstrap. */
-export function hydrateServerPreferences(prefs: ServerPreferences): void {
-  if (typeof prefs.theme === "string")
-    hydratePreference(PREFERENCE_KEYS.theme, prefs.theme);
-  if (typeof prefs.compactToolActivity === "boolean") {
+export function hydrateServerPreferences(prefs: unknown): void {
+  const parsed = ServerPreferencesSchema(prefs);
+  if (parsed instanceof type.errors) return;
+  if (parsed.theme !== undefined)
+    hydratePreference(PREFERENCE_KEYS.theme, parsed.theme);
+  if (parsed.compactToolActivity !== undefined) {
     hydratePreference(
       PREFERENCE_KEYS.compactToolActivity,
-      String(prefs.compactToolActivity),
+      String(parsed.compactToolActivity),
     );
   }
-  if (typeof prefs.toolSummaryStyle === "string") {
-    hydratePreference(PREFERENCE_KEYS.toolSummaryStyle, prefs.toolSummaryStyle);
+  if (parsed.toolSummaryStyle !== undefined) {
+    hydratePreference(PREFERENCE_KEYS.toolSummaryStyle, parsed.toolSummaryStyle);
   }
 }
 

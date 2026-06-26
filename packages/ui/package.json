@@ -15,6 +15,7 @@
     "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "arktype": "catalog:",
     "@intx/workflow": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
