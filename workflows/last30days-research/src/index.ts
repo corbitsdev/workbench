@@ -1,6 +1,6 @@
 import { awaitSignal, defineWorkflow } from "@intx/workflow";
 import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
-import { buildWriterSystemPrompt } from "./prompts";
+import { buildRerankSystemPrompt, buildWriterSystemPrompt } from "./prompts";
 
 export const label = "last30days Research";
 export const description =
@@ -91,11 +91,22 @@ export const workflow = defineWorkflow({
       after: ["x"],
     }),
 
+    // Genuine-reasoning relevance judge (W1.2): scores each candidate's
+    // relevance to the topic. Its JSON reply feeds the brief, which applies the
+    // scores before ranking. Best-effort — the brief degrades to deterministic
+    // entity grounding if the judge output is missing or malformed.
+    rerank: inlineInferenceStep({
+      id: "last30days-rerank",
+      systemPrompt: buildRerankSystemPrompt(),
+      input: { from: "steps" },
+      after: ["youtube"],
+    }),
+
     brief: deterministicToolStep({
       id: "last30days-build-brief",
       tool: "last30days_workflow_brief",
       input: { from: "steps" },
-      after: ["youtube"],
+      after: ["rerank"],
     }),
 
     write: inlineInferenceStep({
@@ -125,6 +136,7 @@ export const workflow = defineWorkflow({
         body: { from: "reply" },
         kind: { literal: "research" },
         content: { from: "content" },
+        jobLabel: { literal: "Last 30 days research" },
       },
       after: ["write"],
     }),

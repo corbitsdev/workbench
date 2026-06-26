@@ -40,6 +40,60 @@ async function runBrief(steps: Record<string, unknown>): Promise<Report> {
   return parsed;
 }
 
+describe("last30days_workflow_brief rerank (W1.2)", () => {
+  const twoHnItems = {
+    output: {
+      content: JSON.stringify([
+        {
+          url: "https://a.com",
+          title: "Unrelated viral post",
+          publishedAt: "2026-06-20T12:00:00Z",
+          source: "hn",
+          engagement: { upvotes: 5000, comments: 400 },
+        },
+        {
+          url: "https://b.com",
+          title: "Quiet note",
+          publishedAt: "2026-06-20T12:00:00Z",
+          source: "hn",
+          engagement: { upvotes: 5, comments: 1 },
+        },
+      ]),
+    },
+  };
+
+  test("applies LLM rerank scores by url and they dominate ranking", async () => {
+    const report = await runBrief({
+      intake: { output: { topic: "Anthropic", days: 30 } },
+      hackernews: twoHnItems,
+      rerank: {
+        output: {
+          reply:
+            'Here you go:\n{"scores":[{"url":"https://a.com","relevance":5},{"url":"https://b.com","relevance":95}]}',
+        },
+      },
+    });
+    expect(report.items[0]?.url).toBe("https://b.com");
+    expect(report.items.find((i) => i.url === "https://b.com")?.relevance).toBe(
+      95,
+    );
+    expect(report.items.find((i) => i.url === "https://a.com")?.relevance).toBe(
+      5,
+    );
+  });
+
+  test("a malformed rerank reply is ignored; ranking falls back to deterministic", async () => {
+    const report = await runBrief({
+      intake: { output: { topic: "Anthropic", days: 30 } },
+      hackernews: twoHnItems,
+      rerank: { output: { reply: "sorry, I could not produce JSON" } },
+    });
+    expect(report.items.length).toBe(2);
+    // Deterministic grounding does not write the relevance field onto items.
+    expect(report.items.every((i) => i.relevance === undefined)).toBe(true);
+  });
+});
+
 describe("last30days_workflow_brief resilience", () => {
   test("one errored source does not poison the brief — good sources still produce items", async () => {
     const report = await runBrief({

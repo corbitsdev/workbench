@@ -50,6 +50,7 @@ function researchPhase(state: RunState | null): StepPhase | undefined {
     "reddit",
     "x",
     "youtube",
+    "rerank",
     "brief",
   ] as const;
   if (phaseFor(state, "brief") === "completed") return "completed";
@@ -91,7 +92,7 @@ function toStepperStatus(
     const persist = phaseFor(state, "persist");
     if (persist === "completed") return "completed";
     if (write === "completed" || write === "in-flight") return "current";
-    return researchPhase(state) === "completed" ? "pending" : "pending";
+    return "pending";
   }
   const persist = phaseFor(state, "persist");
   if (persist === "completed") return "completed";
@@ -151,6 +152,76 @@ function Spinner({ label }: { label?: string }) {
   );
 }
 
+const SOURCE_PROGRESS: { id: string; label: string }[] = [
+  { id: "hackernews", label: "Hacker News" },
+  { id: "github", label: "GitHub" },
+  { id: "web", label: "Web" },
+  { id: "reddit", label: "Reddit" },
+  { id: "x", label: "X" },
+  { id: "youtube", label: "YouTube" },
+  { id: "rerank", label: "Ranking relevance" },
+  { id: "brief", label: "Building brief" },
+];
+
+function isRunningPhase(phase: StepPhase | undefined): boolean {
+  return (
+    phase === "in-flight" ||
+    phase === "awaiting-signal" ||
+    phase === "awaiting-timer"
+  );
+}
+
+function sourceStatusLabel(phase: StepPhase | undefined): {
+  text: string;
+  tone: string;
+} {
+  if (phase === "completed") return { text: "done", tone: "text-success" };
+  if (phase === "failed") return { text: "skipped", tone: "text-text-3" };
+  // Summit Blue for in-progress (cool, informational); orange is reserved for
+  // the single primary action on screen ("Start research").
+  if (isRunningPhase(phase)) return { text: "running", tone: "text-blue" };
+  return { text: "waiting", tone: "text-text-3" };
+}
+
+function SourceProgress({ state }: { state: RunState | null }) {
+  return (
+    <Card>
+      <h3 className="mb-4 text-sm font-semibold text-text">
+        Gathering sources
+      </h3>
+      <ul className="space-y-2.5">
+        {SOURCE_PROGRESS.map(({ id, label }) => {
+          const phase = phaseFor(state, id);
+          const status = sourceStatusLabel(phase);
+          const running = isRunningPhase(phase);
+          return (
+            <li
+              key={id}
+              className="flex items-center justify-between gap-3 text-sm"
+            >
+              <span className="flex items-center gap-2 text-text-2">
+                <span
+                  className={`h-3 w-3 rounded-full border-2 transition-opacity duration-200 ${
+                    running
+                      ? "animate-spin border-border border-t-blue opacity-100"
+                      : "border-transparent opacity-0"
+                  }`}
+                />
+                {label}
+              </span>
+              <span
+                className={`text-xs transition-colors duration-200 ${status.tone}`}
+              >
+                {status.text}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
+  );
+}
+
 /** `query` is the string every source search uses (focus text when set, else topic). */
 export type IntakePayload = { topic: string; query: string; days?: number };
 
@@ -173,7 +244,7 @@ function IntakeScreen({
   if (phase !== "awaiting-signal") {
     return (
       <Card>
-        <Spinner />
+        <Spinner label="Setting up workflow…" />
       </Card>
     );
   }
@@ -184,8 +255,8 @@ function IntakeScreen({
         What should we research?
       </h3>
       <p className="mb-5 text-xs text-text-3">
-        We gather signal from the last 30 days across HN, GitHub, web, Reddit,
-        X, YouTube, and Bluesky, then synthesize a cited brief.
+        We gather signal from the last 30 days across Hacker News, GitHub, web,
+        Reddit, X, and YouTube, then synthesize a cited brief.
       </p>
       <form
         className="space-y-4"
@@ -315,18 +386,15 @@ function DoneScreen({ stepOutputs }: { stepOutputs: Record<string, unknown> }) {
   }
 
   return (
-    <Card>
-      <h3 className="mb-2 text-sm font-semibold text-text">
-        Saved to workbench
-      </h3>
-      {meta?.title ? <p className="text-sm text-text-2">{meta.title}</p> : null}
-      {meta?.artifactId ? (
-        <p className="mt-2 font-mono text-xs text-text-3">{meta.artifactId}</p>
-      ) : null}
-      <div className="mt-6">
-        <ReportScreen stepOutputs={stepOutputs} />
+    <div className="space-y-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-text">Saved to workbench</h3>
+        {meta?.title ? (
+          <p className="text-sm text-text-2">{meta.title}</p>
+        ) : null}
       </div>
-    </Card>
+      <ReportScreen stepOutputs={stepOutputs} />
+    </div>
   );
 }
 
@@ -375,9 +443,7 @@ export function Panel(props: WorkflowPanelProps) {
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
         ) : current === "research" ? (
-          <Card>
-            <Spinner label="Gathering sources and building brief…" />
-          </Card>
+          <SourceProgress state={state} />
         ) : current === "report" ? (
           <ReportScreen stepOutputs={stepOutputs} />
         ) : (

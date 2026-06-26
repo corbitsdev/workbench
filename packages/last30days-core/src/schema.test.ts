@@ -69,9 +69,13 @@ describe("Engagement", () => {
     expect(result instanceof type.errors).toBe(false);
   });
 
-  test("rejects engagement missing required fields", () => {
-    expect(Engagement({ upvotes: 10 }) instanceof type.errors).toBe(true);
-    expect(Engagement({}) instanceof type.errors).toBe(true);
+  test("accepts a partial engagement (vote fields are optional)", () => {
+    // A GitHub repo has stars but no upvotes/comments; an empty object is also
+    // valid (every field is optional). A wrong-typed field is still rejected.
+    expect(Engagement({ upvotes: 10 }) instanceof type.errors).toBe(false);
+    expect(Engagement({ stars: 24000 }) instanceof type.errors).toBe(false);
+    expect(Engagement({}) instanceof type.errors).toBe(false);
+    expect(Engagement({ upvotes: "lots" }) instanceof type.errors).toBe(true);
   });
 });
 

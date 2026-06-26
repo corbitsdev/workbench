@@ -19,7 +19,11 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
-  source: { citations: unknown[]; brief?: Record<string, unknown> };
+  source: {
+    citations: unknown[];
+    brief?: Record<string, unknown>;
+    jobLabel?: string;
+  };
 };
 
 /**
@@ -133,6 +137,30 @@ describe("write_artifact tool", () => {
     );
 
     expect(artifactInserts[0]?.tenantId).toBe("tnt-42");
+  });
+
+  it("stores a provided jobLabel under source.jobLabel; omits it otherwise", async () => {
+    const withLabel: InsertedArtifact[] = [];
+    const dbA = makeMockDb({ captureArtifactInserts: withLabel });
+    await getStringHandler({ db: dbA, tenantId: "t", principalId: "p" })(
+      {
+        title: "Anthropic",
+        body: "Body",
+        kind: "research",
+        citations: [],
+        jobLabel: "Last 30 days research",
+      },
+      SIGNAL,
+    );
+    expect(withLabel[0]?.source.jobLabel).toBe("Last 30 days research");
+
+    const noLabel: InsertedArtifact[] = [];
+    const dbB = makeMockDb({ captureArtifactInserts: noLabel });
+    await getStringHandler({ db: dbB, tenantId: "t", principalId: "p" })(
+      { title: "Anthropic", body: "Body", kind: "research", citations: [] },
+      SIGNAL,
+    );
+    expect(noLabel[0]?.source.jobLabel).toBeUndefined();
   });
 
   it("round-trip: handler returns artifactId and version, matching inserted content", async () => {

@@ -246,6 +246,39 @@ const SOURCE_STEP_IDS = [
   "bluesky",
 ] as const;
 
+// The LLM rerank step (W1.2) emits a `reply` string of JSON relevance scores by
+// url. Parse it tolerantly (tolerate code fences / surrounding prose); a missing
+// or malformed reply yields an empty map and the brief falls back to the
+// deterministic grounding in rankScore.
+function parseRerankScores(step: unknown): Map<string, number> {
+  const scores = new Map<string, number>();
+  const output = isRecord(step) ? step.output : undefined;
+  const reply = isRecord(output) ? output.reply : undefined;
+  if (typeof reply !== "string") return scores;
+  const start = reply.indexOf("{");
+  const end = reply.lastIndexOf("}");
+  if (start === -1 || end <= start) return scores;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(reply.slice(start, end + 1));
+  } catch {
+    return scores;
+  }
+  const list =
+    isRecord(parsed) && Array.isArray(parsed.scores) ? parsed.scores : [];
+  for (const entry of list) {
+    if (
+      isRecord(entry) &&
+      typeof entry.url === "string" &&
+      typeof entry.relevance === "number" &&
+      Number.isFinite(entry.relevance)
+    ) {
+      scores.set(entry.url, Math.max(0, Math.min(entry.relevance, 100)));
+    }
+  }
+  return scores;
+}
+
 function createWorkflowBriefTool(): AgentTool {
   return {
     kind: "string",
@@ -287,6 +320,15 @@ function createWorkflowBriefTool(): AgentTool {
             kind: "invalid-items",
             reason: `${invalidCount} item(s) failed schema validation`,
           });
+        }
+      }
+      // Apply LLM rerank relevance (W1.2) onto items by url; rankScore treats an
+      // explicit relevance as the dominant signal over the deterministic ground.
+      const rerankScores = parseRerankScores(steps.rerank);
+      if (rerankScores.size > 0) {
+        for (const item of rawItems) {
+          const score = rerankScores.get(item.url);
+          if (score !== undefined) item.relevance = score;
         }
       }
       const nowIso = new Date().toISOString();

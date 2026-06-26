@@ -6,10 +6,16 @@ export const SourceLabel = type(
 export type SourceLabel = typeof SourceLabel.infer;
 
 export const Engagement = type({
-  upvotes: "number",
-  comments: "number",
+  // Vote-style fields are optional: a source like GitHub has stars but no
+  // upvotes/comments, and emitting a misleading zero would read as "a post with
+  // no reactions". Omit what does not apply.
+  "upvotes?": "number",
+  "comments?": "number",
   "views?": "number",
   "shares?": "number",
+  // GitHub stars are NOT upvotes — they are a distinct unit and must not inflate
+  // the upvote-based engagement signal. The writer labels them as "stars".
+  "stars?": "number",
 });
 export type Engagement = typeof Engagement.infer;
 
@@ -30,6 +36,10 @@ export const ResearchItem = type({
   "entityTag?": "string",
   "author?": "string",
   "topComments?": TopComment.array(),
+  // Topic-relevance score in [0, 100]. Populated by the LLM rerank step when
+  // present; otherwise the ranker computes a deterministic local relevance via
+  // entity grounding. Mirrors the reference engine's `rerank_score`.
+  "relevance?": "number",
 });
 export type ResearchItem = typeof ResearchItem.infer;
 

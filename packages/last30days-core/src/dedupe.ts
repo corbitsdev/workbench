@@ -7,17 +7,17 @@ function normalizeTitle(title: string): string {
 }
 
 function engagementSum(
-  engagement: { upvotes: number; comments: number } | undefined,
+  engagement: { upvotes?: number; comments?: number } | undefined,
 ): number {
   if (engagement === undefined) return 0;
-  return engagement.upvotes + engagement.comments;
+  return (engagement.upvotes ?? 0) + (engagement.comments ?? 0);
 }
 
 export function dedupe<
   T extends {
     url: string;
     title: string;
-    engagement?: { upvotes: number; comments: number };
+    engagement?: { upvotes?: number; comments?: number };
     source: string;
   },
 >(items: T[]): T[] {

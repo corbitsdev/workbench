@@ -18,6 +18,11 @@ describe("visualForKind", () => {
     expect(v.label).toBe("Document");
     expect(v.fill).toBe("bg-cream");
   });
+
+  it("labels research and report kinds as Report, not Document (CL-2411)", () => {
+    expect(visualForKind("research").label).toBe("Report");
+    expect(visualForKind("report").label).toBe("Report");
+  });
 });
 
 describe("toGalleryArtifact", () => {
@@ -47,6 +52,25 @@ describe("toGalleryArtifact", () => {
     expect(toGalleryArtifact({ ...base, sessionName: null }).from).toBe(
       "Untitled job",
     );
+  });
+
+  it("labels a session-less artifact with the workflow-supplied jobLabel, not 'Untitled job' (CL-2411)", () => {
+    const research = {
+      ...base,
+      sessionName: null,
+      kind: "research",
+      source: { citations: [], jobLabel: "Last 30 days research" },
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(research).from).toBe("Last 30 days research");
+  });
+
+  it("falls back to 'Untitled job' when a session-less artifact has no jobLabel (CL-2411)", () => {
+    const noLabel = {
+      ...base,
+      sessionName: null,
+      source: { citations: [] },
+    } as ArtifactWithSession;
+    expect(toGalleryArtifact(noLabel).from).toBe("Untitled job");
   });
 
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {

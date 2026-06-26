@@ -82,6 +82,12 @@ export function createWriteArtifactTool(
 
         const source: Record<string, unknown> =
           brief === undefined ? { citations } : { citations, brief };
+        // Optional display name for the gallery tile of a session-less workflow
+        // artifact. The workflow chooses the string; the artifact layer stays
+        // generic (no workflow-specific label baked into the UI package).
+        if (typeof args.jobLabel === "string" && args.jobLabel.trim() !== "") {
+          source.jobLabel = args.jobLabel.trim();
+        }
 
         const result = await context.db.transaction(async (tx) => {
           // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.
