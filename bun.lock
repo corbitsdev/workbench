@@ -806,6 +806,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
