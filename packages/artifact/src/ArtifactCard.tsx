@@ -9,7 +9,7 @@ interface ArtifactCardProps {
   /** 1-based position in the grid, used for the decorative code badge. */
   index: number;
   /** Invoked when the card is activated (click / Enter / Space). */
-  onOpen?: (artifact: GalleryArtifact) => void;
+  onOpen?: ((artifact: GalleryArtifact) => void) | undefined;
 }
 
 export function ArtifactCard({ artifact, index, onOpen }: ArtifactCardProps) {

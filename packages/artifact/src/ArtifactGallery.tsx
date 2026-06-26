@@ -185,7 +185,7 @@ export function ArtifactGallery({
               key={tile.id}
               artifact={tile}
               index={i + 1}
-              {...(onOpen ? { onOpen } : {})}
+              onOpen={onOpen}
             />
           ))}
         </div>

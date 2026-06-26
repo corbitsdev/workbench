@@ -172,11 +172,10 @@ function ToolRow({
   // relevant argument (e.g. "Searching the web for X"), so the raw arg chip
   // would render it twice. The full arguments remain available on expand.
   suppressArgsSummary: boolean;
-  onRespond?: (response: UIResponse) => void;
-  onAction?: (
-    action: "copy" | "download" | "save-artifact",
-    block: UIBlock,
-  ) => void;
+  onRespond?: ((response: UIResponse) => void) | undefined;
+  onAction?:
+    | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
+    | undefined;
 }) {
   const [open, setOpen] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -312,8 +311,8 @@ function ToolRows({
             call={call}
             summary={summary}
             suppressArgsSummary={formatSummary !== undefined}
-            {...(onRespond !== undefined ? { onRespond } : {})}
-            {...(onAction !== undefined ? { onAction } : {})}
+            onRespond={onRespond}
+            onAction={onAction}
           />
         );
       })}
