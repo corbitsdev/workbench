@@ -5,6 +5,31 @@ import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
+import {
+  ALL_KINDS,
+  DEFAULT_RUN_FILTERS,
+  applyRunFilters,
+  distinctRunKinds,
+  type RunFilters,
+  type RunSort,
+  type RunStatusFilter,
+} from "../lib/workflow-run-filters";
+
+const STATUS_OPTIONS: { value: RunStatusFilter; label: string }[] = [
+  { value: "all", label: "All statuses" },
+  { value: "running", label: "Running" },
+  { value: "awaiting", label: "Awaiting" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+];
+
+const SORT_OPTIONS: { value: RunSort; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+];
+
+const filterSelectClass =
+  "min-w-0 flex-1 rounded-md border border-border bg-page px-3 py-2 text-sm text-text transition-colors focus:outline-none focus:ring-1 focus:ring-border-focus";
 
 function statusClass(status: string): string {
   if (status === "completed") return "text-green-600";
@@ -59,7 +84,7 @@ function RunRow({
         type="button"
         onClick={onToggleArchive}
         title={archived ? "Unarchive run" : "Archive run"}
-        aria-label={archived ? "Unarchive run" : "Archive run"}
+        aria-label={`${archived ? "Unarchive" : "Archive"} ${run.kind} run`}
         className="shrink-0 px-3 text-xs text-text-3 opacity-100 transition-opacity hover:text-text focus:opacity-100 hover-hover:opacity-0 hover-hover:focus:opacity-100 hover-hover:group-hover:opacity-100"
       >
         {archived ? "Unarchive" : "Archive"}
@@ -84,6 +109,7 @@ export function WorkflowsPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [filters, setFilters] = useState<RunFilters>(DEFAULT_RUN_FILTERS);
   const { archived, isArchived, setArchived } = useArchivedWorkflowRuns();
 
   const allRuns = runs ?? [];
@@ -91,13 +117,17 @@ export function WorkflowsPage() {
     () => allRuns.reduce((n, r) => (archived.has(r.runId) ? n + 1 : n), 0),
     [allRuns, archived],
   );
-  const visibleRuns = useMemo(
-    () =>
-      showArchived
-        ? allRuns
-        : allRuns.filter((run) => !archived.has(run.runId)),
-    [allRuns, archived, showArchived],
-  );
+  const kindOptions = useMemo(() => distinctRunKinds(allRuns), [allRuns]);
+  const filtersAreDefault =
+    filters.status === DEFAULT_RUN_FILTERS.status &&
+    filters.kind === DEFAULT_RUN_FILTERS.kind &&
+    filters.sort === DEFAULT_RUN_FILTERS.sort;
+  const visibleRuns = useMemo(() => {
+    const archiveScoped = showArchived
+      ? allRuns
+      : allRuns.filter((run) => !archived.has(run.runId));
+    return applyRunFilters(archiveScoped, filters);
+  }, [allRuns, archived, showArchived, filters]);
 
   return (
     <div className="flex h-full flex-row overflow-hidden">
@@ -113,6 +143,56 @@ export function WorkflowsPage() {
             New run
           </Button>
         </div>
+        {!isLoading && !isError && allRuns.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-b border-border px-4 py-2">
+            <select
+              aria-label="Filter by status"
+              className={filterSelectClass}
+              value={filters.status}
+              onChange={(e) =>
+                setFilters((f) => ({
+                  ...f,
+                  status: e.target.value as RunStatusFilter,
+                }))
+              }
+            >
+              {STATUS_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Filter by workflow kind"
+              className={filterSelectClass}
+              value={filters.kind}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, kind: e.target.value }))
+              }
+            >
+              <option value={ALL_KINDS}>All workflows</option>
+              {kindOptions.map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Sort runs"
+              className={filterSelectClass}
+              value={filters.sort}
+              onChange={(e) =>
+                setFilters((f) => ({ ...f, sort: e.target.value as RunSort }))
+              }
+            >
+              {SORT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="min-h-0 flex-1 overflow-auto">
           {isLoading && (
             <div className="px-4 py-6 text-sm text-text-2">Loading runs…</div>
@@ -138,7 +218,9 @@ export function WorkflowsPage() {
             <>
               {visibleRuns.length === 0 && (
                 <div className="px-4 py-6 text-sm text-text-2">
-                  All runs are archived.
+                  {filtersAreDefault && !showArchived && archivedCount > 0
+                    ? `All runs are archived. Show ${String(archivedCount)} archived to view them.`
+                    : "No runs match the current filters."}
                 </div>
               )}
               {visibleRuns.map((run) => (
