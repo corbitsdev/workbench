@@ -1,5 +1,7 @@
 import { type } from "arktype";
 
+export * from "./palette";
+
 export type Severity = "low" | "medium" | "high" | "critical";
 
 // 'pending' = created, analysis not yet started.

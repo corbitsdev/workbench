@@ -29,6 +29,15 @@ Workflows are deployed pipelines that run on Interchange's native workflow runti
 3. **The run console shows progress** — each step's status streams in live; at a review gate the user approves (or rejects) before the run continues.
 4. **Outputs are artifacts** — results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
 
+## Command Palette
+
+A global command palette gives keyboard-first navigation across the workbench. Pressing **Cmd+K** (Ctrl+K on Windows/Linux) from anywhere opens a centered search overlay; Escape closes it and returns focus to wherever the user was. Typing fuzzy-matches two kinds of results, grouped by category:
+
+- **Go to** — jump to any top-level area (Chats, Artifacts, Workflows, Skills, Tools, Insights, Settings)
+- **Entities** — conversations, agents, workflows, artifacts, skills, and tools in the active workbench
+
+Selecting a result navigates straight to it. Navigation commands are matched on the client; entity results come from a server-side search scoped to the active workbench, so the palette only ever surfaces what the user is allowed to see. Each entity type contributes its top few matches, with a "Load more" control to pull the next batch.
+
 ## Workflows Currently Shipped
 
 Each workflow is a deployed pipeline (`collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`). Examples:

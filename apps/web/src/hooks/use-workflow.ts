@@ -97,10 +97,14 @@ export function useWorkflowRuns(tenantId?: string | null) {
   });
 }
 
-export function useWorkflowDeployments(tenantId?: string | null) {
+export function useWorkflowDeployments(
+  tenantId?: string | null,
+  options?: { enabled?: boolean },
+) {
   return useQuery<WorkflowDeployment[]>({
     queryKey: ["workflow-deployments", tenantId ?? null],
     staleTime: 5 * 60_000,
+    enabled: options?.enabled ?? true,
     queryFn: async () => {
       const raw = await api<unknown>(
         "GET",
