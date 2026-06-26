@@ -82,6 +82,7 @@ const mockOverview = {
     { key: "deepseek-v4-flash", count: 9 },
     { key: "kimi", count: 3 },
   ],
+  tokensRecordedFrom: "2000-01-01",
   inference: {
     summary: {
       tenantId: "tenant-1",
@@ -275,6 +276,30 @@ describe("InsightsDashboard", () => {
       expect(screen.getByText("Myra")).toBeDefined();
     });
     expect(screen.getByText("10")).toBeDefined();
+  });
+
+  it("caveats token cards and hides token-cost for a range crossing the live/history boundary", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    // Token recording begins in the future, so every preset range starts before
+    // it — the whole selectable window is history with no real token data.
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId("data-caveat").length).toBeGreaterThan(0);
+      });
+      // The token-cost mosaic must not present zero-filled history as a real
+      // breakdown.
+      expect(screen.queryByTestId("token-mosaic")).toBeNull();
+      expect(
+        screen
+          .getAllByTestId("data-caveat")
+          .some((n) => n.textContent?.includes("not recorded")),
+      ).toBe(true);
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+    }
   });
 
   it("scopes analytics queries to the active workbench tenant and shows its name", async () => {

@@ -9,6 +9,7 @@ export {
   getAnalyticsSummaryByInstance,
   getAnalyticsDailySeries,
   getAnalyticsModelDistribution,
+  getTokenDataStartDate,
   type AnalyticsAgentRow,
   type AnalyticsInstanceRow,
   type AnalyticsDailyPoint,

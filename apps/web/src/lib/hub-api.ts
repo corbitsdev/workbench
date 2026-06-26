@@ -549,6 +549,7 @@ const ActivityOverviewSchema = type({
     thinkingTokens: "number",
   }).array(),
   models: ActivityCountRowSchema.array(),
+  tokensRecordedFrom: "string.date | null",
   inference: {
     summary: AnalyticsSummarySchema,
     previousSummary: AnalyticsSummarySchema.or("null"),

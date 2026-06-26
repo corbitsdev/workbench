@@ -81,6 +81,39 @@ export function fillDailySeries(
   return out;
 }
 
+/**
+ * Token and tool-error counts are zero for pre-subscriber HISTORY buckets (see
+ * `apps/hub/bin/backfill-analytics-rollups.ts`). Any selected range that starts
+ * before `tokensRecordedFrom` mixes real token/error data with zeros, so a
+ * token-cost or error-rate value over it understates reality. Returns a plain
+ * caveat sentence for such ranges, or null when the whole range is trustworthy.
+ *
+ * - `tokensRecordedFrom === null`: no tokens were ever recorded for this tenant.
+ * - range start missing (all-time) or earlier than the boundary: crosses it.
+ */
+export function tokenDataCaveat(
+  range: { startDate?: string; endDate?: string },
+  tokensRecordedFrom: string | null,
+): string | null {
+  if (tokensRecordedFrom === null) {
+    return "Token and tool-error data are not recorded for this range";
+  }
+  if (range.startDate === undefined || range.startDate < tokensRecordedFrom) {
+    return `Token and tool-error data are not recorded before ${formatBoundaryDate(tokensRecordedFrom)}`;
+  }
+  return null;
+}
+
+function formatBoundaryDate(iso: string): string {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function cacheHitRate(input: number, cacheRead: number): number {
   const denom = input + cacheRead;
   if (denom <= 0) return 0;

@@ -8,6 +8,7 @@ import {
   fillDailySeries,
   formatCompact,
   ratePct,
+  tokenDataCaveat,
 } from "./metrics";
 
 describe("computeDelta", () => {
@@ -142,5 +143,34 @@ describe("formatCompact", () => {
     expect(formatCompact(1500)).toBe("1.5k");
     expect(formatCompact(2_000_000)).toBe("2M");
     expect(formatCompact(42)).toBe("42");
+  });
+});
+
+describe("tokenDataCaveat", () => {
+  it("returns null when the range starts on or after the boundary", () => {
+    expect(
+      tokenDataCaveat({ startDate: "2026-06-01" }, "2026-06-01"),
+    ).toBeNull();
+    expect(
+      tokenDataCaveat({ startDate: "2026-06-10" }, "2026-06-01"),
+    ).toBeNull();
+  });
+
+  it("caveats a range that starts before token recording began", () => {
+    expect(tokenDataCaveat({ startDate: "2026-05-01" }, "2026-06-01")).toBe(
+      "Token and tool-error data are not recorded before Jun 1, 2026",
+    );
+  });
+
+  it("caveats an all-time (no startDate) range", () => {
+    expect(tokenDataCaveat({}, "2026-06-01")).toBe(
+      "Token and tool-error data are not recorded before Jun 1, 2026",
+    );
+  });
+
+  it("caveats when no token data exists at all", () => {
+    expect(tokenDataCaveat({ startDate: "2026-06-10" }, null)).toBe(
+      "Token and tool-error data are not recorded for this range",
+    );
   });
 });

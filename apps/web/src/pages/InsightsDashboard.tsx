@@ -1,7 +1,7 @@
 import { PagePanel } from "@workbench/ui";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart2 } from "lucide-react";
+import { AlertTriangle, BarChart2 } from "lucide-react";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
@@ -21,6 +21,7 @@ import {
   computeDelta,
   fillDailySeries,
   ratePct,
+  tokenDataCaveat,
 } from "./insights/metrics";
 
 type Preset = "7d" | "30d" | "90d" | "all";
@@ -81,6 +82,18 @@ function CardLabel({ children }: { children: React.ReactNode }) {
     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
       {children}
     </span>
+  );
+}
+
+function CaveatNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="flex items-start gap-1.5 text-[11px] leading-snug text-text-3"
+      data-testid="data-caveat"
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0 text-text-3" />
+      <span>{children}</span>
+    </p>
   );
 }
 
@@ -148,11 +161,13 @@ function TrendCard({
   total,
   values,
   delta,
+  note,
 }: {
   label: string;
   total: string;
   values: number[];
   delta?: ReturnType<typeof computeDelta>;
+  note?: string | null;
 }) {
   return (
     <HudCard label={label}>
@@ -168,6 +183,7 @@ function TrendCard({
         width={220}
         height={36}
       />
+      {note ? <CaveatNote>{note}</CaveatNote> : null}
     </HudCard>
   );
 }
@@ -175,9 +191,11 @@ function TrendCard({
 function TrendsSection({
   data,
   range,
+  tokenCaveat,
 }: {
   data: ActivityOverview;
   range: { startDate?: string; endDate?: string };
+  tokenCaveat: string | null;
 }) {
   const rawSeries = data.dailySeries;
   if (rawSeries.length === 0) return null;
@@ -224,10 +242,14 @@ function TrendsSection({
           label="Tokens / day"
           total={formatNumber(summary.inputTokens + summary.outputTokens)}
           values={tokenValues}
-          delta={computeDelta(
-            summary.inputTokens + summary.outputTokens,
-            prev ? prev.inputTokens + prev.outputTokens : null,
-          )}
+          delta={
+            tokenCaveat === null
+              ? computeDelta(
+                  summary.inputTokens + summary.outputTokens,
+                  prev ? prev.inputTokens + prev.outputTokens : null,
+                )
+              : undefined
+          }
         />
       </div>
       <HudCard label="Turns per day">
@@ -237,7 +259,13 @@ function TrendsSection({
   );
 }
 
-function InferenceSection({ data }: { data: ActivityOverview }) {
+function InferenceSection({
+  data,
+  tokenCaveat,
+}: {
+  data: ActivityOverview;
+  tokenCaveat: string | null;
+}) {
   const summary = data.inference.summary;
   const prev = data.inference.previousSummary;
   const tokens = totalTokens(summary);
@@ -269,6 +297,7 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Inference &amp; tool usage</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
           label="Total turns"
@@ -284,8 +313,12 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
             summary.toolCallCount,
             prev?.toolCallCount ?? null,
           )}
-          sub={`${toolRate.toFixed(1)}% success`}
-          accent={summary.toolErrorCount > 0}
+          sub={
+            tokenCaveat === null
+              ? `${toolRate.toFixed(1)}% success`
+              : "success rate unavailable"
+          }
+          accent={tokenCaveat === null && summary.toolErrorCount > 0}
         />
         <Stat
           label="Cache hit rate"
@@ -301,18 +334,31 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
 
       <HudCard
         label="Token mix"
-        tag={<CardLabel>{formatNumber(tokens)} total</CardLabel>}
+        tag={
+          tokenCaveat === null ? (
+            <CardLabel>{formatNumber(tokens)} total</CardLabel>
+          ) : undefined
+        }
       >
-        <TokenMosaic
-          label="Token usage breakdown"
-          parts={[
-            { label: "Input", value: summary.inputTokens },
-            { label: "Output", value: summary.outputTokens },
-            { label: "Cache read", value: summary.cacheReadTokens },
-            { label: "Cache write", value: summary.cacheWriteTokens },
-            { label: "Thinking", value: summary.thinkingTokens },
-          ]}
-        />
+        {tokenCaveat === null ? (
+          <TokenMosaic
+            label="Token usage breakdown"
+            parts={[
+              { label: "Input", value: summary.inputTokens },
+              { label: "Output", value: summary.outputTokens },
+              { label: "Cache read", value: summary.cacheReadTokens },
+              { label: "Cache write", value: summary.cacheWriteTokens },
+              { label: "Thinking", value: summary.thinkingTokens },
+            ]}
+          />
+        ) : (
+          <div className="flex flex-col items-start gap-2 py-2">
+            <span className="text-[12px] text-text-2">
+              Token mix unavailable for this range
+            </span>
+            <CaveatNote>{tokenCaveat}</CaveatNote>
+          </div>
+        )}
       </HudCard>
 
       {data.models.length > 0 && (
@@ -562,6 +608,11 @@ export function InsightsDashboard() {
   const showSummaryLoading =
     loading || (!!activeTenantId && overviewQuery.isLoading);
 
+  const overview = overviewQuery.data;
+  const tokenCaveat = overview
+    ? tokenDataCaveat(dates, overview.tokensRecordedFrom)
+    : null;
+
   return (
     <PagePanel scroll={false} flat>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
@@ -613,17 +664,19 @@ export function InsightsDashboard() {
           </div>
         )}
 
-        {overviewQuery.data && (
+        {overview && (
           <div className="flex flex-col gap-10">
-            <TrendsSection data={overviewQuery.data} range={dates} />
-            <EngagementSection data={overviewQuery.data} />
-            <InferenceSection data={overviewQuery.data} />
-            <OperationalLedger data={overviewQuery.data} />
+            <TrendsSection
+              data={overview}
+              range={dates}
+              tokenCaveat={tokenCaveat}
+            />
+            <EngagementSection data={overview} />
+            <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
+            <OperationalLedger data={overview} />
             <div className="flex flex-col gap-4">
-              <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
-              <InstanceBreakdown
-                instances={overviewQuery.data.inference.byInstance}
-              />
+              <AgentBreakdown agents={overview.inference.byAgent} />
+              <InstanceBreakdown instances={overview.inference.byInstance} />
             </div>
           </div>
         )}

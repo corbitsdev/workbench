@@ -7,6 +7,7 @@ import {
   getAnalyticsSummaryByAgent,
   getAnalyticsSummaryByInstance,
   getConversationActivity,
+  getTokenDataStartDate,
   type AnalyticsDailyPoint,
   type AnalyticsDateRange,
   type AnalyticsSummary,
@@ -66,6 +67,12 @@ export type ActivityOverview = {
   };
   dailySeries: AnalyticsDailyPoint[];
   models: ActivityCountRow[];
+  /**
+   * Earliest date real token counts exist (null when none). Token and tool-error
+   * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
+   * range starting before this date. See `backfill-analytics-rollups.ts`.
+   */
+  tokensRecordedFrom: string | null;
   inference: {
     summary: AnalyticsSummary;
     previousSummary: AnalyticsSummary | null;
@@ -263,6 +270,7 @@ export async function getActivityOverview(args: {
     modelRows,
     conversationActivity,
     previousSummary,
+    tokensRecordedFrom,
   ] = await Promise.all([
     getAnalyticsSummary(inferenceFilter),
     getAnalyticsSummaryByAgent(inferenceFilter),
@@ -273,6 +281,7 @@ export async function getActivityOverview(args: {
     previousRange !== null
       ? getAnalyticsSummary({ db, tenantId, range: previousRange })
       : Promise.resolve(null),
+    getTokenDataStartDate({ db, tenantId }),
   ]);
 
   return {
@@ -318,6 +327,7 @@ export async function getActivityOverview(args: {
       key: row.model,
       count: row.turnCount,
     })),
+    tokensRecordedFrom,
     inference: { summary, previousSummary, byAgent, byInstance },
   };
 }

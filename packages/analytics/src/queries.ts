@@ -318,6 +318,33 @@ export async function getAnalyticsDailySeries(
   }));
 }
 
+/**
+ * Earliest bucket date for which real token counts exist for this tenant, or
+ * null when no bucket has any tokens. HISTORY buckets (reconstructed by the
+ * backfill from `inference_turn`) carry zero tokens — they were never persisted
+ * — so a token/cost metric is only truthful from this date forward. The
+ * Insights UI uses it to caveat any range that starts earlier.
+ */
+export async function getTokenDataStartDate(args: {
+  db: DB["db"];
+  tenantId: string;
+}): Promise<string | null> {
+  const { db, tenantId } = args;
+  const rows = await db
+    .select({
+      date: sql<string | null>`min(${analyticsRollupDaily.bucketDate})`,
+    })
+    .from(analyticsRollupDaily)
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        sql`(${analyticsRollupDaily.inputTokens} + ${analyticsRollupDaily.outputTokens} + ${analyticsRollupDaily.cacheReadTokens} + ${analyticsRollupDaily.cacheWriteTokens} + ${analyticsRollupDaily.thinkingTokens}) > 0`,
+      ),
+    );
+  const date = rows[0]?.date;
+  return date === undefined || date === null ? null : date;
+}
+
 export async function getAnalyticsModelDistribution(
   args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsModelRow[]> {
