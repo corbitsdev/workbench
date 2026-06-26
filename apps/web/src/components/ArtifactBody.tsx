@@ -153,16 +153,78 @@ function CsvExportBody({
   );
 }
 
+function extractUploadFilename(source: unknown): string | null {
+  if (typeof source !== "object" || source === null) return null;
+  const upload = (source as Record<string, unknown>).upload;
+  if (typeof upload !== "object" || upload === null) return null;
+  const filename = (upload as Record<string, unknown>).filename;
+  return typeof filename === "string" && filename.length > 0 ? filename : null;
+}
+
+function ImageBody({
+  artifactId,
+  filename,
+}: {
+  artifactId: string;
+  filename: string | null;
+}) {
+  const src = buildApiUrl(`/artifacts/${artifactId}/download`);
+  return (
+    <div className="space-y-3">
+      <img
+        src={src}
+        alt={filename ?? "Uploaded image"}
+        className="max-h-[480px] max-w-full rounded border border-border"
+      />
+      <a
+        href={src}
+        download
+        className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+      >
+        Download {filename ?? "image"}
+      </a>
+    </div>
+  );
+}
+
+function FileBody({
+  artifactId,
+  filename,
+}: {
+  artifactId: string;
+  filename: string | null;
+}) {
+  return (
+    <a
+      href={buildApiUrl(`/artifacts/${artifactId}/download`)}
+      download
+      className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+    >
+      Download {filename ?? "file"}
+    </a>
+  );
+}
+
 export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
   const brief = extractBrief(artifact.source);
+  const uploadFilename = extractUploadFilename(artifact.source);
 
   if (usesSocialPostPreview(type)) {
     return <LinkedInBody body={body} />;
   }
 
   switch (type) {
+    // uploaded binaries (file/folder import) — served by the download route
+    case "image": {
+      if (!artifact.id) return <OnePagerBody body={body} />;
+      return <ImageBody artifactId={artifact.id} filename={uploadFilename} />;
+    }
+    case "file": {
+      if (!artifact.id) return <OnePagerBody body={body} />;
+      return <FileBody artifactId={artifact.id} filename={uploadFilename} />;
+    }
     // downloadable export
     case "csv-export": {
       if (!artifact.id) {

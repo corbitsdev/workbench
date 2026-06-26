@@ -18,10 +18,16 @@ import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { schema as intxSchema } from "@intx/db";
 import type { HubDb } from "../db";
-import { artifact, artifactStatus, artifactVersion } from "../db/schema";
+import {
+  artifact,
+  artifactStatus,
+  artifactVersion,
+  upload,
+} from "../db/schema";
 import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
+import { MAX_UPLOAD_BYTES } from "./uploads";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
 
@@ -48,6 +54,120 @@ const CreateArtifactRequest = type({
   content: TrimmedNonEmpty,
   "kind?": ImportableArtifactKind,
 });
+
+const ErrorResponse = type({ error: "string" });
+
+// File/folder upload (CL-2475). Binary is persisted to the `upload` table
+// (BYTEA); each file yields one artifact row whose `source.upload.id` is the
+// authoritative download reference (text `content` stays empty for file kinds)
+// and whose `source.upload` records the file metadata. The per-file 10MB ceiling
+// is shared with POST /uploads (MAX_UPLOAD_BYTES) — larger inputs are out of
+// scope (object storage).
+
+// A folder upload (`webkitdirectory`) can carry an unbounded number of files;
+// without a cap the whole multipart body is buffered into memory and inserted
+// inside one transaction, risking OOM and a long-held lock on the shared hub.
+// Bound both the file count and the aggregate byte size; anything larger is
+// rejected with a 413 before any binary is read into a Buffer.
+const MAX_UPLOAD_FILE_COUNT = 50;
+const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
+
+// Broadened beyond the xlsx-only POST /uploads allowlist to a sensible
+// document/image/text set. Validate at the boundary so a disallowed payload is
+// rejected with a clear message rather than persisted opaquely. Accept either
+// the declared MIME or a known extension (browsers omit MIME for some types).
+// SVG is deliberately excluded: it can carry inline <script> and would be a
+// stored-XSS vector once served back on the app origin.
+const ACCEPTED_UPLOAD_MIMES: ReadonlySet<string> = new Set([
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/html",
+  "application/pdf",
+  "application/json",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/msword",
+  "application/vnd.ms-excel",
+  "application/vnd.ms-powerpoint",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+// Extension → canonical MIME. Drives both the accept check and the effective
+// MIME we persist when the browser omits `file.type` (common for some types),
+// so kind mapping and content-type-based serving stay correct.
+const EXTENSION_MIME: ReadonlyMap<string, string> = new Map([
+  [".txt", "text/plain"],
+  [".md", "text/markdown"],
+  [".csv", "text/csv"],
+  [".html", "text/html"],
+  [".pdf", "application/pdf"],
+  [".json", "application/json"],
+  [
+    ".xlsx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ],
+  [
+    ".docx",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ],
+  [
+    ".pptx",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ],
+  [".doc", "application/msword"],
+  [".xls", "application/vnd.ms-excel"],
+  [".ppt", "application/vnd.ms-powerpoint"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
+function extensionMime(filename: string): string | undefined {
+  const name = filename.toLowerCase();
+  for (const [ext, mime] of EXTENSION_MIME) {
+    if (name.endsWith(ext)) return mime;
+  }
+  return undefined;
+}
+
+// The MIME we trust for kind mapping and storage: the declared type when it is
+// in the allowlist, otherwise the extension-derived type. Empty when neither
+// resolves (the upload is then rejected by `isAcceptedArtifactUpload`).
+function effectiveUploadMime(file: File): string {
+  if (ACCEPTED_UPLOAD_MIMES.has(file.type)) return file.type;
+  return extensionMime(file.name) ?? "";
+}
+
+function isAcceptedArtifactUpload(file: File): boolean {
+  return effectiveUploadMime(file).length > 0;
+}
+
+function uploadArtifactKind(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "image";
+  return "file";
+}
+
+function uploadDownloadFilename(filename: string): string {
+  const cleaned = filename.replace(/[\r\n"\\]/g, "").trim();
+  return cleaned.length > 0 ? cleaned : "download";
+}
+
+// Pull the upload reference (download key) out of an artifact's opaque jsonb
+// `source` bag. Present on file/image artifacts created via POST /artifacts/upload.
+function uploadIdFromSource(raw: unknown): string | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const uploadField = (raw as Record<string, unknown>).upload;
+  if (typeof uploadField !== "object" || uploadField === null) return null;
+  const id = (uploadField as Record<string, unknown>).id;
+  return typeof id === "string" && id.length > 0 ? id : null;
+}
 
 const log = getLogger(["api", "artifacts"]);
 
@@ -463,6 +583,207 @@ export function createArtifactsRouter(
     },
   );
 
+  // Import one or more files as artifacts (CL-2475). Accepts multipart/form-data
+  // with any number of File fields (a single file, a multi-select batch, or a
+  // folder upload via `webkitdirectory`). Each file is stored once in the
+  // `upload` table and produces one artifact row with an `imported` origin.
+  router.post(
+    "/artifacts/upload",
+    describeRoute({
+      tags: ["Artifacts"],
+      summary: "Import files as artifacts",
+      description:
+        "Accepts multipart/form-data with one or more File fields. Each file is persisted to the upload table (BYTEA) and becomes an artifact with an `imported` origin; the artifact content holds the upload id. Returns the created set in one response.",
+      requestBody: {
+        content: {
+          "multipart/form-data": {
+            schema: {
+              type: "object",
+              properties: {
+                files: {
+                  type: "array",
+                  items: { type: "string", format: "binary" },
+                },
+                generatedBy: { type: "string" },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: { description: "Artifacts created" },
+        400: {
+          description: "No files supplied",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: "No accessible workbench",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        413: {
+          description: "A file exceeds the size limit",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        415: {
+          description: "A file has an unsupported type",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const requestedTenantId = c.req.query("tenantId");
+
+      const { context: userContext, forbidden } = await getRequestedUserContext(
+        db,
+        userId,
+        requestedTenantId,
+      );
+      if (forbidden) {
+        return c.json({ error: "Tenant not accessible" }, 403);
+      }
+      if (!userContext) {
+        return c.json({ error: "No accessible workbench" }, 403);
+      }
+
+      const parsedBody = await c.req.parseBody({ all: true });
+      const files: File[] = [];
+      let generatedBy: string | undefined;
+      for (const value of Object.values(parsedBody)) {
+        if (Array.isArray(value)) {
+          for (const entry of value) {
+            if (entry instanceof File) files.push(entry);
+          }
+        } else if (value instanceof File) {
+          files.push(value);
+        } else if (typeof value === "string" && generatedBy === undefined) {
+          const trimmed = value.trim();
+          if (trimmed.length > 0) generatedBy = trimmed;
+        }
+      }
+
+      if (files.length === 0) {
+        return c.json({ error: "Expected at least one file field" }, 400);
+      }
+
+      if (files.length > MAX_UPLOAD_FILE_COUNT) {
+        return c.json(
+          {
+            error: `Too many files: ${files.length} exceeds the ${MAX_UPLOAD_FILE_COUNT} file limit`,
+          },
+          413,
+        );
+      }
+
+      let totalBytes = 0;
+      for (const file of files) {
+        if (file.size > MAX_UPLOAD_BYTES) {
+          return c.json(
+            {
+              error: `File "${file.name}" exceeds the ${MAX_UPLOAD_BYTES} byte limit`,
+            },
+            413,
+          );
+        }
+        totalBytes += file.size;
+        if (totalBytes > MAX_UPLOAD_TOTAL_BYTES) {
+          return c.json(
+            {
+              error: `Upload exceeds the ${MAX_UPLOAD_TOTAL_BYTES} byte aggregate limit`,
+            },
+            413,
+          );
+        }
+        if (!isAcceptedArtifactUpload(file)) {
+          return c.json(
+            { error: `File "${file.name}" has an unsupported type` },
+            415,
+          );
+        }
+      }
+
+      const now = new Date();
+      const created = await db.transaction(async (tx) => {
+        const rows: ArtifactRow[] = [];
+        for (const file of files) {
+          const mimeType = effectiveUploadMime(file);
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const [uploadRow] = await tx
+            .insert(upload)
+            .values({
+              tenantId: userContext.tenantId,
+              principalId: userContext.principalId,
+              filename: file.name,
+              mimeType,
+              content: buffer,
+              size: file.size,
+            })
+            .returning();
+          if (!uploadRow) throw new Error("Failed to store upload");
+
+          const source: Record<string, unknown> = {
+            origin: "imported",
+            upload: {
+              id: uploadRow.id,
+              filename: file.name,
+              mimeType,
+              size: file.size,
+            },
+          };
+          if (generatedBy !== undefined) source.generatedBy = generatedBy;
+
+          const [artifactRow] = await tx
+            .insert(artifact)
+            .values({
+              tenantId: userContext.tenantId,
+              principalId: userContext.principalId,
+              ownerPrincipalId: userContext.principalId,
+              sessionId: null,
+              kind: uploadArtifactKind(mimeType),
+              title: file.name,
+              content: "",
+              source,
+              status: "draft",
+              version: 1,
+              createdAt: now,
+              updatedAt: now,
+            })
+            .returning();
+          if (!artifactRow) throw new Error("Failed to create artifact");
+
+          await tx.insert(artifactVersion).values({
+            artifactId: artifactRow.id,
+            version: 1,
+            title: file.name,
+            content: "",
+            authorId: userContext.principalId,
+            createdAt: now,
+          });
+
+          rows.push(artifactRow);
+        }
+        return rows;
+      });
+
+      log.info("Created artifacts from upload", {
+        count: created.length,
+        tenantId: userContext.tenantId,
+      });
+
+      return c.json(
+        {
+          artifacts: created.map((a) => ({
+            ...serializeArtifact(a),
+            sessionName: null,
+            sessionStatus: null,
+            ownerName: null,
+          })),
+        },
+        201,
+      );
+    },
+  );
+
   // Download a file-shaped artifact's content (CSV export). Tenant-scoped.
   router.get("/artifacts/:id/download", async (c) => {
     const id = c.req.param("id");
@@ -480,6 +801,32 @@ export function createArtifactsRouter(
     );
     if (forbidden || !userContext || art.tenantId !== userContext.tenantId) {
       return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // File/image artifacts (POST /artifacts/upload) carry their binary in the
+    // `upload` table, referenced by `source.upload.id`. Stream those bytes back
+    // with the stored content type. Always `attachment` so user-supplied bytes
+    // never execute inline on the app origin.
+    const uploadId = uploadIdFromSource(art.source);
+    if (uploadId) {
+      const uploadRow = await db.query.upload.findFirst({
+        where: eq(upload.id, uploadId),
+      });
+      if (!uploadRow || uploadRow.tenantId !== userContext.tenantId) {
+        return c.json({ error: "Upload not found" }, 404);
+      }
+      c.header(
+        "Content-Type",
+        uploadRow.mimeType.length > 0
+          ? uploadRow.mimeType
+          : "application/octet-stream",
+      );
+      c.header(
+        "Content-Disposition",
+        `attachment; filename="${uploadDownloadFilename(uploadRow.filename)}"`,
+      );
+      const bytes = Uint8Array.from(uploadRow.content);
+      return c.body(bytes.buffer as ArrayBuffer);
     }
 
     if (!DOWNLOADABLE_ARTIFACT_KINDS.has(art.kind)) {

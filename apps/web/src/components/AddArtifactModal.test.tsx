@@ -8,8 +8,16 @@ const mutateAsync = mock<
   (params: Record<string, unknown>) => Promise<{ id: string }>
 >(() => Promise.resolve({ id: "art-new" }));
 
+const uploadMutateAsync = mock<
+  (params: Record<string, unknown>) => Promise<{ id: string }[]>
+>(() => Promise.resolve([{ id: "art-up" }]));
+
 mock.module("@workbench/client/react", () => ({
   useCreateArtifact: () => ({ mutateAsync, isPending: false }),
+  useUploadArtifacts: () => ({
+    mutateAsync: uploadMutateAsync,
+    isPending: false,
+  }),
 }));
 
 import { AddArtifactModal } from "./AddArtifactModal";
@@ -17,6 +25,7 @@ import { AddArtifactModal } from "./AddArtifactModal";
 afterEach(() => {
   cleanup();
   mutateAsync.mockClear();
+  uploadMutateAsync.mockClear();
 });
 
 describe("AddArtifactModal", () => {
@@ -97,5 +106,62 @@ describe("AddArtifactModal", () => {
       title: "My note",
       content: "the body",
     });
+  });
+
+  it("renders file and folder upload tabs", () => {
+    render(
+      React.createElement(AddArtifactModal, {
+        open: true,
+        onClose: () => {},
+      }),
+    );
+    expect(screen.getByRole("tab", { name: "Upload files" })).toBeDefined();
+    expect(screen.getByRole("tab", { name: "Upload folder" })).toBeDefined();
+  });
+
+  it("uploads selected files via the upload mutation", async () => {
+    const onCreated = mock((_id: string) => {});
+    render(
+      React.createElement(AddArtifactModal, {
+        open: true,
+        tenantId: "tn-1",
+        onClose: () => {},
+        onCreated,
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Upload files" }));
+    const file = new File([new Uint8Array(3)], "notes.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    await Promise.resolve();
+    expect(uploadMutateAsync).toHaveBeenCalledTimes(1);
+    const call = uploadMutateAsync.mock.calls[0]?.[0] as {
+      tenantId?: string;
+      files: File[];
+    };
+    expect(call.tenantId).toBe("tn-1");
+    expect(call.files).toHaveLength(1);
+    expect(call.files[0]?.name).toBe("notes.txt");
+  });
+
+  it("blocks an upload when no files are selected", () => {
+    render(
+      React.createElement(AddArtifactModal, {
+        open: true,
+        onClose: () => {},
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Upload files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    expect(uploadMutateAsync).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Choose at least one file to upload."),
+    ).toBeDefined();
   });
 });

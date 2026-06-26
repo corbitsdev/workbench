@@ -118,6 +118,14 @@ export interface CreateArtifactParams {
   generatedBy?: string;
 }
 
+export interface UploadArtifactsParams {
+  tenantId?: string | null;
+  /** Files to import; one artifact is created per file. */
+  files: File[];
+  /** Optional attribution label stamped on every created artifact. */
+  generatedBy?: string;
+}
+
 const WorkflowRunRowSchema = type({
   deploymentId: "string",
   kind: "string",
@@ -362,4 +370,41 @@ export async function createArtifact(
     throw new Error(`Invalid POST /artifacts response: ${parsed.summary}`);
   }
   return parsed.artifact;
+}
+
+const UploadArtifactsResponseSchema = type({ artifacts: Artifact.array() });
+
+/**
+ * Import one or more files as artifacts (`POST /artifacts/upload`). Sends
+ * multipart/form-data (browser `FormData`); the hub persists each file's binary
+ * and stamps an `imported` origin. Returns one artifact per uploaded file.
+ */
+export async function uploadArtifacts(
+  options: ClientOptions = {},
+  params: UploadArtifactsParams,
+): Promise<Artifact[]> {
+  const qs = params.tenantId
+    ? `?tenantId=${encodeURIComponent(params.tenantId)}`
+    : "";
+  const form = new FormData();
+  for (const file of params.files) {
+    form.append("files", file, file.name);
+  }
+  if (params.generatedBy) form.append("generatedBy", params.generatedBy);
+
+  const raw = await request<unknown>(`artifacts/upload${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: "POST",
+      body: form,
+    },
+  });
+  const parsed = UploadArtifactsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid POST /artifacts/upload response: ${parsed.summary}`,
+    );
+  }
+  return parsed.artifacts;
 }

@@ -20,9 +20,11 @@ import {
   listArtifacts,
   listWorkflows,
   listMembers,
+  uploadArtifacts,
   type ClientOptions,
   type CreateArtifactParams,
   type TenantMember,
+  type UploadArtifactsParams,
 } from "./index";
 
 export type { TenantMember };
@@ -107,6 +109,23 @@ export function useCreateArtifact(
   return useMutation({
     mutationFn: (params: CreateArtifactParams) =>
       createArtifact(options, params),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
+  });
+}
+
+/**
+ * Import one or more files as artifacts and refresh the gallery. Callers must
+ * `.catch()` the returned `mutateAsync` (or use `mutate` with `onError`).
+ */
+export function useUploadArtifacts(
+  options: ClientOptions = {},
+): UseMutationResult<Artifact[], Error, UploadArtifactsParams> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: UploadArtifactsParams) =>
+      uploadArtifacts(options, params),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
     },
