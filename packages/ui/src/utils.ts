@@ -30,6 +30,10 @@ export function toHumanLabel(name: string): string {
       break;
     }
   }
+  // Sentence case: only the first word is capitalized; known acronyms keep
+  // their canonical casing wherever they appear. Title Case is reserved for
+  // proper nouns/branded terms (house style), so content labels stay lower.
+  let isFirstWord = true;
   return cleaned
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/[-_]/g, " ")
@@ -37,8 +41,15 @@ export function toHumanLabel(name: string): string {
     .map((word) => {
       if (word === "") return word;
       const lower = word.toLowerCase();
-      if (ACRONYMS[lower]) return ACRONYMS[lower];
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      if (ACRONYMS[lower]) {
+        isFirstWord = false;
+        return ACRONYMS[lower];
+      }
+      if (isFirstWord) {
+        isFirstWord = false;
+        return word.charAt(0).toUpperCase() + lower.slice(1);
+      }
+      return lower;
     })
     .join(" ");
 }

@@ -64,6 +64,17 @@ const skills = [
     ownerUserId: "usr-2",
     ownerName: "Grace Hopper",
   },
+  {
+    id: "skill-3",
+    name: "viral-content",
+    displayName: null,
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    scope: "tenant",
+    accessTenantId: "tenant-root",
+    ownerUserId: "usr-3",
+    ownerName: "Alan Turing",
+  },
 ];
 
 beforeEach(() => {
@@ -108,6 +119,15 @@ describe("SkillsLibrary", () => {
     await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
     expect(document.body.textContent).toContain("Ada Lovelace");
     expect(document.body.textContent).toContain("Corbits");
+  });
+
+  it("humanizes a kebab-case skill name when no displayName is set", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Viral Content"),
+    );
+    expect(document.body.textContent).not.toContain("viral-content");
   });
 
   it("labels private skills as Private", async () => {

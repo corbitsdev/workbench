@@ -5,6 +5,7 @@ import {
   catalogCardClassName,
   hashString,
   PagePanel,
+  toHumanLabel,
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -53,8 +54,8 @@ function ToolCard({
         </span>
       </div>
       <div className="border-t border-border bg-surface px-[13px] py-[11px]">
-        <div className="truncate font-mono text-[13px] font-semibold text-text">
-          {tool.name}
+        <div className="truncate text-[13px] font-semibold text-text">
+          {toHumanLabel(tool.name)}
         </div>
         <p className="mt-0.5 line-clamp-2 text-pretty text-[11px] text-text-3">
           {tool.description || "No description"}
@@ -86,6 +87,7 @@ export function ToolsLibrary() {
       (tool) =>
         !q ||
         tool.name.toLowerCase().includes(q) ||
+        toHumanLabel(tool.name).toLowerCase().includes(q) ||
         tool.providerName.toLowerCase().includes(q) ||
         tool.description.toLowerCase().includes(q),
     );

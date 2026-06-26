@@ -21,6 +21,7 @@ import {
   SKILL_VERSION_PAGE_SIZE,
 } from "../hooks/use-skills";
 import { getMe } from "../lib/hub-api";
+import { toHumanLabel } from "@workbench/ui";
 
 type TreeNode =
   | { kind: "file"; path: string; name: string; content?: string }
@@ -265,7 +266,7 @@ export function SkillDetail() {
             {skill && (
               <>
                 <p className="text-[15px] font-semibold text-text">
-                  {skill.displayName ?? skill.name}
+                  {skill.displayName ?? toHumanLabel(skill.name)}
                 </p>
                 <p className="text-[12px] text-text-3">{skill.name}</p>
               </>

@@ -85,14 +85,15 @@ function renderPage() {
 }
 
 describe("ToolsLibrary", () => {
-  it("renders each tool with its name and provider badge", async () => {
+  it("renders each tool with a humanized name and provider badge", async () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("attio_query_records"),
+      expect(document.body.textContent).toContain("Attio Query Records"),
     );
+    expect(document.body.textContent).not.toContain("attio_query_records");
     expect(document.body.textContent).toContain("Attio");
-    expect(document.body.textContent).toContain("linear_list_issues");
+    expect(document.body.textContent).toContain("Linear List Issues");
     expect(document.body.textContent).toContain("Linear");
   });
 
@@ -112,7 +113,7 @@ describe("ToolsLibrary", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("linear_list_issues"),
+      expect(document.body.textContent).toContain("Linear List Issues"),
     );
     expect(document.body.textContent).not.toContain("vnull");
   });

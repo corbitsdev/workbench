@@ -5,6 +5,7 @@ import {
   catalogCardClassName,
   hashString,
   PagePanel,
+  toHumanLabel,
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -30,7 +31,7 @@ function SkillCard({
   const hash = hashString(skill.id);
   const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-  const title = skill.displayName ?? skill.name;
+  const title = skill.displayName ?? toHumanLabel(skill.name);
 
   return (
     <div
@@ -99,6 +100,7 @@ export function SkillsLibrary() {
       (skill) =>
         !q ||
         skill.name.toLowerCase().includes(q) ||
+        toHumanLabel(skill.name).toLowerCase().includes(q) ||
         (skill.displayName ?? "").toLowerCase().includes(q),
     );
   }, [query, skillsQuery.data]);

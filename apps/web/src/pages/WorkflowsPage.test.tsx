@@ -127,7 +127,7 @@ describe("WorkflowsPage", () => {
     };
     render(React.createElement(WorkflowsPage));
     expect(lastRunsTenantId).toBe("ten-42");
-    fireEvent.click(screen.getByText("deck-build"));
+    fireEvent.click(screen.getByText("Deck Build"));
     expect(lastPaneTenantId).toBe("ten-42");
   });
 
@@ -146,9 +146,9 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     render(React.createElement(WorkflowsPage));
-    expect(screen.getByText("deck-build")).toBeDefined();
+    expect(screen.getByText("Deck Build")).toBeDefined();
     expect(screen.queryByTestId("run-pane")).toBeNull();
-    fireEvent.click(screen.getByText("deck-build"));
+    fireEvent.click(screen.getByText("Deck Build"));
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
   });
 

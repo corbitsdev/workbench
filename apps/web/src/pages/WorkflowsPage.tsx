@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button } from "@workbench/ui";
+import { Button, toHumanLabel } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
@@ -38,7 +38,7 @@ function RunRow({
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-medium text-text">
-          {run.kind}
+          {toHumanLabel(run.kind)}
         </span>
         <span
           className={`shrink-0 text-xs font-medium capitalize ${statusClass(run.status)}`}
