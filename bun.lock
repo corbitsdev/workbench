@@ -688,6 +688,7 @@
         "@intx/hub-common": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
+        "arktype": "catalog:",
         "drizzle-orm": "catalog:",
       },
       "devDependencies": {
