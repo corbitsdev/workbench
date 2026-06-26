@@ -9,8 +9,8 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 | `@workbench/analytics` | Event mapping, fact + daily rollup persistence, Hono routes                                                                            |
 | Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                                |
 | Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent`       |
-| Hub (activity)         | `GET /api/tenants/:tenantId/activity/overview` — operational counts (artifacts, workflow runs, instances) + embedded inference rollups |
-| Web                    | `getActivityOverview` → Insights operational ledger + inference KPIs                                                                   |
+| Hub (activity)         | `GET /api/tenants/:tenantId/activity/overview` — operational counts (artifacts, workflow runs, instances), daily inference series, model distribution, conversation/message counts, agent-activity split, and a previous-window summary for deltas |
+| Web                    | `getActivityOverview` → Insights activity trends, engagement metrics, inference KPIs, and operational ledger                          |
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 
@@ -28,7 +28,12 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
 - `GET /api/tenants/:tenantId/analytics/summary` — tenant totals (`startDate`, `endDate`, `agentId`, `instanceId` query params)
 - `GET /api/tenants/:tenantId/analytics/summary/by-agent` — per-`agentId` breakdown (same filters)
 - `GET /api/tenants/:tenantId/analytics/summary/by-instance` — per-`instanceId` breakdown (same filters)
-- `GET /api/tenants/:tenantId/activity/overview` — tenant operational ledger (`startDate`, `endDate`): artifact and workflow-run counts from hub tables, agent-instance lifecycle counts, plus `inference` block (summary, by-agent, by-instance) from `analytics_rollup_daily`
+- `GET /api/tenants/:tenantId/activity/overview` — tenant operational ledger (`startDate`, `endDate`): artifact and workflow-run counts from hub tables, agent-instance lifecycle counts, plus:
+  - `dailySeries` — per-`bucket_date` inference rollup (turns, tool calls, token categories), ordered ascending, for trend sparklines and the activity heatmap
+  - `models` — `{ key, count }` turn counts grouped by `model`
+  - `conversations` / `messages` — `agent_session` and `inference_turn` counts (`total` + `createdInRange`)
+  - `agentActivity` — `{ active, idle }`: instances with vs. without turns in range (derived from `inference.byInstance`)
+  - `inference.summary`, `inference.byAgent`, `inference.byInstance` from `analytics_rollup_daily`, plus `inference.previousSummary` — the equal-length window immediately before the selected range (or `null` for all-time), used for period-over-period deltas in the UI
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 

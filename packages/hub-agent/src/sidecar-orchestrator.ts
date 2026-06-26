@@ -129,6 +129,7 @@ export type SidecarOrchestratorConfig = {
   drainInboundRouter?: DrainInboundRouter;
   pingIntervalMs?: number;
   reconnectDelayMs?: number;
+  maxReconnectDelayMs?: number;
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
 };
@@ -163,6 +164,7 @@ export function createSidecarOrchestrator(
     drainInboundRouter,
     pingIntervalMs,
     reconnectDelayMs,
+    maxReconnectDelayMs,
     maxOutboundQueue,
     scheduleReconnect,
   } = config;
@@ -253,6 +255,7 @@ export function createSidecarOrchestrator(
     ...(drainInboundRouter !== undefined ? { drainInboundRouter } : {}),
     ...(pingIntervalMs !== undefined ? { pingIntervalMs } : {}),
     ...(reconnectDelayMs !== undefined ? { reconnectDelayMs } : {}),
+    ...(maxReconnectDelayMs !== undefined ? { maxReconnectDelayMs } : {}),
     ...(maxOutboundQueue !== undefined ? { maxOutboundQueue } : {}),
     ...(scheduleReconnect !== undefined ? { scheduleReconnect } : {}),
   });

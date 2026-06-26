@@ -1,10 +1,13 @@
 import type { AgentTool } from "@intx/agent";
 import type { DB } from "@intx/db";
+import { getLogger } from "@intx/log";
 import { parseReport } from "@workbench/last30days-core";
 import { WRITE_ARTIFACT_DEFINITION } from "@workbench/tools-artifact";
 import { and, eq, max } from "drizzle-orm";
 import { artifact, artifactVersion } from "../db/schema";
 import type { ContextToolEntry } from "../lib/tool-registry";
+
+const log = getLogger(["tools", "write-artifact"]);
 
 export { WRITE_ARTIFACT_DEFINITION };
 
@@ -58,14 +61,33 @@ export function createWriteArtifactTool(
               if (citations.length === 0) {
                 citations = parsedBrief.citations;
               }
+            } else {
+              log.warn(
+                "write_artifact brief content is JSON but does not match the Report schema; ignoring",
+                { title },
+              );
             }
-          } catch {
-            // Non-JSON brief content is ignored; explicit citations/data still apply.
+          } catch (cause) {
+            // Explicit citations/data still apply, but a malformed brief here
+            // means an upstream step produced bad content — surface it.
+            log.warn(
+              "write_artifact brief content is not valid JSON; ignoring",
+              {
+                title,
+                error: cause instanceof Error ? cause.message : cause,
+              },
+            );
           }
         }
 
         const source: Record<string, unknown> =
           brief === undefined ? { citations } : { citations, brief };
+        // Optional display name for the gallery tile of a session-less workflow
+        // artifact. The workflow chooses the string; the artifact layer stays
+        // generic (no workflow-specific label baked into the UI package).
+        if (typeof args.jobLabel === "string" && args.jobLabel.trim() !== "") {
+          source.jobLabel = args.jobLabel.trim();
+        }
 
         const result = await context.db.transaction(async (tx) => {
           // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.

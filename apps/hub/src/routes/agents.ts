@@ -776,6 +776,41 @@ export function createAgentProvisioningRouter(
         // tearing it down here would delete a healthy instance.
         if (!isAgentAlreadyExistsError(err)) {
           const failure = describeLaunchError(err);
+          // A leaked agent means the sidecar's own undeploy also failed, so a
+          // provisioned agent survives on the sidecar with no way for the hub to
+          // reach it. Deleting the hub rows here would orphan that zombie: the
+          // address keeps routing on the sidecar but has no hub row, so the next
+          // mail 502s until a sidecar restart. Keep the rows and mark the
+          // instance 'error' so relaunchInstanceIfNeeded (which acts on a cold
+          // start — no active session — and only skips a 'stopped'+endedAt
+          // instance) re-attempts the launch and the sidecar's
+          // already-exists carve-out adopts the live agent. (CL-2367)
+          if (failure.leakedAgent) {
+            log.error(
+              "Agent instance created but session launch failed AND the sidecar leaked the agent; keeping rows and marking instance error",
+              {
+                instanceId,
+                phase: failure.phase,
+                detail: failure.detail,
+                leakedAgent: failure.leakedAgent,
+                error: err instanceof Error ? err : new Error(String(err)),
+              },
+            );
+            const now2 = new Date();
+            await hubDb
+              .update(agentInstance)
+              .set({ status: "error", updatedAt: now2 })
+              .where(eq(agentInstance.id, instanceId));
+            return c.json(
+              {
+                error: "Failed to launch agent session",
+                phase: failure.phase,
+                detail: failure.detail,
+                leakedAgent: failure.leakedAgent,
+              },
+              503,
+            );
+          }
           // Log the real Error at error level so the Sentry sink reports it via
           // captureException with stack + cause (not a stringified captureMessage).
           log.error(
@@ -784,6 +819,7 @@ export function createAgentProvisioningRouter(
               instanceId,
               phase: failure.phase,
               detail: failure.detail,
+              leakedAgent: failure.leakedAgent,
               error: err instanceof Error ? err : new Error(String(err)),
             },
           );
@@ -824,6 +860,7 @@ export function createAgentProvisioningRouter(
               error: "Failed to launch agent session",
               phase: failure.phase,
               detail: failure.detail,
+              leakedAgent: failure.leakedAgent,
             },
             503,
           );

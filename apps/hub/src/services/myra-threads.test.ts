@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { getTableName } from "drizzle-orm";
 import type { PgTable } from "drizzle-orm/pg-core";
 
@@ -20,6 +20,7 @@ function resetTitleMocks() {
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
   lastIsogitDir = null;
+  ancestorChainResult = ["tn-global"];
 }
 
 mock.module("@workbench/storage-isogit", () => ({
@@ -84,6 +85,14 @@ mock.module("@intx/agent", () => ({
 }));
 
 const resolveCredentialRequirementMock = mock(() => Promise.resolve(null));
+// Chain returned by getAncestorChain — [tenant, ...ancestors, root]. Default is a
+// single-tenant chain (active == root); per-test overrides exercise sub-tenants.
+let ancestorChainResult: string[] = ["tn-global"];
+const getAncestorChainMock = mock((_db: unknown, tenantId: string) =>
+  Promise.resolve(
+    ancestorChainResult.length > 0 ? ancestorChainResult : [tenantId],
+  ),
+);
 mock.module("@intx/db", () => ({
   schema: {
     agent: { tenantId: "agent.tenantId", name: "agent.name" },
@@ -93,6 +102,7 @@ mock.module("@intx/db", () => ({
     grant: {},
   },
   resolveCredentialRequirement: resolveCredentialRequirementMock,
+  getAncestorChain: getAncestorChainMock,
 }));
 
 mock.module("../config", () => ({
@@ -126,9 +136,15 @@ mock.module("./agent-provisioning", () => ({
   describeLaunchError: (err: unknown) => ({
     phase: null,
     detail: err instanceof Error ? err.message : String(err),
+    leakedAgent:
+      err instanceof Error && (err as { leakedAgent?: boolean }).leakedAgent
+        ? true
+        : false,
   }),
 }));
 
+import type { InferenceEvent } from "@intx/types/runtime";
+import { createAnalyticsSubscriber } from "@workbench/analytics";
 import {
   createMyraThread,
   deleteMyraThread,
@@ -139,23 +155,48 @@ import {
 } from "./myra-threads";
 
 describe("createMyraThread", () => {
+  beforeEach(() => {
+    ancestorChainResult = ["tn-global"];
+  });
+
   function buildCreateDb(opts: {
     transactions: () => void;
     deleted?: unknown[];
+    updated?: Record<string, unknown>[];
+    inserted?: Record<string, unknown>[];
+    agentDefs?: Record<string, unknown>[];
   }) {
+    const agentDefs = opts.agentDefs ?? [
+      {
+        id: "agt-myra",
+        tenantId: "tn-global",
+        systemPrompt: "You are Myra.",
+      },
+    ];
     return {
+      update: (table: unknown) => ({
+        set: (values: Record<string, unknown>) => ({
+          where: () => {
+            opts.updated?.push({ table, values });
+            return Promise.resolve(undefined);
+          },
+        }),
+      }),
       query: {
         agent: {
-          findFirst: mock(() =>
-            Promise.resolve({ id: "agt-myra", systemPrompt: "You are Myra." }),
-          ),
+          findMany: mock(() => Promise.resolve(agentDefs)),
         },
         memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
       },
       transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
         opts.transactions();
         await fn({
-          insert: () => ({ values: () => Promise.resolve(undefined) }),
+          insert: () => ({
+            values: (values: Record<string, unknown>) => {
+              opts.inserted?.push(values);
+              return Promise.resolve(undefined);
+            },
+          }),
           delete: (table: unknown) => {
             opts.deleted?.push(table);
             return { where: () => Promise.resolve(undefined) };
@@ -232,6 +273,218 @@ describe("createMyraThread", () => {
     expect(deletedNames).toContain("agent_session");
     expect(deletedNames).toContain("principal");
   });
+
+  it("does NOT tear down and marks the instance error when the launch leaked an agent", async () => {
+    const leaked = new Error("start failed; sidecar undeploy also failed");
+    (leaked as { leakedAgent?: boolean }).leakedAgent = true;
+    launchShouldThrow = leaked;
+    let txCount = 0;
+    const deleted: unknown[] = [];
+    const updated: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      updated,
+    });
+
+    let thrown: unknown;
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      await createMyraThread(db as any, deps, {
+        tenantId: "tn-global",
+        tenantDomain: "global.test",
+        memberPrincipalId: "prn-member",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
+    expect((thrown as MyraThreadLaunchError).leakedAgent).toBe(true);
+    // Only the create transaction ran — the teardown transaction MUST NOT,
+    // because deleting the rows orphans the leaked sidecar agent.
+    expect(txCount).toBe(1);
+    expect(deleted).toHaveLength(0);
+    // The instance is marked 'error' so a later relaunch can adopt the live
+    // sidecar agent.
+    expect(updated).toHaveLength(1);
+    expect(getTableName(updated[0]!.table as PgTable)).toBe("agent_instance");
+    expect((updated[0]!.values as { status: string }).status).toBe("error");
+  });
+});
+
+describe("createMyraThread (active-workbench attribution)", () => {
+  const deps = {
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    sessionService: {} as any,
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    grantStore: {} as any,
+    // biome-ignore lint/suspicious/noExplicitAny: structural mock
+    eventCollectors: {} as any,
+  };
+
+  function buildDb(
+    inserted: Record<string, unknown>[],
+    agentDefs: Record<string, unknown>[],
+  ) {
+    return {
+      query: {
+        agent: { findMany: mock(() => Promise.resolve(agentDefs)) },
+        memberAgentInstance: { findMany: mock(() => Promise.resolve([])) },
+      },
+      transaction: mock(async (fn: (tx: unknown) => Promise<void>) => {
+        await fn({
+          insert: () => ({
+            values: (values: Record<string, unknown>) => {
+              inserted.push(values);
+              return Promise.resolve(undefined);
+            },
+          }),
+          delete: () => ({ where: () => Promise.resolve(undefined) }),
+        });
+      }),
+    };
+  }
+
+  it("creates the instance + mapping in the active child tenant using the root Myra definition", async () => {
+    launchShouldThrow = null;
+    ancestorChainResult = ["tn-child", "tn-root"];
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildDb(inserted, [
+      { id: "agt-root", tenantId: "tn-root", systemPrompt: "You are Myra." },
+    ]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, deps, {
+      tenantId: "tn-child",
+      tenantDomain: "child.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.tenantId).toBe("tn-child");
+    expect(instanceInsert?.agentId).toBe("agt-root");
+    const mappingInsert = inserted.find((v) => "templateKey" in v);
+    expect(mappingInsert?.tenantId).toBe("tn-child");
+    expect(mappingInsert?.agentId).toBe("agt-root");
+  });
+
+  it("prefers the most-specific definition when the child has its own", async () => {
+    launchShouldThrow = null;
+    ancestorChainResult = ["tn-child", "tn-root"];
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildDb(inserted, [
+      { id: "agt-root", tenantId: "tn-root", systemPrompt: "root" },
+      { id: "agt-child", tenantId: "tn-child", systemPrompt: "child" },
+    ]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, deps, {
+      tenantId: "tn-child",
+      tenantDomain: "child.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.agentId).toBe("agt-child");
+  });
+
+  it("throws a clear error when no Myra definition exists in the chain", async () => {
+    launchShouldThrow = null;
+    ancestorChainResult = ["tn-child", "tn-root"];
+    const db = buildDb([], []);
+
+    let thrown: unknown;
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      await createMyraThread(db as any, deps, {
+        tenantId: "tn-child",
+        tenantDomain: "child.test",
+        memberPrincipalId: "prn-member",
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(Error);
+  });
+
+  it("attributes the analytics rollup to the child tenant for a child-tenant instance (subscriber seam)", async () => {
+    launchShouldThrow = null;
+    ancestorChainResult = ["tn-child", "tn-root"];
+    const inserted: Record<string, unknown>[] = [];
+    const createDb = buildDb(inserted, [
+      { id: "agt-root", tenantId: "tn-root", systemPrompt: "You are Myra." },
+    ]);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(createDb as any, deps, {
+      tenantId: "tn-child",
+      tenantDomain: "child.test",
+      memberPrincipalId: "prn-member",
+    });
+
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert).toBeDefined();
+    // Reconstruct the persisted instance row the subscriber resolves by address.
+    const instanceRow: Record<string, unknown> = {
+      ...instanceInsert,
+      sessionId: "ses_child",
+      endedAt: null,
+    };
+
+    const rollups: Record<string, unknown>[] = [];
+    const subscriberChain = {
+      values: mock(() => subscriberChain),
+      onConflictDoNothing: mock(() => subscriberChain),
+      onConflictDoUpdate: mock(() => Promise.resolve()),
+      returning: mock(() => Promise.resolve([{ id: "ane_new" }])),
+    };
+    let insertCount = 0;
+    const analyticsDb = {
+      query: {
+        agentInstance: { findFirst: mock(() => Promise.resolve(instanceRow)) },
+      },
+      insert: mock(() => {
+        insertCount += 1;
+        return {
+          values: (v: Record<string, unknown>) => {
+            // Second insert is the daily rollup.
+            if (insertCount === 2) rollups.push(v);
+            return subscriberChain;
+          },
+        };
+      }),
+      transaction: mock(
+        async (fn: (tx: unknown) => Promise<void>) => await fn(analyticsDb),
+      ),
+    };
+
+    const subscriber = createAnalyticsSubscriber({ db: analyticsDb as never });
+    const inferenceDone: InferenceEvent = {
+      type: "inference.done",
+      seq: 10,
+      data: {
+        turn: { role: "assistant", content: [], model: "m", timestamp: 0 },
+        usage: {
+          input: 100,
+          output: 40,
+          cacheRead: 1,
+          cacheWrite: 2,
+          thinking: 3,
+        },
+        source: { sourceId: "s", provider: "openai-compatible", model: "m" },
+      },
+    } as InferenceEvent;
+
+    await subscriber.onAgentEvent({
+      agentAddress: instanceRow.address as string,
+      event: inferenceDone,
+    });
+
+    expect(rollups).toHaveLength(1);
+    expect(rollups[0]?.tenantId).toBe("tn-child");
+    expect(rollups[0]?.inputTokens).toBe(100);
+  });
 });
 
 describe("generateMyraThreadTitle", () => {
@@ -255,8 +508,10 @@ describe("generateMyraThreadTitle", () => {
           findFirst: mock(() => Promise.resolve(opts.mappingRow)),
         },
         agent: {
-          findFirst: mock(() =>
-            Promise.resolve({ id: "agt", modelRequirements: null }),
+          findMany: mock(() =>
+            Promise.resolve([
+              { id: "agt", tenantId: "tn-global", modelRequirements: null },
+            ]),
           ),
         },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
@@ -307,6 +562,42 @@ describe("generateMyraThreadTitle", () => {
     ]);
   });
 
+  it("resolves the title source via the tenant hierarchy for a sub-tenant", async () => {
+    resetTitleMocks();
+    ancestorChainResult = ["tn-child", "tn-root"];
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+      renamed: {
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "Pricing Deep Dive",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    // The Myra definition lives only in the root ancestor, not the active child.
+    db.query.agent.findMany = mock(() =>
+      Promise.resolve([
+        { id: "agt", tenantId: "tn-root", modelRequirements: null },
+      ]),
+    );
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: "tn-child",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "How should we price the enterprise tier?",
+      },
+    );
+
+    expect(result?.label).toBe("Pricing Deep Dive");
+    // The recorded turn is attributed to the active child tenant.
+    expect(lastCreateEventCollectorConfig?.tenantId).toBe("tn-child");
+  });
+
   it("no-ops on a custom (non-default) label without running inference", async () => {
     resetTitleMocks();
     const db = buildTitleDb({
@@ -350,6 +641,43 @@ describe("generateMyraThreadTitle", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it("surfaces a genuine credential-resolution fault instead of silently falling back", async () => {
+    resetTitleMocks();
+    // A real fault (e.g. ambiguous credential match), not the optional title
+    // credential simply being absent.
+    resolveCredentialRequirementMock.mockImplementation(() =>
+      Promise.reject(new Error("Ambiguous credential match")),
+    );
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+
+    try {
+      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+      const result = await generateMyraThreadTitle(
+        db as any,
+        {},
+        {
+          tenantId: "tn-global",
+          memberPrincipalId: "prn-member",
+          threadId: "map-1",
+          firstMessage: "Hello",
+        },
+      );
+
+      // Best-effort contract still holds (titling never breaks chat): null, no throw.
+      expect(result).toBeNull();
+      // But the fault short-circuits BEFORE any inference turn — proving it
+      // propagated to the logged handler rather than being swallowed and
+      // continuing on to the fallback source (which would have run a turn).
+      expect(lastCreateEventCollectorConfig).toBeNull();
+    } finally {
+      resolveCredentialRequirementMock.mockImplementation(() =>
+        Promise.resolve(null),
+      );
+    }
   });
 
   it("does not throw and returns null when inference fails", async () => {

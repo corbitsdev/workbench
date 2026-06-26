@@ -1,9 +1,13 @@
 import type { DB } from "@intx/db";
 import { agentInstance } from "@intx/db/schema";
 import {
+  getAnalyticsDailySeries,
+  getAnalyticsModelDistribution,
   getAnalyticsSummary,
   getAnalyticsSummaryByAgent,
   getAnalyticsSummaryByInstance,
+  getConversationActivity,
+  type AnalyticsDailyPoint,
   type AnalyticsDateRange,
   type AnalyticsSummary,
 } from "@workbench/analytics";
@@ -48,12 +52,55 @@ export type ActivityOverview = {
     endedInRange: number;
     total: number;
   };
+  agentActivity: {
+    active: number;
+    idle: number;
+  };
+  conversations: {
+    total: number;
+    createdInRange: number;
+  };
+  messages: {
+    total: number;
+    createdInRange: number;
+  };
+  dailySeries: AnalyticsDailyPoint[];
+  models: ActivityCountRow[];
   inference: {
     summary: AnalyticsSummary;
+    previousSummary: AnalyticsSummary | null;
     byAgent: Awaited<ReturnType<typeof getAnalyticsSummaryByAgent>>;
     byInstance: Awaited<ReturnType<typeof getAnalyticsSummaryByInstance>>;
   };
 };
+
+export function computePreviousRange(
+  range: AnalyticsDateRange,
+  today: string,
+): AnalyticsDateRange | null {
+  if (range.startDate === undefined) return null;
+  const msPerDay = 86_400_000;
+  const endRef = range.endDate ?? today;
+  const start = new Date(`${range.startDate}T00:00:00.000Z`);
+  const end = new Date(`${endRef}T00:00:00.000Z`);
+  const lengthDays =
+    Math.round((end.getTime() - start.getTime()) / msPerDay) + 1;
+  if (lengthDays <= 0) return null;
+  const prevEnd = new Date(start.getTime() - msPerDay);
+  const prevStart = new Date(prevEnd.getTime() - (lengthDays - 1) * msPerDay);
+  return {
+    startDate: prevStart.toISOString().slice(0, 10),
+    endDate: prevEnd.toISOString().slice(0, 10),
+  };
+}
+
+export function deriveAgentActivity(
+  byInstance: { turnCount: number }[],
+  totalInstances: number,
+): { active: number; idle: number } {
+  const active = byInstance.filter((row) => row.turnCount > 0).length;
+  return { active, idle: Math.max(0, totalInstances - active) };
+}
 
 function createdInRange(
   createdAtColumn: AnyColumn,
@@ -206,10 +253,26 @@ export async function getActivityOverview(args: {
   ]);
 
   const inferenceFilter = { db, tenantId, range };
-  const [summary, byAgent, byInstance] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+  const previousRange = computePreviousRange(range, today);
+  const [
+    summary,
+    byAgent,
+    byInstance,
+    dailySeries,
+    modelRows,
+    conversationActivity,
+    previousSummary,
+  ] = await Promise.all([
     getAnalyticsSummary(inferenceFilter),
     getAnalyticsSummaryByAgent(inferenceFilter),
     getAnalyticsSummaryByInstance(inferenceFilter),
+    getAnalyticsDailySeries(inferenceFilter),
+    getAnalyticsModelDistribution(inferenceFilter),
+    getConversationActivity({ db, tenantId, range }),
+    previousRange !== null
+      ? getAnalyticsSummary({ db, tenantId, range: previousRange })
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -244,6 +307,17 @@ export async function getActivityOverview(args: {
       endedInRange: Number(instanceEndedRow[0]?.count ?? 0),
       total: Number(instanceTotalRow[0]?.count ?? 0),
     },
-    inference: { summary, byAgent, byInstance },
+    agentActivity: deriveAgentActivity(
+      byInstance,
+      Number(instanceTotalRow[0]?.count ?? 0),
+    ),
+    conversations: conversationActivity.conversations,
+    messages: conversationActivity.messages,
+    dailySeries,
+    models: modelRows.map((row) => ({
+      key: row.model,
+      count: row.turnCount,
+    })),
+    inference: { summary, previousSummary, byAgent, byInstance },
   };
 }

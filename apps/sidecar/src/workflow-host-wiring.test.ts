@@ -33,6 +33,8 @@ import {
   createMultistepMailRouter,
   type MultistepMailRouter,
 } from "./workflow-run-pack-client";
+import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
+import { sanitizeAddress } from "@workbench/hub-agent";
 
 function createMinimalStubRepoStore(): RepoStore {
   const stub: Partial<RepoStore> = {
@@ -593,14 +595,18 @@ function makeMultistepFrame(args: MultistepDeployArgs): AgentDeployFrame {
   return {
     type: "agent.deploy",
     agentAddress: args.agentAddress ?? "multi@example.com",
-    agentId: "multi-agent",
+    // `ins_<deploymentId>` shape the orchestrator's `deriveDeploymentAgentId`
+    // mints; the deploy router's `deriveRawDeploymentId` recovers the raw
+    // deploymentId from it and throws on any other shape.
+    agentId: "ins_multi-agent",
     hubPublicKey: "hub-pk",
-    // The wire-side HarnessConfig has many required fields. The router
-    // never inspects `config` on the multi-step branch (only the
-    // trivial branch hands it to provisionAgent), so an opaque
-    // placeholder satisfies the surface contract for these tests.
+    // The wire-side HarnessConfig has many required fields. The router's
+    // multi-step branch reads `config.tenantId` (threaded into the
+    // workflow-child's `TENANT_ID` substrate-config key) and `config.grants`;
+    // an opaque placeholder carrying `tenantId` satisfies the surface
+    // contract for these tests.
 
-    config: {} as AgentDeployFrame["config"],
+    config: { tenantId: "ten_test" } as AgentDeployFrame["config"],
     workflow: {
       definition: args.definition,
       sources: args.sources,
@@ -1108,8 +1114,21 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     // touch a real /tmp path; callers can override
     // `SIDECAR_DATA_DIR` (and any other key) by passing
     // `multistepSubstrateEnv`.
+    // Mirror the real sidecar boot edge (apps/sidecar/src/index.ts
+    // `multistepSubstrateEnv`): every substrate-config key the boot edge
+    // threads through the deploy router must be present here so the fixture
+    // faithfully reproduces production. The deploy router derives the
+    // workflow-definition / workflow-run identity keys, TENANT_ID, and
+    // WORKFLOW_RAW_DEPLOYMENT_ID per-deploy; the rest are boot-edge constants.
     const defaultSubstrateEnv: Record<string, string> = {
       SIDECAR_DATA_DIR: await createTempBaseDir("sidecar-multistep-data-"),
+      SIDECAR_SIGNING_PUBLIC_KEY: "deadbeef",
+      SIDECAR_SIGNING_PRIVATE_KEY: "cafef00d",
+      HUB_WS_URL: "ws://hub.test/ws",
+      SIDECAR_ID: "sc_test",
+      SIDECAR_TOKEN: "tok_test",
+      SIDECAR_CACHE_MAX_BYTES: "1000000",
+      SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
     };
     const mergedSubstrateEnv: Record<string, string> = {
       ...defaultSubstrateEnv,
@@ -1242,6 +1261,19 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     expect(env.DEFINITION_HASH).toBe(computeWireDefinitionHash(definition));
     expect(env[STEP_INFERENCE_SOURCES_ENV_KEY]).toBe(JSON.stringify(sources));
     expect(env.IPC_CHANNEL_ID).toMatch(/^[0-9a-f]{32}$/);
+
+    // CL-2363 superset guard: `toMatchObject` above is a SUBSET matcher — it
+    // passes even when a substrate-config key is absent, which is exactly how
+    // the #364 re-sync dropped TENANT_ID / WORKFLOW_RAW_DEPLOYMENT_ID with a
+    // green build. Assert the captured spawn env carries EVERY
+    // SIDECAR_SUBSTRATE_CONFIG_KEYS member, present and non-empty. The fixture's
+    // `defaultSubstrateEnv` faithfully mirrors the real boot edge, so this test
+    // can actually fail if the deploy router stops threading a key (verified by
+    // temporarily deleting one from the assembled env).
+    for (const key of SIDECAR_SUBSTRATE_CONFIG_KEYS) {
+      const value = env[key];
+      expect(typeof value === "string" && value.length > 0).toBe(true);
+    }
 
     // Drive the `ready` handshake.
     const channelId = env.IPC_CHANNEL_ID;
@@ -1692,17 +1724,14 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     await deployPromise;
   });
 
-  test("a registerDeployment failure after spawn unwinds the supervisor, routers, and slug", async () => {
-    // The H1 multi-step partial-state unwind: when an earlier
-    // commit's slug-only release is extended to the full deploy
-    // pipeline, a `registerDeployment` failure must kill the
-    // freshly-spawned workflow-process child, drop the
-    // `activeSupervisors` entry, unregister the three multistep
-    // routers, and release the slug. The observable evidence here
-    // is that (a) the spawner's `kill` is invoked on the first
-    // child after deploy rejects and (b) a subsequent deploy on the
-    // SAME address succeeds, which is only possible if the slug
-    // and the activeSupervisors entry were released.
+  test("a registerDeployment failure (before spawn, CL-2400) unwinds the slug without spawning a child", async () => {
+    // CL-2400 reordered registration to BEFORE `supervisor.spawn`, so a
+    // `registerDeployment` failure now aborts the deploy before any child is
+    // spawned: nothing to kill, no `activeSupervisors` entry, no router
+    // registrations -- only the claimed slug to release. The observable
+    // evidence is that (a) NO child was ever spawned and (b) a subsequent
+    // deploy on the SAME address succeeds, which is only possible if the slug
+    // was released by the unwind.
     const childIpcKeyPair = await generateKeyPair();
     const spawnedHandles: {
       pid: number;
@@ -1805,12 +1834,9 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     };
     const frame = makeMultistepFrame({ definition, sources });
 
-    const firstDeploy = router.deploy(frame);
-    await driveReadyFor(0, 9000);
-
     let firstCaught: unknown;
     try {
-      await firstDeploy;
+      await router.deploy(frame);
     } catch (err) {
       firstCaught = err;
     }
@@ -1819,26 +1845,217 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       /registerDeployment failure \(synthetic\)/,
     );
 
-    // The first child must have been killed by the unwind's
-    // `supervisor.shutdown()` call. Without the unwind, the
-    // freshly-spawned workflow-process child would remain alive
-    // under no owner.
+    // Registration now runs before spawn, so the failed register aborted the
+    // deploy before the supervisor spawned any child.
+    expect(spawnedHandles.length).toBe(0);
+
+    // Re-deploy on the SAME address must succeed. If the unwind missed the
+    // slug release, the second deploy would surface a phantom collision. The
+    // router's public contract is that a failed deploy leaves the address
+    // claimable again. The second deploy is the first to actually spawn.
+    const secondDeploy = router.deploy(frame);
+    await driveReadyFor(0, 9000);
+    const secondResult = await secondDeploy;
+    expect(secondResult.publicKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(registerCallCount).toBe(2);
+  });
+
+  test("a post-spawn failure (router registration) kills the spawned child and releases the slug (CL-2400)", async () => {
+    // CL-2400 moves registration before spawn, but the post-spawn-success
+    // unwind is still live: anything that throws AFTER `supervisor.spawn`
+    // resolves -- here a `multistepMailRouter.register` failure -- must shut
+    // down the freshly-spawned child (so it does not run under no owner) and
+    // release the slug. Evidence: (a) the first child's `kill` is invoked and
+    // (b) a subsequent deploy on the SAME address succeeds.
+    const childIpcKeyPair = await generateKeyPair();
+    const spawnedHandles: {
+      pid: number;
+      killed: boolean;
+      supervisorToChild: ReturnType<typeof createMemoryNdjsonStream>;
+      childToSupervisor: ReturnType<typeof createMemoryNdjsonStream>;
+      eventChildToSupervisor: ReturnType<typeof createMemoryFrameStream>;
+    }[] = [];
+    const observedEnvs: Record<string, string>[] = [];
+    const spawner: SubprocessSpawner = ({ env }) => {
+      observedEnvs.push(env);
+      const supervisorToChild = createMemoryNdjsonStream();
+      const childToSupervisor = createMemoryNdjsonStream();
+      const eventChildToSupervisor = createMemoryFrameStream();
+      let resolveExit: ((code: number) => void) | undefined;
+      const exited = new Promise<number>((resolve) => {
+        resolveExit = resolve;
+      });
+      const record = {
+        pid: 9000 + spawnedHandles.length,
+        killed: false,
+        supervisorToChild,
+        childToSupervisor,
+        eventChildToSupervisor,
+      };
+      spawnedHandles.push(record);
+      const handle: SubprocessHandle = {
+        pid: record.pid,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          record.killed = true;
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+      return handle;
+    };
+
+    let mailRegisterCalls = 0;
+    const failingMailRouter: MultistepMailRouter = {
+      register: () => {
+        mailRegisterCalls += 1;
+        if (mailRegisterCalls === 1) {
+          throw new Error("mailRouter.register failure (synthetic)");
+        }
+      },
+      unregister: () => {
+        /* no-op */
+      },
+      tryRoute: () => false,
+    };
+
+    const multiDataDir = await createTempBaseDir("sidecar-postspawn-unwind-");
+    const { router } = await buildMultistepFixture({
+      spawner,
+      multistepBinaryPath: "/fake/bin/multistep-workflow-child",
+      multistepSubstrateEnv: { SIDECAR_DATA_DIR: multiDataDir },
+      multistepMailRouter: failingMailRouter,
+    });
+
+    async function driveReadyFor(
+      handleIndex: number,
+      childPid: number,
+    ): Promise<void> {
+      while (spawnedHandles.length <= handleIndex) {
+        await new Promise((r) => setTimeout(r, 1));
+      }
+      const env = observedEnvs[handleIndex];
+      const channelId = env?.IPC_CHANNEL_ID;
+      if (channelId === undefined) {
+        throw new Error("IPC_CHANNEL_ID missing in observed env");
+      }
+      const record = spawnedHandles[handleIndex];
+      if (record === undefined) {
+        throw new Error(`spawnedHandles[${String(handleIndex)}] missing`);
+      }
+      const childSender = createControlChannelSender({
+        privateKeySeed: childIpcKeyPair.privateKey,
+        channelId,
+        writer: {
+          write(line: string) {
+            record.childToSupervisor.inject(line);
+            return Promise.resolve();
+          },
+        },
+      });
+      await childSender.send({
+        type: "ready",
+        data: {
+          childPid,
+          childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString(
+            "hex",
+          ),
+        },
+      });
+    }
+
+    const sources = defaultMultistepSources();
+    const definition = {
+      id: "wf-postspawn-unwind",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1", "step-2"],
+      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({ definition, sources });
+
+    const firstDeploy = router.deploy(frame);
+    await driveReadyFor(0, 9000);
+    let firstCaught: unknown;
+    try {
+      await firstDeploy;
+    } catch (err) {
+      firstCaught = err;
+    }
+    expect(firstCaught).toBeInstanceOf(Error);
+    expect(firstCaught instanceof Error && firstCaught.message).toMatch(
+      /mailRouter\.register failure \(synthetic\)/,
+    );
+
+    // The freshly-spawned child must have been killed by the unwind's
+    // `supervisor.shutdown()`; without it the child would run under no owner.
     const firstHandle = spawnedHandles[0];
     if (firstHandle === undefined) {
       throw new Error("spawnedHandles[0] missing");
     }
     expect(firstHandle.killed).toBe(true);
 
-    // Re-deploy on the SAME address must succeed. If the unwind
-    // missed the slug release OR the activeSupervisors entry, the
-    // second deploy would surface a phantom collision (slug) or
-    // overwrite a stale entry (activeSupervisors). The router's
-    // public contract is that a failed deploy leaves the address
-    // claimable again.
+    // Re-deploy on the SAME address must succeed: the unwind released the slug
+    // (and unregistered the early-recorded mapping). The second deploy is the
+    // second spawn (handle index 1), and the mail-router register succeeds.
     const secondDeploy = router.deploy(frame);
     await driveReadyFor(1, 9001);
     const secondResult = await secondDeploy;
     expect(secondResult.publicKey).toMatch(/^[0-9a-f]{64}$/);
-    expect(registerCallCount).toBe(2);
+    expect(mailRegisterCalls).toBe(2);
+  });
+
+  test("CL-2363: a multi-step deploy whose assembled substrate env is missing a required key fails loudly at deploy time, naming the key", async () => {
+    // The deploy router derives TENANT_ID from `frame.config.tenantId`. An
+    // empty tenantId yields an empty TENANT_ID in the assembled substrate env,
+    // which the completeness assertion must reject BEFORE the supervisor is
+    // constructed and the child is spawned — converting what would otherwise be
+    // a runtime child-spawn crash into a loud deploy-time failure. The spawner
+    // throws if invoked, proving the assertion fires before spawn.
+    const spawner: SubprocessSpawner = () => {
+      throw new Error(
+        "spawner must not be invoked when the substrate env is incomplete",
+      );
+    };
+    const { router } = await buildMultistepFixture({ spawner });
+
+    const sources = defaultMultistepSources();
+    const definition = {
+      id: "wf-incomplete-env",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1", "step-2"],
+      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({ definition, sources });
+    const frameWithEmptyTenant: AgentDeployFrame = {
+      ...frame,
+      config: { tenantId: "" } as AgentDeployFrame["config"],
+    };
+
+    let caught: unknown;
+    try {
+      await router.deploy(frameWithEmptyTenant);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught instanceof Error && caught.message).toContain('"TENANT_ID"');
+    expect(caught instanceof Error && caught.message).toMatch(
+      /missing required key/,
+    );
+  });
+});
+
+describe("sanitizeAddress (CL-2231 reclaim dir-name contract)", () => {
+  test("maps a representative agent address to its expected on-disk segment", () => {
+    // The CL-2231 undeploy reclaim sweep computes a deployment's owned dirs
+    // from `sanitizeAddress` (imported from @workbench/hub-agent). If a future
+    // interchange pin bump changes this mapping, the reclaim would target the
+    // wrong dir and silently re-introduce the sidecar-volume inode leak. Pin
+    // the mapping here so such a change fails this test instead.
+    expect(sanitizeAddress("ins_x@abklabs.com")).toBe("ins_x_at_abklabs_com");
   });
 });

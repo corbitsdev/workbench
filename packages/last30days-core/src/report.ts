@@ -2,7 +2,13 @@ import { clusterMerge } from "./cluster-merge";
 import { dateFilter } from "./date-filter";
 import { dedupe } from "./dedupe";
 import { rankScore, type RankedCluster } from "./rank-score";
-import type { BestTake, BriefCluster, Report, ResearchItem } from "./schema";
+import type {
+  BestTake,
+  BriefCluster,
+  Report,
+  ResearchItem,
+  SkippedSource,
+} from "./schema";
 
 const MAX_BEST_TAKES = 5;
 
@@ -58,7 +64,13 @@ function collectBestTakes(items: ResearchItem[]): BestTake[] {
 
 export function buildReport(
   rawItems: ResearchItem[],
-  opts: { topic: string; days: number; topK: number; nowIso: string },
+  opts: {
+    topic: string;
+    days: number;
+    topK: number;
+    nowIso: string;
+    skippedSources?: SkippedSource[];
+  },
 ): Report {
   const windowed = dateFilter(rawItems, {
     days: opts.days,
@@ -93,6 +105,9 @@ export function buildReport(
   };
   if (leadCluster !== undefined) {
     report.leadInsight = leadCluster.topItem.title;
+  }
+  if (opts.skippedSources !== undefined && opts.skippedSources.length > 0) {
+    report.skippedSources = opts.skippedSources;
   }
   return report;
 }

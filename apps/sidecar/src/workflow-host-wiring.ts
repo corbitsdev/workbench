@@ -67,8 +67,36 @@ import type {
   MultistepMailRouter,
   MultistepSignalRouter,
 } from "./workflow-run-pack-client";
+import { SIDECAR_SUBSTRATE_CONFIG_KEYS } from "./workflow-substrate-factory";
 
 const logger = getLogger(["interchange", "sidecar", "workflow-host-wiring"]);
+
+/**
+ * WORKBENCH-LOCAL (CL-2363): not in upstream interchange — preserve on pin-bump
+ * re-sync of this vendored file.
+ *
+ * Deploy-time completeness assertion for the multi-step workflow-child's
+ * substrate-config env. The hand-off between this wiring and the workflow-child
+ * is duck-typed (no compile-time contract), so a dropped substrate-config key
+ * does NOT fail the build — it surfaces only when the child boots and its
+ * `filterSubstrateConfig` validator throws, i.e. a runtime child-spawn crash in
+ * production. This happened in the #364 pin-bump re-sync, which dropped
+ * `TENANT_ID` and `WORKFLOW_RAW_DEPLOYMENT_ID` (CL-2361). Asserting presence +
+ * non-emptiness of every `SIDECAR_SUBSTRATE_CONFIG_KEYS` member here converts
+ * that silent runtime crash into a loud deploy-time failure naming the missing
+ * key. The key list is imported from `workflow-substrate-factory` (the single
+ * source of truth) rather than duplicated.
+ */
+function assertSubstrateEnvComplete(env: Record<string, string>): void {
+  for (const key of SIDECAR_SUBSTRATE_CONFIG_KEYS) {
+    const value = env[key];
+    if (typeof value !== "string" || value.length === 0) {
+      throw new Error(
+        `sidecar deploy router: assembled workflow-child substrate env is missing required key ${JSON.stringify(key)} (present in SIDECAR_SUBSTRATE_CONFIG_KEYS but absent or empty in the spawn-time env); a dropped substrate-config key would crash the workflow-child at boot — see CL-2361/CL-2363`,
+      );
+    }
+  }
+}
 
 /**
  * Project an agent address into the substrate-safe id of its
@@ -987,6 +1015,7 @@ export function createSidecarDeployRouter(deps: {
     let wiredForUnwind: SidecarWorkflowSupervisor | undefined;
     let supervisorRegistered = false;
     let routersRegistered = false;
+    let deploymentRegistered = false;
     let agentTransportRegistered = false;
     try {
       const definitionHash = computeWireDefinitionHash(projection.definition);
@@ -1050,6 +1079,11 @@ export function createSidecarDeployRouter(deps: {
         [RAW_DEPLOYMENT_ID_ENV_KEY]: deriveRawDeploymentId(frame.agentId),
         [STEP_INFERENCE_SOURCES_ENV_KEY]: JSON.stringify(projection.sources),
       };
+
+      // WORKBENCH-LOCAL (CL-2363): fail the deploy loudly if any
+      // substrate-config key the workflow-child requires is missing from the
+      // assembled env, rather than spawning a child that crashes at boot.
+      assertSubstrateEnvComplete(substrateEnv);
 
       // Materialize the workflow asset on the sidecar's local substrate
       // so the workflow-process child's `loadWorkflowDefinition` can read
@@ -1245,16 +1279,30 @@ export function createSidecarDeployRouter(deps: {
         },
       } satisfies SpawnOpts;
 
+      // WORKBENCH-LOCAL (CL-2400): record the deployment-address mapping
+      // BEFORE spawn. `spawn` runs the supervisor's `replayProcessingToInbox`,
+      // which commits run events through the workflow-run pack-push pipeline as
+      // soon as there is a `processing/` entry to replay (a re-spawn /
+      // crash-recovery). That push resolves the deployment's agent address via
+      // the `DeploymentAddressRegistry`; if the mapping is recorded after spawn
+      // the push throws "no agent address registered" (the supervisor swallows
+      // it as a best-effort warn upstream, losing the run event). The mapping
+      // is a local synchronous `Map.set` with no WS dependency, so recording it
+      // first cannot fail the deploy. A spawn-time rejection is unwound below:
+      // `deploymentRegistered` drives `unregisterDeployment` in the `finally`,
+      // so a failed deploy still leaves the registry untouched on net.
+      deps.registerDeployment({
+        deploymentId,
+        agentAddress: frame.agentAddress,
+      });
+      deploymentRegistered = true;
+
       // Surface spawn-time errors structurally: if the subprocess
       // spawner crashes immediately (binary missing, env malformed,
       // EXEC error) the supervisor's `wireChild` races the child's
       // `exited` against `readyPromise` and the rejection propagates
       // here. The router lets it surface; the link's deploy handler
-      // converts the rejection into a structured failure frame. The
-      // supervisor is registered against the deployment address only
-      // after spawn succeeds; a spawn-time rejection leaves the
-      // registry untouched so the undeploy hook does not chase a
-      // supervisor that never owned a child.
+      // converts the rejection into a structured failure frame.
       await wired.supervisor.spawn(spawnOpts);
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
@@ -1333,18 +1381,6 @@ export function createSidecarDeployRouter(deps: {
       });
       routersRegistered = true;
 
-      // Register the deployment-address mapping last so a failure in any
-      // earlier step (asset materialization, supervisor.spawn) leaves the
-      // boot-edge `DeploymentAddressRegistry` untouched. The link's
-      // `handleAgentDeploy` catches a rejection here and surfaces
-      // `agent.error` without invoking the undeploy hook; a partial
-      // registration would persist a `(deploymentId -> agentAddress)`
-      // entry for a deployment that never finished standing up.
-      deps.registerDeployment({
-        deploymentId,
-        agentAddress: frame.agentAddress,
-      });
-
       claimedSlugSucceeded = true;
       return { publicKey: principalPublicKeyHex };
     } finally {
@@ -1374,6 +1410,16 @@ export function createSidecarDeployRouter(deps: {
           // if the address was never registered.
           deps.transport.unregister(frame.agentAddress);
         }
+        if (deploymentRegistered) {
+          // WORKBENCH-LOCAL (CL-2400): the mapping is now recorded before
+          // spawn, so a failed deploy must undo it -- otherwise a
+          // `(deploymentId -> agentAddress)` entry (and its delta cursor)
+          // persists for a deployment that never finished standing up.
+          deps.unregisterDeployment({
+            deploymentId,
+            agentAddress: frame.agentAddress,
+          });
+        }
         releaseSlug(deploymentId, frame.agentAddress);
       }
     }
@@ -1388,10 +1434,10 @@ export function createSidecarDeployRouter(deps: {
       const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
       claimSlug(deploymentId, frame.agentAddress);
       // See deployMultiStep's `claimedSlugSucceeded` guard: without
-      // it, any failure between `claimSlug` and the
-      // `registerDeployment` call below leaves the slug claimed
-      // forever (the undeploy hook never fires for failed deploys).
+      // it, any failure between `claimSlug` and success leaves the slug
+      // claimed forever (the undeploy hook never fires for failed deploys).
       let trivialClaimedSlugSucceeded = false;
+      let trivialDeploymentRegistered = false;
       try {
         const wired = createSidecarWorkflowSupervisor({
           transport: deps.transport,
@@ -1463,6 +1509,20 @@ export function createSidecarDeployRouter(deps: {
             ? { consumedRetentionMs: deps.consumedRetentionMs }
             : {}),
         });
+        // WORKBENCH-LOCAL (CL-2400): record the deployment-address mapping
+        // BEFORE `deploy`, for the same reason as the multi-step branch --
+        // `supervisor.deploy` can commit run events through the workflow-run
+        // pack-push pipeline, which resolves the agent address via the
+        // `DeploymentAddressRegistry`. Recording it first (a local synchronous
+        // `Map.set`) ensures the push never throws "no agent address
+        // registered". A failure in `deploy` or the public-key check below is
+        // unwound in the `finally` via `trivialDeploymentRegistered`, so a
+        // failed deploy still leaves the registry untouched on net.
+        deps.registerDeployment({
+          deploymentId,
+          agentAddress: frame.agentAddress,
+        });
+        trivialDeploymentRegistered = true;
         await wired.supervisor.deploy({
           agentAddress: frame.agentAddress,
           agentId: frame.agentId,
@@ -1474,22 +1534,16 @@ export function createSidecarDeployRouter(deps: {
             "sidecar deploy router: trivialLaunch did not surface a public key",
           );
         }
-        // Register the deployment-address mapping last so a failure in
-        // `supervisor.deploy` (e.g. the host-supplied `trivialLaunch`
-        // callback's `provisionAgent` throwing) leaves the boot-edge
-        // `DeploymentAddressRegistry` untouched. The link's
-        // `handleAgentDeploy` catches a rejection here and surfaces
-        // `agent.error` without invoking the undeploy hook; a partial
-        // registration would persist a `(deploymentId -> agentAddress)`
-        // entry for a deployment that never finished standing up.
-        deps.registerDeployment({
-          deploymentId,
-          agentAddress: frame.agentAddress,
-        });
         trivialClaimedSlugSucceeded = true;
         return { publicKey };
       } finally {
         if (!trivialClaimedSlugSucceeded) {
+          if (trivialDeploymentRegistered) {
+            deps.unregisterDeployment({
+              deploymentId,
+              agentAddress: frame.agentAddress,
+            });
+          }
           releaseSlug(deploymentId, frame.agentAddress);
         }
       }

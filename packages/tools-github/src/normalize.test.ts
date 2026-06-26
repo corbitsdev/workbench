@@ -37,8 +37,9 @@ describe("normalizeGitHubRepo", () => {
     );
     expect(item.publishedAt).toBe("2026-06-10T18:00:00Z");
     expect(item.source).toBe("github");
-    expect(item.engagement.upvotes).toBe(24000);
-    expect(item.engagement.comments).toBe(0);
+    expect(item.engagement.stars).toBe(24000);
+    expect("upvotes" in item.engagement).toBe(false);
+    expect("comments" in item.engagement).toBe(false);
     expect(item.entityTag).toBe("openai/openai-python");
   });
 

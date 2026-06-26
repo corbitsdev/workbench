@@ -1,3 +1,4 @@
+import { PagePanel } from "@workbench/ui";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart2 } from "lucide-react";
@@ -8,6 +9,19 @@ import type {
   AnalyticsAgentRow,
   AnalyticsSummary,
 } from "../lib/hub-api";
+import {
+  DeltaBadge,
+  Heatmap,
+  MiniBars,
+  Sparkline,
+  TokenMosaic,
+} from "./insights/viz";
+import {
+  cacheHitRate,
+  computeDelta,
+  fillDailySeries,
+  ratePct,
+} from "./insights/metrics";
 
 type Preset = "7d" | "30d" | "90d" | "all";
 
@@ -24,123 +38,330 @@ function daysAgoISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+const PRESET_DAYS: Record<Exclude<Preset, "all">, number> = {
+  "7d": 7,
+  "30d": 30,
+  "90d": 90,
+};
+
 function presetToDates(preset: Preset): {
   startDate?: string;
   endDate?: string;
 } {
   if (preset === "all") return {};
-  const days = preset === "7d" ? 7 : preset === "30d" ? 30 : 90;
-  return { startDate: daysAgoISO(days) };
+  return { startDate: daysAgoISO(PRESET_DAYS[preset]) };
 }
 
 function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
-function KPICard({
+function totalTokens(s: AnalyticsSummary): number {
+  return (
+    s.inputTokens +
+    s.outputTokens +
+    s.cacheReadTokens +
+    s.cacheWriteTokens +
+    s.thinkingTokens
+  );
+}
+
+// Uppercase + tracking is the brand "Caption" style (Red Hat Display, not mono).
+// Space Mono is reserved for true data readouts — numbers, IDs, timestamps.
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
+      {children}
+    </h2>
+  );
+}
+
+function CardLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
+      {children}
+    </span>
+  );
+}
+
+function HudCard({
+  label,
+  tag,
+  children,
+  className = "",
+}: {
+  label?: string;
+  tag?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`flex flex-col gap-3 rounded-[12px] border border-border bg-surface p-4 ${className}`}
+    >
+      {(label || tag) && (
+        <div className="flex items-center justify-between">
+          {label ? <CardLabel>{label}</CardLabel> : <span />}
+          {tag}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+function Stat({
   label,
   value,
   sub,
+  delta,
   accent,
 }: {
   label: string;
   value: string;
   sub?: string;
+  delta?: ReturnType<typeof computeDelta>;
   accent?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1 rounded-[12px] border border-border bg-surface p-4">
-      <span className="text-[12px] font-medium text-text-3">{label}</span>
-      <span
-        className={`text-[24px] font-bold ${accent ? "text-orange" : "text-text"}`}
-      >
-        {value}
-      </span>
-      {sub && <span className="text-[12px] text-text-3">{sub}</span>}
+    <div className="flex flex-col gap-1.5 rounded-[12px] border border-border bg-surface p-4">
+      <CardLabel>{label}</CardLabel>
+      <div className="flex items-baseline gap-2">
+        <span
+          className={`text-[26px] font-black leading-none tabular-nums ${accent ? "text-accent" : "text-text"}`}
+        >
+          {value}
+        </span>
+        {delta && <DeltaBadge delta={delta} />}
+      </div>
+      {sub && (
+        <span className="text-[10px] uppercase tracking-[0.08em] text-text-3">
+          {sub}
+        </span>
+      )}
     </div>
   );
 }
 
-function TokenRow({ label, value }: { label: string; value: number }) {
+function TrendCard({
+  label,
+  total,
+  values,
+  delta,
+}: {
+  label: string;
+  total: string;
+  values: number[];
+  delta?: ReturnType<typeof computeDelta>;
+}) {
   return (
-    <div className="flex items-center justify-between py-2">
-      <span className="text-[13px] text-text-2">{label}</span>
-      <span className="text-[13px] font-medium text-text">
-        {formatNumber(value)}
-      </span>
+    <HudCard label={label}>
+      <div className="flex items-baseline gap-2">
+        <span className="text-[22px] font-black leading-none tabular-nums text-text">
+          {total}
+        </span>
+        {delta && <DeltaBadge delta={delta} />}
+      </div>
+      <Sparkline
+        values={values}
+        label={`${label} trend`}
+        width={220}
+        height={36}
+      />
+    </HudCard>
+  );
+}
+
+function TrendsSection({
+  data,
+  range,
+}: {
+  data: ActivityOverview;
+  range: { startDate?: string; endDate?: string };
+}) {
+  const rawSeries = data.dailySeries;
+  if (rawSeries.length === 0) return null;
+
+  // Expand to a continuous day spine so sparklines/heatmap don't draw false
+  // slopes across days with no activity. Only when the window is bounded; an
+  // all-time range (no startDate) keeps the raw points.
+  const series =
+    range.startDate !== undefined
+      ? fillDailySeries(
+          rawSeries,
+          range.startDate,
+          range.endDate ?? new Date().toISOString().slice(0, 10),
+        )
+      : rawSeries;
+
+  const prev = data.inference.previousSummary;
+  const summary = data.inference.summary;
+  const turnValues = series.map((d) => d.turnCount);
+  const toolValues = series.map((d) => d.toolCallCount);
+  const tokenValues = series.map((d) => d.inputTokens + d.outputTokens);
+  const heatDays = series.map((d) => ({ date: d.date, value: d.turnCount }));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionLabel>Activity trends</SectionLabel>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <TrendCard
+          label="Turns / day"
+          total={formatNumber(summary.turnCount)}
+          values={turnValues}
+          delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
+        />
+        <TrendCard
+          label="Tool calls / day"
+          total={formatNumber(summary.toolCallCount)}
+          values={toolValues}
+          delta={computeDelta(
+            summary.toolCallCount,
+            prev?.toolCallCount ?? null,
+          )}
+        />
+        <TrendCard
+          label="Tokens / day"
+          total={formatNumber(summary.inputTokens + summary.outputTokens)}
+          values={tokenValues}
+          delta={computeDelta(
+            summary.inputTokens + summary.outputTokens,
+            prev ? prev.inputTokens + prev.outputTokens : null,
+          )}
+        />
+      </div>
+      <HudCard label="Turns per day">
+        <Heatmap days={heatDays} label="Turns per day heatmap" />
+      </HudCard>
     </div>
   );
 }
 
-function SummaryContent({ data }: { data: AnalyticsSummary }) {
-  const totalTokens =
-    data.inputTokens +
-    data.outputTokens +
-    data.cacheReadTokens +
-    data.cacheWriteTokens +
-    data.thinkingTokens;
+function InferenceSection({ data }: { data: ActivityOverview }) {
+  const summary = data.inference.summary;
+  const prev = data.inference.previousSummary;
+  const tokens = totalTokens(summary);
 
   const allZero =
-    data.turnCount === 0 && data.toolCallCount === 0 && totalTokens === 0;
+    summary.turnCount === 0 && summary.toolCallCount === 0 && tokens === 0;
 
   if (allZero) {
     return (
-      <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
-        <span className="text-[14px] text-text-2">No activity yet</span>
-        <span className="text-[13px] text-text-3">
-          Usage data will appear here once your workbench has activity.
-        </span>
+      <div className="flex flex-col gap-4">
+        <SectionLabel>Inference &amp; tool usage</SectionLabel>
+        <div className="flex flex-col items-center justify-center gap-2 rounded-[12px] border border-border bg-surface py-16 text-center">
+          <span className="text-[14px] text-text-2">No activity yet</span>
+          <span className="text-[12px] text-text-3">
+            Usage data appears once your workbench has activity
+          </span>
+        </div>
       </div>
     );
   }
 
-  const successfulTurnCount = data.turnCount - data.failedTurnCount;
-  const successRate =
-    data.turnCount > 0
-      ? `${((successfulTurnCount / data.turnCount) * 100).toFixed(1)}% success rate`
-      : undefined;
-
-  const successfulToolCallCount = data.toolCallCount - data.toolErrorCount;
-  const toolSuccessRate =
-    data.toolCallCount > 0
-      ? `${((successfulToolCallCount / data.toolCallCount) * 100).toFixed(1)}% success rate`
-      : undefined;
+  const successfulTurns = summary.turnCount - summary.failedTurnCount;
+  const successfulTools = summary.toolCallCount - summary.toolErrorCount;
+  const turnRate = ratePct(successfulTurns, summary.turnCount);
+  const toolRate = ratePct(successfulTools, summary.toolCallCount);
+  const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
+  const thinkPct = ratePct(summary.thinkingTokens, tokens);
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
+      <SectionLabel>Inference &amp; tool usage</SectionLabel>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KPICard label="Total turns" value={formatNumber(data.turnCount)} />
-        <KPICard
-          label="Successful turns"
-          value={formatNumber(successfulTurnCount)}
-          sub={successRate}
-          accent={data.failedTurnCount > 0}
+        <Stat
+          label="Total turns"
+          value={formatNumber(summary.turnCount)}
+          delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
+          sub={`${turnRate.toFixed(1)}% success`}
+          accent={summary.failedTurnCount > 0}
         />
-        <KPICard label="Tool calls" value={formatNumber(data.toolCallCount)} />
-        <KPICard
-          label="Successful tool calls"
-          value={formatNumber(successfulToolCallCount)}
-          sub={toolSuccessRate}
-          accent={data.toolErrorCount > 0}
+        <Stat
+          label="Tool calls"
+          value={formatNumber(summary.toolCallCount)}
+          delta={computeDelta(
+            summary.toolCallCount,
+            prev?.toolCallCount ?? null,
+          )}
+          sub={`${toolRate.toFixed(1)}% success`}
+          accent={summary.toolErrorCount > 0}
+        />
+        <Stat
+          label="Cache hit rate"
+          value={`${hitRate.toFixed(0)}%`}
+          sub="of read tokens"
+        />
+        <Stat
+          label="Thinking tokens"
+          value={`${thinkPct.toFixed(0)}%`}
+          sub="of all tokens"
         />
       </div>
 
-      <div className="rounded-[12px] border border-border bg-surface p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <span className="text-[13px] font-semibold text-text">
-            Token usage
-          </span>
-          <span className="text-[13px] font-bold text-text">
-            {formatNumber(totalTokens)} total
-          </span>
-        </div>
-        <div className="divide-y divide-border">
-          <TokenRow label="Input" value={data.inputTokens} />
-          <TokenRow label="Output" value={data.outputTokens} />
-          <TokenRow label="Cache read" value={data.cacheReadTokens} />
-          <TokenRow label="Cache write" value={data.cacheWriteTokens} />
-          <TokenRow label="Thinking" value={data.thinkingTokens} />
-        </div>
+      <HudCard
+        label="Token mix"
+        tag={<CardLabel>{formatNumber(tokens)} total</CardLabel>}
+      >
+        <TokenMosaic
+          label="Token usage breakdown"
+          parts={[
+            { label: "Input", value: summary.inputTokens },
+            { label: "Output", value: summary.outputTokens },
+            { label: "Cache read", value: summary.cacheReadTokens },
+            { label: "Cache write", value: summary.cacheWriteTokens },
+            { label: "Thinking", value: summary.thinkingTokens },
+          ]}
+        />
+      </HudCard>
+
+      {data.models.length > 0 && (
+        <HudCard
+          label="Models · by turns"
+          tag={
+            data.models.length > 8 ? (
+              <CardLabel>{`+${data.models.length - 8} more`}</CardLabel>
+            ) : undefined
+          }
+        >
+          <MiniBars
+            label="Model distribution"
+            rows={data.models
+              .slice(0, 8)
+              .map((m) => ({ label: m.key, value: m.count }))}
+          />
+        </HudCard>
+      )}
+    </div>
+  );
+}
+
+function EngagementSection({ data }: { data: ActivityOverview }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionLabel>Engagement</SectionLabel>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label="Conversations"
+          value={formatNumber(data.conversations.total)}
+          sub={`${formatNumber(data.conversations.createdInRange)} in range`}
+        />
+        <Stat
+          label="Messages"
+          value={formatNumber(data.messages.total)}
+          sub={`${formatNumber(data.messages.createdInRange)} in range`}
+        />
+        <Stat
+          label="Active agents"
+          value={formatNumber(data.agentActivity.active)}
+          sub="with activity"
+          accent
+        />
+        <Stat
+          label="Idle agents"
+          value={formatNumber(data.agentActivity.idle)}
+          sub="of total instances"
+        />
       </div>
     </div>
   );
@@ -148,7 +369,7 @@ function SummaryContent({ data }: { data: AnalyticsSummary }) {
 
 function SkeletonCard() {
   return (
-    <div className="h-[92px] animate-pulse rounded-[12px] border border-border bg-surface" />
+    <div className="h-[96px] animate-pulse rounded-[12px] border border-border bg-surface-2" />
   );
 }
 
@@ -170,78 +391,52 @@ function CountTable({
   title: string;
   rows: { key: string; count: number }[];
 }) {
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-[12px] border border-border bg-surface p-4">
-        <h3 className="mb-2 text-[13px] font-semibold text-text">{title}</h3>
-        <p className="text-[13px] text-text-3">None recorded</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="rounded-[12px] border border-border bg-surface p-4">
-      <h3 className="mb-3 text-[13px] font-semibold text-text">{title}</h3>
-      <table className="w-full text-left text-[13px]">
-        <thead className="text-[12px] text-text-3">
-          <tr>
-            <th className="pb-2 font-medium">Key</th>
-            <th className="pb-2 text-right font-medium">Count</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.map((row) => (
-            <tr key={row.key}>
-              <td className="py-1.5 text-text-2">{row.key}</td>
-              <td className="py-1.5 text-right font-medium text-text">
-                {formatNumber(row.count)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <HudCard label={title}>
+      {rows.length === 0 ? (
+        <p className="text-[13px] text-text-3">None recorded</p>
+      ) : (
+        <table className="w-full text-left text-[13px]">
+          <tbody className="divide-y divide-border">
+            {rows.map((row) => (
+              <tr key={row.key}>
+                <td className="py-1.5 text-[12px] text-text-2">{row.key}</td>
+                <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-text">
+                  {formatNumber(row.count)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </HudCard>
   );
 }
 
 function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
-      <h2 className="text-[14px] font-semibold text-text">
-        Operational ledger
-      </h2>
+      <SectionLabel>Operational ledger</SectionLabel>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <KPICard
-          label="Artifacts (total)"
+        <Stat
+          label="Artifacts"
           value={formatNumber(data.artifacts.total)}
+          sub={`${formatNumber(data.artifacts.createdInRange)} in range`}
         />
-        <KPICard
-          label="Artifacts (in range)"
-          value={formatNumber(data.artifacts.createdInRange)}
-        />
-        <KPICard
-          label="Workflow executions"
+        <Stat
+          label="Workflow runs"
           value={formatNumber(data.workflowRuns.executionRecords)}
+          sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
         />
-        <KPICard
-          label="Active workflow runs"
-          value={formatNumber(data.workflowRuns.activeExecutions)}
-        />
-        <KPICard
-          label="Agent instances (active)"
-          value={formatNumber(data.agentInstances.active)}
-        />
-        <KPICard
-          label="Agent instances (total)"
+        <Stat
+          label="Agent instances"
           value={formatNumber(data.agentInstances.total)}
+          sub={`${formatNumber(data.agentInstances.active)} active`}
         />
-        <KPICard
-          label="Instances started (range)"
-          value={formatNumber(data.agentInstances.startedInRange)}
-        />
-        <KPICard
-          label="Deployments indexed"
+        <Stat
+          label="Deployments"
           value={formatNumber(data.workflowRuns.deploymentsIndexed)}
+          sub="indexed"
         />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -268,17 +463,15 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-[13px] font-semibold text-text">By agent</h2>
+      <SectionLabel>By agent</SectionLabel>
       <div className="overflow-x-auto rounded-[12px] border border-border">
         <table className="w-full min-w-[480px] text-left text-[13px]">
-          <thead className="border-b border-border bg-surface text-[12px] text-text-3">
+          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
             <tr>
               <th className="px-4 py-2 font-medium">Agent</th>
-              <th className="px-4 py-2 font-medium text-right">Turns</th>
-              <th className="px-4 py-2 font-medium text-right">Tool calls</th>
-              <th className="px-4 py-2 font-medium text-right">
-                Tokens (in+out)
-              </th>
+              <th className="px-4 py-2 text-right font-medium">Turns</th>
+              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
+              <th className="px-4 py-2 text-right font-medium">Tokens</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
@@ -287,13 +480,13 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
                 <td className="px-4 py-2 text-text">
                   {row.agentName ?? row.agentId}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.turnCount)}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.toolCallCount)}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.inputTokens + row.outputTokens)}
                 </td>
               </tr>
@@ -314,18 +507,16 @@ function InstanceBreakdown({
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-[13px] font-semibold text-text">By agent instance</h2>
+      <SectionLabel>By agent instance</SectionLabel>
       <div className="overflow-x-auto rounded-[12px] border border-border">
         <table className="w-full min-w-[560px] text-left text-[13px]">
-          <thead className="border-b border-border bg-surface text-[12px] text-text-3">
+          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
             <tr>
               <th className="px-4 py-2 font-medium">Instance</th>
               <th className="px-4 py-2 font-medium">Agent</th>
-              <th className="px-4 py-2 font-medium text-right">Turns</th>
-              <th className="px-4 py-2 font-medium text-right">Tool calls</th>
-              <th className="px-4 py-2 font-medium text-right">
-                Tokens (in+out)
-              </th>
+              <th className="px-4 py-2 text-right font-medium">Turns</th>
+              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
+              <th className="px-4 py-2 text-right font-medium">Tokens</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
@@ -337,13 +528,13 @@ function InstanceBreakdown({
                 <td className="px-4 py-2 text-text">
                   {row.agentName ?? row.agentId}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.turnCount)}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.toolCallCount)}
                 </td>
-                <td className="px-4 py-2 text-right text-text-2">
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.inputTokens + row.outputTokens)}
                 </td>
               </tr>
@@ -372,74 +563,71 @@ export function InsightsDashboard() {
     loading || (!!activeTenantId && overviewQuery.isLoading);
 
   return (
-    <div className="flex h-full overflow-hidden bg-bg">
-      <div className="flex flex-1 flex-col overflow-hidden rounded-panel border border-border bg-bg">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
-              <p className="text-[14px] font-semibold text-text">
-                Data &amp; Insights
-              </p>
-            </div>
-            {activeWorkbench && (
-              <p className="truncate pl-6 text-[12px] text-text-3">
-                {activeWorkbench.tenantName}
-              </p>
-            )}
+    <PagePanel scroll={false} flat>
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <BarChart2 className="h-4 w-4 shrink-0 text-text-3" />
+            <p className="text-[14px] font-semibold text-text">
+              Data &amp; Insights
+            </p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="flex items-center gap-1">
-              {PRESETS.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
-                  onClick={() => setPreset(p.value)}
-                  className={`rounded-[8px] px-3 py-1 text-[12px] font-medium transition-colors ${
-                    preset === p.value
-                      ? "bg-orange/10 text-orange"
-                      : "text-text-3 hover:bg-[var(--row-hover)] hover:text-text"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {activeWorkbench && (
+            <p className="truncate pl-6 text-[12px] text-text-3">
+              {activeWorkbench.tenantName}
+            </p>
+          )}
         </div>
-
-        <div className="flex-1 overflow-y-auto px-5 py-5">
-          {showSummaryLoading && <SkeletonGrid />}
-
-          {!loading && !activeTenantId && (
-            <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              Select a workbench to view analytics.
-            </div>
-          )}
-
-          {overviewQuery.isError && (
-            <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-              {describeHubApiFailure(overviewQuery.error)}
-            </div>
-          )}
-
-          {overviewQuery.data && (
-            <div className="flex flex-col gap-10">
-              <OperationalLedger data={overviewQuery.data} />
-              <div className="flex flex-col gap-4">
-                <h2 className="text-[14px] font-semibold text-text">
-                  Inference &amp; tool usage
-                </h2>
-                <SummaryContent data={overviewQuery.data.inference.summary} />
-                <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
-                <InstanceBreakdown
-                  instances={overviewQuery.data.inference.byInstance}
-                />
-              </div>
-            </div>
-          )}
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex items-center gap-1">
+            {PRESETS.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                onClick={() => setPreset(p.value)}
+                className={`flex min-h-[32px] items-center rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-[color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
+                  preset === p.value
+                    ? "bg-accent/10 text-accent"
+                    : "text-text-3 hover:bg-row-hover hover:text-text"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+
+      <div className="flex-1 overflow-y-auto px-5 py-5">
+        {showSummaryLoading && <SkeletonGrid />}
+
+        {!loading && !activeTenantId && (
+          <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
+            Select a workbench to view analytics.
+          </div>
+        )}
+
+        {overviewQuery.isError && (
+          <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
+            {describeHubApiFailure(overviewQuery.error)}
+          </div>
+        )}
+
+        {overviewQuery.data && (
+          <div className="flex flex-col gap-10">
+            <TrendsSection data={overviewQuery.data} range={dates} />
+            <EngagementSection data={overviewQuery.data} />
+            <InferenceSection data={overviewQuery.data} />
+            <OperationalLedger data={overviewQuery.data} />
+            <div className="flex flex-col gap-4">
+              <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
+              <InstanceBreakdown
+                instances={overviewQuery.data.inference.byInstance}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+    </PagePanel>
   );
 }

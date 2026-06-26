@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { type Report, parseReport } from "@workbench/last30days-core";
+import { MarkdownBlock } from "./Markdown";
 
 // The brief contract is owned by @workbench/last30days-core; the web validates
 // the persisted artifact payload at the boundary via the package's parse helper
@@ -11,7 +13,7 @@ export function parseResearchBrief(value: unknown): ResearchBrief | null {
 
 function StatsLine({ stats }: { stats: ResearchBrief["stats"] }) {
   return (
-    <p className="text-sm text-text-3">
+    <p className="font-mono text-[13px] text-text-3 tabular-nums">
       {stats.sourceCount} sources · {stats.itemCount} items
       {stats.dateRange
         ? ` · ${stats.dateRange.from}–${stats.dateRange.to}`
@@ -58,7 +60,7 @@ function ClusterSection({
               >
                 {item.title}
               </a>
-              <span className="text-[11px] text-text-3 shrink-0 whitespace-nowrap">
+              <span className="font-mono text-[11px] text-text-3 shrink-0 whitespace-nowrap tabular-nums">
                 {item.engagement?.upvotes ?? 0} up ·{" "}
                 {item.engagement?.comments ?? 0} comments
               </span>
@@ -110,24 +112,23 @@ function CitationsSection({
 }) {
   if (citations.length === 0) return null;
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <h2 className="text-sm font-semibold text-text">Citations</h2>
-      <ol className="space-y-1">
+      <ol className="space-y-2.5">
         {citations.map((citation, index) => (
-          <li
-            key={index}
-            className="flex items-start gap-2 text-[11px] text-text-3"
-          >
-            <span className="shrink-0">{index + 1}.</span>
-            <span className="min-w-0">
+          <li key={index} className="flex items-baseline gap-3 text-[13px]">
+            <span className="font-mono text-xs text-text-3 tabular-nums shrink-0 w-6 text-right">
+              {index + 1}
+            </span>
+            <span className="min-w-0 leading-relaxed">
               {citation.title && (
-                <span className="text-text-2">{citation.title} — </span>
+                <span className="text-text-2">{citation.title} </span>
               )}
               <a
                 href={citation.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:text-text hover:underline break-all"
+                className="font-mono text-xs text-accent hover:underline break-words"
               >
                 {citation.source}
               </a>
@@ -139,25 +140,81 @@ function CitationsSection({
   );
 }
 
-interface ResearchBodyProps {
-  brief: ResearchBrief;
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 60) || "research-report"
+  );
 }
 
-export default function ResearchBody({ brief }: ResearchBodyProps) {
+function ReportActions({
+  markdown,
+  topic,
+}: {
+  markdown: string;
+  topic: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+    };
+  }, []);
+
+  const copy = () => {
+    navigator.clipboard
+      .writeText(markdown)
+      .then(() => {
+        setCopied(true);
+        if (resetTimer.current) clearTimeout(resetTimer.current);
+        resetTimer.current = setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => setCopied(false));
+  };
+
+  const download = () => {
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugify(topic)}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const buttonBase =
+    "rounded-md px-3 py-1.5 text-[13px] font-medium transition-transform active:scale-[0.97]";
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={copy}
+        className={`${buttonBase} border border-border bg-surface-2 text-text-2 hover:text-text`}
+      >
+        {copied ? "Copied" : "Copy markdown"}
+      </button>
+      <button
+        type="button"
+        onClick={download}
+        className={`${buttonBase} bg-accent text-charcoal hover:bg-accent-deep`}
+      >
+        Download .md
+      </button>
+    </div>
+  );
+}
+
+function ResearchData({ brief }: { brief: ResearchBrief }) {
   return (
     <div className="space-y-6">
-      <div className="space-y-1.5">
-        <h1 className="text-base font-semibold text-text leading-snug">
-          {brief.topic}
-        </h1>
-        <StatsLine stats={brief.stats} />
-        {brief.leadInsight && (
-          <p className="text-sm text-text-2 leading-relaxed">
-            {brief.leadInsight}
-          </p>
-        )}
-      </div>
-
       {brief.clusters.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-text">Top Clusters</h2>
@@ -170,6 +227,79 @@ export default function ResearchBody({ brief }: ResearchBodyProps) {
       <BestTakesSection takes={brief.bestTakes} />
 
       <CitationsSection citations={brief.citations} />
+    </div>
+  );
+}
+
+interface ResearchBodyProps {
+  brief: ResearchBrief;
+  // The prose report markdown persisted alongside the structured brief. When
+  // present it is the primary deliverable; the brief becomes supporting data.
+  body?: string;
+}
+
+export default function ResearchBody({ brief, body }: ResearchBodyProps) {
+  const report = body?.trim() ?? "";
+
+  // No prose report persisted (older artifacts): fall back to the structured view.
+  if (report === "") {
+    return (
+      <div className="space-y-6">
+        <div className="space-y-1.5">
+          <h1 className="text-base font-semibold text-text leading-snug">
+            {brief.topic}
+          </h1>
+          <StatsLine stats={brief.stats} />
+          {brief.leadInsight && (
+            <p className="text-sm text-text-2 leading-relaxed">
+              {brief.leadInsight}
+            </p>
+          )}
+        </div>
+        <ResearchData brief={brief} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-7">
+      <div className="flex items-start justify-between gap-4 pb-5 border-b border-border">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-text leading-tight text-balance">
+            {brief.topic}
+          </h1>
+          <StatsLine stats={brief.stats} />
+        </div>
+        <ReportActions markdown={report} topic={brief.topic} />
+      </div>
+
+      <div className="max-w-[68ch]">
+        <MarkdownBlock text={report} />
+      </div>
+
+      <details className="group border-t border-border pt-4">
+        <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-text-2 hover:text-text [&::-webkit-details-marker]:hidden">
+          <svg
+            className="size-3.5 shrink-0 transition-transform group-open:rotate-90"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M6 4l4 4-4 4" />
+          </svg>
+          <span>
+            Sources &amp; data ({brief.stats.sourceCount} sources ·{" "}
+            {brief.stats.itemCount} items)
+          </span>
+        </summary>
+        <div className="mt-5">
+          <ResearchData brief={brief} />
+        </div>
+      </details>
     </div>
   );
 }

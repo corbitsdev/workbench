@@ -6,9 +6,10 @@ export function normalizeGitHubRepo(repo: GitHubRepo) {
     title: `${repo.full_name}: ${repo.description ?? ""}`,
     publishedAt: repo.pushed_at,
     source: "github",
+    // A repo has stars, not upvotes/comments — omit the vote fields rather than
+    // emitting a misleading zero.
     engagement: {
-      upvotes: repo.stargazers_count,
-      comments: 0,
+      stars: repo.stargazers_count,
     },
     entityTag: repo.full_name,
   };

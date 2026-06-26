@@ -1,5 +1,9 @@
-import { and, eq } from "drizzle-orm";
-import { schema as intxSchema, resolveCredentialRequirement } from "@intx/db";
+import { and, eq, inArray } from "drizzle-orm";
+import {
+  schema as intxSchema,
+  resolveCredentialRequirement,
+  getAncestorChain,
+} from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import {
   createAgent,
@@ -11,7 +15,11 @@ import type { InferenceSource } from "@intx/types/runtime";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { AGENT_TEMPLATES, PERSONAL_AGENT_NAME } from "@workbench/agents";
+import {
+  AGENT_TEMPLATES,
+  LLM_DEFAULT_MODEL,
+  PERSONAL_AGENT_NAME,
+} from "@workbench/agents";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -24,7 +32,7 @@ import {
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
-import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
+import { lookupMember } from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
   launchAgentSession,
@@ -48,6 +56,7 @@ export const MYRA_TEMPLATE_KEY = "myra";
 export class MyraThreadLaunchError extends Error {
   readonly phase: string | null;
   readonly detail: string;
+  readonly leakedAgent: boolean;
   constructor(
     description: LaunchErrorDescription,
     options?: { cause?: unknown },
@@ -56,6 +65,7 @@ export class MyraThreadLaunchError extends Error {
     this.name = "MyraThreadLaunchError";
     this.phase = description.phase;
     this.detail = description.detail;
+    this.leakedAgent = description.leakedAgent;
   }
 }
 
@@ -69,6 +79,39 @@ export type MyraThreadRow = {
 function defaultThreadLabel(index: number): string {
   if (index === 0) return "Chat";
   return `Chat ${index + 1}`;
+}
+
+/**
+ * Resolve the Myra agent definition for an active tenant by walking the tenant
+ * hierarchy. The instance/session/analytics live in the active (possibly child)
+ * tenant, but the definition is shared and usually seeded only in the root org
+ * tenant — so we accept any definition in the ancestor chain and pick the most
+ * specific one (nearest to the active tenant). Returns null when no Myra
+ * definition exists anywhere in the chain.
+ */
+async function resolveMyraDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  const chain = await getAncestorChain(db as never, tenantId);
+  const defs = await db.query.agent.findMany({
+    where: and(
+      inArray(agent.tenantId, chain),
+      eq(agent.name, PERSONAL_AGENT_NAME),
+    ),
+  });
+  if (defs.length === 0) return null;
+
+  let best = defs[0]!;
+  let bestIdx = chain.indexOf(best.tenantId);
+  for (const candidate of defs) {
+    const idx = chain.indexOf(candidate.tenantId);
+    if (idx !== -1 && (bestIdx === -1 || idx < bestIdx)) {
+      best = candidate;
+      bestIdx = idx;
+    }
+  }
+  return best;
 }
 
 export async function listMyraThreads(
@@ -148,14 +191,11 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
-  const def = await db.query.agent.findFirst({
-    where: and(
-      eq(agent.tenantId, opts.tenantId),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
-  });
+  const def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
-    throw new Error("Myra org definition is not seeded for this tenant");
+    throw new Error(
+      "Myra org definition is not seeded in this tenant hierarchy",
+    );
   }
 
   const now = new Date();
@@ -250,12 +290,39 @@ export async function createMyraThread(
     // create path — any launch error here is a genuine failure and the
     // half-created rows must be torn down.
     const failure = describeLaunchError(err);
+    // A leaked agent means the sidecar's own undeploy also failed, so a
+    // provisioned agent survives on the sidecar with no way for the hub to reach
+    // it. Tearing down the hub rows here would orphan that zombie: the address
+    // keeps routing on the sidecar but has no hub row, so the next mail 502s
+    // until a sidecar restart. Keep the rows and mark the instance 'error' so
+    // relaunchInstanceIfNeeded (cold-start path; only skips 'stopped'+endedAt)
+    // re-attempts and the sidecar's already-exists carve-out adopts the live
+    // agent. (CL-2367)
+    if (failure.leakedAgent) {
+      log.error(
+        "Myra thread session launch failed AND the sidecar leaked the agent; keeping rows and marking instance error",
+        {
+          instanceId,
+          phase: failure.phase,
+          detail: failure.detail,
+          leakedAgent: failure.leakedAgent,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
+      );
+      const errAt = new Date();
+      await db
+        .update(agentInstance)
+        .set({ status: "error", updatedAt: errAt })
+        .where(eq(agentInstance.id, instanceId));
+      throw new MyraThreadLaunchError(failure, { cause: err });
+    }
     // Log the real Error (not a stringified message) at error level so the
     // Sentry sink routes it through captureException with stack + cause.
     log.error("Myra thread session launch failed; tearing down thread", {
       instanceId,
       phase: failure.phase,
       detail: failure.detail,
+      leakedAgent: failure.leakedAgent,
       error: err instanceof Error ? err : new Error(String(err)),
     });
     // Do not leave an orphan thread that looks healthy. Remove the rows we just
@@ -320,7 +387,8 @@ const TITLE_CREDENTIAL_NAME = "Myra Title LLM";
 // Cheap, fast model for titling. Served by the same openai-compatible gateway
 // (opencode-zen) the Myra LLM credential already points at, so titling works
 // with no extra credential — we just pin the flash model on the existing key.
-const TITLE_MODEL = "deepseek-v4-flash";
+// Shares the canonical id so the title model can't drift from the rest of the app.
+const TITLE_MODEL = LLM_DEFAULT_MODEL;
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
@@ -371,6 +439,10 @@ async function resolveTitleSource(
   db: HubDb,
   tenantId: string,
 ): Promise<InferenceSource | null> {
+  // Returns null when the optional 'Myra Title LLM' credential is absent (the
+  // common case — we then fall back to Myra's own source below). A thrown error
+  // means a real fault (ambiguous match, DB failure); let it propagate to the
+  // logged best-effort handler in generateMyraThreadTitle rather than swallow it.
   const resolved = await resolveCredentialRequirement(
     db,
     tenantId,
@@ -381,7 +453,7 @@ async function resolveTitleSource(
     },
     null,
     null,
-  ).catch(() => null);
+  );
 
   if (resolved) {
     const providerRow = await db.query.provider.findFirst({
@@ -403,12 +475,7 @@ async function resolveTitleSource(
     }
   }
 
-  const def = await db.query.agent.findFirst({
-    where: and(
-      eq(agent.tenantId, tenantId),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
-  });
+  const def = await resolveMyraDefinition(db, tenantId);
   if (!def) return null;
   const resolution = await resolveInstanceSourcesFromDefinition(
     db,
@@ -428,6 +495,13 @@ async function resolveTitleSource(
   };
 }
 
+// Best-effort teardown: cleanup must not throw over the real result/error, but
+// the failure is logged rather than silently dropped.
+const logTeardownError = (op: string) => (err: unknown) =>
+  log.warn(`Myra title turn teardown failed: ${op}`, {
+    error: err instanceof Error ? err.message : String(err),
+  });
+
 // Serializes title turns per member principal. A member's title turns share one
 // durable working tree (their audit repo), so they must not run concurrently;
 // different principals run fully in parallel. The map holds one tail promise per
@@ -439,6 +513,9 @@ function runSerializedPerPrincipal<T>(
 ): Promise<T> {
   const prev = titleLocks.get(key) ?? Promise.resolve();
   const run = prev.then(fn, fn);
+  // The stored tail only keeps the chain alive without an unhandled rejection;
+  // the real error is surfaced to the caller via the returned `run` (and logged
+  // by generateMyraThreadTitle's handler), so discarding it here is not a swallow.
   titleLocks.set(
     key,
     run.catch(() => undefined),
@@ -475,6 +552,27 @@ async function runTitleTurn(
   );
   const store = await createIsogitStore(contextDir);
 
+  // The collector persists this turn to `inference_turn`, whose `session_id` is
+  // a NOT NULL FK to `agent_session`. A fabricated id would violate the FK and
+  // fail every title turn, so we key the collector to one durable, reused title
+  // session per tenant — created once, idempotently, on first use.
+  const instanceRow = await db.query.agentInstance.findFirst({
+    where: (i, { eq: ieq }) => ieq(i.id, opts.instanceId),
+  });
+  if (!instanceRow) return null;
+
+  const titleSessionId = `ses_myra-title-${opts.tenantId}`;
+  await db
+    .insert(agentSession)
+    .values({
+      id: titleSessionId,
+      tenantId: opts.tenantId,
+      agentId: instanceRow.agentId,
+      principalId: instanceRow.principalId,
+      status: "active",
+    })
+    .onConflictDoNothing({ target: agentSession.id });
+
   const def = defineAgent({
     id: `myra-title-${randomUUID()}`,
     systemPrompt: TITLE_SYSTEM_PROMPT,
@@ -505,7 +603,7 @@ async function runTitleTurn(
 
   const collector = createEventCollector({
     db,
-    sessionId: generateId("session"),
+    sessionId: titleSessionId,
     instanceId: opts.instanceId,
     tenantId: opts.tenantId,
     onTurnFinalized,
@@ -524,15 +622,15 @@ async function runTitleTurn(
   try {
     const result = await agentInst.send(opts.firstMessage);
     await agentInst.close();
-    await pumpDone.catch(() => undefined);
+    await pumpDone.catch(logTeardownError("pump stream"));
     await collector.abandon();
     const text =
       finalizedText ?? collector.getAccumulatedText() ?? result.reply;
     return text;
   } catch (err) {
-    await agentInst.close().catch(() => undefined);
-    await pumpDone.catch(() => undefined);
-    await collector.abandon().catch(() => undefined);
+    await agentInst.close().catch(logTeardownError("close agent"));
+    await pumpDone.catch(logTeardownError("pump stream"));
+    await collector.abandon().catch(logTeardownError("abandon collector"));
     throw err;
   }
 }
@@ -669,19 +767,24 @@ export async function deleteMyraThread(
   return true;
 }
 
+/**
+ * Resolve the thread context for a user acting in a specific (active) tenant.
+ * Returns null when the user is not a member of that tenant — the route turns
+ * that into a 403. The mail domain is deployment-wide (mirrors
+ * `provisionMemberInstances`), not tenant-specific, so it comes from config; the
+ * instance/session/analytics land in the active tenant via `tenantId`.
+ */
 export async function resolveMyraThreadContext(
   db: HubDb,
   userId: string,
+  tenantId: string,
 ): Promise<{
   tenantId: string;
   tenantDomain: string;
   memberPrincipalId: string;
 } | null> {
   const { domain } = getConfig().rootTenant;
-  const rootTenantId = await getRootTenantId(db as never);
-  const member = rootTenantId
-    ? await lookupMember(db as never, { tenantId: rootTenantId, userId })
-    : null;
+  const member = await lookupMember(db as never, { tenantId, userId });
   if (!member) return null;
   return {
     tenantId: member.tenantId,

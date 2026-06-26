@@ -547,6 +547,7 @@ describe("describeLaunchError", () => {
     expect(describeLaunchError(err)).toEqual({
       phase: "provision",
       detail: "tool-package @workbench/tools-exa@2.0.0 failed validation",
+      leakedAgent: false,
     });
   });
 
@@ -554,6 +555,7 @@ describe("describeLaunchError", () => {
     expect(describeLaunchError(new Error("boom"))).toEqual({
       phase: null,
       detail: "boom",
+      leakedAgent: false,
     });
   });
 
@@ -561,6 +563,16 @@ describe("describeLaunchError", () => {
     expect(describeLaunchError("nope")).toEqual({
       phase: null,
       detail: "nope",
+      leakedAgent: false,
+    });
+  });
+
+  it("extracts leakedAgent=true from a SessionLaunchError whose sidecar undeploy also failed", () => {
+    const err = new SessionLaunchError("start", new Error("kernel died"), true);
+    expect(describeLaunchError(err)).toEqual({
+      phase: "start",
+      detail: "kernel died",
+      leakedAgent: true,
     });
   });
 });
@@ -1502,6 +1514,70 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     expect(sessionIdx).toBeGreaterThanOrEqual(0);
     expect(instanceIdx).toBeLessThan(sessionIdx);
     expect(sessionIdx).toBeLessThan(principalIdx);
+  });
+
+  it("does NOT roll back and marks the instance error when the launch leaked an agent (CL-2367)", async () => {
+    const db = deployDb();
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // The sidecar provisioned the agent but its own undeploy ALSO failed, so a
+    // zombie agent survives on the sidecar. Tearing down the hub rows would
+    // orphan it (next mail 502s until a sidecar restart).
+    const leakedError = new SessionLaunchError(
+      "start",
+      new Error("session start failed; sidecar undeploy also failed"),
+      true,
+    );
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.reject(leakedError)),
+    };
+
+    const insertMock = mock(() => ({ values: mock(() => Promise.resolve()) }));
+    const deletedTables: unknown[] = [];
+    const deleteMock = mock((table: unknown) => {
+      deletedTables.push(table);
+      return { where: mock(() => Promise.resolve()) };
+    });
+    const updates: Record<string, unknown>[] = [];
+    const updateMock = mock((table: unknown) => ({
+      set: mock((values: Record<string, unknown>) => {
+        updates.push({ table, values });
+        return { where: mock(() => Promise.resolve()) };
+      }),
+    }));
+    db.insert = insertMock as never;
+    db.update = updateMock as never;
+    db.transaction = mock((fn: (tx: unknown) => Promise<unknown>) =>
+      fn({ insert: insertMock, update: updateMock, delete: deleteMock }),
+    ) as never;
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest("http://localhost/tenants/tenant-1/agents/instances", {
+        method: "POST",
+        body: { templateKey: "oat" },
+      }),
+    );
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toBe("Failed to launch agent session");
+    expect(json.leakedAgent).toBe(true);
+    // No teardown ran — the leaked sidecar agent must keep its hub rows. (The
+    // grant-requirement materialization deletes/re-inserts grant rows before
+    // launch, so we assert the teardown-owned rows specifically, not a total of
+    // zero deletes.)
+    expect(deletedTables).not.toContain(agentInstanceTable);
+    expect(deletedTables).not.toContain(agentSessionTable);
+    expect(deletedTables).not.toContain(principalTable);
+    // The instance was marked 'error' so a later relaunch can adopt it.
+    const errorUpdate = updates.find(
+      (u) =>
+        u.table === agentInstanceTable &&
+        (u.values as { status?: string }).status === "error",
+    );
+    expect(errorUpdate).toBeDefined();
   });
 
   it("keeps the instance and returns 201 when launch reports the agent already exists", async () => {

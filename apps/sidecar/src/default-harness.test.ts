@@ -304,6 +304,64 @@ describe("createDefaultHarnessBuilder", () => {
       }
     });
 
+    it("does not abort the harness build when an OLD persisted prompt names a since-folded seed file (CL-2364)", async () => {
+      createHarnessMock.mockClear();
+      // Simulate an old persisted prompt whose marker lists a folded-away file.
+      const stalePrompt = `${buildPersonalAgentSystemPrompt("Myra", {
+        xml: true,
+      })}\n\n<!-- workbench:memory-seed=MEMORY.md,CONTACTS.md,GONE.md -->`;
+      readDeployTreeMock.mockImplementationOnce(async () => ({
+        systemPrompt: stalePrompt,
+      }));
+
+      const storeDir = await fs.promises.mkdtemp(
+        path.join(os.tmpdir(), "harness-seed-stale-"),
+      );
+      try {
+        const builder = createDefaultHarnessBuilder({
+          hubHttpUrl: "http://localhost:4000",
+          sidecarToken: "test-token",
+          cacheRoot: "/tmp/wb-test-tool-cache",
+          cacheMaxBytes: 1024 * 1024,
+          registryMaxTarballBytes: 1024 * 1024,
+        });
+
+        const build = builder.build({
+          agentAddress: "myra@tenant.localhost",
+          agentConfig: {
+            agentAddress: "myra@tenant.localhost",
+            agentId: "agent-1",
+            sessionId: "session-1",
+            sources: [validSource],
+            defaultSource: "src-1",
+            grants: [],
+            tools: [],
+            principalId: "user-1",
+            tenantId: TEST_TENANT_ID,
+            systemPrompt: "unused fallback",
+          },
+          sources: [validSource],
+          defaultSource: validSource.id,
+          storeDir,
+          agentTransport: {} as any,
+          crypto: { signSSH: mock(() => "sig") } as any,
+          onEvent: mock(() => {}),
+          onConnectorStateChanged: mock(() => {}),
+        });
+
+        // The whole harness (inference + tools) must come up despite the stale
+        // marker — the unknown basenames are skipped, not thrown.
+        await expect(build).resolves.toBeDefined();
+
+        const seeded = await fs.promises.readdir(
+          path.join(storeDir, "workspace"),
+        );
+        expect(seeded.sort()).toEqual(["MEMORY.md"].sort());
+      } finally {
+        await fs.promises.rm(storeDir, { recursive: true, force: true });
+      }
+    });
+
     it("forwards reactor events to onEvent, skipping message.received", async () => {
       // Without this forwarding the hub never sees inference/turn events, so
       // committed turns and streaming text only render after a manual reload.

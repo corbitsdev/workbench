@@ -235,7 +235,76 @@ describe("hub-api network helpers", () => {
     expect(calls[0]!.url).toContain("/api/me/principals");
   });
 
-  it("listWorkbenches joins principals with /me and excludes root tenants", async () => {
+  it("listWorkbenches keeps the working/global-org tenant first and excludes other root tenants", async () => {
+    installFetch((url) => {
+      if (url.includes("/me/principals")) {
+        return {
+          body: {
+            data: [
+              {
+                principalId: "p-acme",
+                tenantId: "t-acme",
+                tenantSlug: "s",
+                tenantName: "Acme",
+              },
+              {
+                principalId: "p-root",
+                tenantId: "t-root",
+                tenantSlug: "org",
+                tenantName: "Global",
+              },
+              {
+                principalId: "p-legacy",
+                tenantId: "t-legacy",
+                tenantSlug: "legacy",
+                tenantName: "Legacy",
+              },
+            ],
+          },
+        };
+      }
+      return {
+        body: {
+          rootTenantIds: ["t-root", "t-legacy"],
+          personalTenantId: "t-root",
+        },
+      };
+    });
+
+    const workbenches = await listWorkbenches();
+    // The working/global-org tenant (t-root) is selectable and listed first as
+    // the default; the legacy root tenant (t-legacy) is excluded; the sub-tenant
+    // (t-acme) is kept.
+    expect(workbenches.map((w) => w.tenantId)).toEqual(["t-root", "t-acme"]);
+  });
+
+  it("listWorkbenches returns the working tenant for a root-only user", async () => {
+    installFetch((url) => {
+      if (url.includes("/me/principals")) {
+        return {
+          body: {
+            data: [
+              {
+                principalId: "p-root",
+                tenantId: "t-root",
+                tenantSlug: "org",
+                tenantName: "Global",
+              },
+            ],
+          },
+        };
+      }
+      return {
+        body: { rootTenantIds: ["t-root"], personalTenantId: "t-root" },
+      };
+    });
+
+    const workbenches = await listWorkbenches();
+    expect(workbenches).toHaveLength(1);
+    expect(workbenches[0]!.tenantId).toBe("t-root");
+  });
+
+  it("listWorkbenches excludes legacy root tenants when there is no working tenant", async () => {
     installFetch((url) => {
       if (url.includes("/me/principals")) {
         return {
@@ -258,21 +327,6 @@ describe("hub-api network helpers", () => {
     const workbenches = await listWorkbenches();
     expect(workbenches).toHaveLength(1);
     expect(workbenches[0]!.id).toBe("p-acme");
-  });
-
-  it("listWorkbenches falls back to personalTenantId when rootTenantIds is empty", async () => {
-    installFetch((url) => {
-      if (url.includes("/me/principals")) {
-        return {
-          body: {
-            data: [{ principalId: "p-personal", tenantId: "t-personal" }],
-          },
-        };
-      }
-      return { body: { rootTenantIds: [], personalTenantId: "t-personal" } };
-    });
-
-    expect(await listWorkbenches()).toHaveLength(0);
   });
 
   it("listAgentInstances encodes the tenantId query parameter", async () => {

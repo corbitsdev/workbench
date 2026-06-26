@@ -183,6 +183,11 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
         description:
           "Optional structured payload for rich rendering (e.g. a research ResearchBrief). Stored under source.brief.",
       },
+      jobLabel: {
+        type: "string",
+        description:
+          "Optional display name for the gallery tile of a session-less workflow artifact (e.g. the producing workflow's name). Stored under source.jobLabel.",
+      },
     },
     required: ["title", "body", "kind"],
   },

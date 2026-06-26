@@ -8,9 +8,11 @@ import {
   type ChatDockState,
 } from "@workbench/chat";
 import { useChatLauncher } from "../lib/chat-launcher-context";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useMyraSession } from "../hooks/use-myra-session";
 import {
   resolveActiveThread,
+  useAutoTitleFirstMessage,
   useCreateMyraThread,
   useMyraThreads,
   writeLastActiveThreadId,
@@ -54,13 +56,22 @@ export function PersonalAgentChat() {
   const [dockState, setDockState] = useState<ChatDockState>(readDockState);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
 
+  const { activeTenantId } = useActiveWorkbench();
   const { data: threads } = useMyraThreads();
   const createThread = useCreateMyraThread();
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);
   const session = useMyraSession(
     activeThread?.instanceId ?? null,
+    activeTenantId,
     !onChatRoute,
+  );
+
+  // Auto-title a still-default thread from its first message, exactly as the
+  // full-page chat does — the dock is the surface most new threads start from.
+  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
+    activeThread,
+    session.messages,
   );
 
   const {
@@ -90,6 +101,7 @@ export function PersonalAgentChat() {
       return;
     }
     if (session.state.phase !== "ready") return;
+    maybeTitleFromFirstMessage(pendingMessage);
     session.send(pendingMessage);
     clearPendingMessage();
     // session.send is recreated each render; depend on the phase that gates it.
@@ -126,6 +138,7 @@ export function PersonalAgentChat() {
     const pending = takePendingFirstMessage(activeThread.id);
     if (pending) {
       deliveredRef.current = activeThread.id;
+      maybeTitleFromFirstMessage(pending);
       session.send(pending);
     }
     // session.send is recreated each render; gate on phase + thread id instead.
@@ -165,6 +178,7 @@ export function PersonalAgentChat() {
       <div className="min-h-0 flex-1">
         <MyraChatSurface
           session={session}
+          onUserSend={maybeTitleFromFirstMessage}
           dockState={dockState}
           onToggleDock={toggleDock}
           expanded={expanded}

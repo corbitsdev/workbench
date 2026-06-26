@@ -50,22 +50,32 @@ export function createMyraThreadsRouter(
   const hubDb = db as unknown as HubDb;
 
   app.get(
-    "/me/myra/threads",
+    "/tenants/:tenantId/me/myra/threads",
     describeRoute({
       tags: ["Agents"],
-      summary: "List Myra chat threads for the current member",
+      summary: "List Myra chat threads for the current member in a workbench",
+      parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
       responses: {
         200: {
           description: "Thread list",
           content: { "application/json": { schema: resolver(MyraThreadList) } },
         },
+        403: { description: "Not a member of this tenant" },
       },
     }),
     async (c) => {
       const userId = c.get("userId");
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
+      const tenantId = c.req.param("tenantId");
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
       if (!ctx) {
-        return c.json({ error: "Member not provisioned" }, 503);
+        return c.json({ error: "Not a member of this tenant" }, 403);
       }
       const threads = await listMyraThreads(hubDb, {
         tenantId: ctx.tenantId,
@@ -76,10 +86,18 @@ export function createMyraThreadsRouter(
   );
 
   app.post(
-    "/me/myra/threads",
+    "/tenants/:tenantId/me/myra/threads",
     describeRoute({
       tags: ["Agents"],
       summary: "Create a new Myra chat thread (new agent instance + session)",
+      parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
       requestBody: {
         content: {
           "application/json": {
@@ -96,9 +114,9 @@ export function createMyraThreadsRouter(
             },
           },
         },
+        403: { description: "Not a member of this tenant" },
         503: {
-          description:
-            "Member not provisioned, or the chat session failed to launch",
+          description: "The chat session failed to launch",
           content: {
             "application/json": {
               schema: resolver(
@@ -106,6 +124,7 @@ export function createMyraThreadsRouter(
                   error: "string",
                   "phase?": "string | null",
                   "detail?": "string",
+                  "leakedAgent?": "boolean",
                 }),
               ),
             },
@@ -115,12 +134,13 @@ export function createMyraThreadsRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
+      const tenantId = c.req.param("tenantId");
       const body = CreateMyraThreadBody.assert(
         await c.req.json().catch(() => ({})),
       );
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
       if (!ctx) {
-        return c.json({ error: "Member not provisioned" }, 503);
+        return c.json({ error: "Not a member of this tenant" }, 403);
       }
       try {
         const result = await createMyraThread(
@@ -141,6 +161,7 @@ export function createMyraThreadsRouter(
               error: "Failed to launch Myra chat session",
               phase: err.phase,
               detail: err.detail,
+              leakedAgent: err.leakedAgent,
             },
             503,
           );
@@ -151,11 +172,17 @@ export function createMyraThreadsRouter(
   );
 
   app.patch(
-    "/me/myra/threads/:id",
+    "/tenants/:tenantId/me/myra/threads/:id",
     describeRoute({
       tags: ["Agents"],
       summary: "Rename a Myra chat thread",
       parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
         { name: "id", in: "path", required: true, schema: { type: "string" } },
       ],
       requestBody: {
@@ -178,6 +205,7 @@ export function createMyraThreadsRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
+      const tenantId = c.req.param("tenantId");
       const threadId = c.req.param("id");
       const parsed = RenameMyraThreadBody(await c.req.json().catch(() => ({})));
       if (parsed instanceof type.errors) {
@@ -187,9 +215,9 @@ export function createMyraThreadsRouter(
       if (!label) {
         return c.json({ error: "label is required" }, 400);
       }
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
       if (!ctx) {
-        return c.json({ error: "Member not provisioned" }, 503);
+        return c.json({ error: "Not a member of this tenant" }, 403);
       }
       const thread = await renameMyraThread(hubDb, {
         tenantId: ctx.tenantId,
@@ -205,11 +233,17 @@ export function createMyraThreadsRouter(
   );
 
   app.post(
-    "/me/myra/threads/:id/title",
+    "/tenants/:tenantId/me/myra/threads/:id/title",
     describeRoute({
       tags: ["Agents"],
       summary: "Auto-title a Myra chat thread from its first user message",
       parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
         { name: "id", in: "path", required: true, schema: { type: "string" } },
       ],
       requestBody: {
@@ -233,14 +267,15 @@ export function createMyraThreadsRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
+      const tenantId = c.req.param("tenantId");
       const threadId = c.req.param("id");
       const parsed = TitleMyraThreadBody(await c.req.json().catch(() => ({})));
       if (parsed instanceof type.errors) {
         return c.json({ error: "firstMessage is required" }, 400);
       }
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
       if (!ctx) {
-        return c.json({ error: "Member not provisioned" }, 503);
+        return c.json({ error: "Not a member of this tenant" }, 403);
       }
       const thread = await generateMyraThreadTitle(
         hubDb,
@@ -257,11 +292,17 @@ export function createMyraThreadsRouter(
   );
 
   app.delete(
-    "/me/myra/threads/:id",
+    "/tenants/:tenantId/me/myra/threads/:id",
     describeRoute({
       tags: ["Agents"],
       summary: "Delete a Myra chat thread (tears down the agent instance)",
       parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
         { name: "id", in: "path", required: true, schema: { type: "string" } },
       ],
       responses: {
@@ -275,10 +316,11 @@ export function createMyraThreadsRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
+      const tenantId = c.req.param("tenantId");
       const threadId = c.req.param("id");
-      const ctx = await resolveMyraThreadContext(hubDb, userId);
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
       if (!ctx) {
-        return c.json({ error: "Member not provisioned" }, 503);
+        return c.json({ error: "Not a member of this tenant" }, 403);
       }
       const deleted = await deleteMyraThread(
         hubDb,

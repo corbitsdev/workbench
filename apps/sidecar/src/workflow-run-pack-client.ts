@@ -705,6 +705,17 @@ export function createWorkflowRunPackPushingRepoStore(
       }
       const agentAddress = registry.resolve(repoId.id);
       if (agentAddress === null) {
+        // WORKBENCH-LOCAL (CL-2400): the deploy wiring now records the mapping
+        // before spawn/deploy, so the routine deploy-ordering race this used to
+        // catch is gone. Reaching here is almost always a genuine invariant
+        // violation (a run-event commit for a deployment the router never
+        // registered) -- worth surfacing. The one expected case is a torn
+        // deploy: a crash-recovery replay push whose address resolves AFTER the
+        // failure unwind already unregistered the deployment; that is rare and
+        // the run is already being torn down. Log at error either way so a real
+        // violation reaches Sentry rather than being swallowed as the
+        // supervisor's best-effort warn upstream.
+        logger.error`workflow-run pack push: no agent address registered for deployment ${repoId.id}; run event dropped`;
         throw new Error(
           `workflow-run pack push: no agent address registered for deployment ${repoId.id}; the deploy router must record the mapping before the supervisor commits run events`,
         );

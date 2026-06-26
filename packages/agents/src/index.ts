@@ -13,6 +13,7 @@ export {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
   STEP_ARGMAP_TAG,
+  STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   ArgMap,
@@ -48,6 +49,7 @@ export {
   buildSeedMarker,
   parseSeedMarker,
   type SeedWorkspaceFile,
+  type SeedMarkerParse,
 } from "./personal-agent/seed-files";
 
 // Loop agent

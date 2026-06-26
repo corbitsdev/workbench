@@ -15,6 +15,13 @@ const LINKEDIN_POST_VISUAL: ArtifactVisual = {
   span: "row-span-2",
 };
 
+const REPORT_VISUAL: ArtifactVisual = {
+  label: "Report",
+  viz: "deck",
+  fill: "bg-charcoal",
+  span: "row-span-4",
+};
+
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
   email: {
     label: "Email",
@@ -82,6 +89,10 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     fill: "bg-cream",
     span: "row-span-4",
   },
+  // Both the workflow's persisted `research` kind and a generic `report` kind
+  // share one tile treatment.
+  research: REPORT_VISUAL,
+  report: REPORT_VISUAL,
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {
@@ -122,6 +133,22 @@ function formatRelativeTime(iso: string): string {
   return "";
 }
 
+// A session-less workflow artifact has no agent session to name it, so the
+// gallery showed "Untitled job". The producing workflow may instead supply a
+// generic `source.jobLabel` string; surface that. No workflow-specific knowledge
+// lives here — the label is the domain's to choose.
+function artifactJobLabel(artifact: ArtifactWithSession): string {
+  if (artifact.sessionName) return artifact.sessionName;
+  const source = artifact.source;
+  if (source !== null && source !== undefined && typeof source === "object") {
+    const label = (source as Record<string, unknown>).jobLabel;
+    if (typeof label === "string" && label.trim().length > 0) {
+      return label;
+    }
+  }
+  return "Untitled job";
+}
+
 export function toGalleryArtifact(
   artifact: ArtifactWithSession,
 ): GalleryArtifact {
@@ -130,7 +157,7 @@ export function toGalleryArtifact(
     ...visual,
     id: artifact.id,
     title: artifact.title,
-    from: artifact.sessionName ?? "Untitled job",
+    from: artifactJobLabel(artifact),
     time: formatRelativeTime(artifact.updatedAt),
   };
 }

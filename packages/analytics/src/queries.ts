@@ -59,6 +59,26 @@ export type AnalyticsAgentRow = {
   thinkingTokens: number;
 };
 
+export type AnalyticsDailyPoint = {
+  date: string;
+  turnCount: number;
+  failedTurnCount: number;
+  toolCallCount: number;
+  toolErrorCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+};
+
+export type AnalyticsModelRow = {
+  model: string;
+  turnCount: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
 export async function getAnalyticsSummary(
   args: { db: DB["db"] } & AnalyticsSummaryFilter,
 ): Promise<AnalyticsSummary> {
@@ -244,6 +264,101 @@ export async function getAnalyticsSummaryByInstance(
       (a, b) =>
         b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
     );
+}
+
+export async function getAnalyticsDailySeries(
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
+): Promise<AnalyticsDailyPoint[]> {
+  const { db, tenantId, agentId, instanceId, range } = args;
+  const rows = await db
+    .select({
+      date: analyticsRollupDaily.bucketDate,
+      turnCount: sumInteger(analyticsRollupDaily.turnCount),
+      failedTurnCount: sumInteger(analyticsRollupDaily.failedTurnCount),
+      toolCallCount: sumInteger(analyticsRollupDaily.toolCallCount),
+      toolErrorCount: sumInteger(analyticsRollupDaily.toolErrorCount),
+      inputTokens: sumInteger(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInteger(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInteger(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInteger(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInteger(analyticsRollupDaily.thinkingTokens),
+    })
+    .from(analyticsRollupDaily)
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        agentId !== undefined
+          ? eq(analyticsRollupDaily.agentId, agentId)
+          : undefined,
+        instanceId !== undefined
+          ? eq(analyticsRollupDaily.instanceId, instanceId)
+          : undefined,
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(analyticsRollupDaily.bucketDate)
+    .orderBy(analyticsRollupDaily.bucketDate);
+
+  return rows.map((row) => ({
+    date: row.date,
+    turnCount: row.turnCount,
+    failedTurnCount: row.failedTurnCount,
+    toolCallCount: row.toolCallCount,
+    toolErrorCount: row.toolErrorCount,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+    thinkingTokens: row.thinkingTokens,
+  }));
+}
+
+export async function getAnalyticsModelDistribution(
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
+): Promise<AnalyticsModelRow[]> {
+  const { db, tenantId, agentId, instanceId, range } = args;
+  const rows = await db
+    .select({
+      model: analyticsRollupDaily.model,
+      turnCount: sumInteger(analyticsRollupDaily.turnCount),
+      inputTokens: sumInteger(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInteger(analyticsRollupDaily.outputTokens),
+    })
+    .from(analyticsRollupDaily)
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        agentId !== undefined
+          ? eq(analyticsRollupDaily.agentId, agentId)
+          : undefined,
+        instanceId !== undefined
+          ? eq(analyticsRollupDaily.instanceId, instanceId)
+          : undefined,
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(analyticsRollupDaily.model);
+
+  return rows
+    .filter((row): row is typeof row & { model: string } => row.model !== null)
+    .map((row) => ({
+      model: row.model,
+      turnCount: row.turnCount,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+    }))
+    .sort((a, b) => b.turnCount - a.turnCount)
+    .slice(0, 50);
 }
 
 function sumInteger(column: AnyColumn) {

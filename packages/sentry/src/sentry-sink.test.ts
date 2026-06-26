@@ -70,7 +70,7 @@ describe("createSentrySink", () => {
     expect((context as { level: string }).level).toBe("fatal");
   });
 
-  it("ignores records below error level", () => {
+  it("ignores records below error level when no warn allowlist is given", () => {
     const client = makeClient();
     const sink = createSentrySink(client);
     for (const level of ["debug", "info", "warning"] as const) {
@@ -78,5 +78,64 @@ describe("createSentrySink", () => {
     }
     expect(client.captureException).not.toHaveBeenCalled();
     expect(client.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it("forwards a warning whose category matches an allowlisted prefix", () => {
+    const client = makeClient();
+    const sink = createSentrySink(client, [["workflow-host"]]);
+    sink(
+      record({
+        level: "warning",
+        category: ["workflow-host", "supervisor"],
+        rawMessage: "replayProcessingToInbox on spawn failed",
+        properties: {},
+      }),
+    );
+    expect(client.captureMessage).toHaveBeenCalledTimes(1);
+    const [, context] = client.captureMessage.mock.calls[0]!;
+    expect((context as { level: string }).level).toBe("warning");
+    expect(
+      (context as { tags: { logCategory: string } }).tags.logCategory,
+    ).toBe("workflow-host.supervisor");
+  });
+
+  it("ignores a warning whose category is not on the allowlist", () => {
+    const client = makeClient();
+    const sink = createSentrySink(client, [["workflow-host"]]);
+    // The transient WS reconnect category must stay out of Sentry.
+    sink(
+      record({
+        level: "warning",
+        category: ["interchange", "hub-agent", "ws"],
+        rawMessage: "WebSocket error: Failed to connect",
+        properties: {},
+      }),
+    );
+    expect(client.captureMessage).not.toHaveBeenCalled();
+    expect(client.captureException).not.toHaveBeenCalled();
+  });
+
+  it("matches a prefix only at the start of the category path", () => {
+    const client = makeClient();
+    const sink = createSentrySink(client, [
+      ["interchange", "sidecar", "workflow-run-pack-client"],
+    ]);
+    // A prefix longer than the record category, or a mid-path match, must not
+    // forward.
+    sink(
+      record({
+        level: "warning",
+        category: ["interchange", "sidecar"],
+        properties: {},
+      }),
+    );
+    expect(client.captureMessage).not.toHaveBeenCalled();
+  });
+
+  it("still forwards error-level records regardless of the warn allowlist", () => {
+    const client = makeClient();
+    const sink = createSentrySink(client, [["workflow-host"]]);
+    sink(record({ category: ["api", "other"], properties: {} }));
+    expect(client.captureMessage).toHaveBeenCalledTimes(1);
   });
 });

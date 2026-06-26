@@ -19,7 +19,11 @@ type InsertedArtifact = {
   title: string;
   content: string;
   status: string;
-  source: { citations: unknown[]; brief?: Record<string, unknown> };
+  source: {
+    citations: unknown[];
+    brief?: Record<string, unknown>;
+    jobLabel?: string;
+  };
 };
 
 /**
@@ -133,6 +137,30 @@ describe("write_artifact tool", () => {
     );
 
     expect(artifactInserts[0]?.tenantId).toBe("tnt-42");
+  });
+
+  it("stores a provided jobLabel under source.jobLabel; omits it otherwise", async () => {
+    const withLabel: InsertedArtifact[] = [];
+    const dbA = makeMockDb({ captureArtifactInserts: withLabel });
+    await getStringHandler({ db: dbA, tenantId: "t", principalId: "p" })(
+      {
+        title: "Anthropic",
+        body: "Body",
+        kind: "research",
+        citations: [],
+        jobLabel: "Last 30 days research",
+      },
+      SIGNAL,
+    );
+    expect(withLabel[0]?.source.jobLabel).toBe("Last 30 days research");
+
+    const noLabel: InsertedArtifact[] = [];
+    const dbB = makeMockDb({ captureArtifactInserts: noLabel });
+    await getStringHandler({ db: dbB, tenantId: "t", principalId: "p" })(
+      { title: "Anthropic", body: "Body", kind: "research", citations: [] },
+      SIGNAL,
+    );
+    expect(noLabel[0]?.source.jobLabel).toBeUndefined();
   });
 
   it("round-trip: handler returns artifactId and version, matching inserted content", async () => {
@@ -356,6 +384,56 @@ describe("write_artifact tool", () => {
       topic: "GTM agents",
     });
     expect(artifactInserts[0]?.source.citations).toHaveLength(1);
+  });
+
+  it("content: non-JSON brief content is ignored, leaving source without a brief", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    await handler(
+      {
+        title: "Brief",
+        body: "Body",
+        kind: "research",
+        citations: [
+          { url: "https://kept.com", source: "web", retrievedAt: "2026-01-01" },
+        ],
+        content: "xAI API error: 429 Too Many Requests",
+      },
+      SIGNAL,
+    );
+
+    const source = artifactInserts[0]?.source;
+    expect("brief" in (source ?? {})).toBe(false);
+    expect(source?.citations).toHaveLength(1);
+  });
+
+  it("content: valid JSON that is not a Report is ignored, leaving source without a brief", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    await handler(
+      {
+        title: "Brief",
+        body: "Body",
+        kind: "research",
+        citations: [],
+        content: JSON.stringify({ not: "a report" }),
+      },
+      SIGNAL,
+    );
+
+    expect("brief" in (artifactInserts[0]?.source ?? {})).toBe(false);
   });
 
   it("update path: refreshes the parent row content, source, and version", async () => {

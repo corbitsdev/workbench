@@ -94,10 +94,66 @@ const FIXTURE_BRIEF: ResearchBrief = {
   generatedAt: "2026-06-15T12:00:00Z",
 };
 
+const FIXTURE_REPORT = `## Synthesis
+
+What we found about AI Infrastructure Trends: inference cost is collapsing while GPU supply eases.
+
+**Key pattern:** serving optimizations are the dominant story this cycle.
+
+*Research by last30days via GTM Workbench*`;
+
 describe("ResearchBody", () => {
   it("renders the topic heading", () => {
     render(React.createElement(ResearchBody, { brief: FIXTURE_BRIEF }));
     screen.getByText("AI Infrastructure Trends");
+  });
+
+  it("renders the prose report as primary content when body is present", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT,
+      }),
+    );
+    screen.getByText(/inference cost is collapsing/);
+    screen.getByText("Synthesis");
+  });
+
+  it("exposes copy and download actions when a prose report is present", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT,
+      }),
+    );
+    screen.getByRole("button", { name: "Copy markdown" });
+    screen.getByRole("button", { name: "Download .md" });
+  });
+
+  it("moves structured clusters into a collapsible section when a report is present", () => {
+    render(
+      React.createElement(ResearchBody, {
+        brief: FIXTURE_BRIEF,
+        body: FIXTURE_REPORT,
+      }),
+    );
+    // Cluster data is still present, but now nested under the details disclosure.
+    const cluster = screen.getByText("Model Serving Cost Reduction");
+    if (cluster.closest("details") === null) {
+      throw new Error(
+        "Expected clusters to be nested inside the collapsible details section",
+      );
+    }
+  });
+
+  it("renders structured clusters directly when no prose report is present", () => {
+    render(React.createElement(ResearchBody, { brief: FIXTURE_BRIEF }));
+    const cluster = screen.getByText("Model Serving Cost Reduction");
+    if (cluster.closest("details") !== null) {
+      throw new Error(
+        "Expected clusters to render directly when there is no prose report",
+      );
+    }
   });
 
   it("renders the stats line with source count, item count, and date range", () => {
@@ -120,10 +176,9 @@ describe("ResearchBody", () => {
 
   it("renders cluster item links with titles", () => {
     render(React.createElement(ResearchBody, { brief: FIXTURE_BRIEF }));
-    const link = screen.getByText("vLLM 0.5 cuts inference cost by 40%");
-    const anchor = link.closest("a");
-    if (!anchor)
-      throw new Error("Expected item title to be wrapped in an anchor");
+    const anchor = screen.getByRole("link", {
+      name: "vLLM 0.5 cuts inference cost by 40%",
+    });
     if (anchor.getAttribute("href") !== "https://example.com/story-1") {
       throw new Error("Item link href does not match expected URL");
     }
@@ -181,18 +236,19 @@ describe("ResearchBody", () => {
 });
 
 describe("ArtifactBody research routing", () => {
-  it("renders ResearchBody when kind is research and brief is valid", () => {
+  it("renders ResearchBody with the prose report when kind is research and brief is valid", () => {
     render(
       React.createElement(ArtifactBody, {
         artifact: {
-          content: "# Fallback markdown",
+          content: "# Real report heading\n\nThe prose synthesis lives here.",
           kind: "research",
           source: { brief: FIXTURE_BRIEF },
         },
       }),
     );
     screen.getByText("AI Infrastructure Trends");
-    screen.getByText(/12 sources · 47 items/);
+    screen.getByText("Real report heading");
+    screen.getByText(/The prose synthesis lives here/);
   });
 
   it("falls back to markdown when kind is research but brief is absent", () => {

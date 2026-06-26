@@ -220,23 +220,6 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
   });
 }
 
-// Delete (undeploy) a workflow deployment: operator-gated soft-delete that
-// drops it from the list/start. Used to finish/remove a completed or stuck run.
-export function useDeleteWorkflow(tenantId?: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (deploymentId: string) =>
-      api<unknown>(
-        "DELETE",
-        withTenant(`/workflows/${encodeURIComponent(deploymentId)}`, tenantId),
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
-      void queryClient.invalidateQueries({ queryKey: ["workflows"] });
-    },
-  });
-}
-
 export { runStateFromRecord };
 
 const workflowCredentialSchema = type({

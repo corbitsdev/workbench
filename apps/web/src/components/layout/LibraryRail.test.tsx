@@ -371,36 +371,6 @@ describe("LibraryRail", () => {
       expect(badges.length).toBeGreaterThan(1);
     });
   });
-
-  it("does not expose deployment removal controls for user run rows", async () => {
-    workflowRunsOverride = [
-      {
-        runId: "wfr-done",
-        kind: "collateral-generation",
-        status: "completed",
-        createdAt: new Date().toISOString(),
-      },
-    ];
-
-    const { LibraryRail } = await import("./LibraryRail");
-    const view = renderWithClient(
-      React.createElement(LibraryRail as React.FC<LibraryRailProps>, {
-        onWorkflowSelect: () => undefined,
-      }),
-    );
-
-    const doneToggle = await waitFor(() => view.getByText("Completed"));
-    fireEvent.click(doneToggle);
-
-    await waitFor(() =>
-      view.getByRole("button", { name: "Open workflow Collateral Generation" }),
-    );
-    expect(
-      view.queryByRole("button", {
-        name: "Remove workflow Collateral Generation",
-      }),
-    ).toBeNull();
-  });
 });
 
 describe("CompletedWorkflowRow (pure view)", () => {

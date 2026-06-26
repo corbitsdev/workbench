@@ -182,6 +182,65 @@ describe("runDeterministicToolStep", () => {
     expect(tr.isError).not.toBe(true);
   });
 
+  test("nonFatal: a throwing step degrades to an isError envelope instead of rejecting", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // A non-object input throws in `verbatimToolArguments` (a real step failure).
+    // Without nonFatal it rejects (asserted above); with nonFatal the harness
+    // must swallow the throw and return a completed isError envelope so the run
+    // is not failed by one best-effort source. The original reason is preserved
+    // in `content` so the brief can record it in skippedSources with the why.
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: "not-an-object",
+      nonFatal: true,
+      signal: new AbortController().signal,
+    });
+    const output = result.output as Record<string, unknown>;
+    expect(output.isError).toBe(true);
+    expect(typeof output.content).toBe("string");
+    expect(output.content as string).toContain("write_file");
+    expect(output.content as string).toContain("requires an object");
+  });
+
+  test("nonFatal does NOT mask cancellation: an aborted signal rethrows instead of degrading", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // Run cancel/timeout aborts the step's signal. The throw is the
+    // cancellation, not a source failure — degrading it to a completed
+    // isError step would let the run march on past the cancel. The harness
+    // must rethrow even when nonFatal is set.
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: "not-an-object",
+        nonFatal: true,
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow(/requires an object/);
+  });
+
+  test("nonFatal degrade also covers an unpinned tool (misconfiguration is logged + skipped, not fatal)", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "gamma_create_from_template",
+      input: {},
+      nonFatal: true,
+      signal: new AbortController().signal,
+    });
+    const output = result.output as Record<string, unknown>;
+    expect(output.isError).toBe(true);
+    expect(output.content as string).toContain(
+      "not in the step's loaded runner",
+    );
+  });
+
   test("fails loud when an argMap `from` field is absent on the evaluated input", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
