@@ -11,6 +11,11 @@ import path from "node:path";
 
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_DELAY_MS = 1_000;
+// Backoff ceiling. reconnectDelayMs is the floor; the hub link grows the
+// delay exponentially from it toward this cap (with jitter) so a hub that
+// stays down is retried without a tight hammer loop, while a brief
+// redeploy blip still reconnects within the floor.
+const DEFAULT_MAX_RECONNECT_DELAY_MS = 3_000;
 
 // Content-addressable tarball cache for materialized tool packages.
 // 512 MiB holds many deduped tool-package extractions; 64 MiB caps any
@@ -21,6 +26,7 @@ export const DEFAULT_REGISTRY_MAX_TARBALL_BYTES = 64 * 1024 * 1024;
 export type SidecarHeartbeat = {
   pingIntervalMs: number;
   reconnectDelayMs: number;
+  maxReconnectDelayMs: number;
 };
 
 export type SidecarHubLinkQueue = {
@@ -84,6 +90,11 @@ export function resolveSidecarHeartbeat(
       "SIDECAR_RECONNECT_DELAY_MS",
       env.SIDECAR_RECONNECT_DELAY_MS,
       DEFAULT_RECONNECT_DELAY_MS,
+    ),
+    maxReconnectDelayMs: parsePositiveInt(
+      "SIDECAR_MAX_RECONNECT_DELAY_MS",
+      env.SIDECAR_MAX_RECONNECT_DELAY_MS,
+      DEFAULT_MAX_RECONNECT_DELAY_MS,
     ),
   };
 }

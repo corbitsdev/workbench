@@ -234,6 +234,7 @@ const orchestrator = createSidecarOrchestrator({
   dataDir,
   pingIntervalMs: heartbeat.pingIntervalMs,
   reconnectDelayMs: heartbeat.reconnectDelayMs,
+  maxReconnectDelayMs: heartbeat.maxReconnectDelayMs,
   maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
   transport,
   buildHarness: createDefaultHarnessBuilder({

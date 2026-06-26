@@ -11,15 +11,18 @@ describe("resolveSidecarHeartbeat", () => {
     const hb = resolveSidecarHeartbeat({});
     expect(hb.pingIntervalMs).toBe(5_000);
     expect(hb.reconnectDelayMs).toBe(1_000);
+    expect(hb.maxReconnectDelayMs).toBe(3_000);
   });
 
   it("overrides from env when provided", () => {
     const hb = resolveSidecarHeartbeat({
       SIDECAR_PING_INTERVAL_MS: "2000",
       SIDECAR_RECONNECT_DELAY_MS: "500",
+      SIDECAR_MAX_RECONNECT_DELAY_MS: "8000",
     });
     expect(hb.pingIntervalMs).toBe(2_000);
     expect(hb.reconnectDelayMs).toBe(500);
+    expect(hb.maxReconnectDelayMs).toBe(8_000);
   });
 
   it("rejects a non-integer override", () => {
