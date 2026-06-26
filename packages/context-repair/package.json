@@ -14,7 +14,8 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
-    "@intx/types": "workspace:*"
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest",

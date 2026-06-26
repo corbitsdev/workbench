@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import type { ConversationTurn } from "@intx/types/runtime";
 
 /**
@@ -24,10 +25,14 @@ function isUnsendableAssistantTurn(turn: ConversationTurn): boolean {
   );
 }
 
-export interface ContextRepairResult {
+// turns: "unknown[]" -- ConversationTurn is a recursive discriminated union from
+// @intx/types/runtime (interchange, out of scope for arktype's string DSL). The
+// exported type intersection below restores the correct static type; element-level
+// validation of turns is intentionally skipped.
+const ContextRepairResult = type({ turns: "unknown[]", removedCount: "number" });
+export type ContextRepairResult = Omit<typeof ContextRepairResult.infer, "turns"> & {
   turns: ConversationTurn[];
-  removedCount: number;
-}
+};
 
 /**
  * Drop assistant turns that cannot be sent to an OpenAI-compatible provider.
@@ -76,13 +81,18 @@ function synthesizeResultTurn(
   };
 }
 
-export interface ToolPairingRepairResult {
-  turns: ConversationTurn[];
-  /** tool_results synthesized for assistant tool_calls that had none. */
-  synthesizedResults: number;
-  /** dangling tool_result blocks dropped (no matching tool_call). */
-  droppedResults: number;
-}
+// turns: "unknown[]" -- same ConversationTurn constraint as ContextRepairResult above.
+const ToolPairingRepairResult = type({
+  turns: "unknown[]",
+  // tool_results synthesized for assistant tool_calls that had none.
+  synthesizedResults: "number",
+  // dangling tool_result blocks dropped (no matching tool_call).
+  droppedResults: "number",
+});
+export type ToolPairingRepairResult = Omit<
+  typeof ToolPairingRepairResult.infer,
+  "turns"
+> & { turns: ConversationTurn[] };
 
 /**
  * Enforce the tool_call/tool_result pairing invariant OpenAI-compatible
@@ -151,13 +161,17 @@ export function repairToolCallPairing(
   return { turns: repaired, synthesizedResults, droppedResults };
 }
 
-export interface ContextHealResult {
+// turns: "unknown[]" -- same ConversationTurn constraint as above.
+const ContextHealResult = type({
+  turns: "unknown[]",
+  changed: "boolean",
+  unsendableRemoved: "number",
+  toolResultsSynthesized: "number",
+  danglingResultsDropped: "number",
+});
+export type ContextHealResult = Omit<typeof ContextHealResult.infer, "turns"> & {
   turns: ConversationTurn[];
-  changed: boolean;
-  unsendableRemoved: number;
-  toolResultsSynthesized: number;
-  danglingResultsDropped: number;
-}
+};
 
 /**
  * Full launch-time heal of a durable transcript: strip null-body assistant
