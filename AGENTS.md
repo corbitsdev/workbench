@@ -115,6 +115,8 @@ Each step is a separate commit.
 bun run format && bun run lint && bun run typecheck && bun run test
 ```
 
+`bun run format` formats only changed files (staged + unstaged + untracked). Use `bun run format:all` to format the entire repo explicitly.
+
 `bun run typecheck` must pass with zero errors in `apps/`, `packages/`, `scripts/` before any commit. Errors inside `interchange/` are pre-existing upstream issues.
 
 ## Dockerfile Maintenance
