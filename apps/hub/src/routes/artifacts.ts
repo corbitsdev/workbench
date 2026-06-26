@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { describeRoute, resolver } from "hono-openapi";
 import {
   and,
   asc,
@@ -13,14 +14,40 @@ import {
   ne,
   or,
 } from "drizzle-orm";
+import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { schema as intxSchema } from "@intx/db";
 import type { HubDb } from "../db";
-import { artifact, artifactStatus } from "../db/schema";
+import { artifact, artifactStatus, artifactVersion } from "../db/schema";
+import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
+
+// Trim before validating so a whitespace-only field is rejected (length is
+// checked after trim) and the parsed value carries no leading/trailing space.
+// One source of truth for the non-empty-after-trim rule.
+const TrimmedNonEmpty = type("string")
+  .pipe((raw: string) => raw.trim())
+  .to("string > 0");
+
+// Kinds this import path may mint. URL imports default to `link`, pasted text
+// to `document`. An explicit kind must stay within this allowlist so an
+// untrusted caller cannot stamp a file-shaped / downloadable kind (e.g.
+// `csv-export`) onto a row whose content is actually a URL or text body.
+const IMPORTABLE_ARTIFACT_KINDS = ["link", "document"] as const;
+const ImportableArtifactKind = type.enumerated(...IMPORTABLE_ARTIFACT_KINDS);
+
+// POST /artifacts request: a human importing collateral from an external
+// source. `mode` selects the provenance origin — `url` links an external page
+// (content is the URL), `text` stores a pasted document body.
+const CreateArtifactRequest = type({
+  mode: "'url' | 'text'",
+  title: TrimmedNonEmpty,
+  content: TrimmedNonEmpty,
+  "kind?": ImportableArtifactKind,
+});
 
 const log = getLogger(["api", "artifacts"]);
 
@@ -292,6 +319,149 @@ export function createArtifactsRouter(
 
     return c.json({ artifacts: rows, nextCursor });
   });
+
+  // Create an artifact from an external source (link a URL or paste text).
+  // Provenance is required (CL-2432): URL imports record an `imported` origin,
+  // pasted text a `manual` origin. File/folder upload + batch are a follow-up.
+  router.post(
+    "/artifacts",
+    describeRoute({
+      tags: ["artifacts"],
+      summary:
+        "Import an artifact from an external source (link a URL or paste text)",
+      parameters: [
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          schema: { type: "string" },
+        },
+      ],
+      requestBody: {
+        content: {
+          "application/json": {
+            schema: requestBodySchema(CreateArtifactRequest),
+          },
+        },
+      },
+      responses: {
+        201: {
+          description: "Artifact created",
+          content: {
+            "application/json": {
+              schema: resolver(type({ artifact: "unknown" })),
+            },
+          },
+        },
+        400: { description: "Invalid request body" },
+        403: { description: "Tenant not accessible" },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const requestedTenantId = c.req.query("tenantId");
+
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "Invalid JSON body" }, 400);
+      }
+
+      const parsed = CreateArtifactRequest(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: parsed.summary }, 400);
+      }
+
+      const title = parsed.title;
+      const content = parsed.content;
+
+      if (parsed.mode === "url") {
+        let url: URL;
+        try {
+          url = new URL(content);
+        } catch {
+          return c.json({ error: "content must be a valid URL" }, 400);
+        }
+        if (url.protocol !== "https:" && url.protocol !== "http:") {
+          return c.json({ error: "URL must be http or https" }, 400);
+        }
+      }
+
+      const { context: userContext, forbidden } = await getRequestedUserContext(
+        db,
+        userId,
+        requestedTenantId,
+      );
+      if (forbidden) {
+        return c.json({ error: "Tenant not accessible" }, 403);
+      }
+      if (!userContext) {
+        return c.json({ error: "No accessible workbench" }, 403);
+      }
+
+      const origin = parsed.mode === "url" ? "imported" : "manual";
+      const defaultKind: (typeof IMPORTABLE_ARTIFACT_KINDS)[number] =
+        parsed.mode === "url" ? "link" : "document";
+      const kind = parsed.kind ?? defaultKind;
+      const source: Record<string, unknown> = { origin };
+      if (parsed.mode === "url") {
+        source.url = content;
+      }
+
+      const now = new Date();
+      const created = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(artifact)
+          .values({
+            tenantId: userContext.tenantId,
+            principalId: userContext.principalId,
+            ownerPrincipalId: userContext.principalId,
+            sessionId: null,
+            kind,
+            title,
+            content,
+            source,
+            status: "draft",
+            version: 1,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+
+        if (!row) throw new Error("Failed to create artifact");
+
+        await tx.insert(artifactVersion).values({
+          artifactId: row.id,
+          version: 1,
+          title,
+          content,
+          authorId: userContext.principalId,
+          createdAt: now,
+        });
+
+        return row;
+      });
+
+      log.info("Created artifact from source", {
+        artifactId: created.id,
+        origin,
+        tenantId: userContext.tenantId,
+      });
+
+      return c.json(
+        {
+          artifact: {
+            ...serializeArtifact(created),
+            sessionName: null,
+            sessionStatus: null,
+            ownerName: null,
+          },
+        },
+        201,
+      );
+    },
+  );
 
   // Download a file-shaped artifact's content (CSV export). Tenant-scoped.
   router.get("/artifacts/:id/download", async (c) => {

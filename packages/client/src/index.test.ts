@@ -4,7 +4,7 @@
 // and error propagation behavior so a backwards-incompatible change fails loudly.
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import "./test-setup";
-import { listArtifacts, listWorkflows } from "./index";
+import { createArtifact, listArtifacts, listWorkflows } from "./index";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -46,6 +46,56 @@ describe("@workbench/client request construction", () => {
     expect(spy.mock.calls[0]?.[0]).toBe(
       "http://localhost:4000/api/v1/artifacts",
     );
+  });
+
+  it("POSTs a create-artifact body and returns the parsed artifact", async () => {
+    const responseArtifact = {
+      id: "art-9",
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: "link",
+      title: "Docs",
+      content: "https://example.com",
+      status: "draft",
+      version: 1,
+      ownerPrincipalId: "prn-1",
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+      source: { origin: "imported", url: "https://example.com" },
+    };
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: responseArtifact }, 201)),
+    );
+
+    const result = await createArtifact(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { mode: "url", title: "Docs", content: "https://example.com" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts",
+    );
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
+      mode: "url",
+      title: "Docs",
+      content: "https://example.com",
+    });
+    expect(result.id).toBe("art-9");
+    expect(result.source?.origin).toBe("imported");
+  });
+
+  it("throws when the create-artifact response is malformed", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: { id: 42 } }, 201)),
+    );
+    await expect(
+      createArtifact(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { mode: "text", title: "T", content: "C" },
+      ),
+    ).rejects.toThrow("Invalid POST /artifacts response");
   });
 
   it("issues a GET with credentials included by default", async () => {

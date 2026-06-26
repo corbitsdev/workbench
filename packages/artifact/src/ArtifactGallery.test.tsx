@@ -94,10 +94,10 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText(/No artifacts yet/)).toBeDefined();
   });
 
-  it("fires onNew from the New button", () => {
+  it("fires onNew from the Add button", () => {
     const onNew = mock(() => {});
     render(React.createElement(ArtifactGallery, { artifacts: [], onNew }));
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 
