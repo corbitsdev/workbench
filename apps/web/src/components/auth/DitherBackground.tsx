@@ -113,7 +113,11 @@ export function DitherBackground({ className }: { className?: string }) {
       const inside = tmx > -0.1 && tmx < 1.1 && tmy > -0.1 && tmy < 1.1;
       tStr = inside ? 1 : 0;
     };
-    canvas.addEventListener("pointermove", onMove, { passive: true });
+    // Listen on window, not the canvas: the canvas is painted behind the
+    // QuoteCard overlay, so canvas-scoped pointermove never fires. onMove
+    // already maps coordinates to the canvas rect and zeroes strength when
+    // the cursor is outside the panel, so the global listener is cheap.
+    window.addEventListener("pointermove", onMove, { passive: true });
 
     const reduceQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let reduce = reduceQuery.matches;
@@ -243,7 +247,7 @@ export function DitherBackground({ className }: { className?: string }) {
       io.disconnect();
       reduceQuery.removeEventListener("change", onReduceChange);
       document.removeEventListener("visibilitychange", onVisibility);
-      canvas.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointermove", onMove);
     };
   }, []);
 
