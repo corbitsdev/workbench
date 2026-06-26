@@ -192,4 +192,23 @@ describe("gamma_create_from_template", () => {
     expect(body["themeId"]).toBe("theme-42");
     expect(body["title"]).toBe("Q3 Deck");
   });
+  it("throws immediately on unknown generation status rather than exhausting poll attempts", async () => {
+    const tools = createTemplateTools({
+      ...baseConfig,
+      fetcher: makeFetcher([
+        { status: 200, body: { generationId: "gen_unknown" } },
+        { status: 200, body: { status: "processing" } },
+      ]),
+    });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    await expect(
+      tool.handler(
+        { gammaId: "g_t", prompt: "Make a deck" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Unknown generation status: processing");
+  });
 });

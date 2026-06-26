@@ -59,7 +59,7 @@ describe("gamma_duplicate_presentation", () => {
     if (!tool || tool.kind !== "string") throw new Error("tool not found");
     await expect(
       tool.handler({}, new AbortController().signal),
-    ).rejects.toThrow("gammaId is required");
+    ).rejects.toThrow("Invalid duplicate presentation args");
   });
 
   it("uses default prompt when none is provided", async () => {
