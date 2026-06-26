@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
 import {
@@ -18,6 +19,15 @@ import type { ToolDefinition } from "@intx/types/runtime";
 export type { ToolDefinition };
 import { and, eq } from "drizzle-orm";
 import { DISPATCH_AGENT_DEFINITION } from "./definition";
+
+const DispatchArgs = type({ agentDefinitionId: "string > 0", task: "string > 0" });
+
+type DispatchResult = {
+  instanceId: string;
+  address: string;
+  sessionId: string;
+  status: "running";
+};
 
 export { DISPATCH_AGENT_DEFINITION };
 
@@ -222,14 +232,14 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
           throw new Error("dispatch_agent aborted before starting");
         }
 
-        const agentDefinitionId =
-          typeof args.agentDefinitionId === "string"
-            ? args.agentDefinitionId
-            : "";
-        const task = typeof args.task === "string" ? args.task : "";
-        if (!agentDefinitionId)
-          throw new Error("agentDefinitionId is required");
-        if (!task) throw new Error("task is required");
+        const parsed = DispatchArgs(args);
+        if (parsed instanceof type.errors) {
+          const failedField = parsed.issues[0]?.path?.[0];
+          if (failedField === "agentDefinitionId")
+            throw new Error("agentDefinitionId is required");
+          throw new Error("task is required");
+        }
+        const { agentDefinitionId, task } = parsed;
 
         const { db, tenantId, sessionService } = context;
 
@@ -292,16 +302,14 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
           taskLength: task.length,
         });
 
-        return JSON.stringify(
-          {
-            instanceId: launched.instanceId,
-            address: launched.address,
-            sessionId: launched.sessionId,
-            status: "running",
-          },
-          null,
-          2,
-        );
+        const result: DispatchResult = {
+          instanceId: launched.instanceId,
+          address: launched.address,
+          sessionId: launched.sessionId,
+          status: "running",
+        };
+
+        return JSON.stringify(result, null, 2);
       },
     },
   ];
