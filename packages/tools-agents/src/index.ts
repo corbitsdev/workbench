@@ -15,6 +15,7 @@ export {
   resolvePrincipalStatusFilter,
 } from "./principals";
 export type { ListPrincipalsContext } from "./principals";
+export { IDENTITY_GET_DEFINITION, IDENTITY_SET_DEFINITION } from "./identity";
 
 const AgentInstanceStatusSchema = type(
   "'deployed' | 'running' | 'updating' | 'error' | 'stopped'",

@@ -21,10 +21,15 @@ describe("tools-agents interchange.tools entry", () => {
     expect(agents.requires).toEqual([HUB_RPC_ENV_KEY]);
   });
 
-  test("the bundle exposes list_principals and list_agents", () => {
+  test("the bundle exposes the directory and identity definitions", () => {
     const names = agents(env)
       .definitions.map((d) => d.name)
       .sort();
-    expect(names).toEqual(["list_agents", "list_principals"]);
+    expect(names).toEqual([
+      "identity_get",
+      "identity_set",
+      "list_agents",
+      "list_principals",
+    ]);
   });
 });

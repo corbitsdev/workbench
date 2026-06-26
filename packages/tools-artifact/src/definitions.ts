@@ -193,6 +193,44 @@ export const WRITE_ARTIFACT_DEFINITION: ToolDefinition = {
   },
 };
 
+export const MEMORY_LOAD_DEFINITION: ToolDefinition = {
+  name: "memory_load",
+  description:
+    "Load your durable memory — the standing brief on the person you work for, durable facts and decisions, and contacts. Returns the full memory text (empty when nothing is stored yet). Call this when a task needs the context it holds, not on every turn.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      scope: {
+        type: "string",
+        description:
+          "Memory scope. 'global' (default) is your durable memory, shared across every conversation. 'chat' (per-conversation memory) is not enabled yet.",
+      },
+    },
+    required: [],
+  },
+};
+
+export const MEMORY_SAVE_DEFINITION: ToolDefinition = {
+  name: "memory_save",
+  description:
+    "Save your durable memory, replacing the stored text with what you pass. Load it first, edit the whole text, then save the full result — saving overwrites, it does not append. Keep it organized under headings. Update only when you learn something durable, never for a greeting or simple reply.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      content: {
+        type: "string",
+        description: "The full memory text to store, replacing the prior text.",
+      },
+      scope: {
+        type: "string",
+        description:
+          "Memory scope. 'global' (default) is your durable memory, shared across every conversation. 'chat' (per-conversation memory) is not enabled yet.",
+      },
+    },
+    required: ["content"],
+  },
+};
+
 export const ARTIFACT_TOOL_DEFINITIONS: ToolDefinition[] = [
   ARTIFACT_LINK_FILE_DEFINITION,
   ARTIFACT_CREATE_DEFINITION,
@@ -202,4 +240,6 @@ export const ARTIFACT_TOOL_DEFINITIONS: ToolDefinition[] = [
   ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   WRITE_ARTIFACT_DEFINITION,
+  MEMORY_LOAD_DEFINITION,
+  MEMORY_SAVE_DEFINITION,
 ];

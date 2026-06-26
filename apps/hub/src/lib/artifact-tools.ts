@@ -241,7 +241,7 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
  *
  * Walks: context.principalId -> agent_instance -> member_agent_instance
  */
-async function resolveOwnerMemberPrincipalId(
+export async function resolveOwnerMemberPrincipalId(
   db: DB["db"],
   context: { tenantId: string; principalId: string },
 ): Promise<string | null> {

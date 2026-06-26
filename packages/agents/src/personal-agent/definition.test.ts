@@ -33,9 +33,36 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
   });
 
-  it("leaves local runner tools (posix) unprefixed", () => {
-    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("read_file");
-    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("search_files");
+  // CL-2413: durable memory moved off the filesystem into the hub artifact
+  // store, accessed via memory_load/memory_save. POSIX runner tools are dropped.
+  it("includes the memory tools (prefixed, same factory as artifact)", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-artifact/artifact:memory_load",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-artifact/artifact:memory_save",
+    );
+  });
+
+  it("no longer carries POSIX filesystem tools", () => {
+    for (const posix of [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "search_files",
+    ]) {
+      expect(PERSONAL_AGENT_BASE_TOOLS).not.toContain(posix);
+    }
+  });
+
+  // CL-2420: per-tool account identity for scoping "my X" queries.
+  it("includes the identity tools (prefixed, tools-agents factory)", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-agents/agents:identity_get",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-agents/agents:identity_set",
+    );
   });
 
   it("includes the Exa web_search alias (prefixed)", () => {

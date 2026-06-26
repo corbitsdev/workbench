@@ -9,36 +9,17 @@ export interface SeedWorkspaceFile {
 }
 
 /**
- * Myra's documented memory files (see the personal-agent prompt `<notes>`
- * section). On first launch none of these exist, so reading them fails; the
- * harness seeds these stubs so the agent always has them to read and append to.
+ * Files the harness seeds into Myra's workspace before her first turn.
  *
- * One slot only: durable memory (MEMORY.md), organized into sections — folding
- * the former CONTACTS/ERRORS/HUMAN files in (and dropping the transient
- * SCRATCHPAD) keeps the agent from fanning reads and writes across
- * near-identical files.
+ * Empty by design: Myra's durable memory moved off the filesystem to the
+ * hub-owned, versioned artifact store, accessed via the `memory_load` /
+ * `memory_save` tools (CL-2413). A sidecar-local MEMORY.md was lost on every
+ * wipe/redeploy, so there is no seed file to write. The marker/parser machinery
+ * below stays — it is generic harness infrastructure and an old persisted
+ * prompt may still carry a `MEMORY.md` marker, which `parseSeedMarker` now
+ * resolves to nothing (gracefully skipped, never wedging restore — CL-2364).
  */
-export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [
-  {
-    path: "MEMORY.md",
-    content: `# Memory
-
-Durable memory worth keeping across tasks. Keep it organized under these headings; add to the right one rather than starting new files.
-
-## The Person
-Standing brief on the person you work for: preferences, priorities, open tasks and todos.
-
-## Facts
-Durable facts and decisions worth remembering.
-
-## Contacts
-Agents and people: who they are, what they are for, their addresses.
-
-## Errors
-Failures you hit, with enough detail to avoid them next time.
-`,
-  },
-];
+export const PERSONAL_AGENT_SEED_FILES: SeedWorkspaceFile[] = [];
 
 const SEED_MARKER_PREFIX = "<!-- workbench:memory-seed=";
 const SEED_MARKER_SUFFIX = " -->";

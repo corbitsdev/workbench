@@ -147,17 +147,27 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(prompt).toContain("snapshots, not current state");
   });
 
-  // Self-notes convention — one durable slot only (SCRATCHPAD dropped)
-  it("documents MEMORY.md as the single durable memory file", () => {
+  // CL-2413: durable memory is a hub-owned store reached via memory tools, not a
+  // file. The notes section teaches the load→edit→save-whole discipline and no
+  // longer names any memory file.
+  it("documents memory as a tool-accessed store with the load-edit-save discipline", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
     expect(prompt).toContain("<notes>");
-    expect(prompt).toContain("MEMORY.md");
-    expect(prompt).not.toContain("SCRATCHPAD.md");
+    expect(prompt).toContain("reach it through your memory tools, not a file");
+    expect(prompt).toContain(
+      "saving replaces what is stored, it does not append",
+    );
   });
 
-  it("no longer carries the retired CONTACTS/ERRORS/HUMAN memory files", () => {
+  it("no longer references any memory file", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    for (const file of ["CONTACTS.md", "ERRORS.md", "HUMAN.md"]) {
+    for (const file of [
+      "MEMORY.md",
+      "SCRATCHPAD.md",
+      "CONTACTS.md",
+      "ERRORS.md",
+      "HUMAN.md",
+    ]) {
       expect(prompt).not.toContain(file);
     }
   });
@@ -204,14 +214,14 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(prompt).toContain("<knowledge> recency rules still govern");
   });
 
-  // CL-1952 — the base prompt carries the memory-seed marker so the sidecar can
-  // parse the file list out of the effective (personalized) prompt.
-  it("embeds the memory-seed marker in the base prompt regardless of format", () => {
-    expect(buildPersonalAgentSystemPrompt("Myra", xmlFormat)).toContain(
-      "<!-- workbench:memory-seed=",
+  // CL-2413 — memory moved off the filesystem, so the prompt no longer seeds a
+  // file or carries the memory-seed marker (the CL-1952 marker is retired here).
+  it("no longer embeds a memory-seed marker", () => {
+    expect(buildPersonalAgentSystemPrompt("Myra", xmlFormat)).not.toContain(
+      "workbench:memory-seed",
     );
-    expect(buildPersonalAgentSystemPrompt("Myra", markdownFormat)).toContain(
-      "<!-- workbench:memory-seed=",
-    );
+    expect(
+      buildPersonalAgentSystemPrompt("Myra", markdownFormat),
+    ).not.toContain("workbench:memory-seed");
   });
 });

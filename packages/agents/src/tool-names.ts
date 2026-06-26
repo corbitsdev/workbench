@@ -17,7 +17,12 @@ import type { ToolPackagePin } from "@intx/types/tool-packages";
 // returned verbatim.
 
 const PACKAGE_TOOLS: Record<string, readonly string[]> = {
-  "@workbench/tools-agents/agents": ["list_agents", "list_principals"],
+  "@workbench/tools-agents/agents": [
+    "list_agents",
+    "list_principals",
+    "identity_get",
+    "identity_set",
+  ],
   "@workbench/tools-attio/attio": [
     "attio_list_objects",
     "attio_query_records",
@@ -34,6 +39,8 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "artifact_link_file",
     "artifact_link_presentation",
     "write_artifact",
+    "memory_load",
+    "memory_save",
   ],
   "@workbench/tools-bluesky/bluesky": ["bluesky_search"],
   "@workbench/tools-dispatch/dispatch": ["dispatch_agent"],
