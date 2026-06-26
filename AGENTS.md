@@ -187,6 +187,41 @@ Define new types with `type(...)` from `arktype`, deriving the TypeScript type v
   separate commit, after checking downstream `infer`/narrowing usage.
 - `interchange/` (`@intx/*`) is out of scope — never modify upstream types.
 
+### Canonical form — the schema is the source of truth, and is exported
+
+A migrated base/boundary type is defined **once as an exported arktype schema**, with the
+TypeScript type derived from it. The schema — not the inferred type — is the canonical
+definition; export it even when no caller validates through it yet, so the runtime
+validator is always in reach at the boundary. A bare, unexported `const Schema = type(...)`
+that is only ever read as `typeof Schema.infer` is the wrong shape — `no-unused-vars` flags
+it, and it signals a schema that was demoted to a type-only alias. Export it (or use it).
+
+```ts
+// correct — schema exported, type derived from it
+export const GammaTemplateSchema = type({
+  id: "string",
+  gammaId: "string",
+  name: "string",
+});
+export type GammaTemplate = typeof GammaTemplateSchema.infer;
+
+// wrong — schema hidden behind a type-only alias (lint error, defeats the migration)
+const GammaTemplateSchema = type({
+  id: "string",
+  gammaId: "string",
+  name: "string",
+});
+export type GammaTemplate = typeof GammaTemplateSchema.infer;
+```
+
+- **An unused-at-runtime schema is acceptable; a plain-`type` downgrade is not.** Do not
+  convert an arktype schema back to a hand-written `type {...}` to silence a lint warning —
+  export the schema instead. The goal of these migrations is that every base/boundary type
+  _is_ an arktype schema.
+- **Non-serializable members** (injected functions like a `fetcher`, class instances) cannot
+  be expressed in arktype. Keep the serializable subset as an exported schema and intersect
+  the function field as a plain type: `type Config = typeof ConfigSchema.infer & { fetcher?: Fetch }`.
+
 ## Dependency Injection
 
 Inject stateful resources (DB, HTTP clients). Import stateless singletons (config, loggers) directly.
