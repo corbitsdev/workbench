@@ -160,4 +160,26 @@ describe("inlineInferenceStep", () => {
     expect(primitive.input).toEqual({ from: "steps.fetch.output" });
     expect(primitive.after).toEqual(["context"]);
   });
+
+  test("a model preference declares a matching preferred inference source", () => {
+    const primitive = inlineInferenceStep({
+      id: "writer",
+      systemPrompt: SYSTEM_PROMPT,
+      model: "kimi-k2.6",
+    });
+    // The orchestrator's pickStepInferenceSource matches by (provider, model)
+    // against the deploy's config.sources, so the declared preference must carry
+    // both — this is what routes the step to a non-default model.
+    expect(primitive.agent.inference.sources).toEqual([
+      { provider: "openai-compatible", model: "kimi-k2.6" },
+    ]);
+  });
+
+  test("no model preference leaves the source list empty (rides the deploy default)", () => {
+    const primitive = inlineInferenceStep({
+      id: "analyze",
+      systemPrompt: SYSTEM_PROMPT,
+    });
+    expect(primitive.agent.inference.sources).toEqual([]);
+  });
 });

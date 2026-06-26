@@ -9,7 +9,11 @@ export const RankScoreOptions = type({
 });
 export type RankScoreOptions = typeof RankScoreOptions.infer;
 
-export type RankedCluster = Cluster & { score: number };
+// `relevance` is the cluster's best item-relevance in [0, 100] (LLM rerank score
+// when present, else deterministic entity grounding). Surfaced alongside `score`
+// so the report can apply a relevance floor — dropping off-topic clusters that a
+// thin topic would otherwise pad the brief with — without recomputing grounding.
+export type RankedCluster = Cluster & { score: number; relevance: number };
 
 // Per-source quality weight, ported from the reference engine's SOURCE_QUALITY
 // (signals.py). Grounding-heavy sources (HN, YouTube) sit above social-noise
@@ -142,7 +146,11 @@ function freshnessScore(items: ResearchItem[], nowMs: number): number {
   }, 0);
   const ageMs = nowMs - mostRecent;
   const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-  return Math.max(0, 1 - ageMs / thirtyDaysMs);
+  // Clamp to [0, 1]. The upper clamp matters for sources whose `publishedAt` is a
+  // future date — Polymarket emits the market END date — so a future-dated item
+  // cannot earn a freshness bonus above a brand-new post and over-rank on dating
+  // alone.
+  return Math.max(0, Math.min(1, 1 - ageMs / thirtyDaysMs));
 }
 
 function sourceBreadthBonus(cluster: Cluster): number {
@@ -250,7 +258,11 @@ export function rankScore(
     const topItem = cappedItems.includes(cluster.topItem)
       ? cluster.topItem
       : (cappedItems[0] ?? cluster.topItem);
-    return { cluster: { ...cluster, items: cappedItems, topItem }, score };
+    return {
+      cluster: { ...cluster, items: cappedItems, topItem },
+      score,
+      relevance,
+    };
   });
 
   scored.sort((a, b) => {
@@ -260,5 +272,9 @@ export function rankScore(
     return bTime - aTime;
   });
 
-  return scored.map((s) => ({ ...s.cluster, score: s.score }));
+  return scored.map((s) => ({
+    ...s.cluster,
+    score: s.score,
+    relevance: s.relevance,
+  }));
 }

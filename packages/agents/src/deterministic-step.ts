@@ -4,6 +4,7 @@ import { step } from "@intx/workflow";
 import type { StepPrimitive, Selector } from "@intx/workflow";
 import { canonicalizeToolNames } from "./tool-names";
 import { EPHEMERAL_CHAT_TAG } from "./ephemeral-chat/payload";
+import { LLM_PROVIDER } from "./constants";
 
 /**
  * Marker tags the sidecar's step invoker reads to dispatch a step as a
@@ -142,6 +143,16 @@ export interface InlineInferenceStepOpts {
    * ephemeral token budget before the model turn (CL-2308).
    */
   ephemeralChat?: "v1";
+  /**
+   * Optional per-step model preference. When set, the step's placeholder agent
+   * declares this `(LLM_PROVIDER, model)` as its preferred inference source, so
+   * the deploy orchestrator's `pickStepInferenceSource` pins that model for this
+   * step instead of the deploy default — provided the workflow deploy resolved
+   * the model into `config.sources` (see `resolveWorkflowDeploySource`). Absent,
+   * the step uses the deploy's default model. Use to route a heavier synthesis
+   * step (e.g. `LLM_WRITER_MODEL`) while the rest stay on `LLM_DEFAULT_MODEL`.
+   */
+  model?: string;
 }
 
 /**
@@ -168,7 +179,15 @@ export function inlineInferenceStep(
     systemPrompt: opts.systemPrompt,
     tools: [],
     capabilities: [],
-    inference: { sources: [] },
+    // A declared preferred source makes the capability walk emit the
+    // `inference.source:<provider>:<model>` grant and the orchestrator's
+    // pickStepInferenceSource pin that model for the step; with none declared the
+    // step falls back to the deploy defaultSource. The sidecar still resolves the
+    // concrete pinned source from STEP_INFERENCE_SOURCES at runtime either way.
+    inference:
+      opts.model !== undefined
+        ? { sources: [{ provider: LLM_PROVIDER, model: opts.model }] }
+        : { sources: [] },
     tags: {
       [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
       ...(opts.ephemeralChat !== undefined

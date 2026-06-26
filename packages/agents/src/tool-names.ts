@@ -82,6 +82,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   "@workbench/tools-last30days/core": [
     "last30days_core_extract",
     "last30days_core_report",
+    "last30days_ground_queries",
     "last30days_validate",
     "last30days_workflow_brief",
   ],

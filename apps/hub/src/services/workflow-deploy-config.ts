@@ -3,6 +3,7 @@ import { resolveModelSources } from "@intx/db";
 import type { ModelRequirement } from "@intx/types";
 import type { HarnessConfig, InferenceSource } from "@intx/types/runtime";
 import type { DeployContent } from "@intx/hub-sessions";
+import type { WorkflowDefinition } from "@intx/workflow";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 import type { HubDb } from "../db";
 
@@ -11,6 +12,29 @@ export type WorkflowDeployConfig = {
   config: HarnessConfig;
   deployContent: DeployContent;
 };
+
+// The distinct non-default models a workflow's steps declare as a preferred
+// inference source (via `inlineInferenceStep({ model })`). The deploy resolves
+// these into `config.sources` IN ADDITION to the default chain so a step that
+// prefers one can pin it. Driving the extra-model set off the definition keeps
+// the per-step model a property of the workflow that declares it — the generic
+// hub deploy path never names a specific model. Defensive reads: the primitive
+// is reconstructed from persisted JSON.
+export function collectDeclaredStepModels(
+  definition: WorkflowDefinition,
+): string[] {
+  const models = new Set<string>();
+  for (const stepId of definition.stepOrder) {
+    const primitive = definition.steps[stepId];
+    if (primitive === undefined || primitive.kind !== "step") continue;
+    for (const source of primitive.agent?.inference?.sources ?? []) {
+      if (source.model !== "" && source.model !== LLM_DEFAULT_MODEL) {
+        models.add(source.model);
+      }
+    }
+  }
+  return [...models];
+}
 
 // Resolve the tenant's inference sources for native workflows from the tenant
 // catalog. `resolveModelSources` returns the offerings for the required model
@@ -26,6 +50,9 @@ export type WorkflowDeployConfig = {
 export async function resolveWorkflowDeploySource(args: {
   db: HubDb;
   tenantId: string;
+  // Extra models some step prefers (see `collectDeclaredStepModels`). Resolved
+  // optionally and appended after the required default chain.
+  extraModels?: readonly string[];
 }): Promise<InferenceSource[]> {
   const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
   const resolution = await resolveModelSources(args.db, args.tenantId, [
@@ -46,7 +73,24 @@ export async function resolveWorkflowDeploySource(args: {
       `workflow deploy: model "${resolution.model}" is unavailable in tenant ${args.tenantId}${detail}`,
     );
   }
-  return resolution.sources;
+  // The default model chain is required; its head is the deploy defaultSource.
+  // Step-preferred models are OPTIONAL — a step opts into one via a per-step
+  // preference, and pickStepInferenceSource falls back to the default when it is
+  // absent. Resolve each (the default is already covered and excluded by
+  // collectDeclaredStepModels) and append only the offerings the catalog carries,
+  // so the deploy never fails on a preferred model the tenant lacks.
+  const sources = [...resolution.sources];
+  for (const model of args.extraModels ?? []) {
+    const extra = await resolveModelSources(args.db, args.tenantId, [{ model }]);
+    if (!extra.ok) continue;
+    for (const source of extra.sources) {
+      const present = sources.some(
+        (s) => s.provider === source.provider && s.model === source.model,
+      );
+      if (!present) sources.push(source);
+    }
+  }
+  return sources;
 }
 
 // Assemble the base HarnessConfig from a resolved source chain and a
@@ -87,15 +131,19 @@ export function assembleWorkflowDeployConfig(args: {
 }
 
 // Builds the base HarnessConfig for a FRESH deploy, minting a new deploymentId.
+// The definition supplies the per-step model preferences to resolve alongside the
+// default chain.
 export async function resolveWorkflowDeployConfig(args: {
   db: HubDb;
   tenantId: string;
   principalId: string;
   deploymentDomain: string;
+  definition: WorkflowDefinition;
 }): Promise<WorkflowDeployConfig> {
   const sources = await resolveWorkflowDeploySource({
     db: args.db,
     tenantId: args.tenantId,
+    extraModels: collectDeclaredStepModels(args.definition),
   });
   return assembleWorkflowDeployConfig({
     deploymentId: generateId("session"),

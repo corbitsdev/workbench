@@ -44,12 +44,15 @@ function phaseFor(
 
 function researchPhase(state: RunState | null): StepPhase | undefined {
   const ids = [
+    "ground",
+    "groundQueries",
     "hackernews",
     "github",
     "web",
     "reddit",
     "x",
     "youtube",
+    "polymarket",
     "rerank",
     "brief",
   ] as const;
@@ -153,12 +156,14 @@ function Spinner({ label }: { label?: string }) {
 }
 
 const SOURCE_PROGRESS: { id: string; label: string }[] = [
+  { id: "ground", label: "Tailoring queries" },
   { id: "hackernews", label: "Hacker News" },
   { id: "github", label: "GitHub" },
   { id: "web", label: "Web" },
   { id: "reddit", label: "Reddit" },
   { id: "x", label: "X" },
   { id: "youtube", label: "YouTube" },
+  { id: "polymarket", label: "Polymarket" },
   { id: "rerank", label: "Ranking relevance" },
   { id: "brief", label: "Building brief" },
 ];
@@ -175,7 +180,7 @@ function sourceStatusLabel(phase: StepPhase | undefined): {
   text: string;
   tone: string;
 } {
-  if (phase === "completed") return { text: "done", tone: "text-success" };
+  if (phase === "completed") return { text: "done", tone: "text-green" };
   if (phase === "failed") return { text: "skipped", tone: "text-text-3" };
   // Summit Blue for in-progress (cool, informational); orange is reserved for
   // the single primary action on screen ("Start research").
@@ -183,15 +188,28 @@ function sourceStatusLabel(phase: StepPhase | undefined): {
   return { text: "waiting", tone: "text-text-3" };
 }
 
+// The single "Tailoring queries" row stands in for both the grounding inference
+// (`ground`) and the deterministic parse (`groundQueries`); it stays "running"
+// across both so the panel never shows an all-idle gap while the fast parse step
+// runs, and reads "done" only once the per-source query map exists.
+function rowPhase(state: RunState | null, id: string): StepPhase | undefined {
+  if (id !== "ground") return phaseFor(state, id);
+  const parse = phaseFor(state, "groundQueries");
+  if (parse === "completed") return "completed";
+  if (isRunningPhase(parse)) return parse;
+  if (phaseFor(state, "ground") === "completed") return "in-flight";
+  return phaseFor(state, "ground");
+}
+
 function SourceProgress({ state }: { state: RunState | null }) {
   return (
     <Card>
       <h3 className="mb-4 text-sm font-semibold text-text">
-        Gathering sources
+        Research progress
       </h3>
       <ul className="space-y-2.5">
         {SOURCE_PROGRESS.map(({ id, label }) => {
-          const phase = phaseFor(state, id);
+          const phase = rowPhase(state, id);
           const status = sourceStatusLabel(phase);
           const running = isRunningPhase(phase);
           return (
@@ -256,7 +274,7 @@ function IntakeScreen({
       </h3>
       <p className="mb-5 text-xs text-text-3">
         We gather signal from the last 30 days across Hacker News, GitHub, web,
-        Reddit, X, and YouTube, then synthesize a cited brief.
+        Reddit, X, YouTube, and Polymarket, then synthesize a cited brief.
       </p>
       <form
         className="space-y-4"
@@ -352,7 +370,7 @@ function ReportScreen({
               <li key={c.url}>
                 <a
                   href={c.url}
-                  className="text-orange underline"
+                  className="text-accent hover:underline"
                   target="_blank"
                   rel="noreferrer"
                 >

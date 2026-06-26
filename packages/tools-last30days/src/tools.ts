@@ -61,6 +61,16 @@ export const LAST30DAYS_WORKFLOW_BRIEF_DEFINITION: ToolDefinition = {
   },
 };
 
+export const LAST30DAYS_GROUND_QUERIES_DEFINITION: ToolDefinition = {
+  name: "last30days_ground_queries",
+  description:
+    "Internal workflow helper. Parse the grounding step's JSON reply into a per-source query map so each source fan-out gets a query tailored to that platform. Every source key is guaranteed a non-empty string (falling back to the base query) so a thin or malformed grounding reply never blanks a source search.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
 export const LAST30DAYS_VALIDATE_DEFINITION: ToolDefinition = {
   name: "last30days_validate",
   description:
@@ -243,8 +253,15 @@ const SOURCE_STEP_IDS = [
   "reddit",
   "x",
   "youtube",
+  "polymarket",
   "bluesky",
 ] as const;
+
+// Relevance floor for the workflow brief: drop clusters the rerank/grounding
+// scored below 40 (off-topic on the reference 0–100 scale) instead of padding
+// topK with noise. A thin topic then yields an honestly-small brief. See
+// buildReport's `minRelevance`.
+const BRIEF_MIN_RELEVANCE = 40;
 
 // The LLM rerank step (W1.2) emits a `reply` string of JSON relevance scores by
 // url. Parse it tolerantly (tolerate code fences / surrounding prose); a missing
@@ -277,6 +294,85 @@ function parseRerankScores(step: unknown): Map<string, number> {
     }
   }
   return scores;
+}
+
+// The fan-out sources whose search query the grounding step tailors. Mirrors the
+// workflow's `SOURCES` keys (the workflow is the fan-out source of truth; a key
+// here that the workflow drops, or vice versa, degrades that source to the base
+// query rather than erroring). Bluesky stays disabled upstream. Exported so the
+// parse contract is inspectable.
+export const GROUNDING_SOURCE_KEYS = [
+  "hackernews",
+  "github",
+  "web",
+  "reddit",
+  "x",
+  "youtube",
+  "polymarket",
+] as const;
+
+// Parse the grounding LLM reply (tolerant of code fences / surrounding prose)
+// into a per-source query map. Every key is filled: the per-source string the
+// model returned when it is non-empty, else the base query — so a malformed or
+// partial reply degrades to the untailored query rather than blanking a source.
+function parseGroundedQueries(
+  reply: unknown,
+  baseQuery: string,
+): Record<string, string> {
+  const tailored = new Map<string, string>();
+  if (typeof reply === "string") {
+    const start = reply.indexOf("{");
+    const end = reply.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        const parsed: unknown = JSON.parse(reply.slice(start, end + 1));
+        if (isRecord(parsed)) {
+          for (const key of GROUNDING_SOURCE_KEYS) {
+            const value = parsed[key];
+            if (typeof value === "string" && value.trim().length > 0) {
+              tailored.set(key, value.trim());
+            }
+          }
+        }
+      } catch {
+        // fall through to base-query defaults
+      }
+    }
+  }
+  const queries: Record<string, string> = {};
+  for (const key of GROUNDING_SOURCE_KEYS) {
+    queries[key] = tailored.get(key) ?? baseQuery;
+  }
+  return queries;
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+// Returns object `content` (not a JSON string) so each source step can select
+// its tailored query by field: `steps.groundQueries.output.content.<source>`.
+function createGroundQueriesTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: LAST30DAYS_GROUND_QUERIES_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const baseQuery =
+        readNonEmptyString(args.query) ?? readNonEmptyString(args.topic);
+      if (baseQuery === undefined) {
+        throw new Error(
+          "last30days_ground_queries requires a non-empty query or topic",
+        );
+      }
+      return {
+        callId: call.id,
+        content: parseGroundedQueries(args.reply, baseQuery),
+      };
+    },
+  };
 }
 
 function createWorkflowBriefTool(): AgentTool {
@@ -338,6 +434,7 @@ function createWorkflowBriefTool(): AgentTool {
           days,
           topK: 20,
           nowIso,
+          minRelevance: BRIEF_MIN_RELEVANCE,
           skippedSources,
         }),
       );
@@ -364,6 +461,7 @@ export function createLast30daysTools(): AgentTool[] {
   return [
     createExtractTool(),
     createReportTool(),
+    createGroundQueriesTool(),
     createWorkflowBriefTool(),
     createValidateTool(),
   ];

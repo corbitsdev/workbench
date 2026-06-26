@@ -312,3 +312,82 @@ describe("buildReport", () => {
     expect(report.stats.dateRange).toBeUndefined();
   });
 });
+
+describe("buildReport relevance floor (minRelevance)", () => {
+  test("drops clusters below the floor and keeps grounded ones", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://on.com", title: "TypeScript 6 release notes" }),
+      makeItem({
+        url: "https://off.com",
+        title: "A weekend cooking recipe",
+        source: "reddit",
+      }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    const urls = report.items.map((i) => i.url);
+    expect(urls).toContain("https://on.com");
+    expect(urls).not.toContain("https://off.com");
+  });
+
+  test("shrinks the brief to empty when nothing clears the floor", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://x.com", title: "Totally unrelated chatter" }),
+    ];
+    const report = buildReport(items, {
+      topic: "neobank launches",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    expect(report.items).toHaveLength(0);
+    expect(report.clusters).toHaveLength(0);
+  });
+
+  test("an explicit LLM relevance below the floor is cut even when popular", () => {
+    const items: ResearchItem[] = [
+      // Distinct titles so the two land in separate clusters (jaccard < 0.8) and
+      // the floor judges each on its own relevance, not the merged max.
+      makeItem({
+        url: "https://viral.com",
+        title: "Redux selectors deep dive",
+        relevance: 10,
+        engagement: { upvotes: 9999, comments: 999 },
+      }),
+      makeItem({
+        url: "https://keep.com",
+        title: "GraphQL federation guide",
+        relevance: 80,
+      }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    const urls = report.items.map((i) => i.url);
+    expect(urls).toContain("https://keep.com");
+    expect(urls).not.toContain("https://viral.com");
+  });
+
+  test("without minRelevance the floor is off — ungrounded items survive", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://off.com", title: "A weekend cooking recipe" }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+    });
+    expect(report.items.map((i) => i.url)).toContain("https://off.com");
+  });
+});

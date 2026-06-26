@@ -4,12 +4,15 @@ import { runLocal } from "@intx/workflow/runlocal";
 import {
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
+  STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
+  LLM_WRITER_MODEL,
 } from "@workbench/agents";
 
 import { workflow } from "./index";
+import { buildGroundingSystemPrompt } from "./prompts";
 
 // Bluesky is disabled (CL-2401): its search API fails on every run, and a
 // failed source step flips the whole run to RunFailed. It stays out of the
@@ -21,6 +24,7 @@ const SOURCE_STEP_IDS = [
   "reddit",
   "x",
   "youtube",
+  "polymarket",
 ] as const;
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
@@ -38,6 +42,18 @@ function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
 describe("last30days-research native workflow", () => {
   test("gates on intake, fans out sources, briefs, writes, then persists", async () => {
     const { invoker, ran } = makeRecordingInvoker({
+      "last30days-ground": { reply: "{}" },
+      "last30days-ground-queries": {
+        content: {
+          hackernews: "q",
+          github: "q",
+          web: "q",
+          reddit: "q",
+          x: "q",
+          youtube: "q",
+          polymarket: "q",
+        },
+      },
       "last30days-build-brief": { content: '{"topic":"AI coding tools"}' },
       "last30days-write-report": {
         reply: "What I learned about AI coding tools:",
@@ -56,6 +72,9 @@ describe("last30days-research native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
 
     const ranIds = ran.map((r) => r.id);
+    // Grounding runs before any source so each fan-out gets a tailored query.
+    expect(ranIds).toContain("last30days-ground");
+    expect(ranIds).toContain("last30days-ground-queries");
     for (const source of SOURCE_STEP_IDS) {
       expect(ranIds).toContain(`last30days-fetch-${source}`);
     }
@@ -75,21 +94,23 @@ describe("last30days-research native workflow", () => {
     expect(ranIds.at(-1)).toBe("last30days-persist-artifact");
   });
 
-  test("sources are deterministic tool steps chained serially after intake", () => {
-    // Serial chain (CL-2314 mitigation): intake -> hackernews -> github -> ... -> youtube.
-    // The chain is load-bearing — a parallel fan-out races the retry scheduler
-    // on the run event log's single-writer seq guard. Each source must depend on
-    // exactly its predecessor so no two source bodies are ever in flight at once.
+  test("sources are deterministic tool steps chained serially after grounding", () => {
+    // Serial chain (CL-2314 mitigation): groundQueries -> hackernews -> github ->
+    // ... -> youtube -> polymarket. The chain is load-bearing — a parallel fan-out
+    // races the retry scheduler on the run event log's single-writer seq guard.
+    // Each source must depend on exactly its predecessor so no two source bodies
+    // are ever in flight at once.
     const expectedPredecessor: Record<
       (typeof SOURCE_STEP_IDS)[number],
       string
     > = {
-      hackernews: "intake",
+      hackernews: "groundQueries",
       github: "hackernews",
       web: "github",
       reddit: "web",
       x: "reddit",
       youtube: "x",
+      polymarket: "youtube",
     };
     for (const source of SOURCE_STEP_IDS) {
       const step = workflow.steps[source];
@@ -98,6 +119,27 @@ describe("last30days-research native workflow", () => {
       }
       expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
       expect(step.after).toEqual([expectedPredecessor[source]]);
+    }
+  });
+
+  test("each source pulls its own tailored query and that key exists in the grounding prompt", () => {
+    // Drift guard: a source's argMap query must select its own key off the
+    // grounded-queries map, and the grounding prompt must ask for that key — else
+    // the source silently falls back to the untailored base query. Catches a
+    // source added to the chain but missed in the prompt.
+    const groundingPrompt = buildGroundingSystemPrompt();
+    for (const source of SOURCE_STEP_IDS) {
+      const step = workflow.steps[source];
+      if (step === undefined || step.kind !== "step") {
+        throw new Error(`expected a step primitive for ${source}`);
+      }
+      const argMapJson = step.agent.tags?.[STEP_ARGMAP_TAG];
+      if (argMapJson === undefined) {
+        throw new Error(`expected an argMap on source step ${source}`);
+      }
+      const argMap = JSON.parse(argMapJson) as { query?: { from?: string } };
+      expect(argMap.query?.from).toBe(source);
+      expect(groundingPrompt).toContain(`"${source}"`);
     }
   });
 
@@ -133,6 +175,41 @@ describe("last30days-research native workflow", () => {
     expect(brief.agent.tags?.[STEP_TOOL_TAG]).toBe(
       "@workbench/tools-last30days/core:last30days_workflow_brief",
     );
+  });
+
+  test("grounding fans out before the sources and feeds the per-source query map", () => {
+    const ground = workflow.steps.ground;
+    if (ground === undefined || ground.kind !== "step") {
+      throw new Error("expected a step primitive for ground");
+    }
+    expect(ground.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(ground.after).toEqual(["intake"]);
+
+    const groundQueries = workflow.steps.groundQueries;
+    if (groundQueries === undefined || groundQueries.kind !== "step") {
+      throw new Error("expected a step primitive for groundQueries");
+    }
+    expect(groundQueries.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "last30days_ground_queries",
+    );
+    expect(groundQueries.after).toEqual(["ground"]);
+  });
+
+  test("the write step pins the heavier writer model; grounding/rerank do not", () => {
+    const write = workflow.steps.write;
+    if (write === undefined || write.kind !== "step") {
+      throw new Error("expected a step primitive for write");
+    }
+    expect(write.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
+
+    for (const id of ["ground", "rerank"] as const) {
+      const step = workflow.steps[id];
+      if (step === undefined || step.kind !== "step") {
+        throw new Error(`expected a step primitive for ${id}`);
+      }
+      // No preference → the deploy default model is pinned for the step.
+      expect(step.agent.inference.sources).toEqual([]);
+    }
   });
 
   test("write is an inline-inference step; persist is deterministic and gated on write", () => {
