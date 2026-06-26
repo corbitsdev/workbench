@@ -1077,6 +1077,7 @@
       "dependencies": {
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.9.0",
