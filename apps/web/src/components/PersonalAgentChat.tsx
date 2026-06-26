@@ -18,7 +18,7 @@ import {
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
 import { takePendingFirstMessage } from "../lib/pending-first-message";
-import { MyraChatSurface } from "./MyraChatSurface";
+import { ExpandedChatOverlay, MyraChatSurface } from "./MyraChatSurface";
 import { ThreadSwitcher } from "./ThreadSwitcher";
 
 const DOCK_STATE_KEY = "myra-chat-dock-state";
@@ -189,17 +189,32 @@ export function PersonalAgentChat() {
     </div>
   );
 
+  // While expanded, the whole panel (thread switcher + surface) is lifted into a
+  // single dismissible full-screen overlay; the inline dock/popup is not also
+  // rendered, so no emptied chat is left stranded behind the overlay. The overlay
+  // is always mounted so AnimatePresence can play its exit transition on collapse.
+  const overlay = (
+    <ExpandedChatOverlay open={expanded} onExit={toggleExpand}>
+      {panel}
+    </ExpandedChatOverlay>
+  );
+
   if (dockState === "docked") {
     return (
       <>
-        {/* Spacer reserves height in the flex column so main content shrinks
-            above the fixed overlay rather than being hidden behind it. */}
-        <div
-          aria-hidden
-          style={{ height: DOCKED_BAR_HEIGHT + 18 }}
-          className="shrink-0"
-        />
-        <DockedChatBar>{panel}</DockedChatBar>
+        {!expanded && (
+          <>
+            {/* Spacer reserves height in the flex column so main content shrinks
+                above the fixed overlay rather than being hidden behind it. */}
+            <div
+              aria-hidden
+              style={{ height: DOCKED_BAR_HEIGHT + 18 }}
+              className="shrink-0"
+            />
+            <DockedChatBar>{panel}</DockedChatBar>
+          </>
+        )}
+        {overlay}
       </>
     );
   }
@@ -209,13 +224,12 @@ export function PersonalAgentChat() {
       {!launcherHidden && (
         <ChatLauncher onClick={() => setOpen((prev) => !prev)} open={open} />
       )}
-      <FloatingChat
-        open={open}
-        expanded={expanded}
-        onClose={() => setOpen(false)}
-      >
-        {panel}
-      </FloatingChat>
+      {!expanded && (
+        <FloatingChat open={open} onClose={() => setOpen(false)}>
+          {panel}
+        </FloatingChat>
+      )}
+      {overlay}
     </>
   );
 }
