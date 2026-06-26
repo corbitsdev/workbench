@@ -190,6 +190,60 @@ describe("ArtifactGallery", () => {
     screen.getByRole("menuitem", { name: "Bob" });
   });
 
+  it("renders a rows table with column headers when viewMode is rows", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [{ ...artifact, ownerName: "Alice" }],
+        viewMode: "rows",
+        onViewModeChange: () => {},
+      }),
+    );
+    screen.getByRole("table");
+    screen.getByRole("columnheader", { name: "Kind" });
+    screen.getByRole("columnheader", { name: "Owner" });
+    screen.getByRole("cell", { name: "Email" });
+    screen.getByRole("cell", { name: "Alice" });
+  });
+
+  it("renders the grid (no table) when viewMode is grid", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "grid",
+        onViewModeChange: () => {},
+      }),
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("opens the mapped artifact from a rows-view row click", () => {
+    const onOpen = mock((_a: { id: string }) => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "rows",
+        onViewModeChange: () => {},
+        onOpen,
+      }),
+    );
+    fireEvent.click(screen.getByText("Sales automation ROI"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen.mock.calls[0]?.[0]?.id).toBe("a-1");
+  });
+
+  it("toggles view mode from the header control", () => {
+    const onViewModeChange = mock((_m: "grid" | "rows") => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "grid",
+        onViewModeChange,
+      }),
+    );
+    fireEvent.click(screen.getByLabelText("Rows view"));
+    expect(onViewModeChange).toHaveBeenCalledWith("rows");
+  });
+
   it("calls onOwnerFilterChange when an owner is selected", async () => {
     const owners = [
       { id: "p-1", name: "Alice" },

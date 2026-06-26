@@ -5,10 +5,23 @@
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Menu, MenuContent, MenuItem, MenuTrigger } from "@workbench/ui";
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  DataTable,
+  ViewToggle,
+  type DataTableColumn,
+  type ViewMode,
+} from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
-import { toGalleryArtifact } from "./artifact-visuals";
+import {
+  labelForStatus,
+  toGalleryArtifact,
+  visualForKind,
+} from "./artifact-visuals";
 import { ArtifactCard } from "./ArtifactCard";
 
 export interface ArtifactGalleryProps {
@@ -44,6 +57,10 @@ export interface ArtifactGalleryProps {
   origin?: string;
   /** Called when any advanced filter (date range / origin) changes. */
   onAdvancedFilterChange?: (next: AdvancedArtifactFilter) => void;
+  /** Current layout. When omitted, defaults to the grid. */
+  viewMode?: ViewMode;
+  /** Called when the user toggles between grid and rows. When omitted, the toggle is hidden. */
+  onViewModeChange?: (mode: ViewMode) => void;
 }
 
 /** Date-range + provenance facet selection driven by the gallery filter bar. */
@@ -52,6 +69,41 @@ export interface AdvancedArtifactFilter {
   createdBefore?: string | undefined;
   origin?: string | undefined;
 }
+
+function formatUpdated(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
+}
+
+const artifactRowColumns: DataTableColumn<ArtifactWithSession>[] = [
+  {
+    key: "title",
+    header: "Name",
+    className: "font-medium text-text",
+    render: (a) => a.title,
+  },
+  {
+    key: "kind",
+    header: "Kind",
+    render: (a) => visualForKind(a.kind).label,
+  },
+  {
+    key: "owner",
+    header: "Owner",
+    render: (a) => a.ownerName ?? "—",
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (a) => labelForStatus(a.status),
+  },
+  {
+    key: "updated",
+    header: "Updated",
+    render: (a) => formatUpdated(a.updatedAt),
+  },
+];
 
 export function ArtifactGallery({
   artifacts,
@@ -70,6 +122,8 @@ export function ArtifactGallery({
   createdAfter,
   createdBefore,
   onAdvancedFilterChange,
+  viewMode = "grid",
+  onViewModeChange,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
@@ -199,6 +253,9 @@ export function ArtifactGallery({
             Filters
           </button>
         )}
+        {onViewModeChange && (
+          <ViewToggle mode={viewMode} onChange={onViewModeChange} />
+        )}
         <button
           type="button"
           onClick={onNew}
@@ -279,16 +336,28 @@ export function ArtifactGallery({
             No results for &ldquo;{query.trim()}&rdquo;.
           </div>
         )}
-        <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-          {tiles.map((tile, i) => (
-            <ArtifactCard
-              key={tile.id}
-              artifact={tile}
-              index={i + 1}
-              onOpen={onOpen}
-            />
-          ))}
-        </div>
+        {viewMode === "rows" ? (
+          <DataTable<ArtifactWithSession>
+            caption="Artifacts"
+            rows={artifacts}
+            getRowKey={(a) => a.id}
+            {...(onOpen
+              ? { onRowClick: (a) => onOpen(toGalleryArtifact(a)) }
+              : {})}
+            columns={artifactRowColumns}
+          />
+        ) : (
+          <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+            {tiles.map((tile, i) => (
+              <ArtifactCard
+                key={tile.id}
+                artifact={tile}
+                index={i + 1}
+                {...(onOpen ? { onOpen } : {})}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

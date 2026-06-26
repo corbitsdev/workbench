@@ -4,6 +4,7 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
+import { useViewMode } from "@workbench/ui";
 import { useArtifacts, useTenantMembers } from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
@@ -66,6 +67,7 @@ export function ArtifactGallery({
     {},
   );
   const [addOpen, setAddOpen] = useState(false);
+  const { mode: viewMode, setMode: setViewMode } = useViewMode("artifacts");
 
   const {
     data: artifacts,
@@ -143,6 +145,8 @@ export function ArtifactGallery({
         createdAfter={advancedFilter.createdAfter}
         createdBefore={advancedFilter.createdBefore}
         onAdvancedFilterChange={setAdvancedFilter}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
       <ArtifactModal
         open={selected !== null}

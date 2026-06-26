@@ -60,7 +60,14 @@ export {
   PREFERENCE_KEYS,
   ServerPreferencesSchema,
   type ServerPreferences,
+  VIEW_MODE_SCOPES,
+  viewModeStorageKey,
+  viewModeServerKey,
+  type ViewModeScope,
 } from "./preferences-store";
+export { useViewMode, type ViewMode } from "./use-view-mode";
+export { ViewToggle } from "./ViewToggle";
+export { DataTable, type DataTableColumn } from "./DataTable";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
 export { default as HorizontalStepper } from "./HorizontalStepper";
 export {

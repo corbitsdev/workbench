@@ -34,6 +34,25 @@ export function parseStringList(raw: string | null): string[] {
   }
 }
 
+/**
+ * Library pages that support a Grid/Rows layout toggle. Each scope owns one
+ * persisted view-mode preference, keyed by scope so the three pages never
+ * collide. Adding a page is one entry here — the store, persister, and
+ * hydration all derive their keys from this list.
+ */
+export const VIEW_MODE_SCOPES = ["artifacts", "tools", "skills"] as const;
+export type ViewModeScope = (typeof VIEW_MODE_SCOPES)[number];
+
+/** localStorage / store key for a scope's view-mode preference. */
+export function viewModeStorageKey(scope: ViewModeScope): string {
+  return `cw-view-${scope}`;
+}
+
+/** Server-side preference key (rides the open MemberPreferences blob). */
+export function viewModeServerKey(scope: ViewModeScope): string {
+  return `${scope}ViewMode`;
+}
+
 type Persister = (key: string, value: string) => void;
 
 let persister: Persister | null = null;
@@ -114,12 +133,17 @@ export function hydratePreference(key: string, value: string): void {
   notify(key);
 }
 
-/** Server bootstrap shape — structurally the shared `MemberPreferences`. */
+/**
+ * Server bootstrap shape — structurally the shared `MemberPreferences`. Open
+ * (`[string]`) so the per-scope `*ViewMode` keys ride along without one schema
+ * entry per page; they are read explicitly in {@link hydrateServerPreferences}.
+ */
 export const ServerPreferencesSchema = type({
   "theme?": "string",
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": "string",
   "archivedWorkflowRuns?": "string[]",
+  "[string]": "unknown",
 });
 
 export type ServerPreferences = typeof ServerPreferencesSchema.infer;
@@ -148,6 +172,12 @@ export function hydrateServerPreferences(prefs: unknown): void {
       JSON.stringify(parsed.archivedWorkflowRuns),
     );
   }
+  for (const scope of VIEW_MODE_SCOPES) {
+    const value = parsed[viewModeServerKey(scope)];
+    if (typeof value === "string") {
+      hydratePreference(viewModeStorageKey(scope), value);
+    }
+  }
 }
 
 /**
@@ -167,5 +197,9 @@ export function serverPatchForRawChange(
     return { toolSummaryStyle: value };
   if (key === PREFERENCE_KEYS.archivedWorkflowRuns)
     return { archivedWorkflowRuns: parseStringList(value) };
+  for (const scope of VIEW_MODE_SCOPES) {
+    if (key === viewModeStorageKey(scope))
+      return { [viewModeServerKey(scope)]: value };
+  }
   return null;
 }

@@ -8,6 +8,8 @@ import {
   setPreference,
   setPreferencePersister,
   usePreferenceRaw,
+  viewModeServerKey,
+  viewModeStorageKey,
 } from "./preferences-store";
 import { act, renderHook } from "@testing-library/react";
 
@@ -124,5 +126,28 @@ describe("serverPatchForRawChange", () => {
     expect(
       serverPatchForRawChange(PREFERENCE_KEYS.archivedWorkflowRuns, "not-json"),
     ).toEqual({ archivedWorkflowRuns: [] });
+  });
+
+  it("maps a per-scope view-mode key to its server key", () => {
+    expect(
+      serverPatchForRawChange(viewModeStorageKey("tools"), "rows"),
+    ).toEqual({ [viewModeServerKey("tools")]: "rows" });
+  });
+});
+
+describe("view-mode hydration", () => {
+  it("hydrates each scope's view-mode from the server blob", () => {
+    hydrateServerPreferences({
+      artifactsViewMode: "rows",
+      toolsViewMode: "grid",
+    });
+    expect(getPreferenceRaw(viewModeStorageKey("artifacts"))).toBe("rows");
+    expect(getPreferenceRaw(viewModeStorageKey("tools"))).toBe("grid");
+    expect(getPreferenceRaw(viewModeStorageKey("skills"))).toBeNull();
+  });
+
+  it("ignores a non-string view-mode value", () => {
+    hydrateServerPreferences({ skillsViewMode: 3 });
+    expect(getPreferenceRaw(viewModeStorageKey("skills"))).toBeNull();
   });
 });
