@@ -6,6 +6,8 @@ import {
   formatSection,
   HUMANIZER_SECTION,
   jsonOutputContract,
+  PromptFormat,
+  PromptSection,
   structuredSection,
   xml,
 } from "./index";
@@ -42,6 +44,20 @@ describe("prompt format helpers", () => {
         xmlFormat,
       ),
     ).toBe("<context>\nDate: 04/06/2026\n</context>");
+  });
+});
+
+describe("schema runtime validation", () => {
+  it("rejects PromptSection with non-string tag", () => {
+    expect(() => PromptSection.assert({ tag: 1, content: "x" })).toThrow();
+  });
+
+  it("rejects PromptFormat with non-boolean xml field", () => {
+    expect(() => PromptFormat.assert({ xml: "yes" })).toThrow();
+  });
+
+  it("rejects PromptSection missing required fields", () => {
+    expect(() => PromptSection.assert({ tag: "role" })).toThrow();
   });
 });
 
