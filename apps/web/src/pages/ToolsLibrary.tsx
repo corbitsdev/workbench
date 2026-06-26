@@ -3,9 +3,13 @@ import {
   CATALOG_GLYPH_KINDS,
   CatalogGlyph,
   catalogCardClassName,
+  DataTable,
   hashString,
   PagePanel,
   toHumanLabel,
+  useViewMode,
+  ViewToggle,
+  type DataTableColumn,
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -96,10 +100,41 @@ function ToolCard({
 
 const ALL_PROVIDERS = "__all__";
 
+const toolRowColumns: DataTableColumn<ToolSummary>[] = [
+  {
+    key: "name",
+    header: "Name",
+    className: "font-medium text-text",
+    render: (t) => toHumanLabel(t.name),
+  },
+  {
+    key: "provider",
+    header: "Provider",
+    render: (t) => t.providerName,
+  },
+  {
+    key: "version",
+    header: "Version",
+    className: "font-mono",
+    render: (t) => (t.version !== null ? `v${t.version}` : "—"),
+  },
+  {
+    key: "description",
+    header: "Description",
+    className: "max-w-[420px]",
+    render: (t) => (
+      <span className="line-clamp-1 text-text-3">
+        {t.description || "No description"}
+      </span>
+    ),
+  },
+];
+
 export function ToolsLibrary() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [provider, setProvider] = useState<string>(ALL_PROVIDERS);
+  const { mode: viewMode, setMode: setViewMode } = useViewMode("tools");
   const meQuery = useQuery({
     queryKey: ["me"],
     queryFn: getMe,
@@ -176,6 +211,7 @@ export function ToolsLibrary() {
           onChange={(e) => setQuery(e.target.value)}
           className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
         />
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
       </div>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
@@ -198,32 +234,47 @@ export function ToolsLibrary() {
               )}
             </div>
           )}
-        <div className="flex flex-col gap-7">
-          {groups.map((group) => (
-            <section key={group.provider}>
-              <h2 className="mb-3 flex items-center gap-[9px] text-[13px] font-semibold uppercase tracking-[0.04em] text-text-2">
-                {group.label}
-                <span className="rounded-[6px] bg-surface-2 px-[7px] py-[2px] font-mono text-[11px] font-normal text-text-3">
-                  {group.tools.length}
-                </span>
-              </h2>
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-                {group.tools.map((tool) => {
-                  return (
-                    <ToolCard
-                      key={tool.name}
-                      tool={tool}
-                      index={toolIndices.get(tool.name) ?? 0}
-                      onSelect={() =>
-                        navigate(`/tools/${encodeURIComponent(tool.name)}`)
-                      }
-                    />
-                  );
-                })}
-              </div>
-            </section>
+        {!toolsQuery.isLoading &&
+          !toolsQuery.isError &&
+          filtered.length > 0 &&
+          (viewMode === "rows" ? (
+            <DataTable<ToolSummary>
+              caption="Tools"
+              rows={filtered}
+              getRowKey={(t) => t.name}
+              onRowClick={(t) =>
+                navigate(`/tools/${encodeURIComponent(t.name)}`)
+              }
+              columns={toolRowColumns}
+            />
+          ) : (
+            <div className="flex flex-col gap-7">
+              {groups.map((group) => (
+                <section key={group.provider}>
+                  <h2 className="mb-3 flex items-center gap-[9px] text-[13px] font-semibold uppercase tracking-[0.04em] text-text-2">
+                    {group.label}
+                    <span className="rounded-[6px] bg-surface-2 px-[7px] py-[2px] font-mono text-[11px] font-normal text-text-3">
+                      {group.tools.length}
+                    </span>
+                  </h2>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+                    {group.tools.map((tool) => {
+                      return (
+                        <ToolCard
+                          key={tool.name}
+                          tool={tool}
+                          index={toolIndices.get(tool.name) ?? 0}
+                          onSelect={() =>
+                            navigate(`/tools/${encodeURIComponent(tool.name)}`)
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
           ))}
-        </div>
       </div>
     </PagePanel>
   );

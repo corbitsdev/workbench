@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -57,6 +63,7 @@ const tools = [
 ];
 
 beforeEach(() => {
+  localStorage.clear();
   window.happyDOM.setURL("http://localhost/");
   globalThis.fetch = mock((url: string) => {
     if (String(url).includes("/tools")) {
@@ -68,6 +75,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   globalThis.fetch = originalFetch;
 });
 
@@ -149,5 +157,27 @@ describe("ToolsLibrary", () => {
     );
     expect(document.body.textContent).toContain("Linear list issues");
     expect(document.body.textContent).toContain("1 items");
+  });
+
+  it("switches to a rows table and persists the preference when toggled", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Attio query records"),
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Rows view"));
+
+    await screen.findByRole("table");
+    screen.getByRole("columnheader", { name: "Provider" });
+    expect(localStorage.getItem("cw-view-tools")).toBe("rows");
+  });
+
+  it("starts in rows view when the stored preference is rows", async () => {
+    localStorage.setItem("cw-view-tools", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
   });
 });
