@@ -165,7 +165,7 @@ describe("reddit_search", () => {
     });
     await expect(
       getHandler(tools, "reddit_search")({}, new AbortController().signal),
-    ).rejects.toThrow("query is required");
+    ).rejects.toThrow(/reddit_search:.*query/i);
   });
 });
 
@@ -207,7 +207,7 @@ describe("reddit_subreddit_search", () => {
         { query: "x" },
         new AbortController().signal,
       ),
-    ).rejects.toThrow("subreddit is required");
+    ).rejects.toThrow(/reddit_subreddit_search:.*subreddit/i);
   });
 });
 
@@ -240,7 +240,20 @@ describe("limit handling", () => {
     expect(items).toHaveLength(10);
   });
 
-  it("clamps an explicit limit to the MAX of 100", async () => {
+  it("rejects a limit above 100 at the schema boundary", async () => {
+    const handler = getHandler(
+      createRedditTools({
+        apiKey: "k",
+        fetcher: async () => new Response(JSON.stringify(manyPosts(150))),
+      }),
+      "reddit_search",
+    );
+    await expect(
+      handler({ query: "rust", limit: 500 }, new AbortController().signal),
+    ).rejects.toThrow(/reddit_search:.*limit/i);
+  });
+
+  it("honours an explicit limit within the allowed range", async () => {
     const handler = getHandler(
       createRedditTools({
         apiKey: "k",
@@ -249,12 +262,9 @@ describe("limit handling", () => {
       "reddit_search",
     );
     const items = JSON.parse(
-      await handler(
-        { query: "rust", limit: 500 },
-        new AbortController().signal,
-      ),
+      await handler({ query: "rust", limit: 50 }, new AbortController().signal),
     ) as unknown[];
-    expect(items).toHaveLength(100);
+    expect(items).toHaveLength(50);
   });
 });
 

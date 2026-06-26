@@ -1,5 +1,6 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import { type } from "arktype";
 import { normalizeRedditPost } from "./normalize";
 import type { RedditPost, RedditTopComment } from "./types";
 
@@ -24,6 +25,31 @@ export type RedditToolsConfig = {
   baseURL?: string;
   fetcher?: RedditFetch;
 };
+
+const RedditSortLiteral = type(
+  '"relevance" | "new" | "top" | "comment_count"',
+);
+const RedditSubredditSortLiteral = type(
+  '"relevance" | "hot" | "top" | "new" | "comments"',
+);
+const RedditTimeframeLiteral = type(
+  '"all" | "day" | "week" | "month" | "year"',
+);
+
+const RedditSearchArgs = type({
+  query: "string > 0",
+  "sort?": RedditSortLiteral,
+  "timeframe?": RedditTimeframeLiteral,
+  "limit?": "1 <= number.integer <= 100",
+});
+
+const RedditSubredditSearchArgs = type({
+  subreddit: "string > 0",
+  query: "string > 0",
+  "sort?": RedditSubredditSortLiteral,
+  "timeframe?": RedditTimeframeLiteral,
+  "limit?": "1 <= number.integer <= 100",
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -182,14 +208,20 @@ function parseRedditPost(value: unknown): RedditPost | null {
   return post;
 }
 
-function resolveLimit(args: Record<string, unknown>): number {
+type CommonParams = {
+  sort?: string;
+  timeframe?: string;
+  limit?: number;
+};
+
+function resolveLimit(args: CommonParams): number {
   if (typeof args.limit === "number" && args.limit > 0) {
     return Math.min(Math.floor(args.limit), MAX_LIMIT);
   }
   return DEFAULT_LIMIT;
 }
 
-function applyCommonParams(url: URL, args: Record<string, unknown>): void {
+function applyCommonParams(url: URL, args: CommonParams): void {
   const sort =
     typeof args.sort === "string" && args.sort.length > 0
       ? args.sort
@@ -265,19 +297,19 @@ async function searchReddit(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = RedditSearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`reddit_search: ${parsed.summary}`);
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/search`);
-  url.searchParams.set("query", query);
-  applyCommonParams(url, args);
+  url.searchParams.set("query", parsed.query);
+  applyCommonParams(url, parsed);
 
   const data = await fetchJSON(config, url, signal);
   const posts = extractPosts(data)
     .map(parseRedditPost)
     .filter((post): post is RedditPost => post !== null)
-    .slice(0, resolveLimit(args));
+    .slice(0, resolveLimit(parsed));
   return JSON.stringify(posts.map(normalizeRedditPost), null, 2);
 }
 
@@ -286,24 +318,20 @@ async function searchSubreddit(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const subreddit = typeof args.subreddit === "string" ? args.subreddit : "";
-  if (subreddit.length === 0) {
-    throw new Error("subreddit is required");
-  }
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = RedditSubredditSearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`reddit_subreddit_search: ${parsed.summary}`);
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/subreddit/search`);
-  url.searchParams.set("subreddit", subreddit);
-  url.searchParams.set("query", query);
-  applyCommonParams(url, args);
+  url.searchParams.set("subreddit", parsed.subreddit);
+  url.searchParams.set("query", parsed.query);
+  applyCommonParams(url, parsed);
 
   const data = await fetchJSON(config, url, signal);
   const posts = extractPosts(data)
     .map(parseRedditPost)
     .filter((post): post is RedditPost => post !== null)
-    .slice(0, resolveLimit(args));
+    .slice(0, resolveLimit(parsed));
   return JSON.stringify(posts.map(normalizeRedditPost), null, 2);
 }
 
