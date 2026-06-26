@@ -167,7 +167,7 @@ function TreeItem({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[13px] text-text-2 hover:bg-[var(--row-hover)]"
+          className="flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1 text-left text-[13px] text-text-2 hover:bg-[var(--row-hover)]"
           style={{ paddingLeft: `${8 + indent}px` }}
         >
           <ChevronRight
@@ -194,7 +194,7 @@ function TreeItem({
     <button
       type="button"
       onClick={() => onSelect(node)}
-      className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[13px] hover:bg-[var(--row-hover)] ${selectedPath === node.path ? "bg-orange/10 text-orange" : "text-text-2"}`}
+      className={`flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1 text-left text-[13px] hover:bg-[var(--row-hover)] ${selectedPath === node.path ? "bg-orange/10 font-medium text-orange" : "text-text-2"}`}
       style={{ paddingLeft: `${8 + indent + 16}px` }}
     >
       <File className="h-3.5 w-3.5 shrink-0 text-text-3" />
@@ -253,67 +253,24 @@ export function SkillDetail() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => navigate("/skills")}
-            className="grid h-8 w-8 place-items-center rounded-[9px] border border-border text-text-2 hover:text-text"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-          <div>
-            {skill && (
-              <>
-                <p className="text-[15px] font-semibold text-text">
-                  {skill.displayName ?? toHumanLabel(skill.name)}
-                </p>
-                <p className="text-[12px] text-text-3">{skill.name}</p>
-              </>
-            )}
-            {detailQuery.isLoading && (
-              <p className="text-[13px] text-text-3">Loading...</p>
-            )}
-          </div>
+      <div className="flex items-center gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
+        <button
+          type="button"
+          onClick={() => navigate("/skills")}
+          className="grid h-8 w-8 place-items-center rounded-[9px] border border-border text-text-2 hover:text-text"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div>
+          {skill && (
+            <p className="text-[15px] font-semibold text-text">
+              {skill.displayName ?? toHumanLabel(skill.name)}
+            </p>
+          )}
+          {detailQuery.isLoading && (
+            <p className="text-[13px] text-text-3">Loading...</p>
+          )}
         </div>
-
-        {deleteMutation.error && (
-          <p className="text-[12px] text-red-500">
-            {deleteMutation.error instanceof Error
-              ? deleteMutation.error.message
-              : "Failed to delete skill"}
-          </p>
-        )}
-        {skill && !confirmDelete && (
-          <button
-            type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="flex items-center gap-1.5 rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 hover:border-red-400 hover:text-red-500"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
-          </button>
-        )}
-        {confirmDelete && (
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] text-text-2">Delete this skill?</span>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-              className="rounded-[9px] bg-red-500 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-red-600 disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Confirm"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 hover:text-text"
-            >
-              Cancel
-            </button>
-          </div>
-        )}
       </div>
 
       {detailQuery.isError && (
@@ -324,7 +281,7 @@ export function SkillDetail() {
 
       {detailQuery.data && (
         <div className="flex flex-1 overflow-hidden">
-          {tree.length > 0 && (
+          {files.length > 1 && tree.length > 0 && (
             <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface py-2">
               {tree.map((node) => (
                 <TreeItem
@@ -339,6 +296,53 @@ export function SkillDetail() {
           )}
 
           <div className="flex-1 space-y-5 overflow-y-auto p-5">
+            {selectedFile ? (
+              <div className="rounded-[10px] border border-border bg-surface">
+                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
+                  <p className="min-w-0 truncate font-mono text-[12px] text-text-3">
+                    {selectedFile.path}
+                  </p>
+                  {selectedFile.content !== undefined && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSource((v) => !v)}
+                      aria-pressed={showSource}
+                      className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-3 transition-colors hover:border-border-strong hover:text-text"
+                    >
+                      {showSource ? (
+                        <Eye className="h-3.5 w-3.5" />
+                      ) : (
+                        <Code className="h-3.5 w-3.5" />
+                      )}
+                      {showSource ? "Preview" : "Source"}
+                    </button>
+                  )}
+                </div>
+                <div className="overflow-x-auto p-5">
+                  {selectedFile.content !== undefined ? (
+                    showSource ? (
+                      <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-text-2">
+                        {selectedFile.content}
+                      </pre>
+                    ) : (
+                      <SkillFileBody
+                        path={selectedFile.path}
+                        content={selectedFile.content}
+                      />
+                    )
+                  ) : (
+                    <p className="text-[13px] text-text-3">
+                      Binary file — content not displayed.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-[13px] text-text-3">
+                Select a file to view its contents.
+              </p>
+            )}
+
             {versions.length > 0 && (
               <section className="rounded-[10px] border border-border bg-surface">
                 <div className="border-b border-border px-4 py-2">
@@ -408,51 +412,52 @@ export function SkillDetail() {
                 )}
               </section>
             )}
-            {selectedFile ? (
-              <div className="rounded-[10px] border border-border bg-surface">
-                <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
-                  <p className="min-w-0 truncate font-mono text-[12px] text-text-3">
-                    {selectedFile.path}
+
+            {skill && (
+              <section className="flex items-center justify-between gap-3 rounded-[10px] border border-border bg-surface px-4 py-3">
+                {deleteMutation.error ? (
+                  <p className="text-[12px] text-red-500">
+                    {deleteMutation.error instanceof Error
+                      ? deleteMutation.error.message
+                      : "Failed to delete skill"}
                   </p>
-                  {selectedFile.content !== undefined && (
+                ) : (
+                  <p className="text-[12px] text-text-3">
+                    Permanently delete this skill and its history.
+                  </p>
+                )}
+                {!confirmDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(true)}
+                    className="flex shrink-0 items-center gap-1.5 rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 hover:border-red-400 hover:text-red-500"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
+                ) : (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className="text-[13px] text-text-2">
+                      Delete this skill?
+                    </span>
                     <button
                       type="button"
-                      onClick={() => setShowSource((v) => !v)}
-                      aria-pressed={showSource}
-                      className="flex shrink-0 items-center gap-1.5 rounded-[7px] border border-border px-2.5 py-1 text-[12px] text-text-3 transition-colors hover:border-border-strong hover:text-text"
+                      onClick={handleDelete}
+                      disabled={deleteMutation.isPending}
+                      className="rounded-[9px] bg-red-500 px-3 py-1.5 text-[13px] font-medium text-white hover:bg-red-600 disabled:opacity-50"
                     >
-                      {showSource ? (
-                        <Eye className="h-3.5 w-3.5" />
-                      ) : (
-                        <Code className="h-3.5 w-3.5" />
-                      )}
-                      {showSource ? "Preview" : "Source"}
+                      {deleteMutation.isPending ? "Deleting..." : "Confirm"}
                     </button>
-                  )}
-                </div>
-                <div className="overflow-x-auto p-5">
-                  {selectedFile.content !== undefined ? (
-                    showSource ? (
-                      <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-text-2">
-                        {selectedFile.content}
-                      </pre>
-                    ) : (
-                      <SkillFileBody
-                        path={selectedFile.path}
-                        content={selectedFile.content}
-                      />
-                    )
-                  ) : (
-                    <p className="text-[13px] text-text-3">
-                      Binary file — content not displayed.
-                    </p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <p className="text-[13px] text-text-3">
-                Select a file to view its contents.
-              </p>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      className="rounded-[9px] border border-border px-3 py-1.5 text-[13px] text-text-2 hover:text-text"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </section>
             )}
           </div>
         </div>
