@@ -1,7 +1,8 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { normalizeXResult } from "./normalize";
-import type { XSearchResult } from "./types";
+import { XSearchResult, XSearchResponse } from "./types";
 
 const XAI_BASE_URL = "https://api.x.ai";
 const XAI_MODEL = "grok-4-1-fast";
@@ -16,6 +17,14 @@ export type XToolsConfig = {
   baseURL?: string;
   fetcher?: XFetch;
 };
+
+const XSearchArgs = type({
+  query: "string > 0",
+  "days?": "number",
+  "fromDate?": "string",
+  "toDate?": "string",
+  "limit?": "number",
+});
 
 export const X_SEARCH_DEFINITION: ToolDefinition = {
   name: "x_search",
@@ -87,15 +96,30 @@ function parseXSearchResult(value: unknown): XSearchResult {
     publishedAt = value.date;
   }
 
-  return {
+  const item = {
     title,
     url: typeof value.url === "string" ? value.url : undefined,
     summary,
     publishedAt,
     engagementSignal,
   };
+  const validated = XSearchResult(item);
+  if (validated instanceof type.errors) {
+    throw new Error(`xAI result item failed validation: ${validated.summary}`);
+  }
+  return validated;
 }
 
+/**
+ * Parses the xAI response text into an array of XSearchResult items. Each
+ * item is validated through the XSearchResult arktype schema.
+ *
+ * XSearchResponse (the { results: XSearchResult[] } schema) is intentionally
+ * not used here as a top-level validator: the xAI API returns either a bare
+ * array or an { items: [...] } envelope — neither matches XSearchResponse's
+ * shape. XSearchResponse is exported for downstream consumers (e.g. the hub
+ * tool registry) that want a typed wrapper around a results array.
+ */
 function parseXSearchResponse(content: string): XSearchResult[] {
   let parsed: unknown;
   try {
@@ -144,23 +168,25 @@ function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function resolveDays(args: Record<string, unknown>): number {
-  if (typeof args.days !== "number" || !Number.isFinite(args.days)) {
+type ParsedXSearchArgs = typeof XSearchArgs.infer;
+
+function resolveDays(args: ParsedXSearchArgs): number {
+  if (args.days === undefined || !Number.isFinite(args.days)) {
     return DEFAULT_DAYS;
   }
   return Math.max(1, Math.floor(args.days));
 }
 
-function resolveDateRange(args: Record<string, unknown>): {
+function resolveDateRange(args: ParsedXSearchArgs): {
   fromDate: string;
   toDate: string;
 } {
   const toDate =
-    typeof args.toDate === "string" && args.toDate.length > 0
+    args.toDate !== undefined && args.toDate.length > 0
       ? args.toDate
       : undefined;
   const fromDate =
-    typeof args.fromDate === "string" && args.fromDate.length > 0
+    args.fromDate !== undefined && args.fromDate.length > 0
       ? args.fromDate
       : undefined;
   if (fromDate !== undefined && toDate !== undefined) {
@@ -226,13 +252,16 @@ function extractOutputText(data: unknown): string {
 
 async function searchX(
   config: XToolsConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const query = typeof args.query === "string" ? args.query : "";
-  if (query.length === 0) {
-    throw new Error("query is required");
+  const parsed = XSearchArgs(rawArgs);
+  if (parsed instanceof type.errors) {
+    throw new Error(`x_search: ${parsed.summary}`);
   }
+  const args = parsed;
+
+  const query = args.query;
 
   const endpoint = resolveResponsesEndpoint(config);
   const { fromDate, toDate } = resolveDateRange(args);

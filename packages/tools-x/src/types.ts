@@ -1,11 +1,17 @@
-export type XSearchResult = {
-  title: string;
-  url: string | undefined;
-  summary: string;
-  publishedAt: string | undefined;
-  engagementSignal: string | undefined;
-};
+import { type } from "arktype";
 
-export type XSearchResponse = {
-  results: XSearchResult[];
-};
+export const XSearchResult = type({
+  title: "string",
+  "url?": "string",
+  summary: "string",
+  "publishedAt?": "string",
+  "engagementSignal?": "string",
+});
+
+export type XSearchResult = typeof XSearchResult.infer;
+
+export const XSearchResponse = type({
+  results: XSearchResult.array(),
+});
+
+export type XSearchResponse = typeof XSearchResponse.infer;
