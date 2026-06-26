@@ -23,7 +23,6 @@ export function buildWriterSystemPrompt(): string {
 
 ## Shape
 - Open with "What we found about [topic]:" and the lead insight
-- Add a stats line "**N sources · N items · date range**"
 - Narrative prose, no bullet lists, occasional bold lead-in
 - Group cross-cutting themes under "Key patterns from the research:" as a numbered list
 - Close with "*Research by last30days via GTM Workbench*"
