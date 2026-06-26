@@ -74,6 +74,31 @@ const WithOutputRef = type({
   "+": "ignore",
 });
 const WithErrorMessage = type({ error: { message: "string" }, "+": "ignore" });
+const WithStepFailure = type({
+  stepId: "string",
+  error: { message: "string" },
+  "+": "ignore",
+});
+
+// Compose a human-legible run-failure detail. The native runtime emits a generic
+// "one or more steps failed" on RunFailed; on its own that is undebuggable (which
+// step? why?). We capture each StepFailed's (stepId, message) and, when the run
+// fails, surface them — so the error names the failing step(s) and their reason
+// instead of the opaque aggregate.
+function describeFailure(
+  runMessage: string | undefined,
+  failedSteps: readonly { stepId: string; message: string }[],
+): string {
+  if (failedSteps.length > 0) {
+    const steps = failedSteps
+      .map((s) => `step "${s.stepId}" failed: ${s.message}`)
+      .join("; ");
+    return runMessage !== undefined && runMessage !== "one or more steps failed"
+      ? `${runMessage} (${steps})`
+      : steps;
+  }
+  return runMessage ?? "workflow run failed";
+}
 
 type RunRecordStatus = "running" | "awaiting" | "completed" | "failed";
 
@@ -120,6 +145,9 @@ export interface ProjectedRun {
   // stepId -> output ref, in completion order; resolved to values before save.
   completedRefs: { stepId: string; ref: string }[];
   error?: string;
+  // Per-step failures captured from StepFailed events, used to enrich the
+  // generic RunFailed message with which step(s) failed and why.
+  failedSteps: { stepId: string; message: string }[];
 }
 
 // Fold an ordered run-event stream (possibly interleaving several runs on one
@@ -132,7 +160,12 @@ export function foldRunEvents(
   const ensure = (runId: string): ProjectedRun => {
     let run = runs.get(runId);
     if (run === undefined) {
-      run = { status: "running", currentStepId: null, completedRefs: [] };
+      run = {
+        status: "running",
+        currentStepId: null,
+        completedRefs: [],
+        failedSteps: [],
+      };
       runs.set(runId, run);
     }
     return run;
@@ -164,12 +197,21 @@ export function foldRunEvents(
         break;
       }
       case "StepFailed": {
-        const narrowed = WithErrorMessage(event);
+        const narrowed = WithStepFailure(event);
         run.status = "failed";
-        run.error =
-          narrowed instanceof type.errors
-            ? "step failed"
-            : narrowed.error.message;
+        if (narrowed instanceof type.errors) {
+          const msgOnly = WithErrorMessage(event);
+          const message =
+            msgOnly instanceof type.errors ? "step failed" : msgOnly.error.message;
+          run.error = message;
+          run.failedSteps.push({ stepId: run.currentStepId ?? "?", message });
+        } else {
+          run.error = `step "${narrowed.stepId}" failed: ${narrowed.error.message}`;
+          run.failedSteps.push({
+            stepId: narrowed.stepId,
+            message: narrowed.error.message,
+          });
+        }
         break;
       }
       case "SignalAwaited": {
@@ -193,10 +235,9 @@ export function foldRunEvents(
         const narrowed = WithErrorMessage(event);
         run.status = "failed";
         run.currentStepId = null;
-        run.error =
-          narrowed instanceof type.errors
-            ? "run failed"
-            : narrowed.error.message;
+        const runMessage =
+          narrowed instanceof type.errors ? undefined : narrowed.error.message;
+        run.error = describeFailure(runMessage, run.failedSteps);
         break;
       }
       case "RunCancelled": {
