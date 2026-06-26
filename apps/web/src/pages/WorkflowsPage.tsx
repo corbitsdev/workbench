@@ -132,9 +132,7 @@ export function WorkflowsPage() {
       <UnifiedCatalogModal
         open={catalogOpen}
         tenantId={activeTenantId}
-        defaultTab="workflows"
         onClose={() => setCatalogOpen(false)}
-        onAgentDeployed={() => setCatalogOpen(false)}
         onWorkflowStarted={(runId) => {
           setCatalogOpen(false);
           setSelectedRunId(runId);
