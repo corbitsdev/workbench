@@ -36,6 +36,15 @@ export interface ArtifactGalleryProps {
   onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
   /** Tenant members for the owner filter. Dropdown shows only when two or more are provided. */
   owners?: { id: string; name: string }[];
+  /** ISO date (yyyy-mm-dd) lower bound on creation; undefined means no bound. */
+  createdAfter?: string;
+  /** ISO date (yyyy-mm-dd) upper bound on creation; undefined means no bound. */
+  createdBefore?: string;
+  /** Called when any advanced filter (date range) changes. */
+  onAdvancedFilterChange?: (next: {
+    createdAfter?: string | undefined;
+    createdBefore?: string | undefined;
+  }) => void;
 }
 
 export function ArtifactGallery({
@@ -52,11 +61,29 @@ export function ArtifactGallery({
   ownerPrincipalId,
   onOwnerFilterChange,
   owners,
+  createdAfter,
+  createdBefore,
+  onAdvancedFilterChange,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
   );
   const sort = sortProp ?? internalSort;
+
+  const hasActiveAdvancedFilter =
+    Boolean(createdAfter) || Boolean(createdBefore);
+  const [filtersOpen, setFiltersOpen] = useState(hasActiveAdvancedFilter);
+
+  function emitAdvanced(patch: {
+    createdAfter?: string | undefined;
+    createdBefore?: string | undefined;
+  }) {
+    onAdvancedFilterChange?.({
+      createdAfter,
+      createdBefore,
+      ...patch,
+    });
+  }
 
   function handleSortToggle() {
     const next = sort === "newest" ? "oldest" : "newest";
@@ -143,6 +170,32 @@ export function ArtifactGallery({
           </svg>
           {sort === "newest" ? "Newest" : "Oldest"}
         </button>
+        {onAdvancedFilterChange && (
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-label="Toggle filters"
+            className={`flex items-center gap-[7px] rounded-[9px] border px-[13px] py-[7px] text-[12.5px] font-semibold transition-colors hover:border-border-strong hover:bg-[var(--row-hover)] ${
+              hasActiveAdvancedFilter
+                ? "border-border-strong text-text"
+                : "border-border text-text-2"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+            </svg>
+            Filters
+          </button>
+        )}
         <button
           type="button"
           onClick={onNew}
@@ -160,6 +213,47 @@ export function ArtifactGallery({
           New
         </button>
       </div>
+
+      {onAdvancedFilterChange && filtersOpen && (
+        <div className="flex flex-wrap items-end gap-[14px] border-t border-border px-4 py-[14px] sm:px-7">
+          <label className="flex flex-col gap-[5px] text-[11.5px] font-semibold text-text-3">
+            From
+            <input
+              type="date"
+              value={createdAfter ?? ""}
+              onChange={(e) =>
+                emitAdvanced({ createdAfter: e.target.value || undefined })
+              }
+              className="h-[32px] rounded-[9px] border border-border bg-transparent px-[10px] text-[12.5px] text-text [color-scheme:var(--color-scheme)] focus:border-border-strong focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-[5px] text-[11.5px] font-semibold text-text-3">
+            To
+            <input
+              type="date"
+              value={createdBefore ?? ""}
+              onChange={(e) =>
+                emitAdvanced({ createdBefore: e.target.value || undefined })
+              }
+              className="h-[32px] rounded-[9px] border border-border bg-transparent px-[10px] text-[12.5px] text-text [color-scheme:var(--color-scheme)] focus:border-border-strong focus:outline-none"
+            />
+          </label>
+          {hasActiveAdvancedFilter && (
+            <button
+              type="button"
+              onClick={() =>
+                emitAdvanced({
+                  createdAfter: undefined,
+                  createdBefore: undefined,
+                })
+              }
+              className="h-[32px] rounded-[9px] border border-border px-[13px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7 [container-type:inline-size]">
         {isLoading && (

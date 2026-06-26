@@ -94,6 +94,10 @@ export interface ListArtifactsParams {
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
+  /** Date-only `yyyy-mm-dd` or ISO timestamp; only artifacts created at/after this are returned. */
+  createdAfter?: string;
+  /** Date-only `yyyy-mm-dd` upper bound (inclusive end-of-day) or ISO timestamp. */
+  createdBefore?: string;
   cursor?: string;
   limit?: number;
 }
@@ -305,6 +309,8 @@ export function listArtifacts(
   if (params.status) qs.set("status", params.status);
   if (params.ownerPrincipalId)
     qs.set("ownerPrincipalId", params.ownerPrincipalId);
+  if (params.createdAfter) qs.set("createdAfter", params.createdAfter);
+  if (params.createdBefore) qs.set("createdBefore", params.createdBefore);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : "";

@@ -5,9 +5,11 @@ import {
   desc,
   eq,
   gt,
+  gte,
   ilike,
   inArray,
   lt,
+  lte,
   ne,
   or,
 } from "drizzle-orm";
@@ -85,8 +87,33 @@ export function createArtifactsRouter(
     const kindParam = c.req.query("kind");
     const statusParam = c.req.query("status");
     const ownerPrincipalIdParam = c.req.query("ownerPrincipalId");
+    const createdAfterParam = c.req.query("createdAfter");
+    const createdBeforeParam = c.req.query("createdBefore");
     const cursorParam = c.req.query("cursor");
     const limitParam = c.req.query("limit");
+
+    let createdAfter: Date | undefined;
+    if (createdAfterParam !== undefined) {
+      createdAfter = new Date(createdAfterParam);
+      if (Number.isNaN(createdAfter.getTime())) {
+        return c.json({ error: "Invalid createdAfter filter" }, 400);
+      }
+    }
+    // The gallery sends a date-only `yyyy-mm-dd` upper bound, which `new Date`
+    // parses to UTC midnight. A naive `<= midnight` would drop every row created
+    // later that same day (From=To=today then shows nothing). Treat a date-only
+    // bound as inclusive end-of-day; a full timestamp is honored as given.
+    const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+    let createdBefore: Date | undefined;
+    if (createdBeforeParam !== undefined) {
+      createdBefore = new Date(createdBeforeParam);
+      if (Number.isNaN(createdBefore.getTime())) {
+        return c.json({ error: "Invalid createdBefore filter" }, 400);
+      }
+      if (DATE_ONLY.test(createdBeforeParam)) {
+        createdBefore.setUTCHours(23, 59, 59, 999);
+      }
+    }
 
     type ArtifactStatusValue = (typeof artifactStatus)[number];
     const isArtifactStatus = (value: string): value is ArtifactStatusValue =>
@@ -138,6 +165,12 @@ export function createArtifactsRouter(
     const ownerWhere = ownerPrincipalIdParam
       ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
       : undefined;
+    const createdAfterWhere = createdAfter
+      ? gte(artifact.createdAt, createdAfter)
+      : undefined;
+    const createdBeforeWhere = createdBefore
+      ? lte(artifact.createdAt, createdBefore)
+      : undefined;
 
     let cursorWhere: ReturnType<typeof or> | undefined;
     if (cursorParam !== undefined) {
@@ -175,6 +208,8 @@ export function createArtifactsRouter(
       statusWhere,
       kindWhere,
       ownerWhere,
+      createdAfterWhere,
+      createdBeforeWhere,
       searchWhere,
       cursorWhere,
     ].filter((cond): cond is NonNullable<typeof cond> => cond != null);

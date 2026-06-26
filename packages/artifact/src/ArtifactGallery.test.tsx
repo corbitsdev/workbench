@@ -211,4 +211,62 @@ describe("ArtifactGallery", () => {
     fireEvent.click(item);
     expect(onOwnerFilterChange).toHaveBeenCalledWith("p-1");
   });
+
+  it("hides advanced filter controls until the Filters toggle is opened", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        onAdvancedFilterChange: mock(() => {}),
+      }),
+    );
+    expect(screen.queryByText("From")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Toggle filters/ }));
+    screen.getByText("From");
+    screen.getByText("To");
+  });
+
+  it("emits the merged advanced filter when a date bound changes", () => {
+    const onAdvancedFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        createdAfter: "2026-06-01",
+        onAdvancedFilterChange,
+      }),
+    );
+    // An active createdAfter keeps the bar open without toggling.
+    const toInput = screen
+      .getByText("To")
+      .querySelector("input") as HTMLInputElement;
+    fireEvent.change(toInput, { target: { value: "2026-06-30" } });
+    expect(onAdvancedFilterChange).toHaveBeenCalledWith({
+      createdAfter: "2026-06-01",
+      createdBefore: "2026-06-30",
+    });
+  });
+
+  it("lets the Filters toggle close the panel while a filter is active", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        createdAfter: "2026-06-01",
+        onAdvancedFilterChange: mock(() => {}),
+      }),
+    );
+    const toggle = screen.getByRole("button", { name: /Toggle filters/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    screen.getByText("From");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("From")).toBeNull();
+  });
+
+  it("does not render the Filters toggle without an advanced-filter handler", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /Toggle filters/ })).toBeNull();
+  });
 });

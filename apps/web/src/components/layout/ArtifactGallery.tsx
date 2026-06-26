@@ -60,6 +60,10 @@ export function ArtifactGallery({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
+  const [advancedFilter, setAdvancedFilter] = useState<{
+    createdAfter?: string;
+    createdBefore?: string;
+  }>({});
 
   const {
     data: artifacts,
@@ -70,6 +74,8 @@ export function ArtifactGallery({
     query: debouncedQuery || undefined,
     sort,
     ownerPrincipalId: ownerFilter,
+    createdAfter: advancedFilter.createdAfter,
+    createdBefore: advancedFilter.createdBefore,
   });
 
   const { data: members } = useTenantMembers(clientOptions, { tenantId });
@@ -122,6 +128,9 @@ export function ArtifactGallery({
         ownerPrincipalId={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
         owners={members}
+        createdAfter={advancedFilter.createdAfter}
+        createdBefore={advancedFilter.createdBefore}
+        onAdvancedFilterChange={setAdvancedFilter}
       />
       <ArtifactModal
         open={selected !== null}
