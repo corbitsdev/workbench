@@ -7,59 +7,66 @@
  * `onChange` handler. The package itself is entirely stateless.
  */
 
+import { type } from "arktype";
+
+// ── Arktype schemas for boundary-crossing shapes ──────────────────────────────
+
+export const SettingsSelectOption = type({
+  value: "string",
+  label: "string",
+});
+export type SettingsSelectOption = typeof SettingsSelectOption.infer;
+
+export const SettingsTextField = type({
+  key: "string",
+  label: "string",
+  "description?": "string",
+  "disabled?": "boolean",
+  kind: "'text'",
+  "placeholder?": "string",
+});
+export type SettingsTextField = typeof SettingsTextField.infer;
+
+export const SettingsToggleField = type({
+  key: "string",
+  label: "string",
+  "description?": "string",
+  "disabled?": "boolean",
+  kind: "'toggle'",
+});
+export type SettingsToggleField = typeof SettingsToggleField.infer;
+
+export const SettingsSelectField = type({
+  key: "string",
+  label: "string",
+  "description?": "string",
+  "disabled?": "boolean",
+  kind: "'select'",
+  options: SettingsSelectOption.array(),
+});
+export type SettingsSelectField = typeof SettingsSelectField.infer;
+
+export const SettingsField = SettingsTextField.or(SettingsToggleField).or(
+  SettingsSelectField,
+);
+export type SettingsField = typeof SettingsField.infer;
+
+export const SettingsSectionDescriptor = type({
+  id: "string",
+  title: "string",
+  "description?": "string",
+  fields: SettingsField.array(),
+});
+export type SettingsSectionDescriptor =
+  typeof SettingsSectionDescriptor.infer;
+
+// ── Plain types — not JSON-expressible or internal/trusted ────────────────────
+
 /** Discriminator for the kind of control a field renders. */
 export type SettingsFieldKind = "text" | "toggle" | "select";
 
 /** A primitive settings value. Each field kind maps to one of these. */
 export type SettingsFieldValue = string | boolean;
-
-/** A selectable option for a `select` field. */
-export interface SettingsSelectOption {
-  readonly value: string;
-  readonly label: string;
-}
-
-interface SettingsFieldBase {
-  /** Stable key used to read/write the field's value in the values map. */
-  readonly key: string;
-  /** Human-readable label rendered next to the control. */
-  readonly label: string;
-  /** Optional helper text shown beneath the control. */
-  readonly description?: string;
-  /** When true, the control is rendered disabled. */
-  readonly disabled?: boolean;
-}
-
-export interface SettingsTextField extends SettingsFieldBase {
-  readonly kind: "text";
-  readonly placeholder?: string;
-}
-
-export interface SettingsToggleField extends SettingsFieldBase {
-  readonly kind: "toggle";
-}
-
-export interface SettingsSelectField extends SettingsFieldBase {
-  readonly kind: "select";
-  readonly options: readonly SettingsSelectOption[];
-}
-
-/** Any settings field descriptor. */
-export type SettingsField =
-  | SettingsTextField
-  | SettingsToggleField
-  | SettingsSelectField;
-
-/** A logical grouping of related fields. */
-export interface SettingsSectionDescriptor {
-  /** Stable identifier for the section. */
-  readonly id: string;
-  /** Section heading. */
-  readonly title: string;
-  /** Optional supporting copy under the heading. */
-  readonly description?: string;
-  readonly fields: readonly SettingsField[];
-}
 
 /** Current value for every field, keyed by `SettingsField.key`. */
 export type SettingsValues = Readonly<Record<string, SettingsFieldValue>>;
