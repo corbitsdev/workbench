@@ -40,11 +40,17 @@ export interface ArtifactGalleryProps {
   createdAfter?: string;
   /** ISO date (yyyy-mm-dd) upper bound on creation; undefined means no bound. */
   createdBefore?: string;
-  /** Called when any advanced filter (date range) changes. */
-  onAdvancedFilterChange?: (next: {
-    createdAfter?: string | undefined;
-    createdBefore?: string | undefined;
-  }) => void;
+  /** `source.origin` provenance facet; undefined means all origins. */
+  origin?: string;
+  /** Called when any advanced filter (date range / origin) changes. */
+  onAdvancedFilterChange?: (next: AdvancedArtifactFilter) => void;
+}
+
+/** Date-range + provenance facet selection driven by the gallery filter bar. */
+export interface AdvancedArtifactFilter {
+  createdAfter?: string | undefined;
+  createdBefore?: string | undefined;
+  origin?: string | undefined;
 }
 
 export function ArtifactGallery({
@@ -74,10 +80,7 @@ export function ArtifactGallery({
     Boolean(createdAfter) || Boolean(createdBefore);
   const [filtersOpen, setFiltersOpen] = useState(hasActiveAdvancedFilter);
 
-  function emitAdvanced(patch: {
-    createdAfter?: string | undefined;
-    createdBefore?: string | undefined;
-  }) {
+  function emitAdvanced(patch: AdvancedArtifactFilter) {
     onAdvancedFilterChange?.({
       createdAfter,
       createdBefore,

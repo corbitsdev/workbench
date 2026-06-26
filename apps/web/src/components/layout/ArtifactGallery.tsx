@@ -9,7 +9,11 @@ import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
 } from "@workbench/artifact";
-import type { GalleryArtifact, ArtifactWithSession } from "@workbench/artifact";
+import type {
+  GalleryArtifact,
+  ArtifactWithSession,
+  AdvancedArtifactFilter,
+} from "@workbench/artifact";
 import { clientOptions } from "../../lib/client-options";
 import ArtifactBody from "../ArtifactBody";
 import { resolveKindLabel } from "../../lib/resolve-kind-label";
@@ -60,10 +64,9 @@ export function ArtifactGallery({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
-  const [advancedFilter, setAdvancedFilter] = useState<{
-    createdAfter?: string;
-    createdBefore?: string;
-  }>({});
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedArtifactFilter>(
+    {},
+  );
 
   const {
     data: artifacts,

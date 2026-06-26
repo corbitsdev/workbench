@@ -8,13 +8,21 @@ export type {
   VizKind,
   ArtifactVisual,
   GalleryArtifact,
+  ArtifactOrigin,
+  ArtifactSource,
 } from "./types";
 export {
   ArtifactVisualSchema,
   GalleryArtifactSchema,
   parseGalleryArtifact,
 } from "./types";
-export { visualForKind, toGalleryArtifact } from "./artifact-visuals";
+export {
+  visualForKind,
+  toGalleryArtifact,
+  artifactProvenance,
+  artifactProvenanceLabel,
+} from "./artifact-visuals";
+export type { ArtifactProvenance, ProvenanceTone } from "./artifact-visuals";
 export {
   WORKFLOW_ACCEPTED_ARTIFACT_KINDS,
   canUseArtifactInWorkflow,
@@ -24,7 +32,11 @@ export {
 } from "./artifact-workflow-eligibility";
 export { ArtifactViz } from "./ArtifactViz";
 export { ArtifactCard } from "./ArtifactCard";
-export { ArtifactGallery, type ArtifactGalleryProps } from "./ArtifactGallery";
+export {
+  ArtifactGallery,
+  type ArtifactGalleryProps,
+  type AdvancedArtifactFilter,
+} from "./ArtifactGallery";
 export {
   ArtifactModal,
   type ArtifactModalProps,

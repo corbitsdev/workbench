@@ -60,6 +60,7 @@ const fakeArtifact: ArtifactWithSession = {
   ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  source: { origin: "workflow" },
   sessionName: "Acme call",
   sessionStatus: "reviewing",
   ownerName: null,

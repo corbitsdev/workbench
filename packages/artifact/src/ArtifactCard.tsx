@@ -53,6 +53,17 @@ export function ArtifactCard({ artifact, index, onOpen }: ArtifactCardProps) {
         <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">
           <span>{artifact.from}</span>·<span>{artifact.time}</span>
         </div>
+        {artifact.provenanceTone !== "unknown" && (
+          <div className="mt-1">
+            <span
+              className={`inline-flex max-w-full items-center truncate rounded-sm bg-surface-2 px-2 py-0.5 text-[10px] font-semibold tracking-[0.03em] text-text-3 ${
+                artifact.provenanceTone === "free" ? "" : "uppercase"
+              }`}
+            >
+              {artifact.provenance}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -67,6 +67,7 @@ const baseArtifact: ArtifactWithSession = {
   ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  source: { origin: "workflow" },
   sessionName: "Acme Corp",
   sessionStatus: "done",
   ownerName: null,

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { ArtifactWithSession } from "@workbench/shared";
-import { toGalleryArtifact, visualForKind } from "./artifact-visuals";
+import {
+  artifactProvenance,
+  artifactProvenanceLabel,
+  toGalleryArtifact,
+  visualForKind,
+} from "./artifact-visuals";
 
 describe("visualForKind", () => {
   it("maps known kinds to their visuals", () => {
@@ -39,6 +44,7 @@ describe("toGalleryArtifact", () => {
     ownerPrincipalId: null,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
+    source: { origin: "workflow" },
     sessionName: "Acme Corp",
     sessionStatus: "done",
     ownerName: null,
@@ -59,7 +65,11 @@ describe("toGalleryArtifact", () => {
       ...base,
       sessionName: null,
       kind: "research",
-      source: { citations: [], jobLabel: "Last 30 days research" },
+      source: {
+        origin: "workflow",
+        citations: [],
+        jobLabel: "Last 30 days research",
+      },
     } as ArtifactWithSession;
     expect(toGalleryArtifact(research).from).toBe("Last 30 days research");
   });
@@ -68,7 +78,7 @@ describe("toGalleryArtifact", () => {
     const noLabel = {
       ...base,
       sessionName: null,
-      source: { citations: [] },
+      source: { origin: "workflow", citations: [] },
     } as ArtifactWithSession;
     expect(toGalleryArtifact(noLabel).from).toBe("Untitled job");
   });
@@ -77,5 +87,89 @@ describe("toGalleryArtifact", () => {
     expect(toGalleryArtifact({ ...base, updatedAt: "not-a-date" }).time).toBe(
       "",
     );
+  });
+
+  it("surfaces the source origin as the provenance badge", () => {
+    expect(
+      toGalleryArtifact({ ...base, source: { origin: "manual" } }).provenance,
+    ).toBe("Manual");
+  });
+
+  it("prefers an explicit generatedBy attribution over the origin label", () => {
+    expect(
+      toGalleryArtifact({
+        ...base,
+        source: { origin: "workflow", generatedBy: "Last 30 Days" },
+      }).provenance,
+    ).toBe("Last 30 Days");
+  });
+
+  it("tags free-text attribution so it is not uppercased", () => {
+    expect(
+      toGalleryArtifact({
+        ...base,
+        source: { origin: "workflow", generatedBy: "Last 30 Days" },
+      }).provenanceTone,
+    ).toBe("free");
+  });
+
+  it("tags a coarse origin word as uppercasable", () => {
+    expect(
+      toGalleryArtifact({ ...base, source: { origin: "manual" } })
+        .provenanceTone,
+    ).toBe("origin");
+  });
+
+  it("tags legacy/unknown provenance as a muted unknown state", () => {
+    expect(
+      toGalleryArtifact({ ...base, source: { origin: "unknown" } })
+        .provenanceTone,
+    ).toBe("unknown");
+    expect(
+      toGalleryArtifact({
+        ...base,
+        source: {} as ArtifactWithSession["source"],
+      }).provenanceTone,
+    ).toBe("unknown");
+  });
+});
+
+describe("artifactProvenance", () => {
+  it("returns free tone for an explicit generatedBy string", () => {
+    expect(
+      artifactProvenance({ origin: "workflow", generatedBy: "Last 30 Days" }),
+    ).toEqual({ label: "Last 30 Days", tone: "free" });
+  });
+
+  it("returns origin tone for a coarse origin word", () => {
+    expect(artifactProvenance({ origin: "agent" })).toEqual({
+      label: "Agent",
+      tone: "origin",
+    });
+  });
+
+  it("returns unknown tone for a legacy/blank or unknown-origin source", () => {
+    expect(artifactProvenance({ origin: "unknown" })).toEqual({
+      label: "Unknown source",
+      tone: "unknown",
+    });
+    expect(artifactProvenance({} as ArtifactWithSession["source"])).toEqual({
+      label: "Unknown source",
+      tone: "unknown",
+    });
+  });
+});
+
+describe("artifactProvenanceLabel", () => {
+  it("falls back to an unknown-source label for a legacy/blank source", () => {
+    expect(artifactProvenanceLabel({} as ArtifactWithSession["source"])).toBe(
+      "Unknown source",
+    );
+  });
+
+  it("maps each known origin to a human label", () => {
+    expect(artifactProvenanceLabel({ origin: "workflow" })).toBe("Workflow");
+    expect(artifactProvenanceLabel({ origin: "agent" })).toBe("Agent");
+    expect(artifactProvenanceLabel({ origin: "imported" })).toBe("Imported");
   });
 });

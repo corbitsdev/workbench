@@ -24,6 +24,7 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
       ownerPrincipalId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      source: { origin: "workflow" },
       versions: [],
     };
     expect(artifact.id).toBe("a-1");
@@ -44,6 +45,7 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
       ownerPrincipalId: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      source: { origin: "workflow" },
       versions: [
         {
           id: "av-1",
@@ -111,6 +113,7 @@ describe("GalleryArtifactSchema", () => {
     title: "My Email",
     from: "Acme Corp",
     time: "2 days ago",
+    provenance: "Workflow",
   };
 
   it("accepts a fully valid GalleryArtifact", () => {
@@ -147,6 +150,7 @@ describe("parseGalleryArtifact", () => {
       title: "A Tweet",
       from: "Startup",
       time: "just now",
+      provenance: "Agent",
     });
     expect(artifact.id).toBe("a-2");
   });

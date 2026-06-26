@@ -120,6 +120,7 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
         typeof args.preview === "string" ? args.preview.trim() : "";
       const content = preview || `Linked file: ${path}`;
       const source = {
+        origin: "agent",
         type: "posix_file",
         path,
         agentId: context.agentId,
@@ -179,6 +180,7 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
       const kind = requiredString(args, "kind");
       const content = requiredString(args, "content");
       const source = {
+        origin: "agent",
         type: "inline",
         agentId: context.agentId,
         sessionId: context.sessionId,
@@ -500,6 +502,7 @@ function createLinkPresentationHandler(
         context,
       );
       const source = {
+        origin: "agent",
         type: "inline",
         agentId: context.agentId,
         sessionId: context.sessionId,
