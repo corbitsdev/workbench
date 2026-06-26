@@ -28,7 +28,8 @@ describe("normalizePolymarketMarket", () => {
   });
 
   test("falls back to current time when endDate is undefined", () => {
-    const noEndDate: PolymarketMarket = { ...fixture, endDate: undefined };
+    const { endDate: _dropped, ...rest } = fixture;
+    const noEndDate: PolymarketMarket = rest;
     const before = Date.now();
     const item = normalizePolymarketMarket(noEndDate);
     const after = Date.now();
@@ -43,7 +44,8 @@ describe("normalizePolymarketMarket", () => {
   });
 
   test("uses 0 for missing volume24hr", () => {
-    const noVolume: PolymarketMarket = { ...fixture, volume24hr: undefined };
+    const { volume24hr: _dropped, ...rest } = fixture;
+    const noVolume: PolymarketMarket = rest;
     const item = normalizePolymarketMarket(noVolume);
     expect(item.engagement.upvotes).toBe(0);
   });

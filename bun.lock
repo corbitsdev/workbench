@@ -989,6 +989,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
