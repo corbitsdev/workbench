@@ -1,4 +1,13 @@
 export { Button, buttonVariants } from "./Button";
+export {
+  Menu,
+  MenuTrigger,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuGroup,
+  MenuLabel,
+} from "./Menu";
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
 export { PagePanel } from "./PagePanel";

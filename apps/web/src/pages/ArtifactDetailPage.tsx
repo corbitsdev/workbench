@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Link, useNavigate, useParams } from "react-router";
 import {
@@ -10,6 +9,7 @@ import {
   PanelBottom,
   Send,
 } from "lucide-react";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@workbench/ui";
 import { useArtifacts } from "@workbench/client/react";
 import type { ArtifactWithSession } from "@workbench/artifact";
 import { clientOptions } from "../lib/client-options";
@@ -47,11 +47,9 @@ function CenteredNotice({ children }: { children: React.ReactNode }) {
 
 /**
  * "Open in" menu — moves the live conversation to a full-page chat or the dock.
- * Origin-aware scale-in from the trigger, full keyboard support (Escape returns
- * focus, arrows move between items), and focus on open.
+ * Built on the shared Radix-backed Menu primitive: opaque branded surface,
+ * anchored positioning, and full keyboard support handled by the primitive.
  */
-type MenuAnchor = { top: number; right: number };
-
 function OpenInMenu({
   onFullScreen,
   onDock,
@@ -60,64 +58,11 @@ function OpenInMenu({
   onDock: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<MenuAnchor | null>(null);
-  const reduceMotion = useReducedMotion();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Focus the first item when the menu opens so it is keyboard-operable.
-  useEffect(() => {
-    if (!open) return;
-    menuRef.current
-      ?.querySelector<HTMLButtonElement>('[role="menuitem"]')
-      ?.focus();
-  }, [open]);
-
-  const openMenu = () => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (rect)
-      setAnchor({
-        top: rect.bottom + 4,
-        right: window.innerWidth - rect.right,
-      });
-    setOpen(true);
-  };
-
-  const close = (returnFocus = true) => {
-    setOpen(false);
-    if (returnFocus) triggerRef.current?.focus();
-  };
-
-  const onMenuKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const items = Array.from(
-      menuRef.current?.querySelectorAll<HTMLButtonElement>(
-        '[role="menuitem"]',
-      ) ?? [],
-    );
-    if (items.length === 0) return;
-    const idx = items.indexOf(document.activeElement as HTMLButtonElement);
-    const next = e.key === "ArrowDown" ? idx + 1 : idx - 1;
-    items[(next + items.length) % items.length]?.focus();
-  };
-
-  const itemClass =
-    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-text outline-none transition-colors hover:bg-page focus-visible:bg-page";
 
   return (
-    <div className="relative">
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => (open ? close(false) : openMenu())}
-        aria-haspopup="menu"
-        aria-expanded={open}
+    <Menu open={open} onOpenChange={setOpen}>
+      <MenuTrigger
+        aria-label="Open in"
         className="flex items-center gap-1 rounded-sm px-2 py-1 text-xs text-text-2 outline-none transition-[color,background-color,transform] hover:bg-page hover:text-text focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97]"
       >
         Open in
@@ -125,66 +70,18 @@ function OpenInMenu({
           size={14}
           className={`transition-transform ${open ? "rotate-180" : ""}`}
         />
-      </button>
-      {createPortal(
-        <AnimatePresence>
-          {open && anchor && (
-            <>
-              <button
-                type="button"
-                aria-hidden
-                tabIndex={-1}
-                className="fixed inset-0 z-[60] cursor-default"
-                onClick={() => close(false)}
-              />
-              <motion.div
-                ref={menuRef}
-                role="menu"
-                onKeyDown={onMenuKeyDown}
-                initial={reduceMotion ? false : { opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={
-                  reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95 }
-                }
-                transition={{ duration: 0.15, ease: EASE }}
-                style={{
-                  top: anchor.top,
-                  right: anchor.right,
-                  transformOrigin: "top right",
-                }}
-                className="fixed z-[61] w-44 overflow-hidden rounded-lg border border-border bg-surface shadow-lg"
-              >
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close(false);
-                    onFullScreen();
-                  }}
-                  className={itemClass}
-                >
-                  <Maximize2 size={15} className="text-text-2" />
-                  Full screen
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close(false);
-                    onDock();
-                  }}
-                  className={itemClass}
-                >
-                  <PanelBottom size={15} className="text-text-2" />
-                  Dock
-                </button>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>,
-        document.body,
-      )}
-    </div>
+      </MenuTrigger>
+      <MenuContent align="end" className="w-44">
+        <MenuItem onSelect={onFullScreen}>
+          <Maximize2 size={15} className="text-text-2" />
+          Full screen
+        </MenuItem>
+        <MenuItem onSelect={onDock}>
+          <PanelBottom size={15} className="text-text-2" />
+          Dock
+        </MenuItem>
+      </MenuContent>
+    </Menu>
   );
 }
 

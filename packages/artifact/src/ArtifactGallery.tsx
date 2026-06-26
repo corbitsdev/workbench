@@ -4,6 +4,8 @@
 // kept out of the transport layer). This renders the grid and header only.
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { Menu, MenuContent, MenuItem, MenuTrigger } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
 import { toGalleryArtifact } from "./artifact-visuals";
@@ -97,22 +99,23 @@ export function ArtifactGallery({
         </span>
         <div className="flex-1" />
         {owners && owners.length > 1 && onOwnerFilterChange && (
-          <select
-            value={ownerPrincipalId ?? ""}
-            onChange={(e) =>
-              onOwnerFilterChange(
-                e.target.value === "" ? undefined : e.target.value,
-              )
-            }
-            className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
-          >
-            <option value="">All owners</option>
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+          <Menu>
+            <MenuTrigger className="flex h-[34px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {owners.find((o) => o.id === ownerPrincipalId)?.name ??
+                "All owners"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onOwnerFilterChange(undefined)}>
+                All owners
+              </MenuItem>
+              {owners.map((o) => (
+                <MenuItem key={o.id} onSelect={() => onOwnerFilterChange(o.id)}>
+                  {o.name}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
         )}
         <input
           type="search"

@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "./test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { ArtifactGallery } from "./ArtifactGallery";
@@ -94,7 +100,7 @@ describe("ArtifactGallery", () => {
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the owner filter dropdown when multiple owners are provided", () => {
+  it("renders the owner filter dropdown when multiple owners are provided", async () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
@@ -107,11 +113,11 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(select).toBeDefined();
-    expect(select.value).toBe("");
-    expect(screen.getByText("Alice")).toBeDefined();
-    expect(screen.getByText("Bob")).toBeDefined();
+    const trigger = screen.getByRole("button", { name: /All owners/ });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    await waitFor(() => screen.getByRole("menu"));
+    screen.getByRole("menuitem", { name: "Alice" });
+    screen.getByRole("menuitem", { name: "Bob" });
   });
 
   it("does not render the dropdown when fewer than two owners are provided", () => {
@@ -123,7 +129,7 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
   it("does not render the dropdown when owners is undefined", () => {
@@ -134,16 +140,15 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
-  it("dropdown is stable when filtering filters out some artifacts", () => {
+  it("reflects the active owner filter in the trigger label", () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
     ];
     const onOwnerFilterChange = mock(() => {});
-    // Only Alice's artifact is in the filtered view, but both owners still show
     const filteredArtifacts = [
       { ...artifact, ownerPrincipalId: "p-1", ownerName: "Alice" },
     ];
@@ -155,13 +160,36 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(select.value).toBe("p-1");
-    expect(screen.getByText("Alice")).toBeDefined();
-    expect(screen.getByText("Bob")).toBeDefined();
+    screen.getByRole("button", { name: /Alice/ });
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
-  it("calls onOwnerFilterChange when the owner dropdown selection changes", () => {
+  it("sources the owner list from the owners prop, not the filtered artifacts", async () => {
+    const owners = [
+      { id: "p-1", name: "Alice" },
+      { id: "p-2", name: "Bob" },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    const filteredArtifacts = [
+      { ...artifact, ownerPrincipalId: "p-1", ownerName: "Alice" },
+    ];
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: filteredArtifacts,
+        owners,
+        ownerPrincipalId: "p-1",
+        onOwnerFilterChange,
+      }),
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /Alice/ }), {
+      key: "ArrowDown",
+    });
+    await waitFor(() => screen.getByRole("menu"));
+    screen.getByRole("menuitem", { name: "Alice" });
+    screen.getByRole("menuitem", { name: "Bob" });
+  });
+
+  it("calls onOwnerFilterChange when an owner is selected", async () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
@@ -174,8 +202,13 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "p-1" } });
+    fireEvent.keyDown(screen.getByRole("button", { name: /All owners/ }), {
+      key: "ArrowDown",
+    });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: "Alice" }),
+    );
+    fireEvent.click(item);
     expect(onOwnerFilterChange).toHaveBeenCalledWith("p-1");
   });
 });
