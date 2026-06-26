@@ -514,8 +514,27 @@ describe("generateMyraThreadTitle", () => {
             ]),
           ),
         },
+        // runTitleTurn (CL-2162/3b0d4dcc) resolves the instance row to attribute
+        // the recorded turn and to FK the durable per-tenant title session.
+        agentInstance: {
+          findFirst: mock(() =>
+            Promise.resolve(
+              opts.mappingRow
+                ? {
+                    id: opts.mappingRow.instanceId,
+                    agentId: "agt",
+                    principalId: "prn-inst",
+                  }
+                : undefined,
+            ),
+          ),
+        },
         provider: { findFirst: mock(() => Promise.resolve(undefined)) },
       },
+      // The title session is upserted idempotently before the turn runs.
+      insert: mock(() => ({
+        values: () => ({ onConflictDoNothing: mock(() => Promise.resolve()) }),
+      })),
       update: mock(() => ({
         set: () => ({ where: () => ({ returning: updateReturning }) }),
       })),
@@ -700,6 +719,44 @@ describe("generateMyraThreadTitle", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it("returns null and does not rename when the inference turn yields no usable text", async () => {
+    // The real-world CL-2449 failure: chat works but the title turn comes back
+    // empty (model/config fault). The turn does not throw — it produces empty
+    // text — so this exercises the non-throw no-op branch, which must leave the
+    // default label intact rather than persist a blank title.
+    resetTitleMocks();
+    agentReply = "   ";
+    let renameCalled = false;
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+    db.update = mock(() => {
+      renameCalled = true;
+      return {
+        set: () => ({
+          where: () => ({ returning: () => Promise.resolve([]) }),
+        }),
+      };
+    }) as never;
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "How should we price the enterprise tier?",
+      },
+    );
+
+    expect(result).toBeNull();
+    expect(renameCalled).toBe(false);
+    // The turn DID run (the failure is empty output, not a skipped turn).
+    expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
   });
 
   it("sanitizes the model output before persisting it", async () => {

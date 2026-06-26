@@ -144,33 +144,42 @@ export function useGenerateMyraThreadTitle() {
 }
 
 /**
- * Returns a callback that auto-titles `active` from its first user message.
- * Shared by every Myra surface (full-page chat and the dock) so titling fires
- * wherever a thread is first used, not just on `/chats`. No-ops once the thread
- * has a custom label, once it has already been titled while this surface is
- * mounted, or once a user turn already exists in the stream. (The hub re-checks
+ * Returns a callback that auto-titles `active` while it still carries a default
+ * label. Shared by every Myra surface (full-page chat and the dock) so titling
+ * fires wherever a thread is first used, not just on `/chats`. No-ops once the
+ * thread has a custom label or has already been titled this mount. Re-titling is
+ * allowed regardless of how many user turns the thread already has — a still
+ * "Chat"-labelled thread always deserves another shot — and the hub re-checks
  * the default-label guard under a per-principal lock, so a redundant call from
- * another surface is a safe no-op, not an overwrite.)
+ * another surface is a safe no-op, not an overwrite.
  */
 export function useAutoTitleFirstMessage(
   active: MyraThread | null,
-  messages: readonly { role: string }[],
 ): (text: string) => void {
   const generateTitle = useGenerateMyraThreadTitle();
   const titledRef = useRef<Set<string>>(new Set());
-  // Read active/messages through refs so the returned callback always evaluates
-  // its guards against the live render's values — correct even when invoked from
-  // an effect that captured an earlier instance, or if a caller memoizes it.
+  // Read active through a ref so the returned callback always evaluates its
+  // guards against the live render's value — correct even when invoked from an
+  // effect that captured an earlier instance, or if a caller memoizes it.
   const activeRef = useRef(active);
   activeRef.current = active;
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
   return (text: string) => {
     const thread = activeRef.current;
     if (!thread || !isDefaultThreadLabel(thread.label)) return;
     if (titledRef.current.has(thread.id)) return;
-    if (messagesRef.current.some((m) => m.role === "user")) return;
+    // Latch up front to block a concurrent double-fire, then release on a hub
+    // no-op (`thread: null`) or error so the next message can retry (CL-2449).
     titledRef.current.add(thread.id);
-    generateTitle.mutate({ id: thread.id, firstMessage: text });
+    generateTitle.mutate(
+      { id: thread.id, firstMessage: text },
+      {
+        onSuccess: (updated) => {
+          if (!updated) titledRef.current.delete(thread.id);
+        },
+        onError: () => {
+          titledRef.current.delete(thread.id);
+        },
+      },
+    );
   };
 }
