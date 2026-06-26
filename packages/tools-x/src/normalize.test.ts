@@ -48,7 +48,7 @@ describe("normalizeXResult", () => {
   });
 
   it("synthesizes x.com search url when url is missing", () => {
-    const noUrl: XSearchResult = { ...fixture, url: undefined };
+    const { url: _omitUrl, ...noUrl } = fixture;
     const result = normalizeXResult(noUrl, "grok live search");
     expect(result.url).toBe("https://x.com/search?q=grok%20live%20search");
   });
@@ -60,7 +60,7 @@ describe("normalizeXResult", () => {
   });
 
   it("falls back to current ISO date when publishedAt is missing", () => {
-    const noDate: XSearchResult = { ...fixture, publishedAt: undefined };
+    const { publishedAt: _omitDate, ...noDate } = fixture;
     const before = Date.now();
     const result = normalizeXResult(noDate, "grok");
     const after = Date.now();
