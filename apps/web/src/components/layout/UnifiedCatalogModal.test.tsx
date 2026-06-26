@@ -79,9 +79,9 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral Generation"));
-    screen().getByText("Presentation Generation");
-    screen().getByText("SEO Enrichment");
+    await waitFor(() => screen().getByText("Collateral generation"));
+    screen().getByText("Presentation generation");
+    screen().getByText("SEO enrichment");
 
     expect(screen().queryByRole("button", { name: "Agents" })).toBeNull();
     expect(screen().queryByRole("button", { name: "Workflows" })).toBeNull();
@@ -99,15 +99,15 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral Generation"));
+    await waitFor(() => screen().getByText("Collateral generation"));
 
     const user = userEvent.setup();
     const searchInput = screen().getByPlaceholderText(/search/i);
     await user.type(searchInput, "collateral");
 
-    screen().getByText("Collateral Generation");
+    screen().getByText("Collateral generation");
     await waitFor(() =>
-      expect(screen().queryByText("Presentation Generation")).toBeNull(),
+      expect(screen().queryByText("Presentation generation")).toBeNull(),
     );
   });
 
@@ -122,7 +122,7 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral Generation"));
+    await waitFor(() => screen().getByText("Collateral generation"));
 
     fireEvent.click(screen().getAllByRole("button", { name: "Start" })[0]!);
 

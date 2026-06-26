@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -89,11 +89,11 @@ describe("ToolsLibrary", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Attio Query Records"),
+      expect(document.body.textContent).toContain("Attio query records"),
     );
     expect(document.body.textContent).not.toContain("attio_query_records");
     expect(document.body.textContent).toContain("Attio");
-    expect(document.body.textContent).toContain("Linear List Issues");
+    expect(document.body.textContent).toContain("Linear list issues");
     expect(document.body.textContent).toContain("Linear");
   });
 
@@ -113,8 +113,41 @@ describe("ToolsLibrary", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Linear List Issues"),
+      expect(document.body.textContent).toContain("Linear list issues"),
     );
     expect(document.body.textContent).not.toContain("vnull");
+  });
+
+  it("groups tools under a heading per provider", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Attio query records"),
+    );
+    const headings = [...document.querySelectorAll("h2")].map(
+      (h) => h.textContent ?? "",
+    );
+    expect(headings.some((t) => t.includes("Attio"))).toBe(true);
+    expect(headings.some((t) => t.includes("Linear"))).toBe(true);
+  });
+
+  it("narrows to a single provider when the provider filter is set", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Attio query records"),
+    );
+
+    const select = document.querySelector<HTMLSelectElement>(
+      'select[aria-label="Filter by provider"]',
+    );
+    if (!select) throw new Error("provider filter not rendered");
+    fireEvent.change(select, { target: { value: "Linear" } });
+
+    await waitFor(() =>
+      expect(document.body.textContent).not.toContain("Attio query records"),
+    );
+    expect(document.body.textContent).toContain("Linear list issues");
+    expect(document.body.textContent).toContain("1 items");
   });
 });
