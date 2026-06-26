@@ -68,7 +68,7 @@ describe("firecrawl_monitor_create handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("config is required");
+    expect(result.content).toContain("config must be an object");
   });
 });
 

@@ -1,9 +1,10 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  InteractArgsSchema,
+  RequiredIdArgsSchema,
   firecrawlFetchJSON,
-  optionalString,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -12,34 +13,30 @@ import {
 
 async function interact(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const jobId = requiredString(args, "jobId");
-  const code = optionalString(args.code);
-  const prompt = optionalString(args.prompt);
-  const language = optionalString(args.language);
-  const timeout = typeof args.timeout === "number" ? args.timeout : undefined;
+  const args = parseArgs(InteractArgsSchema, rawArgs, "firecrawl_interact");
 
   const body: Record<string, unknown> = {};
-  if (code !== null) {
-    body.code = code;
+  if (args.code !== undefined) {
+    body.code = args.code;
   }
-  if (prompt !== null) {
-    body.prompt = prompt;
+  if (args.prompt !== undefined) {
+    body.prompt = args.prompt;
   }
-  if (language !== null) {
-    body.language = language;
+  if (args.language !== undefined) {
+    body.language = args.language;
   }
-  if (timeout !== undefined) {
-    body.timeout = timeout;
+  if (args.timeout !== undefined) {
+    body.timeout = args.timeout;
   }
 
   return firecrawlFetchJSON(
     config,
     {
       method: "POST",
-      path: `/scrape/${encodeURIComponent(jobId)}/interact`,
+      path: `/scrape/${encodeURIComponent(args.jobId)}/interact`,
       body,
     },
     signal,
@@ -60,10 +57,14 @@ async function listSessions(
 
 async function deleteSession(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_browser_session_delete",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "DELETE", path: `/browser/sessions/${encodeURIComponent(id)}` },

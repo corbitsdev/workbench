@@ -6,6 +6,7 @@
  * file is stable: config types, a generic HTTP helper that covers every
  * Firecrawl endpoint, and argument/response parsing utilities.
  */
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 
@@ -21,19 +22,24 @@ export type FirecrawlFetch = (
  */
 export const FIRECRAWL_DEFAULT_BASE_URL = "https://api.firecrawl.dev/v2";
 
-export type FirecrawlToolsConfig = {
-  apiKey: string;
-  /** Defaults to {@link FIRECRAWL_DEFAULT_BASE_URL} when omitted or empty. */
-  baseUrl?: string;
+const FirecrawlToolsConfigSchema = type({
+  apiKey: "string",
+  "baseUrl?": "string",
+});
+
+export type FirecrawlToolsConfig = typeof FirecrawlToolsConfigSchema.infer & {
   fetcher?: FirecrawlFetch;
 };
 
-/** Internal config with the base URL resolved to a concrete value. */
-export type ResolvedFirecrawlConfig = {
-  apiKey: string;
-  baseUrl: string;
-  fetcher?: FirecrawlFetch;
-};
+const ResolvedFirecrawlConfigSchema = type({
+  apiKey: "string",
+  baseUrl: "string",
+});
+
+export type ResolvedFirecrawlConfig =
+  typeof ResolvedFirecrawlConfigSchema.infer & {
+    fetcher?: FirecrawlFetch;
+  };
 
 /**
  * Resolve a caller-supplied config into one with a concrete base URL, then
@@ -171,6 +177,19 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Parse and validate tool args at the trust boundary using an arktype schema. */
+export function parseArgs<T>(
+  schema: { (input: unknown): T | type.errors },
+  args: unknown,
+  toolName: string,
+): T {
+  const parsed = schema(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`${toolName}: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export function optionalString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
@@ -232,3 +251,128 @@ export function requiredStringArray(
   }
   return value;
 }
+
+// --- Arktype schemas for tool arg boundaries --------------------------------
+
+export const ScrapeArgsSchema = type({
+  url: "string > 0",
+  "formats?": "string[]",
+  "onlyMainContent?": "boolean",
+  "includeTags?": "string[]",
+  "excludeTags?": "string[]",
+  "waitFor?": "number",
+  "timeout?": "number",
+  "jsonOptions?": "Record<string, unknown>",
+});
+
+export type ScrapeArgs = typeof ScrapeArgsSchema.infer;
+
+export const RequiredIdArgsSchema = type({ id: "string > 0" });
+export type RequiredIdArgs = typeof RequiredIdArgsSchema.infer;
+
+export const CrawlStartArgsSchema = type({
+  url: "string > 0",
+  "limit?": "number",
+  "maxDepth?": "number",
+  "includePaths?": "string[]",
+  "excludePaths?": "string[]",
+  "allowBackwardLinks?": "boolean",
+  "scrapeOptions?": "Record<string, unknown>",
+});
+
+export type CrawlStartArgs = typeof CrawlStartArgsSchema.infer;
+
+export const CrawlParamsPreviewArgsSchema = type({
+  url: "string > 0",
+  prompt: "string > 0",
+});
+
+export type CrawlParamsPreviewArgs = typeof CrawlParamsPreviewArgsSchema.infer;
+
+export const BatchScrapeStartArgsSchema = type({
+  urls: "string[] >= 1",
+  "scrapeOptions?": "Record<string, unknown>",
+});
+
+export type BatchScrapeStartArgs = typeof BatchScrapeStartArgsSchema.infer;
+
+export const MapArgsSchema = type({
+  url: "string > 0",
+  "search?": "string > 0",
+  "limit?": "number",
+  "includeSubdomains?": "boolean",
+  "sitemapOnly?": "boolean",
+});
+
+export type MapArgs = typeof MapArgsSchema.infer;
+
+export const SearchArgsSchema = type({
+  query: "string > 0",
+  "limit?": "number",
+  "sources?": "string[]",
+  "tbs?": "string > 0",
+  "scrapeOptions?": "Record<string, unknown>",
+});
+
+export type SearchArgs = typeof SearchArgsSchema.infer;
+
+export const ExtractStartArgsSchema = type({
+  urls: "string[] >= 1",
+  "prompt?": "string",
+  "schema?": "Record<string, unknown>",
+  "enableWebSearch?": "boolean",
+});
+
+export type ExtractStartArgs = typeof ExtractStartArgsSchema.infer;
+
+export const FireAgentArgsSchema = type({
+  prompt: "string > 0",
+  "schema?": "Record<string, unknown>",
+});
+
+export type FireAgentArgs = typeof FireAgentArgsSchema.infer;
+
+export const InteractArgsSchema = type({
+  jobId: "string > 0",
+  "code?": "string > 0",
+  "prompt?": "string > 0",
+  "language?": "string > 0",
+  "timeout?": "number",
+});
+
+export type InteractArgs = typeof InteractArgsSchema.infer;
+
+export const ParseArgsSchema = type({
+  url: "string > 0",
+  "options?": "Record<string, unknown>",
+});
+
+export type ParseArgs = typeof ParseArgsSchema.infer;
+
+export const MonitorCreateArgsSchema = type({
+  config: "Record<string, unknown>",
+});
+
+export type MonitorCreateArgs = typeof MonitorCreateArgsSchema.infer;
+
+export const MonitorUpdateArgsSchema = type({
+  id: "string > 0",
+  config: "Record<string, unknown>",
+});
+
+export type MonitorUpdateArgs = typeof MonitorUpdateArgsSchema.infer;
+
+export const HistoricalCreditUsageArgsSchema = type({
+  "byApiKey?": "boolean",
+});
+
+export type HistoricalCreditUsageArgs =
+  typeof HistoricalCreditUsageArgsSchema.infer;
+
+export const ActivityArgsSchema = type({
+  "endpoint?": "string",
+  "limit?": "number",
+  "cursor?": "string",
+});
+
+export type ActivityArgs = typeof ActivityArgsSchema.infer;

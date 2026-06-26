@@ -13,12 +13,12 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  CrawlParamsPreviewArgsSchema,
+  CrawlStartArgsSchema,
+  RequiredIdArgsSchema,
   firecrawlFetchJSON,
-  optionalBoolean,
   optionalPositiveInteger,
-  optionalRecord,
-  optionalStringArray,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -31,37 +31,37 @@ const LIMIT_FALLBACK = 10_000;
 const DEPTH_FALLBACK = 10;
 
 function buildCrawlStartBody(
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
 ): Record<string, unknown> {
-  const url = requiredString(args, "url");
-  const includePaths = optionalStringArray(args.includePaths);
-  const excludePaths = optionalStringArray(args.excludePaths);
-  const allowBackwardLinks = optionalBoolean(args.allowBackwardLinks);
-  const scrapeOptions = optionalRecord(args.scrapeOptions);
+  const args = parseArgs(
+    CrawlStartArgsSchema,
+    rawArgs,
+    "firecrawl_crawl_start",
+  );
 
-  const body: Record<string, unknown> = { url };
+  const body: Record<string, unknown> = { url: args.url };
 
-  if (typeof args.limit === "number") {
+  if (args.limit !== undefined) {
     body.limit = optionalPositiveInteger(args.limit, LIMIT_FALLBACK, MAX_LIMIT);
   }
-  if (typeof args.maxDepth === "number") {
+  if (args.maxDepth !== undefined) {
     body.maxDiscoveryDepth = optionalPositiveInteger(
       args.maxDepth,
       DEPTH_FALLBACK,
       MAX_DEPTH,
     );
   }
-  if (includePaths !== null) {
-    body.includePaths = includePaths;
+  if (args.includePaths !== undefined) {
+    body.includePaths = args.includePaths;
   }
-  if (excludePaths !== null) {
-    body.excludePaths = excludePaths;
+  if (args.excludePaths !== undefined) {
+    body.excludePaths = args.excludePaths;
   }
-  if (allowBackwardLinks !== null) {
-    body.crawlEntireDomain = allowBackwardLinks;
+  if (args.allowBackwardLinks !== undefined) {
+    body.crawlEntireDomain = args.allowBackwardLinks;
   }
-  if (scrapeOptions !== null) {
-    body.scrapeOptions = scrapeOptions;
+  if (args.scrapeOptions !== undefined) {
+    body.scrapeOptions = args.scrapeOptions;
   }
 
   return body;
@@ -81,10 +81,14 @@ async function crawlStart(
 
 async function crawlStatus(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_crawl_status",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/crawl/${encodeURIComponent(id)}` },
@@ -106,10 +110,14 @@ async function crawlActive(
 
 async function crawlErrors(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_crawl_errors",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/crawl/${encodeURIComponent(id)}/errors` },
@@ -119,10 +127,14 @@ async function crawlErrors(
 
 async function crawlCancel(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_crawl_cancel",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "DELETE", path: `/crawl/${encodeURIComponent(id)}` },
@@ -132,11 +144,14 @@ async function crawlCancel(
 
 async function crawlParamsPreview(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, "url");
-  const prompt = requiredString(args, "prompt");
+  const { url, prompt } = parseArgs(
+    CrawlParamsPreviewArgsSchema,
+    rawArgs,
+    "firecrawl_crawl_params_preview",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "POST", path: "/crawl/params-preview", body: { url, prompt } },

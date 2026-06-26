@@ -81,7 +81,7 @@ describe("firecrawl_batch_scrape_start handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("urls is required");
+    expect(result.content).toContain("urls must be non-empty");
   });
 });
 

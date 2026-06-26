@@ -1,28 +1,27 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
-  resolveConfig,
-  stringTool,
-  requiredString,
-  optionalRecord,
+  ParseArgsSchema,
   errorMessageFromBody,
   normalizeBaseUrl,
+  parseArgs,
+  resolveConfig,
+  stringTool,
   type FirecrawlToolsConfig,
   type ResolvedFirecrawlConfig,
 } from "./shared";
 
 async function parseDocument(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, "url");
-  const options = optionalRecord(args.options);
+  const args = parseArgs(ParseArgsSchema, rawArgs, "firecrawl_parse");
 
   const fetcher = config.fetcher ?? fetch;
 
   // Download the document
-  const fileResponse = await fetcher(url, { signal });
+  const fileResponse = await fetcher(args.url, { signal });
   if (!fileResponse.ok) {
     throw new Error(
       `Failed to fetch document: ${fileResponse.status} ${fileResponse.statusText}`,
@@ -33,8 +32,8 @@ async function parseDocument(
   // Build multipart form
   const form = new FormData();
   form.append("file", blob, "document");
-  if (options !== null) {
-    form.append("options", JSON.stringify(options));
+  if (args.options !== undefined) {
+    form.append("options", JSON.stringify(args.options));
   }
 
   // POST to /parse
