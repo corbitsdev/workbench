@@ -498,6 +498,18 @@ const ActivityCountRowSchema = type({
   count: "number",
 });
 
+export const UsageByPersonRowSchema = type({
+  principalId: "string",
+  name: "string | null",
+  isSelf: "boolean",
+  turnCount: "number",
+  toolCallCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+});
+
+export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
+
 const ActivityOverviewSchema = type({
   tenantId: "string",
   range: {
@@ -550,6 +562,7 @@ const ActivityOverviewSchema = type({
   }).array(),
   models: ActivityCountRowSchema.array(),
   tokensRecordedFrom: "string.date | null",
+  byPerson: UsageByPersonRowSchema.array(),
   inference: {
     summary: AnalyticsSummarySchema,
     previousSummary: AnalyticsSummarySchema.or("null"),

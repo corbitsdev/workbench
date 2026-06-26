@@ -8,6 +8,7 @@ import type {
   ActivityOverview,
   AnalyticsAgentRow,
   AnalyticsSummary,
+  UsageByPersonRow,
 } from "../lib/hub-api";
 import {
   DeltaBadge,
@@ -504,6 +505,96 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
   );
 }
 
+function PersonBreakdown({
+  people,
+  tokenCaveat,
+}: {
+  people: UsageByPersonRow[];
+  tokenCaveat: string | null;
+}) {
+  if (people.length === 0) return null;
+
+  // Server sorts by total tokens, but those columns collapse to "—" under the
+  // caveat — leaving the table ordered by an invisible key. Re-sort by a
+  // visible metric (turns) so the ordering is always explainable.
+  const orderedPeople =
+    tokenCaveat === null
+      ? people
+      : [...people].sort((a, b) => b.turnCount - a.turnCount);
+
+  const totals = people.reduce(
+    (acc, p) => ({
+      turnCount: acc.turnCount + p.turnCount,
+      toolCallCount: acc.toolCallCount + p.toolCallCount,
+      inputTokens: acc.inputTokens + p.inputTokens,
+      outputTokens: acc.outputTokens + p.outputTokens,
+    }),
+    { turnCount: 0, toolCallCount: 0, inputTokens: 0, outputTokens: 0 },
+  );
+
+  const tokenCell = (value: number) =>
+    tokenCaveat === null ? formatNumber(value) : "—";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>By person</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
+      <div className="overflow-x-auto rounded-[12px] border border-border">
+        <table className="w-full min-w-[520px] text-left text-[13px]">
+          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
+            <tr>
+              <th className="px-4 py-2 font-medium">Person</th>
+              <th className="px-4 py-2 text-right font-medium">Turns</th>
+              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
+              <th className="px-4 py-2 text-right font-medium">Tokens</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-bg">
+            {orderedPeople.map((row) => (
+              <tr key={row.principalId}>
+                <td className="px-4 py-2 text-text">
+                  {row.name ?? "Unknown member"}
+                  {row.isSelf && (
+                    <span className="ml-1.5 text-[11px] font-semibold text-accent">
+                      (me)
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {formatNumber(row.turnCount)}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {formatNumber(row.toolCallCount)}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {tokenCell(row.inputTokens + row.outputTokens)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t border-border bg-surface">
+            <tr>
+              <td className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-3">
+                Attributed total
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {formatNumber(totals.turnCount)}
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {formatNumber(totals.toolCallCount)}
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {tokenCell(totals.inputTokens + totals.outputTokens)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="text-[11px] text-text-3">Excludes shared agents</p>
+    </div>
+  );
+}
+
 function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
   if (agents.length === 0) return null;
 
@@ -675,6 +766,10 @@ export function InsightsDashboard() {
             <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
             <OperationalLedger data={overview} />
             <div className="flex flex-col gap-4">
+              <PersonBreakdown
+                people={overview.byPerson}
+                tokenCaveat={tokenCaveat}
+              />
               <AgentBreakdown agents={overview.inference.byAgent} />
               <InstanceBreakdown instances={overview.inference.byInstance} />
             </div>

@@ -1,6 +1,8 @@
 import type { DB } from "@intx/db";
+import { schema as intxSchema } from "@intx/db";
 import { agentInstance } from "@intx/db/schema";
 import {
+  analyticsRollupDaily,
   getAnalyticsDailySeries,
   getAnalyticsModelDistribution,
   getAnalyticsSummary,
@@ -15,6 +17,7 @@ import {
 import {
   and,
   count,
+  desc,
   eq,
   gte,
   inArray,
@@ -26,7 +29,25 @@ import {
   type AnyColumn,
 } from "drizzle-orm";
 
-import { artifact, workflowRun, workflowRunRecord } from "../db/schema";
+import {
+  artifact,
+  memberAgentInstance,
+  workflowRun,
+  workflowRunRecord,
+} from "../db/schema";
+
+export type UsageByPersonRow = {
+  /** Owning member's user-principal id (from `member_agent_instance`). */
+  principalId: string;
+  /** Display name from the user behind that principal, null if unresolved. */
+  name: string | null;
+  /** True when this row is the authenticated caller. */
+  isSelf: boolean;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+};
 
 export type ActivityCountRow = { key: string; count: number };
 
@@ -73,6 +94,15 @@ export type ActivityOverview = {
    * range starting before this date. See `backfill-analytics-rollups.ts`.
    */
   tokensRecordedFrom: string | null;
+  /**
+   * Usage attributed to the person who owns each agent instance, via the
+   * hub-owned `member_agent_instance` link (instance → owning member). The
+   * analytics principal on raw events is the per-instance synthetic principal,
+   * NOT the user, so attribution goes through this link rather than a naive
+   * principal==user assumption. Instances with no member link (e.g. shared
+   * agents) are excluded — their usage cannot be attributed to one person.
+   */
+  byPerson: UsageByPersonRow[];
   inference: {
     summary: AnalyticsSummary;
     previousSummary: AnalyticsSummary | null;
@@ -145,12 +175,101 @@ function rangeEndedFilters(range?: AnalyticsDateRange) {
   );
 }
 
+function sumInt(column: AnyColumn) {
+  return sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
+}
+
+export async function getUsageByPerson(args: {
+  db: DB["db"];
+  tenantId: string;
+  callerPrincipalId: string | null;
+  range?: AnalyticsDateRange;
+}): Promise<UsageByPersonRow[]> {
+  const { db, tenantId, callerPrincipalId, range } = args;
+
+  // `member_agent_instance` has no DB-level uniqueness on `instanceId`, so a
+  // reassigned or re-provisioned instance can have more than one link row.
+  // Joining the rollup directly to it would fan out and multiply every
+  // turn/tool/token count. Collapse to one owning member per instance (most
+  // recent link), scoped to this tenant so an `instanceId` that also exists
+  // under another tenant cannot bleed attribution across the boundary.
+  const ownerByInstance = db
+    .selectDistinctOn([memberAgentInstance.instanceId], {
+      instanceId: memberAgentInstance.instanceId,
+      memberPrincipalId: memberAgentInstance.memberPrincipalId,
+    })
+    .from(memberAgentInstance)
+    .where(eq(memberAgentInstance.tenantId, tenantId))
+    .orderBy(
+      memberAgentInstance.instanceId,
+      desc(memberAgentInstance.createdAt),
+    )
+    .as("owner_by_instance");
+
+  // `principalId` here is the owning member's tenant `kind: "user"` principal
+  // (the column `ensureMember` writes and the route's `c.get("principal")`
+  // reads), NOT the per-instance synthetic principal on raw analytics events —
+  // so comparing it to `callerPrincipalId` for `isSelf` is like-for-like.
+  const rows = await db
+    .select({
+      principalId: ownerByInstance.memberPrincipalId,
+      name: intxSchema.user.name,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      ownerByInstance,
+      eq(ownerByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .leftJoin(
+      intxSchema.principal,
+      eq(intxSchema.principal.id, ownerByInstance.memberPrincipalId),
+    )
+    .leftJoin(
+      intxSchema.user,
+      eq(intxSchema.user.id, intxSchema.principal.refId),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(ownerByInstance.memberPrincipalId, intxSchema.user.name);
+
+  return rows
+    .map((row) => ({
+      principalId: row.principalId,
+      name: row.name ?? null,
+      isSelf:
+        callerPrincipalId !== null && row.principalId === callerPrincipalId,
+      turnCount: row.turnCount,
+      toolCallCount: row.toolCallCount,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+    }))
+    .sort(
+      (a, b) =>
+        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    );
+}
+
 export async function getActivityOverview(args: {
   db: DB["db"];
   tenantId: string;
+  callerPrincipalId?: string | null;
   range?: AnalyticsDateRange;
 }): Promise<ActivityOverview> {
   const { db, tenantId } = args;
+  const callerPrincipalId = args.callerPrincipalId ?? null;
   const range = args.range ?? {};
 
   const tenantArtifacts = and(
@@ -271,6 +390,7 @@ export async function getActivityOverview(args: {
     conversationActivity,
     previousSummary,
     tokensRecordedFrom,
+    byPerson,
   ] = await Promise.all([
     getAnalyticsSummary(inferenceFilter),
     getAnalyticsSummaryByAgent(inferenceFilter),
@@ -282,6 +402,7 @@ export async function getActivityOverview(args: {
       ? getAnalyticsSummary({ db, tenantId, range: previousRange })
       : Promise.resolve(null),
     getTokenDataStartDate({ db, tenantId }),
+    getUsageByPerson({ db, tenantId, callerPrincipalId, range }),
   ]);
 
   return {
@@ -328,6 +449,7 @@ export async function getActivityOverview(args: {
       count: row.turnCount,
     })),
     tokensRecordedFrom,
+    byPerson,
     inference: { summary, previousSummary, byAgent, byInstance },
   };
 }
