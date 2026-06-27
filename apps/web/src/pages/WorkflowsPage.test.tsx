@@ -107,6 +107,13 @@ function renderWorkflowsPage(initialPath = "/workflows") {
   return { router, ...view };
 }
 
+// The run list, search, and filters now live in the hover/focus-to-expand
+// overlay. Latch it open via the rail's expand toggle so those controls are
+// present and interactive before a test drives them.
+function expandRail() {
+  fireEvent.click(screen.getByRole("button", { name: /expand run list/i }));
+}
+
 describe("WorkflowsPage", () => {
   it("shows a loading state", () => {
     runsResult = {
@@ -165,6 +172,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     const { router } = renderWorkflowsPage();
+    expandRail();
     fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
     expect(router.state.location.pathname).toBe("/workflows/run-1");
   });
@@ -223,6 +231,7 @@ describe("WorkflowsPage", () => {
     const { router } = renderWorkflowsPage("/workflows/run-1");
     expect(router.state.location.pathname).toBe("/workflows/run-1");
 
+    expandRail();
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
     expect(router.state.location.pathname).toBe("/workflows");
   });
@@ -248,6 +257,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
+    expandRail();
 
     // Archive the deck-build run via its row action.
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
@@ -282,6 +292,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
+    expandRail();
 
     screen.getByText("Deck build", { selector: "span" });
     screen.getByText("Last30days", { selector: "span" });
@@ -313,6 +324,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
+    expandRail();
 
     fireEvent.click(screen.getByRole("button", { name: "Failed" }));
     expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
@@ -342,6 +354,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
+    expandRail();
 
     fireEvent.change(screen.getByLabelText("Search runs"), {
       target: { value: "last30" },
@@ -362,7 +375,7 @@ describe("WorkflowsPage", () => {
     const { router } = renderWorkflowsPage();
 
     expect(screen.queryByTestId("stub-start")).toBeNull();
-    fireEvent.click(screen.getByText(/new run/i));
+    fireEvent.click(screen.getByRole("button", { name: /new run/i }));
     expect(lastCatalogProps?.open).toBe(true);
     expect(lastCatalogProps?.tenantId).toBe("ten-7");
 
