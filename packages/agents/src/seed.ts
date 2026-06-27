@@ -4,10 +4,13 @@
 // keeps the sidecar's dependency graph free of frontend packages (CL-1952).
 export {
   PERSONAL_AGENT_SEED_FILES,
+  RETIRED_SEED_FILES,
   buildSeedMarker,
   parseSeedMarker,
+  resolveSeedMarker,
   stripSeedMarker,
   hasSeedMarker,
   type SeedWorkspaceFile,
   type SeedMarkerParse,
+  type SeedMarkerResolution,
 } from "./personal-agent/seed-files";

@@ -59,6 +59,26 @@ const seedFileByPath = new Map(
 );
 
 /**
+ * Seed files that were once registered but have since been deliberately folded
+ * away — their content moved off the filesystem (e.g. MEMORY.md → the hub
+ * artifact store, CL-2413). An OLD persisted prompt still names them in its
+ * marker, so on every sidecar restore the parser would otherwise classify them
+ * as unexpected unresolvable files and the harness would log a warning per
+ * instance per boot. They are a KNOWN, intentional fold — resolving them to
+ * nothing is correct and silent, not a contract break (CL-2364). A genuinely
+ * unknown or unsafe name still lands in `skipped` and is surfaced.
+ *
+ * Sunset: this set exists only to silence markers in OLD persisted prompts. The
+ * current prompt builder emits no marker, so every redeploy overwrites a prompt
+ * with a marker-free one. Once all live instances have redeployed past CL-2413,
+ * no reachable prompt can name a retired file and this set is dead — remove it
+ * then (tracked as a follow-up). A name must never be in BOTH this set and
+ * `PERSONAL_AGENT_SEED_FILES`, or it would be silently dropped instead of
+ * seeded; the seed-files test asserts that disjointness.
+ */
+export const RETIRED_SEED_FILES = new Set(["MEMORY.md"]);
+
+/**
  * Whether a system prompt carries a seed marker at all. Lets the harness tell a
  * present-but-empty (malformed) marker apart from no marker: the former is a
  * contract break worth a warning, the latter is a normal non-seeding agent.
@@ -68,16 +88,23 @@ export function hasSeedMarker(systemPrompt: string): boolean {
 }
 
 /**
- * Result of parsing a seed marker: the resolvable {path, content}[] to seed and
- * the declared basenames that could not be resolved (unknown to the table, or
- * unsafe non-basenames). Skips are surfaced, never thrown — a since-folded seed
- * file named in an OLD persisted prompt must not wedge a live session on sidecar
- * restore (CL-2364). The build-time drift test guards against the table and the
- * live prompt's marker diverging, so genuine drift fails in CI, not in prod.
+ * Result of parsing a seed marker:
+ *   - `files`   — resolvable {path, content}[] to seed
+ *   - `retired` — declared names that name a KNOWN, deliberately-folded seed
+ *     file (`RETIRED_SEED_FILES`); resolving them to nothing is expected, so the
+ *     harness drops them silently rather than warning per instance per boot
+ *   - `skipped` — declared basenames that are genuinely unexpected (unknown to
+ *     the table, or unsafe non-basenames); surfaced via a warning
+ *
+ * Nothing is ever thrown — a since-folded seed file named in an OLD persisted
+ * prompt must not wedge a live session on sidecar restore (CL-2364). The
+ * build-time drift test guards against the table and the live prompt's marker
+ * diverging, so genuine drift fails in CI, not in prod.
  */
 export interface SeedMarkerParse {
   files: SeedWorkspaceFile[];
   skipped: string[];
+  retired: string[];
 }
 
 /**
@@ -94,7 +121,8 @@ export interface SeedMarkerParse {
  */
 export function parseSeedMarker(systemPrompt: string): SeedMarkerParse {
   const match = SEED_MARKER_PATTERN.exec(systemPrompt);
-  if (!match || match[1] === undefined) return { files: [], skipped: [] };
+  if (!match || match[1] === undefined)
+    return { files: [], skipped: [], retired: [] };
 
   const declared = match[1]
     .split(",")
@@ -103,7 +131,12 @@ export function parseSeedMarker(systemPrompt: string): SeedMarkerParse {
 
   const files: SeedWorkspaceFile[] = [];
   const skipped: string[] = [];
+  const retired: string[] = [];
   for (const name of declared) {
+    if (RETIRED_SEED_FILES.has(name)) {
+      retired.push(name);
+      continue;
+    }
     if (!isPlainBasename(name)) {
       skipped.push(name);
       continue;
@@ -115,7 +148,30 @@ export function parseSeedMarker(systemPrompt: string): SeedMarkerParse {
     }
     skipped.push(name);
   }
-  return { files, skipped };
+  return { files, skipped, retired };
+}
+
+/**
+ * A parsed marker plus the one derived decision the harness acts on: whether the
+ * marker is `malformed` — present but resolving to NOTHING (no seeded file, no
+ * skipped name, no retired name). That is the only case worth a per-boot
+ * warning: a marker naming only since-retired files (an old MEMORY.md prompt) is
+ * expected and stays silent (CL-2509), while unresolvable names are surfaced via
+ * `skipped`. Owning this decision here keeps the harness a thin caller and makes
+ * the gating directly testable.
+ */
+export interface SeedMarkerResolution extends SeedMarkerParse {
+  malformed: boolean;
+}
+
+export function resolveSeedMarker(systemPrompt: string): SeedMarkerResolution {
+  const parse = parseSeedMarker(systemPrompt);
+  const malformed =
+    hasSeedMarker(systemPrompt) &&
+    parse.files.length === 0 &&
+    parse.skipped.length === 0 &&
+    parse.retired.length === 0;
+  return { ...parse, malformed };
 }
 
 /**
