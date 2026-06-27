@@ -387,15 +387,6 @@ export function WorkflowsPage() {
         onBlurCapture={handleBlur}
       >
         <div className="flex h-full w-14 flex-col items-center gap-3 border-r border-border bg-page py-3">
-          <button
-            type="button"
-            onClick={() => setCatalogOpen(true)}
-            aria-label="New run"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-[11px] bg-accent text-white transition-transform hover:bg-accent-deep active:scale-[0.97]"
-          >
-            <PlusIcon />
-          </button>
-
           <div
             aria-hidden="true"
             className="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-hidden py-1"
@@ -461,6 +452,17 @@ export function WorkflowsPage() {
               className="grid h-7 w-7 shrink-0 place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-row-hover hover:text-text"
             >
               <ChevronLeftIcon />
+            </button>
+          </div>
+
+          <div className="px-4 pb-3">
+            <button
+              type="button"
+              onClick={() => setCatalogOpen(true)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-[9px] border border-border bg-page py-2 text-[13px] font-medium text-text transition-colors hover:border-border-strong hover:bg-row-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong active:scale-[0.99] motion-reduce:active:scale-100"
+            >
+              <PlusIcon />
+              New run
             </button>
           </div>
 

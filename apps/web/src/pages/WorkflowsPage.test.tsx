@@ -526,9 +526,9 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
     screen.getByText(/no workflows yet/i);
     screen.getByText(/start your first workflow/i);
-    expect(
-      screen.getAllByRole("button", { name: /new run/i }).length,
-    ).toBeGreaterThan(1);
+    // Exactly one visible New-run CTA (the welcome button); the collapsed rail's
+    // New-run is aria-hidden, so the landing has no competing/duplicate button.
+    screen.getByRole("button", { name: /new run/i });
   });
 
   it("favoriting a kind persists to localStorage and toggles aria-pressed", () => {
