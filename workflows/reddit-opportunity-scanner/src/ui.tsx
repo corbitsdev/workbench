@@ -2,8 +2,13 @@ import { useState } from "react";
 import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
 import {
+  activeDisplayStep,
+  buildRunStepperSteps,
   Button,
+  type DisplayStep,
   HorizontalStepper,
+  LiveStatusSlot,
+  liveStatusLabel,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
@@ -93,35 +98,33 @@ function phaseFor(
   return state?.steps.get(stepId)?.phase;
 }
 
-function toStepperStatus(phase: StepPhase | undefined): WorkflowStep["status"] {
-  if (phase === "completed") return "completed";
-  if (
-    phase === "in-flight" ||
-    phase === "awaiting-signal" ||
-    phase === "awaiting-timer"
-  ) {
-    return "current";
-  }
-  return "pending";
-}
+// One runtime step per display step; the shared helpers encode the robust
+// "passed = completed OR a later step progressed" rule so a gate whose output is
+// missing from the synthesized record can't rewind the panel mid-run (CL-2506).
+// Machine-work steps carry a verb `activityLabel` for the live line; the intake,
+// review, and selection gates carry none.
+const STEP_ACTIVITY: Partial<Record<StepKey, string>> = {
+  scrape: "Crawling the site",
+  analyze: "Analyzing the site",
+  scan: "Searching Reddit",
+  persist: "Saving to workbench",
+};
+
+const DISPLAY_STEPS: DisplayStep[] = STEP_ORDER.map((id) => ({
+  key: id,
+  label: STEP_LABELS[id],
+  stepIds: [id],
+  ...(STEP_ACTIVITY[id] !== undefined
+    ? { activityLabel: STEP_ACTIVITY[id] }
+    : {}),
+}));
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
-  return STEP_ORDER.map((stepId, index) => ({
-    number: index + 1,
-    label: STEP_LABELS[stepId],
-    status: toStepperStatus(phaseFor(state, stepId)),
-  }));
+  return buildRunStepperSteps(state, DISPLAY_STEPS);
 }
 
-/**
- * Derives which step screen to render. Returns the first step that is not
- * `completed`, or `"persist"` when all steps are done.
- */
 function activeStep(state: RunState | null): StepKey {
-  for (const id of STEP_ORDER) {
-    if (phaseFor(state, id) !== "completed") return id;
-  }
-  return "persist";
+  return activeDisplayStep(state, DISPLAY_STEPS)?.key as StepKey;
 }
 
 // ── Parsers ───────────────────────────────────────────────────────────────────
@@ -945,6 +948,8 @@ export function Panel(props: WorkflowPanelProps) {
   const active = activeStep(state);
   const runPhase = state?.phase;
   const failed = runPhase === "failed" || runPhase === "cancelled";
+  // `failed` also covers `cancelled`, which liveStatusLabel does not suppress.
+  const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
 
   const failedStep = STEP_ORDER.find((id) => {
     const p = phaseFor(state, id);
@@ -986,6 +991,7 @@ export function Panel(props: WorkflowPanelProps) {
       </div>
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
+      <LiveStatusSlot label={liveLabel} />
 
       {/* Body — guided: only the active step screen is rendered */}
       <div className="flex-1 overflow-y-auto p-5">

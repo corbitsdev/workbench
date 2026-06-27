@@ -2,25 +2,57 @@ import { useState } from "react";
 import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
 import {
+  activeDisplayStep,
+  buildRunStepperSteps,
   Button,
+  type DisplayStep,
   HorizontalStepper,
+  LiveStatusSlot,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
-import { parseReport } from "@workbench/last30days-core";
+import { parseReport, type Report } from "@workbench/last30days-core";
 
 const INTAKE_SIGNAL = "intake";
 
-const STEP_ORDER = ["intake", "research", "report", "done"] as const;
-type StepKey = (typeof STEP_ORDER)[number];
+type StepKey = "intake" | "research" | "report" | "done";
 
-const STEP_LABELS: Record<StepKey, string> = {
-  intake: "Topic",
-  research: "Research",
-  report: "Report",
-  done: "Done",
-};
+// Every runtime step of the multi-source research phase, in run order, terminal
+// (`brief`) last — clustered into one display step so the stepper shows a single
+// "Research" node and the shared router reads it `completed` only once the brief
+// lands.
+const RESEARCH_STEP_IDS = [
+  "ground",
+  "groundQueries",
+  "web",
+  "webB",
+  "webC",
+  "hackernews",
+  "github",
+  "reddit",
+  "x",
+  "youtube",
+  "polymarket",
+  "entities",
+  "entityQueries",
+  "web2",
+  "reddit2",
+  "x2",
+  "youtube2",
+  "collect",
+  "curate",
+  "brief",
+] as const;
+
+// Routing goes through the shared helpers like every other panel; the live LINE
+// is bespoke (see `currentActivity`), so these carry no `activityLabel`.
+const DISPLAY_STEPS: DisplayStep[] = [
+  { key: "intake", label: "Topic", stepIds: ["intake"] },
+  { key: "research", label: "Research", stepIds: RESEARCH_STEP_IDS },
+  { key: "report", label: "Report", stepIds: ["write"] },
+  { key: "done", label: "Done", stepIds: ["persist"] },
+];
 
 const ToolResultEnvelope = type({ callId: "string", content: "string" }).or({
   content: "string",
@@ -43,30 +75,8 @@ function phaseFor(
 }
 
 function researchPhase(state: RunState | null): StepPhase | undefined {
-  const ids = [
-    "ground",
-    "groundQueries",
-    "web",
-    "webB",
-    "webC",
-    "hackernews",
-    "github",
-    "reddit",
-    "x",
-    "youtube",
-    "polymarket",
-    "entities",
-    "entityQueries",
-    "web2",
-    "reddit2",
-    "x2",
-    "youtube2",
-    "collect",
-    "curate",
-    "brief",
-  ] as const;
   if (phaseFor(state, "brief") === "completed") return "completed";
-  for (const id of ids) {
+  for (const id of RESEARCH_STEP_IDS) {
     const p = phaseFor(state, id);
     if (p === "in-flight" || p === "awaiting-signal" || p === "awaiting-timer")
       return p;
@@ -76,55 +86,26 @@ function researchPhase(state: RunState | null): StepPhase | undefined {
   return undefined;
 }
 
-function toStepperStatus(
-  step: StepKey,
-  state: RunState | null,
-): WorkflowStep["status"] {
-  if (step === "intake") {
-    const p = phaseFor(state, "intake");
-    if (p === "completed") return "completed";
-    if (p === "awaiting-signal" || p === "in-flight") return "current";
-    return "pending";
-  }
-  if (step === "research") {
-    const p = researchPhase(state);
-    if (p === "completed") return "completed";
-    if (
-      p === "in-flight" ||
-      p === "awaiting-signal" ||
-      p === "awaiting-timer" ||
-      p === "failed"
-    ) {
-      return "current";
-    }
-    return phaseFor(state, "intake") === "completed" ? "current" : "pending";
-  }
-  if (step === "report") {
-    const write = phaseFor(state, "write");
-    const persist = phaseFor(state, "persist");
-    if (persist === "completed") return "completed";
-    if (write === "completed" || write === "in-flight") return "current";
-    return "pending";
-  }
-  const persist = phaseFor(state, "persist");
-  if (persist === "completed") return "completed";
-  if (persist === "in-flight") return "current";
-  return phaseFor(state, "write") === "completed" ? "current" : "pending";
+// The intake awaitSignal gate's StepCompleted can be absent from the synthesized
+// record (projection lag / an unresolved output ref), so its own phase is an
+// unreliable "done" signal. Any downstream progress proves the gate cleared —
+// without this the panel regresses to the "Setting up workflow" intake screen
+// mid-run (CL-2505).
+function intakeIsDone(state: RunState | null): boolean {
+  if (phaseFor(state, "intake") === "completed") return true;
+  return researchPhase(state) !== undefined;
 }
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
-  return STEP_ORDER.map((stepId, index) => ({
-    number: index + 1,
-    label: STEP_LABELS[stepId],
-    status: toStepperStatus(stepId, state),
-  }));
+  return buildRunStepperSteps(state, DISPLAY_STEPS);
 }
 
+// Routed through the shared "passed = completed OR a later step progressed"
+// rule, which preserves the old intakeIsDone fix: if the intake gate's output
+// is absent from the synthesized record but a research step has progressed, the
+// run stays on Research instead of rewinding to the Topic screen (CL-2506).
 function activeStep(state: RunState | null): StepKey {
-  if (phaseFor(state, "intake") !== "completed") return "intake";
-  if (researchPhase(state) !== "completed") return "research";
-  if (phaseFor(state, "write") !== "completed") return "report";
-  return "done";
+  return activeDisplayStep(state, DISPLAY_STEPS)?.key as StepKey;
 }
 
 function parseBriefReport(
@@ -213,6 +194,61 @@ function rowPhase(state: RunState | null, id: string): StepPhase | undefined {
   if (isRunningPhase(parse)) return parse;
   if (phaseFor(state, "ground") === "completed") return "in-flight";
   return phaseFor(state, "ground");
+}
+
+// Verb phrasing for the live status line, for the stable bare-source rows whose
+// SOURCE_PROGRESS label is just a platform name ("GitHub"). Every other row
+// (grounding, deeper passes, curation, brief) already carries a descriptive
+// label, so the line falls back to that — no parallel map to drift as the
+// research pipeline gains stages (CL-2505).
+const SEARCH_VERB: Record<string, string> = {
+  hackernews: "Searching Hacker News",
+  github: "Searching GitHub",
+  web: "Searching the web",
+  reddit: "Searching Reddit",
+  x: "Searching X",
+  youtube: "Searching YouTube",
+  polymarket: "Checking Polymarket odds",
+};
+
+// The single live line that tells the user what the run is doing right now.
+// Returns null while the intake screen is up (it carries its own indicator) and
+// on terminal runs. Poll-driven: it advances each ~2s record refetch.
+function currentActivity(state: RunState | null): string | null {
+  if (state === null) return null;
+  if (state.phase === "failed" || state.phase === "completed") return null;
+  if (!intakeIsDone(state)) return null;
+  const researchDone = researchPhase(state) === "completed";
+  if (!researchDone) {
+    const running = SOURCE_PROGRESS.find(({ id }) =>
+      isRunningPhase(rowPhase(state, id)),
+    );
+    if (running === undefined) return "Gathering signal";
+    return SEARCH_VERB[running.id] ?? running.label;
+  }
+  if (phaseFor(state, "write") === "completed") {
+    if (phaseFor(state, "persist") === "completed") return null;
+    return "Saving to workbench";
+  }
+  return "Writing the report";
+}
+
+function BriefSummary({ report }: { report: Report }) {
+  const skipped = report.skippedSources?.length ?? 0;
+  const summary = `${report.stats.sourceCount} sources · ${report.stats.itemCount} signals · ${report.citations.length} citations`;
+  return (
+    <Card>
+      <h3 className="mb-1 text-sm font-semibold text-text">
+        Research complete
+      </h3>
+      <p className="text-sm text-text-2">{summary}</p>
+      {skipped > 0 ? (
+        <p className="mt-1 text-xs text-text-3">
+          {skipped} source{skipped === 1 ? "" : "s"} skipped
+        </p>
+      ) : null}
+    </Card>
+  );
 }
 
 function SourceProgress({ state }: { state: RunState | null }) {
@@ -351,20 +387,27 @@ function ReportScreen({
 }) {
   const report = parseBriefReport(stepOutputs.brief);
   const reply = parseWriteReply(stepOutputs.write);
+  const brief =
+    report !== "pending" && report !== "error" && report !== null
+      ? report
+      : null;
 
-  if (reply === "pending" && report === "pending") {
+  // The brief lands before the synthesis turn finishes: surface its stats right
+  // away so the user sees a concrete result while the report is still writing,
+  // rather than a bare spinner (CL-2505).
+  if (reply === "pending") {
     return (
-      <Card>
-        <Spinner label="Writing report…" />
-      </Card>
+      <div className="space-y-4">
+        {brief !== null ? <BriefSummary report={brief} /> : null}
+        <Card>
+          <Spinner label="Synthesizing report…" />
+        </Card>
+      </div>
     );
   }
 
-  const body = reply !== "pending" ? reply : "";
-  const citations =
-    report !== "pending" && report !== "error" && report !== null
-      ? report.citations
-      : [];
+  const body = reply;
+  const citations = brief !== null ? brief.citations : [];
 
   return (
     <div className="space-y-4">
@@ -435,6 +478,7 @@ export function Panel(props: WorkflowPanelProps) {
     props;
   const failed = state?.phase === "failed";
   const current = activeStep(state);
+  const liveLabel = failed ? null : currentActivity(state);
 
   return (
     <div className="flex h-full flex-col bg-surface">
@@ -458,6 +502,7 @@ export function Panel(props: WorkflowPanelProps) {
       </header>
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
+      <LiveStatusSlot label={liveLabel} />
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (

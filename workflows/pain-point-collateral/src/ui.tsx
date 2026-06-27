@@ -1,8 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { type } from "arktype";
 import {
+  activeDisplayStepIndex,
+  buildRunStepperSteps,
   Button,
+  type DisplayStep,
   HorizontalStepper,
+  LiveStatusSlot,
+  liveStatusLabel,
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
@@ -13,14 +18,42 @@ import type { RunState } from "@intx/workflow";
 // Step configuration
 // -------------------------------------------------------------------------
 
-const STEP_CONFIG = [
-  { id: "intake", label: "Transcript" },
-  { id: "context", label: "Context" },
-  { id: "analyze", label: "Pain Points" },
-  { id: "generate", label: "Generate" },
-  { id: "review", label: "Review" },
-  { id: "persist", label: "Done" },
-] as const;
+// Each stepper entry clusters the internal workflow steps it represents, in run
+// order. The shared helpers compute stepper status / active step from this with
+// the robust "passed = completed OR a later step progressed" rule, so a gate
+// whose output is missing from the synthesized record can't rewind the panel,
+// and fmtSelection naturally advances to Review once generate starts (CL-2506).
+// `activityLabel` drives the live line from the in-flight machine work, never
+// the stepper noun: while `generate` runs the line reads "Generating
+// collateral", not the gate noun "Review". Gate-only groups (Transcript,
+// Context, Generate=fmtSelection) carry none.
+const DISPLAY_STEPS: DisplayStep[] = [
+  {
+    key: "transcript",
+    label: "Transcript",
+    stepIds: ["intake", "select", "fetch"],
+  },
+  { key: "context", label: "Context", stepIds: ["context"] },
+  {
+    key: "painPoints",
+    label: "Pain Points",
+    stepIds: ["analyze", "ppSelection"],
+    activityLabel: "Analyzing the call",
+  },
+  { key: "formats", label: "Generate", stepIds: ["fmtSelection"] },
+  {
+    key: "review",
+    label: "Review",
+    stepIds: ["generate", "review"],
+    activityLabel: "Generating collateral",
+  },
+  {
+    key: "done",
+    label: "Done",
+    stepIds: ["persist"],
+    activityLabel: "Saving to workbench",
+  },
+];
 
 type StepPhase = NonNullable<ReturnType<RunState["steps"]["get"]>>["phase"];
 
@@ -235,77 +268,12 @@ function phaseFor(state: RunState | null, id: string): StepPhase | undefined {
   return state?.steps.get(id)?.phase;
 }
 
-function isActive(state: RunState | null, id: string): boolean {
-  const phase = phaseFor(state, id);
-  return (
-    phase === "in-flight" ||
-    phase === "awaiting-signal" ||
-    phase === "awaiting-timer"
-  );
-}
-
-/**
- * Returns the display-step index (0-based) that should be highlighted as
- * "current" in the stepper. Maps internal workflow step clusters to their
- * corresponding STEP_CONFIG display position.
- *
- * Cluster → display index:
- *   0 — Transcript: intake, select, fetch
- *   1 — Context:    context
- *   2 — Pain Points: analyze, ppSelection
- *   3 — Generate:   fmtSelection (format picker only — while awaiting the signal)
- *   4 — Review:     generate (running/completed), review (signal)
- *   5 — Done:       persist
- *
- * Note: fmtSelection is in display group 3 only while it is awaiting-signal.
- * Once the signal fires and generate starts, we advance to group 4 so the
- * review panel shows the "generating" state rather than the completed format
- * picker screen.
- */
 function activeDisplayIndex(state: RunState | null): number {
-  if (
-    isActive(state, "intake") ||
-    isActive(state, "select") ||
-    isActive(state, "fetch")
-  )
-    return 0;
-  if (isActive(state, "context")) return 1;
-  if (isActive(state, "analyze") || isActive(state, "ppSelection")) return 2;
-  if (isActive(state, "fmtSelection")) return 3;
-  // generate running or review awaiting — show the review/collateral panel
-  if (isActive(state, "generate") || isActive(state, "review")) return 4;
-  if (isActive(state, "persist")) return 5;
-  // Fall through: derive from first non-completed display step
-  const displayGroups = [
-    ["intake", "select", "fetch"],
-    ["context"],
-    ["analyze", "ppSelection"],
-    ["fmtSelection"],
-    ["generate", "review"],
-    ["persist"],
-  ] as const;
-  for (let i = 0; i < displayGroups.length; i += 1) {
-    const anyIncomplete = displayGroups[i]!.some(
-      (id) => phaseFor(state, id) !== "completed",
-    );
-    if (anyIncomplete) return i;
-  }
-  return 5;
+  return activeDisplayStepIndex(state, DISPLAY_STEPS);
 }
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
-  const activeIdx = activeDisplayIndex(state);
-  return STEP_CONFIG.map(({ label }, index) => {
-    let status: WorkflowStep["status"];
-    if (index < activeIdx) {
-      status = "completed";
-    } else if (index === activeIdx) {
-      status = "current";
-    } else {
-      status = "pending";
-    }
-    return { number: index + 1, label, status };
-  });
+  return buildRunStepperSteps(state, DISPLAY_STEPS);
 }
 
 function hasFailed(state: RunState | null): boolean {
@@ -330,16 +298,8 @@ type DisplayGroup =
   | "done";
 
 function activeDisplayGroup(state: RunState | null): DisplayGroup {
-  const idx = activeDisplayIndex(state);
-  const groups: DisplayGroup[] = [
-    "transcript",
-    "context",
-    "painPoints",
-    "formats",
-    "review",
-    "done",
-  ];
-  return groups[idx] ?? "done";
+  return (DISPLAY_STEPS[activeDisplayIndex(state)]?.key ??
+    "done") as DisplayGroup;
 }
 
 // -------------------------------------------------------------------------
@@ -1113,6 +1073,9 @@ export function Panel(props: WorkflowPanelProps) {
   const group = activeDisplayGroup(state);
   const failed = hasFailed(state);
   const stepperSteps = buildStepperSteps(state);
+  // hasFailed also covers a single failed step before the run's own phase flips,
+  // which liveStatusLabel does not suppress — guard it here.
+  const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
@@ -1145,6 +1108,7 @@ export function Panel(props: WorkflowPanelProps) {
       </header>
 
       <HorizontalStepper steps={stepperSteps} />
+      <LiveStatusSlot label={liveLabel} />
 
       {/* Body — renders ONLY the active display group */}
       <div className="flex-1 space-y-4 overflow-y-auto p-5">

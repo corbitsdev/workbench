@@ -118,6 +118,21 @@ describe("ab-compare-hitl Panel — header & stepper", () => {
   });
 });
 
+describe("ab-compare-hitl Panel — guided routing", () => {
+  it("does not rewind to config when the config gate's output is absent but execute is running (CL-2506)", () => {
+    // config (an awaitSignal gate) is missing from the synthesized state, but
+    // execute is in-flight: the panel must stay on Execute, not fall back to the
+    // config wizard.
+    renderPanel({ state: makeState({ execute: "in-flight" }) });
+    screen.getByText("Running the prompt across variants…");
+    expect(
+      screen.queryByPlaceholderText(
+        "Paste the prompt you want to run across all providers…",
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("ab-compare-hitl Panel — decision screen", () => {
   it("shows the blind variant outputs and the winner picker", () => {
     renderPanel({ state: DECISION_STATE, stepOutputs: DECISION_OUTPUTS });

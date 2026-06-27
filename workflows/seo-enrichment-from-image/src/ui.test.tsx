@@ -137,7 +137,21 @@ describe("Panel", () => {
     renderPanel({
       state: makeState({ intake: "completed", enrich: "in-flight" }),
     });
-    screen.getByText("Extracting SEO metadata…");
+    // Shown both as the body placeholder and on the persistent live status line.
+    expect(
+      screen.getAllByText("Extracting SEO metadata…").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not rewind to intake when the intake gate's output is absent but enrich is running (CL-2506)", () => {
+    // The intake awaitSignal gate's StepCompleted is missing from the
+    // synthesized state, but enrich is in-flight: the panel must stay on Enrich,
+    // not fall back to the intake form.
+    renderPanel({ state: makeState({ enrich: "in-flight" }) });
+    expect(
+      screen.getAllByText("Extracting SEO metadata…").length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("Start enrichment")).toBeNull();
   });
 
   it("renders extracted metadata rows from the enrich step reply", () => {

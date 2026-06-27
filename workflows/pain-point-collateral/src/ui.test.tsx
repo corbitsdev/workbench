@@ -260,6 +260,32 @@ describe("Panel — context input (step 2)", () => {
     screen.getByRole("button", { name: "Continue" });
   });
 
+  it("does not rewind to the transcript group when early gate outputs are absent but context is active (CL-2506)", () => {
+    // intake/select/fetch (the transcript cluster, including awaitSignal gates)
+    // are missing from the synthesized state, but context is awaiting its signal:
+    // the panel must show the context step, not fall back to transcript.
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ context: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          intake: NOTE_LIST,
+          fetch: toolResult({
+            id: "note_1",
+            title: "Acme discovery call",
+            summary: "Discovery",
+          }),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+    screen.getByPlaceholderText(/focus on integration issues/i);
+    expect(screen.queryByText("Beta renewal")).toBeNull();
+  });
+
   it("fires context signal with trimmed textarea value", async () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
@@ -993,7 +1019,10 @@ describe("Panel — review generated pieces (step 5)", () => {
       />,
     );
 
-    screen.getByText("Generating collateral…");
+    // Shown both as the body placeholder and on the persistent live status line.
+    expect(screen.getAllByText("Generating collateral…").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("reads generated pieces wrapped in a JSON markdown fence", () => {

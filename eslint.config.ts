@@ -82,4 +82,36 @@ export default defineConfig(
     ],
     rules: { "no-console": 0 },
   },
+  {
+    // Workflow run panels must route screen + stepper state through the shared
+    // @workbench/ui run-state helpers (activeDisplayStep / buildRunStepperSteps /
+    // displayStepPhase), never a hand-rolled "first step whose phase is not
+    // completed" loop. That idiom rewinds the panel to an earlier screen mid-run
+    // when an awaitSignal gate's StepCompleted is absent from the synthesized
+    // record (projection lag / unresolved output ref). See CL-2506.
+    files: ["workflows/**/src/ui.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "ForOfStatement IfStatement[test.operator='!=='][test.right.value='completed']",
+          message:
+            "Don't hand-roll active-step routing by looping the step order and returning the first step whose phase !== 'completed' — it rewinds the panel mid-run when a gate's output is missing. Build a DisplayStep[] and use activeDisplayStep / buildRunStepperSteps from @workbench/ui (CL-2506).",
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='some'] BinaryExpression[operator='!=='][right.value='completed']",
+          message:
+            "Don't derive the active display group via `.some(id => phaseFor(...) !== 'completed')` — it rewinds the panel mid-run when a gate's output is missing. Build a DisplayStep[] (clustered stepIds) and use activeDisplayStep / buildRunStepperSteps from @workbench/ui (CL-2506).",
+        },
+        {
+          selector:
+            "IfStatement[test.operator='!=='][test.right.value='completed'] ReturnStatement[argument.type='Literal']",
+          message:
+            "Don't hand-roll active-step routing with `if (phaseFor(step) !== 'completed') return '<stepKey>'` — it rewinds the panel mid-run when a gate's output is missing. Build a DisplayStep[] and use activeDisplayStep / buildRunStepperSteps from @workbench/ui (CL-2506).",
+        },
+      ],
+    },
+  },
 );

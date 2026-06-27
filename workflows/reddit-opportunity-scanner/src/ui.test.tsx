@@ -462,4 +462,14 @@ describe("reddit-opportunity-scanner Panel", () => {
     expect(screen.queryByText("Save opportunities")).toBeNull();
     expect(screen.queryByText(/Save \d+ opportunit/)).toBeNull();
   });
+
+  it("does not rewind to intake when the intake gate's output is absent but scrape is running (CL-2506)", () => {
+    // The intake awaitSignal gate's StepCompleted is missing from the
+    // synthesized state, but scrape is in-flight: the panel must stay on
+    // Scrape, not fall back to the intake gate screen.
+    renderPanel({ state: makeState({ scrape: "in-flight" }) });
+    screen.getByText("Crawling the site");
+    expect(screen.queryByLabelText(/Website URL/)).toBeNull();
+    expect(screen.queryByText("What should we analyze?")).toBeNull();
+  });
 });
