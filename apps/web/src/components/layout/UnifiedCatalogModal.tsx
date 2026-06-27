@@ -33,16 +33,33 @@ export function UnifiedCatalogModal({
     useWorkflowDeployments(tenantId);
   const startWorkflow = useStartWorkflow(tenantId);
 
-  const deployedKinds = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
+  // One entry per deployed kind, carrying the workflow's display label +
+  // description from the deploy meta (falling back to a humanized kind when an
+  // older deployment has no meta label). Deployments arrive newest-first; a
+  // later row's real meta label upgrades a humanized fallback.
+  const deployedWorkflows = useMemo(() => {
+    const byKind = new Map<
+      string,
+      { kind: string; label: string; description?: string }
+    >();
     for (const deployment of workflowDeployments) {
-      if (!seen.has(deployment.kind)) {
-        seen.add(deployment.kind);
-        result.push(deployment.kind);
+      const metaLabel = deployment.meta?.label;
+      const metaDescription = deployment.meta?.description;
+      const existing = byKind.get(deployment.kind);
+      const isFallback =
+        existing !== undefined &&
+        existing.label === toHumanLabel(deployment.kind);
+      if (existing === undefined || (isFallback && metaLabel !== undefined)) {
+        byKind.set(deployment.kind, {
+          kind: deployment.kind,
+          label: metaLabel ?? toHumanLabel(deployment.kind),
+          ...(metaDescription !== undefined
+            ? { description: metaDescription }
+            : {}),
+        });
       }
     }
-    return result;
+    return [...byKind.values()];
   }, [workflowDeployments]);
 
   const handleClose = useCallback(() => {
@@ -93,8 +110,10 @@ export function UnifiedCatalogModal({
 
   const query = search.toLowerCase();
 
-  const filteredWorkflowKinds = deployedKinds.filter((kind) =>
-    toHumanLabel(kind).toLowerCase().includes(query),
+  const filteredWorkflows = deployedWorkflows.filter(
+    (w) =>
+      w.label.toLowerCase().includes(query) ||
+      w.kind.toLowerCase().includes(query),
   );
 
   const handleStartWorkflow = (kind: string) => {
@@ -199,36 +218,41 @@ export function UnifiedCatalogModal({
                   </p>
                 )}
                 {!workflowsPending &&
-                  filteredWorkflowKinds.map((kind) => (
+                  filteredWorkflows.map((workflow) => (
                     <div
-                      key={kind}
+                      key={workflow.kind}
                       className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
                     >
-                      <div className="min-w-0">
+                      <div className="min-w-0 space-y-1">
                         <p className="text-[14px] font-semibold text-text">
-                          {toHumanLabel(kind)}
+                          {workflow.label}
                         </p>
+                        {workflow.description !== undefined && (
+                          <p className="text-[12px] leading-snug text-text-3 text-pretty">
+                            {workflow.description}
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
                         disabled={startWorkflow.isPending}
-                        onClick={() => handleStartWorkflow(kind)}
+                        onClick={() => handleStartWorkflow(workflow.kind)}
                         className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
                       >
-                        {startingKind === kind ? "Starting…" : "Start"}
+                        {startingKind === workflow.kind ? "Starting…" : "Start"}
                       </button>
                     </div>
                   ))}
                 {!workflowsPending &&
-                  filteredWorkflowKinds.length === 0 &&
-                  deployedKinds.length === 0 && (
+                  filteredWorkflows.length === 0 &&
+                  deployedWorkflows.length === 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
                       No workflows deployed yet.
                     </p>
                   )}
                 {!workflowsPending &&
-                  filteredWorkflowKinds.length === 0 &&
-                  deployedKinds.length > 0 && (
+                  filteredWorkflows.length === 0 &&
+                  deployedWorkflows.length > 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
                       No workflows match your search.
                     </p>

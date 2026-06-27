@@ -26,7 +26,7 @@ const WRITER_MAX_TOKENS = 16384;
 // that would invalidate the JSON and force the deterministic fallback).
 const CURATE_MAX_TOKENS = 8192;
 
-export const label = "last30days Research";
+export const label = "Last30Days Research Report";
 export const description =
   "Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.";
 export const kind = "last30days-research";

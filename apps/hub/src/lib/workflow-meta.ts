@@ -13,5 +13,11 @@ export const WorkflowMeta = type({
   version: "string",
   sha: "string",
   deployedAt: "string.date.iso",
+  // The workflow's human display name + one-line description, captured from the
+  // package's `label`/`description` exports at deploy time so the launcher can
+  // show them without importing workflow code. Optional: older deployments
+  // (deployed before CL-2507) carry no label/description.
+  "label?": "string",
+  "description?": "string",
 });
 export type WorkflowMeta = typeof WorkflowMeta.infer;

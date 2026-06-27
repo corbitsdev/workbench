@@ -134,47 +134,12 @@ function LoadingState({ label }: { label: string }) {
   );
 }
 
-// ── Config wizard step bar ────────────────────────────────────────────────────
-
-type ConfigStep = "comparisons" | "configure" | "input";
-
-const CONFIG_STEP_LABELS: Record<ConfigStep, string> = {
-  comparisons: "Comparisons",
-  configure: "Configure",
-  input: "Input",
-};
-
-function ConfigStepBar({ currentStep }: { currentStep: ConfigStep }) {
-  const steps: ConfigStep[] = ["comparisons", "configure", "input"];
-  const index = steps.indexOf(currentStep);
-  return (
-    <div className="flex items-center gap-2 pb-4 shrink-0">
-      {steps.map((step, i) => (
-        <div key={step} className="flex items-center gap-2">
-          <div
-            className={`grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold ${
-              i < index
-                ? "bg-green text-white"
-                : i === index
-                  ? "bg-orange text-white"
-                  : "bg-surface-2 text-text-3"
-            }`}
-          >
-            {i < index ? "✓" : i + 1}
-          </div>
-          <span
-            className={`text-[12px] font-medium ${i === index ? "text-text" : "text-text-3"}`}
-          >
-            {CONFIG_STEP_LABELS[step]}
-          </span>
-          {i < steps.length - 1 && <span className="mx-1 text-text-3">›</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Config wizard state ───────────────────────────────────────────────────────
+
+// The config gate is a simple Back/Next flow across these sub-steps. The outer
+// workflow stepper already shows "Configure" as the current phase, so there is
+// no inner stepper here — that nesting was redundant.
+type ConfigStep = "comparisons" | "configure" | "input";
 
 const PROVIDER_WHITELIST = new Set([
   "openai-compatible",
@@ -338,8 +303,6 @@ function ConfigScreen({
   return (
     <div className="flex flex-col h-full">
       <Card>
-        <ConfigStepBar currentStep={configStep} />
-
         {configStep === "comparisons" && (
           <div className="space-y-4">
             <p className="text-[13px] text-text-2">
@@ -782,7 +745,9 @@ export function Panel(props: WorkflowPanelProps) {
     <div className="flex h-full flex-col bg-surface">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-base font-medium text-text">A/B Compare</h2>
+          <h2 className="text-base font-medium text-text">
+            A/B Test - Agent Select
+          </h2>
           <p className="text-xs text-text-3">
             Blind ranking across provider/model variants
           </p>

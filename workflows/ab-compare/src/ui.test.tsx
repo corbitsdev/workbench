@@ -133,7 +133,7 @@ async function runConfigWizard(
 describe("ab-compare Panel — header", () => {
   it("renders the panel header and all step labels in the stepper", () => {
     renderPanel();
-    screen.getByText("A/B Compare");
+    screen.getByText("A/B Test - Agent Select");
     for (const label of [
       "Configure",
       "Execute",
@@ -157,7 +157,7 @@ describe("ab-compare Panel — header", () => {
 describe("ab-compare Panel — guided routing (ONLY active step shown)", () => {
   it("shows the config screen when config is awaiting-signal", () => {
     renderPanel({ state: makeState({ config: "awaiting-signal" }) });
-    screen.getByText("Comparisons");
+    screen.getByText("Comparison 1");
     expect(
       screen.queryByText("Running the prompt across variants…"),
     ).toBeNull();
@@ -168,7 +168,7 @@ describe("ab-compare Panel — guided routing (ONLY active step shown)", () => {
       state: makeState({ config: "completed", execute: "in-flight" }),
     });
     screen.getByText("Running the prompt across variants…");
-    expect(screen.queryByText("Comparisons")).toBeNull();
+    expect(screen.queryByText("Comparison 1")).toBeNull();
   });
 
   it("shows the compare screen while compare is in-flight", () => {

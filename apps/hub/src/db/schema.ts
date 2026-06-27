@@ -130,6 +130,8 @@ export const workflowRun = pgTable("workflow_run", {
     version: string;
     sha: string;
     deployedAt: string;
+    label?: string;
+    description?: string;
   }>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")

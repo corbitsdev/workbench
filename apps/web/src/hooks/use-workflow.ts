@@ -53,6 +53,10 @@ const workflowMetaSchema = type({
   version: "string",
   sha: "string",
   deployedAt: "string.date.iso",
+  // The workflow's display name + one-line description, captured at deploy time
+  // (optional — older deployments carry none).
+  "label?": "string",
+  "description?": "string",
 });
 export type WorkflowMeta = typeof workflowMetaSchema.infer;
 

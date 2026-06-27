@@ -194,7 +194,20 @@ export function resolveWorkflowEntry(kind: string): string {
   return resolve(pkgDir, entry);
 }
 
-async function loadWorkflowDefinition(kind: string): Promise<unknown> {
+interface LoadedWorkflow {
+  definition: unknown;
+  label?: string;
+  description?: string;
+}
+
+function readStringExport(mod: object, key: string): string | undefined {
+  const value = (mod as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() !== ""
+    ? value.trim()
+    : undefined;
+}
+
+async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   const entry = resolveWorkflowEntry(kind);
   const mod: unknown = await import(entry);
   if (typeof mod !== "object" || mod === null || !("workflow" in mod)) {
@@ -204,14 +217,24 @@ async function loadWorkflowDefinition(kind: string): Promise<unknown> {
   }
   const definition = (mod as { workflow: unknown }).workflow;
   assertSerializable(definition, new Set(), "workflow");
-  return definition;
+  return {
+    definition,
+    label: readStringExport(mod, "label"),
+    description: readStringExport(mod, "description"),
+  };
 }
 
 export async function deployWorkflow(
   opts: DeployWorkflowOptions,
 ): Promise<void> {
-  const definition = await loadWorkflowDefinition(opts.kind);
-  const meta = readWorkflowMeta(opts.kind);
+  const { definition, label, description } = await loadWorkflow(opts.kind);
+  // Carry the package's display label/description into the deploy meta so the
+  // launcher can show them without importing workflow code.
+  const meta: DeployWorkflowMeta = {
+    ...readWorkflowMeta(opts.kind),
+    ...(label !== undefined ? { label } : {}),
+    ...(description !== undefined ? { description } : {}),
+  };
   let query =
     opts.tenantSlug !== undefined && opts.tenantSlug !== ""
       ? `?tenant=${encodeURIComponent(opts.tenantSlug)}`

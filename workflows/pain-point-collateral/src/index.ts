@@ -20,7 +20,7 @@ import {
 // Workflow metadata
 // -------------------------------------------------------------------------
 
-export const label = "Collateral Generation";
+export const label = "Pain Point Collateral Generation";
 export const description =
   "Analyze a call transcript for customer pain points and generate targeted sales collateral.";
 export const kind = "pain-point-collateral";

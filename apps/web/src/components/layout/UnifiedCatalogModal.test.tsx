@@ -20,8 +20,16 @@ mock.module("../../hooks/use-workflow", () => ({
         kind: "collateral-generation",
         status: "running",
         createdAt: "",
+        meta: {
+          version: "0.1.0",
+          sha: "abc1234",
+          deployedAt: "2026-06-27T00:00:00.000Z",
+          label: "Pain Point Collateral Generation",
+          description: "Analyze a call transcript and generate collateral.",
+        },
       },
       {
+        // No meta — the card falls back to the humanized kind, no description.
         deploymentId: "dep-2",
         kind: "presentation-generation",
         status: "running",
@@ -32,6 +40,12 @@ mock.module("../../hooks/use-workflow", () => ({
         kind: "seo-enrichment",
         status: "running",
         createdAt: "",
+        meta: {
+          version: "0.1.0",
+          sha: "abc1234",
+          deployedAt: "2026-06-27T00:00:00.000Z",
+          label: "SEO Enrichment Report",
+        },
       },
     ],
     isPending: false,
@@ -79,9 +93,12 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral generation"));
+    // Cards use the deploy-meta label + description; a deployment with no meta
+    // falls back to the humanized kind and shows no description.
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
+    screen().getByText("Analyze a call transcript and generate collateral.");
+    screen().getByText("SEO Enrichment Report");
     screen().getByText("Presentation generation");
-    screen().getByText("SEO enrichment");
 
     expect(screen().queryByRole("button", { name: "Agents" })).toBeNull();
     expect(screen().queryByRole("button", { name: "Workflows" })).toBeNull();
@@ -99,13 +116,13 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral generation"));
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
 
     const user = userEvent.setup();
     const searchInput = screen().getByPlaceholderText(/search/i);
     await user.type(searchInput, "collateral");
 
-    screen().getByText("Collateral generation");
+    screen().getByText("Pain Point Collateral Generation");
     await waitFor(() =>
       expect(screen().queryByText("Presentation generation")).toBeNull(),
     );
@@ -122,7 +139,7 @@ describe("UnifiedCatalogModal", () => {
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Collateral generation"));
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
 
     fireEvent.click(screen().getAllByRole("button", { name: "Start" })[0]!);
 

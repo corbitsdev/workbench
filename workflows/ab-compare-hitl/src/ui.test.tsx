@@ -111,7 +111,7 @@ const DECISION_STATE = makeState({
 describe("ab-compare-hitl Panel — header & stepper", () => {
   it("renders the HITL header and the four step labels", () => {
     renderPanel();
-    screen.getByText("A/B Test (HITL)");
+    screen.getByText("A/B Test - Human Select");
     for (const label of ["Configure", "Execute", "Decide", "Persist"]) {
       screen.getByText(label);
     }

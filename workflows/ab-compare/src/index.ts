@@ -36,7 +36,7 @@ import { AB_COMPARE_SYSTEM_PROMPT, AB_EXECUTE_SYSTEM_PROMPT } from "./prompts";
 // per-step session. The deterministic `persist` step does the artifact write.
 // -------------------------------------------------------------------------
 
-export const label = "A/B Test (Agent Select)";
+export const label = "A/B Test - Agent Select";
 export const description =
   "Run a shared prompt blind across multiple provider/model variants, let an impartial agent judge rank the outputs, and save the comparison.";
 export const kind = "ab-compare";

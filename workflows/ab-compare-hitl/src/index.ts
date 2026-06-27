@@ -26,7 +26,7 @@ import { AB_EXECUTE_SYSTEM_PROMPT } from "./prompts";
 //   persist     deterministicToolStep artifact_create — saves the ab-comparison.
 // -------------------------------------------------------------------------
 
-export const label = "A/B Test (HITL)";
+export const label = "A/B Test - Human Select";
 export const description =
   "Run a shared prompt blind across multiple provider/model variants, then let a human pick the winner and save the comparison.";
 export const kind = "ab-compare-hitl";
