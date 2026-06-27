@@ -63,6 +63,19 @@ function isZeroSignal(item: ResearchItem): boolean {
   return engagementTotal(item) === 0 && !hasComments(item);
 }
 
+// A repo search on a consumer/product/launch topic floods the pool with 0-1 star
+// pet projects, clones, tutorial outputs, and portfolio pieces that merely carry
+// the topic word — exactly the GitHub junk Larry's methodology drops ("keep a repo
+// only if there is genuine recent activity"). A star count is the cheapest
+// traction proxy: a repo below the floor (or with no stars at all) is not a launch
+// signal. The floor is low so a genuinely notable new project clears it.
+const GITHUB_TRACTION_FLOOR = 10;
+function isLowTractionRepo(item: ResearchItem): boolean {
+  if (item.source !== "github") return false;
+  const stars = item.engagement?.stars ?? 0;
+  return stars < GITHUB_TRACTION_FLOOR;
+}
+
 /**
  * Drop low-value junk before items reach clustering and the brief: bare social
  * handles with no content, clone/white-label/boilerplate repos, and zero-signal
@@ -73,7 +86,12 @@ function isZeroSignal(item: ResearchItem): boolean {
  * patterns the deterministic ranker alone let through.
  */
 export function isJunkItem(item: ResearchItem): boolean {
-  return isBareHandle(item) || isCloneRepo(item) || isZeroSignal(item);
+  return (
+    isBareHandle(item) ||
+    isCloneRepo(item) ||
+    isLowTractionRepo(item) ||
+    isZeroSignal(item)
+  );
 }
 
 export function qualityFilter(items: ResearchItem[]): ResearchItem[] {

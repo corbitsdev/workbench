@@ -12,6 +12,37 @@ function makeItem(
   };
 }
 
+describe("isJunkItem GitHub traction floor (CL-2503)", () => {
+  test("drops a low/zero-star repo that merely carries the topic word", () => {
+    const item = makeItem({
+      url: "https://github.com/someone/neobank",
+      title: "someone/neobank: pet project",
+      source: "github",
+      engagement: { stars: 1 },
+    });
+    expect(isJunkItem(item)).toBe(true);
+  });
+
+  test("a repo with no star count is treated as zero-traction junk", () => {
+    const item = makeItem({
+      url: "https://github.com/x/neobank-demo",
+      title: "x/neobank-demo",
+      source: "github",
+    });
+    expect(isJunkItem(item)).toBe(true);
+  });
+
+  test("keeps a notable repo above the traction floor", () => {
+    const item = makeItem({
+      url: "https://github.com/real/project",
+      title: "real/project: a notable launch",
+      source: "github",
+      engagement: { stars: 250 },
+    });
+    expect(isJunkItem(item)).toBe(false);
+  });
+});
+
 describe("isJunkItem", () => {
   test("drops a bare social handle with no content", () => {
     const item = makeItem({

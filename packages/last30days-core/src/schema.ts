@@ -110,6 +110,90 @@ export const Report = type({
 });
 export type Report = typeof Report.infer;
 
+// The LLM curate step's structured output (CL-2503): the judgment the
+// deterministic cluster/filter pipeline cannot do — junk dropped, survivors
+// grouped into a few named themes, and verbatim community quotes selected with
+// attribution + engagement. The brief tool parses the curate reply through this
+// schema and assembles a Report from it (falling back to the deterministic
+// buildReport when the reply is missing or yields no usable theme).
+export const CuratedTheme = type({
+  title: "string",
+  "summary?": "string",
+  // URLs of the collected items this theme is built from. The brief resolves
+  // them back to full ResearchItems; unknown urls are dropped.
+  itemUrls: "string[]",
+});
+export type CuratedTheme = typeof CuratedTheme.infer;
+
+export const CuratedQuote = type({
+  quote: "string",
+  "author?": "string",
+  source: SourceLabel,
+  engagement: "number",
+  url: "string",
+});
+export type CuratedQuote = typeof CuratedQuote.infer;
+
+export const Curation = type({
+  themes: CuratedTheme.array(),
+  quotes: CuratedQuote.array(),
+});
+export type Curation = typeof Curation.infer;
+
+/**
+ * Validate an unknown value against the Curation contract. Returns the
+ * validated curation or null so the brief boundary can fall back to the
+ * deterministic pipeline on a malformed curate reply.
+ */
+export function parseCuration(value: unknown): Curation | null {
+  const result = Curation(value);
+  return result instanceof type.errors ? null : result;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Lenient curation parse for the brief boundary. The curate model is a stochastic
+ * JSON producer — one malformed quote (engagement as a string, a missing url) or a
+ * stray theme must NOT discard the whole reply and force the junky deterministic
+ * fallback. So validate each theme and quote INDIVIDUALLY against its schema, drop
+ * only the invalid ones (coercing a numeric-string engagement), and return the
+ * salvaged Curation. Returns null only when no usable theme survives — the genuine
+ * fall-back-to-deterministic case.
+ */
+export function coerceCuration(value: unknown): Curation | null {
+  if (!isPlainObject(value)) return null;
+  const rawThemes = Array.isArray(value.themes) ? value.themes : [];
+  const rawQuotes = Array.isArray(value.quotes) ? value.quotes : [];
+
+  const themes: CuratedTheme[] = [];
+  for (const candidate of rawThemes) {
+    const validated = CuratedTheme(candidate);
+    if (!(validated instanceof type.errors)) themes.push(validated);
+  }
+  if (themes.length === 0) return null;
+
+  const quotes: CuratedQuote[] = [];
+  for (const candidate of rawQuotes) {
+    const normalized = isPlainObject(candidate)
+      ? { ...candidate, engagement: coerceNumber(candidate.engagement) }
+      : candidate;
+    const validated = CuratedQuote(normalized);
+    if (!(validated instanceof type.errors)) quotes.push(validated);
+  }
+  return { themes, quotes };
+}
+
+function coerceNumber(value: unknown): unknown {
+  if (typeof value === "string") {
+    const parsed = Number(value.replace(/[,_\s]/g, ""));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return value;
+}
+
 /**
  * Validate an unknown value (e.g. a persisted artifact's source.brief) against
  * the Report contract. Returns the validated brief or null — the single parse

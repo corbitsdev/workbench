@@ -18,9 +18,11 @@ import { buildGroundingSystemPrompt } from "./prompts";
 // failed source step flips the whole run to RunFailed. It stays out of the
 // chain until the auth path is fixed.
 const SOURCE_STEP_IDS = [
+  "web",
+  "webB",
+  "webC",
   "hackernews",
   "github",
-  "web",
   "reddit",
   "x",
   "youtube",
@@ -54,6 +56,16 @@ describe("last30days-research native workflow", () => {
           polymarket: "q",
         },
       },
+      "last30days-entities": {
+        reply: '{"web":"q","reddit":"q","x":"q","youtube":"q"}',
+      },
+      "last30days-entity-queries": {
+        content: { web: "q", reddit: "q", x: "q", youtube: "q" },
+      },
+      "last30days-collect": {
+        content: { topic: "AI coding tools", days: 30, items: [] },
+      },
+      "last30days-curate": { reply: '{"themes":[],"quotes":[]}' },
       "last30days-build-brief": { content: '{"topic":"AI coding tools"}' },
       "last30days-write-report": {
         reply: "What I learned about AI coding tools:",
@@ -78,6 +90,15 @@ describe("last30days-research native workflow", () => {
     for (const source of SOURCE_STEP_IDS) {
       expect(ranIds).toContain(`last30days-fetch-${source}`);
     }
+    // Entity-chasing round 2 (CL-2503): extract entities, re-query, then collect
+    // + curate before the brief.
+    expect(ranIds).toContain("last30days-entities");
+    expect(ranIds).toContain("last30days-entity-queries");
+    for (const id of ["web2", "reddit2", "x2", "youtube2"] as const) {
+      expect(ranIds).toContain(`last30days-fetch-${id}`);
+    }
+    expect(ranIds).toContain("last30days-collect");
+    expect(ranIds).toContain("last30days-curate");
     expect(ranIds).toContain("last30days-build-brief");
     expect(ranIds).toContain("last30days-write-report");
     expect(ranIds).toContain("last30days-persist-artifact");
@@ -104,10 +125,12 @@ describe("last30days-research native workflow", () => {
       (typeof SOURCE_STEP_IDS)[number],
       string
     > = {
-      hackernews: "groundQueries",
+      web: "groundQueries",
+      webB: "web",
+      webC: "webB",
+      hackernews: "webC",
       github: "hackernews",
-      web: "github",
-      reddit: "web",
+      reddit: "github",
       x: "reddit",
       youtube: "x",
       polymarket: "youtube",
@@ -195,7 +218,7 @@ describe("last30days-research native workflow", () => {
     expect(groundQueries.after).toEqual(["ground"]);
   });
 
-  test("the write step pins the heavier writer model; grounding/rerank do not", () => {
+  test("the write and curate steps pin the heavier writer model; grounding/entities do not", () => {
     const write = workflow.steps.write;
     if (write === undefined || write.kind !== "step") {
       throw new Error("expected a step primitive for write");
@@ -208,7 +231,18 @@ describe("last30days-research native workflow", () => {
       maxTokens: 16384,
     });
 
-    for (const id of ["ground", "rerank"] as const) {
+    // Curation is genuine editorial judgment on the heavier model (CL-2503),
+    // with its own JSON-safe token ceiling.
+    const curate = workflow.steps.curate;
+    if (curate === undefined || curate.kind !== "step") {
+      throw new Error("expected a step primitive for curate");
+    }
+    expect(curate.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
+    expect(curate.agent.inference.sources[0]?.parameters).toEqual({
+      maxTokens: 8192,
+    });
+
+    for (const id of ["ground", "entities"] as const) {
       const step = workflow.steps[id];
       if (step === undefined || step.kind !== "step") {
         throw new Error(`expected a step primitive for ${id}`);
@@ -216,6 +250,74 @@ describe("last30days-research native workflow", () => {
       // No preference → the deploy default model is pinned for the step.
       expect(step.agent.inference.sources).toEqual([]);
     }
+  });
+
+  test("entity round: entities (inline) → entityQueries (tool) → round-2 sources chained serially → collect → curate", () => {
+    const entities = workflow.steps.entities;
+    if (entities === undefined || entities.kind !== "step") {
+      throw new Error("expected a step primitive for entities");
+    }
+    expect(entities.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(entities.after).toEqual(["polymarket"]);
+
+    const entityQueries = workflow.steps.entityQueries;
+    if (entityQueries === undefined || entityQueries.kind !== "step") {
+      throw new Error("expected a step primitive for entityQueries");
+    }
+    expect(entityQueries.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "last30days_entity_queries",
+    );
+    expect(entityQueries.after).toEqual(["entities"]);
+
+    // Round-2 sources chase the discovered entities and must chain serially
+    // (CL-2314), starting after entityQueries — never overlapping round 1.
+    const round2Predecessor: Record<string, string> = {
+      web2: "entityQueries",
+      reddit2: "web2",
+      x2: "reddit2",
+      youtube2: "x2",
+    };
+    const round2QueryKey: Record<string, string> = {
+      web2: "web",
+      reddit2: "reddit",
+      x2: "x",
+      youtube2: "youtube",
+    };
+    for (const [id, predecessor] of Object.entries(round2Predecessor)) {
+      const step = workflow.steps[id];
+      if (step === undefined || step.kind !== "step") {
+        throw new Error(`expected a step primitive for ${id}`);
+      }
+      expect(step.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+      expect(step.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+      expect(step.after).toEqual([predecessor]);
+      const argMapJson = step.agent.tags?.[STEP_ARGMAP_TAG];
+      if (argMapJson === undefined) {
+        throw new Error(`expected an argMap on round-2 step ${id}`);
+      }
+      const argMap = JSON.parse(argMapJson) as { query?: { from?: string } };
+      expect(argMap.query?.from).toBe(round2QueryKey[id]);
+    }
+
+    const collect = workflow.steps.collect;
+    if (collect === undefined || collect.kind !== "step") {
+      throw new Error("expected a step primitive for collect");
+    }
+    expect(collect.agent.tags?.[STEP_TOOL_TAG]).toContain("last30days_collect");
+    expect(collect.after).toEqual(["youtube2"]);
+
+    const curate = workflow.steps.curate;
+    if (curate === undefined || curate.kind !== "step") {
+      throw new Error("expected a step primitive for curate");
+    }
+    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(curate.after).toEqual(["collect"]);
+
+    // The brief now gates on curation, not on a relevance rerank.
+    expect(
+      workflow.steps.brief?.kind === "step" && workflow.steps.brief.after,
+    ).toEqual(["curate"]);
+    expect(workflow.steps.rerank).toBeUndefined();
   });
 
   test("write is an inline-inference step; persist is deterministic and gated on write", () => {

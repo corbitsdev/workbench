@@ -83,6 +83,8 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "last30days_core_extract",
     "last30days_core_report",
     "last30days_ground_queries",
+    "last30days_entity_queries",
+    "last30days_collect",
     "last30days_validate",
     "last30days_workflow_brief",
   ],

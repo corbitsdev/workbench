@@ -6,8 +6,9 @@ import {
   LLM_WRITER_MODEL,
 } from "@workbench/agents";
 import {
+  buildCurateSystemPrompt,
+  buildEntityExtractSystemPrompt,
   buildGroundingSystemPrompt,
-  buildRerankSystemPrompt,
   buildWriterSystemPrompt,
 } from "./prompts";
 
@@ -18,6 +19,12 @@ import {
 // longest report the brief warrants; if the model caps lower internally that is
 // harmless — requesting the higher ceiling only removes our truncation.
 const WRITER_MAX_TOKENS = 16384;
+
+// The curate step emits a structured JSON brief (named themes + verbatim quotes
+// + the item urls each theme cites). A full pool can produce a large object; this
+// ceiling keeps the JSON from truncating mid-array (a clean finish_reason:"length"
+// that would invalidate the JSON and force the deterministic fallback).
+const CURATE_MAX_TOKENS = 8192;
 
 export const label = "last30days Research";
 export const description =
@@ -89,14 +96,27 @@ function sourceStep(opts: {
 // source to the untailored base query rather than erroring). `limit` deepens the
 // candidate pool off each tool's small default and is at or under the tool's own
 // MAX cap (which the tool clamps anyway).
+// Web news is the SPINE of the brief: for a launch/release/announcement topic the
+// coverage IS the story, and Reddit/X/YouTube are supporting community VOICE, not
+// the headline. So web pulls the deepest pool and the engagement sources are
+// capped well below it — otherwise a flood of pure-complaint or "which is best?"
+// Reddit threads outnumbers the launch news and the curate pool skews to
+// off-intent chatter (the recall failure CL-2503 fixes).
+// Three complementary web queries (web/webB/webC) form the spine: a semantic news
+// engine returns a different slice of real launches per phrasing, and no single
+// query covers the field — their UNION does. Each pulls Exa's max (25). The
+// engagement sources are capped well below the web pool so launch news dominates
+// the curate pool over community chatter.
 const SOURCES = [
-  { key: "hackernews", tool: "hackernews_search", limit: 30 },
-  { key: "github", tool: "github_activity", limit: 25 },
   { key: "web", tool: "exa_search", limit: 25 },
-  { key: "reddit", tool: "reddit_search", limit: 40 },
-  { key: "x", tool: "x_search", limit: 20 },
-  { key: "youtube", tool: "youtube_search", limit: 20 },
-  { key: "polymarket", tool: "polymarket_odds", limit: 25 },
+  { key: "webB", tool: "exa_search", limit: 25 },
+  { key: "webC", tool: "exa_search", limit: 25 },
+  { key: "hackernews", tool: "hackernews_search", limit: 20 },
+  { key: "github", tool: "github_activity", limit: 15 },
+  { key: "reddit", tool: "reddit_search", limit: 20 },
+  { key: "x", tool: "x_search", limit: 15 },
+  { key: "youtube", tool: "youtube_search", limit: 12 },
+  { key: "polymarket", tool: "polymarket_odds", limit: 15 },
 ] as const;
 
 const lastSource = SOURCES.at(-1);
@@ -122,6 +142,55 @@ function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
       after: [previous],
     });
     previous = source.key;
+  }
+  return steps;
+}
+
+// Round-2 entity-chasing fan-out (CL-2503): re-query the engagement-rich
+// platforms with the entity-focused queries the `entities` step produced, so the
+// launches discovered in round 1 get deeper coverage and community reaction
+// (Larry's entity-chasing). Each source pulls its query from the entity-queries
+// map (`steps.entityQueries.output.content.<mapKey>`); the parse tool guarantees
+// each key is a non-empty string (base-query fallback). Serial like round 1
+// (the CL-2314 single-writer constraint): chained off `firstAfter` and each
+// predecessor, and starting only after the entire round-1 chain has drained.
+const entityQueriesInput = {
+  from: "steps.entityQueries.output.content",
+} as const;
+
+const ROUND2_SOURCES = [
+  { id: "web2", tool: "exa_search", mapKey: "web", limit: 30 },
+  { id: "reddit2", tool: "reddit_search", mapKey: "reddit", limit: 18 },
+  { id: "x2", tool: "x_search", mapKey: "x", limit: 15 },
+  { id: "youtube2", tool: "youtube_search", mapKey: "youtube", limit: 12 },
+] as const;
+
+const lastRound2 = ROUND2_SOURCES.at(-1);
+if (lastRound2 === undefined) {
+  throw new Error(
+    "last30days workflow: ROUND2_SOURCES must declare at least one source",
+  );
+}
+const LAST_ROUND2_ID = lastRound2.id;
+
+function buildEntityRoundSteps(
+  firstAfter: string,
+): Record<string, StepPrimitive> {
+  const steps: Record<string, StepPrimitive> = {};
+  let previous = firstAfter;
+  for (const source of ROUND2_SOURCES) {
+    steps[source.id] = deterministicToolStep({
+      id: `last30days-fetch-${source.id}`,
+      tool: source.tool,
+      input: entityQueriesInput,
+      argMap: {
+        query: { from: source.mapKey },
+        limit: { literal: source.limit },
+      },
+      after: [previous],
+      nonFatal: true,
+    });
+    previous = source.id;
   }
   return steps;
 }
@@ -160,26 +229,70 @@ export const workflow = defineWorkflow({
       after: ["ground"],
     }),
 
-    // Source fan-out (serial, see SOURCES + the CL-2314 note above). The first
-    // source depends on groundQueries; the rest chain off their predecessor.
+    // Round-1 source fan-out (serial, see SOURCES + the CL-2314 note above). The
+    // first source depends on groundQueries; the rest chain off their predecessor.
     ...buildSourceSteps("groundQueries"),
 
-    // Genuine-reasoning relevance judge (W1.2): scores each candidate's
-    // relevance to the topic. Its JSON reply feeds the brief, which applies the
-    // scores before ranking. Best-effort — the brief degrades to deterministic
-    // entity grounding if the judge output is missing or malformed.
-    rerank: inlineInferenceStep({
-      id: "last30days-rerank",
-      systemPrompt: buildRerankSystemPrompt(),
+    // Genuine-reasoning entity extraction (CL-2503): reads the round-1 results and
+    // names the concrete launches/entities that surfaced, emitting an entity-focused
+    // follow-up query per platform so round 2 chases them deeper. Best-effort — the
+    // parse tool falls back to the base query if the reply is malformed.
+    entities: inlineInferenceStep({
+      id: "last30days-entities",
+      systemPrompt: buildEntityExtractSystemPrompt(),
       input: { from: "steps" },
       after: [LAST_SOURCE_KEY],
     }),
 
+    // Parse the entity reply into a round-2 per-source query map addressable by
+    // field (`steps.entityQueries.output.content.<source>`).
+    entityQueries: deterministicToolStep({
+      id: "last30days-entity-queries",
+      tool: "last30days_entity_queries",
+      input: {
+        merge: [
+          { from: "steps.intake.output" },
+          { from: "steps.entities.output" },
+        ],
+      },
+      after: ["entities"],
+    }),
+
+    // Round-2 entity-chasing fan-out (serial). Starts only after the round-1
+    // chain has fully drained (entities/entityQueries depend on LAST_SOURCE_KEY),
+    // so no two source bodies are in flight (CL-2314).
+    ...buildEntityRoundSteps("entityQueries"),
+
+    // Collect both rounds into one clean candidate pool (date-filtered, deduped,
+    // structural-junk-filtered) for the curate step to judge.
+    collect: deterministicToolStep({
+      id: "last30days-collect",
+      tool: "last30days_collect",
+      input: { from: "steps" },
+      after: [LAST_ROUND2_ID],
+    }),
+
+    // Genuine-reasoning curation (CL-2503): the judgment the deterministic
+    // cluster/filter pipeline cannot do — drop promo/shill/off-topic, group the
+    // survivors into 3-6 named themes, and select 3-5 verbatim community quotes.
+    // Runs on the heavier writer model. Best-effort — the brief tool falls back to
+    // the deterministic buildReport pipeline if the curate JSON is missing or junk.
+    curate: inlineInferenceStep({
+      id: "last30days-curate",
+      systemPrompt: buildCurateSystemPrompt(),
+      model: LLM_WRITER_MODEL,
+      maxTokens: CURATE_MAX_TOKENS,
+      input: { from: "steps.collect.output.content" },
+      after: ["collect"],
+    }),
+
+    // Assemble the structured brief: from the curate JSON when usable, else the
+    // deterministic fallback over the collected pool.
     brief: deterministicToolStep({
       id: "last30days-build-brief",
       tool: "last30days_workflow_brief",
       input: { from: "steps" },
-      after: ["rerank"],
+      after: ["curate"],
     }),
 
     // The synthesis turn runs on a heavier model (LLM_WRITER_MODEL) than the

@@ -46,6 +46,12 @@ type WebResearchItem = typeof WebResearchItem.infer;
 const SearchArgs = type({
   query: "string > 0",
   "numResults?": "number",
+  // `limit` is the result-count name every other research source tool uses
+  // (reddit/youtube/hackernews/x). Accepting it as an alias for `numResults`
+  // lets a generic caller (the last30days workflow's source fan-out) set the
+  // count with one arg name across all sources — otherwise Exa silently ignores
+  // `limit` and caps at the default 5, starving the web spine of the brief.
+  "limit?": "number",
   "type?": "string",
   "includeDomains?": "unknown",
   "excludeDomains?": "unknown",
@@ -177,11 +183,12 @@ async function searchExa(
     throw new Error(parsed.summary);
   }
 
+  const requestedCount = parsed.numResults ?? parsed.limit;
   const numResults = Math.min(
-    parsed.numResults !== undefined &&
-      Number.isInteger(parsed.numResults) &&
-      parsed.numResults > 0
-      ? parsed.numResults
+    requestedCount !== undefined &&
+      Number.isInteger(requestedCount) &&
+      requestedCount > 0
+      ? requestedCount
       : DEFAULT_NUM_RESULTS,
     MAX_NUM_RESULTS,
   );
@@ -226,6 +233,11 @@ const WEB_SEARCH_INPUT_SCHEMA = {
     numResults: {
       type: "number",
       description: "Maximum number of results to return (1-25, default 5).",
+    },
+    limit: {
+      type: "number",
+      description:
+        "Alias for numResults (1-25). Accepted so a generic caller can use the same count arg across all source tools.",
     },
     type: {
       type: "string",
