@@ -105,7 +105,6 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
-        "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
@@ -114,6 +113,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/workflow-host": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -1151,6 +1151,22 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+      },
+    },
+    "packages/workflow-host": {
+      "name": "@workbench/workflow-host",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mail-memory": "workspace:*",
+        "@intx/mime": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
       },
     },
     "workflows/ab-compare": {
@@ -2273,6 +2289,8 @@
     "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-host": ["@workbench/workflow-host@workspace:packages/workflow-host"],
 
     "@workbench/workflow-last30days-research": ["@workbench/workflow-last30days-research@workspace:workflows/last30days-research"],
 

@@ -17,9 +17,9 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
-import type { GrantEvaluator } from "@intx/workflow-host";
-import { createWarmAgentCache } from "@intx/workflow-host";
-import type { ChildOutboundMailBridge } from "@intx/workflow-host";
+import type { GrantEvaluator } from "@workbench/workflow-host";
+import { createWarmAgentCache } from "@workbench/workflow-host";
+import type { ChildOutboundMailBridge } from "@workbench/workflow-host";
 import type { StepInvokeRequest } from "@intx/workflow";
 import type { OutboundMessage, SendReceipt } from "@intx/types/runtime";
 

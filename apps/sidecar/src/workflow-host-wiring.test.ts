@@ -16,7 +16,7 @@ import {
   type SubprocessHandle,
   type SubprocessSpawner,
   type SupervisorRunEvent,
-} from "@intx/workflow-host";
+} from "@workbench/workflow-host";
 import type { InferenceEvent } from "@intx/types/runtime";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 

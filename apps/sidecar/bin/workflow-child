@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 import { setupObservability, flushSentry } from "@workbench/sentry";
 import { getLogger } from "@intx/log";
-import { runWorkflowChildFromProcessEnv } from "@intx/workflow-host";
+import { runWorkflowChildFromProcessEnv } from "@workbench/workflow-host";
 import {
   SIDECAR_SUBSTRATE_CONFIG_KEYS,
   createSubstrate,
 } from "../src/workflow-substrate-factory";
+import { recoverParkedRunFromLog } from "../src/workflow-resume";
 
 // WORKBENCH-LOCAL (CL-2503): the workflow-child is the process where every
 // workflow STEP actually runs and throws, but upstream's entrypoint inits no
@@ -59,4 +60,9 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 
 await runWorkflowChildFromProcessEnv(createSubstrate, {
   substrateConfigKeys: SIDECAR_SUBSTRATE_CONFIG_KEYS,
+  // WORKBENCH-LOCAL (CL-2535): recover a run discovered parked at an
+  // awaitSignal gate whose signal was already delivered (committed to the log)
+  // before the crash — finish the gate and resume instead of failing it.
+  recoverParkedRun: (run, ctx) =>
+    recoverParkedRunFromLog({ log: run.seedEvents, blobs: ctx.blobs }),
 });

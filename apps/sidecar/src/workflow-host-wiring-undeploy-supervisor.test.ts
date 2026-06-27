@@ -25,7 +25,7 @@ import {
   type NdjsonWriter,
   type SubprocessHandle,
   type SubprocessSpawner,
-} from "@intx/workflow-host";
+} from "@workbench/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 
 import {

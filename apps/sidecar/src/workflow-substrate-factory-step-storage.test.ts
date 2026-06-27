@@ -14,7 +14,7 @@ import type { RepoId } from "@intx/hub-sessions";
 import { createDefaultDirectorRegistry } from "@intx/agent";
 import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
-import type { GrantEvaluator } from "@intx/workflow-host";
+import type { GrantEvaluator } from "@workbench/workflow-host";
 import type { StepInvokeRequest } from "@intx/workflow";
 
 import {

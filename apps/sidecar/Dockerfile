@@ -59,6 +59,7 @@ COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
+COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
@@ -80,6 +81,7 @@ COPY packages/catalog/ packages/catalog/
 COPY packages/context-repair/ packages/context-repair/
 COPY packages/hub-agent/ packages/hub-agent/
 COPY packages/storage-isogit/ packages/storage-isogit/
+COPY packages/workflow-host/ packages/workflow-host/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tool-credentials/ packages/tool-credentials/

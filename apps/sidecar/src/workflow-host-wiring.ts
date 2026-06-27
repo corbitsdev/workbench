@@ -51,7 +51,7 @@ import {
   type SupervisorRunEvent,
   type TrivialLaunch,
   type WorkflowSupervisor,
-} from "@intx/workflow-host";
+} from "@workbench/workflow-host";
 import {
   parseInferenceEvent,
   type CryptoProvider,

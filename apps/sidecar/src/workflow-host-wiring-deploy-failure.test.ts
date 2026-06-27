@@ -34,7 +34,7 @@ import { createInMemoryTransport } from "@intx/mail-memory";
 import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
-import type { SubprocessSpawner } from "@intx/workflow-host";
+import type { SubprocessSpawner } from "@workbench/workflow-host";
 
 import {
   createDeploymentAddressRegistry,

@@ -8,7 +8,17 @@ export default defineConfig(
   eslint.configs.recommended,
   tseslint.configs.strict,
   tseslint.configs.stylistic,
-  globalIgnores(["**/dist/**", "tmp/**", "interchange/**", "temporary/**"]),
+  // `packages/workflow-host` is a verbatim vendor of `@intx/workflow-host`
+  // (WORKBENCH-LOCAL CL-2535 edits aside); lint it as vendored upstream code,
+  // same as `interchange/**`, so its own eslint-disable directives don't trip
+  // our differing rule set.
+  globalIgnores([
+    "**/dist/**",
+    "tmp/**",
+    "interchange/**",
+    "temporary/**",
+    "packages/workflow-host/**",
+  ]),
   {
     linterOptions: {
       reportUnusedDisableDirectives: "error",

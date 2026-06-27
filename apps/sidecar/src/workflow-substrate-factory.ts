@@ -88,7 +88,7 @@ import {
   type SubstrateFactory,
   type SubstrateFactoryEnv,
   type WarmAgentCache,
-} from "@intx/workflow-host";
+} from "@workbench/workflow-host";
 import {
   createDurableConversationRegistry,
   type DurableConversationRegistry,

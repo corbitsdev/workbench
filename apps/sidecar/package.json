@@ -25,7 +25,6 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
-    "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/approvals": "workspace:*",
     "@workbench/context-repair": "workspace:*",
@@ -33,7 +32,8 @@
     "@workbench/prompts": "workspace:*",
     "@workbench/sentry": "workspace:*",
     "@workbench/storage-isogit": "workspace:*",
-    "@workbench/tool-credentials": "workspace:*"
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/workflow-host": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",
