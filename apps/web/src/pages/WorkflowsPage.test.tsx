@@ -496,7 +496,7 @@ describe("WorkflowsPage", () => {
     expect(router.state.location.pathname).toBe("/workflows/run-active");
   });
 
-  it("renders the recent runs section on the dashboard", () => {
+  it("renders the workflows launcher sidebar (not a second run list) + a view-all-runs link", () => {
     runsResult = {
       data: [
         {
@@ -511,8 +511,9 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
-    screen.getByText("Recent");
-    screen.getByRole("button", { name: "View all" });
+    // The rail owns the run list; the dashboard sidebar is a kind launcher.
+    screen.getByText("Your workflows");
+    screen.getByRole("button", { name: "View all runs" });
   });
 
   it("pivots to a New-run empty state when there are zero runs", () => {

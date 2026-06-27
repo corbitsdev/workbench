@@ -42,10 +42,6 @@ function relativeAgo(iso: string): string {
   return rel;
 }
 
-function sortByCreatedDesc(runs: readonly WorkflowRun[]): WorkflowRun[] {
-  return [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
-
 export interface WorkflowsDashboardProps {
   runs: WorkflowRun[];
   isLoading: boolean;
@@ -255,7 +251,19 @@ export function WorkflowsDashboard({
     });
   }, [runs]);
 
-  const recents = useMemo(() => sortByCreatedDesc(runs).slice(0, 6), [runs]);
+  // The pinned rail already owns the run list/history; the dashboard's right
+  // rail is a forward-looking launcher of the workflow KINDS you run (favorites
+  // first), not a second copy of the run list.
+  const workflowKinds = useMemo(() => {
+    const seen = new Set<string>(favoriteKinds);
+    for (const run of runs) seen.add(run.kind);
+    return [...seen].sort((a, b) => {
+      const favA = favoriteKinds.includes(a);
+      const favB = favoriteKinds.includes(b);
+      if (favA !== favB) return favA ? -1 : 1;
+      return toHumanLabel(a).localeCompare(toHumanLabel(b));
+    });
+  }, [runs, favoriteKinds]);
 
   const insetClass = pinned ? "pl-[20rem]" : "";
 
@@ -322,9 +330,18 @@ export function WorkflowsDashboard({
       {missingNote}
 
       <div className="mb-6 flex items-center justify-between gap-4">
-        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-          Workflows
-        </h1>
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
+            Workflows
+          </h1>
+          <button
+            type="button"
+            onClick={onShowAll}
+            className="text-[12px] text-text-3 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
+          >
+            View all runs
+          </button>
+        </div>
         <NewRunButton onClick={onNewRun} />
       </div>
 
@@ -375,54 +392,14 @@ export function WorkflowsDashboard({
           </section>
         </div>
 
-        <aside className="flex flex-col gap-8 @[860px]:w-[300px] @[860px]:shrink-0 @[860px]:self-start @[860px]:sticky @[860px]:top-0 @[860px]:max-h-[calc(100vh-2rem)] @[860px]:overflow-y-auto">
-          <section>
-            <div className="mb-2 flex items-baseline justify-between gap-2">
-              <h2 className="text-[13px] font-semibold text-text">Recent</h2>
-              <button
-                type="button"
-                onClick={onShowAll}
-                className="text-[11px] text-text-3 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-              >
-                View all
-              </button>
-            </div>
-            <div className="flex flex-col">
-              {recents.map((run) => (
-                <div key={run.runId} className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onSelectRun(run.runId)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[9px] px-2.5 py-2 text-left transition-colors duration-150 ease-[var(--ease)] hover:bg-row-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusDotClass(run.status)}`}
-                    />
-                    <span className="min-w-0 flex-1 truncate text-[13px] text-text">
-                      {toHumanLabel(run.kind)}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-text-3 tabular-nums">
-                      {relativeAgo(run.createdAt)}
-                    </span>
-                  </button>
-                  <StarButton
-                    favorited={favoriteKinds.includes(run.kind)}
-                    kindLabel={toHumanLabel(run.kind)}
-                    onToggle={() => toggleFavoriteKind(run.kind)}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {favoriteKinds.length > 0 && (
+        {workflowKinds.length > 0 && (
+          <aside className="flex flex-col gap-8 @[860px]:w-[260px] @[860px]:shrink-0 @[860px]:self-start @[860px]:sticky @[860px]:top-0 @[860px]:max-h-[calc(100vh-2rem)] @[860px]:overflow-y-auto">
             <section>
               <h2 className="mb-2 text-[13px] font-semibold text-text">
-                Favorites
+                Your workflows
               </h2>
               <div className="flex flex-col">
-                {favoriteKinds.map((kind) => (
+                {workflowKinds.map((kind) => (
                   <div key={kind} className="flex items-center gap-1">
                     <span className="min-w-0 flex-1 truncate px-2.5 text-[13px] text-text">
                       {toHumanLabel(kind)}
@@ -435,7 +412,7 @@ export function WorkflowsDashboard({
                       Run
                     </button>
                     <StarButton
-                      favorited
+                      favorited={favoriteKinds.includes(kind)}
                       kindLabel={toHumanLabel(kind)}
                       onToggle={() => toggleFavoriteKind(kind)}
                     />
@@ -443,8 +420,8 @@ export function WorkflowsDashboard({
                 ))}
               </div>
             </section>
-          )}
-        </aside>
+          </aside>
+        )}
       </div>
     </div>,
   );
