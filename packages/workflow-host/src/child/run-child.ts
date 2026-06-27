@@ -541,16 +541,30 @@ export async function runWorkflowChild(
     // hub's `failOrphanedRuns` reconciler fails it on its next pass).
     let seedEvents: readonly WorkflowEvent[] = run.seedEvents;
     if (opts.recoverParkedRun !== undefined && hasUnresumableTail(run)) {
-      const blobs = createWorkflowRunBlobSubstrate({
-        substrate: opts.bindings.substrate,
-        repoId: opts.bindings.workflowRunRepoId,
-        principal: opts.bindings.principal,
-        runId: run.runId,
-        ref: opts.bindings.workflowRunRef,
-      });
-      const satisfied = await opts.recoverParkedRun(run, { blobs });
-      if (satisfied !== null) {
-        seedEvents = satisfied;
+      // WORKBENCH-LOCAL (CL-2535): a recovery-hook failure must NEVER crash the
+      // child. This runs during self-discovery, BEFORE `ready` is announced, so
+      // an uncaught throw here rejects `runWorkflowChild`, trips the binary's
+      // `unhandledRejection` -> `flushAndExit(1)`, and the child dies before
+      // `ready` — wedging the whole deployment's supervisor (it can no longer
+      // service triggers), durably across restarts. The self-discovery loop's
+      // invariant is that one bad run cannot block `ready`; the hook must honor
+      // it. On any throw, fall through to the default resume path (identical to
+      // no hook): `runtimeRun` rejects the unresumable tail, caught below.
+      try {
+        const blobs = createWorkflowRunBlobSubstrate({
+          substrate: opts.bindings.substrate,
+          repoId: opts.bindings.workflowRunRepoId,
+          principal: opts.bindings.principal,
+          runId: run.runId,
+          ref: opts.bindings.workflowRunRef,
+        });
+        const satisfied = await opts.recoverParkedRun(run, { blobs });
+        if (satisfied !== null) {
+          seedEvents = satisfied;
+        }
+      } catch (cause) {
+        logger.error`recoverParkedRun failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
+        seedEvents = run.seedEvents;
       }
     }
     const env = buildRuntimeEnv({

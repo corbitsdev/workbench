@@ -966,6 +966,105 @@ describe("runWorkflowChild", () => {
     expect(result.resumedRunIds).toContain("run-parked");
   });
 
+  // WORKBENCH-LOCAL (CL-2535): a recoverParkedRun hook that THROWS must NOT
+  // crash the child. This runs during self-discovery before `ready`; an
+  // uncaught throw would reject runWorkflowChild, trip the binary's
+  // unhandledRejection -> exit(1), and wedge the whole deployment. The guard
+  // makes one bad run fall through to the default path instead.
+  test("a throwing recoverParkedRun hook does not crash the child (falls through)", async () => {
+    const baseDir = await makeTempDir("child-recover-throw-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+
+    const assetDir = path.join(baseDir, "workflow", "workflow-asset");
+    await fs.mkdir(assetDir, { recursive: true });
+    await fs.writeFile(
+      path.join(assetDir, "workflow.json"),
+      JSON.stringify({
+        id: "gate-workflow",
+        triggers: [{ type: "manual" }],
+        steps: {
+          gate: {
+            kind: "awaitSignal",
+            id: "gate",
+            name: "go",
+            drainBehavior: "wait",
+          },
+        },
+        stepOrder: ["gate"],
+      }),
+    );
+    await seedRun(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      "run-parked",
+      [
+        {
+          seq: 1,
+          type: "RunStarted",
+          at: "2026-01-01T00:00:00.000Z",
+          runId: "run-parked",
+          definitionHash: "h",
+          trigger: { type: "manual", payload: null },
+        },
+        {
+          seq: 2,
+          type: "StepStarted",
+          at: "2026-01-01T00:00:00.100Z",
+          stepId: "gate",
+          attempt: 1,
+          input: { ref: "inline:null" },
+        },
+        {
+          seq: 3,
+          type: "SignalAwaited",
+          at: "2026-01-01T00:00:00.200Z",
+          stepId: "gate",
+          signalName: "go",
+        },
+      ],
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: bytesToHex(hmacKey),
+        hostPubKeyHex: bytesToHex(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+      recoverParkedRun: async () => {
+        throw new Error("boom recovery");
+      },
+    });
+
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    // Must RESOLVE (reach `ready`) despite the hook throwing — not reject.
+    const result = await runPromise;
+    expect(result.resumedRunIds).toContain("run-parked");
+  });
+
   test("grants-updated frame replaces the active credentialsSnapshot", async () => {
     const baseDir = await makeTempDir("child-grants-");
     const supervisorKeyPair = await generateKeyPair();
