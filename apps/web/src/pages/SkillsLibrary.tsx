@@ -158,18 +158,18 @@ export function SkillsLibrary() {
         <button
           type="button"
           onClick={() => navigate("/skills/new")}
-          className="flex items-center gap-[7px] rounded-[9px] border border-charcoal bg-charcoal px-[13px] py-[7px] text-[12.5px] font-semibold text-cream transition-colors"
+          className="flex items-center gap-[7px] rounded-[9px] border border-border bg-transparent px-[13px] py-[7px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface"
         >
           <svg
             viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             strokeWidth="2"
-            className="h-3.5 w-3.5"
+            className="h-3.5 w-3.5 text-orange"
           >
             <path d="M12 5v14M5 12h14" />
           </svg>
-          Add Skill
+          Add skill
         </button>
       </div>
 

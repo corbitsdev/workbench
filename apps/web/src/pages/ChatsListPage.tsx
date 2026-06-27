@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Plus, Search } from "lucide-react";
+import { PagePanel } from "@workbench/ui";
+import { Plus } from "lucide-react";
 import {
   useCreateMyraThread,
   useMyraThreads,
@@ -27,6 +28,7 @@ export function ChatsListPage() {
   const createThread = useCreateMyraThread();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [newChatError, setNewChatError] = useState<string | null>(null);
 
   const open = (thread: MyraThread) => {
     writeLastActiveThreadId(thread.id);
@@ -34,10 +36,14 @@ export function ChatsListPage() {
   };
 
   const newChat = () => {
+    setNewChatError(null);
     createThread.mutate(undefined, {
       onSuccess: (thread) => {
         writeLastActiveThreadId(thread.id);
         navigate(`/chats/${thread.id}`);
+      },
+      onError: () => {
+        setNewChatError("Could not start a new chat. Try again.");
       },
     });
   };
@@ -48,46 +54,51 @@ export function ChatsListPage() {
   );
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-2xl flex-col px-6 py-6">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold text-text">Chats</h1>
+    <PagePanel>
+      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
+        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+          Chats
+        </h1>
+        {!isLoading && (
+          <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
+            {filtered.length} {filtered.length === 1 ? "chat" : "chats"}
+          </span>
+        )}
+        <div className="flex-1" />
+        {newChatError && (
+          <span className="text-[12px] text-orange-deep">{newChatError}</span>
+        )}
+        <input
+          type="search"
+          aria-label="Search chats"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search chats"
+          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+        />
         <button
           type="button"
           onClick={newChat}
           disabled={createThread.isPending}
-          className="flex items-center gap-2 rounded-[10px] bg-orange px-3 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="flex items-center gap-[7px] rounded-[9px] border border-border bg-transparent px-[13px] py-[7px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface disabled:opacity-50"
         >
-          <Plus size={16} />
+          <Plus size={16} className="text-orange" />
           {createThread.isPending ? "Creating…" : "New chat"}
         </button>
       </div>
 
-      <div className="relative mt-4">
-        <Search
-          size={16}
-          className="absolute left-3 top-1/2 -translate-y-1/2 text-text-3"
-        />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search chats"
-          className="w-full rounded-[10px] border border-border bg-surface py-2 pl-9 pr-3 text-sm text-text outline-none transition-colors focus:border-orange"
-        />
-      </div>
-
-      <div className="mt-4 min-h-0 flex-1 overflow-auto">
+      <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {isLoading && (
-          <p className="px-1 py-6 text-sm text-text-2">Loading chats…</p>
+          <div className="py-10 text-[13px] text-text-3">Loading chats…</div>
         )}
 
         {isError && (
-          <div className="flex flex-col items-start gap-2 px-1 py-6 text-sm text-text-2">
-            <span>Couldn't load your chats.</span>
+          <div className="flex flex-col items-start gap-3 py-10 text-[13px] text-text-3">
+            <span>Could not load chats.</span>
             <button
               type="button"
               onClick={() => void refetch()}
-              className="text-orange underline"
+              className="rounded-[9px] border border-border px-[11px] py-[6px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface"
             >
               Try again
             </button>
@@ -95,38 +106,43 @@ export function ChatsListPage() {
         )}
 
         {!isLoading && !isError && (threads?.length ?? 0) === 0 && (
-          <p className="px-1 py-6 text-sm text-text-2">
-            You don't have any chats yet.
-          </p>
+          <div className="py-10 text-[13px] text-text-3">
+            No chats yet. Start a new chat when you're ready.
+          </div>
         )}
 
         {!isLoading &&
           !isError &&
           (threads?.length ?? 0) > 0 &&
           filtered.length === 0 && (
-            <p className="px-1 py-6 text-sm text-text-3">
-              No chats match "{query}".
-            </p>
+            <div className="py-10 text-[13px] text-text-3">
+              No chats match &ldquo;{query.trim()}&rdquo;.
+            </div>
           )}
 
-        <div className="flex flex-col gap-1">
-          {filtered.map((thread) => (
-            <button
-              key={thread.id}
-              type="button"
-              onClick={() => open(thread)}
-              className="flex items-center justify-between gap-3 rounded-[10px] border border-transparent px-3 py-3 text-left transition-colors hover:border-border hover:bg-surface"
-            >
-              <span className="truncate text-sm font-medium text-text">
-                {thread.label}
-              </span>
-              <span className="shrink-0 text-xs text-text-3">
-                {formatWhen(thread.createdAt)}
-              </span>
-            </button>
-          ))}
-        </div>
+        {!isLoading && !isError && filtered.length > 0 && (
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[var(--gap)]">
+            {filtered.map((thread) => (
+              <button
+                key={thread.id}
+                type="button"
+                onClick={() => open(thread)}
+                className="group flex min-h-[104px] flex-col justify-between rounded-lg border border-border bg-surface p-[13px] text-left transition-colors hover:border-border-strong hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange"
+              >
+                <span className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-text">
+                  {thread.label}
+                </span>
+                <span className="mt-5 flex items-center justify-between gap-3 font-mono text-[11px] text-text-3">
+                  <span>{formatWhen(thread.createdAt)}</span>
+                  <span className="font-sans text-[12px] font-medium text-text-3 transition-colors group-hover:text-text-2">
+                    Open chat
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+    </PagePanel>
   );
 }

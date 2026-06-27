@@ -11,7 +11,14 @@ let threadsResult: {
   isError: boolean;
   refetch: () => void;
 };
-const createMutate = mock((_arg: undefined, _opts?: unknown) => {});
+type MutateOpts = {
+  onSuccess?: (thread: { id: string }) => void;
+  onError?: (error: unknown) => void;
+};
+let mutateOutcome: "noop" | "error" = "noop";
+const createMutate = mock((_arg: undefined, opts?: MutateOpts) => {
+  if (mutateOutcome === "error") opts?.onError?.(new Error("boom"));
+});
 
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => threadsResult,
@@ -33,6 +40,7 @@ function renderPage() {
 
 beforeEach(() => {
   createMutate.mockClear();
+  mutateOutcome = "noop";
   threadsResult = {
     data: [
       {
@@ -88,8 +96,18 @@ describe("ChatsListPage", () => {
       refetch: () => {},
     };
     renderPage();
-    expect(screen.getByText(/don't have any chats yet/i)).toBeDefined();
+    expect(screen.getByText(/no chats yet/i)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
     expect(createMutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a legible message when new-chat creation fails", () => {
+    mutateOutcome = "error";
+    renderPage();
+    expect(screen.queryByText(/could not start a new chat/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
+    expect(
+      screen.queryByText(/could not start a new chat\. try again\./i),
+    ).not.toBeNull();
   });
 });
