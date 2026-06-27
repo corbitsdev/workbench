@@ -51,6 +51,8 @@ export interface WorkflowsDashboardProps {
   selectedRunMissing: boolean;
   onSelectRun: (runId: string) => void;
   onNewRun: () => void;
+  onRunKind: (kind: string) => void;
+  startingKind: string | null;
   onFilterStatus: (status: RunStatus) => void;
   onShowAll: () => void;
 }
@@ -214,6 +216,8 @@ export function WorkflowsDashboard({
   selectedRunMissing,
   onSelectRun,
   onNewRun,
+  onRunKind,
+  startingKind,
   onFilterStatus,
   onShowAll,
 }: WorkflowsDashboardProps) {
@@ -406,10 +410,11 @@ export function WorkflowsDashboard({
                     </span>
                     <button
                       type="button"
-                      onClick={onNewRun}
-                      className="rounded-[7px] px-2 py-1 text-[11px] text-text-2 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
+                      onClick={() => onRunKind(kind)}
+                      disabled={startingKind !== null}
+                      className="rounded-[7px] px-2 py-1 text-[11px] text-text-2 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
                     >
-                      Run
+                      {startingKind === kind ? "Starting…" : "Run"}
                     </button>
                     <StarButton
                       favorited={favoriteKinds.includes(kind)}

@@ -21,11 +21,20 @@ let runsResult: {
 let lastRunsTenantId: string | null | undefined;
 let activeTenantId: string | null = "ten-1";
 
+let lastStartKind: string | null = null;
 mock.module("../hooks/use-workflow", () => ({
   useWorkflowRuns: (tenantId?: string | null) => {
     lastRunsTenantId = tenantId;
     return runsResult;
   },
+  useStartWorkflow: () => ({
+    isPending: false,
+    variables: undefined,
+    mutateAsync: (vars: { kind: string }) => {
+      lastStartKind = vars.kind;
+      return Promise.resolve({ runId: "run-started" });
+    },
+  }),
 }));
 
 mock.module("../lib/active-workbench-context", () => ({
@@ -93,6 +102,7 @@ afterEach(() => {
   lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
   lastCatalogProps = null;
+  lastStartKind = null;
 });
 
 function renderWorkflowsPage(initialPath = "/workflows") {
@@ -474,7 +484,12 @@ describe("WorkflowsPage", () => {
     expect(
       screen.getByLabelText("Show 1 failed runs").getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(localStorage.getItem("workflow-rail-pinned")).toBe("1");
+    // The rail opens (transient, no longer persisted): its overlay un-hides.
+    expect(
+      document
+        .getElementById("workflow-rail-overlay")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("false");
   });
 
   it("clicking an active workflow card navigates to that run", () => {
@@ -514,6 +529,31 @@ describe("WorkflowsPage", () => {
     // The rail owns the run list; the dashboard sidebar is a kind launcher.
     screen.getByText("Your workflows");
     screen.getByRole("button", { name: "View all runs" });
+  });
+
+  it("starts a kind directly from the launcher Run button (no catalog dialog)", async () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { router } = renderWorkflowsPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run" }));
+    expect(lastStartKind).toBe("deck-build");
+    // It started directly — the catalog dialog did not open.
+    expect(lastCatalogProps?.open).toBe(false);
+
+    await Promise.resolve();
+    expect(router.state.location.pathname).toBe("/workflows/run-started");
   });
 
   it("pivots to a New-run empty state when there are zero runs", () => {

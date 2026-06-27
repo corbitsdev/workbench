@@ -6,7 +6,11 @@ import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { WorkflowsDashboard } from "../components/WorkflowsDashboard";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
-import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
+import {
+  useStartWorkflow,
+  useWorkflowRuns,
+  type WorkflowRun,
+} from "../hooks/use-workflow";
 import {
   ALL_KINDS,
   DEFAULT_RUN_FILTERS,
@@ -18,7 +22,6 @@ import {
 } from "../lib/workflow-run-filters";
 
 const OVERLAY_ID = "workflow-rail-overlay";
-const PIN_STORAGE_KEY = "workflow-rail-pinned";
 const HOVER_OPEN_DELAY_MS = 120;
 const HOVER_CLOSE_DELAY_MS = 260;
 
@@ -46,17 +49,6 @@ function prefersCoarsePointer(): boolean {
     return false;
   }
   return window.matchMedia("(hover: none), (pointer: coarse)").matches;
-}
-
-function readPinned(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(PIN_STORAGE_KEY) === "1";
-}
-
-function writePinned(next: boolean): void {
-  if (typeof window === "undefined") return;
-  if (next) window.localStorage.setItem(PIN_STORAGE_KEY, "1");
-  else window.localStorage.removeItem(PIN_STORAGE_KEY);
 }
 
 export function statusLabel(status: string): string {
@@ -97,29 +89,6 @@ function PlusIcon() {
         strokeWidth="1.6"
         strokeLinecap="round"
       />
-    </svg>
-  );
-}
-
-function PanelIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      <rect
-        x="2"
-        y="3"
-        width="12"
-        height="10"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.4"
-      />
-      <path d="M6 3v10" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }
@@ -263,7 +232,7 @@ export function WorkflowsPage() {
   const [filters, setFilters] = useState<RunFilters>(DEFAULT_RUN_FILTERS);
   const { archived, isArchived, setArchived } = useArchivedWorkflowRuns();
 
-  const [pinned, setPinned] = useState<boolean>(readPinned);
+  const [pinned, setPinned] = useState(false);
   const [hovering, setHovering] = useState(false);
   const [focusWithin, setFocusWithin] = useState(false);
   const [coarsePointer] = useState<boolean>(prefersCoarsePointer);
@@ -324,22 +293,27 @@ export function WorkflowsPage() {
     setFocusWithin(false);
   };
 
-  const togglePinned = () => {
-    setPinned((prev) => {
-      const next = !prev;
-      writePinned(next);
-      return next;
-    });
-  };
+  const togglePinned = () => setPinned((prev) => !prev);
 
   const collapseRail = () => {
     clearTimers();
     setPinned(false);
     setHovering(false);
-    writePinned(false);
     if (typeof document !== "undefined") {
       (document.activeElement as HTMLElement | null)?.blur?.();
     }
+  };
+
+  const startWorkflow = useStartWorkflow(activeTenantId);
+  const startingKind = startWorkflow.isPending
+    ? (startWorkflow.variables?.kind ?? null)
+    : null;
+  const handleRunKind = (kind: string) => {
+    if (startWorkflow.isPending) return;
+    startWorkflow
+      .mutateAsync({ kind, input: {} })
+      .then((res) => navigate(`/workflows/${res.runId}`))
+      .catch(() => setCatalogOpen(true));
   };
 
   const allRuns = runs ?? [];
@@ -405,15 +379,16 @@ export function WorkflowsPage() {
             })}
           </div>
 
+          {/* Keyboard entry point — the rail expands on hover for pointer
+              users, so this stays visually hidden but tab-reachable. */}
           <button
             type="button"
             onClick={togglePinned}
             aria-controls={OVERLAY_ID}
             aria-expanded={expanded}
-            aria-label="Expand run list and filters"
-            className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] text-text-3 transition-colors hover:bg-row-hover hover:text-text"
+            className="sr-only focus-visible:not-sr-only focus-visible:grid focus-visible:h-9 focus-visible:w-9 focus-visible:place-items-center focus-visible:rounded-[9px] focus-visible:bg-row-hover focus-visible:text-[10px] focus-visible:text-text"
           >
-            <PanelIcon />
+            Expand run list
           </button>
         </div>
 
@@ -640,15 +615,15 @@ export function WorkflowsPage() {
             selectedRunMissing={selectedRunMissing}
             onSelectRun={(runId) => navigate(`/workflows/${runId}`)}
             onNewRun={() => setCatalogOpen(true)}
+            onRunKind={handleRunKind}
+            startingKind={startingKind}
             onFilterStatus={(status) => {
               setFilters((f) => ({ ...f, status }));
               setPinned(true);
-              writePinned(true);
             }}
             onShowAll={() => {
               setFilters(DEFAULT_RUN_FILTERS);
               setPinned(true);
-              writePinned(true);
             }}
           />
         )}
