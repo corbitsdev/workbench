@@ -1,12 +1,10 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  ScrapeArgsSchema,
   firecrawlFetchJSON,
-  optionalBoolean,
   optionalPositiveInteger,
-  optionalRecord,
-  optionalStringArray,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -18,27 +16,31 @@ const MAX_TIMEOUT_MS = 300_000;
 
 async function scrape(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, "url");
-  const formats = optionalStringArray(args.formats);
-  const onlyMainContent = optionalBoolean(args.onlyMainContent);
-  const includeTags = optionalStringArray(args.includeTags);
-  const excludeTags = optionalStringArray(args.excludeTags);
+  const args = parseArgs(ScrapeArgsSchema, rawArgs, "firecrawl_scrape");
+
   const waitFor = optionalPositiveInteger(args.waitFor, 0, MAX_WAIT_FOR_MS);
   const timeout = optionalPositiveInteger(args.timeout, 0, MAX_TIMEOUT_MS);
-  const jsonOptions = optionalRecord(args.jsonOptions);
 
   const body: Record<string, unknown> = {
-    url,
-    ...(formats !== null ? { formats } : {}),
-    ...(onlyMainContent !== null ? { onlyMainContent } : {}),
-    ...(includeTags !== null ? { includeTags } : {}),
-    ...(excludeTags !== null ? { excludeTags } : {}),
+    url: args.url,
+    ...(args.formats !== undefined ? { formats: args.formats } : {}),
+    ...(args.onlyMainContent !== undefined
+      ? { onlyMainContent: args.onlyMainContent }
+      : {}),
+    ...(args.includeTags !== undefined
+      ? { includeTags: args.includeTags }
+      : {}),
+    ...(args.excludeTags !== undefined
+      ? { excludeTags: args.excludeTags }
+      : {}),
     ...(waitFor > 0 ? { waitFor } : {}),
     ...(timeout > 0 ? { timeout } : {}),
-    ...(jsonOptions !== null ? { jsonOptions } : {}),
+    ...(args.jsonOptions !== undefined
+      ? { jsonOptions: args.jsonOptions }
+      : {}),
   };
 
   return firecrawlFetchJSON(

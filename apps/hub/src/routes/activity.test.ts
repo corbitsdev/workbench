@@ -47,8 +47,14 @@ const overviewPayload = {
   },
 };
 
+let lastArgs: { tenantId?: string; callerPrincipalId?: string | null } = {};
 mock.module("../services/activity-overview", () => ({
-  getActivityOverview: mock(async () => overviewPayload),
+  getActivityOverview: mock(
+    async (args: { tenantId: string; callerPrincipalId?: string | null }) => {
+      lastArgs = args;
+      return overviewPayload;
+    },
+  ),
 }));
 
 describe("GET /overview", () => {
@@ -71,5 +77,24 @@ describe("GET /overview", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { tenantId: string };
     expect(body.tenantId).toBe("tnt_test");
+  });
+
+  it("threads the caller's principal id into the overview for self-marking", async () => {
+    const hub = new Hono<ActivityRouteEnv>();
+    hub.use("/api/tenants/:tenantId/activity/*", async (c, next) => {
+      c.set("tenant", { id: "tnt_test" });
+      c.set("principal", { id: "pri_caller" });
+      await next();
+    });
+    hub.route(
+      "/api/tenants/:tenantId/activity",
+      createActivityRouter({ db: {} as never }),
+    );
+
+    const res = await hub.request(
+      "http://localhost/api/tenants/tnt_test/activity/overview",
+    );
+    expect(res.status).toBe(200);
+    expect(lastArgs.callerPrincipalId).toBe("pri_caller");
   });
 });

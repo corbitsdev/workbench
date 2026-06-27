@@ -3,18 +3,38 @@ import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
 import {
   Button,
+  ComparisonView,
   HorizontalStepper,
-  Markdown,
+  parseComparisonResult,
+  type ComparisonResult,
   type WorkflowCredential,
   type WorkflowPanelProps,
   type WorkflowSkill,
   type WorkflowStep,
 } from "@workbench/ui";
+import { composeComparisonResult } from "@workbench/tools-ab-compare";
 import {
   defaultAbComparisonModel,
   isAbComparisonModelAllowed,
   listAbComparisonModels,
 } from "./models";
+
+// Build the same structured ComparisonResult the persist step saves, from the
+// live step outputs — so the in-flight review looks exactly like the saved
+// artifact (one renderer, one shape). Returns null until the pieces are ready.
+function previewResult(
+  configOutput: unknown,
+  executeOutput: unknown,
+  compareOutput: unknown,
+): ComparisonResult | null {
+  return parseComparisonResult(
+    composeComparisonResult({
+      config: { output: configOutput },
+      execute: { output: executeOutput },
+      compare: { output: compareOutput },
+    }),
+  );
+}
 
 const CONFIG_SIGNAL = "ab-config";
 const REVIEW_SIGNAL = "comparison-review";
@@ -45,35 +65,6 @@ interface VariantConfig {
   skillIds?: string[];
   input: string;
 }
-
-// Inline-inference step output shape: { reply: string, turn?: unknown }.
-const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
-// The execute map emits an array of per-variant agent outputs.
-const ExecuteMapOutput = AgentStepOutput.array();
-
-// The compare agent emits STRICT JSON in its reply.
-const CompareJSON = type({
-  "summary?": "string",
-  "ranking?": type({
-    rank: "number",
-    label: "string",
-    "rationale?": "string",
-  }).array(),
-  "recommendation?": "string",
-});
-
-// The config signal payload we read back for the reveal.
-const ConfigPayload = type({
-  variants: type({
-    label: "string",
-    providerName: "string",
-    model: "string",
-    "systemPrompt?": "string",
-    "skillIds?": "string[]",
-    input: "string",
-  }).array(),
-  input: "string",
-});
 
 // `deterministicToolStep` output: { callId: string, content: "<JSON string>" }.
 const ToolResultEnvelope = type({ callId: "string", content: "string" });
@@ -143,47 +134,12 @@ function LoadingState({ label }: { label: string }) {
   );
 }
 
-// ── Config wizard step bar ────────────────────────────────────────────────────
-
-type ConfigStep = "comparisons" | "configure" | "input";
-
-const CONFIG_STEP_LABELS: Record<ConfigStep, string> = {
-  comparisons: "Comparisons",
-  configure: "Configure",
-  input: "Input",
-};
-
-function ConfigStepBar({ currentStep }: { currentStep: ConfigStep }) {
-  const steps: ConfigStep[] = ["comparisons", "configure", "input"];
-  const index = steps.indexOf(currentStep);
-  return (
-    <div className="flex items-center gap-2 pb-4 shrink-0">
-      {steps.map((step, i) => (
-        <div key={step} className="flex items-center gap-2">
-          <div
-            className={`grid h-6 w-6 place-items-center rounded-full text-[11px] font-semibold ${
-              i < index
-                ? "bg-green text-white"
-                : i === index
-                  ? "bg-orange text-white"
-                  : "bg-surface-2 text-text-3"
-            }`}
-          >
-            {i < index ? "✓" : i + 1}
-          </div>
-          <span
-            className={`text-[12px] font-medium ${i === index ? "text-text" : "text-text-3"}`}
-          >
-            {CONFIG_STEP_LABELS[step]}
-          </span>
-          {i < steps.length - 1 && <span className="mx-1 text-text-3">›</span>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Config wizard state ───────────────────────────────────────────────────────
+
+// The config gate is a simple Back/Next flow across these sub-steps. The outer
+// workflow stepper already shows "Configure" as the current phase, so there is
+// no inner stepper here — that nesting was redundant.
+type ConfigStep = "comparisons" | "configure" | "input";
 
 const PROVIDER_WHITELIST = new Set([
   "openai-compatible",
@@ -347,8 +303,6 @@ function ConfigScreen({
   return (
     <div className="flex flex-col h-full">
       <Card>
-        <ConfigStepBar currentStep={configStep} />
-
         {configStep === "comparisons" && (
           <div className="space-y-4">
             <p className="text-[13px] text-text-2">
@@ -558,33 +512,6 @@ function ConfigScreen({
   );
 }
 
-function VariantOutputs({ output }: { output: unknown }) {
-  const parsed = ExecuteMapOutput(output);
-  if (parsed instanceof type.errors || parsed.length === 0) return null;
-  return (
-    <Card>
-      <CardTitle>Variant outputs</CardTitle>
-      <p className="mb-4 text-xs text-text-3">
-        Outputs are shown anonymously. Provider and model stay hidden through
-        ranking.
-      </p>
-      <div className="space-y-4">
-        {parsed.map((variant, index) => (
-          <div
-            key={index}
-            className="rounded-lg border border-border bg-surface-2 p-3"
-          >
-            <p className="mb-2 text-xs font-medium text-text-2">
-              Variant {index + 1}
-            </p>
-            <Markdown>{variant.reply}</Markdown>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
-
 function ExecuteScreen({ phase }: { phase: StepPhase | undefined }) {
   if (phase !== "completed") {
     return <LoadingState label="Running the prompt across variants…" />;
@@ -596,17 +523,21 @@ function ExecuteScreen({ phase }: { phase: StepPhase | undefined }) {
 
 function CompareScreen({
   phase,
-  output,
+  configOutput,
+  executeOutput,
+  compareOutput,
 }: {
   phase: StepPhase | undefined;
-  output: unknown;
+  configOutput: unknown;
+  executeOutput: unknown;
+  compareOutput: unknown;
 }) {
   if (phase === "in-flight" || phase === undefined) {
     return <LoadingState label="Generating blind ranking…" />;
   }
 
-  const parsed = AgentStepOutput(output);
-  if (parsed instanceof type.errors) {
+  const result = previewResult(configOutput, executeOutput, compareOutput);
+  if (result === null) {
     if (phase === "completed") {
       return (
         <Card>
@@ -619,63 +550,17 @@ function CompareScreen({
     return <LoadingState label="Generating blind ranking…" />;
   }
 
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(parsed.reply);
-  } catch {
-    decoded = undefined;
-  }
-
-  const structured = decoded !== undefined ? CompareJSON(decoded) : undefined;
-  const rich =
-    structured !== undefined && !(structured instanceof type.errors)
-      ? structured
-      : undefined;
-
-  if (rich !== undefined) {
-    return (
-      <Card>
-        <CardTitle>Blind ranking</CardTitle>
-        {rich.summary !== undefined && (
-          <p className="mb-4 text-sm text-text-2">{rich.summary}</p>
-        )}
-        {rich.ranking !== undefined && rich.ranking.length > 0 ? (
-          <ol className="space-y-2">
-            {rich.ranking.map((entry, index) => (
-              <li
-                key={index}
-                className="flex gap-3 rounded-lg border border-border bg-surface-2 p-3"
-              >
-                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange text-xs font-medium text-white">
-                  {entry.rank}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-text">{entry.label}</p>
-                  {entry.rationale !== undefined && (
-                    <p className="text-sm text-text-3">{entry.rationale}</p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-        {rich.recommendation !== undefined && (
-          <p className="mt-4 text-sm text-text-2">{rich.recommendation}</p>
-        )}
-      </Card>
-    );
-  }
-
   return (
     <Card>
       <CardTitle>Blind ranking</CardTitle>
-      <Markdown>{parsed.reply}</Markdown>
+      <ComparisonView result={result} blind />
     </Card>
   );
 }
 
 function ReviewScreen({
   phase,
+  configOutput,
   compareOutput,
   executeOutput,
   connected,
@@ -684,6 +569,7 @@ function ReviewScreen({
   onSkip,
 }: {
   phase: StepPhase | undefined;
+  configOutput: unknown;
   compareOutput: unknown;
   executeOutput: unknown;
   connected: boolean;
@@ -695,10 +581,16 @@ function ReviewScreen({
     return <LoadingState label="Waiting for comparison to finish…" />;
   }
 
+  const result = previewResult(configOutput, executeOutput, compareOutput);
+
   return (
     <div className="space-y-4">
-      <VariantOutputs output={executeOutput} />
-      <CompareScreen phase="completed" output={compareOutput} />
+      {result !== null && (
+        <Card>
+          <CardTitle>Blind ranking</CardTitle>
+          <ComparisonView result={result} blind />
+        </Card>
+      )}
 
       <Card>
         <CardTitle>Review and approve</CardTitle>
@@ -738,85 +630,18 @@ function ReviewScreen({
   );
 }
 
-// ── Reveal section ────────────────────────────────────────────────────────────
-
-function RevealSection({
-  configOutput,
-  compareOutput,
-}: {
-  configOutput: unknown;
-  compareOutput: unknown;
-}) {
-  const configParsed = ConfigPayload(configOutput);
-  if (configParsed instanceof type.errors) return null;
-
-  const compareParsed = AgentStepOutput(compareOutput);
-  if (compareParsed instanceof type.errors) return null;
-
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(compareParsed.reply);
-  } catch {
-    decoded = undefined;
-  }
-
-  const structured = decoded !== undefined ? CompareJSON(decoded) : undefined;
-  const ranking =
-    structured !== undefined && !(structured instanceof type.errors)
-      ? (structured.ranking ?? [])
-      : [];
-
-  const { variants } = configParsed;
-
-  return (
-    <Card>
-      <CardTitle>Reveal</CardTitle>
-      <p className="mb-4 text-sm text-text-2">
-        Here is what was behind each variant.
-      </p>
-      <div className="space-y-2">
-        {variants.map((variant, i) => {
-          const rank = ranking.find((r) => r.label === `Variant ${i + 1}`);
-          return (
-            <div
-              key={i}
-              className="flex items-start gap-3 rounded-lg border border-border bg-surface-2 p-3"
-            >
-              {rank !== undefined && (
-                <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-orange text-xs font-medium text-white">
-                  #{rank.rank}
-                </span>
-              )}
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-text">{variant.label}</p>
-                <p className="text-xs text-text-2">
-                  {variant.providerName} · {variant.model}
-                </p>
-                {variant.skillIds !== undefined &&
-                  variant.skillIds.length > 0 && (
-                    <p className="text-xs text-text-3">
-                      Skills: {variant.skillIds.join(", ")}
-                    </p>
-                  )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </Card>
-  );
-}
-
 function PersistScreen({
   phase,
   output,
   configOutput,
+  executeOutput,
   compareOutput,
   onClose,
 }: {
   phase: StepPhase | undefined;
   output: unknown;
   configOutput: unknown;
+  executeOutput: unknown;
   compareOutput: unknown;
   onClose: () => void;
 }) {
@@ -851,12 +676,18 @@ function PersistScreen({
       ? artifact
       : undefined;
 
+  // The provider/model reveal lives in the variant cards of the result, so the
+  // saved view is the same ComparisonView the reviewer just approved.
+  const result = previewResult(configOutput, executeOutput, compareOutput);
+
   return (
     <div className="space-y-4">
-      <RevealSection
-        configOutput={configOutput}
-        compareOutput={compareOutput}
-      />
+      {result !== null && (
+        <Card>
+          <CardTitle>Comparison</CardTitle>
+          <ComparisonView result={result} />
+        </Card>
+      )}
       <Card>
         <CardTitle>Comparison saved</CardTitle>
         {saved !== undefined ? (
@@ -914,7 +745,9 @@ export function Panel(props: WorkflowPanelProps) {
     <div className="flex h-full flex-col bg-surface">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-base font-medium text-text">A/B Compare</h2>
+          <h2 className="text-base font-medium text-text">
+            A/B Test - Agent Select
+          </h2>
           <p className="text-xs text-text-3">
             Blind ranking across provider/model variants
           </p>
@@ -952,11 +785,14 @@ export function Panel(props: WorkflowPanelProps) {
         ) : current === "compare" ? (
           <CompareScreen
             phase={phaseFor(state, "compare")}
-            output={stepOutputs["compare"]}
+            configOutput={stepOutputs["config"]}
+            executeOutput={stepOutputs["execute"]}
+            compareOutput={stepOutputs["compare"]}
           />
         ) : current === "review" ? (
           <ReviewScreen
             phase={phaseFor(state, "review")}
+            configOutput={stepOutputs["config"]}
             compareOutput={stepOutputs["compare"]}
             executeOutput={stepOutputs["execute"]}
             connected={connected}
@@ -969,6 +805,7 @@ export function Panel(props: WorkflowPanelProps) {
             phase={phaseFor(state, "persist")}
             output={stepOutputs["persist"]}
             configOutput={stepOutputs["config"]}
+            executeOutput={stepOutputs["execute"]}
             compareOutput={stepOutputs["compare"]}
             onClose={onClose}
           />

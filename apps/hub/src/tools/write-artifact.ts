@@ -81,7 +81,9 @@ export function createWriteArtifactTool(
         }
 
         const source: Record<string, unknown> =
-          brief === undefined ? { citations } : { citations, brief };
+          brief === undefined
+            ? { origin: "workflow", citations }
+            : { origin: "workflow", citations, brief };
         // Optional display name for the gallery tile of a session-less workflow
         // artifact. The workflow chooses the string; the artifact layer stays
         // generic (no workflow-specific label baked into the UI package).

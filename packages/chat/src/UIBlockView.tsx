@@ -12,12 +12,11 @@ import type { UIBlock, UIResponse } from "./ui-block";
 export interface UIBlockViewProps {
   block: UIBlock;
   /** Invoked when an interactive block produces a response to send to the agent. */
-  onRespond?: (response: UIResponse) => void;
+  onRespond?: ((response: UIResponse) => void) | undefined;
   /** Invoked for document actions (copy / download / save-artifact). */
-  onAction?: (
-    action: "copy" | "download" | "save-artifact",
-    block: UIBlock,
-  ) => void;
+  onAction?:
+    | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
+    | undefined;
 }
 
 export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
@@ -60,8 +59,8 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
             <UIBlockView
               key={index}
               block={child}
-              {...(onRespond !== undefined ? { onRespond } : {})}
-              {...(onAction !== undefined ? { onAction } : {})}
+              onRespond={onRespond}
+              onAction={onAction}
             />
           ))}
         </div>

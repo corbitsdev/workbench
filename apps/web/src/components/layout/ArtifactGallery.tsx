@@ -4,14 +4,20 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
+import { useViewMode } from "@workbench/ui";
 import { useArtifacts, useTenantMembers } from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
 } from "@workbench/artifact";
-import type { GalleryArtifact, ArtifactWithSession } from "@workbench/artifact";
+import type {
+  GalleryArtifact,
+  ArtifactWithSession,
+  AdvancedArtifactFilter,
+} from "@workbench/artifact";
 import { clientOptions } from "../../lib/client-options";
 import ArtifactBody from "../ArtifactBody";
+import { AddArtifactModal } from "../AddArtifactModal";
 import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
@@ -21,8 +27,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 interface ArtifactGalleryProps {
   /** Active workbench tenant. Null means workbench context is still loading. */
   tenantId?: string | null;
-  /** Bridge to the working intake flow (real Dashboard) until CL-988/Phase 4 wires it natively. */
-  onNew?: () => void;
   /** When provided, renders a mobile-only control to open the library overlay. */
   onOpenLibrary?: () => void;
   /** Open the workflow catalog seeded with this artifact (owned by the page). */
@@ -49,7 +53,6 @@ export function buildArtifactMessage(
 
 export function ArtifactGallery({
   tenantId,
-  onNew,
   onOpenLibrary,
   onUseInWorkflow,
   onOpenArtifact,
@@ -60,6 +63,11 @@ export function ArtifactGallery({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedArtifactFilter>(
+    {},
+  );
+  const [addOpen, setAddOpen] = useState(false);
+  const { mode: viewMode, setMode: setViewMode } = useViewMode("artifacts");
 
   const {
     data: artifacts,
@@ -70,6 +78,8 @@ export function ArtifactGallery({
     query: debouncedQuery || undefined,
     sort,
     ownerPrincipalId: ownerFilter,
+    createdAfter: advancedFilter.createdAfter,
+    createdBefore: advancedFilter.createdBefore,
   });
 
   const { data: members } = useTenantMembers(clientOptions, { tenantId });
@@ -106,6 +116,16 @@ export function ArtifactGallery({
     setSelected(null);
   }
 
+  // The mutation invalidates the artifact list, so the new row refetches into
+  // the gallery. Clear any active search/filters so it is guaranteed visible
+  // rather than hidden behind a stale facet.
+  function handleArtifactCreated(_artifactId: string) {
+    setInputQuery("");
+    setDebouncedQuery("");
+    setOwnerFilter(undefined);
+    setAdvancedFilter({});
+  }
+
   return (
     <>
       <ArtifactGalleryView
@@ -115,13 +135,18 @@ export function ArtifactGallery({
         query={inputQuery}
         onQueryChange={handleQueryChange}
         onOpen={handleOpen}
-        onNew={onNew}
+        onNew={() => setAddOpen(true)}
         onOpenLibrary={onOpenLibrary}
         sort={sort}
         onSortChange={setSort}
         ownerPrincipalId={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
         owners={members}
+        createdAfter={advancedFilter.createdAfter}
+        createdBefore={advancedFilter.createdBefore}
+        onAdvancedFilterChange={setAdvancedFilter}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
       />
       <ArtifactModal
         open={selected !== null}
@@ -134,6 +159,12 @@ export function ArtifactGallery({
       >
         {selected && <ArtifactBody artifact={selected} />}
       </ArtifactModal>
+      <AddArtifactModal
+        open={addOpen}
+        tenantId={tenantId}
+        onClose={() => setAddOpen(false)}
+        onCreated={handleArtifactCreated}
+      />
     </>
   );
 }

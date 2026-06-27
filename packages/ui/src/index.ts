@@ -1,6 +1,26 @@
 export { Button, buttonVariants } from "./Button";
+export {
+  Menu,
+  MenuTrigger,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuGroup,
+  MenuLabel,
+} from "./Menu";
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
+export {
+  ComparisonView,
+  ComparisonResultSchema,
+  ComparisonVariantSchema,
+  ComparisonRankingEntrySchema,
+  parseComparisonResult,
+  type ComparisonResult,
+  type ComparisonVariant,
+  type ComparisonRankingEntry,
+  type ComparisonViewProps,
+} from "./comparison";
 export { PagePanel } from "./PagePanel";
 export {
   CatalogGlyph,
@@ -39,6 +59,7 @@ export {
   type Theme,
 } from "./use-theme";
 export { useCompactToolActivity } from "./use-compact-tool-activity";
+export { useArchivedWorkflowRuns } from "./use-archived-workflow-runs";
 export {
   useToolSummaryStyle,
   type ToolSummaryStyle,
@@ -48,8 +69,16 @@ export {
   hydrateServerPreferences,
   serverPatchForRawChange,
   PREFERENCE_KEYS,
+  ServerPreferencesSchema,
   type ServerPreferences,
+  VIEW_MODE_SCOPES,
+  viewModeStorageKey,
+  viewModeServerKey,
+  type ViewModeScope,
 } from "./preferences-store";
+export { useViewMode, type ViewMode } from "./use-view-mode";
+export { ViewToggle } from "./ViewToggle";
+export { DataTable, type DataTableColumn } from "./DataTable";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
 export { default as HorizontalStepper } from "./HorizontalStepper";
 export {

@@ -42,10 +42,8 @@ export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
  * (persistInstanceToolGrants), so listing a tool here is what authorizes it.
  */
 export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
-  "read_file",
-  "write_file",
-  "edit_file",
-  "search_files",
+  "memory_load",
+  "memory_save",
   "exa_search",
   "web_search",
   "linear_list_issues",
@@ -66,6 +64,8 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   "artifact_list",
   "list_agents",
   "list_principals",
+  "identity_get",
+  "identity_set",
   "list_skills",
   "search_skills",
   "load_skill",

@@ -1,11 +1,5 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  deployAgentFromTemplate,
-  listAgentTemplates,
-  type AgentCatalogEntry,
-} from "../../lib/hub-api";
 import { toHumanLabel } from "@workbench/ui";
 import {
   useStartWorkflow,
@@ -15,85 +9,64 @@ import {
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
 
-const TOOL_PROVIDER_LABELS: Record<string, string> = {
-  granola: "Granola",
-  firecrawl: "Firecrawl",
-  gamma: "Gamma",
-  exa: "Exa",
-  reddit: "Reddit",
-  scrapecreators: "ScrapeCreators",
-};
-
-function deriveProviderLabels(tools: string[]): string[] {
-  const seen = new Set<string>();
-  const labels: string[] = [];
-  for (const tool of tools) {
-    const prefix = tool.split("_")[0];
-    if (prefix && TOOL_PROVIDER_LABELS[prefix] && !seen.has(prefix)) {
-      seen.add(prefix);
-      labels.push(TOOL_PROVIDER_LABELS[prefix]!);
-    }
-  }
-  return labels;
-}
-
-type Tab = "agents" | "workflows";
-
 export interface UnifiedCatalogModalProps {
   open: boolean;
   tenantId: string | null;
   onClose: () => void;
-  onAgentDeployed: () => void;
   onWorkflowStarted: (deploymentId: string) => void;
-  // Controls which tab opens by default when the modal opens.
-  defaultTab?: Tab;
 }
 
-// Dumb launcher. Lists deployed agent templates and workflow kinds; clicking a
-// workflow card starts a run immediately and hands the new deploymentId back.
-// There is no pre-workflow screen — the run's own Panel renders the experience.
+// Dumb launcher. Lists deployed workflow kinds; clicking a workflow card starts
+// a run immediately and hands the new deploymentId back. There is no
+// pre-workflow screen — the run's own Panel renders the experience.
 export function UnifiedCatalogModal({
   open,
   tenantId,
   onClose,
-  onAgentDeployed,
   onWorkflowStarted,
-  defaultTab = "agents",
 }: UnifiedCatalogModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<Tab>(defaultTab);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  const { data: agentCatalog = [] } = useQuery<AgentCatalogEntry[]>({
-    queryKey: ["agent-templates"],
-    queryFn: listAgentTemplates,
-    enabled: open,
-    staleTime: 5 * 60_000,
-  });
 
   const { data: workflowDeployments = [], isPending: workflowsPending } =
     useWorkflowDeployments(tenantId);
   const startWorkflow = useStartWorkflow(tenantId);
 
-  const deployedKinds = useMemo(() => {
-    const seen = new Set<string>();
-    const result: string[] = [];
+  // One entry per deployed kind, carrying the workflow's display label +
+  // description from the deploy meta (falling back to a humanized kind when an
+  // older deployment has no meta label). Deployments arrive newest-first; a
+  // later row's real meta label upgrades a humanized fallback.
+  const deployedWorkflows = useMemo(() => {
+    const byKind = new Map<
+      string,
+      { kind: string; label: string; description?: string }
+    >();
     for (const deployment of workflowDeployments) {
-      if (!seen.has(deployment.kind)) {
-        seen.add(deployment.kind);
-        result.push(deployment.kind);
+      const metaLabel = deployment.meta?.label;
+      const metaDescription = deployment.meta?.description;
+      const existing = byKind.get(deployment.kind);
+      const isFallback =
+        existing !== undefined &&
+        existing.label === toHumanLabel(deployment.kind);
+      if (existing === undefined || (isFallback && metaLabel !== undefined)) {
+        byKind.set(deployment.kind, {
+          kind: deployment.kind,
+          label: metaLabel ?? toHumanLabel(deployment.kind),
+          ...(metaDescription !== undefined
+            ? { description: metaDescription }
+            : {}),
+        });
       }
     }
-    return result;
+    return [...byKind.values()];
   }, [workflowDeployments]);
 
   const handleClose = useCallback(() => {
     setError(null);
     setSearch("");
-    setTab(defaultTab);
     onClose();
-  }, [onClose, defaultTab]);
+  }, [onClose]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -122,22 +95,6 @@ export function UnifiedCatalogModal({
     [handleClose],
   );
 
-  const deployAgentMutation = useMutation({
-    mutationFn: ({ tenantId: tid, key }: { tenantId: string; key: string }) =>
-      deployAgentFromTemplate(tid, key),
-    onSuccess: () => {
-      handleClose();
-      onAgentDeployed();
-    },
-    onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to add agent");
-    },
-  });
-
-  const deploying = deployAgentMutation.isPending
-    ? (deployAgentMutation.variables?.key ?? null)
-    : null;
-
   const startingKind = startWorkflow.isPending
     ? (startWorkflow.variables?.kind ?? null)
     : null;
@@ -153,21 +110,11 @@ export function UnifiedCatalogModal({
 
   const query = search.toLowerCase();
 
-  const filteredAgents = agentCatalog.filter(
-    (a) =>
-      a.name.toLowerCase().includes(query) ||
-      a.description.toLowerCase().includes(query),
+  const filteredWorkflows = deployedWorkflows.filter(
+    (w) =>
+      w.label.toLowerCase().includes(query) ||
+      w.kind.toLowerCase().includes(query),
   );
-
-  const filteredWorkflowKinds = deployedKinds.filter((kind) =>
-    toHumanLabel(kind).toLowerCase().includes(query),
-  );
-
-  const handleDeployAgent = (entry: AgentCatalogEntry) => {
-    if (!tenantId || deployAgentMutation.isPending) return;
-    setError(null);
-    deployAgentMutation.mutate({ tenantId, key: entry.key });
-  };
 
   const handleStartWorkflow = (kind: string) => {
     if (startWorkflow.isPending) return;
@@ -185,8 +132,6 @@ export function UnifiedCatalogModal({
       });
   };
 
-  const isGridBusy = deployAgentMutation.isPending || startWorkflow.isPending;
-
   return (
     <AnimatePresence>
       {open && (
@@ -202,7 +147,7 @@ export function UnifiedCatalogModal({
             ref={panelRef}
             role="dialog"
             aria-modal="true"
-            aria-label="Add agent or workflow"
+            aria-label="New workflow"
             tabIndex={-1}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={handleKeyDown}
@@ -214,7 +159,9 @@ export function UnifiedCatalogModal({
           >
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
-              <div className="text-[16px] font-bold text-text">New</div>
+              <div className="text-[16px] font-bold text-text">
+                New workflow
+              </div>
               <button
                 type="button"
                 onClick={handleClose}
@@ -233,28 +180,8 @@ export function UnifiedCatalogModal({
               </button>
             </div>
 
-            {/* Tabs + search */}
+            {/* Search */}
             <div className="flex items-center gap-2 border-b border-border px-5 py-3">
-              <div className="flex gap-1 rounded-[8px] bg-surface-2 p-[3px]">
-                {(["agents", "workflows"] as Tab[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => {
-                      setTab(t);
-                      setSearch("");
-                      setError(null);
-                    }}
-                    className={`rounded-[6px] px-3 py-1 text-[13px] font-medium capitalize transition-colors ${
-                      tab === t
-                        ? "bg-surface text-text shadow-sm"
-                        : "text-text-2 hover:text-text"
-                    }`}
-                  >
-                    {t.charAt(0).toUpperCase() + t.slice(1)}
-                  </button>
-                ))}
-              </div>
               <div className="relative flex-1">
                 <svg
                   viewBox="0 0 24 24"
@@ -284,96 +211,53 @@ export function UnifiedCatalogModal({
 
             {/* Grid */}
             <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">
-              {tab === "agents" && (
-                <div className="grid grid-cols-2 gap-2">
-                  {filteredAgents.map((entry) => {
-                    const labels = deriveProviderLabels(entry.tools);
-                    return (
-                      <div
-                        key={entry.key}
-                        className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="text-[14px] font-semibold text-text">
-                              {entry.name}
-                            </span>
-                            {labels.map((label) => (
-                              <span
-                                key={label}
-                                className="rounded-[5px] bg-surface-2 px-1.5 py-0.5 text-[11px] font-medium text-text-2"
-                              >
-                                {label}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="mt-1 text-[12px] leading-[1.4] text-text-3">
-                            {entry.description}
+              <div className="grid grid-cols-2 gap-2">
+                {workflowsPending && (
+                  <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                    Loading workflows…
+                  </p>
+                )}
+                {!workflowsPending &&
+                  filteredWorkflows.map((workflow) => (
+                    <div
+                      key={workflow.kind}
+                      className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
+                    >
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-[14px] font-semibold text-text">
+                          {workflow.label}
+                        </p>
+                        {workflow.description !== undefined && (
+                          <p className="text-[12px] leading-snug text-text-3 text-pretty">
+                            {workflow.description}
                           </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={isGridBusy || !tenantId}
-                          onClick={() => void handleDeployAgent(entry)}
-                          className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
-                        >
-                          {deploying === entry.key ? "Adding…" : "Add"}
-                        </button>
+                        )}
                       </div>
-                    );
-                  })}
-                  {filteredAgents.length === 0 && (
+                      <button
+                        type="button"
+                        disabled={startWorkflow.isPending}
+                        onClick={() => handleStartWorkflow(workflow.kind)}
+                        className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
+                      >
+                        {startingKind === workflow.kind ? "Starting…" : "Start"}
+                      </button>
+                    </div>
+                  ))}
+                {!workflowsPending &&
+                  filteredWorkflows.length === 0 &&
+                  deployedWorkflows.length === 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
-                      No agents match your search.
+                      No workflows deployed yet.
                     </p>
                   )}
-                </div>
-              )}
-
-              {tab === "workflows" && (
-                <div className="grid grid-cols-2 gap-2">
-                  {workflowsPending && (
+                {!workflowsPending &&
+                  filteredWorkflows.length === 0 &&
+                  deployedWorkflows.length > 0 && (
                     <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
-                      Loading workflows…
+                      No workflows match your search.
                     </p>
                   )}
-                  {!workflowsPending &&
-                    filteredWorkflowKinds.map((kind) => (
-                      <div
-                        key={kind}
-                        className="flex flex-col justify-between gap-3 rounded-[10px] border border-border p-4 transition-colors hover:bg-[var(--row-hover)]"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-semibold text-text">
-                            {toHumanLabel(kind)}
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={isGridBusy}
-                          onClick={() => handleStartWorkflow(kind)}
-                          className="self-start rounded-[7px] border border-border px-3 py-1 text-[12px] font-semibold text-text-2 transition-colors active:scale-[0.97] disabled:opacity-50 hover:border-orange hover:text-orange"
-                        >
-                          {startingKind === kind ? "Starting…" : "Start"}
-                        </button>
-                      </div>
-                    ))}
-                  {!workflowsPending &&
-                    filteredWorkflowKinds.length === 0 &&
-                    deployedKinds.length === 0 && (
-                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
-                        No workflows deployed yet.
-                      </p>
-                    )}
-                  {!workflowsPending &&
-                    filteredWorkflowKinds.length === 0 &&
-                    deployedKinds.length > 0 && (
-                      <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
-                        No workflows match your search.
-                      </p>
-                    )}
-                </div>
-              )}
+              </div>
             </div>
           </motion.div>
         </motion.div>

@@ -3,9 +3,14 @@ import type { ToolDefinition } from "@intx/types/runtime";
 import { type } from "arktype";
 import {
   buildReport,
+  buildReportFromCuration,
+  coerceCuration,
+  dateFilter,
+  dedupe,
   entityExtract,
+  qualityFilter,
   ResearchItem,
-  type SkippedSource,
+  SkippedSource,
 } from "@workbench/last30days-core";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
@@ -55,6 +60,36 @@ export const LAST30DAYS_WORKFLOW_BRIEF_DEFINITION: ToolDefinition = {
   name: "last30days_workflow_brief",
   description:
     "Build a structured last30days brief from workflow step outputs. Internal workflow helper that parses source tool result envelopes.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const LAST30DAYS_GROUND_QUERIES_DEFINITION: ToolDefinition = {
+  name: "last30days_ground_queries",
+  description:
+    "Internal workflow helper. Parse the grounding step's JSON reply into a per-source query map so each source fan-out gets a query tailored to that platform. Every source key is guaranteed a non-empty string (falling back to the base query) so a thin or malformed grounding reply never blanks a source search.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const LAST30DAYS_COLLECT_DEFINITION: ToolDefinition = {
+  name: "last30days_collect",
+  description:
+    "Internal workflow helper. Parse every source step's result envelope (both research rounds), date-filter, dedupe, and structural-junk-filter the candidates, and return a single clean { topic, days, items, skippedSources } object for the LLM curate step to judge.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const LAST30DAYS_ENTITY_QUERIES_DEFINITION: ToolDefinition = {
+  name: "last30days_entity_queries",
+  description:
+    "Internal workflow helper. Parse the entity-extraction step's JSON reply into a per-source query map (web, reddit, x, youtube) for the second research round, so the discovered launches/entities get chased into deeper searches. Every key falls back to the base query when missing.",
   inputSchema: {
     type: "object",
     additionalProperties: true,
@@ -236,47 +271,306 @@ function collectItems(value: unknown): unknown[] {
   return [];
 }
 
+// Every source step id the collect tool drains — round-1 fan-out plus the
+// round-2 entity-chasing re-queries (web2/reddit2/x2/youtube2). A step id listed
+// here but absent from the run simply contributes no items; the workflow is the
+// source of truth for which actually run.
 const SOURCE_STEP_IDS = [
   "hackernews",
   "github",
   "web",
+  "webB",
+  "webC",
   "reddit",
   "x",
   "youtube",
+  "polymarket",
   "bluesky",
+  "web2",
+  "reddit2",
+  "x2",
+  "youtube2",
 ] as const;
 
-// The LLM rerank step (W1.2) emits a `reply` string of JSON relevance scores by
-// url. Parse it tolerantly (tolerate code fences / surrounding prose); a missing
-// or malformed reply yields an empty map and the brief falls back to the
-// deterministic grounding in rankScore.
-function parseRerankScores(step: unknown): Map<string, number> {
-  const scores = new Map<string, number>();
-  const output = isRecord(step) ? step.output : undefined;
-  const reply = isRecord(output) ? output.reply : undefined;
-  if (typeof reply !== "string") return scores;
-  const start = reply.indexOf("{");
-  const end = reply.lastIndexOf("}");
-  if (start === -1 || end <= start) return scores;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(reply.slice(start, end + 1));
-  } catch {
-    return scores;
-  }
-  const list =
-    isRecord(parsed) && Array.isArray(parsed.scores) ? parsed.scores : [];
-  for (const entry of list) {
-    if (
-      isRecord(entry) &&
-      typeof entry.url === "string" &&
-      typeof entry.relevance === "number" &&
-      Number.isFinite(entry.relevance)
-    ) {
-      scores.set(entry.url, Math.max(0, Math.min(entry.relevance, 100)));
+// The second-round source keys the entity-extraction reply tailors. Only the
+// engagement-rich, entity-chaseable platforms get a round 2 — HN/GitHub/Polymarket
+// add little once the named launches are known.
+export const ENTITY_ROUND_KEYS = ["web", "reddit", "x", "youtube"] as const;
+
+// Relevance floor for the workflow brief: drop clusters the rerank/grounding
+// scored below 40 (off-topic on the reference 0–100 scale) instead of padding
+// topK with noise. A thin topic then yields an honestly-small brief. See
+// buildReport's `minRelevance`.
+const BRIEF_MIN_RELEVANCE = 40;
+
+// Parse the entity-extraction LLM reply (tolerant of code fences / surrounding
+// prose) into the round-2 per-source query map. Every ENTITY_ROUND_KEYS key is
+// filled with the model's entity-focused query when non-empty, else the base
+// query — so a malformed reply degrades to a duplicate round (deduped later)
+// rather than blanking a round-2 source.
+function parseEntityQueries(
+  reply: unknown,
+  baseQuery: string,
+): Record<string, string> {
+  const tailored = new Map<string, string>();
+  if (typeof reply === "string") {
+    const start = reply.indexOf("{");
+    const end = reply.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        const parsed: unknown = JSON.parse(reply.slice(start, end + 1));
+        if (isRecord(parsed)) {
+          for (const key of ENTITY_ROUND_KEYS) {
+            const value = parsed[key];
+            if (typeof value === "string" && value.trim().length > 0) {
+              tailored.set(key, value.trim());
+            }
+          }
+        }
+      } catch {
+        // fall through to base-query defaults
+      }
     }
   }
-  return scores;
+  const queries: Record<string, string> = {};
+  for (const key of ENTITY_ROUND_KEYS) {
+    queries[key] = tailored.get(key) ?? baseQuery;
+  }
+  return queries;
+}
+
+// The fan-out sources whose search query the grounding step tailors. Mirrors the
+// workflow's `SOURCES` keys (the workflow is the fan-out source of truth; a key
+// here that the workflow drops, or vice versa, degrades that source to the base
+// query rather than erroring). Bluesky stays disabled upstream. Exported so the
+// parse contract is inspectable.
+export const GROUNDING_SOURCE_KEYS = [
+  "hackernews",
+  "github",
+  "web",
+  "webB",
+  "webC",
+  "reddit",
+  "x",
+  "youtube",
+  "polymarket",
+] as const;
+
+// Parse the grounding LLM reply (tolerant of code fences / surrounding prose)
+// into a per-source query map. Every key is filled: the per-source string the
+// model returned when it is non-empty, else the base query — so a malformed or
+// partial reply degrades to the untailored query rather than blanking a source.
+function parseGroundedQueries(
+  reply: unknown,
+  baseQuery: string,
+): Record<string, string> {
+  const tailored = new Map<string, string>();
+  if (typeof reply === "string") {
+    const start = reply.indexOf("{");
+    const end = reply.lastIndexOf("}");
+    if (start !== -1 && end > start) {
+      try {
+        const parsed: unknown = JSON.parse(reply.slice(start, end + 1));
+        if (isRecord(parsed)) {
+          for (const key of GROUNDING_SOURCE_KEYS) {
+            const value = parsed[key];
+            if (typeof value === "string" && value.trim().length > 0) {
+              tailored.set(key, value.trim());
+            }
+          }
+        }
+      } catch {
+        // fall through to base-query defaults
+      }
+    }
+  }
+  const queries: Record<string, string> = {};
+  for (const key of GROUNDING_SOURCE_KEYS) {
+    queries[key] = tailored.get(key) ?? baseQuery;
+  }
+  return queries;
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
+}
+
+// Returns object `content` (not a JSON string) so each source step can select
+// its tailored query by field: `steps.groundQueries.output.content.<source>`.
+function createGroundQueriesTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: LAST30DAYS_GROUND_QUERIES_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const baseQuery =
+        readNonEmptyString(args.query) ?? readNonEmptyString(args.topic);
+      if (baseQuery === undefined) {
+        throw new Error(
+          "last30days_ground_queries requires a non-empty query or topic",
+        );
+      }
+      return {
+        callId: call.id,
+        content: parseGroundedQueries(args.reply, baseQuery),
+      };
+    },
+  };
+}
+
+interface CollectedItems {
+  topic: string;
+  days: number;
+  items: (typeof ResearchItem.infer)[];
+  skippedSources: SkippedSource[];
+}
+
+function readIntakeTopicDays(steps: Record<string, unknown>): {
+  topic: string;
+  days: number;
+} {
+  const intake =
+    isRecord(steps.intake) && isRecord(steps.intake.output)
+      ? steps.intake.output
+      : {};
+  const topic =
+    typeof intake.topic === "string" && intake.topic.trim().length > 0
+      ? intake.topic
+      : undefined;
+  if (topic === undefined) {
+    throw new Error("workflow intake output must include topic");
+  }
+  const days =
+    typeof intake.days === "number" && Number.isFinite(intake.days)
+      ? intake.days
+      : 30;
+  return { topic, days };
+}
+
+// Drain every source step (both rounds) into one clean candidate pool: parse the
+// envelopes, validate items, then date-filter, dedupe, and structural-junk-filter
+// so the curate LLM judges semantic quality (promo/shill/off-topic) on a compact,
+// de-noised set rather than raw multi-source envelopes. The semantic judgment is
+// the LLM's job (CL-2503); this only removes mechanical noise and the window.
+function collectCleanItems(steps: Record<string, unknown>): CollectedItems {
+  const { topic, days } = readIntakeTopicDays(steps);
+  const rawItems: (typeof ResearchItem.infer)[] = [];
+  const skippedSources: SkippedSource[] = [];
+  for (const stepId of SOURCE_STEP_IDS) {
+    if (steps[stepId] === undefined) continue;
+    const result = parseSourceStep(steps[stepId]);
+    if (!result.ok) {
+      skippedSources.push({
+        source: stepId,
+        kind: "source-error",
+        reason: result.reason,
+      });
+      continue;
+    }
+    const { items, invalidCount } = collectValidItems(result.items);
+    rawItems.push(...items);
+    if (invalidCount > 0) {
+      skippedSources.push({
+        source: stepId,
+        kind: "invalid-items",
+        reason: `${invalidCount} item(s) failed schema validation`,
+      });
+    }
+  }
+  const nowIso = new Date().toISOString();
+  const windowed = dateFilter(rawItems, { days, nowIso });
+  const deduped = dedupe(windowed);
+  const cleaned = qualityFilter(deduped);
+  return { topic, days, items: cleaned, skippedSources };
+}
+
+// Returns object `content` so the curate step reads a single compact pool
+// (`steps.collect.output.content.items`) instead of N raw source envelopes.
+function createCollectTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: LAST30DAYS_COLLECT_DEFINITION,
+    handler: async (call) => {
+      const steps = coerceArgsObject(call.arguments);
+      const { topic, days, items, skippedSources } = collectCleanItems(steps);
+      // A `full` tool's content is `Record<string, unknown>`; build the pool as a
+      // plain record so each field is addressable downstream
+      // (`steps.collect.output.content.items`).
+      const content: Record<string, unknown> = {
+        topic,
+        days,
+        items,
+        skippedSources,
+      };
+      return { callId: call.id, content };
+    },
+  };
+}
+
+function createEntityQueriesTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: LAST30DAYS_ENTITY_QUERIES_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const baseQuery =
+        readNonEmptyString(args.query) ?? readNonEmptyString(args.topic);
+      if (baseQuery === undefined) {
+        throw new Error(
+          "last30days_entity_queries requires a non-empty query or topic",
+        );
+      }
+      return {
+        callId: call.id,
+        content: parseEntityQueries(args.reply, baseQuery),
+      };
+    },
+  };
+}
+
+function readCollected(steps: Record<string, unknown>): CollectedItems {
+  const output =
+    isRecord(steps.collect) && isRecord(steps.collect.output)
+      ? steps.collect.output
+      : undefined;
+  const content = isRecord(output) ? output.content : undefined;
+  if (!isRecord(content)) {
+    // No collect output reachable — drain the source steps directly so the brief
+    // never silently empties when the selector shape shifts.
+    return collectCleanItems(steps);
+  }
+  const { topic, days } = readIntakeTopicDays(steps);
+  const { items } = collectValidItems(
+    Array.isArray(content.items) ? content.items : [],
+  );
+  const skippedSources: SkippedSource[] = [];
+  if (Array.isArray(content.skippedSources)) {
+    for (const entry of content.skippedSources) {
+      const validated = SkippedSource(entry);
+      if (!(validated instanceof type.errors)) skippedSources.push(validated);
+    }
+  }
+  return { topic, days, items, skippedSources };
+}
+
+// The LLM curate reply (CL-2503): a JSON object of named themes + verbatim
+// quotes. Parse it tolerantly (code fences / surrounding prose); a missing or
+// malformed reply yields null and the brief falls back to the deterministic
+// buildReport pipeline.
+function parseCurateReply(step: unknown): unknown {
+  const output = isRecord(step) ? step.output : undefined;
+  const reply = isRecord(output) ? output.reply : undefined;
+  if (typeof reply !== "string") return undefined;
+  const start = reply.indexOf("{");
+  const end = reply.lastIndexOf("}");
+  if (start === -1 || end <= start) return undefined;
+  try {
+    return JSON.parse(reply.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
 }
 
 function createWorkflowBriefTool(): AgentTool {
@@ -285,59 +579,29 @@ function createWorkflowBriefTool(): AgentTool {
     definition: LAST30DAYS_WORKFLOW_BRIEF_DEFINITION,
     handler: async (args) => {
       const steps = coerceArgsObject(args);
-      const intake =
-        isRecord(steps.intake) && isRecord(steps.intake.output)
-          ? steps.intake.output
-          : {};
-      const topic =
-        typeof intake.topic === "string" && intake.topic.trim().length > 0
-          ? intake.topic
-          : undefined;
-      if (topic === undefined) {
-        throw new Error("workflow intake output must include topic");
-      }
-      const days =
-        typeof intake.days === "number" && Number.isFinite(intake.days)
-          ? intake.days
-          : 30;
-      const rawItems: (typeof ResearchItem.infer)[] = [];
-      const skippedSources: SkippedSource[] = [];
-      for (const stepId of SOURCE_STEP_IDS) {
-        const result = parseSourceStep(steps[stepId]);
-        if (!result.ok) {
-          skippedSources.push({
-            source: stepId,
-            kind: "source-error",
-            reason: result.reason,
-          });
-          continue;
-        }
-        const { items, invalidCount } = collectValidItems(result.items);
-        rawItems.push(...items);
-        if (invalidCount > 0) {
-          skippedSources.push({
-            source: stepId,
-            kind: "invalid-items",
-            reason: `${invalidCount} item(s) failed schema validation`,
-          });
-        }
-      }
-      // Apply LLM rerank relevance (W1.2) onto items by url; rankScore treats an
-      // explicit relevance as the dominant signal over the deterministic ground.
-      const rerankScores = parseRerankScores(steps.rerank);
-      if (rerankScores.size > 0) {
-        for (const item of rawItems) {
-          const score = rerankScores.get(item.url);
-          if (score !== undefined) item.relevance = score;
-        }
-      }
+      const { topic, days, items, skippedSources } = readCollected(steps);
       const nowIso = new Date().toISOString();
+
+      const curation = coerceCuration(parseCurateReply(steps.curate));
+      if (curation !== null) {
+        const curated = buildReportFromCuration(items, curation, {
+          topic,
+          days,
+          nowIso,
+          skippedSources,
+        });
+        if (curated !== null) return JSON.stringify(curated);
+      }
+
+      // Fallback: curate returned junk or no usable theme — assemble the brief
+      // deterministically so the writer still gets a structured input.
       return JSON.stringify(
-        buildReport(rawItems, {
+        buildReport(items, {
           topic,
           days,
           topK: 20,
           nowIso,
+          minRelevance: BRIEF_MIN_RELEVANCE,
           skippedSources,
         }),
       );
@@ -364,6 +628,9 @@ export function createLast30daysTools(): AgentTool[] {
   return [
     createExtractTool(),
     createReportTool(),
+    createGroundQueriesTool(),
+    createEntityQueriesTool(),
+    createCollectTool(),
     createWorkflowBriefTool(),
     createValidateTool(),
   ];

@@ -2,18 +2,29 @@
 // functions. React and @tanstack/react-query are peer dependencies; the host
 // app provides the QueryClientProvider.
 
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueryClient,
+  useQuery,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import type {
+  Artifact,
   ArtifactStatus,
   ArtifactWithSession,
   WorkflowSummary,
 } from "@workbench/shared";
 import {
+  createArtifact,
   listArtifacts,
   listWorkflows,
   listMembers,
+  uploadArtifacts,
   type ClientOptions,
+  type CreateArtifactParams,
   type TenantMember,
+  type UploadArtifactsParams,
 } from "./index";
 
 export type { TenantMember };
@@ -59,6 +70,8 @@ export interface UseArtifactsParams {
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
+  createdAfter?: string;
+  createdBefore?: string;
   enabled?: boolean;
 }
 
@@ -76,9 +89,45 @@ export function useArtifacts(
       params.kind ?? "",
       params.status ?? "",
       params.ownerPrincipalId ?? "",
+      params.createdAfter ?? "",
+      params.createdBefore ?? "",
     ],
     queryFn: () =>
       listArtifacts(options, params).then((page) => page.artifacts),
     enabled: params.tenantId != null && (params.enabled ?? true),
+  });
+}
+
+/**
+ * Create an artifact from an external source and refresh the gallery. Callers
+ * must `.catch()` the returned `mutateAsync` (or use `mutate` with `onError`).
+ */
+export function useCreateArtifact(
+  options: ClientOptions = {},
+): UseMutationResult<Artifact, Error, CreateArtifactParams> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: CreateArtifactParams) =>
+      createArtifact(options, params),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
+  });
+}
+
+/**
+ * Import one or more files as artifacts and refresh the gallery. Callers must
+ * `.catch()` the returned `mutateAsync` (or use `mutate` with `onError`).
+ */
+export function useUploadArtifacts(
+  options: ClientOptions = {},
+): UseMutationResult<Artifact[], Error, UploadArtifactsParams> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (params: UploadArtifactsParams) =>
+      uploadArtifacts(options, params),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
   });
 }

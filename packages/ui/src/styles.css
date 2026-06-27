@@ -100,6 +100,7 @@
   --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   /* Dark theme (default): pure-black background, cream elements */
+  --color-scheme: dark;
   --page: #000000;
   --bg: #0a0908;
   --surface: #141211;
@@ -126,6 +127,7 @@
 }
 
 html[data-theme="corbits-dark"] {
+  --color-scheme: dark;
   --page: #000000;
   --bg: #0a0908;
   --surface: #141211;
@@ -150,6 +152,7 @@ html[data-theme="corbits-dark"] {
 }
 
 html[data-theme="corbits-light"] {
+  --color-scheme: light;
   --page: #ffffff;
   --bg: #f2f4f5;
   --surface: #ffffff;
@@ -174,6 +177,7 @@ html[data-theme="corbits-light"] {
 }
 
 html[data-theme="tkww"] {
+  --color-scheme: light;
   --page: #f7faf6;
   --bg: #f0f4ee;
   --surface: #ffffff;
@@ -198,6 +202,7 @@ html[data-theme="tkww"] {
 }
 
 html[data-theme="notion"] {
+  --color-scheme: light;
   --page: #ffffff;
   --bg: #ffffff;
   --surface: #ffffff;
@@ -253,5 +258,46 @@ button {
   .btn-secondary:hover {
     background-color: var(--row-hover);
     border-color: var(--border-strong);
+  }
+
+  .wb-menu-surface {
+    transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+  }
+
+  .wb-menu-surface[data-state="open"] {
+    animation: wb-menu-enter 150ms var(--ease);
+  }
+
+  .wb-menu-surface[data-state="closed"] {
+    animation: wb-menu-exit 150ms var(--ease);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wb-menu-surface[data-state="open"],
+    .wb-menu-surface[data-state="closed"] {
+      animation: none;
+    }
+  }
+}
+
+@keyframes wb-menu-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes wb-menu-exit {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.95);
   }
 }

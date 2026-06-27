@@ -594,6 +594,79 @@ describe("buildSupervisorDeployFrame", () => {
     expect(frame.workflow.sources.intake).toBe(TENANT_SOURCE);
     expect(frame.workflow.sources.analyze).toBe(TENANT_SOURCE);
   });
+
+  test("pins a step's preferred model when the resolved set carries it", () => {
+    const WRITER_SOURCE: InferenceSource = {
+      id: "openai-compatible:w",
+      provider: "openai-compatible",
+      baseURL: "https://llm.example.com",
+      apiKey: "secret",
+      model: "writer-model",
+    };
+    const definition = {
+      id: "wf",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["intake", "write"],
+      steps: {
+        intake: { kind: "step" },
+        write: {
+          kind: "step",
+          agent: {
+            inference: {
+              sources: [
+                { provider: "openai-compatible", model: "writer-model" },
+              ],
+            },
+          },
+        },
+      },
+    } as unknown as WorkflowDefinition;
+
+    const frame = buildSupervisorDeployFrame({
+      deploymentId: "ses_abc",
+      deploymentDomain: "deploy.example.com",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      definition,
+      sources: [TENANT_SOURCE, WRITER_SOURCE],
+    });
+
+    // The write step prefers the writer model and the resolved set carries it,
+    // so it pins WRITER_SOURCE; intake declares no preference and rides the head.
+    expect(frame.workflow.sources.write).toBe(WRITER_SOURCE);
+    expect(frame.workflow.sources.intake).toBe(TENANT_SOURCE);
+  });
+
+  test("falls a step's preferred model back to the head when the set lacks it", () => {
+    const definition = {
+      id: "wf",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["write"],
+      steps: {
+        write: {
+          kind: "step",
+          agent: {
+            inference: {
+              sources: [
+                { provider: "openai-compatible", model: "absent-model" },
+              ],
+            },
+          },
+        },
+      },
+    } as unknown as WorkflowDefinition;
+
+    const frame = buildSupervisorDeployFrame({
+      deploymentId: "ses_abc",
+      deploymentDomain: "deploy.example.com",
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      definition,
+      sources: [TENANT_SOURCE],
+    });
+
+    expect(frame.workflow.sources.write).toBe(TENANT_SOURCE);
+  });
 });
 
 describe("readWorkflowDefinition", () => {

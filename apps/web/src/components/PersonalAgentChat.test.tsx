@@ -62,7 +62,10 @@ mock.module("@workbench/chat", () => ({
   DOCKED_BAR_HEIGHT: 340,
 }));
 mock.module("./MyraChatSurface", () => ({
-  MyraChatSurface: (props: { onUserSend?: (t: string) => void }) =>
+  MyraChatSurface: (props: {
+    onUserSend?: (t: string) => void;
+    onToggleExpand?: () => void;
+  }) =>
     React.createElement(
       "div",
       { "data-testid": "surface" },
@@ -71,10 +74,33 @@ mock.module("./MyraChatSurface", () => ({
         { onClick: () => props.onUserSend?.("typed in dock") },
         "send",
       ),
+      React.createElement(
+        "button",
+        { onClick: () => props.onToggleExpand?.() },
+        "expand",
+      ),
     ),
+  ExpandedChatOverlay: ({
+    children,
+    open,
+    onExit,
+  }: {
+    children: React.ReactNode;
+    open: boolean;
+    onExit: () => void;
+  }) =>
+    open
+      ? React.createElement(
+          "div",
+          { "data-testid": "expanded-overlay" },
+          React.createElement("button", { onClick: onExit }, "minimize"),
+          children,
+        )
+      : null,
 }));
 mock.module("./ThreadSwitcher", () => ({
-  ThreadSwitcher: () => React.createElement("div"),
+  ThreadSwitcher: () =>
+    React.createElement("div", { "data-testid": "thread-switcher" }),
 }));
 
 const { PersonalAgentChat } = require("./PersonalAgentChat");
@@ -141,6 +167,34 @@ describe("PersonalAgentChat dock handoff", () => {
     renderAt("/artifacts/art-1");
     await waitFor(() => expect(clearPendingDockThread).toHaveBeenCalled());
     expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the thread switcher and drops the inline popup when expanded", () => {
+    renderAt("/artifacts/art-1");
+    // Collapsed: the inline surface hosts the switcher; no overlay yet.
+    expect(screen.queryByTestId("expanded-overlay")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "expand" }));
+
+    // Expanded: the whole panel (switcher + surface) moves into the overlay and
+    // neither the floating popup nor the docked bar is rendered behind it.
+    const overlay = screen.getByTestId("expanded-overlay");
+    expect(
+      overlay.querySelector('[data-testid="thread-switcher"]'),
+    ).not.toBeNull();
+    expect(overlay.querySelector('[data-testid="surface"]')).not.toBeNull();
+    expect(screen.queryByTestId("floating")).toBeNull();
+    expect(screen.queryByTestId("docked")).toBeNull();
+  });
+
+  it("minimizing from the overlay returns to the inline surface, not closed", () => {
+    renderAt("/artifacts/art-1");
+    fireEvent.click(screen.getByRole("button", { name: "expand" }));
+    expect(screen.getByTestId("expanded-overlay")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "minimize" }));
+    expect(screen.queryByTestId("expanded-overlay")).toBeNull();
+    expect(screen.getByTestId("surface")).toBeDefined();
   });
 
   it("renders nothing on the full-page chat route", () => {

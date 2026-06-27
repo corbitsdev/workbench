@@ -1,5 +1,10 @@
 // Shared constants
-export { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from "./constants";
+export {
+  LLM_CREDENTIAL_NAME,
+  LLM_DEFAULT_MODEL,
+  LLM_PROVIDER,
+  LLM_WRITER_MODEL,
+} from "./constants";
 export {
   canonicalizeToolNames,
   expandToolAliasGrants,

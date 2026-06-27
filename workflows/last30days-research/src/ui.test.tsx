@@ -126,6 +126,29 @@ describe("last30days Panel", () => {
     expect(screen.queryByText(/bluesky/i)).toBeNull();
   });
 
+  test("the Tailoring queries row stays running while groundQueries parses (no dead zone)", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={
+          {
+            phase: "running",
+            steps: new Map([
+              ["intake", { phase: "completed" as const }],
+              ["ground", { phase: "completed" as const }],
+              ["groundQueries", { phase: "in-flight" as const }],
+            ]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    // ground is done but groundQueries is parsing — the row must read "running",
+    // not show every row idle. Guards the rowPhase fold of ground + groundQueries.
+    screen.getByText("Tailoring queries");
+    expect(screen.getByText("running")).toBeDefined();
+    expect(screen.queryByText("done")).toBeNull();
+  });
+
   test("research phase shows per-source progress including a skipped source", () => {
     render(
       <Panel
@@ -147,6 +170,11 @@ describe("last30days Panel", () => {
     expect(screen.getByText("Reddit")).toBeDefined();
     expect(screen.getByText("skipped")).toBeDefined();
     expect(screen.getByText("running")).toBeDefined();
+    // A completed source must use the defined `text-green` success token, not
+    // the undefined `text-success` (which renders as no color at all).
+    const done = screen.getByText("done");
+    expect(done.className).toContain("text-green");
+    expect(done.className).not.toContain("text-success");
   });
 
   test("completed report does not nest the synthesis card inside another bordered card", () => {

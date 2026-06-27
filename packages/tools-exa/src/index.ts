@@ -1,39 +1,63 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 
 export type ExaFetch = (input: string, init: RequestInit) => Promise<Response>;
 
-export type ExaToolsConfig = {
-  apiKey: string;
-  baseUrl?: string;
+const ExaToolsConfig = type({
+  apiKey: "string",
+  "baseUrl?": "string",
+  "fetcher?": "unknown",
+});
+
+export type ExaToolsConfig = typeof ExaToolsConfig.infer & {
   fetcher?: ExaFetch;
 };
 
-type ExaSearchResult = {
-  title: string;
-  url: string;
-  publishedDate?: string;
-  author?: string;
-  text?: string;
-  summary?: string;
-};
+const ExaSearchResult = type({
+  "title?": "string",
+  "url?": "string",
+  "publishedDate?": "string",
+  "author?": "string",
+  "text?": "string",
+  "summary?": "string",
+});
 
-type ExaSearchResponse = {
-  results: ExaSearchResult[];
-};
+type ExaSearchResult = typeof ExaSearchResult.infer;
 
-// Structurally compatible with @workbench/last30days-core ResearchItem (source 'web').
-// Kept as a local literal type so tools-exa stays dependency-free, matching the
-// other source packages (reddit/hackernews normalize inline rather than importing).
-type WebResearchItem = {
-  url: string;
-  title: string;
-  publishedAt: string;
-  source: "web";
-  engagement: { upvotes: number; comments: number };
-  author?: string;
-  provenance?: "degraded";
-};
+const ExaSearchResponse = type({
+  results: ExaSearchResult.array(),
+});
+
+type ExaSearchResponse = typeof ExaSearchResponse.infer;
+
+const WebResearchItem = type({
+  url: "string",
+  title: "string",
+  publishedAt: "string",
+  source: '"web"',
+  engagement: { upvotes: "number", comments: "number" },
+  "author?": "string",
+  "provenance?": '"degraded"',
+});
+
+type WebResearchItem = typeof WebResearchItem.infer;
+
+const SearchArgs = type({
+  query: "string > 0",
+  "numResults?": "number",
+  // `limit` is the result-count name every other research source tool uses
+  // (reddit/youtube/hackernews/x). Accepting it as an alias for `numResults`
+  // lets a generic caller (the last30days workflow's source fan-out) set the
+  // count with one arg name across all sources — otherwise Exa silently ignores
+  // `limit` and caps at the default 5, starving the web spine of the brief.
+  "limit?": "number",
+  "type?": "string",
+  "includeDomains?": "unknown",
+  "excludeDomains?": "unknown",
+});
+
+const StringArray = type("string[]");
 
 // Web results carry no engagement signal and often no publish date. Rather than
 // force the agent to reshape Exa output before last30days_core_report (the "exa
@@ -44,12 +68,13 @@ function normalizeExaResult(
   result: ExaSearchResult,
   retrievedAt: string,
 ): WebResearchItem | null {
-  if (result.url.length === 0) {
+  const url = result.url ?? "";
+  if (url.length === 0) {
     return null;
   }
   const item: WebResearchItem = {
-    url: result.url,
-    title: result.title,
+    url,
+    title: result.title ?? "",
     publishedAt: result.publishedDate ?? retrievedAt,
     source: "web",
     engagement: { upvotes: 0, comments: 0 },
@@ -82,65 +107,16 @@ function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, "");
 }
 
-function optionalString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function optionalStringArray(value: unknown): string[] | null {
-  if (
-    !Array.isArray(value) ||
-    !value.every((item) => typeof item === "string")
-  ) {
-    return null;
-  }
-  return value;
-}
-
-function optionalPositiveInteger(
-  value: unknown,
-  fallback: number,
-  max: number,
-): number {
-  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
-    return fallback;
-  }
-  return Math.min(value, max);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function parseSearchResult(value: unknown): ExaSearchResult {
-  if (!isRecord(value)) {
-    throw new Error("Exa response contains an invalid search result");
-  }
-
-  const title = typeof value.title === "string" ? value.title : "";
-  const url = typeof value.url === "string" ? value.url : "";
-  const publishedDate = optionalString(value.publishedDate);
-  const author = optionalString(value.author);
-  const text = optionalString(value.text);
-  const summary = optionalString(value.summary);
-
-  return {
-    title,
-    url,
-    ...(publishedDate !== null ? { publishedDate } : {}),
-    ...(author !== null ? { author } : {}),
-    ...(text !== null ? { text } : {}),
-    ...(summary !== null ? { summary } : {}),
-  };
-}
-
 function parseSearchResponse(value: unknown): ExaSearchResponse {
-  if (!isRecord(value) || !Array.isArray(value.results)) {
+  const parsed = ExaSearchResponse(value);
+  if (parsed instanceof type.errors) {
     throw new Error("Exa response contains an invalid search result list");
   }
-
-  return {
-    results: value.results.map(parseSearchResult),
-  };
+  return parsed;
 }
 
 function validateConfig(config: ExaToolsConfig): void {
@@ -202,36 +178,39 @@ async function searchExa(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ) {
-  const query = optionalString(args.query);
-  if (query === null) {
-    throw new Error("query is required");
+  const parsed = SearchArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(parsed.summary);
   }
 
-  const numResults = optionalPositiveInteger(
-    args.numResults,
-    DEFAULT_NUM_RESULTS,
+  const requestedCount = parsed.numResults ?? parsed.limit;
+  const numResults = Math.min(
+    requestedCount !== undefined &&
+      Number.isInteger(requestedCount) &&
+      requestedCount > 0
+      ? requestedCount
+      : DEFAULT_NUM_RESULTS,
     MAX_NUM_RESULTS,
   );
-  const type = optionalString(args.type);
-  const includeDomains = optionalStringArray(args.includeDomains);
-  const excludeDomains = optionalStringArray(args.excludeDomains);
 
   const url = new URL(
     `${normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL)}/search`,
   );
 
   const body: Record<string, unknown> = {
-    query,
+    query: parsed.query,
     numResults,
   };
 
-  if (type !== null) {
-    body.type = type;
+  if (parsed.type !== undefined && parsed.type.length > 0) {
+    body.type = parsed.type;
   }
-  if (includeDomains !== null) {
+  const includeDomains = StringArray(parsed.includeDomains);
+  if (!(includeDomains instanceof type.errors)) {
     body.includeDomains = includeDomains;
   }
-  if (excludeDomains !== null) {
+  const excludeDomains = StringArray(parsed.excludeDomains);
+  if (!(excludeDomains instanceof type.errors)) {
     body.excludeDomains = excludeDomains;
   }
 
@@ -254,6 +233,11 @@ const WEB_SEARCH_INPUT_SCHEMA = {
     numResults: {
       type: "number",
       description: "Maximum number of results to return (1-25, default 5).",
+    },
+    limit: {
+      type: "number",
+      description:
+        "Alias for numResults (1-25). Accepted so a generic caller can use the same count arg across all source tools.",
     },
     type: {
       type: "string",

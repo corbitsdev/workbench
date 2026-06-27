@@ -12,13 +12,11 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  MapArgsSchema,
+  SearchArgsSchema,
   firecrawlFetchJSON,
-  optionalBoolean,
   optionalPositiveInteger,
-  optionalRecord,
-  optionalString,
-  optionalStringArray,
-  requiredString,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -32,24 +30,23 @@ const SEARCH_MAX_LIMIT = 100;
 
 async function mapSite(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const url = requiredString(args, "url");
-  const search = optionalString(args.search);
-  const includeSubdomains = optionalBoolean(args.includeSubdomains);
-  const sitemapOnly = optionalBoolean(args.sitemapOnly);
+  const args = parseArgs(MapArgsSchema, rawArgs, "firecrawl_map");
 
   const body: Record<string, unknown> = {
-    url,
+    url: args.url,
     limit: optionalPositiveInteger(
       args.limit,
       MAP_DEFAULT_LIMIT,
       MAP_MAX_LIMIT,
     ),
-    ...(search !== null ? { search } : {}),
-    ...(includeSubdomains !== null ? { includeSubdomains } : {}),
-    ...(sitemapOnly === true ? { sitemap: "only" } : {}),
+    ...(args.search !== undefined ? { search: args.search } : {}),
+    ...(args.includeSubdomains !== undefined
+      ? { includeSubdomains: args.includeSubdomains }
+      : {}),
+    ...(args.sitemapOnly === true ? { sitemap: "only" } : {}),
   };
 
   return firecrawlFetchJSON(
@@ -61,24 +58,23 @@ async function mapSite(
 
 async function searchWeb(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const query = requiredString(args, "query");
-  const sources = optionalStringArray(args.sources);
-  const tbs = optionalString(args.tbs);
-  const scrapeOptions = optionalRecord(args.scrapeOptions);
+  const args = parseArgs(SearchArgsSchema, rawArgs, "firecrawl_search");
 
   const body: Record<string, unknown> = {
-    query,
+    query: args.query,
     limit: optionalPositiveInteger(
       args.limit,
       SEARCH_DEFAULT_LIMIT,
       SEARCH_MAX_LIMIT,
     ),
-    ...(sources !== null ? { sources } : {}),
-    ...(tbs !== null ? { tbs } : {}),
-    ...(scrapeOptions !== null ? { scrapeOptions } : {}),
+    ...(args.sources !== undefined ? { sources: args.sources } : {}),
+    ...(args.tbs !== undefined ? { tbs: args.tbs } : {}),
+    ...(args.scrapeOptions !== undefined
+      ? { scrapeOptions: args.scrapeOptions }
+      : {}),
   };
 
   return firecrawlFetchJSON(

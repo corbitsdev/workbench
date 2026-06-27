@@ -15,7 +15,8 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
-    "@workbench/last30days-core": "workspace:*"
+    "@workbench/last30days-core": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",

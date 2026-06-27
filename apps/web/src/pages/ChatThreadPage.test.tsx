@@ -167,17 +167,16 @@ describe("ChatThreadPage", () => {
     expect(createMutate).toHaveBeenCalledTimes(1);
   });
 
-  it("wires the auto-title callback to the surface and binds it to the live thread + stream", () => {
+  it("wires the auto-title callback to the surface and binds it to the live thread", () => {
     sessionResult = {
       state: { phase: "ready", session: {} },
       messages: [{ role: "assistant" }],
       activity: null,
     };
     renderAt("/chats/t1");
-    // The page binds the title hook to the resolved thread and the session
-    // message stream, then hands its callback to the surface as onUserSend.
+    // The page binds the title hook to the resolved thread, then hands its
+    // callback to the surface as onUserSend.
     expect(autoTitleArgs[0]).toMatchObject({ id: "t1" });
-    expect(autoTitleArgs[1]).toEqual([{ role: "assistant" }]);
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(autoTitle).toHaveBeenCalledWith("hello");
   });

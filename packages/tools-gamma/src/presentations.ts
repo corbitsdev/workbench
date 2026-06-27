@@ -1,16 +1,24 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
   gammaFetchJSON,
   isRecord,
-  optionalString,
   pollGeneration,
-  requiredString,
   resolveConfig,
   stringTool,
   type GammaToolsConfig,
   type ResolvedGammaConfig,
 } from "./shared";
+
+const DuplicatePresentationArgsSchema = type({
+  gammaId: "string > 0",
+  "title?": "string > 0",
+  "prompt?": "string > 0",
+});
+
+export type DuplicatePresentationArgs =
+  typeof DuplicatePresentationArgsSchema.infer;
 
 const DUPLICATE_DEFAULT_PROMPT =
   "Create an exact copy of this presentation, preserving all content, structure, and layout.";
@@ -22,9 +30,15 @@ async function duplicatePresentation(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const gammaId = requiredString(args, "gammaId");
-  const title = optionalString(args["title"]);
-  const prompt = optionalString(args["prompt"]) ?? DUPLICATE_DEFAULT_PROMPT;
+  const parsedArgs = DuplicatePresentationArgsSchema(args);
+  if (parsedArgs instanceof type.errors) {
+    throw new Error(
+      `Invalid duplicate presentation args: ${parsedArgs.summary}`,
+    );
+  }
+  const gammaId = parsedArgs.gammaId;
+  const title = parsedArgs.title ?? null;
+  const prompt = parsedArgs.prompt ?? DUPLICATE_DEFAULT_PROMPT;
 
   const body: Record<string, unknown> = {
     gammaId,

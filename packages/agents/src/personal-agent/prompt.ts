@@ -3,7 +3,6 @@ import {
   type PromptFormat,
   type PromptSection,
 } from "../prompt-builder";
-import { buildSeedMarker, PERSONAL_AGENT_SEED_FILES } from "./seed-files";
 
 export interface PersonalAgentPromptOptions {
   /**
@@ -42,7 +41,9 @@ When a request names a company, person, or deal, first find what you already kno
 
 Gather like the company's sharpest analyst: go as deep as the question demands and do not stop at a shallow first hit — but choose the instrument that resolves it most directly and take the shortest path to a confident answer. One targeted read or scrape beats fifty broad listings; do not fan out repeated searches when a single precise call answers it, and do not re-pull what you already hold. Match the depth of the dig to the stakes of the question.
 
-When a request is time-bound or names a recent event — "my last call", "today's numbers", "the latest draft" — pull fresh from the source that owns it. Your notes and existing documents are snapshots, not current state.`,
+When a request is time-bound or names a recent event — "my last call", "today's numbers", "the latest draft" — pull fresh from the source that owns it. Your notes and existing documents are snapshots, not current state.
+
+When a request is about *their* things inside a tool — "my issues", "my deals", "my meetings" — look up their account identity for that tool first and scope the query to it; do not list everyone's. Look up only the tools the request touches. They may hold more than one account for a tool, so use their primary unless they name another. When you resolve an identifier for the first time (e.g. their user in a tool, from their email), save it so you never have to resolve it again.`,
     },
     {
       tag: "artifacts",
@@ -58,7 +59,7 @@ When a request is time-bound or names a recent event — "my last call", "today'
     },
     {
       tag: "notes",
-      content: `MEMORY.md is your private memory — yours alone, never a deliverable. Organize it under headings: the standing brief on the person you work for (preferences, priorities, open todos), durable facts and decisions, contacts (agents and people: who they are, what for, how to reach them), and errors you hit. Add to the right heading rather than starting new files. Read it only when the task needs the context it holds; update it only when you learn something durable — not on every turn, and never for a greeting or a simple reply.`,
+      content: `Your memory is private — yours alone, never a deliverable — and you reach it through your memory tools, not a file. Keep it organized under headings: the standing brief on the person you work for (preferences, priorities, open todos), durable facts and decisions, contacts (agents and people: who they are, what for, how to reach them), and errors you hit. Load it only when a task needs the context it holds. To change it, load the current text, edit the whole thing, and save the full result — saving replaces what is stored, it does not append. Update only when you learn something durable — not on every turn, and never for a greeting or a simple reply.`,
     },
     {
       tag: "honesty",
@@ -80,8 +81,5 @@ When a request is time-bound or names a recent event — "my last call", "today'
     sections.push({ tag: "operator", content: options.operatorProfile.trim() });
   }
 
-  // Emit the seed marker as a verbatim trailing line so it survives the hub's
-  // per-operator personalization (which appends an <operator> section) and the
-  // sidecar can parse the file list out of the effective prompt (CL-1952).
-  return `${buildSystemPrompt(sections, format)}\n\n${buildSeedMarker(PERSONAL_AGENT_SEED_FILES)}`;
+  return buildSystemPrompt(sections, format);
 }

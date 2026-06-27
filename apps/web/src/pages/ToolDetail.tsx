@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { useToolDetail } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
 import { ApiError } from "../lib/api";
+import { toHumanLabel } from "@workbench/ui";
 
 type ParamRow = {
   name: string;
@@ -106,9 +107,12 @@ export function ToolDetail() {
                   </span>
                 )}
               </div>
-              <h1 className="mt-2.5 font-mono text-[22px] font-bold tracking-[-0.01em] text-text">
-                {toolQuery.data.name}
+              <h1 className="mt-2.5 text-[22px] font-bold tracking-[-0.01em] text-text">
+                {toHumanLabel(toolQuery.data.name)}
               </h1>
+              <p className="mt-1 font-mono text-[12px] text-text-3">
+                {toolQuery.data.name}
+              </p>
               <p className="mt-2 text-pretty text-[13.5px] leading-relaxed text-text-2">
                 {toolQuery.data.description || "No description provided."}
               </p>

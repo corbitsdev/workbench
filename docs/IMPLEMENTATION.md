@@ -108,12 +108,15 @@ No tool package reads env vars or resolves credentials. Config (`apiKey`, `baseU
 
 #### last30days research workflow
 
-The `last30days` research capability is split into per-source fetch tools, a deterministic core, and the `last30days-research` workflow (`workflows/last30days-research`). Inline inference steps use the workflow runtime's `createAgent` path and do not deploy idling per-step agents.
-
-- **Source tools** each normalize their API into a shared `ResearchItem` (`{ url, title, publishedAt, source, engagement, author?, topComments? }`): `tools-hackernews`, `tools-github`, `tools-exa` (web), `tools-reddit` (`reddit_search`/`reddit_subreddit_search` via ScrapeCreators, passing through top comments when the payload carries them), `tools-x`, `tools-polymarket`, `tools-scrapecreators` (tiktok/instagram/threads/pinterest), `tools-youtube` (`youtube_search`, providerName `'youtube'`), and `tools-bluesky` (`bluesky_search`, unauthenticated public AppView — no credential; currently disabled in the workflow chain, CL-2401, because its search API fails on every run).
-- **Source steps are non-fatal** (CL-2401): each fetch step carries `deterministicToolStep`'s `nonFatal` flag, so a thrown source error (rate-limit/auth/network) is logged with its reason and degraded by the sidecar to a completed `isError` envelope rather than failing the step. Without this a single failed source step lands in the `failed` phase, which flips the whole run to `RunFailed` even though the brief tool already records it in `skippedSources`. `nonFatal` is for best-effort sources only — `brief`, `write`, and `persist` stay fatal.
-- **`packages/last30days-core`** (`@workbench/last30days-core`): pure pipeline — `entityExtract`, `dateFilter`, `dedupe`, `clusterMerge`, `rankScore` (engagement + freshness + source-breadth + a capped top-comment "fun" bonus, minus a degraded penalty), and `buildReport`, which returns a typed, ArkType-validated `ResearchBrief`: `{ topic, days, queryType?, stats: { sourceCount, itemCount, dateRange? }, leadInsight?, clusters[], bestTakes[], items[], citations[] }`. `parseReport(unknown)` is the canonical boundary parser consumers use instead of re-declaring the schema.
-- **`last30days_core_report`** returns the brief; the agent persists it via `write_artifact { kind: 'research', data: brief }`, which stores the structured brief at `artifact.source.brief` (and refreshes the parent row on a same-title/kind update so the gallery never shows a stale version). `apps/web` `ResearchBody` validates `source.brief` through `parseReport` and renders clusters, best-takes, stats, and citations; it falls back to markdown when no valid brief is present.
+Gathers the last 30 days of cross-platform signal (per-fan-out grounded queries →
+serial source fetches → relevance-floored brief → long-form write) and saves a
+cited `research` artifact. Detail lives with the code:
+[`workflows/last30days-research/README.md`](../workflows/last30days-research/README.md)
+(steps, serial chain, per-step models),
+[`packages/last30days-core/README.md`](../packages/last30days-core/README.md)
+(pipeline + `buildReport`/`minRelevance`), and
+[`packages/tools-last30days/README.md`](../packages/tools-last30days/README.md)
+(the core/grounding/brief tools).
 
 ### `packages/chat` (`@workbench/chat`)
 
@@ -278,6 +281,14 @@ All skill hooks live here (`useSkillLibrary`, `useSkillDetail`, `useCreateSkill`
 **Library page** — `apps/web/src/pages/SkillsLibrary.tsx`: cards show owner, last-edited date, and an access label (`Private` or the resolved share-target tenant name).
 
 **Routing** — `/skills` (library), `/skills/new` (upload form), `/skills/:id` (detail + delete)
+
+### Search
+
+| Method | Route                           | Input       | Output                                            |
+| ------ | ------------------------------- | ----------- | ------------------------------------------------- |
+| `GET`  | `/api/tenants/:tenantId/search` | `?q=&page=` | `{ results: PaletteResultItem[], page, hasMore }` |
+
+Tenant-scoped aggregate palette search (see § Command Palette and UI Components). Mounted behind Interchange's `resolveTenant`; every source is filtered by `tenant_id`. Per-source limit 5 at `OFFSET page*5`; relevance ordered exact > prefix > contains, tie-broken by recency.
 
 ### Health
 
@@ -629,6 +640,18 @@ Located in `apps/web/src/components/RunConsole.tsx`. A single generic console th
 - Renders the step timeline with phase indicators (running / completed / failed / awaiting-signal) derived from the reduced `RunState`
 - Shows step outputs as they arrive
 - Renders an Approve button on any step whose phase is `awaiting-signal`, wired to `useSignalWorkflow` (HITL approval = a signal)
+
+### Command Palette
+
+A global Cmd/Ctrl+K command palette for keyboard-first navigation (see PRODUCT.md § Command Palette). Navigation commands are client-side; entity results come from a server-side aggregate search (CL-2500).
+
+- **Shared contract** — `packages/workbench-shared/src/palette.ts` exports the `PaletteResultItemSchema` arktype schema (category union `navigation | conversation | agent | workflow | artifact | skill | tool`, `PaletteResultItem` derived via `typeof Schema.infer`), the `PaletteSearchResponseSchema` (`{ results, page, hasMore }`), and a dependency-free subsequence fuzzy matcher (`fuzzyMatch`/`rankPaletteItems`) used for client-side nav ranking and entity-title highlighting. Both hub and web validate against this one schema. A tiny ranked-substring matcher was chosen over Fuse.js/uFuzzy to avoid a runtime dependency.
+- **Server search** — `GET /api/tenants/:tenantId/search?q=&page=` (`apps/hub/src/routes/search.ts` → `apps/hub/src/services/search.ts`, mounted on `hubApp` behind Interchange's `resolveTenant`). `searchTenant` aggregates six sources — chats (`member_agent_instance`, myra), workflows (distinct `workflow_run.kind`), agents (`agent_instance ⋈ agent`, excluding member-owned instances), artifacts (`artifact`), skills (`asset` where `kind='skill'`), and tools (the in-process `listAvailableToolSummaries` catalog). **Every DB source carries a `tenant_id = ?` predicate** (`tenant.id` from `resolveTenant`), so cross-tenant rows cannot appear. Each source returns at most 5 rows at `OFFSET page*5` (a `+1` fetch sets `hasMore`); relevance is a SQL `CASE` rank (exact > prefix > contains) tie-broken by recency, mirrored in-process for tools via `scoreText`. Rows are normalized to `PaletteResultItem` and validated through `PaletteResultItemSchema` before return.
+- **Provider** — `apps/web/src/components/command-palette-context.tsx` (`CommandPaletteProvider`, wired into `AppShell` in `apps/web/src/router.tsx`) owns open/closed state, the global Cmd/Ctrl+K listener (a capture-phase `keydown` subscription — the one legitimate effect), and a 200 ms-debounced query. Entity results are fetched with TanStack `useInfiniteQuery` (`searchPaletteEntities` in `apps/web/src/lib/palette-search.ts`, `keepPreviousData`, `AbortController` via `signal`, gated on `open` + active tenant + non-empty query; a new query is a fresh key so pagination resets). `fetchNextPage` drives "Load more". Static **Go to** commands (`NAV_COMMANDS`, beside the route table in `router.tsx`) stay client-side. Navigates via react-router `useNavigate` on selection.
+- **Component** — `apps/web/src/components/CommandPalette.tsx` is controlled (query lifted to the provider). It fuzzy-ranks nav commands client-side and renders the already-matched server entity rows in server order (highlight-only). It renders a centered overlay (backdrop `rgba(0,0,0,0.55)` + `backdrop-blur`, `rounded-panel` surface); the input is `role="combobox"`, results are `role="listbox"`/`role="option"` — **not** a dialog — with `aria-activedescendant` tracking the active row. Arrow Up/Down `preventDefault()` first (so the caret never moves) and are ignored, with Enter, during an IME composition. The panel uses an **opacity-only** transition with `initial={false}`; `PALETTE_PANEL_MOTION` is exported and asserted transform-free by a brand regression test. Loading/empty/error states are explicit.
+- **Entity routing** — conversations → `/chats/:threadId`, artifacts → `/artifacts/:artifactId`, skills → `/skills/:assetId`, tools → `/tools/:name`. Workflows have no per-deployment route (→ `/workflows`); agents have no detail route (→ `/chats`).
+- **Testing** — `searchTenant` is integration-tested against a drizzle `pg-proxy` recording driver that generates **real SQL**, asserting the `tenant_id` predicate + bound tenant param on every source (cross-tenant isolation), the relevance `CASE` ordering, and `LIMIT 6` / `OFFSET page*5`. No live Postgres is required and none is available in the test harness.
+- **Deferred (v2)** — content / full-text search (`pg_trgm` similarity or a Postgres FTS `tsvector` index) and a global cross-source relevance merge. v1 is plain `ILIKE` ordering with no new pg extension or migration.
 
 ### Page Transitions
 

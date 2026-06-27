@@ -191,6 +191,6 @@ describe("hackernews_search tool", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(String(result.content)).toContain("query is required");
+    expect(String(result.content)).toContain("query");
   });
 });

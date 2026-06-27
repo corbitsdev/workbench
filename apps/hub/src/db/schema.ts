@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { feedbackSubjectKinds } from "@workbench/shared";
@@ -56,6 +57,41 @@ export const memberPreferences = pgTable(
   }),
 );
 
+// Per-member, per-tool account identity (CL-2420). One row per account, so a
+// member can hold several accounts of the same provider (e.g. two Linear
+// workspaces) — each with a human `label`, a `isPrimary` default flag, and an
+// open `metadata` map. `value` is the identifier Myra passes to that tool to
+// scope "my X" queries. Tool-accessed only (never dumped into the prompt).
+export const memberIdentity = pgTable(
+  "member_identity",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    memberPrincipalId: text("member_principal_id").notNull(),
+    provider: text("provider").notNull(),
+    value: text("value").notNull(),
+    label: text("label"),
+    isPrimary: boolean("is_primary").notNull().default(false),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    memberIdentityAccountUniq: unique("member_identity_account_uniq").on(
+      t.tenantId,
+      t.memberPrincipalId,
+      t.provider,
+      t.value,
+    ),
+  }),
+);
+
 // Binary files uploaded before any workflow run exists. Artifacts require a
 // sessionId (FK to workflow_run), but an xlsx arrives ahead of the run that
 // will consume it (CL-1961), so uploads live in their own tenant-owned table
@@ -94,6 +130,8 @@ export const workflowRun = pgTable("workflow_run", {
     version: string;
     sha: string;
     deployedAt: string;
+    label?: string;
+    description?: string;
   }>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
@@ -157,35 +195,47 @@ export const painPoint = pgTable("pain_point", {
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
 // migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
-export const artifact = pgTable("artifact", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  tenantId: text("tenant_id"),
-  principalId: text("principal_id"),
-  ownerPrincipalId: text("owner_principal_id"),
-  sessionId: uuid("session_id").references(() => workflowRun.id, {
-    onDelete: "cascade",
+export const artifact = pgTable(
+  "artifact",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id"),
+    principalId: text("principal_id"),
+    ownerPrincipalId: text("owner_principal_id"),
+    sessionId: uuid("session_id").references(() => workflowRun.id, {
+      onDelete: "cascade",
+    }),
+    // Null for artifacts created directly by agents via the artifact_* tools
+    // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
+    // Workflow paths always supply a valid id.
+    parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
+      onDelete: "cascade",
+    }),
+    painPointId: uuid("pain_point_id").references(() => painPoint.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    content: text("content").notNull(),
+    source: jsonb("source").$type<Record<string, unknown>>(),
+    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    // CL-2413: durable agent memory is one row per owning member principal. A
+    // partial unique index makes that an invariant — concurrent first-saves
+    // upsert onto the same row instead of forking into duplicate memory rows.
+    // Scoped to kind='memory' so it never constrains other artifact kinds.
+    memoryPerOwnerUniq: uniqueIndex("artifact_memory_per_owner_uniq")
+      .on(t.tenantId, t.ownerPrincipalId)
+      .where(sql`${t.kind} = 'memory'`),
   }),
-  // Null for artifacts created directly by agents via the artifact_* tools
-  // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
-  // Workflow paths always supply a valid id.
-  parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
-    onDelete: "cascade",
-  }),
-  painPointId: uuid("pain_point_id").references(() => painPoint.id, {
-    onDelete: "set null",
-  }),
-  kind: text("kind").notNull(),
-  title: text("title").notNull(),
-  content: text("content").notNull(),
-  source: jsonb("source").$type<Record<string, unknown>>(),
-  status: text("status", { enum: artifactStatus }).notNull().default("draft"),
-  version: integer("version").notNull().default(1),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at")
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
+);
 
 // Append-only version history. Every change by an agent or a human writes a row.
 // author_id is the actor's principal id (no agent/human distinction).

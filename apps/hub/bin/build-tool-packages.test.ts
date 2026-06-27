@@ -80,6 +80,17 @@ describe("build-tool-packages", () => {
     expect(bundled).not.toContain('from "@intx/agent"');
   });
 
+  test("registers @workbench/tools-ab-compare so its tarball is published", () => {
+    // The compose tool the A/B workflows depend on must be in the build list or
+    // its tarball never reaches the registry and the compose step fails at run
+    // time. The subprocess build below packs the full list, so a broken entry
+    // here also fails that test.
+    const abCompare = TOOL_PACKAGES.find(
+      (s) => s.name === "@workbench/tools-ab-compare",
+    );
+    expect(abCompare?.packageDir).toBe("packages/tools-ab-compare");
+  });
+
   test("an independent build run reproduces the same SRI integrity", async () => {
     const proc = Bun.spawn(["bun", "run", "bin/build-tool-packages.ts"], {
       cwd: path.resolve(import.meta.dir, ".."),

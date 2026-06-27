@@ -11,12 +11,38 @@ export function parseResearchBrief(value: unknown): ResearchBrief | null {
   return parseReport(value);
 }
 
+const MONTH_DAY = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
+const MONTH_DAY_YEAR = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function formatDateRange(from: string, to: string): string {
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return `${from}–${to}`;
+  }
+  return `${MONTH_DAY.format(fromDate)} – ${MONTH_DAY_YEAR.format(toDate)}`;
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString("en-US");
+}
+
 function StatsLine({ stats }: { stats: ResearchBrief["stats"] }) {
   return (
     <p className="font-mono text-[13px] text-text-3 tabular-nums">
-      {stats.sourceCount} sources · {stats.itemCount} items
+      {formatCount(stats.sourceCount)} sources · {formatCount(stats.itemCount)}{" "}
+      items
       {stats.dateRange
-        ? ` · ${stats.dateRange.from}–${stats.dateRange.to}`
+        ? ` · ${formatDateRange(stats.dateRange.from, stats.dateRange.to)}`
         : ""}
     </p>
   );
@@ -34,16 +60,13 @@ function ClusterSection({
         <h3 className="text-sm font-semibold text-text leading-snug">
           {cluster.title}
         </h3>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <span className="rounded border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-text-3">
-            score {cluster.score.toFixed(1)}
-          </span>
-          {cluster.sources.length > 0 && (
+        {cluster.sources.length > 0 && (
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className="rounded border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-text-3">
               {cluster.sources.join(", ")}
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
       {cluster.summary && (
         <p className="text-xs text-text-2 leading-relaxed">{cluster.summary}</p>
@@ -61,8 +84,8 @@ function ClusterSection({
                 {item.title}
               </a>
               <span className="font-mono text-[11px] text-text-3 shrink-0 whitespace-nowrap tabular-nums">
-                {item.engagement?.upvotes ?? 0} up ·{" "}
-                {item.engagement?.comments ?? 0} comments
+                {formatCount(item.engagement?.upvotes ?? 0)} up ·{" "}
+                {formatCount(item.engagement?.comments ?? 0)} comments
               </span>
             </li>
           ))}
@@ -87,14 +110,14 @@ function BestTakesSection({ takes }: { takes: ResearchBrief["bestTakes"] }) {
               {take.author ? `${take.author} · ` : ""}
               {take.source}
             </span>
-            <span className="text-[11px] text-text-3">
-              {take.engagement} engagement
+            <span className="text-[11px] text-text-3 tabular-nums">
+              {formatCount(take.engagement)} engagement
             </span>
             <a
               href={take.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[11px] text-text-3 hover:text-text hover:underline"
+              className="text-[11px] text-accent hover:underline"
             >
               source
             </a>
@@ -105,33 +128,46 @@ function BestTakesSection({ takes }: { takes: ResearchBrief["bestTakes"] }) {
   );
 }
 
+// A citation list can repeat a URL (an item that clustered across sources). Both
+// the on-screen list and the exported ## Sources section show one entry per URL,
+// so they never disagree on count or numbering.
+function dedupeCitationsByUrl(
+  citations: ResearchBrief["citations"],
+): ResearchBrief["citations"] {
+  const seen = new Set<string>();
+  return citations.filter((citation) => {
+    if (seen.has(citation.url)) return false;
+    seen.add(citation.url);
+    return true;
+  });
+}
+
 function CitationsSection({
   citations,
 }: {
   citations: ResearchBrief["citations"];
 }) {
-  if (citations.length === 0) return null;
+  const deduped = dedupeCitationsByUrl(citations);
+  if (deduped.length === 0) return null;
   return (
     <div className="space-y-3">
       <h2 className="text-sm font-semibold text-text">Citations</h2>
       <ol className="space-y-2.5">
-        {citations.map((citation, index) => (
+        {deduped.map((citation, index) => (
           <li key={index} className="flex items-baseline gap-3 text-[13px]">
             <span className="font-mono text-xs text-text-3 tabular-nums shrink-0 w-6 text-right">
               {index + 1}
             </span>
             <span className="min-w-0 leading-relaxed">
-              {citation.title && (
-                <span className="text-text-2">{citation.title} </span>
-              )}
               <a
                 href={citation.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-mono text-xs text-accent hover:underline break-words"
+                className="text-accent hover:underline break-words"
               >
-                {citation.source}
+                {citation.title ?? citation.url}
               </a>
+              <span className="text-text-3"> · {citation.source}</span>
             </span>
           </li>
         ))}
@@ -150,12 +186,22 @@ function slugify(value: string): string {
   );
 }
 
+export function buildSourcesSection(brief: ResearchBrief): string {
+  const citations = dedupeCitationsByUrl(brief.citations);
+  if (citations.length === 0) return "";
+  const lines = citations.map(
+    (citation, index) =>
+      `${index + 1}. [${citation.title ?? citation.url}](${citation.url}) — ${citation.source}`,
+  );
+  return `\n\n## Sources\n\n${lines.join("\n")}`;
+}
+
 function ReportActions({
   markdown,
-  topic,
+  brief,
 }: {
   markdown: string;
-  topic: string;
+  brief: ResearchBrief;
 }) {
   const [copied, setCopied] = useState(false);
   const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,9 +212,11 @@ function ReportActions({
     };
   }, []);
 
+  const fullMarkdown = markdown + buildSourcesSection(brief);
+
   const copy = () => {
     navigator.clipboard
-      .writeText(markdown)
+      .writeText(fullMarkdown)
       .then(() => {
         setCopied(true);
         if (resetTimer.current) clearTimeout(resetTimer.current);
@@ -178,11 +226,11 @@ function ReportActions({
   };
 
   const download = () => {
-    const blob = new Blob([markdown], { type: "text/markdown" });
+    const blob = new Blob([fullMarkdown], { type: "text/markdown" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `${slugify(topic)}.md`;
+    anchor.download = `${slugify(brief.topic)}.md`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
@@ -190,7 +238,7 @@ function ReportActions({
   };
 
   const buttonBase =
-    "rounded-md px-3 py-1.5 text-[13px] font-medium transition-transform active:scale-[0.97]";
+    "inline-flex items-center justify-center min-h-10 rounded-md px-4 py-2 text-[13px] font-medium transition-transform active:scale-[0.97]";
 
   return (
     <div className="flex items-center gap-2">
@@ -270,7 +318,7 @@ export default function ResearchBody({ brief, body }: ResearchBodyProps) {
           </h1>
           <StatsLine stats={brief.stats} />
         </div>
-        <ReportActions markdown={report} topic={brief.topic} />
+        <ReportActions markdown={report} brief={brief} />
       </div>
 
       <div className="max-w-[68ch]">

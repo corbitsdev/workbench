@@ -1,40 +1,118 @@
 import { describe, expect, test } from "bun:test";
-import { buildWriterSystemPrompt } from "./prompts";
+import {
+  buildCurateSystemPrompt,
+  buildEntityExtractSystemPrompt,
+  buildGroundingSystemPrompt,
+  buildWriterSystemPrompt,
+} from "./prompts";
 
-describe("buildWriterSystemPrompt", () => {
+describe("buildWriterSystemPrompt (Larry structure, CL-2503)", () => {
   const prompt = buildWriterSystemPrompt();
 
-  test("keeps the fixed report skeleton in house-style voice/casing", () => {
-    expect(prompt).toContain("What we found about");
-    expect(prompt).toContain("Key patterns from the research");
-    expect(prompt).toContain("Research by last30days via GTM Workbench");
+  test("encodes the Larry report skeleton: title, TL;DR, themes, contested, dated sources", () => {
+    expect(prompt).toContain("What People Actually Said (Last 30 Days)");
+    expect(prompt).toContain("**TL;DR**");
+    expect(prompt).toContain("What's still open / contested");
+    expect(prompt).toContain("## Sources");
+    // The source list must be dated, per Larry's "(date)" trailing format.
+    expect(prompt).toContain("(date)");
   });
 
-  test("requires weaving verbatim attributed community takes (LAW 9)", () => {
-    expect(prompt.toLowerCase()).toContain("verbatim");
-    expect(prompt.toLowerCase()).toContain("bestTakes".toLowerCase());
+  test("builds one section per theme/cluster and scales depth to the evidence", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("section per cluster");
+    expect(lower).toContain("never pad, never truncate");
+  });
+
+  test("requires at least three verbatim attributed community quotes from bestTakes", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("verbatim");
+    expect(lower).toContain("besttakes");
+    expect(lower).toContain("at least 3");
     expect(prompt).toMatch(/u\/name|@handle/);
   });
 
   test("labels engagement per source and forbids calling GitHub stars upvotes", () => {
-    expect(prompt).toContain("stars");
     expect(prompt.toLowerCase()).toContain("points");
     expect(prompt.toLowerCase()).toContain("views");
-    // GitHub must be tied to "stars", and the prompt must say not to call them upvotes
     expect(prompt.toLowerCase()).toMatch(/github.*stars|stars.*github/s);
     expect(prompt.toLowerCase()).toContain('never "upvotes"'.toLowerCase());
   });
 
-  test("encodes source weighting (social/community over web/github)", () => {
-    expect(prompt).toContain("Reddit");
-    expect(prompt.toLowerCase()).toContain("weakest");
+  test("uses house style: collective voice and hyphen-spaced asides, not I", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain('collective voice ("we")');
+    expect(lower).toContain("not em dashes");
+    expect(prompt).not.toContain("What I learned");
   });
 
-  test("uses house style: collective voice and a true em dash for asides", () => {
-    expect(prompt.toLowerCase()).toContain("em dash");
-    expect(prompt.toLowerCase()).toContain(
-      'collective voice ("we")'.toLowerCase(),
-    );
-    expect(prompt).not.toContain("What I learned");
+  test("forbids inventing anything outside the brief", () => {
+    expect(prompt.toLowerCase()).toContain("invent nothing");
+  });
+});
+
+describe("buildCurateSystemPrompt (CL-2503)", () => {
+  const prompt = buildCurateSystemPrompt();
+
+  test("instructs dropping promo/shill junk", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("drop the junk");
+    expect(lower).toContain("shill");
+    expect(lower).toContain("ama");
+  });
+
+  test("requires grouping into a few named themes with backing item urls", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("3-6 real themes");
+    expect(prompt).toContain('"itemUrls"');
+  });
+
+  test("requires selecting verbatim attributed quotes with engagement and json-only output", () => {
+    const lower = prompt.toLowerCase();
+    expect(lower).toContain("verbatim quotes");
+    expect(prompt).toContain('"engagement"');
+    expect(lower).toContain("json only");
+  });
+});
+
+describe("buildEntityExtractSystemPrompt (CL-2503)", () => {
+  const prompt = buildEntityExtractSystemPrompt();
+
+  test("asks for entity-focused follow-up queries per round-2 source as JSON only", () => {
+    expect(prompt.toLowerCase()).toContain("json only");
+    for (const key of ["web", "reddit", "x", "youtube"]) {
+      expect(prompt).toContain(`"${key}"`);
+    }
+  });
+
+  test("targets discovered entities rather than the broad topic", () => {
+    expect(prompt.toLowerCase()).toContain("named entities");
+    expect(prompt.toLowerCase()).toContain("not the broad topic");
+  });
+});
+
+describe("buildGroundingSystemPrompt", () => {
+  const prompt = buildGroundingSystemPrompt();
+
+  test("asks for one tailored query per source as JSON only", () => {
+    expect(prompt.toLowerCase()).toContain("json only");
+    expect(prompt.toLowerCase()).toContain("tailor");
+    // Every source the workflow fans out to must be a requested output key, or
+    // that source falls back to the untailored topic.
+    for (const key of [
+      "hackernews",
+      "github",
+      "web",
+      "reddit",
+      "x",
+      "youtube",
+      "polymarket",
+    ]) {
+      expect(prompt).toContain(`"${key}"`);
+    }
+  });
+
+  test("forbids reusing the raw topic verbatim across platforms", () => {
+    expect(prompt.toLowerCase()).toContain("never reuse the raw topic");
   });
 });

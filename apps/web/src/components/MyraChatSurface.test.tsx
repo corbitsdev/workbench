@@ -45,7 +45,7 @@ mock.module("@workbench/agents/browser", () => ({
   summarizeToolCalls: () => "",
 }));
 
-const { MyraChatSurface } = require("./MyraChatSurface");
+const { MyraChatSurface, ExpandedChatOverlay } = require("./MyraChatSurface");
 
 function makeSession(over: Partial<MyraSession>): MyraSession {
   return {
@@ -113,5 +113,42 @@ describe("MyraChatSurface", () => {
     expect(screen.getByTestId("tagline").textContent).toBe("Pricing");
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(sendSpy).toHaveBeenCalledWith("hello");
+  });
+
+  function renderExpanded(onExit: () => void) {
+    render(
+      React.createElement(
+        ExpandedChatOverlay,
+        { open: true, onExit },
+        React.createElement("div", { "data-testid": "child" }, "panel"),
+      ),
+    );
+  }
+
+  it("collapses (not closes) when Escape is pressed while expanded", () => {
+    const onExit = mock(() => {});
+    renderExpanded(onExit);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("collapses when the visible minimize button is clicked while expanded", () => {
+    const onExit = mock(() => {});
+    renderExpanded(onExit);
+    fireEvent.click(screen.getByRole("button", { name: /minimize/i }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it("locks body scroll while expanded and restores it on exit", () => {
+    const { unmount } = render(
+      React.createElement(
+        ExpandedChatOverlay,
+        { open: true, onExit: () => {} },
+        React.createElement("div", null, "panel"),
+      ),
+    );
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("");
   });
 });

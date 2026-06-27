@@ -76,6 +76,7 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
+import { createSearchRouter } from "./routes/search";
 import { createActivityRouter } from "./routes/activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -500,6 +501,7 @@ const hubApp = createApp({
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
+hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 

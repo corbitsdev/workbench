@@ -160,4 +160,51 @@ describe("inlineInferenceStep", () => {
     expect(primitive.input).toEqual({ from: "steps.fetch.output" });
     expect(primitive.after).toEqual(["context"]);
   });
+
+  test("a model preference declares a matching preferred inference source", () => {
+    const primitive = inlineInferenceStep({
+      id: "writer",
+      systemPrompt: SYSTEM_PROMPT,
+      model: "kimi-k2.6",
+    });
+    // The orchestrator's pickStepInferenceSource matches by (provider, model)
+    // against the deploy's config.sources, so the declared preference must carry
+    // both — this is what routes the step to a non-default model.
+    expect(primitive.agent.inference.sources).toEqual([
+      { provider: "openai-compatible", model: "kimi-k2.6" },
+    ]);
+  });
+
+  test("no model preference leaves the source list empty (rides the deploy default)", () => {
+    const primitive = inlineInferenceStep({
+      id: "analyze",
+      systemPrompt: SYSTEM_PROMPT,
+    });
+    expect(primitive.agent.inference.sources).toEqual([]);
+  });
+
+  test("maxTokens rides on the preferred source's parameters so the deploy can lift it onto defaults.maxTokens", () => {
+    const primitive = inlineInferenceStep({
+      id: "writer",
+      systemPrompt: SYSTEM_PROMPT,
+      model: "kimi-k2.6",
+      maxTokens: 16384,
+    });
+    expect(primitive.agent.inference.sources).toEqual([
+      {
+        provider: "openai-compatible",
+        model: "kimi-k2.6",
+        parameters: { maxTokens: 16384 },
+      },
+    ]);
+  });
+
+  test("maxTokens without a model is ignored — no preferred source to carry it", () => {
+    const primitive = inlineInferenceStep({
+      id: "analyze",
+      systemPrompt: SYSTEM_PROMPT,
+      maxTokens: 16384,
+    });
+    expect(primitive.agent.inference.sources).toEqual([]);
+  });
 });

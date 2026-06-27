@@ -240,7 +240,7 @@ describe("createDefaultHarnessBuilder", () => {
       expect(callArgs[1].sources[0]?.apiKey).toBe("sk-plaintext-key");
     });
 
-    it("strips the memory-seed marker from the model prompt while seeding the workspace (CL-1952)", async () => {
+    it("builds Myra's markerless prompt with no marker leak and seeds no files (CL-2413)", async () => {
       createHarnessMock.mockClear();
       const deployPrompt = buildPersonalAgentSystemPrompt("Myra", {
         xml: true,
@@ -294,17 +294,17 @@ describe("createDefaultHarnessBuilder", () => {
         // But the substantive prompt body survives.
         expect(modelPrompt).toContain("You are Myra, Chief of Staff");
 
-        // And the workspace was seeded with the documented memory file.
+        // CL-2413: Myra seeds no workspace files — memory moved to the tools.
         const seeded = await fs.promises.readdir(
           path.join(storeDir, "workspace"),
         );
-        expect(seeded.sort()).toEqual(["MEMORY.md"].sort());
+        expect(seeded).toEqual([]);
       } finally {
         await fs.promises.rm(storeDir, { recursive: true, force: true });
       }
     });
 
-    it("does not abort the harness build when an OLD persisted prompt names a since-folded seed file (CL-2364)", async () => {
+    it("does not abort the harness build when an OLD persisted prompt names a since-retired seed file (CL-2364)", async () => {
       createHarnessMock.mockClear();
       // Simulate an old persisted prompt whose marker lists a folded-away file.
       const stalePrompt = `${buildPersonalAgentSystemPrompt("Myra", {
@@ -350,13 +350,14 @@ describe("createDefaultHarnessBuilder", () => {
         });
 
         // The whole harness (inference + tools) must come up despite the stale
-        // marker — the unknown basenames are skipped, not thrown.
+        // marker — every named basename is now unregistered (MEMORY.md included,
+        // CL-2413), so all are skipped, not thrown.
         await expect(build).resolves.toBeDefined();
 
         const seeded = await fs.promises.readdir(
           path.join(storeDir, "workspace"),
         );
-        expect(seeded.sort()).toEqual(["MEMORY.md"].sort());
+        expect(seeded).toEqual([]);
       } finally {
         await fs.promises.rm(storeDir, { recursive: true, force: true });
       }

@@ -82,7 +82,7 @@ describe("foldRunEvents", () => {
       }),
     ]);
     expect(runs.get("r1")?.status).toBe("failed");
-    expect(runs.get("r1")?.error).toBe("tool 500");
+    expect(runs.get("r1")?.error).toBe('step "analyze" failed: tool 500');
   });
 
   test("RunCancelled is reported as failed/cancelled", () => {
@@ -194,7 +194,13 @@ describe("createCoalescingScheduler", () => {
 
 describe("logNewWorkflowRunFailureIfNeeded", () => {
   function failedProjected(error = "something broke"): ProjectedRun {
-    return { status: "failed", currentStepId: null, completedRefs: [], error };
+    return {
+      status: "failed",
+      currentStepId: null,
+      completedRefs: [],
+      error,
+      failedSteps: [],
+    };
   }
 
   test("does not throw when version and sha are provided", () => {

@@ -3,8 +3,13 @@ import {
   CATALOG_GLYPH_KINDS,
   CatalogGlyph,
   catalogCardClassName,
+  DataTable,
   hashString,
   PagePanel,
+  toHumanLabel,
+  useViewMode,
+  ViewToggle,
+  type DataTableColumn,
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
@@ -30,7 +35,7 @@ function SkillCard({
   const hash = hashString(skill.id);
   const glyph = CATALOG_GLYPH_KINDS[hash % CATALOG_GLYPH_KINDS.length];
   const fill = CATALOG_GLYPH_FILLS[hash % CATALOG_GLYPH_FILLS.length];
-  const title = skill.displayName ?? skill.name;
+  const title = skill.displayName ?? toHumanLabel(skill.name);
 
   return (
     <div
@@ -81,6 +86,7 @@ export function SkillsLibrary() {
   });
   const tenantId = meQuery.data?.personalTenantId ?? null;
   const [query, setQuery] = useState("");
+  const { mode: viewMode, setMode: setViewMode } = useViewMode("skills");
 
   const skillsQuery = useSkillLibrary(tenantId);
   const shareTargetsQuery = useSkillShareTargets(tenantId);
@@ -99,11 +105,36 @@ export function SkillsLibrary() {
       (skill) =>
         !q ||
         skill.name.toLowerCase().includes(q) ||
+        toHumanLabel(skill.name).toLowerCase().includes(q) ||
         (skill.displayName ?? "").toLowerCase().includes(q),
     );
   }, [query, skillsQuery.data]);
 
   const isSearching = query.trim().length > 0;
+
+  const skillRowColumns: DataTableColumn<SkillLibraryItem>[] = [
+    {
+      key: "name",
+      header: "Name",
+      className: "font-medium text-text",
+      render: (s) => s.displayName ?? s.name,
+    },
+    {
+      key: "access",
+      header: "Access",
+      render: (s) => accessLabel(s),
+    },
+    {
+      key: "owner",
+      header: "Owner",
+      render: (s) => s.ownerName ?? "—",
+    },
+    {
+      key: "updated",
+      header: "Updated",
+      render: (s) => new Date(s.updatedAt).toLocaleDateString(),
+    },
+  ];
 
   return (
     <PagePanel>
@@ -123,6 +154,7 @@ export function SkillsLibrary() {
           onChange={(e) => setQuery(e.target.value)}
           className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
         />
+        <ViewToggle mode={viewMode} onChange={setViewMode} />
         <button
           type="button"
           onClick={() => navigate("/skills/new")}
@@ -170,17 +202,30 @@ export function SkillsLibrary() {
               )}
             </div>
           )}
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-          {filteredLibrary.map((skill, i) => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              accessLabel={accessLabel(skill)}
-              index={i + 1}
-              onSelect={() => navigate(`/skills/${skill.id}`)}
+        {!skillsQuery.isLoading &&
+          !skillsQuery.isError &&
+          filteredLibrary.length > 0 &&
+          (viewMode === "rows" ? (
+            <DataTable<SkillLibraryItem>
+              caption="Skills"
+              rows={filteredLibrary}
+              getRowKey={(s) => s.id}
+              onRowClick={(s) => navigate(`/skills/${s.id}`)}
+              columns={skillRowColumns}
             />
+          ) : (
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+              {filteredLibrary.map((skill, i) => (
+                <SkillCard
+                  key={skill.id}
+                  skill={skill}
+                  accessLabel={accessLabel(skill)}
+                  index={i + 1}
+                  onSelect={() => navigate(`/skills/${skill.id}`)}
+                />
+              ))}
+            </div>
           ))}
-        </div>
       </div>
     </PagePanel>
   );

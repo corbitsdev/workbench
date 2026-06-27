@@ -15,7 +15,8 @@
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
-    "@intx/types": "workspace:*"
+    "@intx/types": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest",

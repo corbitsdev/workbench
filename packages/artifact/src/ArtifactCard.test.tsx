@@ -13,6 +13,7 @@ const artifact: GalleryArtifact = {
   title: "Sales automation ROI",
   from: "Acme Corp",
   time: "2 hours ago",
+  provenance: "Workflow",
   label: "Email",
   viz: "lines",
   fill: "bg-orange",
@@ -27,6 +28,38 @@ describe("ArtifactCard", () => {
     expect(screen.getByText("2 hours ago")).toBeDefined();
     // Badge is the label's first letter plus the padded index: "E03".
     expect(screen.getByText("E03")).toBeDefined();
+    // Provenance badge is always surfaced.
+    expect(screen.getByText("Workflow")).toBeDefined();
+  });
+
+  it("omits the provenance chip for an unknown/legacy source", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          provenance: "Unknown source",
+          provenanceTone: "unknown",
+        },
+        index: 1,
+      }),
+    );
+    expect(screen.queryByText("Unknown source")).toBeNull();
+  });
+
+  it("does not uppercase free-text provenance", () => {
+    render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          provenance: "Last 30 Days",
+          provenanceTone: "free",
+        },
+        index: 1,
+      }),
+    );
+    const chip = screen.getByText("Last 30 Days");
+    expect(chip.className).not.toContain("uppercase");
+    expect(chip.className).toContain("truncate");
   });
 
   it("exposes no button role when onOpen is omitted", () => {

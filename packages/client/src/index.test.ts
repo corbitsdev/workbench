@@ -4,7 +4,12 @@
 // and error propagation behavior so a backwards-incompatible change fails loudly.
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import "./test-setup";
-import { listArtifacts, listWorkflows } from "./index";
+import {
+  createArtifact,
+  listArtifacts,
+  listWorkflows,
+  uploadArtifacts,
+} from "./index";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -46,6 +51,108 @@ describe("@workbench/client request construction", () => {
     expect(spy.mock.calls[0]?.[0]).toBe(
       "http://localhost:4000/api/v1/artifacts",
     );
+  });
+
+  it("POSTs a create-artifact body and returns the parsed artifact", async () => {
+    const responseArtifact = {
+      id: "art-9",
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: "link",
+      title: "Docs",
+      content: "https://example.com",
+      status: "draft",
+      version: 1,
+      ownerPrincipalId: "prn-1",
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+      source: { origin: "imported", url: "https://example.com" },
+    };
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: responseArtifact }, 201)),
+    );
+
+    const result = await createArtifact(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { mode: "url", title: "Docs", content: "https://example.com" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts",
+    );
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
+      mode: "url",
+      title: "Docs",
+      content: "https://example.com",
+    });
+    expect(result.id).toBe("art-9");
+    expect(result.source?.origin).toBe("imported");
+  });
+
+  it("throws when the create-artifact response is malformed", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: { id: 42 } }, 201)),
+    );
+    await expect(
+      createArtifact(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { mode: "text", title: "T", content: "C" },
+      ),
+    ).rejects.toThrow("Invalid POST /artifacts response");
+  });
+
+  it("uploads files as multipart/form-data and returns the parsed artifacts", async () => {
+    const responseArtifact = {
+      id: "art-up",
+      sessionId: null,
+      parentId: null,
+      painPointId: null,
+      kind: "file",
+      title: "notes.txt",
+      content: "upl-1",
+      status: "draft",
+      version: 1,
+      ownerPrincipalId: "prn-1",
+      createdAt: "2026-06-26T00:00:00.000Z",
+      updatedAt: "2026-06-26T00:00:00.000Z",
+      source: { origin: "imported" },
+    };
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifacts: [responseArtifact] }, 201)),
+    );
+
+    const file = new File([new Uint8Array(3)], "notes.txt", {
+      type: "text/plain",
+    });
+    const result = await uploadArtifacts(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { tenantId: "tn-1", files: [file] },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts/upload?tenantId=tn-1",
+    );
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    const sentBody = spy.mock.calls[0]?.[1]?.body;
+    expect(sentBody).toBeInstanceOf(FormData);
+    expect((sentBody as FormData).getAll("files")).toHaveLength(1);
+    expect(result[0]?.id).toBe("art-up");
+    expect(result[0]?.source?.origin).toBe("imported");
+  });
+
+  it("throws when the upload response is malformed", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifacts: [{ id: 7 }] }, 201)),
+    );
+    const file = new File([new Uint8Array(1)], "x.txt", { type: "text/plain" });
+    await expect(
+      uploadArtifacts(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { files: [file] },
+      ),
+    ).rejects.toThrow("Invalid POST /artifacts/upload response");
   });
 
   it("issues a GET with credentials included by default", async () => {

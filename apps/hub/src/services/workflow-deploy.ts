@@ -42,6 +42,8 @@ import {
 } from "@intx/hub-sessions";
 import {
   assembleWorkflowDeployConfig,
+  collectDeclaredStepModels,
+  collectDeclaredStepModelMaxTokens,
   resolveWorkflowDeploySource,
 } from "./workflow-deploy-config";
 
@@ -350,6 +352,8 @@ async function reestablishSupervisor(deps: {
   const sources = await resolveWorkflowDeploySource({
     db: deps.db,
     tenantId: args.tenantId,
+    extraModels: collectDeclaredStepModels(definition),
+    modelMaxTokens: collectDeclaredStepModelMaxTokens(definition),
   });
 
   // Revive the supervisor's agent + instance rows before re-sending the deploy
@@ -404,13 +408,36 @@ async function reestablishSupervisor(deps: {
 // (definition + per-step inference sources). Pure function of its inputs so the
 // address/config/sources derivation is unit-testable without a sidecar.
 //
-// Every native workflow step pins the tenant catalog chain head today (see
-// resolveWorkflowDeploySource — the orchestrator's pickStepInferenceSource
-// resolves the same defaultSource for steps that declare no preference). The
-// per-step `sources` map therefore assigns the chain head to every step id.
-// Runtime cross-source failover is not wired in the workflow path (the
-// orchestrator pins one source per step into STEP_INFERENCE_SOURCES); when that
-// lands upstream this gains the full per-step resolution.
+// A step that declares no model preference pins the tenant catalog chain head;
+// a `step` primitive whose agent declares a preferred (provider, model) pins the
+// matching resolved source (see pickFrameStepSource — it mirrors the deploy
+// orchestrator's pickStepInferenceSource so the fresh-deploy and re-drive paths
+// agree). Runtime cross-source failover is still not wired in the workflow path
+// (one source is pinned per step into STEP_INFERENCE_SOURCES); when that lands
+// upstream this gains the full per-step routing chain.
+// Mirror the deploy orchestrator's `pickStepInferenceSource` for the re-drive
+// frame: a `step` primitive whose agent declares a preferred (provider, model)
+// inference source pins the matching entry from the resolved source set; every
+// other step — and any non-agent primitive (gate, sleep, awaitSignal, …) — falls
+// back to the chain head. This keeps a re-established supervisor's per-step model
+// assignment identical to the original deploy (so e.g. a writer step stays on its
+// heavier model across an eviction/re-establish).
+function pickFrameStepSource(
+  primitive: WorkflowPrimitive | undefined,
+  sources: InferenceSource[],
+  head: InferenceSource,
+): InferenceSource {
+  if (primitive === undefined || primitive.kind !== "step") return head;
+  // Defensive read: the primitive is reconstructed from persisted JSON, so guard
+  // against a step that carries no agent/source rather than the typed shape.
+  const preferred = primitive.agent?.inference?.sources?.[0];
+  if (preferred === undefined) return head;
+  const match = sources.find(
+    (s) => s.provider === preferred.provider && s.model === preferred.model,
+  );
+  return match ?? head;
+}
+
 export function buildSupervisorDeployFrame(args: {
   deploymentId: string;
   deploymentDomain: string;
@@ -454,7 +481,11 @@ export function buildSupervisorDeployFrame(args: {
   }
   const sources: Record<string, InferenceSource> = {};
   for (const stepId of args.definition.stepOrder) {
-    sources[stepId] = head;
+    sources[stepId] = pickFrameStepSource(
+      args.definition.steps[stepId],
+      args.sources,
+      head,
+    );
   }
   return {
     address,

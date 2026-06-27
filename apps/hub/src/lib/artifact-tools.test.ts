@@ -226,6 +226,7 @@ describe("artifact_link_file handler", () => {
     expect(inserted?.status).toBe("draft");
     expect(inserted?.version).toBe(1);
     expect(inserted?.source).toEqual({
+      origin: "agent",
       type: "posix_file",
       path: "notes/doc.md",
       agentId: "agt_1",
@@ -306,6 +307,7 @@ describe("artifact_create handler", () => {
     });
     expect(artifactInsertValues[0]?.content).toBe("Hello world");
     expect(artifactInsertValues[0]?.source).toEqual({
+      origin: "agent",
       type: "inline",
       agentId: "agt_1",
       sessionId: "ses_1",

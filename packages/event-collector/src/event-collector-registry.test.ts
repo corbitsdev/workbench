@@ -258,4 +258,35 @@ describe("createEventCollectorRegistry (serialized dispatch)", () => {
       "step-finish",
     ]);
   });
+
+  test("onTurnFinalized receives a structurally correct TurnFinalized after connector.reply", async () => {
+    const fake = createFakeDb({ turnInsertDelayMs: 5 });
+    const received: unknown[] = [];
+    const registry = createEventCollectorRegistry({
+      db: fake.db,
+      onTurnFinalized: (_addr, turn) => {
+        received.push(turn);
+      },
+    });
+    registry.create(ADDR, "tnt_1", "ses_1", "ins_1");
+
+    registry.dispatch(ADDR, startEvent(1));
+    registry.dispatch(ADDR, doneEvent(2));
+    registry.dispatch(
+      ADDR,
+      event("connector.reply", 3, { content: "hello", checkpointHash: "abc" }),
+    );
+
+    await until(() => received.length >= 1);
+
+    const turn = received[0] as Record<string, unknown>;
+    expect(typeof turn["turnId"]).toBe("string");
+    expect(turn["status"]).toBe("completed");
+    expect(turn["text"]).toBe("hello");
+    expect(turn["hadReply"]).toBe(true);
+    expect(turn["hadError"]).toBe(false);
+    expect(Array.isArray(turn["errors"])).toBe(true);
+    expect(Array.isArray(turn["toolCalls"])).toBe(true);
+    expect(Array.isArray(turn["toolErrors"])).toBe(true);
+  });
 });

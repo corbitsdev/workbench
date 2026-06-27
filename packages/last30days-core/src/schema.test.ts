@@ -4,6 +4,7 @@ import {
   BestTake,
   BriefCluster,
   Citation,
+  coerceCuration,
   Engagement,
   Report,
   ReportStats,
@@ -11,6 +12,53 @@ import {
   SourceLabel,
   TopComment,
 } from "./schema";
+
+describe("coerceCuration (CL-2503)", () => {
+  test("salvages valid themes and drops only the malformed quote", () => {
+    const result = coerceCuration({
+      themes: [
+        { title: "Launch wave", itemUrls: ["https://a.com"] },
+        { title: "missing itemUrls" },
+      ],
+      quotes: [
+        {
+          quote: "good take",
+          source: "reddit",
+          engagement: 81,
+          url: "https://a.com",
+        },
+        { quote: "no url", source: "reddit", engagement: 5 },
+      ],
+    });
+    if (result === null) throw new Error("expected a curation");
+    expect(result.themes.map((t) => t.title)).toEqual(["Launch wave"]);
+    expect(result.quotes).toHaveLength(1);
+    expect(result.quotes[0]?.quote).toBe("good take");
+  });
+
+  test("coerces a numeric-string engagement so a stringly-typed quote survives", () => {
+    const result = coerceCuration({
+      themes: [{ title: "t", itemUrls: ["https://a.com"] }],
+      quotes: [
+        {
+          quote: "q",
+          source: "x",
+          engagement: "1,200",
+          url: "https://a.com",
+        },
+      ],
+    });
+    if (result === null) throw new Error("expected a curation");
+    expect(result.quotes[0]?.engagement).toBe(1200);
+  });
+
+  test("returns null when no usable theme survives (caller falls back)", () => {
+    expect(coerceCuration({ themes: [{ title: "no urls" }], quotes: [] })).toBe(
+      null,
+    );
+    expect(coerceCuration("not an object")).toBe(null);
+  });
+});
 
 const baseStats = {
   sourceCount: 1,

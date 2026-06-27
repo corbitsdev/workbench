@@ -278,6 +278,7 @@ export function deployWorkflowHandler(
           tenantId: targetTenantId,
           principalId: owner.id,
           deploymentDomain: deps.deploymentDomain,
+          definition: definition as WorkflowDefinition,
         });
 
       const result = await deps.workflowDeployService.deployWorkflow({

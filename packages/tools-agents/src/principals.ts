@@ -1,23 +1,26 @@
+import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import type { ToolDefinition } from "@intx/types/runtime";
 import { and, desc, eq } from "drizzle-orm";
 
-const PRINCIPAL_KINDS = ["user", "agent"] as const;
-type PrincipalKind = (typeof PRINCIPAL_KINDS)[number];
+const PrincipalKindSchema = type("'user' | 'agent'");
+type PrincipalKind = typeof PrincipalKindSchema.infer;
 
-const PRINCIPAL_STATUSES = [
+const PrincipalStatusSchema = type(
+  "'active' | 'suspended' | 'invited' | 'deactivated'",
+);
+type PrincipalStatus = typeof PrincipalStatusSchema.infer;
+
+const ALL_STATUSES = "all";
+const STATUS_VALUES = [
   "active",
   "suspended",
   "invited",
   "deactivated",
+  ALL_STATUSES,
 ] as const;
-type PrincipalStatus = (typeof PRINCIPAL_STATUSES)[number];
-
-const DEFAULT_STATUS: PrincipalStatus = "active";
-const ALL_STATUSES = "all";
-const STATUS_VALUES = [...PRINCIPAL_STATUSES, ALL_STATUSES] as const;
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
@@ -49,6 +52,8 @@ export const LIST_PRINCIPALS_DEFINITION: ToolDefinition = {
   },
 };
 
+// DI/trusted shape: carries a function-typed DB handle — not JSON-expressible,
+// left as plain type intentionally.
 export type ListPrincipalsContext = {
   db: DB["db"];
   tenantId: string;
@@ -61,24 +66,26 @@ export function resolvePrincipalKind(
   if (typeof value !== "string") {
     throw new Error("kind must be a string");
   }
-  if (!PRINCIPAL_KINDS.includes(value as PrincipalKind)) {
-    throw new Error(`kind must be one of: ${PRINCIPAL_KINDS.join(", ")}`);
+  const parsed = PrincipalKindSchema(value);
+  if (parsed instanceof type.errors) {
+    throw new Error(`kind must be one of: ${PrincipalKindSchema.expression}`);
   }
-  return value as PrincipalKind;
+  return parsed;
 }
 
 export function resolvePrincipalStatusFilter(
   value: unknown,
 ): PrincipalStatus | undefined {
-  if (value === undefined) return DEFAULT_STATUS;
+  if (value === undefined) return "active";
   if (typeof value !== "string") {
     throw new Error("status must be a string");
   }
   if (value === ALL_STATUSES) return undefined;
-  if (!PRINCIPAL_STATUSES.includes(value as PrincipalStatus)) {
+  const parsed = PrincipalStatusSchema(value);
+  if (parsed instanceof type.errors) {
     throw new Error(`status must be one of: ${STATUS_VALUES.join(", ")}`);
   }
-  return value as PrincipalStatus;
+  return parsed;
 }
 
 function parseLimit(value: unknown): number {

@@ -14,7 +14,7 @@ The broader workbench pattern is source-to-artifact: users bring source material
 
 Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant. Each user receives their own Myra instance (provisioned automatically on join) within the shared global org tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
 
-**Multi-thread chat.** Myra is the default, chat-first experience: the app opens directly into a conversation. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, memory, and history), not a saved transcript. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
+**Multi-thread chat.** Myra is the default, chat-first experience: the app opens directly into a conversation. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, and history), not a saved transcript. Myra's durable **memory is shared across all of a user's threads**, not per-thread: what she learns in one chat (the standing brief on the person, durable facts, contacts) is available in the others. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
 
 ### Oat — Workspace Granola Agent
 
@@ -28,6 +28,15 @@ Workflows are deployed pipelines that run on Interchange's native workflow runti
 2. **User starts a workflow run** — e.g. Collateral Generation against selected call documents.
 3. **The run console shows progress** — each step's status streams in live; at a review gate the user approves (or rejects) before the run continues.
 4. **Outputs are artifacts** — results are stored as artifact rows and can be reviewed, refined, re-used as inputs, or exported.
+
+## Command Palette
+
+A global command palette gives keyboard-first navigation across the workbench. Pressing **Cmd+K** (Ctrl+K on Windows/Linux) from anywhere opens a centered search overlay; Escape closes it and returns focus to wherever the user was. Typing fuzzy-matches two kinds of results, grouped by category:
+
+- **Go to** — jump to any top-level area (Chats, Artifacts, Workflows, Skills, Tools, Insights, Settings)
+- **Entities** — conversations, agents, workflows, artifacts, skills, and tools in the active workbench
+
+Selecting a result navigates straight to it. Navigation commands are matched on the client; entity results come from a server-side search scoped to the active workbench, so the palette only ever surfaces what the user is allowed to see. Each entity type contributes its top few matches, with a "Load more" control to pull the next batch.
 
 ## Workflows Currently Shipped
 

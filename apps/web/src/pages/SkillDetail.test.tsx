@@ -172,6 +172,70 @@ describe("SkillDetail", () => {
     );
   });
 
+  it("renders the title once and drops the raw-slug subtitle (CL-2428)", async () => {
+    renderPage();
+    const titleNodes = await waitFor(() => {
+      const matches = Array.from(document.querySelectorAll("p")).filter(
+        (p) => p.textContent?.trim() === "ASAP",
+      );
+      expect(matches.length).toBeGreaterThan(0);
+      return matches;
+    });
+    // Exactly one title element renders the display name.
+    expect(titleNodes).toHaveLength(1);
+    // The duplicate header line that rendered the raw lowercase slug is gone.
+    const slugSubtitle = Array.from(document.querySelectorAll("p")).find(
+      (p) => p.textContent?.trim() === "asap",
+    );
+    expect(slugSubtitle).toBeUndefined();
+  });
+
+  it("hides the file tree pane for a single-file skill (CL-2426)", async () => {
+    renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    expect(document.querySelector(".w-56")).toBeNull();
+  });
+
+  it("shows the file tree pane when the skill has multiple files (CL-2426)", async () => {
+    globalThis.fetch = mock((url: string) => {
+      if (String(url).includes("/skills/skill-1/versions")) {
+        return Promise.resolve(jsonResponse({ versions: [], total: 0 }));
+      }
+      if (String(url).includes("/skills/skill-1")) {
+        return Promise.resolve(
+          jsonResponse({
+            skill,
+            files: [
+              { path: "SKILL.md", content: "# ASAP" },
+              { path: "scripts/run.ts", content: "export const x = 1;" },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    }) as unknown as typeof fetch;
+
+    renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    const treePane = document.querySelector(".w-56");
+    expect(treePane).not.toBeNull();
+    expect(treePane?.textContent).toContain("run.ts");
+  });
+
+  it("orders file content above versioning and delete actions (CL-2429)", async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Version history"),
+    );
+    const body = document.body.textContent ?? "";
+    const fileIdx = body.indexOf("SKILL.md");
+    const versionIdx = body.indexOf("Version history");
+    const deleteIdx = body.indexOf("Permanently delete this skill");
+    expect(fileIdx).toBeGreaterThanOrEqual(0);
+    expect(versionIdx).toBeGreaterThan(fileIdx);
+    expect(deleteIdx).toBeGreaterThan(versionIdx);
+  });
+
   it("restores a non-latest version via the restore endpoint", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -191,5 +255,44 @@ describe("SkillDetail", () => {
     });
     const restoreCall = calls.find((c) => c.url.includes("/restore"));
     expect(restoreCall?.json).toMatchObject({ sha: "sha-1" });
+  });
+
+  it("styles the selected file tree row to match the primary nav selection", async () => {
+    // The tree pane only renders for multi-file skills (CL-2426), so the
+    // selection-style assertion needs a multi-file fixture.
+    globalThis.fetch = mock((url: string) => {
+      if (String(url).includes("/skills/skill-1/versions")) {
+        return Promise.resolve(jsonResponse({ versions: [], total: 0 }));
+      }
+      if (String(url).includes("/skills/skill-1")) {
+        return Promise.resolve(
+          jsonResponse({
+            skill,
+            files: [
+              { path: "SKILL.md", content: "# ASAP" },
+              { path: "scripts/run.ts", content: "export const x = 1;" },
+            ],
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    }) as unknown as typeof fetch;
+
+    renderPage();
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+
+    const treePane = document.querySelector(".w-56");
+    const fileRow = [...(treePane?.querySelectorAll("button") ?? [])].find(
+      (b) => b.textContent?.trim() === "SKILL.md",
+    ) as HTMLButtonElement;
+
+    // Source of truth is the AppSidebar nav item: rounded-[10px] +
+    // bg-orange/10 font-medium text-orange. The tree row must not regress to
+    // the old 4px `rounded`.
+    expect(fileRow.className).toContain("rounded-[10px]");
+    expect(fileRow.className).toContain("bg-orange/10");
+    expect(fileRow.className).toContain("font-medium");
+    expect(fileRow.className).toContain("text-orange");
+    expect(fileRow.className).not.toMatch(/\brounded\b(?!-)/);
   });
 });

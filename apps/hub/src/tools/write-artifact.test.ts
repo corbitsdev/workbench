@@ -20,6 +20,7 @@ type InsertedArtifact = {
   content: string;
   status: string;
   source: {
+    origin: string;
     citations: unknown[];
     brief?: Record<string, unknown>;
     jobLabel?: string;
@@ -161,6 +162,9 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
     expect(noLabel[0]?.source.jobLabel).toBeUndefined();
+    // Provenance is required at the creation path (CL-2432).
+    expect(withLabel[0]?.source.origin).toBe("workflow");
+    expect(noLabel[0]?.source.origin).toBe("workflow");
   });
 
   it("round-trip: handler returns artifactId and version, matching inserted content", async () => {

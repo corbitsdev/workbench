@@ -148,12 +148,20 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   artifact_link_file: "Linking a file",
   artifact_link_presentation: "Linking a presentation",
 
+  // Memory — durable per-user store (CL-2413)
+  memory_load: "Recalling memory",
+  memory_save: "Updating memory",
+
   // Dispatch — delegating to other agents
   dispatch_agent: "Delegating to another agent",
 
   // Agents directory
   list_agents: "Listing available agents",
   list_principals: "Listing workspace members",
+
+  // Per-tool account identity (CL-2420)
+  identity_get: "Looking up account identity",
+  identity_set: "Saving account identity",
 
   // last30days research
   last30days_core_extract: "Extracting research findings",

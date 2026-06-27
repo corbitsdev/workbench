@@ -5,6 +5,7 @@
 // `@workbench/shared` domain types and contain no presentation logic.
 
 import { type } from "arktype";
+import { Artifact } from "@workbench/shared";
 import type {
   ArtifactStatus,
   ArtifactWithSession,
@@ -94,6 +95,10 @@ export interface ListArtifactsParams {
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
+  /** Date-only `yyyy-mm-dd` or ISO timestamp; only artifacts created at/after this are returned. */
+  createdAfter?: string;
+  /** Date-only `yyyy-mm-dd` upper bound (inclusive end-of-day) or ISO timestamp. */
+  createdBefore?: string;
   cursor?: string;
   limit?: number;
 }
@@ -101,6 +106,24 @@ export interface ListArtifactsParams {
 export interface ArtifactsPage {
   artifacts: ArtifactWithSession[];
   nextCursor: string | null;
+}
+
+export interface CreateArtifactParams {
+  tenantId?: string | null;
+  /** `url` links an external page (content is the URL); `text` stores a pasted body. */
+  mode: "url" | "text";
+  title: string;
+  content: string;
+  kind?: string;
+  generatedBy?: string;
+}
+
+export interface UploadArtifactsParams {
+  tenantId?: string | null;
+  /** Files to import; one artifact is created per file. */
+  files: File[];
+  /** Optional attribution label stamped on every created artifact. */
+  generatedBy?: string;
 }
 
 const WorkflowRunRowSchema = type({
@@ -305,8 +328,83 @@ export function listArtifacts(
   if (params.status) qs.set("status", params.status);
   if (params.ownerPrincipalId)
     qs.set("ownerPrincipalId", params.ownerPrincipalId);
+  if (params.createdAfter) qs.set("createdAfter", params.createdAfter);
+  if (params.createdBefore) qs.set("createdBefore", params.createdBefore);
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : "";
   return request<ArtifactsPage>(`artifacts${search}`, options);
+}
+
+const CreateArtifactResponseSchema = type({ artifact: Artifact });
+
+/**
+ * Create an artifact from an external source (`POST /artifacts`). Used by the
+ * gallery's "Add from source" flow to link a URL or store pasted text. The hub
+ * stamps the required provenance origin (`imported` / `manual`).
+ */
+export async function createArtifact(
+  options: ClientOptions = {},
+  params: CreateArtifactParams,
+): Promise<Artifact> {
+  const qs = params.tenantId
+    ? `?tenantId=${encodeURIComponent(params.tenantId)}`
+    : "";
+  const raw = await request<unknown>(`artifacts${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: "POST",
+      body: JSON.stringify({
+        mode: params.mode,
+        title: params.title,
+        content: params.content,
+        ...(params.kind ? { kind: params.kind } : {}),
+        ...(params.generatedBy ? { generatedBy: params.generatedBy } : {}),
+      }),
+      headers: { "Content-Type": "application/json", ...options.init?.headers },
+    },
+  });
+  const parsed = CreateArtifactResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid POST /artifacts response: ${parsed.summary}`);
+  }
+  return parsed.artifact;
+}
+
+const UploadArtifactsResponseSchema = type({ artifacts: Artifact.array() });
+
+/**
+ * Import one or more files as artifacts (`POST /artifacts/upload`). Sends
+ * multipart/form-data (browser `FormData`); the hub persists each file's binary
+ * and stamps an `imported` origin. Returns one artifact per uploaded file.
+ */
+export async function uploadArtifacts(
+  options: ClientOptions = {},
+  params: UploadArtifactsParams,
+): Promise<Artifact[]> {
+  const qs = params.tenantId
+    ? `?tenantId=${encodeURIComponent(params.tenantId)}`
+    : "";
+  const form = new FormData();
+  for (const file of params.files) {
+    form.append("files", file, file.name);
+  }
+  if (params.generatedBy) form.append("generatedBy", params.generatedBy);
+
+  const raw = await request<unknown>(`artifacts/upload${qs}`, {
+    ...options,
+    init: {
+      ...options.init,
+      method: "POST",
+      body: form,
+    },
+  });
+  const parsed = UploadArtifactsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid POST /artifacts/upload response: ${parsed.summary}`,
+    );
+  }
+  return parsed.artifacts;
 }

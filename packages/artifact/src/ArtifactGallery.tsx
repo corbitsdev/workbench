@@ -4,9 +4,24 @@
 // kept out of the transport layer). This renders the grid and header only.
 
 import { useState } from "react";
+import { ChevronDown } from "lucide-react";
+import {
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuTrigger,
+  DataTable,
+  ViewToggle,
+  type DataTableColumn,
+  type ViewMode,
+} from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import type { GalleryArtifact } from "./types";
-import { toGalleryArtifact } from "./artifact-visuals";
+import {
+  labelForStatus,
+  toGalleryArtifact,
+  visualForKind,
+} from "./artifact-visuals";
 import { ArtifactCard } from "./ArtifactCard";
 
 export interface ArtifactGalleryProps {
@@ -34,7 +49,61 @@ export interface ArtifactGalleryProps {
   onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
   /** Tenant members for the owner filter. Dropdown shows only when two or more are provided. */
   owners?: { id: string; name: string }[];
+  /** ISO date (yyyy-mm-dd) lower bound on creation; undefined means no bound. */
+  createdAfter?: string;
+  /** ISO date (yyyy-mm-dd) upper bound on creation; undefined means no bound. */
+  createdBefore?: string;
+  /** `source.origin` provenance facet; undefined means all origins. */
+  origin?: string;
+  /** Called when any advanced filter (date range / origin) changes. */
+  onAdvancedFilterChange?: (next: AdvancedArtifactFilter) => void;
+  /** Current layout. When omitted, defaults to the grid. */
+  viewMode?: ViewMode;
+  /** Called when the user toggles between grid and rows. When omitted, the toggle is hidden. */
+  onViewModeChange?: (mode: ViewMode) => void;
 }
+
+/** Date-range + provenance facet selection driven by the gallery filter bar. */
+export interface AdvancedArtifactFilter {
+  createdAfter?: string | undefined;
+  createdBefore?: string | undefined;
+  origin?: string | undefined;
+}
+
+function formatUpdated(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString();
+}
+
+const artifactRowColumns: DataTableColumn<ArtifactWithSession>[] = [
+  {
+    key: "title",
+    header: "Name",
+    className: "font-medium text-text",
+    render: (a) => a.title,
+  },
+  {
+    key: "kind",
+    header: "Kind",
+    render: (a) => visualForKind(a.kind).label,
+  },
+  {
+    key: "owner",
+    header: "Owner",
+    render: (a) => a.ownerName ?? "—",
+  },
+  {
+    key: "status",
+    header: "Status",
+    render: (a) => labelForStatus(a.status),
+  },
+  {
+    key: "updated",
+    header: "Updated",
+    render: (a) => formatUpdated(a.updatedAt),
+  },
+];
 
 export function ArtifactGallery({
   artifacts,
@@ -50,11 +119,28 @@ export function ArtifactGallery({
   ownerPrincipalId,
   onOwnerFilterChange,
   owners,
+  createdAfter,
+  createdBefore,
+  onAdvancedFilterChange,
+  viewMode = "grid",
+  onViewModeChange,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
   );
   const sort = sortProp ?? internalSort;
+
+  const hasActiveAdvancedFilter =
+    Boolean(createdAfter) || Boolean(createdBefore);
+  const [filtersOpen, setFiltersOpen] = useState(hasActiveAdvancedFilter);
+
+  function emitAdvanced(patch: AdvancedArtifactFilter) {
+    onAdvancedFilterChange?.({
+      createdAfter,
+      createdBefore,
+      ...patch,
+    });
+  }
 
   function handleSortToggle() {
     const next = sort === "newest" ? "oldest" : "newest";
@@ -69,7 +155,7 @@ export function ArtifactGallery({
   const isSearching = query.trim().length > 0;
 
   return (
-    <section className="flex min-h-full flex-col rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+    <section className="flex min-h-full flex-col">
       <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
         {onOpenLibrary && (
           <button
@@ -97,22 +183,23 @@ export function ArtifactGallery({
         </span>
         <div className="flex-1" />
         {owners && owners.length > 1 && onOwnerFilterChange && (
-          <select
-            value={ownerPrincipalId ?? ""}
-            onChange={(e) =>
-              onOwnerFilterChange(
-                e.target.value === "" ? undefined : e.target.value,
-              )
-            }
-            className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
-          >
-            <option value="">All owners</option>
-            {owners.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+          <Menu>
+            <MenuTrigger className="flex h-[34px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {owners.find((o) => o.id === ownerPrincipalId)?.name ??
+                "All owners"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onOwnerFilterChange(undefined)}>
+                All owners
+              </MenuItem>
+              {owners.map((o) => (
+                <MenuItem key={o.id} onSelect={() => onOwnerFilterChange(o.id)}>
+                  {o.name}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
         )}
         <input
           type="search"
@@ -140,6 +227,35 @@ export function ArtifactGallery({
           </svg>
           {sort === "newest" ? "Newest" : "Oldest"}
         </button>
+        {onAdvancedFilterChange && (
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((v) => !v)}
+            aria-expanded={filtersOpen}
+            aria-label="Toggle filters"
+            className={`flex items-center gap-[7px] rounded-[9px] border px-[13px] py-[7px] text-[12.5px] font-semibold transition-colors hover:border-border-strong hover:bg-[var(--row-hover)] ${
+              hasActiveAdvancedFilter
+                ? "border-border-strong text-text"
+                : "border-border text-text-2"
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M3 5h18l-7 8v6l-4-2v-4z" />
+            </svg>
+            Filters
+          </button>
+        )}
+        {onViewModeChange && (
+          <ViewToggle mode={viewMode} onChange={onViewModeChange} />
+        )}
         <button
           type="button"
           onClick={onNew}
@@ -154,9 +270,50 @@ export function ArtifactGallery({
           >
             <path d="M12 5v14M5 12h14" />
           </svg>
-          New
+          Add
         </button>
       </div>
+
+      {onAdvancedFilterChange && filtersOpen && (
+        <div className="flex flex-wrap items-end gap-[14px] border-t border-border px-4 py-[14px] sm:px-7">
+          <label className="flex flex-col gap-[5px] text-[11.5px] font-semibold text-text-3">
+            From
+            <input
+              type="date"
+              value={createdAfter ?? ""}
+              onChange={(e) =>
+                emitAdvanced({ createdAfter: e.target.value || undefined })
+              }
+              className="h-[32px] rounded-[9px] border border-border bg-transparent px-[10px] text-[12.5px] text-text [color-scheme:var(--color-scheme)] focus:border-border-strong focus:outline-none"
+            />
+          </label>
+          <label className="flex flex-col gap-[5px] text-[11.5px] font-semibold text-text-3">
+            To
+            <input
+              type="date"
+              value={createdBefore ?? ""}
+              onChange={(e) =>
+                emitAdvanced({ createdBefore: e.target.value || undefined })
+              }
+              className="h-[32px] rounded-[9px] border border-border bg-transparent px-[10px] text-[12.5px] text-text [color-scheme:var(--color-scheme)] focus:border-border-strong focus:outline-none"
+            />
+          </label>
+          {hasActiveAdvancedFilter && (
+            <button
+              type="button"
+              onClick={() =>
+                emitAdvanced({
+                  createdAfter: undefined,
+                  createdBefore: undefined,
+                })
+              }
+              className="h-[32px] rounded-[9px] border border-border px-[13px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)]"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7 [container-type:inline-size]">
         {isLoading && (
@@ -179,16 +336,28 @@ export function ArtifactGallery({
             No results for &ldquo;{query.trim()}&rdquo;.
           </div>
         )}
-        <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
-          {tiles.map((tile, i) => (
-            <ArtifactCard
-              key={tile.id}
-              artifact={tile}
-              index={i + 1}
-              {...(onOpen ? { onOpen } : {})}
-            />
-          ))}
-        </div>
+        {viewMode === "rows" ? (
+          <DataTable<ArtifactWithSession>
+            caption="Artifacts"
+            rows={artifacts}
+            getRowKey={(a) => a.id}
+            {...(onOpen
+              ? { onRowClick: (a) => onOpen(toGalleryArtifact(a)) }
+              : {})}
+            columns={artifactRowColumns}
+          />
+        ) : (
+          <div className="grid auto-rows-[88px] grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-[var(--gap)] sm:grid-cols-[repeat(auto-fill,minmax(190px,1fr))]">
+            {tiles.map((tile, i) => (
+              <ArtifactCard
+                key={tile.id}
+                artifact={tile}
+                index={i + 1}
+                {...(onOpen ? { onOpen } : {})}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

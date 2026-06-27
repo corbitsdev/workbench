@@ -30,6 +30,10 @@ export interface BuiltToolPackage {
 // package means appending here, declaring `interchange.tools` in the
 // package, and pinning it on whichever agent definition wants it.
 export const TOOL_PACKAGES: ToolPackageSpec[] = [
+  {
+    name: "@workbench/tools-ab-compare",
+    packageDir: "packages/tools-ab-compare",
+  },
   { name: "@workbench/tools-artifact", packageDir: "packages/tools-artifact" },
   { name: "@workbench/tools-agents", packageDir: "packages/tools-agents" },
   { name: "@workbench/tools-skills", packageDir: "packages/tools-skills" },

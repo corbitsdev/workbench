@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildReport } from "./report";
-import type { ResearchItem } from "./schema";
+import { buildReport, buildReportFromCuration } from "./report";
+import type { Curation, ResearchItem } from "./schema";
 
 const NOW_ISO = "2026-06-11T12:00:00Z";
 
@@ -310,5 +310,213 @@ describe("buildReport", () => {
     });
     expect(report.stats.itemCount).toBe(0);
     expect(report.stats.dateRange).toBeUndefined();
+  });
+});
+
+describe("buildReport relevance floor (minRelevance)", () => {
+  test("drops clusters below the floor and keeps grounded ones", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://on.com", title: "TypeScript 6 release notes" }),
+      makeItem({
+        url: "https://off.com",
+        title: "A weekend cooking recipe",
+        source: "reddit",
+      }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    const urls = report.items.map((i) => i.url);
+    expect(urls).toContain("https://on.com");
+    expect(urls).not.toContain("https://off.com");
+  });
+
+  test("shrinks the brief to empty when nothing clears the floor", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://x.com", title: "Totally unrelated chatter" }),
+    ];
+    const report = buildReport(items, {
+      topic: "neobank launches",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    expect(report.items).toHaveLength(0);
+    expect(report.clusters).toHaveLength(0);
+  });
+
+  test("an explicit LLM relevance below the floor is cut even when popular", () => {
+    const items: ResearchItem[] = [
+      // Distinct titles so the two land in separate clusters (jaccard < 0.8) and
+      // the floor judges each on its own relevance, not the merged max.
+      makeItem({
+        url: "https://viral.com",
+        title: "Redux selectors deep dive",
+        relevance: 10,
+        engagement: { upvotes: 9999, comments: 999 },
+      }),
+      makeItem({
+        url: "https://keep.com",
+        title: "GraphQL federation guide",
+        relevance: 80,
+      }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+      minRelevance: 40,
+    });
+    const urls = report.items.map((i) => i.url);
+    expect(urls).toContain("https://keep.com");
+    expect(urls).not.toContain("https://viral.com");
+  });
+
+  test("without minRelevance the floor is off — ungrounded items survive", () => {
+    const items: ResearchItem[] = [
+      makeItem({ url: "https://off.com", title: "A weekend cooking recipe" }),
+    ];
+    const report = buildReport(items, {
+      topic: "typescript",
+      days: 30,
+      topK: 10,
+      nowIso: NOW_ISO,
+    });
+    expect(report.items.map((i) => i.url)).toContain("https://off.com");
+  });
+});
+
+describe("buildReportFromCuration (CL-2503)", () => {
+  const items: ResearchItem[] = [
+    makeItem({ url: "https://a.com", title: "Coverd launches" }),
+    makeItem({
+      url: "https://b.com",
+      title: "Reddit reacts",
+      source: "reddit",
+    }),
+    makeItem({ url: "https://junk.com", title: "$TOKEN shill", source: "web" }),
+  ];
+
+  test("builds themes from item urls, drops un-themed items, and carries quotes", () => {
+    const curation: Curation = {
+      themes: [
+        {
+          title: "Coverd launch",
+          summary: "the launch and its reaction",
+          itemUrls: ["https://a.com", "https://b.com"],
+        },
+      ],
+      quotes: [
+        {
+          quote: "this is the way",
+          author: "u/mando",
+          source: "reddit",
+          engagement: 980,
+          url: "https://b.com",
+        },
+      ],
+    };
+    const report = buildReportFromCuration(items, curation, {
+      topic: "Neobank Launches",
+      days: 30,
+      nowIso: NOW_ISO,
+    });
+    if (report === null) throw new Error("expected a report");
+    expect(report.clusters).toHaveLength(1);
+    expect(report.clusters[0]?.summary).toBe("the launch and its reaction");
+    expect(report.clusters[0]?.sources.sort()).toEqual(["hn", "reddit"]);
+    // The un-themed junk url is excluded from items + citations.
+    expect(report.items.map((i) => i.url).sort()).toEqual([
+      "https://a.com",
+      "https://b.com",
+    ]);
+    expect(report.bestTakes[0]?.quote).toBe("this is the way");
+    expect(report.leadInsight).toBe("Coverd launch");
+  });
+
+  test("caps a one-theme-per-item dump to the strongest MAX_THEMES (6)", () => {
+    // The curate model over-emitted: ten single-item themes plus one real
+    // multi-item theme. The cap keeps the corroborated theme and at most 6 total.
+    const pool: ResearchItem[] = Array.from({ length: 12 }, (_, i) =>
+      makeItem({ url: `https://repo${i}.com`, title: `repo ${i}` }),
+    );
+    const themes = pool.map((item) => ({
+      title: `solo ${item.url}`,
+      itemUrls: [item.url],
+    }));
+    // A genuinely corroborated theme (3 items) must outrank the solo buckets.
+    themes.unshift({
+      title: "the real launch",
+      itemUrls: ["https://repo0.com", "https://repo1.com", "https://repo2.com"],
+    });
+    const report = buildReportFromCuration(
+      pool,
+      { themes, quotes: [] },
+      { topic: "x", days: 30, nowIso: NOW_ISO },
+    );
+    if (report === null) throw new Error("expected a report");
+    expect(report.clusters.length).toBeLessThanOrEqual(6);
+    expect(report.clusters[0]?.title).toBe("the real launch");
+  });
+
+  test("backfills community quotes from high-engagement posts when the model selects none", () => {
+    const pool: ResearchItem[] = [
+      makeItem({
+        url: "https://reddit.com/hot",
+        title: "This neobank is a scam, here is why",
+        source: "reddit",
+        author: "u/skeptic",
+        engagement: { upvotes: 240, comments: 90 },
+      }),
+      makeItem({
+        url: "https://web.com/launch",
+        title: "Bank X launches",
+        source: "web",
+      }),
+    ];
+    const report = buildReportFromCuration(
+      pool,
+      {
+        themes: [
+          {
+            title: "launch + reaction",
+            itemUrls: ["https://reddit.com/hot", "https://web.com/launch"],
+          },
+        ],
+        quotes: [],
+      },
+      { topic: "x", days: 30, nowIso: NOW_ISO },
+    );
+    if (report === null) throw new Error("expected a report");
+    // The high-vote Reddit post title becomes a community quote; the web headline
+    // (not a community source) does not.
+    expect(report.bestTakes.map((t) => t.url)).toEqual([
+      "https://reddit.com/hot",
+    ]);
+    expect(report.bestTakes[0]?.quote).toBe(
+      "This neobank is a scam, here is why",
+    );
+    expect(report.bestTakes[0]?.engagement).toBe(330);
+    expect(report.bestTakes[0]?.author).toBe("u/skeptic");
+  });
+
+  test("returns null when no theme resolves to a real item (caller falls back)", () => {
+    const curation: Curation = {
+      themes: [{ title: "ghost", itemUrls: ["https://missing.com"] }],
+      quotes: [],
+    };
+    expect(
+      buildReportFromCuration(items, curation, {
+        topic: "x",
+        days: 30,
+        nowIso: NOW_ISO,
+      }),
+    ).toBeNull();
   });
 });

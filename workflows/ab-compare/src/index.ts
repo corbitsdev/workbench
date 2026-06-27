@@ -1,5 +1,9 @@
 import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import {
+  deterministicToolStep,
+  inlineInferenceStep,
+  LLM_WRITER_MODEL,
+} from "@workbench/agents";
 import { AB_COMPARE_SYSTEM_PROMPT, AB_EXECUTE_SYSTEM_PROMPT } from "./prompts";
 
 // -------------------------------------------------------------------------
@@ -32,10 +36,14 @@ import { AB_COMPARE_SYSTEM_PROMPT, AB_EXECUTE_SYSTEM_PROMPT } from "./prompts";
 // per-step session. The deterministic `persist` step does the artifact write.
 // -------------------------------------------------------------------------
 
-export const label = "A/B Compare";
+export const label = "A/B Test - Agent Select";
 export const description =
-  "Run a shared prompt blind across multiple provider/model variants, rank the outputs, and save the comparison.";
+  "Run a shared prompt blind across multiple provider/model variants, let an impartial agent judge rank the outputs, and save the comparison.";
 export const kind = "ab-compare";
+
+// The persisted artifact's kind — distinct from the workflow id (`kind`). The
+// artifact renderer routes this kind to the shared ComparisonView.
+export const ARTIFACT_KIND = "ab-comparison";
 
 // One blind execution turn per variant. `map` passes each variant as
 // `trigger.payload` ({ label, providerName, model, systemPrompt?, skillIds?,
@@ -71,10 +79,16 @@ export const workflow = defineWorkflow({
 
     // 3. Blind-rank the collected variant outputs. Inline single-turn
     //    inference: no tools, returns strict JSON. Input is the map output (an
-    //    array of per-variant { reply } objects).
+    //    array of per-variant { reply } objects). The judge is the one
+    //    genuine-quality step in the workflow, so it runs on the heavier writer
+    //    model (kimi-k2.6) rather than the flash default — same tiering
+    //    last30days uses for its curate/write turns. Deploy resolves the writer
+    //    model optionally and falls back to LLM_DEFAULT_MODEL when a tenant
+    //    catalog does not carry it.
     compare: inlineInferenceStep({
       id: "blind-ab-compare",
       systemPrompt: AB_COMPARE_SYSTEM_PROMPT,
+      model: LLM_WRITER_MODEL,
       input: { from: "steps.execute.output" },
       after: ["execute"],
     }),
@@ -82,18 +96,30 @@ export const workflow = defineWorkflow({
     // 4. Human reviews the ranking and approves. Payload: { approved: true }.
     review: awaitSignal({ name: "comparison-review", after: ["compare"] }),
 
-    // 5. Save the comparison result. The compare agent's strict-JSON `reply`
-    //    becomes the artifact content.
+    // 5. Fold the variant configs (config), the variant outputs (execute), and
+    //    the agent judge's ranking (compare) into one structured comparison
+    //    payload — so the saved artifact carries the actual variant content side
+    //    by side, not just the ranking. Pure deterministic assembly over the
+    //    whole steps tree.
+    compose: deterministicToolStep({
+      id: "blind-ab-compose",
+      tool: "ab_comparison_compose",
+      input: { from: "steps" },
+      after: ["review"],
+    }),
+
+    // 6. Save the structured comparison as an `ab-comparison` artifact; its
+    //    JSON content is what the renderer parses through ComparisonView.
     persist: deterministicToolStep({
       id: "blind-ab-persist",
       tool: "artifact_create",
-      input: { from: "steps.compare.output" },
+      input: { from: "steps.compose.output" },
       argMap: {
-        content: { from: "reply" },
+        content: { from: "content" },
         title: { literal: "A/B Comparison Results" },
-        kind: { literal: "document" },
+        kind: { literal: ARTIFACT_KIND },
       },
-      after: ["review"],
+      after: ["compose"],
     }),
   },
 });

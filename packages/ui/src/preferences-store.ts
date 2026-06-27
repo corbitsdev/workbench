@@ -1,3 +1,4 @@
+import { type } from "arktype";
 import { useSyncExternalStore } from "react";
 
 /**
@@ -17,7 +18,40 @@ export const PREFERENCE_KEYS = {
   theme: "cw-theme",
   compactToolActivity: "cw-compact-tools",
   toolSummaryStyle: "cw-tool-summary-style",
+  archivedWorkflowRuns: "cw-archived-workflow-runs",
 } as const;
+
+// Parses the JSON-encoded string-array stored under a list-valued preference,
+// degrading a malformed/legacy blob to an empty list rather than throwing.
+export function parseStringList(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Library pages that support a Grid/Rows layout toggle. Each scope owns one
+ * persisted view-mode preference, keyed by scope so the three pages never
+ * collide. Adding a page is one entry here — the store, persister, and
+ * hydration all derive their keys from this list.
+ */
+export const VIEW_MODE_SCOPES = ["artifacts", "tools", "skills"] as const;
+export type ViewModeScope = (typeof VIEW_MODE_SCOPES)[number];
+
+/** localStorage / store key for a scope's view-mode preference. */
+export function viewModeStorageKey(scope: ViewModeScope): string {
+  return `cw-view-${scope}`;
+}
+
+/** Server-side preference key (rides the open MemberPreferences blob). */
+export function viewModeServerKey(scope: ViewModeScope): string {
+  return `${scope}ViewMode`;
+}
 
 type Persister = (key: string, value: string) => void;
 
@@ -99,25 +133,50 @@ export function hydratePreference(key: string, value: string): void {
   notify(key);
 }
 
-/** Server bootstrap shape — structurally the shared `MemberPreferences`. */
-export interface ServerPreferences {
-  theme?: unknown;
-  compactToolActivity?: unknown;
-  toolSummaryStyle?: unknown;
-}
+/**
+ * Server bootstrap shape — structurally the shared `MemberPreferences`. Open
+ * (`[string]`) so the per-scope `*ViewMode` keys ride along without one schema
+ * entry per page; they are read explicitly in {@link hydrateServerPreferences}.
+ */
+export const ServerPreferencesSchema = type({
+  "theme?": "string",
+  "compactToolActivity?": "boolean",
+  "toolSummaryStyle?": "string",
+  "archivedWorkflowRuns?": "string[]",
+  "[string]": "unknown",
+});
+
+export type ServerPreferences = typeof ServerPreferencesSchema.infer;
 
 /** Reconcile the server's persisted preferences into the store after bootstrap. */
-export function hydrateServerPreferences(prefs: ServerPreferences): void {
-  if (typeof prefs.theme === "string")
-    hydratePreference(PREFERENCE_KEYS.theme, prefs.theme);
-  if (typeof prefs.compactToolActivity === "boolean") {
+export function hydrateServerPreferences(prefs: unknown): void {
+  const parsed = ServerPreferencesSchema(prefs);
+  if (parsed instanceof type.errors) return;
+  if (parsed.theme !== undefined)
+    hydratePreference(PREFERENCE_KEYS.theme, parsed.theme);
+  if (parsed.compactToolActivity !== undefined) {
     hydratePreference(
       PREFERENCE_KEYS.compactToolActivity,
-      String(prefs.compactToolActivity),
+      String(parsed.compactToolActivity),
     );
   }
-  if (typeof prefs.toolSummaryStyle === "string") {
-    hydratePreference(PREFERENCE_KEYS.toolSummaryStyle, prefs.toolSummaryStyle);
+  if (parsed.toolSummaryStyle !== undefined) {
+    hydratePreference(
+      PREFERENCE_KEYS.toolSummaryStyle,
+      parsed.toolSummaryStyle,
+    );
+  }
+  if (parsed.archivedWorkflowRuns !== undefined) {
+    hydratePreference(
+      PREFERENCE_KEYS.archivedWorkflowRuns,
+      JSON.stringify(parsed.archivedWorkflowRuns),
+    );
+  }
+  for (const scope of VIEW_MODE_SCOPES) {
+    const value = parsed[viewModeServerKey(scope)];
+    if (typeof value === "string") {
+      hydratePreference(viewModeStorageKey(scope), value);
+    }
   }
 }
 
@@ -136,5 +195,11 @@ export function serverPatchForRawChange(
   }
   if (key === PREFERENCE_KEYS.toolSummaryStyle)
     return { toolSummaryStyle: value };
+  if (key === PREFERENCE_KEYS.archivedWorkflowRuns)
+    return { archivedWorkflowRuns: parseStringList(value) };
+  for (const scope of VIEW_MODE_SCOPES) {
+    if (key === viewModeStorageKey(scope))
+      return { [viewModeServerKey(scope)]: value };
+  }
   return null;
 }

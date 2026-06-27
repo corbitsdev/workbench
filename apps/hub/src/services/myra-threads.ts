@@ -685,10 +685,28 @@ export async function generateMyraThreadTitle(
         firstMessage,
       }),
     );
-    if (raw === null) return null;
+    // The title inference turn producing no usable text is a real-world cause of
+    // "new chats never get a title" (CL-2449): a model/config fault leaves chat
+    // working but the title turn empty. These paths used to return null silently
+    // — invisible to operators, since the catch below only WARNs (and WARN is
+    // not forwarded to Sentry). Log them so a persistently-empty title turn is
+    // diagnosable instead of presenting as an unexplained default label.
+    if (raw === null) {
+      log.warn(
+        "Myra title generation produced no text; leaving default label",
+        { tenantId: opts.tenantId, threadId: opts.threadId },
+      );
+      return null;
+    }
 
     const title = sanitizeTitle(raw);
-    if (title === null) return null;
+    if (title === null) {
+      log.warn(
+        "Myra title generation produced unusable text; leaving default label",
+        { tenantId: opts.tenantId, threadId: opts.threadId, raw },
+      );
+      return null;
+    }
 
     return await renameMyraThread(db, {
       tenantId: opts.tenantId,

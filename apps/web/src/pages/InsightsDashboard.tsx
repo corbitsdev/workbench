@@ -1,13 +1,14 @@
 import { PagePanel } from "@workbench/ui";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart2 } from "lucide-react";
+import { AlertTriangle, BarChart2 } from "lucide-react";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
   ActivityOverview,
   AnalyticsAgentRow,
   AnalyticsSummary,
+  UsageByPersonRow,
 } from "../lib/hub-api";
 import {
   DeltaBadge,
@@ -21,6 +22,7 @@ import {
   computeDelta,
   fillDailySeries,
   ratePct,
+  tokenDataCaveat,
 } from "./insights/metrics";
 
 type Preset = "7d" | "30d" | "90d" | "all";
@@ -81,6 +83,18 @@ function CardLabel({ children }: { children: React.ReactNode }) {
     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
       {children}
     </span>
+  );
+}
+
+function CaveatNote({ children }: { children: React.ReactNode }) {
+  return (
+    <p
+      className="flex items-start gap-1.5 text-[11px] leading-snug text-text-3"
+      data-testid="data-caveat"
+    >
+      <AlertTriangle className="mt-px h-3 w-3 shrink-0 text-text-3" />
+      <span>{children}</span>
+    </p>
   );
 }
 
@@ -148,11 +162,13 @@ function TrendCard({
   total,
   values,
   delta,
+  note,
 }: {
   label: string;
   total: string;
   values: number[];
   delta?: ReturnType<typeof computeDelta>;
+  note?: string | null;
 }) {
   return (
     <HudCard label={label}>
@@ -168,6 +184,7 @@ function TrendCard({
         width={220}
         height={36}
       />
+      {note ? <CaveatNote>{note}</CaveatNote> : null}
     </HudCard>
   );
 }
@@ -175,9 +192,11 @@ function TrendCard({
 function TrendsSection({
   data,
   range,
+  tokenCaveat,
 }: {
   data: ActivityOverview;
   range: { startDate?: string; endDate?: string };
+  tokenCaveat: string | null;
 }) {
   const rawSeries = data.dailySeries;
   if (rawSeries.length === 0) return null;
@@ -224,10 +243,14 @@ function TrendsSection({
           label="Tokens / day"
           total={formatNumber(summary.inputTokens + summary.outputTokens)}
           values={tokenValues}
-          delta={computeDelta(
-            summary.inputTokens + summary.outputTokens,
-            prev ? prev.inputTokens + prev.outputTokens : null,
-          )}
+          delta={
+            tokenCaveat === null
+              ? computeDelta(
+                  summary.inputTokens + summary.outputTokens,
+                  prev ? prev.inputTokens + prev.outputTokens : null,
+                )
+              : undefined
+          }
         />
       </div>
       <HudCard label="Turns per day">
@@ -237,7 +260,13 @@ function TrendsSection({
   );
 }
 
-function InferenceSection({ data }: { data: ActivityOverview }) {
+function InferenceSection({
+  data,
+  tokenCaveat,
+}: {
+  data: ActivityOverview;
+  tokenCaveat: string | null;
+}) {
   const summary = data.inference.summary;
   const prev = data.inference.previousSummary;
   const tokens = totalTokens(summary);
@@ -269,6 +298,7 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Inference &amp; tool usage</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
           label="Total turns"
@@ -284,8 +314,12 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
             summary.toolCallCount,
             prev?.toolCallCount ?? null,
           )}
-          sub={`${toolRate.toFixed(1)}% success`}
-          accent={summary.toolErrorCount > 0}
+          sub={
+            tokenCaveat === null
+              ? `${toolRate.toFixed(1)}% success`
+              : "success rate unavailable"
+          }
+          accent={tokenCaveat === null && summary.toolErrorCount > 0}
         />
         <Stat
           label="Cache hit rate"
@@ -301,18 +335,31 @@ function InferenceSection({ data }: { data: ActivityOverview }) {
 
       <HudCard
         label="Token mix"
-        tag={<CardLabel>{formatNumber(tokens)} total</CardLabel>}
+        tag={
+          tokenCaveat === null ? (
+            <CardLabel>{formatNumber(tokens)} total</CardLabel>
+          ) : undefined
+        }
       >
-        <TokenMosaic
-          label="Token usage breakdown"
-          parts={[
-            { label: "Input", value: summary.inputTokens },
-            { label: "Output", value: summary.outputTokens },
-            { label: "Cache read", value: summary.cacheReadTokens },
-            { label: "Cache write", value: summary.cacheWriteTokens },
-            { label: "Thinking", value: summary.thinkingTokens },
-          ]}
-        />
+        {tokenCaveat === null ? (
+          <TokenMosaic
+            label="Token usage breakdown"
+            parts={[
+              { label: "Input", value: summary.inputTokens },
+              { label: "Output", value: summary.outputTokens },
+              { label: "Cache read", value: summary.cacheReadTokens },
+              { label: "Cache write", value: summary.cacheWriteTokens },
+              { label: "Thinking", value: summary.thinkingTokens },
+            ]}
+          />
+        ) : (
+          <div className="flex flex-col items-start gap-2 py-2">
+            <span className="text-[12px] text-text-2">
+              Token mix unavailable for this range
+            </span>
+            <CaveatNote>{tokenCaveat}</CaveatNote>
+          </div>
+        )}
       </HudCard>
 
       {data.models.length > 0 && (
@@ -458,6 +505,96 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
   );
 }
 
+function PersonBreakdown({
+  people,
+  tokenCaveat,
+}: {
+  people: UsageByPersonRow[];
+  tokenCaveat: string | null;
+}) {
+  if (people.length === 0) return null;
+
+  // Server sorts by total tokens, but those columns collapse to "—" under the
+  // caveat — leaving the table ordered by an invisible key. Re-sort by a
+  // visible metric (turns) so the ordering is always explainable.
+  const orderedPeople =
+    tokenCaveat === null
+      ? people
+      : [...people].sort((a, b) => b.turnCount - a.turnCount);
+
+  const totals = people.reduce(
+    (acc, p) => ({
+      turnCount: acc.turnCount + p.turnCount,
+      toolCallCount: acc.toolCallCount + p.toolCallCount,
+      inputTokens: acc.inputTokens + p.inputTokens,
+      outputTokens: acc.outputTokens + p.outputTokens,
+    }),
+    { turnCount: 0, toolCallCount: 0, inputTokens: 0, outputTokens: 0 },
+  );
+
+  const tokenCell = (value: number) =>
+    tokenCaveat === null ? formatNumber(value) : "—";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <SectionLabel>By person</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
+      <div className="overflow-x-auto rounded-[12px] border border-border">
+        <table className="w-full min-w-[520px] text-left text-[13px]">
+          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
+            <tr>
+              <th className="px-4 py-2 font-medium">Person</th>
+              <th className="px-4 py-2 text-right font-medium">Turns</th>
+              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
+              <th className="px-4 py-2 text-right font-medium">Tokens</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border bg-bg">
+            {orderedPeople.map((row) => (
+              <tr key={row.principalId}>
+                <td className="px-4 py-2 text-text">
+                  {row.name ?? "Unknown member"}
+                  {row.isSelf && (
+                    <span className="ml-1.5 text-[11px] font-semibold text-accent">
+                      (me)
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {formatNumber(row.turnCount)}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {formatNumber(row.toolCallCount)}
+                </td>
+                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
+                  {tokenCell(row.inputTokens + row.outputTokens)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="border-t border-border bg-surface">
+            <tr>
+              <td className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-3">
+                Attributed total
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {formatNumber(totals.turnCount)}
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {formatNumber(totals.toolCallCount)}
+              </td>
+              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
+                {tokenCell(totals.inputTokens + totals.outputTokens)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p className="text-[11px] text-text-3">Excludes shared agents</p>
+    </div>
+  );
+}
+
 function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
   if (agents.length === 0) return null;
 
@@ -562,6 +699,11 @@ export function InsightsDashboard() {
   const showSummaryLoading =
     loading || (!!activeTenantId && overviewQuery.isLoading);
 
+  const overview = overviewQuery.data;
+  const tokenCaveat = overview
+    ? tokenDataCaveat(dates, overview.tokensRecordedFrom)
+    : null;
+
   return (
     <PagePanel scroll={false} flat>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
@@ -613,17 +755,23 @@ export function InsightsDashboard() {
           </div>
         )}
 
-        {overviewQuery.data && (
+        {overview && (
           <div className="flex flex-col gap-10">
-            <TrendsSection data={overviewQuery.data} range={dates} />
-            <EngagementSection data={overviewQuery.data} />
-            <InferenceSection data={overviewQuery.data} />
-            <OperationalLedger data={overviewQuery.data} />
+            <TrendsSection
+              data={overview}
+              range={dates}
+              tokenCaveat={tokenCaveat}
+            />
+            <EngagementSection data={overview} />
+            <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
+            <OperationalLedger data={overview} />
             <div className="flex flex-col gap-4">
-              <AgentBreakdown agents={overviewQuery.data.inference.byAgent} />
-              <InstanceBreakdown
-                instances={overviewQuery.data.inference.byInstance}
+              <PersonBreakdown
+                people={overview.byPerson}
+                tokenCaveat={tokenCaveat}
               />
+              <AgentBreakdown agents={overview.inference.byAgent} />
+              <InstanceBreakdown instances={overview.inference.byInstance} />
             </div>
           </div>
         )}

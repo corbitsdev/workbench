@@ -7,99 +7,75 @@
  * host application in CL-991, outside this package.
  */
 
+import { type } from "arktype";
+
+export const ChatRoleSchema = type("'user' | 'agent' | 'system'");
 /** Who authored a chat message. */
-export type ChatRole = "user" | "agent" | "system";
+export type ChatRole = typeof ChatRoleSchema.infer;
 
+export const ChatMessageStatusSchema = type("'sending' | 'sent' | 'failed'");
 /** Delivery state of a message, used to render ticks / spinners / retries. */
-export type ChatMessageStatus = "sending" | "sent" | "failed";
+export type ChatMessageStatus = typeof ChatMessageStatusSchema.infer;
 
+export const ChatMessageKindSchema = type("'tool' | 'artifact'");
 /**
  * Optional classification of a message's purpose.
  * - `tool` — intermediate tool call / result (eligible for compaction)
  * - `artifact` — a final output (never compacted)
  * Absent means a regular conversational message.
  */
-export type ChatMessageKind = "tool" | "artifact";
+export type ChatMessageKind = typeof ChatMessageKindSchema.infer;
 
+export const ToolCallSchema = type({
+  id: "string",
+  name: "string",
+  "label?": "string",
+  "arguments?": "Record<string, unknown>",
+  "result?": "string",
+  "isError?": "boolean",
+});
 /** A completed or in-progress tool invocation attached to an agent message. */
-export interface ToolCall {
-  id: string;
-  /** Raw tool name as returned by the agent runtime. */
-  name: string;
-  /** Human-readable label. When absent the host should derive one from `name`. */
-  label?: string;
-  /** Arguments the tool was invoked with, e.g. `{ query: "minimax m3" }`. */
-  arguments?: Record<string, unknown>;
-  /** Result text. Absent when the call is still in-flight. */
-  result?: string;
-  /** True when the tool returned an error result. */
-  isError?: boolean;
-}
+export type ToolCall = typeof ToolCallSchema.infer;
 
+export const ChatImageSchema = type({
+  mimeType: "string",
+  data: "string",
+});
 /** An inline image captured from the agent's response stream. */
-export interface ChatImage {
-  mimeType: string;
-  data: string;
-}
+export type ChatImage = typeof ChatImageSchema.infer;
 
+export const ChatMessageSchema = type({
+  id: "string",
+  role: ChatRoleSchema,
+  content: "string",
+  createdAt: "string",
+  "feedbackId?": "string",
+  "status?": ChatMessageStatusSchema,
+  "senderLabel?": "string",
+  "kind?": ChatMessageKindSchema,
+  "toolCalls?": ToolCallSchema.array(),
+  "reasoning?": "string",
+  "images?": ChatImageSchema.array(),
+});
 /** A single message in a chat thread. */
-export interface ChatMessage {
-  id: string;
-  role: ChatRole;
-  /** Plain-text body. Rendering is left to the host if richer content is needed. */
-  content: string;
-  /** ISO-8601 timestamp of when the message was created. */
-  createdAt: string;
-  /**
-   * Stable identity for feedback (thumbs up/down), independent of the display
-   * `id`. An agent reply is first rendered as a client-clock turn and later, once
-   * its server-timestamped mail arrives, as that mail — flipping `id` from the
-   * turnId to the mailId. A rating saved against the turnId would then be orphaned.
-   * `feedbackId` pins the rating subject to the turnId across that collapse; absent
-   * when the message has no echoing turn (use `id`).
-   */
-  feedbackId?: string;
-  /** Delivery state. Absent means delivered/no tracking needed. */
-  status?: ChatMessageStatus;
-  /**
-   * Display label for the message sender. Present on inbound agent-to-agent mail
-   * so the chat view can show who delegated the task. Absent for regular user
-   * messages (no attribution needed) and for all agent/system messages.
-   */
-  senderLabel?: string;
-  /**
-   * Optional classification. Tool messages are eligible for compaction in long
-   * threads; artifact messages are always fully visible.
-   */
-  kind?: ChatMessageKind;
-  /**
-   * Tool calls made during this agent turn. The host populates these from the
-   * agent runtime event stream. A call whose `result` is absent is treated as
-   * still in-flight (renders with a pulse indicator).
-   */
-  toolCalls?: ToolCall[];
-  /**
-   * The agent's reasoning ("thinking") for this turn, when available. Rendered
-   * as a collapsible disclosure above the message content; present on the live
-   * streaming bubble while the agent is thinking.
-   */
-  reasoning?: string;
-  /**
-   * Inline images produced during this agent turn (e.g. browser snapshots).
-   * Each entry carries a base64-encoded payload and its MIME type.
-   */
-  images?: ChatImage[];
-}
+export type ChatMessage = typeof ChatMessageSchema.infer;
 
+export const QuickReplySchema = type({
+  id: "string",
+  label: "string",
+  "value?": "string",
+});
 /** A tappable suggested reply offered by the agent. */
-export interface QuickReply {
-  id: string;
-  label: string;
-  /** Optional payload sent instead of the visible label when chosen. */
-  value?: string;
-}
+export type QuickReply = typeof QuickReplySchema.infer;
 
-/** What the agent is currently doing, shown as a status indicator. */
+/**
+ * What the agent is currently doing, shown as a status indicator.
+ *
+ * Left as a plain discriminated-union type: the variants carry numeric fields
+ * (retryAfterMs) and string-carrying discriminants that are constructed
+ * internally by the host adapter — never parsed from an untrusted external
+ * source, so runtime validation buys nothing here.
+ */
 export type ChatActivity =
   | { type: "thinking" }
   | { type: "tool_call"; name: string }
@@ -112,13 +88,21 @@ export type ChatDockState = "floating" | "docked";
 /** Whether the floating launcher / panel is open or closed. */
 export type ChatOpenState = "open" | "closed";
 
-/** Screen position for the floating launcher and panel. */
+/**
+ * Screen position for the floating launcher and panel.
+ * Left as plain interface: numeric pixel coordinates constructed internally by
+ * drag-and-drop handlers, never parsed from an external source.
+ */
 export interface ChatLauncherPosition {
   x: number;
   y: number;
 }
 
-/** Identity shown in the panel header. */
+/**
+ * Identity shown in the panel header.
+ * Left as plain interface: supplied by the host at component mount as a trusted
+ * prop, not parsed from a wire payload.
+ */
 export interface ChatAgentIdentity {
   /** Display name, e.g. "Myra". */
   name: string;

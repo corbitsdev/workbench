@@ -1,3 +1,7 @@
+import { useEffect, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { AnimatePresence, motion } from "framer-motion";
+import { Minimize2 } from "lucide-react";
 import {
   ChatPanel,
   type ChatAgentIdentity,
@@ -11,6 +15,71 @@ import {
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import type { ToolCall } from "@workbench/chat";
 import type { MyraSession } from "../hooks/use-myra-session";
+
+/**
+ * Near-full-screen overlay wrapping the whole chat panel while expanded so the
+ * thread switcher rides along into fullscreen. Unlike the
+ * dock's plain expand, this is always dismissible: Escape and the visible
+ * minimize button both collapse back (via `onExit`) — they never close the
+ * chat. Body scroll is locked while open and restored on exit so the
+ * underlying page is never left trapped.
+ */
+export function ExpandedChatOverlay({
+  children,
+  open,
+  onExit,
+}: {
+  children: ReactNode;
+  open: boolean;
+  onExit: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onExit();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open, onExit]);
+
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded chat"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+        >
+          <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1.5">
+            <button
+              type="button"
+              onClick={onExit}
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer transition-[transform,background-color,color] duration-150 ease-out active:scale-[0.97]"
+            >
+              <Minimize2 className="h-3.5 w-3.5" />
+              Minimize
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">{children}</div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
+}
 
 const MYRA: ChatAgentIdentity = { name: "Myra", tagline: "Personal agent" };
 

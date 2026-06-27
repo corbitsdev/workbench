@@ -44,10 +44,7 @@ export function ChatThreadPage() {
 
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).
-  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
-    active,
-    session.messages,
-  );
+  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(active);
 
   // Deliver a message seeded by another surface (e.g. the artifact page's chat
   // composer creating this thread). Once, when the session is ready.

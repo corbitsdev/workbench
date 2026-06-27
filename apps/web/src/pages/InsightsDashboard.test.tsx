@@ -82,6 +82,27 @@ const mockOverview = {
     { key: "deepseek-v4-flash", count: 9 },
     { key: "kimi", count: 3 },
   ],
+  tokensRecordedFrom: "2000-01-01",
+  byPerson: [
+    {
+      principalId: "pri_me",
+      name: "Sawyer",
+      isSelf: true,
+      turnCount: 8,
+      toolCallCount: 3,
+      inputTokens: 700,
+      outputTokens: 90,
+    },
+    {
+      principalId: "pri_other",
+      name: "Dana",
+      isSelf: false,
+      turnCount: 4,
+      toolCallCount: 1,
+      inputTokens: 300,
+      outputTokens: 60,
+    },
+  ],
   inference: {
     summary: {
       tenantId: "tenant-1",
@@ -275,6 +296,133 @@ describe("InsightsDashboard", () => {
       expect(screen.getByText("Myra")).toBeDefined();
     });
     expect(screen.getByText("10")).toBeDefined();
+  });
+
+  it("renders a By-person breakdown marking the caller and a total row", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("By person")).toBeDefined();
+    });
+    expect(screen.getByText("Sawyer")).toBeDefined();
+    expect(screen.getByText("(me)")).toBeDefined();
+    expect(screen.getByText("Dana")).toBeDefined();
+    // Total row: turns 8 + 4 = 12. Footer is labeled as attributed-only since
+    // shared-agent usage is excluded from the per-person breakdown.
+    const total = screen.getByText("Attributed total").closest("tr");
+    expect(total?.textContent).toContain("12");
+    // Combined token total shown as a real value (default mock has old
+    // tokensRecordedFrom): inputTokens 1000 + outputTokens 150 = 1,150.
+    expect(total?.textContent).toContain("1,150");
+    expect(screen.getByText("Excludes shared agents")).toBeDefined();
+  });
+
+  it("orders the By-person table by tokens and lists Turns before Tool calls", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("By person")).toBeDefined();
+    });
+    const personTable = screen.getByText("Person").closest("table");
+    const headers = Array.from(
+      personTable?.querySelectorAll("thead th") ?? [],
+    ).map((th) => th.textContent);
+    expect(headers).toEqual(["Person", "Turns", "Tool calls", "Tokens"]);
+    // No caveat in the default mock: rows stay in server token order
+    // (Sawyer 790 tokens before Dana 360).
+    const bodyRows = Array.from(
+      personTable?.querySelectorAll("tbody tr") ?? [],
+    );
+    expect(bodyRows[0]?.textContent).toContain("Sawyer");
+    expect(bodyRows[1]?.textContent).toContain("Dana");
+  });
+
+  it("re-orders the By-person table by a visible metric (turns) under the token caveat", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    // Make Dana out-rank Sawyer on tokens but trail on turns, so token-order
+    // and turn-order disagree.
+    const originalPeople = mockOverview.byPerson;
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    mockOverview.byPerson = [
+      {
+        principalId: "pri_other",
+        name: "Dana",
+        isSelf: false,
+        turnCount: 1,
+        toolCallCount: 1,
+        inputTokens: 9000,
+        outputTokens: 0,
+      },
+      {
+        principalId: "pri_me",
+        name: "Sawyer",
+        isSelf: true,
+        turnCount: 50,
+        toolCallCount: 3,
+        inputTokens: 10,
+        outputTokens: 0,
+      },
+    ];
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("By person")).toBeDefined();
+      });
+      const personTable = screen.getByText("Person").closest("table");
+      const bodyRows = Array.from(
+        personTable?.querySelectorAll("tbody tr") ?? [],
+      );
+      // Under the caveat tokens are hidden, so the visible Turns column drives
+      // the order: Sawyer (50 turns) ahead of Dana (1 turn).
+      expect(bodyRows[0]?.textContent).toContain("Sawyer");
+      expect(bodyRows[1]?.textContent).toContain("Dana");
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+      mockOverview.byPerson = originalPeople;
+    }
+  });
+
+  it("hides token-cost columns in the By-person table when the range crosses the live/history boundary", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("By person")).toBeDefined();
+      });
+      const sawyerRow = screen.getByText("Sawyer").closest("tr");
+      // Token columns collapse to em-dashes; turns/tools still show.
+      expect(sawyerRow?.textContent).not.toContain("700");
+      expect(sawyerRow?.textContent).toContain("—");
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+    }
+  });
+
+  it("caveats token cards and hides token-cost for a range crossing the live/history boundary", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    // Token recording begins in the future, so every preset range starts before
+    // it — the whole selectable window is history with no real token data.
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId("data-caveat").length).toBeGreaterThan(0);
+      });
+      // The token-cost mosaic must not present zero-filled history as a real
+      // breakdown.
+      expect(screen.queryByTestId("token-mosaic")).toBeNull();
+      expect(
+        screen
+          .getAllByTestId("data-caveat")
+          .some((n) => n.textContent?.includes("not recorded")),
+      ).toBe(true);
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+    }
   });
 
   it("scopes analytics queries to the active workbench tenant and shows its name", async () => {

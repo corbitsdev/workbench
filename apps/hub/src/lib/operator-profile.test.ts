@@ -53,14 +53,15 @@ describe("promptFormatForProvider", () => {
 });
 
 describe("buildOperatorProfile", () => {
-  it("names the operator and points at the standing brief in MEMORY.md", () => {
+  it("names the operator and points at the standing brief in memory (no file)", () => {
     const profile = buildOperatorProfile({
       name: "Sawyer Cutler",
       email: "sawyer@abklabs.com",
     });
     expect(profile).toContain("Sawyer Cutler");
     expect(profile).toContain("sawyer@abklabs.com");
-    expect(profile).toContain("MEMORY.md");
+    expect(profile).toContain("standing brief");
+    expect(profile).not.toContain("MEMORY.md");
   });
 });
 

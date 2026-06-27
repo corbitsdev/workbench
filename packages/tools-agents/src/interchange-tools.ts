@@ -7,8 +7,14 @@
 
 import { defineHubBackedToolPackage } from "@workbench/tool-credentials/factory";
 import { LIST_AGENTS_DEFINITION, LIST_PRINCIPALS_DEFINITION } from "./index";
+import { IDENTITY_GET_DEFINITION, IDENTITY_SET_DEFINITION } from "./identity";
 
 export const agents = defineHubBackedToolPackage({
   id: "@workbench/tools-agents/agents",
-  definitions: [LIST_PRINCIPALS_DEFINITION, LIST_AGENTS_DEFINITION],
+  definitions: [
+    LIST_PRINCIPALS_DEFINITION,
+    LIST_AGENTS_DEFINITION,
+    IDENTITY_GET_DEFINITION,
+    IDENTITY_SET_DEFINITION,
+  ],
 });

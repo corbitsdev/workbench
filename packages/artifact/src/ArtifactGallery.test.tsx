@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "./test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { ArtifactGallery } from "./ArtifactGallery";
@@ -23,6 +29,7 @@ const artifact: ArtifactWithSession = {
   ownerPrincipalId: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
+  source: { origin: "workflow" },
   sessionName: "Acme Corp",
   sessionStatus: "done",
   ownerName: null,
@@ -63,6 +70,18 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText("1 items")).toBeDefined();
   });
 
+  it("does not declare its own panel frame (single PagePanel frame owns it)", () => {
+    const { container } = render(
+      React.createElement(ArtifactGallery, { artifacts: [artifact] }),
+    );
+    const root = container.querySelector("section");
+    if (!root) throw new Error("gallery root section not rendered");
+    expect(root.className).not.toContain("rounded-panel");
+    expect(root.className).not.toContain("border-border");
+    expect(root.className).not.toContain("bg-bg");
+    expect(root.className).not.toContain("shadow-");
+  });
+
   it("shows the loading state", () => {
     render(
       React.createElement(ArtifactGallery, { artifacts: [], isLoading: true }),
@@ -75,14 +94,14 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText(/No artifacts yet/)).toBeDefined();
   });
 
-  it("fires onNew from the New button", () => {
+  it("fires onNew from the Add button", () => {
     const onNew = mock(() => {});
     render(React.createElement(ArtifactGallery, { artifacts: [], onNew }));
-    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
     expect(onNew).toHaveBeenCalledTimes(1);
   });
 
-  it("renders the owner filter dropdown when multiple owners are provided", () => {
+  it("renders the owner filter dropdown when multiple owners are provided", async () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
@@ -95,11 +114,11 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(select).toBeDefined();
-    expect(select.value).toBe("");
-    expect(screen.getByText("Alice")).toBeDefined();
-    expect(screen.getByText("Bob")).toBeDefined();
+    const trigger = screen.getByRole("button", { name: /All owners/ });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    await waitFor(() => screen.getByRole("menu"));
+    screen.getByRole("menuitem", { name: "Alice" });
+    screen.getByRole("menuitem", { name: "Bob" });
   });
 
   it("does not render the dropdown when fewer than two owners are provided", () => {
@@ -111,7 +130,7 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
   it("does not render the dropdown when owners is undefined", () => {
@@ -122,16 +141,15 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
-  it("dropdown is stable when filtering filters out some artifacts", () => {
+  it("reflects the active owner filter in the trigger label", () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
     ];
     const onOwnerFilterChange = mock(() => {});
-    // Only Alice's artifact is in the filtered view, but both owners still show
     const filteredArtifacts = [
       { ...artifact, ownerPrincipalId: "p-1", ownerName: "Alice" },
     ];
@@ -143,13 +161,90 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    expect(select.value).toBe("p-1");
-    expect(screen.getByText("Alice")).toBeDefined();
-    expect(screen.getByText("Bob")).toBeDefined();
+    screen.getByRole("button", { name: /Alice/ });
+    expect(screen.queryByText("All owners")).toBeNull();
   });
 
-  it("calls onOwnerFilterChange when the owner dropdown selection changes", () => {
+  it("sources the owner list from the owners prop, not the filtered artifacts", async () => {
+    const owners = [
+      { id: "p-1", name: "Alice" },
+      { id: "p-2", name: "Bob" },
+    ];
+    const onOwnerFilterChange = mock(() => {});
+    const filteredArtifacts = [
+      { ...artifact, ownerPrincipalId: "p-1", ownerName: "Alice" },
+    ];
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: filteredArtifacts,
+        owners,
+        ownerPrincipalId: "p-1",
+        onOwnerFilterChange,
+      }),
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /Alice/ }), {
+      key: "ArrowDown",
+    });
+    await waitFor(() => screen.getByRole("menu"));
+    screen.getByRole("menuitem", { name: "Alice" });
+    screen.getByRole("menuitem", { name: "Bob" });
+  });
+
+  it("renders a rows table with column headers when viewMode is rows", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [{ ...artifact, ownerName: "Alice" }],
+        viewMode: "rows",
+        onViewModeChange: () => {},
+      }),
+    );
+    screen.getByRole("table");
+    screen.getByRole("columnheader", { name: "Kind" });
+    screen.getByRole("columnheader", { name: "Owner" });
+    screen.getByRole("cell", { name: "Email" });
+    screen.getByRole("cell", { name: "Alice" });
+  });
+
+  it("renders the grid (no table) when viewMode is grid", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "grid",
+        onViewModeChange: () => {},
+      }),
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("opens the mapped artifact from a rows-view row click", () => {
+    const onOpen = mock((_a: { id: string }) => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "rows",
+        onViewModeChange: () => {},
+        onOpen,
+      }),
+    );
+    fireEvent.click(screen.getByText("Sales automation ROI"));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen.mock.calls[0]?.[0]?.id).toBe("a-1");
+  });
+
+  it("toggles view mode from the header control", () => {
+    const onViewModeChange = mock((_m: "grid" | "rows") => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        viewMode: "grid",
+        onViewModeChange,
+      }),
+    );
+    fireEvent.click(screen.getByLabelText("Rows view"));
+    expect(onViewModeChange).toHaveBeenCalledWith("rows");
+  });
+
+  it("calls onOwnerFilterChange when an owner is selected", async () => {
     const owners = [
       { id: "p-1", name: "Alice" },
       { id: "p-2", name: "Bob" },
@@ -162,8 +257,71 @@ describe("ArtifactGallery", () => {
         onOwnerFilterChange,
       }),
     );
-    const select = screen.getByRole("combobox") as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "p-1" } });
+    fireEvent.keyDown(screen.getByRole("button", { name: /All owners/ }), {
+      key: "ArrowDown",
+    });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: "Alice" }),
+    );
+    fireEvent.click(item);
     expect(onOwnerFilterChange).toHaveBeenCalledWith("p-1");
+  });
+
+  it("hides advanced filter controls until the Filters toggle is opened", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        onAdvancedFilterChange: mock(() => {}),
+      }),
+    );
+    expect(screen.queryByText("From")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Toggle filters/ }));
+    screen.getByText("From");
+    screen.getByText("To");
+  });
+
+  it("emits the merged advanced filter when a date bound changes", () => {
+    const onAdvancedFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        createdAfter: "2026-06-01",
+        onAdvancedFilterChange,
+      }),
+    );
+    // An active createdAfter keeps the bar open without toggling.
+    const toInput = screen
+      .getByText("To")
+      .querySelector("input") as HTMLInputElement;
+    fireEvent.change(toInput, { target: { value: "2026-06-30" } });
+    expect(onAdvancedFilterChange).toHaveBeenCalledWith({
+      createdAfter: "2026-06-01",
+      createdBefore: "2026-06-30",
+    });
+  });
+
+  it("lets the Filters toggle close the panel while a filter is active", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        createdAfter: "2026-06-01",
+        onAdvancedFilterChange: mock(() => {}),
+      }),
+    );
+    const toggle = screen.getByRole("button", { name: /Toggle filters/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    screen.getByText("From");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("From")).toBeNull();
+  });
+
+  it("does not render the Filters toggle without an advanced-filter handler", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /Toggle filters/ })).toBeNull();
   });
 });

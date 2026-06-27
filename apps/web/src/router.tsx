@@ -1,6 +1,8 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
+import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
 import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
@@ -18,6 +20,61 @@ import { ToolsLibrary } from "./pages/ToolsLibrary";
 import { ToolDetail } from "./pages/ToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
 
+// Static navigation commands for the command palette, kept beside the route
+// table so a new top-level route adds its palette entry in the same place. Each
+// `to` must resolve to a path registered in the router below.
+export const NAV_COMMANDS: PaletteResultItem[] = [
+  {
+    id: "nav:chats",
+    category: "navigation",
+    title: "Chats",
+    to: "/chats",
+    keywords: ["conversations", "myra", "messages"],
+  },
+  {
+    id: "nav:artifacts",
+    category: "navigation",
+    title: "Artifacts",
+    to: "/artifacts",
+    keywords: ["collateral", "outputs", "documents", "library"],
+  },
+  {
+    id: "nav:workflows",
+    category: "navigation",
+    title: "Workflows",
+    to: "/workflows",
+    keywords: ["runs", "pipelines", "jobs"],
+  },
+  {
+    id: "nav:skills",
+    category: "navigation",
+    title: "Skills",
+    to: "/skills",
+    keywords: ["playbooks", "prompts", "library"],
+  },
+  {
+    id: "nav:tools",
+    category: "navigation",
+    title: "Tools",
+    to: "/tools",
+    keywords: ["integrations", "providers", "library"],
+  },
+  {
+    id: "nav:insights",
+    category: "navigation",
+    title: "Insights",
+    to: "/insights",
+    keywords: ["analytics", "usage", "dashboard", "metrics"],
+  },
+  {
+    id: "nav:settings",
+    category: "navigation",
+    title: "Settings",
+    to: "/settings",
+    keywords: ["preferences", "theme", "account"],
+  },
+];
+
 function ProtectedLayout() {
   const { session } = useAuth();
 
@@ -31,15 +88,17 @@ function AppShell() {
   return (
     <ActiveWorkbenchProvider>
       <ChatLauncherProvider>
-        <div className="flex h-screen flex-row bg-page">
-          <AppSidebar />
-          <div className="flex flex-1 flex-col overflow-hidden">
-            <main className="flex-1 overflow-hidden">
-              <Outlet />
-            </main>
-            <PersonalAgentChat />
+        <CommandPaletteProvider>
+          <div className="flex h-screen flex-row bg-page">
+            <AppSidebar />
+            <div className="flex flex-1 flex-col overflow-hidden">
+              <main className="flex-1 overflow-hidden">
+                <Outlet />
+              </main>
+              <PersonalAgentChat />
+            </div>
           </div>
-        </div>
+        </CommandPaletteProvider>
       </ChatLauncherProvider>
     </ActiveWorkbenchProvider>
   );

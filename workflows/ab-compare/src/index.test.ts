@@ -7,6 +7,8 @@ import {
   STEP_ARGMAP_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
+  LLM_PROVIDER,
+  LLM_WRITER_MODEL,
 } from "@workbench/agents";
 
 import { workflow } from "./index";
@@ -41,6 +43,7 @@ describe("ab-compare native workflow", () => {
     const { invoker, ran } = makeRecordingInvoker({
       "blind-ab-execute": { reply: "an answer" },
       "blind-ab-compare": { reply: '{"summary":"ok","ranking":[]}' },
+      "blind-ab-compose": { content: '{"ranking":[],"variants":[]}' },
       "blind-ab-persist": { artifactId: "art_1" },
     });
     const run = runLocal(workflow, { invokeStep: invoker });
@@ -55,9 +58,10 @@ describe("ab-compare native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
 
     const ranIds = ran.map((r) => r.id);
-    // execute runs once per variant (2), then compare, then persist.
+    // execute runs once per variant (2), then compare, compose, then persist.
     expect(ranIds.filter((id) => id === "blind-ab-execute")).toHaveLength(2);
     expect(ranIds).toContain("blind-ab-compare");
+    expect(ranIds).toContain("blind-ab-compose");
     expect(ranIds).toContain("blind-ab-persist");
 
     // Each execute iteration receives one variant payload (not the whole array).
@@ -110,7 +114,7 @@ describe("ab-compare native workflow", () => {
     expect(inner.input).toEqual({ from: "trigger.payload" });
   });
 
-  test("compare is an inline-inference step reading the execute map output", () => {
+  test("compare is an inline-inference step on the writer model reading the execute map output", () => {
     const compare = workflow.steps.compare;
     if (compare === undefined || compare.kind !== "step") {
       throw new Error("expected a step primitive for compare");
@@ -118,13 +122,17 @@ describe("ab-compare native workflow", () => {
     expect(compare.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
     expect(compare.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(compare.agent.capabilities).toEqual([]);
-    expect(compare.agent.inference.sources).toEqual([]);
+    // The judge pins the heavier writer model (deploy resolves it optionally,
+    // falling back to the default when a tenant catalog lacks it).
+    expect(compare.agent.inference.sources).toEqual([
+      { provider: LLM_PROVIDER, model: LLM_WRITER_MODEL },
+    ]);
     expect(compare.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(compare.input).toEqual({ from: "steps.execute.output" });
     expect(compare.after).toContain("execute");
   });
 
-  test("review signal gates between compare and persist", () => {
+  test("review signal gates between compare and compose", () => {
     const review = workflow.steps.review;
     if (review === undefined || review.kind !== "awaitSignal") {
       throw new Error("expected an awaitSignal primitive for review");
@@ -132,14 +140,27 @@ describe("ab-compare native workflow", () => {
     expect(review.name).toBe("comparison-review");
     expect(review.after).toContain("compare");
 
-    const persist = workflow.steps.persist;
-    if (persist === undefined || persist.kind !== "step") {
-      throw new Error("expected a step primitive for persist");
+    const compose = workflow.steps.compose;
+    if (compose === undefined || compose.kind !== "step") {
+      throw new Error("expected a step primitive for compose");
     }
-    expect(persist.after).toContain("review");
+    expect(compose.after).toContain("review");
   });
 
-  test("persist is a deterministic artifact_create step with an argMap, not inference", () => {
+  test("compose is a deterministic ab_comparison_compose step over the whole steps tree", () => {
+    const compose = workflow.steps.compose;
+    if (compose === undefined || compose.kind !== "step") {
+      throw new Error("expected a step primitive for compose");
+    }
+    expect(compose.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(compose.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "ab_comparison_compose",
+    );
+    expect(compose.agent.inference.sources).toEqual([]);
+    expect(compose.input).toEqual({ from: "steps" });
+  });
+
+  test("persist is a deterministic artifact_create step writing an ab-comparison artifact", () => {
     const persist = workflow.steps.persist;
     if (persist === undefined || persist.kind !== "step") {
       throw new Error("expected a step primitive for persist");
@@ -147,13 +168,14 @@ describe("ab-compare native workflow", () => {
     expect(persist.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
     expect(persist.agent.inference.sources).toEqual([]);
-    expect(persist.input).toEqual({ from: "steps.compare.output" });
+    expect(persist.input).toEqual({ from: "steps.compose.output" });
+    expect(persist.after).toContain("compose");
     const argMapTag = persist.agent.tags?.[STEP_ARGMAP_TAG];
     if (argMapTag === undefined) throw new Error("expected an argMap tag");
     expect(JSON.parse(argMapTag)).toEqual({
-      content: { from: "reply" },
+      content: { from: "content" },
       title: { literal: "A/B Comparison Results" },
-      kind: { literal: "document" },
+      kind: { literal: "ab-comparison" },
     });
   });
 });

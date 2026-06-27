@@ -4,13 +4,13 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 
 ## Architecture
 
-| Layer                  | Responsibility                                                                                                                         |
-| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `@workbench/analytics` | Event mapping, fact + daily rollup persistence, Hono routes                                                                            |
-| Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                                |
-| Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent`       |
+| Layer                  | Responsibility                                                                                                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@workbench/analytics` | Event mapping, fact + daily rollup persistence, Hono routes                                                                                                                                                                                        |
+| Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                                                                                                                                            |
+| Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent`                                                                                                                   |
 | Hub (activity)         | `GET /api/tenants/:tenantId/activity/overview` — operational counts (artifacts, workflow runs, instances), daily inference series, model distribution, conversation/message counts, agent-activity split, and a previous-window summary for deltas |
-| Web                    | `getActivityOverview` → Insights activity trends, engagement metrics, inference KPIs, and operational ledger                          |
+| Web                    | `getActivityOverview` → Insights activity trends, engagement metrics, inference KPIs, and operational ledger                                                                                                                                       |
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 

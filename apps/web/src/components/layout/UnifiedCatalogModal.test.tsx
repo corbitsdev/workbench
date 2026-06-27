@@ -20,8 +20,16 @@ mock.module("../../hooks/use-workflow", () => ({
         kind: "collateral-generation",
         status: "running",
         createdAt: "",
+        meta: {
+          version: "0.1.0",
+          sha: "abc1234",
+          deployedAt: "2026-06-27T00:00:00.000Z",
+          label: "Pain Point Collateral Generation",
+          description: "Analyze a call transcript and generate collateral.",
+        },
       },
       {
+        // No meta — the card falls back to the humanized kind, no description.
         deploymentId: "dep-2",
         kind: "presentation-generation",
         status: "running",
@@ -32,6 +40,12 @@ mock.module("../../hooks/use-workflow", () => ({
         kind: "seo-enrichment",
         status: "running",
         createdAt: "",
+        meta: {
+          version: "0.1.0",
+          sha: "abc1234",
+          deployedAt: "2026-06-27T00:00:00.000Z",
+          label: "SEO Enrichment Report",
+        },
       },
     ],
     isPending: false,
@@ -42,49 +56,6 @@ mock.module("../../hooks/use-workflow", () => ({
     }),
     isPending: false,
   }),
-}));
-
-// This mock must be a superset that also satisfies sibling files mocking the
-// same hub-api module: bun applies mock.module globally for the whole run and
-// the last registration wins, so two files mocking ../lib/hub-api with disjoint
-// shapes break each other. Keep this in sync with WorkbenchHome.test's mock.
-mock.module("../../lib/hub-api", () => ({
-  listAgentTemplates: async () => [
-    {
-      key: "oat",
-      name: "Oat",
-      description: "Granola notes agent",
-      tools: ["granola_list_notes"],
-    },
-    {
-      key: "freddy",
-      name: "Freddy",
-      description: "Web research agent",
-      tools: ["firecrawl_scrape"],
-    },
-  ],
-  deployAgentFromTemplate: async (_tenantId: string, key: string) => ({ key }),
-  getMe: () =>
-    Promise.resolve({
-      userId: "u1",
-      userName: "Test User",
-      personalTenantId: "pt1",
-      paInstanceId: "inst-1",
-      provisioned: true,
-      credentialResolved: true,
-    }),
-  getMyPrincipals: () => Promise.resolve([]),
-  listWorkbenches: () =>
-    Promise.resolve([
-      {
-        id: "p-wb",
-        tenantId: "tn-wb",
-        tenantSlug: "acme-corp",
-        tenantName: "Acme Corp",
-      },
-    ]),
-  listAgentInstances: () => Promise.resolve([]),
-  launchInstanceSession: () => Promise.resolve({ launched: true }),
 }));
 
 function screen() {
@@ -102,110 +73,59 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 describe("UnifiedCatalogModal", () => {
   let onClose: ReturnType<typeof mock>;
-  let onAgentDeployed: ReturnType<typeof mock>;
   let onWorkflowStarted: ReturnType<typeof mock>;
 
   beforeEach(() => {
     onClose = mock(() => undefined);
-    onAgentDeployed = mock(() => undefined);
     onWorkflowStarted = mock(() => undefined);
   });
 
   afterEach(cleanup);
 
-  it("renders the Agents tab by default with agent cards", async () => {
+  it("renders only the workflow list with no Agents tab", async () => {
     render(
       <UnifiedCatalogModal
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Oat"));
-    screen().getByText("Freddy");
-    screen().getByText("Granola notes agent");
+    // Cards use the deploy-meta label + description; a deployment with no meta
+    // falls back to the humanized kind and shows no description.
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
+    screen().getByText("Analyze a call transcript and generate collateral.");
+    screen().getByText("SEO Enrichment Report");
+    screen().getByText("Presentation generation");
+
+    expect(screen().queryByRole("button", { name: "Agents" })).toBeNull();
+    expect(screen().queryByRole("button", { name: "Workflows" })).toBeNull();
+    expect(screen().queryByRole("button", { name: "Add" })).toBeNull();
   });
 
-  it("shows tool provider labels on agent cards", async () => {
+  it("filters workflows by search query", async () => {
     render(
       <UnifiedCatalogModal
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper },
     );
 
-    await waitFor(() => screen().getByText("Oat"));
-    screen().getByText("Granola");
-    screen().getByText("Firecrawl");
-  });
-
-  it("switches to Workflows tab and shows workflow cards", async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    fireEvent.click(screen().getByRole("button", { name: "Workflows" }));
-
-    await waitFor(() => screen().getByText("Collateral Generation"));
-    screen().getByText("Presentation Generation");
-    screen().getByText("SEO Enrichment");
-  });
-
-  it("filters agents by search query", async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    await waitFor(() => screen().getByText("Oat"));
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
 
     const user = userEvent.setup();
     const searchInput = screen().getByPlaceholderText(/search/i);
-    await user.type(searchInput, "granola");
+    await user.type(searchInput, "collateral");
 
-    screen().getByText("Oat");
-    await waitFor(() => expect(screen().queryByText("Freddy")).toBeNull());
-  });
-
-  it("calls onAgentDeployed and onClose after successful deploy", async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
+    screen().getByText("Pain Point Collateral Generation");
+    await waitFor(() =>
+      expect(screen().queryByText("Presentation generation")).toBeNull(),
     );
-
-    await waitFor(() => screen().getByText("Oat"));
-    const addButtons = screen().getAllByRole("button", { name: "Add" });
-    fireEvent.click(addButtons[0]!);
-
-    await waitFor(() => expect(onAgentDeployed).toHaveBeenCalledTimes(1));
-    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("calls onWorkflowStarted with the new run id after clicking a workflow card", async () => {
@@ -214,14 +134,12 @@ describe("UnifiedCatalogModal", () => {
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper },
     );
 
-    fireEvent.click(screen().getByRole("button", { name: "Workflows" }));
-    await waitFor(() => screen().getByText("Collateral Generation"));
+    await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
 
     fireEvent.click(screen().getAllByRole("button", { name: "Start" })[0]!);
 
@@ -232,29 +150,12 @@ describe("UnifiedCatalogModal", () => {
     );
   });
 
-  it("opens on the Workflows tab when defaultTab is workflows", async () => {
-    render(
-      <UnifiedCatalogModal
-        open={true}
-        tenantId="tenant-1"
-        onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
-        onWorkflowStarted={onWorkflowStarted}
-        defaultTab="workflows"
-      />,
-      { wrapper },
-    );
-
-    await waitFor(() => screen().getByText("Collateral Generation"));
-  });
-
   it("does not render when open is false", () => {
     render(
       <UnifiedCatalogModal
         open={false}
         tenantId="tenant-1"
         onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper },
@@ -269,7 +170,6 @@ describe("UnifiedCatalogModal", () => {
         open={true}
         tenantId="tenant-1"
         onClose={onClose}
-        onAgentDeployed={onAgentDeployed}
         onWorkflowStarted={onWorkflowStarted}
       />,
       { wrapper },

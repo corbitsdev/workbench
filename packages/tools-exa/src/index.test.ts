@@ -116,6 +116,47 @@ describe("exa_search handler", () => {
     expect(body.numResults).toBe(25);
   });
 
+  it("accepts `limit` as an alias for numResults", async () => {
+    // The last30days workflow's generic source fan-out passes `limit`; Exa must
+    // honor it as the result count, or the web spine is silently capped at the
+    // default 5 and the launch news never reaches the brief.
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(
+      createExaTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "exa_search",
+        arguments: { query: "test", limit: 20 },
+      },
+      new AbortController().signal,
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body.numResults).toBe(20);
+  });
+
+  it("prefers numResults over limit when both are given", async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(
+      createExaTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "exa_search",
+        arguments: { query: "test", numResults: 10, limit: 20 },
+      },
+      new AbortController().signal,
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body.numResults).toBe(10);
+  });
+
   it("surfaces API errors", async () => {
     const fetcher = makeFetchStub({ message: "Invalid API key" }, 401);
     const runner = createToolRunner(
@@ -184,6 +225,21 @@ describe("exa_search handler", () => {
     expect(body).toEqual({ query: "q", numResults: 5 });
   });
 
+  it("drops empty-string type from the request body", async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(
+      createExaTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      { id: "call_1", name: "exa_search", arguments: { query: "q", type: "" } },
+      new AbortController().signal,
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body).not.toHaveProperty("type");
+  });
+
   it("requires a query argument", async () => {
     const fetcher = makeFetchStub({ results: [] });
     const runner = createToolRunner(
@@ -196,7 +252,7 @@ describe("exa_search handler", () => {
     );
 
     expect(result.isError).toBe(true);
-    expect(result.content).toContain("query is required");
+    expect(result.content).toContain("query");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 

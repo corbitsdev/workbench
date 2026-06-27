@@ -8,14 +8,14 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
-  type FirecrawlToolsConfig,
-  type ResolvedFirecrawlConfig,
+  BatchScrapeStartArgsSchema,
+  RequiredIdArgsSchema,
   firecrawlFetchJSON,
-  optionalRecord,
-  requiredString,
-  requiredStringArray,
+  parseArgs,
   resolveConfig,
   stringTool,
+  type FirecrawlToolsConfig,
+  type ResolvedFirecrawlConfig,
 } from "./shared";
 
 export const FIRECRAWL_BATCH_SCRAPE_START_DEFINITION: ToolDefinition = {
@@ -99,15 +99,18 @@ export const BATCH_SCRAPE_DEFINITIONS: ToolDefinition[] = [
 
 async function startBatchScrape(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const urls = requiredStringArray(args, "urls");
-  const scrapeOptions = optionalRecord(args.scrapeOptions);
+  const args = parseArgs(
+    BatchScrapeStartArgsSchema,
+    rawArgs,
+    "firecrawl_batch_scrape_start",
+  );
 
   const body: Record<string, unknown> = {
-    urls,
-    ...(scrapeOptions !== null ? scrapeOptions : {}),
+    urls: args.urls,
+    ...(args.scrapeOptions !== undefined ? args.scrapeOptions : {}),
   };
 
   return firecrawlFetchJSON(
@@ -119,10 +122,14 @@ async function startBatchScrape(
 
 async function batchScrapeStatus(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_batch_scrape_status",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/batch/scrape/${encodeURIComponent(id)}` },
@@ -132,10 +139,14 @@ async function batchScrapeStatus(
 
 async function batchScrapeErrors(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_batch_scrape_errors",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "GET", path: `/batch/scrape/${encodeURIComponent(id)}/errors` },
@@ -145,10 +156,14 @@ async function batchScrapeErrors(
 
 async function cancelBatchScrape(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const id = requiredString(args, "id");
+  const { id } = parseArgs(
+    RequiredIdArgsSchema,
+    rawArgs,
+    "firecrawl_batch_scrape_cancel",
+  );
   return firecrawlFetchJSON(
     config,
     { method: "DELETE", path: `/batch/scrape/${encodeURIComponent(id)}` },

@@ -1,4 +1,11 @@
 export {
+  ChatRoleSchema,
+  ChatMessageStatusSchema,
+  ChatMessageKindSchema,
+  ToolCallSchema,
+  ChatImageSchema,
+  ChatMessageSchema,
+  QuickReplySchema,
   type ChatRole,
   type ChatMessageStatus,
   type ChatMessage,
@@ -21,6 +28,8 @@ export {
 export { CollapsedGroup, type CollapsedGroupProps } from "./CollapsedGroup";
 
 export {
+  DocumentActionsSchema,
+  UIResponseSchema,
   type UIBlock,
   type UIResponse,
   type DocumentActions,

@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -64,9 +70,21 @@ const skills = [
     ownerUserId: "usr-2",
     ownerName: "Grace Hopper",
   },
+  {
+    id: "skill-3",
+    name: "viral-content",
+    displayName: null,
+    createdAt: "2026-06-17T00:00:00.000Z",
+    updatedAt: "2026-06-17T00:00:00.000Z",
+    scope: "tenant",
+    accessTenantId: "tenant-root",
+    ownerUserId: "usr-3",
+    ownerName: "Alan Turing",
+  },
 ];
 
 beforeEach(() => {
+  localStorage.clear();
   window.happyDOM.setURL("http://localhost/");
   globalThis.fetch = mock((url: string) => {
     if (String(url).includes("/skills/share-targets")) {
@@ -85,6 +103,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   globalThis.fetch = originalFetch;
 });
 
@@ -110,6 +129,15 @@ describe("SkillsLibrary", () => {
     expect(document.body.textContent).toContain("Corbits");
   });
 
+  it("humanizes a kebab-case skill name when no displayName is set", async () => {
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("Viral content"),
+    );
+    expect(document.body.textContent).not.toContain("viral-content");
+  });
+
   it("labels private skills as Private", async () => {
     renderPage();
 
@@ -118,5 +146,26 @@ describe("SkillsLibrary", () => {
     );
     expect(document.body.textContent).toContain("Grace Hopper");
     expect(document.body.textContent).toContain("Private");
+  });
+
+  it("switches to a rows table and persists the preference when toggled", async () => {
+    renderPage();
+
+    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    expect(screen.queryByRole("table")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Rows view"));
+
+    await screen.findByRole("table");
+    screen.getByRole("columnheader", { name: "Access" });
+    screen.getByRole("columnheader", { name: "Owner" });
+    expect(localStorage.getItem("cw-view-skills")).toBe("rows");
+  });
+
+  it("starts in rows view when the stored preference is rows", async () => {
+    localStorage.setItem("cw-view-skills", "rows");
+    renderPage();
+
+    await screen.findByRole("table");
   });
 });

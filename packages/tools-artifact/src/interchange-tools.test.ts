@@ -25,7 +25,7 @@ describe("tools-artifact interchange.tools entry", () => {
     expect(artifact.requires).toEqual([HUB_RPC_ENV_KEY]);
   });
 
-  test("the bundle exposes all 8 artifact definitions", () => {
+  test("the bundle exposes all 10 artifact + memory definitions", () => {
     const names = artifact(env)
       .definitions.map((d) => d.name)
       .sort();
@@ -39,6 +39,8 @@ describe("tools-artifact interchange.tools entry", () => {
         "artifact_read",
         "artifact_write",
         "write_artifact",
+        "memory_load",
+        "memory_save",
       ].sort(),
     );
   });

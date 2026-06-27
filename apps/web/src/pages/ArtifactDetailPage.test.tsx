@@ -7,6 +7,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -190,19 +191,29 @@ describe("ArtifactDetailPage", () => {
     expect(generateTitleMutate).not.toHaveBeenCalled();
   });
 
-  it("opens the live chat full screen via the Open in menu", () => {
+  it("opens the live chat full screen via the Open in menu", async () => {
     renderAt("art-1");
     sendMessage("Hello");
-    fireEvent.click(screen.getByRole("button", { name: /open in/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /full screen/i }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /open in/i }), {
+      key: "ArrowDown",
+    });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: /full screen/i }),
+    );
+    fireEvent.click(item);
     expect(screen.getByTestId("fullscreen-chat")).toBeDefined();
   });
 
-  it("hands the thread to the global dock and collapses the pane", () => {
+  it("hands the thread to the global dock and collapses the pane", async () => {
     renderAt("art-1");
     sendMessage("Hello");
-    fireEvent.click(screen.getByRole("button", { name: /open in/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /dock/i }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /open in/i }), {
+      key: "ArrowDown",
+    });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: /dock/i }),
+    );
+    fireEvent.click(item);
     expect(openThreadInDock).toHaveBeenCalledWith("thr-1");
     // Pane returns to the composer; the in-pane surface is gone.
     expect(screen.queryByTestId("chat-surface")).toBeNull();

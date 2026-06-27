@@ -81,6 +81,7 @@ const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   activeTenantId = "ten-1";
   lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
@@ -127,7 +128,7 @@ describe("WorkflowsPage", () => {
     };
     render(React.createElement(WorkflowsPage));
     expect(lastRunsTenantId).toBe("ten-42");
-    fireEvent.click(screen.getByText("deck-build"));
+    fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
     expect(lastPaneTenantId).toBe("ten-42");
   });
 
@@ -146,10 +147,107 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     render(React.createElement(WorkflowsPage));
-    expect(screen.getByText("deck-build")).toBeDefined();
+    screen.getByText("Deck build", { selector: "span" });
     expect(screen.queryByTestId("run-pane")).toBeNull();
-    fireEvent.click(screen.getByText("deck-build"));
+    fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
+  });
+
+  it("archives a run (hidden by default) and reveals it via Show archived", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    render(React.createElement(WorkflowsPage));
+
+    // Archive the deck-build run via its row action.
+    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
+
+    // It is now hidden from the default list; the other run stays.
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    screen.getByText("Last30days", { selector: "span" });
+
+    // Reveal archived runs, then the archived run is shown again.
+    fireEvent.click(screen.getByText(/show 1 archived/i));
+    screen.getByText("Deck build", { selector: "span" });
+  });
+
+  it("filters the run list by status", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "failed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    render(React.createElement(WorkflowsPage));
+
+    screen.getByText("Deck build", { selector: "span" });
+    screen.getByText("Last30days", { selector: "span" });
+
+    fireEvent.change(screen.getByLabelText("Filter by status"), {
+      target: { value: "failed" },
+    });
+
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    screen.getByText("Last30days", { selector: "span" });
+  });
+
+  it("searches the run list by workflow kind", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "completed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    render(React.createElement(WorkflowsPage));
+
+    fireEvent.change(screen.getByLabelText("Search runs"), {
+      target: { value: "last30" },
+    });
+
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    screen.getByText("Last30days", { selector: "span" });
   });
 
   it("opens the catalog on New run, and starting a run selects it", () => {

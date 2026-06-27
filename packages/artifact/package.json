@@ -15,7 +15,9 @@
   },
   "dependencies": {
     "@workbench/shared": "workspace:*",
-    "@workbench/ui": "workspace:*"
+    "@workbench/ui": "workspace:*",
+    "arktype": "catalog:",
+    "lucide-react": "*"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.9.0",

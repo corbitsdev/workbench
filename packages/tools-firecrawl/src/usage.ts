@@ -1,8 +1,10 @@
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  ActivityArgsSchema,
+  HistoricalCreditUsageArgsSchema,
   firecrawlFetchJSON,
-  optionalBoolean,
+  parseArgs,
   resolveConfig,
   stringTool,
   type FirecrawlToolsConfig,
@@ -23,17 +25,23 @@ async function creditUsage(
 
 async function historicalCreditUsage(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const byApiKey = optionalBoolean(args.byApiKey);
+  const args = parseArgs(
+    HistoricalCreditUsageArgsSchema,
+    rawArgs,
+    "firecrawl_historical_credit_usage",
+  );
 
   return firecrawlFetchJSON(
     config,
     {
       method: "GET",
       path: "/team/credit-usage/historical",
-      ...(byApiKey !== null ? { query: { byApiKey } } : {}),
+      ...(args.byApiKey !== undefined
+        ? { query: { byApiKey: args.byApiKey } }
+        : {}),
     },
     signal,
   );
@@ -65,18 +73,19 @@ async function historicalTokenUsage(
 
 async function activity(
   config: ResolvedFirecrawlConfig,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const query: Record<string, string | number | boolean | undefined> = {};
+  const args = parseArgs(ActivityArgsSchema, rawArgs, "firecrawl_activity");
 
-  if (typeof args.endpoint === "string" && args.endpoint.length > 0) {
+  const query: Record<string, string | number | boolean | undefined> = {};
+  if (args.endpoint !== undefined && args.endpoint.length > 0) {
     query.endpoint = args.endpoint;
   }
-  if (typeof args.limit === "number") {
+  if (args.limit !== undefined) {
     query.limit = args.limit;
   }
-  if (typeof args.cursor === "string" && args.cursor.length > 0) {
+  if (args.cursor !== undefined && args.cursor.length > 0) {
     query.cursor = args.cursor;
   }
 

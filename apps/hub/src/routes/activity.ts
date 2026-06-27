@@ -40,6 +40,7 @@ export function createActivityRouter({
 
   app.get("/overview", async (c) => {
     const tenant = c.get("tenant");
+    const callerPrincipalId = c.get("principal")?.id ?? null;
     const queryInput: { startDate?: string; endDate?: string } = {};
     const startDate = optionalQuery(c.req.query("startDate"));
     const endDate = optionalQuery(c.req.query("endDate"));
@@ -68,6 +69,7 @@ export function createActivityRouter({
       const overview = await getActivityOverview({
         db: c.get("db"),
         tenantId: tenant.id,
+        callerPrincipalId,
         ...(range !== undefined ? { range } : {}),
       });
       return c.json(overview);
