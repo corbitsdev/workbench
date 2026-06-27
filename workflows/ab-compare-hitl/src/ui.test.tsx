@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import type { RunState, StepState } from "@intx/workflow";
@@ -10,19 +10,6 @@ import type {
 } from "@workbench/ui";
 
 afterEach(cleanup);
-
-mock.module("framer-motion", () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-  motion: {
-    div: ({
-      children,
-      className,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-    }) => React.createElement("div", { className }, children),
-  },
-}));
 
 const { Panel } = await import("./ui");
 

@@ -99,7 +99,7 @@ describe("LibraryRail", () => {
 
     await waitFor(() => {
       // Title shows the workflow type label resolved from the run kind.
-      expect(view.getAllByText("Collateral Generation").length).toBeGreaterThan(
+      expect(view.getAllByText("Collateral generation").length).toBeGreaterThan(
         0,
       );
     });
@@ -211,7 +211,7 @@ describe("LibraryRail", () => {
     );
 
     const row = await waitFor(() =>
-      view.getByRole("button", { name: "Open workflow Collateral Generation" }),
+      view.getByRole("button", { name: "Open workflow Collateral generation" }),
     );
     fireEvent.click(row);
 
@@ -237,7 +237,7 @@ describe("LibraryRail", () => {
     );
 
     const row = await waitFor(() =>
-      view.getByRole("button", { name: "Open workflow Collateral Generation" }),
+      view.getByRole("button", { name: "Open workflow Collateral generation" }),
     );
     row.focus();
     await user.keyboard("{Enter}");
@@ -377,7 +377,7 @@ describe("CompletedWorkflowRow (pure view)", () => {
   const item = {
     id: "wf-done",
     group: "Workflows" as const,
-    name: "Collateral Generation",
+    name: "Collateral generation",
     type: "workflow" as const,
     sub: "Acme Corp · Done",
     status: "done" as const,
@@ -398,7 +398,7 @@ describe("CompletedWorkflowRow (pure view)", () => {
       }),
     );
     fireEvent.click(
-      view.getByRole("button", { name: "Open workflow Collateral Generation" }),
+      view.getByRole("button", { name: "Open workflow Collateral generation" }),
     );
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
@@ -413,9 +413,9 @@ describe("CompletedWorkflowRow (pure view)", () => {
     );
     expect(
       view.queryByRole("button", {
-        name: "Open workflow Collateral Generation",
+        name: "Open workflow Collateral generation",
       }),
     ).toBeNull();
-    view.getByText("Collateral Generation");
+    view.getByText("Collateral generation");
   });
 });

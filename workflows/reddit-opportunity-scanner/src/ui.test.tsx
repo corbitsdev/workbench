@@ -7,21 +7,6 @@ import type { WorkflowPanelProps } from "@workbench/ui";
 
 afterEach(cleanup);
 
-// Stub framer-motion before importing the module under test
-const passthroughMotion = ({
-  children,
-  className,
-}: {
-  children?: React.ReactNode;
-  className?: string;
-}) => React.createElement("div", { className }, children);
-
-mock.module("framer-motion", () => ({
-  motion: new Proxy({}, { get: () => passthroughMotion }),
-  AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
-    React.createElement(React.Fragment, null, children),
-}));
-
 const { Panel } = await import("./ui");
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

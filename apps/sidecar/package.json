@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "test:authz": "bun test src/step-tool-authz.test.ts",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text"
+    "test": "bun test --isolate",
+    "test:authz": "bun test --isolate src/step-tool-authz.test.ts",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",

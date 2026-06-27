@@ -3,8 +3,8 @@ import { resolveKindLabel } from "./resolve-kind-label";
 
 describe("resolveKindLabel", () => {
   it("humanizes kinds", () => {
-    expect(resolveKindLabel("founder-pov-post")).toBe("Founder POV Post");
-    expect(resolveKindLabel("seo-enrichment")).toBe("SEO Enrichment");
+    expect(resolveKindLabel("founder-pov-post")).toBe("Founder POV post");
+    expect(resolveKindLabel("seo-enrichment")).toBe("SEO enrichment");
   });
 
   it("uses the explicit override for ab-comparison", () => {

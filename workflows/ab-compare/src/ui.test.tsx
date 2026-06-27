@@ -11,20 +11,6 @@ import type {
 
 afterEach(cleanup);
 
-// framer-motion (used by HorizontalStepper) is not compatible with Happy DOM.
-mock.module("framer-motion", () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-  motion: {
-    div: ({
-      children,
-      className,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-    }) => React.createElement("div", { className }, children),
-  },
-}));
-
 const { Panel } = await import("./ui");
 
 type Phase = StepState["phase"];

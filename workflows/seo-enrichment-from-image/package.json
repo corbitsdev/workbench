@@ -15,8 +15,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test --preload ./src/test-setup.ts src",
-    "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "bun test --preload ./src/test-setup.ts --isolate src",
+    "test:coverage": "bun test --preload ./src/test-setup.ts --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
@@ -27,7 +27,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.9.0",
+    "@workbench/test-utils": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",
