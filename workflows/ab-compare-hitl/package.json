@@ -1,5 +1,5 @@
 {
-  "name": "@workbench/workflow-ab-compare",
+  "name": "@workbench/workflow-ab-compare-hitl",
   "version": "0.1.0",
   "private": true,
   "type": "module",

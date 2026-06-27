@@ -39,6 +39,7 @@ COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
+COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
@@ -54,6 +55,7 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY workflows/ab-compare/package.json workflows/ab-compare/
+COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/

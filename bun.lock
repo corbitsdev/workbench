@@ -139,6 +139,7 @@
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-ab-compare": "workspace:*",
+        "@workbench/workflow-ab-compare-hitl": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
@@ -812,6 +813,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-ab-compare": {
+      "name": "@workbench/tools-ab-compare",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-agents": {
       "name": "@workbench/tools-agents",
       "version": "0.1.0",
@@ -1146,6 +1160,30 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/tools-ab-compare": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
+    "workflows/ab-compare-hitl": {
+      "name": "@workbench/workflow-ab-compare-hitl",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/tools-ab-compare": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -2184,6 +2222,8 @@
 
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 
+    "@workbench/tools-ab-compare": ["@workbench/tools-ab-compare@workspace:packages/tools-ab-compare"],
+
     "@workbench/tools-agents": ["@workbench/tools-agents@workspace:packages/tools-agents"],
 
     "@workbench/tools-artifact": ["@workbench/tools-artifact@workspace:packages/tools-artifact"],
@@ -2229,6 +2269,8 @@
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
     "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
+
+    "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 

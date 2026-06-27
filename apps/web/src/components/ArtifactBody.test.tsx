@@ -150,6 +150,34 @@ describe("ArtifactBody rendering", () => {
     expect(screen.getByText("Some opportunity notes")).not.toBeNull();
   });
 
+  it("routes ab-comparison to the compare renderer, not a raw JSON dump", () => {
+    const result = {
+      summary: "Variant B wins on clarity.",
+      ranking: [
+        {
+          rank: 1,
+          label: "Variant B",
+          rationale: "Sharper hook and a concrete number.",
+        },
+      ],
+      variants: [{ label: "Variant B", content: "Hello there B." }],
+    };
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          content: JSON.stringify(result),
+          kind: "ab-comparison",
+        },
+      }),
+    );
+    screen.getByText("Variant B wins on clarity.");
+    screen.getByText("Sharper hook and a concrete number.");
+    // The raw JSON braces must NOT leak through as visible text.
+    if (screen.queryByText(/"ranking"/) !== null) {
+      throw new Error("ab-comparison must not render as a raw JSON dump");
+    }
+  });
+
   it("does not render a download link for non-export kinds", () => {
     render(
       React.createElement(ArtifactBody, {

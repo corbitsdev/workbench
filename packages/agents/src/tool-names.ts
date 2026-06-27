@@ -23,6 +23,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "identity_get",
     "identity_set",
   ],
+  "@workbench/tools-ab-compare/compose": ["ab_comparison_compose"],
   "@workbench/tools-attio/attio": [
     "attio_list_objects",
     "attio_query_records",

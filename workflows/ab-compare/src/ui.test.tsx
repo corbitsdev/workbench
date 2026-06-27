@@ -191,7 +191,13 @@ describe("ab-compare Panel — guided routing (ONLY active step shown)", () => {
         review: "awaiting-signal",
       }),
       stepOutputs: {
-        compare: { reply: "VariantAlpha ranked first", turn: null },
+        compare: {
+          reply: JSON.stringify({
+            summary: "VariantAlpha ranked first",
+            ranking: [{ rank: 1, label: "Variant 1" }],
+          }),
+          turn: null,
+        },
       },
     });
     screen.getByText("Approve comparison");
@@ -353,14 +359,40 @@ describe("ab-compare Panel — execute screen", () => {
         review: "awaiting-signal",
       }),
       stepOutputs: {
+        config: {
+          variants: [
+            {
+              label: "Variant 1",
+              providerName: "anthropic",
+              model: "claude",
+              input: "x",
+            },
+            {
+              label: "Variant 2",
+              providerName: "openai",
+              model: "gpt",
+              input: "x",
+            },
+          ],
+          input: "x",
+        },
         execute: [{ reply: "Answer one" }, { reply: "Answer two" }],
-        compare: { reply: "ranked", turn: null },
+        compare: {
+          reply: JSON.stringify({
+            ranking: [
+              { rank: 1, label: "Variant 1" },
+              { rank: 2, label: "Variant 2" },
+            ],
+          }),
+          turn: null,
+        },
       },
     });
     screen.getByText("Answer one");
     screen.getByText("Answer two");
-    // Outputs are labeled by position, never by provider/model.
-    expect(screen.queryByText("anthropic")).toBeNull();
+    // The review is blind: variant content shows, but provider/model identity
+    // stays hidden until the comparison is saved.
+    expect(screen.queryByText("anthropic · claude")).toBeNull();
   });
 });
 
@@ -397,8 +429,9 @@ describe("ab-compare Panel — compare output (via review screen)", () => {
     screen.getByText("Keep the Variant B hook.");
   });
 
-  it("falls back to plain-text reply when the compare agent does not emit strict JSON", () => {
-    const reply = "VariantB best. VariantA verbose.";
+  it("degrades gracefully when the compare agent does not emit strict JSON", () => {
+    // A non-JSON judge reply yields an empty ranking rather than crashing; the
+    // reviewer can still approve or skip.
     renderPanel({
       state: makeState({
         config: "completed",
@@ -406,27 +439,16 @@ describe("ab-compare Panel — compare output (via review screen)", () => {
         compare: "completed",
         review: "awaiting-signal",
       }),
-      stepOutputs: { compare: { reply, turn: null } },
+      stepOutputs: {
+        compare: { reply: "VariantB best. VariantA verbose.", turn: null },
+      },
     });
-    screen.getByText(reply);
+    screen.getByText("Approve comparison");
+    // No raw JSON or unparsed judge prose is shown as a heading.
+    expect(screen.queryByText('"ranking"')).toBeNull();
   });
 
-  it("renders the plain-text fallback reply as parsed markdown", () => {
-    renderPanel({
-      state: makeState({
-        config: "completed",
-        execute: "completed",
-        compare: "completed",
-        review: "awaiting-signal",
-      }),
-      stepOutputs: { compare: { reply: "Variant **B** wins", turn: null } },
-    });
-    const strong = screen.getByText("B");
-    expect(strong.tagName).toBe("STRONG");
-    expect(screen.queryByText("Variant **B** wins")).toBeNull();
-  });
-
-  it("shows an error when compare output fails validation", () => {
+  it("still lets the reviewer act when compare output is malformed", () => {
     renderPanel({
       state: makeState({
         config: "completed",
@@ -436,7 +458,7 @@ describe("ab-compare Panel — compare output (via review screen)", () => {
       }),
       stepOutputs: { compare: { notReply: true } },
     });
-    screen.getByText("Couldn't read the comparison output.");
+    screen.getByText("Approve comparison");
   });
 });
 
@@ -590,6 +612,10 @@ describe("ab-compare Panel — persist screen", () => {
           ],
           input: "test",
         },
+        execute: [
+          { reply: "Variant one body." },
+          { reply: "Variant two body." },
+        ],
         compare: {
           reply: JSON.stringify({
             ranking: [
@@ -605,10 +631,9 @@ describe("ab-compare Panel — persist screen", () => {
         },
       },
     });
-    screen.getByText("Reveal");
-    // Provider names are shown in the reveal section
-    screen.getByText(/anthropic/);
-    screen.getByText(/openai/);
+    // The saved view reveals provider/model identity in each variant card.
+    screen.getByText("anthropic · claude-sonnet-4-6");
+    screen.getByText("openai · gpt-5.4");
   });
 });
 

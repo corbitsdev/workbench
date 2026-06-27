@@ -14,6 +14,7 @@ export type WorkflowUIModule = {
 // opened workflow loads. Add one entry per workflow package.
 const importers: Record<string, () => Promise<WorkflowUIModule>> = {
   "ab-compare": () => import("@workbench/workflow-ab-compare/ui"),
+  "ab-compare-hitl": () => import("@workbench/workflow-ab-compare-hitl/ui"),
   "gamma-presentation-creator": () =>
     import("@workbench/workflow-gamma-presentation-creator/ui"),
   "pain-point-collateral": () =>

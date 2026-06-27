@@ -1,4 +1,5 @@
 import { usesSocialPostPreview } from "@workbench/artifact";
+import CompareBody from "./CompareBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
 import { MarkdownBlock } from "./Markdown";
@@ -255,6 +256,9 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     // battlecard
     case "battlecard":
       return <BattlecardBody body={body} />;
+    // A/B comparison — content is JSON.stringify(ComparisonResult)
+    case "ab-comparison":
+      return <CompareBody content={body} />;
     // presentation
     case "presentation": {
       let isValidUrl = false;

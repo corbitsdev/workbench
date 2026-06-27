@@ -27,6 +27,7 @@
     "@workbench/transcript": "workspace:*",
     "@workbench/ui": "workspace:*",
     "@workbench/workflow-ab-compare": "workspace:*",
+    "@workbench/workflow-ab-compare-hitl": "workspace:*",
     "@workbench/workflow-gamma-presentation-creator": "workspace:*",
     "@workbench/workflow-last30days-research": "workspace:*",
     "@workbench/workflow-pain-point-collateral": "workspace:*",

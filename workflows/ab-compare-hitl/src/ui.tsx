@@ -20,39 +20,33 @@ import {
 } from "./models";
 
 // Build the same structured ComparisonResult the persist step saves, from the
-// live step outputs — so the in-flight review looks exactly like the saved
-// artifact (one renderer, one shape). Returns null until the pieces are ready.
+// live step outputs (config + execute + the human decision) — so the saved
+// artifact looks exactly like what the reviewer just produced. Returns null
+// until the pieces are ready.
 function previewResult(
   configOutput: unknown,
   executeOutput: unknown,
-  compareOutput: unknown,
+  decisionOutput: unknown,
 ): ComparisonResult | null {
   return parseComparisonResult(
     composeComparisonResult({
       config: { output: configOutput },
       execute: { output: executeOutput },
-      compare: { output: compareOutput },
+      decision: { output: decisionOutput },
     }),
   );
 }
 
 const CONFIG_SIGNAL = "ab-config";
-const REVIEW_SIGNAL = "comparison-review";
+const DECISION_SIGNAL = "ab-decision";
 
-const STEP_ORDER = [
-  "config",
-  "execute",
-  "compare",
-  "review",
-  "persist",
-] as const;
+const STEP_ORDER = ["config", "execute", "decision", "persist"] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
   config: "Configure",
   execute: "Execute",
-  compare: "Compare",
-  review: "Review",
+  decision: "Decide",
   persist: "Persist",
 };
 
@@ -553,114 +547,166 @@ function ExecuteScreen({ phase }: { phase: StepPhase | undefined }) {
   if (phase !== "completed") {
     return <LoadingState label="Running the prompt across variants…" />;
   }
-  return (
-    <LoadingState label="Variants finished — preparing the blind ranking…" />
-  );
+  return <LoadingState label="Variants finished — preparing your review…" />;
 }
 
-function CompareScreen({
-  phase,
-  configOutput,
-  executeOutput,
-  compareOutput,
-}: {
-  phase: StepPhase | undefined;
-  configOutput: unknown;
-  executeOutput: unknown;
-  compareOutput: unknown;
-}) {
-  if (phase === "in-flight" || phase === undefined) {
-    return <LoadingState label="Generating blind ranking…" />;
-  }
-
-  const result = previewResult(configOutput, executeOutput, compareOutput);
-  if (result === null) {
-    if (phase === "completed") {
-      return (
-        <Card>
-          <p className="text-sm text-orange">
-            Couldn't read the comparison output.
-          </p>
-        </Card>
-      );
-    }
-    return <LoadingState label="Generating blind ranking…" />;
-  }
-
-  return (
-    <Card>
-      <CardTitle>Blind ranking</CardTitle>
-      <ComparisonView result={result} blind />
-    </Card>
-  );
+// The human's pick, sent on the ab-decision signal. The compose tool reads it
+// as the (human) decision.
+interface DecisionPayload {
+  ranking: { rank: number; label: string; rationale?: string }[];
+  summary?: string;
+  recommendation?: string;
 }
 
-function ReviewScreen({
+// Turn the picked winner into a full ranking: winner first (with the reviewer's
+// rationale), the rest after in their original order.
+function buildRanking(
+  labels: readonly string[],
+  winner: string,
+  rationale: string,
+): DecisionPayload["ranking"] {
+  const others = labels.filter((label) => label !== winner);
+  const rationaleText = rationale.trim();
+  const winnerEntry: DecisionPayload["ranking"][number] = {
+    rank: 1,
+    label: winner,
+    ...(rationaleText.length > 0 ? { rationale: rationaleText } : {}),
+  };
+  return [
+    winnerEntry,
+    ...others.map((label, index) => ({ rank: index + 2, label })),
+  ];
+}
+
+function DecisionScreen({
   phase,
   configOutput,
-  compareOutput,
   executeOutput,
   connected,
   signalPending,
-  onApprove,
-  onSkip,
+  onSubmit,
 }: {
   phase: StepPhase | undefined;
   configOutput: unknown;
-  compareOutput: unknown;
   executeOutput: unknown;
   connected: boolean;
   signalPending: boolean;
-  onApprove: () => void;
-  onSkip: () => void;
+  onSubmit: (payload: DecisionPayload) => void;
 }) {
+  // The variant outputs to judge, blind (no provider/model). previewResult with
+  // no decision yields an empty ranking and the variant content side by side.
+  const result = previewResult(configOutput, executeOutput, undefined);
+  const labels = (result?.variants ?? []).map((variant) => variant.label);
+
+  const [winner, setWinner] = useState("");
+  const [rationale, setRationale] = useState("");
+  const [summary, setSummary] = useState("");
+  const [error, setError] = useState("");
+
   if (phase !== "awaiting-signal" && phase !== "in-flight") {
-    return <LoadingState label="Waiting for comparison to finish…" />;
+    return <LoadingState label="Waiting for the variants to finish…" />;
+  }
+  if (result === null || labels.length === 0) {
+    return <LoadingState label="Preparing the variant outputs…" />;
   }
 
-  const result = previewResult(configOutput, executeOutput, compareOutput);
+  const locked = !connected || signalPending || phase !== "awaiting-signal";
+
+  function handleSubmit() {
+    if (winner === "") {
+      setError("Pick a winning variant.");
+      return;
+    }
+    setError("");
+    const summaryText = summary.trim();
+    onSubmit({
+      ranking: buildRanking(labels, winner, rationale),
+      ...(summaryText.length > 0 ? { summary: summaryText } : {}),
+    });
+  }
 
   return (
     <div className="space-y-4">
-      {result !== null && (
-        <Card>
-          <CardTitle>Blind ranking</CardTitle>
-          <ComparisonView result={result} blind />
-        </Card>
-      )}
+      <Card>
+        <CardTitle>Variant outputs</CardTitle>
+        <p className="mb-4 text-xs text-text-3">
+          Outputs are shown anonymously. Provider and model stay hidden until
+          you pick a winner.
+        </p>
+        <ComparisonView result={result} blind />
+      </Card>
 
       <Card>
-        <CardTitle>Review and approve</CardTitle>
-        <p className="mb-4 text-sm text-text-2">
-          Review the blind ranking above. Approve to save the results as an
-          artifact, or skip to discard.
-        </p>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={
-              !connected || signalPending || phase !== "awaiting-signal"
-            }
-            onClick={onApprove}
+        <CardTitle>Pick the winner</CardTitle>
+        <div className="space-y-3">
+          <div
+            className="flex flex-wrap gap-2"
+            role="radiogroup"
+            aria-label="Winning variant"
           >
-            Approve comparison
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={
-              !connected || signalPending || phase !== "awaiting-signal"
-            }
-            onClick={onSkip}
-          >
-            Skip
-          </Button>
-          {!connected && (
-            <p className="text-xs text-text-3">
-              Reconnecting — approval unavailable.
-            </p>
-          )}
+            {labels.map((label) => {
+              const active = winner === label;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  disabled={locked}
+                  onClick={() => setWinner(label)}
+                  className={`rounded-[9px] border px-3 py-1.5 text-[13px] font-medium transition-colors disabled:opacity-50 ${
+                    active
+                      ? "border-orange bg-orange/8 text-text"
+                      : "border-border text-text-2 hover:text-text"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-text">
+              Why did it win? (optional)
+            </label>
+            <textarea
+              value={rationale}
+              onChange={(e) => setRationale(e.target.value)}
+              placeholder="What made the winning variant better…"
+              rows={3}
+              disabled={locked}
+              className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40 disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-text">
+              Overall note (optional)
+            </label>
+            <textarea
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              placeholder="A one-line takeaway from the comparison…"
+              rows={2}
+              disabled={locked}
+              className="w-full resize-none rounded-[9px] border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40 disabled:opacity-50"
+            />
+          </div>
+          {error && <p className="text-[12px] text-orange">{error}</p>}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={locked}
+              onClick={handleSubmit}
+            >
+              Save decision
+            </Button>
+            {!connected && (
+              <p className="text-xs text-text-3">
+                Reconnecting — decision unavailable.
+              </p>
+            )}
+          </div>
         </div>
       </Card>
     </div>
@@ -672,14 +718,14 @@ function PersistScreen({
   output,
   configOutput,
   executeOutput,
-  compareOutput,
+  decisionOutput,
   onClose,
 }: {
   phase: StepPhase | undefined;
   output: unknown;
   configOutput: unknown;
   executeOutput: unknown;
-  compareOutput: unknown;
+  decisionOutput: unknown;
   onClose: () => void;
 }) {
   if (phase === "in-flight" || phase === undefined) {
@@ -714,8 +760,8 @@ function PersistScreen({
       : undefined;
 
   // The provider/model reveal lives in the variant cards of the result, so the
-  // saved view is the same ComparisonView the reviewer just approved.
-  const result = previewResult(configOutput, executeOutput, compareOutput);
+  // saved view is the same ComparisonView the reviewer just produced.
+  const result = previewResult(configOutput, executeOutput, decisionOutput);
 
   return (
     <div className="space-y-4">
@@ -770,22 +816,16 @@ export function Panel(props: WorkflowPanelProps) {
     onSignal(CONFIG_SIGNAL, payload);
   }
 
-  function handleApprove() {
-    onSignal(REVIEW_SIGNAL, { approved: true });
-  }
-
-  function handleSkip() {
-    onSignal(REVIEW_SIGNAL, { approved: false });
+  function handleDecisionSubmit(payload: DecisionPayload) {
+    onSignal(DECISION_SIGNAL, payload);
   }
 
   return (
     <div className="flex h-full flex-col bg-surface">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
-          <h2 className="text-base font-medium text-text">A/B Compare</h2>
-          <p className="text-xs text-text-3">
-            Blind ranking across provider/model variants
-          </p>
+          <h2 className="text-base font-medium text-text">A/B Test (HITL)</h2>
+          <p className="text-xs text-text-3">Blind variants, ranked by you</p>
         </div>
         <Button
           variant="ghost"
@@ -817,23 +857,14 @@ export function Panel(props: WorkflowPanelProps) {
           />
         ) : current === "execute" ? (
           <ExecuteScreen phase={phaseFor(state, "execute")} />
-        ) : current === "compare" ? (
-          <CompareScreen
-            phase={phaseFor(state, "compare")}
+        ) : current === "decision" ? (
+          <DecisionScreen
+            phase={phaseFor(state, "decision")}
             configOutput={stepOutputs["config"]}
-            executeOutput={stepOutputs["execute"]}
-            compareOutput={stepOutputs["compare"]}
-          />
-        ) : current === "review" ? (
-          <ReviewScreen
-            phase={phaseFor(state, "review")}
-            configOutput={stepOutputs["config"]}
-            compareOutput={stepOutputs["compare"]}
             executeOutput={stepOutputs["execute"]}
             connected={connected}
             signalPending={signalPending}
-            onApprove={handleApprove}
-            onSkip={handleSkip}
+            onSubmit={handleDecisionSubmit}
           />
         ) : (
           <PersistScreen
@@ -841,7 +872,7 @@ export function Panel(props: WorkflowPanelProps) {
             output={stepOutputs["persist"]}
             configOutput={stepOutputs["config"]}
             executeOutput={stepOutputs["execute"]}
-            compareOutput={stepOutputs["compare"]}
+            decisionOutput={stepOutputs["decision"]}
             onClose={onClose}
           />
         )}

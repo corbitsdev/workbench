@@ -10,6 +10,17 @@ export {
 } from "./Menu";
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
+export {
+  ComparisonView,
+  ComparisonResultSchema,
+  ComparisonVariantSchema,
+  ComparisonRankingEntrySchema,
+  parseComparisonResult,
+  type ComparisonResult,
+  type ComparisonVariant,
+  type ComparisonRankingEntry,
+  type ComparisonViewProps,
+} from "./comparison";
 export { PagePanel } from "./PagePanel";
 export {
   CatalogGlyph,
