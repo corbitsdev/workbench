@@ -286,12 +286,39 @@ describe("WorkflowsPage", () => {
     screen.getByText("Deck build", { selector: "span" });
     screen.getByText("Last30days", { selector: "span" });
 
-    fireEvent.change(screen.getByLabelText("Filter by status"), {
-      target: { value: "failed" },
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
 
     expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
     screen.getByText("Last30days", { selector: "span" });
+  });
+
+  it("resets filters from the toolbar control", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "failed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
+    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    screen.getByText("Deck build", { selector: "span" });
   });
 
   it("searches the run list by workflow kind", () => {

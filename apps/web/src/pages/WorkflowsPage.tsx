@@ -16,8 +16,8 @@ import {
   type RunStatusFilter,
 } from "../lib/workflow-run-filters";
 
-const STATUS_OPTIONS: { value: RunStatusFilter; label: string }[] = [
-  { value: "all", label: "All statuses" },
+const STATUS_CHIP_OPTIONS: { value: RunStatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "running", label: "Running" },
   { value: "awaiting", label: "Awaiting" },
   { value: "completed", label: "Completed" },
@@ -29,14 +29,53 @@ const SORT_OPTIONS: { value: RunSort; label: string }[] = [
   { value: "oldest", label: "Oldest first" },
 ];
 
-const filterSelectClass =
-  "min-w-0 flex-1 rounded-md border border-border bg-page px-3 py-2 text-sm text-text transition-colors focus:outline-none focus:ring-1 focus:ring-border-focus";
+const toolbarSelectClass =
+  "h-[34px] w-full rounded-[9px] border border-border bg-page px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none sm:w-auto";
+
+function StatusFilterChips({
+  value,
+  onChange,
+}: {
+  value: RunStatusFilter;
+  onChange: (next: RunStatusFilter) => void;
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Filter by status"
+      className="flex flex-wrap gap-1.5"
+    >
+      {STATUS_CHIP_OPTIONS.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(opt.value)}
+            className={`rounded-[9px] border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+              active
+                ? "border-text bg-text text-page"
+                : "border-border bg-page text-text-2 hover:border-border-strong hover:text-text"
+            }`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function statusLabel(status: string): string {
+  const match = STATUS_CHIP_OPTIONS.find((opt) => opt.value === status);
+  return match ? match.label : toHumanLabel(status);
+}
 
 function statusClass(status: string): string {
-  if (status === "completed") return "text-green-600";
+  if (status === "completed") return "text-green";
   if (status === "failed") return "text-red-500";
-  if (status === "awaiting") return "text-orange";
-  return "text-text-2";
+  return "text-blue";
 }
 
 function formatWhen(iso: string): string {
@@ -67,6 +106,7 @@ function RunRow({
       <button
         type="button"
         onClick={onSelect}
+        aria-current={selected ? "true" : undefined}
         className="flex min-w-0 flex-1 flex-col gap-0.5 px-4 py-3 text-left"
       >
         <div className="flex items-center justify-between gap-2">
@@ -74,9 +114,9 @@ function RunRow({
             {toHumanLabel(run.kind)}
           </span>
           <span
-            className={`shrink-0 text-xs font-medium capitalize ${statusClass(run.status)}`}
+            className={`shrink-0 text-xs font-medium ${statusClass(run.status)}`}
           >
-            {run.status}
+            {statusLabel(run.status)}
           </span>
         </div>
         <span className="text-xs text-text-3">{formatWhen(run.createdAt)}</span>
@@ -126,10 +166,19 @@ export function WorkflowsPage() {
     [allRuns, archived],
   );
   const kindOptions = useMemo(() => distinctRunKinds(allRuns), [allRuns]);
+  const kindOptionsByLabel = useMemo(
+    () =>
+      [...kindOptions].sort((a, b) =>
+        toHumanLabel(a).localeCompare(toHumanLabel(b)),
+      ),
+    [kindOptions],
+  );
   const filtersAreDefault =
     filters.status === DEFAULT_RUN_FILTERS.status &&
     filters.kind === DEFAULT_RUN_FILTERS.kind &&
-    filters.sort === DEFAULT_RUN_FILTERS.sort;
+    filters.sort === DEFAULT_RUN_FILTERS.sort &&
+    filters.search.trim() === "";
+  const hasActiveFilters = !filtersAreDefault;
   const visibleRuns = useMemo(() => {
     const archiveScoped = showArchived
       ? allRuns
@@ -137,165 +186,191 @@ export function WorkflowsPage() {
     return applyRunFilters(archiveScoped, filters);
   }, [allRuns, archived, showArchived, filters]);
 
+  const showFilters = !isLoading && !isError && allRuns.length > 0;
+  const showAllArchivedNotice =
+    filtersAreDefault && !showArchived && archivedCount > 0;
+
   return (
-    <div className="flex h-full flex-row overflow-hidden">
-      <div className="flex w-[360px] shrink-0 flex-col border-r border-border bg-surface">
-        <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3">
-          <div>
-            <h1 className="text-sm font-semibold text-text">Workflow runs</h1>
-            <p className="text-xs text-text-3">
-              Your workflow execution history
-            </p>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <div className="shrink-0 border-b border-border bg-surface px-4 py-3 sm:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+              Workflow runs
+            </h1>
+            {showFilters && (
+              <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
+                {visibleRuns.length} shown
+              </span>
+            )}
           </div>
           <Button size="sm" onClick={() => setCatalogOpen(true)}>
             New run
           </Button>
         </div>
-        {!isLoading && !isError && allRuns.length > 0 && (
-          <div className="flex flex-col gap-2 border-b border-border px-4 py-2">
+        {showFilters && (
+          <div className="mt-3 flex flex-col gap-3">
             <input
               type="search"
               aria-label="Search runs"
               placeholder="Search runs…"
-              className="w-full rounded border border-border bg-page px-2 py-1 text-xs text-text placeholder:text-text-3"
+              className="h-[34px] w-full rounded-[9px] border border-border bg-page px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
               value={filters.search}
               onChange={(e) =>
                 setFilters((f) => ({ ...f, search: e.target.value }))
               }
             />
-            <div className="flex flex-wrap gap-2">
-              <select
-                aria-label="Filter by status"
-                className={filterSelectClass}
-                value={filters.status}
-                onChange={(e) =>
-                  setFilters((f) => ({
-                    ...f,
-                    status: e.target.value as RunStatusFilter,
-                  }))
-                }
-              >
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Filter by workflow kind"
-                className={filterSelectClass}
-                value={filters.kind}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, kind: e.target.value }))
-                }
-              >
-                <option value={ALL_KINDS}>All workflows</option>
-                {kindOptions.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Sort runs"
-                className={filterSelectClass}
-                value={filters.sort}
-                onChange={(e) =>
-                  setFilters((f) => ({ ...f, sort: e.target.value as RunSort }))
-                }
-              >
-                {SORT_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        )}
-        <div className="min-h-0 flex-1 overflow-auto">
-          {isLoading && (
-            <div className="px-4 py-6 text-sm text-text-2">Loading runs…</div>
-          )}
-          {isError && (
-            <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm text-text-2">
-              <span>Couldn't load workflow runs.</span>
-              <button
-                type="button"
-                onClick={() => void refetch()}
-                className="text-orange underline"
-              >
-                Try again
-              </button>
-            </div>
-          )}
-          {!isLoading && !isError && allRuns.length === 0 && (
-            <div className="px-4 py-6 text-sm text-text-2">
-              No workflow runs yet.
-            </div>
-          )}
-          {!isLoading && !isError && allRuns.length > 0 && (
-            <>
-              {visibleRuns.length === 0 && (
-                <div className="px-4 py-6 text-sm text-text-2">
-                  {filtersAreDefault && !showArchived && archivedCount > 0
-                    ? `All runs are archived. Show ${String(archivedCount)} archived to view them.`
-                    : "No runs match the current filters."}
-                </div>
-              )}
-              {visibleRuns.map((run) => (
-                <RunRow
-                  key={run.runId}
-                  run={run}
-                  selected={run.runId === selectedRunId}
-                  archived={archived.has(run.runId)}
-                  onSelect={() => {
-                    if (run.runId === selectedRunId) return;
-                    navigate(`/workflows/${run.runId}`);
-                  }}
-                  onToggleArchive={() => {
-                    const nextArchived = !isArchived(run.runId);
-                    setArchived(run.runId, nextArchived);
-                    if (
-                      nextArchived &&
-                      !showArchived &&
-                      run.runId === selectedRunId
-                    ) {
-                      navigate("/workflows", { replace: true });
-                    }
-                  }}
-                />
-              ))}
-              {archivedCount > 0 && (
+            <StatusFilterChips
+              value={filters.status}
+              onChange={(status) => setFilters((f) => ({ ...f, status }))}
+            />
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:items-center">
+                <select
+                  aria-label="Filter by workflow kind"
+                  className={`${toolbarSelectClass} sm:max-w-md sm:min-w-[220px] sm:flex-1`}
+                  value={filters.kind}
+                  onChange={(e) =>
+                    setFilters((f) => ({ ...f, kind: e.target.value }))
+                  }
+                >
+                  <option value={ALL_KINDS}>All workflows</option>
+                  {kindOptionsByLabel.map((kind) => (
+                    <option key={kind} value={kind}>
+                      {toHumanLabel(kind)}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  aria-label="Sort runs"
+                  className={`${toolbarSelectClass} sm:w-[200px] sm:shrink-0`}
+                  value={filters.sort}
+                  onChange={(e) =>
+                    setFilters((f) => ({
+                      ...f,
+                      sort: e.target.value as RunSort,
+                    }))
+                  }
+                >
+                  {SORT_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {hasActiveFilters && (
                 <button
                   type="button"
-                  onClick={() => setShowArchived((v) => !v)}
-                  className="w-full px-4 py-3 text-left text-xs text-text-3 underline hover:text-text"
+                  onClick={() => setFilters(DEFAULT_RUN_FILTERS)}
+                  className="self-start font-medium text-text-2 underline hover:text-text sm:self-center"
                 >
-                  {showArchived
-                    ? "Hide archived runs"
-                    : `Show ${String(archivedCount)} archived`}
+                  Reset filters
                 </button>
               )}
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className="min-w-0 flex-1 overflow-hidden">
-        {selectedRunId && !selectedRunMissing ? (
-          <ErrorBoundary>
-            <WorkflowRunPane
-              deploymentId={selectedRunId}
-              tenantId={activeTenantId}
-              onClose={() => navigate("/workflows", { replace: true })}
-            />
-          </ErrorBoundary>
-        ) : (
-          <div className="grid h-full place-items-center px-6 text-center text-sm text-text-3">
-            Select a run to view its details
+            </div>
           </div>
         )}
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-row overflow-hidden">
+        <div className="flex w-[300px] shrink-0 flex-col border-r border-border bg-surface sm:w-[360px] lg:w-[380px]">
+          <div className="min-h-0 flex-1 overflow-auto">
+            {isLoading && (
+              <div className="px-4 py-6 text-sm text-text-2">Loading runs…</div>
+            )}
+            {isError && (
+              <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm text-text-2">
+                <span>Couldn't load workflow runs.</span>
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  className="text-blue underline hover:text-blue-deep"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+            {!isLoading && !isError && allRuns.length === 0 && (
+              <div className="px-4 py-6 text-sm text-text-2">
+                No workflow runs yet.
+              </div>
+            )}
+            {!isLoading && !isError && allRuns.length > 0 && (
+              <>
+                {visibleRuns.length === 0 && showAllArchivedNotice && (
+                  <div className="px-4 py-6 text-sm text-text-2">
+                    {`All runs are archived. Show ${String(archivedCount)} archived to view them.`}
+                  </div>
+                )}
+                {visibleRuns.length === 0 && !showAllArchivedNotice && (
+                  <div className="flex flex-col items-start gap-2 px-4 py-6 text-sm text-text-2">
+                    <span>No runs match the current filters.</span>
+                    {hasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={() => setFilters(DEFAULT_RUN_FILTERS)}
+                        className="font-medium text-text-2 underline hover:text-text"
+                      >
+                        Reset filters
+                      </button>
+                    )}
+                  </div>
+                )}
+                {visibleRuns.map((run) => (
+                  <RunRow
+                    key={run.runId}
+                    run={run}
+                    selected={run.runId === selectedRunId}
+                    archived={archived.has(run.runId)}
+                    onSelect={() => {
+                      if (run.runId === selectedRunId) return;
+                      navigate(`/workflows/${run.runId}`);
+                    }}
+                    onToggleArchive={() => {
+                      const nextArchived = !isArchived(run.runId);
+                      setArchived(run.runId, nextArchived);
+                      if (
+                        nextArchived &&
+                        !showArchived &&
+                        run.runId === selectedRunId
+                      ) {
+                        navigate("/workflows", { replace: true });
+                      }
+                    }}
+                  />
+                ))}
+                {archivedCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowArchived((v) => !v)}
+                    className="w-full px-4 py-3 text-left text-xs text-text-3 underline hover:text-text"
+                  >
+                    {showArchived
+                      ? "Hide archived runs"
+                      : `Show ${String(archivedCount)} archived`}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="min-w-0 flex-1 overflow-hidden">
+          {selectedRunId && !selectedRunMissing ? (
+            <ErrorBoundary>
+              <WorkflowRunPane
+                deploymentId={selectedRunId}
+                tenantId={activeTenantId}
+                onClose={() => navigate("/workflows", { replace: true })}
+              />
+            </ErrorBoundary>
+          ) : (
+            <div className="grid h-full place-items-center px-6 text-center text-sm text-text-3">
+              Select a run to view its details
+            </div>
+          )}
+        </div>
       </div>
 
       <UnifiedCatalogModal

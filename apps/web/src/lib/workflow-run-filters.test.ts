@@ -89,6 +89,14 @@ describe("applyRunFilters", () => {
     expect(out.map((r) => r.runId)).toEqual(["b"]);
   });
 
+  it("matches runs by a case-insensitive humanized kind label search", () => {
+    const out = applyRunFilters(runs, {
+      ...DEFAULT_RUN_FILTERS,
+      search: "deck build",
+    });
+    expect(out.map((r) => r.runId)).toEqual(["c", "a"]);
+  });
+
   it("matches runs by a case-insensitive runId substring search", () => {
     const withIds: WorkflowRun[] = [
       run({ runId: "run_abc123", kind: "deck-build" }),
