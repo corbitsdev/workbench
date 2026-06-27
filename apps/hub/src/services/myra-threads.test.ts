@@ -143,6 +143,20 @@ mock.module("./agent-provisioning", () => ({
   }),
 }));
 
+// CL-2517: mock the tenant-provisioning boundary so createMyraThread's reseed
+// call is a controllable spy (the minimal create-db mock has no agent.findFirst,
+// so the real helper would throw). lookupMember is only used by
+// resolveMyraThreadContext, which these service-fn tests never hit — null is safe.
+let reseedResult: { reseeded: boolean; agentId: string | null } = {
+  reseeded: false,
+  agentId: null,
+};
+const reseedSpy = mock(() => Promise.resolve(reseedResult));
+mock.module("../lib/tenant-provisioning", () => ({
+  lookupMember: mock(() => Promise.resolve(null)),
+  reseedAgentTemplateIfStale: reseedSpy,
+}));
+
 import type { InferenceEvent } from "@intx/types/runtime";
 import { createAnalyticsSubscriber } from "@workbench/analytics";
 import {
@@ -157,6 +171,8 @@ import {
 describe("createMyraThread", () => {
   beforeEach(() => {
     ancestorChainResult = ["tn-global"];
+    reseedResult = { reseeded: false, agentId: null };
+    reseedSpy.mockClear();
   });
 
   function buildCreateDb(opts: {
@@ -310,6 +326,45 @@ describe("createMyraThread", () => {
     expect(updated).toHaveLength(1);
     expect(getTableName(updated[0]!.table as PgTable)).toBe("agent_instance");
     expect((updated[0]!.values as { status: string }).status).toBe("error");
+  });
+
+  it("reseeds the tenant's own def before launch (CL-2517 wiring)", async () => {
+    launchShouldThrow = null;
+    reseedResult = { reseeded: true, agentId: "agt-myra" };
+    const db = buildCreateDb({ transactions: () => {} });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, deps, {
+      tenantId: "tn-global",
+      tenantDomain: "acme.example.com",
+      memberPrincipalId: "prn_member",
+    });
+
+    expect(reseedSpy).toHaveBeenCalledTimes(1);
+    const [, calledTenantId, calledTemplate] = reseedSpy.mock
+      .calls[0] as unknown as [unknown, string, { key: string }];
+    expect(calledTenantId).toBe("tn-global");
+    expect(calledTemplate.key).toBe("myra");
+  });
+
+  it("does NOT reseed an inherited (parent-tenant) def — own-def gate (CL-2517/M1)", async () => {
+    launchShouldThrow = null;
+    ancestorChainResult = ["tn-global", "tn-root"];
+    const db = buildCreateDb({
+      transactions: () => {},
+      agentDefs: [
+        { id: "agt-root", tenantId: "tn-root", systemPrompt: "You are Myra." },
+      ],
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await createMyraThread(db as any, deps, {
+      tenantId: "tn-global",
+      tenantDomain: "acme.example.com",
+      memberPrincipalId: "prn_member",
+    });
+
+    expect(reseedSpy).not.toHaveBeenCalled();
   });
 });
 

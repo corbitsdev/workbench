@@ -549,6 +549,75 @@ export async function seedAgentTemplateIntoTenant(
   }
 }
 
+/** Order-insensitive structural compare — jsonb columns lose key order in PG. */
+function jsonEqual(a: unknown, b: unknown): boolean {
+  const canon = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === "object") {
+      return Object.keys(v as Record<string, unknown>)
+        .sort()
+        .reduce<Record<string, unknown>>((acc, k) => {
+          acc[k] = canon((v as Record<string, unknown>)[k]);
+          return acc;
+        }, {});
+    }
+    return v;
+  };
+  return JSON.stringify(canon(a) ?? null) === JSON.stringify(canon(b) ?? null);
+}
+
+/**
+ * True when a tenant's stored agent definition already matches the template on
+ * every field `seedAgentTemplateIntoTenant` would write (modelConfig excluded —
+ * the seed preserves it with `?? existing`). Keeps the reseed idempotent so the
+ * hot paths (new-thread creation, login sync) can call it unconditionally without
+ * churning `updatedAt` (and therefore without a needless relaunch). (CL-2517)
+ */
+export function agentDefMatchesTemplate(
+  def: typeof agent.$inferSelect,
+  template: AgentTemplate,
+): boolean {
+  return (
+    def.description === template.description &&
+    def.systemPrompt === template.systemPrompt &&
+    jsonEqual(def.capabilities, template.capabilities) &&
+    jsonEqual(def.toolPackages ?? [], template.toolPackages ?? []) &&
+    jsonEqual(def.credentialRequirements, template.credentialRequirements) &&
+    jsonEqual(def.grantRequirements, template.grantRequirements) &&
+    jsonEqual(def.modelRequirements, templateModelRequirements(template))
+  );
+}
+
+/**
+ * Reseed a tenant's agent definition from its template only when it has drifted
+ * (CL-2517). Returns whether a reseed happened. No-op when the def is absent or
+ * already current, so callers on the hot path can invoke it unconditionally.
+ *
+ * This is what makes every NEW Myra thread launch with the latest tools: the
+ * template gains a tool (e.g. Linear/Granola) but existing per-tenant defs are
+ * never otherwise refreshed, so they silently strand users on the old toolset.
+ */
+export async function reseedAgentTemplateIfStale(
+  db: ProductionDB,
+  tenantId: string,
+  template: AgentTemplate,
+): Promise<{ reseeded: boolean; agentId: string | null }> {
+  const def = await db.query.agent.findFirst({
+    where: and(eq(agent.tenantId, tenantId), eq(agent.name, template.name)),
+  });
+  if (!def) return { reseeded: false, agentId: null };
+  if (agentDefMatchesTemplate(def, template)) {
+    return { reseeded: false, agentId: def.id };
+  }
+  const { agentId } = await seedAgentTemplateIntoTenant(db, tenantId, template);
+  log.info("Agent def reseeded from template (drift)", {
+    tenantId,
+    name: template.name,
+    agentId,
+  });
+  return { reseeded: true, agentId };
+}
+
 export async function seedAgentTemplates(
   db: ProductionDB,
   tenantId: string,

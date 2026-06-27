@@ -32,7 +32,10 @@ import {
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
-import { lookupMember } from "../lib/tenant-provisioning";
+import {
+  lookupMember,
+  reseedAgentTemplateIfStale,
+} from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
   launchAgentSession,
@@ -191,11 +194,46 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
-  const def = await resolveMyraDefinition(db, opts.tenantId);
+  let def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
     throw new Error(
       "Myra org definition is not seeded in this tenant hierarchy",
     );
+  }
+
+  // CL-2517: keep THIS tenant's own Myra def current so the new thread launches
+  // with the latest tools — a template that later gains a tool (e.g. Linear) is
+  // only written at member-join and otherwise never reaches existing tenants.
+  // Two deliberate constraints:
+  //   - scoped to the tenant's OWN def (`def.tenantId === opts.tenantId`): an
+  //     inherited/shared parent def is left to the org seed/admin path, never
+  //     rewritten as a side effect of one member creating a thread.
+  //   - best-effort: a reseed failure must NOT block thread creation. Launching
+  //     with the prior def (missing only the newest tool) beats failing the
+  //     create outright. reseedAgentTemplateIfStale is idempotent + a no-op once
+  //     current, so this stays cheap on the hot path.
+  // Live/old threads are untouched (CL-1651); CL-2518 gives those an opt-in update.
+  if (def.tenantId === opts.tenantId) {
+    try {
+      const { reseeded } = await reseedAgentTemplateIfStale(
+        db,
+        opts.tenantId,
+        template,
+      );
+      if (reseeded) {
+        def = (await resolveMyraDefinition(db, opts.tenantId)) ?? def;
+      }
+    } catch (err) {
+      // log.error (not warn): the hub Sentry sink drops warns, and a persistent
+      // reseed failure silently strands a tenant on the old toolset — the exact
+      // bug CL-2517 exists to kill. Best-effort still launches with the prior
+      // def, but the failure must page someone (and this un-swallows real seed
+      // bugs that would otherwise vanish at warn level).
+      log.error("Myra def reseed failed; launched thread with stale def", {
+        tenantId: opts.tenantId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   const now = new Date();
