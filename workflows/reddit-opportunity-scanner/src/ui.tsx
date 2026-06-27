@@ -21,20 +21,22 @@ const STEP_ORDER = [
   "scrape",
   "analyze",
   "review",
-  "scan",
+  "collect",
+  "curate",
   "selection",
   "persist",
 ] as const;
 type StepKey = (typeof STEP_ORDER)[number];
 
 const STEP_LABELS: Record<StepKey, string> = {
-  intake: "Intake",
-  scrape: "Scrape",
-  analyze: "Analyze",
-  review: "Review",
-  scan: "Scan",
+  intake: "Website",
+  scrape: "Crawl",
+  analyze: "Strategy",
+  review: "Search plan",
+  collect: "Collect",
+  curate: "Opportunities",
   selection: "Select",
-  persist: "Persist",
+  persist: "Done",
 };
 
 const INTAKE_SIGNAL = "intake";
@@ -49,17 +51,31 @@ const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
 
 const Recommendation = type({
   label: "string",
+  "intent?": "string",
   "reason?": "string",
   "confidence?": "number",
 });
 
+const SearchPlanItem = type({
+  subreddit: "string",
+  query: "string",
+  "intent?": "string",
+  "reason?": "string",
+  "sort?": "string",
+  "timeframe?": "string",
+  "limit?": "number",
+});
+
+type SearchPlanItem = typeof SearchPlanItem.infer;
+
 const AnalyzeJSON = type({
   "whatTheySell?": "string",
-  "mainKeywords?": "string[]",
+  "icp?": "string",
   "competitors?": "string[]",
   "audienceNotes?": "string",
   "keywords?": Recommendation.array(),
   "subreddits?": Recommendation.array(),
+  "searches?": SearchPlanItem.array(),
 });
 
 export type AnalyzeResult = typeof AnalyzeJSON.infer;
@@ -69,7 +85,12 @@ const Opportunity = type({
   title: "string",
   subreddit: "string",
   signal: "'buying-signal' | 'pain-point' | 'competitor-mention'",
-  detail: "string",
+  "score?": "number",
+  "detail?": "string",
+  "evidence?": "string",
+  "whyItMatters?": "string",
+  "suggestedAction?": "string",
+  "content?": "string",
   "url?": "string",
 });
 
@@ -104,9 +125,10 @@ function phaseFor(
 // Machine-work steps carry a verb `activityLabel` for the live line; the intake,
 // review, and selection gates carry none.
 const STEP_ACTIVITY: Partial<Record<StepKey, string>> = {
-  scrape: "Crawling the site",
-  analyze: "Analyzing the site",
-  scan: "Searching Reddit",
+  scrape: "Reading the website",
+  analyze: "Building the search plan",
+  collect: "Searching Reddit",
+  curate: "Curating opportunities",
   persist: "Saving to workbench",
 };
 
@@ -145,7 +167,7 @@ function parseAnalyzeOutput(raw: unknown): AnalyzeResult | "pending" | "error" {
   return parsed;
 }
 
-function parseScanOutput(raw: unknown): Opportunity[] | "pending" | "error" {
+function parseCurateOutput(raw: unknown): Opportunity[] | "pending" | "error" {
   const envelope = AgentStepOutput(raw);
   if (envelope instanceof type.errors) return "pending";
 
@@ -184,12 +206,27 @@ function Spinner({ label }: { label?: string }) {
   );
 }
 
-function ErrorCard({ title, detail }: { title: string; detail?: string }) {
+function ErrorCard({
+  title,
+  detail,
+  onClose,
+}: {
+  title: string;
+  detail?: string;
+  onClose?: () => void;
+}) {
   return (
     <Card>
       <p className="text-sm font-medium text-orange">{title}</p>
       {detail !== undefined ? (
         <p className="mt-1 text-xs text-text-3">{detail}</p>
+      ) : null}
+      {onClose !== undefined ? (
+        <div className="mt-5">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Start over
+          </Button>
+        </div>
       ) : null}
     </Card>
   );
@@ -305,7 +342,8 @@ function IntakeScreen({
   if (phase !== "awaiting-signal") {
     return (
       <Card>
-        <Spinner />
+        <CardTitle>Getting ready</CardTitle>
+        <Spinner label="Preparing the website form…" />
       </Card>
     );
   }
@@ -393,8 +431,11 @@ function IntakeScreen({
             </p>
           ) : null}
           {connected && inputUrl.trim().length > 0 && !urlValid ? (
-            <p className="text-xs text-orange">Enter a full http(s) URL.</p>
+            <p className="text-xs text-orange">
+              Enter a URL that starts with http:// or https://
+            </p>
           ) : null}
+          {connected && signalPending ? <Spinner label="Submitting…" /> : null}
         </div>
       </form>
     </Card>
@@ -432,12 +473,19 @@ function Field({
 
 // ── Screen: Scrape (deterministic, progress only) ───────────────────────────────
 
-function ScrapeScreen({ phase }: { phase: StepPhase | undefined }) {
+function ScrapeScreen({
+  phase,
+  onClose,
+}: {
+  phase: StepPhase | undefined;
+  onClose: () => void;
+}) {
   if (phase === "failed" || phase === "cancelled") {
     return (
       <ErrorCard
-        title="Couldn't scrape the site."
-        detail="The site fetch failed. Start a new run with a different URL."
+        title="Couldn't crawl the site."
+        detail="We couldn't read the website. Start over with a different URL."
+        onClose={onClose}
       />
     );
   }
@@ -457,6 +505,7 @@ function RecommendationReview({
   signalPending,
   analyzeOutput,
   onSubmit,
+  onClose,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
@@ -467,7 +516,9 @@ function RecommendationReview({
     subreddits: string[];
     competitors: string[];
     businessContext: string;
+    searches: SearchPlanItem[];
   }) => void;
+  onClose: () => void;
 }) {
   const analysis = parseAnalyzeOutput(analyzeOutput);
 
@@ -484,7 +535,8 @@ function RecommendationReview({
     return (
       <ErrorCard
         title="Couldn't read the analysis."
-        detail="The analyze step finished but its result was malformed."
+        detail="We couldn't read the results. Start a new run."
+        onClose={onClose}
       />
     );
   }
@@ -492,7 +544,8 @@ function RecommendationReview({
   if (phase !== "awaiting-signal") {
     return (
       <Card>
-        <Spinner />
+        <CardTitle>Building the search plan</CardTitle>
+        <Spinner label="Preparing the recommendations…" />
       </Card>
     );
   }
@@ -523,6 +576,7 @@ function RecommendationForm({
     subreddits: string[];
     competitors: string[];
     businessContext: string;
+    searches: SearchPlanItem[];
   }) => void;
 }) {
   const [keywords, setKeywords] = useState<string[]>(() =>
@@ -531,12 +585,40 @@ function RecommendationForm({
   const [subreddits, setSubreddits] = useState<string[]>(() =>
     (analysis.subreddits ?? []).map((s) => s.label.replace(/^r\//i, "")),
   );
+  const [searches, setSearches] = useState<SearchPlanItem[]>(() =>
+    (analysis.searches ?? []).map((search) => ({
+      ...search,
+      subreddit: search.subreddit.replace(/^r\//i, ""),
+      sort: search.sort ?? "relevance",
+      timeframe: search.timeframe ?? "month",
+      limit: search.limit ?? 15,
+    })),
+  );
+
+  const updateSearch = (index: number, patch: Partial<SearchPlanItem>) =>
+    setSearches((prev) =>
+      prev.map((search, i) => (i === index ? { ...search, ...patch } : search)),
+    );
+  const removeSearch = (index: number) =>
+    setSearches((prev) => prev.filter((_, i) => i !== index));
+  const addSearch = () =>
+    setSearches((prev) => [
+      ...prev,
+      {
+        subreddit: "",
+        query: "",
+        sort: "relevance",
+        timeframe: "month",
+        limit: 15,
+      },
+    ]);
 
   const competitors = analysis.competitors ?? [];
   const businessContext = [
     analysis.whatTheySell !== undefined
       ? `What they sell: ${analysis.whatTheySell}`
       : null,
+    analysis.icp !== undefined ? `ICP: ${analysis.icp}` : null,
     analysis.audienceNotes !== undefined
       ? `Audience: ${analysis.audienceNotes}`
       : null,
@@ -545,8 +627,22 @@ function RecommendationForm({
     .filter((line): line is string => line !== null)
     .join("\n");
 
+  const validSearches = searches
+    .filter(
+      (search) =>
+        search.subreddit.trim().length > 0 && search.query.trim().length > 0,
+    )
+    .map((search) => ({
+      ...search,
+      subreddit: search.subreddit.trim().replace(/^r\//i, ""),
+      query: search.query.trim(),
+    }));
   const canSubmit =
-    connected && !signalPending && keywords.length > 0 && subreddits.length > 0;
+    connected &&
+    !signalPending &&
+    keywords.length > 0 &&
+    subreddits.length > 0 &&
+    validSearches.length > 0;
 
   return (
     <Card>
@@ -565,7 +661,13 @@ function RecommendationForm({
         onSubmit={(e) => {
           e.preventDefault();
           if (!canSubmit) return;
-          onSubmit({ keywords, subreddits, competitors, businessContext });
+          onSubmit({
+            keywords,
+            subreddits,
+            competitors,
+            businessContext,
+            searches: validSearches,
+          });
         }}
       >
         <ChipInput
@@ -587,6 +689,62 @@ function RecommendationForm({
           }
           onRemove={(v) => setSubreddits((prev) => prev.filter((s) => s !== v))}
         />
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-medium text-text">Search plan</p>
+            <p className="text-xs text-text-3">
+              {validSearches.length}{" "}
+              {validSearches.length === 1 ? "search" : "searches"}
+            </p>
+          </div>
+          <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-lg border border-border bg-surface-2 p-2">
+            {searches.length === 0 ? (
+              <p className="px-1 py-1.5 text-xs text-text-3">
+                No searches yet. Add one to scan Reddit.
+              </p>
+            ) : (
+              searches.map((search, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 rounded-md bg-bg px-2 py-1.5"
+                >
+                  <span className="shrink-0 text-xs text-text-3">r/</span>
+                  <input
+                    type="text"
+                    aria-label={`Subreddit for search ${index + 1}`}
+                    value={search.subreddit}
+                    onChange={(e) =>
+                      updateSearch(index, { subreddit: e.target.value })
+                    }
+                    placeholder="subreddit"
+                    className="w-28 min-w-0 rounded border border-border bg-bg px-2 py-1 text-xs text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
+                  />
+                  <input
+                    type="text"
+                    aria-label={`Query for search ${index + 1}`}
+                    value={search.query}
+                    onChange={(e) =>
+                      updateSearch(index, { query: e.target.value })
+                    }
+                    placeholder="search query"
+                    className="min-w-0 flex-1 rounded border border-border bg-bg px-2 py-1 text-xs text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange"
+                  />
+                  <button
+                    type="button"
+                    aria-label={`Remove search ${index + 1}`}
+                    onClick={() => removeSearch(index)}
+                    className="shrink-0 text-text-3 hover:text-text"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={addSearch}>
+            Add search
+          </Button>
+        </div>
         <div className="flex items-center gap-3 pt-1">
           <Button
             type="submit"
@@ -601,6 +759,7 @@ function RecommendationForm({
               Reconnecting — action unavailable.
             </p>
           ) : null}
+          {connected && signalPending ? <Spinner label="Submitting…" /> : null}
         </div>
       </form>
     </Card>
@@ -686,7 +845,14 @@ function OpportunityCard({
           ) : null}
         </div>
       </div>
-      <p className="mt-1.5 text-xs text-text-2">{opportunity.detail}</p>
+      <p className="mt-1.5 text-xs text-text-2">
+        {opportunity.whyItMatters ?? opportunity.detail ?? opportunity.evidence}
+      </p>
+      {opportunity.suggestedAction !== undefined ? (
+        <p className="mt-1 text-xs text-text-3">
+          Next: {opportunity.suggestedAction}
+        </p>
+      ) : null}
       {opportunity.url !== undefined ? (
         <a
           href={opportunity.url}
@@ -702,31 +868,58 @@ function OpportunityCard({
   );
 }
 
-// ── Screen: Scan (progress, deployed tool-using step) ───────────────────────────
+// ── Screen: Collect + curate progress ───────────────────────────────────────────
 
-function ScanScreen({
+function CollectScreen({
+  phase,
+  onClose,
+}: {
+  phase: StepPhase | undefined;
+  onClose: () => void;
+}) {
+  if (phase === "failed" || phase === "cancelled") {
+    return (
+      <ErrorCard
+        title="Couldn't collect Reddit results."
+        detail="Something went wrong while searching Reddit. Start over."
+        onClose={onClose}
+      />
+    );
+  }
+  return (
+    <Card>
+      <CardTitle>Collecting Reddit evidence</CardTitle>
+      <Spinner label="Searching approved subreddits and gathering candidate threads…" />
+    </Card>
+  );
+}
+
+function CurateScreen({
   phase,
   output,
+  onClose,
 }: {
   phase: StepPhase | undefined;
   output: unknown;
+  onClose: () => void;
 }) {
   if (phase === "in-flight" || phase === undefined) {
     return (
       <Card>
-        <CardTitle>Scanning Reddit</CardTitle>
-        <Spinner label="Searching subreddits and ranking opportunities…" />
+        <CardTitle>Ranking opportunities</CardTitle>
+        <Spinner label="Dropping noise and scoring the strongest Reddit signals…" />
       </Card>
     );
   }
 
-  const result = parseScanOutput(output);
+  const result = parseCurateOutput(output);
 
   if (result === "error") {
     return (
       <ErrorCard
-        title="Couldn't read the scan output."
-        detail="The scan step finished but its result was malformed."
+        title="Couldn't read the opportunity ranking."
+        detail="We couldn't read the results. Start a new run."
+        onClose={onClose}
       />
     );
   }
@@ -734,7 +927,7 @@ function ScanScreen({
   if (result === "pending") {
     return (
       <Card>
-        <CardTitle>Scanning Reddit</CardTitle>
+        <CardTitle>Ranking opportunities</CardTitle>
         <Spinner />
       </Card>
     );
@@ -742,7 +935,7 @@ function ScanScreen({
 
   return (
     <Card>
-      <CardTitle>Scan complete — {result.length} opportunities found</CardTitle>
+      <CardTitle>{result.length} opportunities found</CardTitle>
       {result.length > 0 ? (
         <div className="space-y-2">
           {result.map((opp) => (
@@ -750,7 +943,7 @@ function ScanScreen({
           ))}
         </div>
       ) : (
-        <p className="text-sm text-text-3">No opportunities found yet.</p>
+        <p className="text-sm text-text-3">No strong opportunities found.</p>
       )}
     </Card>
   );
@@ -762,18 +955,20 @@ function SelectionScreen({
   phase,
   connected,
   signalPending,
-  scanOutput,
+  curateOutput,
   onSubmit,
+  onClose,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
-  scanOutput: unknown;
+  curateOutput: unknown;
   onSubmit: (payload: { selected: Opportunity[] }) => void;
+  onClose: () => void;
 }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const result = parseScanOutput(scanOutput);
+  const result = parseCurateOutput(curateOutput);
   const opportunities = Array.isArray(result) ? result : [];
 
   const canSubmit = connected && !signalPending && selectedIds.size > 0;
@@ -793,7 +988,8 @@ function SelectionScreen({
   if (phase !== "awaiting-signal") {
     return (
       <Card>
-        <Spinner />
+        <CardTitle>Preparing opportunities</CardTitle>
+        <Spinner label="Getting the results ready to review…" />
       </Card>
     );
   }
@@ -802,7 +998,8 @@ function SelectionScreen({
     return (
       <ErrorCard
         title="No opportunities to review."
-        detail="The scan step produced no results. Start a new run with different keywords or subreddits."
+        detail="We didn't find any strong opportunities. Start over with different keywords or subreddits."
+        onClose={onClose}
       />
     );
   }
@@ -815,8 +1012,8 @@ function SelectionScreen({
     <Card>
       <CardTitle>Select opportunities to save</CardTitle>
       <p className="mb-4 text-xs text-text-3">
-        Choose which opportunities to persist as artifacts. Each saved item
-        becomes a document in your workbench.
+        Choose which opportunities to save. Each becomes a document in your
+        workbench.
       </p>
       <div className="space-y-2">
         {opportunities.map((opp) => (
@@ -847,6 +1044,7 @@ function SelectionScreen({
             Reconnecting — action unavailable.
           </p>
         ) : null}
+        {connected && signalPending ? <Spinner label="Submitting…" /> : null}
       </div>
     </Card>
   );
@@ -888,48 +1086,69 @@ function PersistScreen({
   if (phase === "in-flight" || phase === undefined) {
     return (
       <Card>
-        <CardTitle>Saving artifacts</CardTitle>
+        <CardTitle>Saving documents</CardTitle>
         <Spinner />
       </Card>
     );
   }
 
   // `persist` is a `map` — its output is an array of tool-result envelopes,
-  // one per selected opportunity.
+  // one per selected opportunity. `items.length` is what we tried to save;
+  // `documents.length` is what actually came back.
   const items = Array.isArray(output) ? output : [];
-  const artifacts = items
+  const documents = items
     .map(readPersistedArtifact)
     .filter((a): a is NonNullable<typeof a> => a !== undefined);
 
+  const savedCount = documents.length;
+  const attemptedCount = items.length;
+
+  if (savedCount === 0) {
+    return (
+      <Card>
+        <CardTitle>Couldn't save your opportunities</CardTitle>
+        <p className="text-sm text-text-3">
+          Nothing was saved. Start a new run and try again.
+        </p>
+        <div className="mt-5">
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+      </Card>
+    );
+  }
+
+  const partial = attemptedCount > savedCount;
+  const heading = partial
+    ? `Saved ${savedCount} of ${attemptedCount} documents`
+    : `Done — ${savedCount} document${savedCount === 1 ? "" : "s"} saved`;
+
   return (
     <Card>
-      <CardTitle>
-        Done — {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}{" "}
-        saved
-      </CardTitle>
-      {artifacts.length > 0 ? (
-        <div className="space-y-2">
-          {artifacts.map((artifact, index) => (
-            <div
-              key={artifact.artifactId ?? index}
-              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
-            >
-              <span className="min-w-0 truncate text-sm text-text">
-                {artifact.title ?? artifact.artifactId ?? "Saved artifact"}
-              </span>
-              {artifact.kind !== undefined ? (
-                <span className="shrink-0 text-xs text-text-3">
-                  {artifact.kind}
-                </span>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-sm text-text-3">
-          No artifacts could be read from the persist output.
+      <CardTitle>{heading}</CardTitle>
+      {partial ? (
+        <p className="mb-3 text-xs text-text-3">
+          Some opportunities couldn&apos;t be saved.
         </p>
-      )}
+      ) : null}
+      <div className="space-y-2">
+        {documents.map((document, index) => (
+          <div
+            key={document.artifactId ?? index}
+            className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface-2 px-3 py-2"
+          >
+            <span className="min-w-0 truncate text-sm text-text">
+              {document.title ?? document.artifactId ?? "Saved document"}
+            </span>
+            {document.kind !== undefined ? (
+              <span className="shrink-0 text-xs text-text-3">
+                {document.kind}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </div>
       <div className="mt-5">
         <Button variant="ghost" size="sm" onClick={onClose}>
           Close
@@ -998,7 +1217,8 @@ export function Panel(props: WorkflowPanelProps) {
         {failed ? (
           <ErrorCard
             title="This run failed."
-            detail={failError ?? "Review the step details and start a new run."}
+            detail={failError ?? "Review the step details and start over."}
+            onClose={onClose}
           />
         ) : active === "intake" ? (
           <IntakeScreen
@@ -1008,7 +1228,7 @@ export function Panel(props: WorkflowPanelProps) {
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
         ) : active === "scrape" ? (
-          <ScrapeScreen phase={phaseFor(state, "scrape")} />
+          <ScrapeScreen phase={phaseFor(state, "scrape")} onClose={onClose} />
         ) : active === "analyze" || active === "review" ? (
           <RecommendationReview
             phase={phaseFor(state, "review")}
@@ -1016,26 +1236,36 @@ export function Panel(props: WorkflowPanelProps) {
             signalPending={signalPending}
             analyzeOutput={stepOutputs["analyze"]}
             onSubmit={(payload) => onSignal(REVIEW_SIGNAL, payload)}
+            onClose={onClose}
           />
-        ) : active === "scan" ? (
-          <ScanScreen
-            phase={phaseFor(state, "scan")}
-            output={stepOutputs["scan"]}
+        ) : active === "collect" ? (
+          <CollectScreen phase={phaseFor(state, "collect")} onClose={onClose} />
+        ) : active === "curate" ? (
+          <CurateScreen
+            phase={phaseFor(state, "curate")}
+            output={stepOutputs["curate"]}
+            onClose={onClose}
           />
         ) : active === "selection" ? (
           <SelectionScreen
             phase={phaseFor(state, "selection")}
             connected={connected}
             signalPending={signalPending}
-            scanOutput={stepOutputs["scan"]}
+            curateOutput={stepOutputs["curate"]}
             onSubmit={(payload) => onSignal(SELECTION_SIGNAL, payload)}
+            onClose={onClose}
           />
-        ) : (
+        ) : active === "persist" ? (
           <PersistScreen
             phase={phaseFor(state, "persist")}
             output={stepOutputs["persist"]}
             onClose={onClose}
           />
+        ) : (
+          <Card>
+            <CardTitle>Loading…</CardTitle>
+            <Spinner />
+          </Card>
         )}
       </div>
     </div>

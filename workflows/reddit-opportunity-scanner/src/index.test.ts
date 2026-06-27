@@ -6,6 +6,7 @@ import {
   INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
+  STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
 
@@ -65,6 +66,15 @@ const REVIEW_PAYLOAD = {
   subreddits: ["devops"],
   competitors: [],
   businessContext: "Acme sells observability tooling.",
+  searches: [
+    {
+      subreddit: "devops",
+      query: "observability pricing",
+      sort: "relevance",
+      timeframe: "month",
+      limit: 15,
+    },
+  ],
 };
 
 const SELECTION_PAYLOAD = {
@@ -74,13 +84,14 @@ const SELECTION_PAYLOAD = {
       title: "Anyone using X for tracing?",
       subreddit: "devops",
       signal: "buying-signal" as const,
-      detail: "Active buying-intent thread.",
+      whyItMatters: "Active buying-intent thread.",
+      content: "## Opportunity\nActive buying-intent thread.",
     },
   ],
 };
 
 describe("reddit-opportunity-scanner native workflow", () => {
-  test("runs the full restored flow: intake → scrape → analyze → review → scan → selection → persist", async () => {
+  test("runs the full guided flow: intake → scrape → analyze → review → collect → curate → selection → persist", async () => {
     const analyzeReply = JSON.stringify({
       whatTheySell: "Observability tooling",
       mainKeywords: ["observability"],
@@ -91,14 +102,15 @@ describe("reddit-opportunity-scanner native workflow", () => {
       ],
       subreddits: [{ label: "devops", reason: "audience", confidence: 0.8 }],
     });
-    const scanReply = JSON.stringify({
+    const curateReply = JSON.stringify({
       opportunities: [
         {
           id: "opp-1",
           title: "Anyone using X for tracing?",
           subreddit: "devops",
           signal: "buying-signal",
-          detail: "Active buying-intent thread.",
+          whyItMatters: "Active buying-intent thread.",
+          content: "## Opportunity\nActive buying-intent thread.",
         },
       ],
     });
@@ -106,7 +118,8 @@ describe("reddit-opportunity-scanner native workflow", () => {
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-scrape": { content: '{"markdown":"site text"}' },
       "reddit-opp-analyze": AGENT_REPLY(analyzeReply),
-      "reddit-opportunity-scan": AGENT_REPLY(scanReply),
+      "reddit-opp-collect-search": { content: "[]" },
+      "reddit-opp-curate": AGENT_REPLY(curateReply),
       "reddit-opp-persist-item": { artifactId: "art_1" },
     });
 
@@ -121,11 +134,12 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
 
     const ranIds = ran.map((r) => r.id);
-    // Ordered chain: scrape → analyze → scan → persist (one per selected item).
+    // Ordered chain: scrape → analyze → collect → curate → persist (one per selected item).
     expect(ranIds).toEqual([
       "reddit-opp-scrape",
       "reddit-opp-analyze",
-      "reddit-opportunity-scan",
+      "reddit-opp-collect-search",
+      "reddit-opp-curate",
       "reddit-opp-persist-item",
     ]);
 
@@ -137,13 +151,12 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(signalNames).toContain("opportunity-selection");
   });
 
-  test("scan step receives the approved review output as input", async () => {
+  test("collect step receives each approved search as input", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-scrape": { content: "{}" },
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opportunity-scan": AGENT_REPLY(
-        JSON.stringify({ opportunities: [] }),
-      ),
+      "reddit-opp-collect-search": { content: "[]" },
+      "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -152,17 +165,16 @@ describe("reddit-opportunity-scanner native workflow", () => {
     await run.signal("opportunity-selection", { selected: [] });
     await run.complete;
 
-    const scanRun = ran.find((r) => r.id === "reddit-opportunity-scan");
-    expect(scanRun?.input).toEqual(REVIEW_PAYLOAD);
+    const collectRun = ran.find((r) => r.id === "reddit-opp-collect-search");
+    expect(collectRun?.input).toEqual(REVIEW_PAYLOAD.searches[0]);
   });
 
   test("intake gates the run before scrape", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-scrape": { content: "{}" },
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opportunity-scan": AGENT_REPLY(
-        JSON.stringify({ opportunities: [] }),
-      ),
+      "reddit-opp-collect-search": { content: "[]" },
+      "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
@@ -177,19 +189,18 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
   });
 
-  test("review gates the run before scan", async () => {
+  test("review gates the run before collect", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "reddit-opp-scrape": { content: "{}" },
       "reddit-opp-analyze": AGENT_REPLY("{}"),
-      "reddit-opportunity-scan": AGENT_REPLY(
-        JSON.stringify({ opportunities: [] }),
-      ),
+      "reddit-opp-collect-search": { content: "[]" },
+      "reddit-opp-curate": AGENT_REPLY(JSON.stringify({ opportunities: [] })),
     });
     const run = runLocal(workflow, { invokeStep: invoker });
 
     await run.signal("intake", INTAKE_PAYLOAD);
 
-    // Wait for analyze to complete, then confirm scan is still gated on review.
+    // Wait for analyze to complete, then confirm collection is still gated on review.
     await new Promise<void>((resolve) => {
       const interval = setInterval(() => {
         if (ran.some((r) => r.id === "reddit-opp-analyze")) {
@@ -198,7 +209,7 @@ describe("reddit-opportunity-scanner native workflow", () => {
         }
       }, 5);
     });
-    expect(ran.some((r) => r.id === "reddit-opportunity-scan")).toBe(false);
+    expect(ran.some((r) => r.id === "reddit-opp-collect-search")).toBe(false);
 
     await run.signal("recommendation-review", REVIEW_PAYLOAD);
     await run.signal("opportunity-selection", { selected: [] });
@@ -229,33 +240,54 @@ describe("reddit-opportunity-scanner native workflow", () => {
     });
   });
 
-  test("scan is a deployed tool-using agent step with the reddit capabilities and an inference source", () => {
-    const scan = stepPrimitive("scan");
-    // Not a deterministic or inline marker — a genuine tool-capable reasoning step.
-    expect(scan.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
-    expect(scan.agent.systemPrompt.length).toBeGreaterThan(0);
-    // capabilities are canonicalized to the prefixed runtime name.
-    expect(
-      scan.agent.capabilities.some((c) => c.endsWith("reddit_search")),
-    ).toBe(true);
-    expect(
-      scan.agent.capabilities.some((c) =>
-        c.endsWith("reddit_subreddit_search"),
-      ),
-    ).toBe(true);
-    expect(scan.agent.inference.sources.length).toBeGreaterThan(0);
-    expect(scan.input).toEqual({ from: "steps.review.output" });
-    expect(scan.after).toContain("review");
+  test("collect is a deterministic reddit_subreddit_search map over approved searches", () => {
+    const collect = mapPrimitive("collect");
+    expect(collect.over).toEqual({ from: "steps.review.output.searches" });
+    const inner = collect.step;
+    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "reddit_subreddit_search",
+    );
+    // Load-bearing: one dead subreddit search must degrade to a skip, not throw
+    // and poison the whole curate pool (the last30days brief-poison class, CL-2362).
+    expect(inner.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+    expect(inner.agent.inference.sources).toEqual([]);
+    const argMap = inner.agent.tags?.[STEP_ARGMAP_TAG];
+    if (argMap === undefined)
+      throw new Error("expected argMap on collect inner step");
+    expect(JSON.parse(argMap)).toEqual({
+      subreddit: { from: "subreddit" },
+      query: { from: "query" },
+      sort: { from: "sort" },
+      timeframe: { from: "timeframe" },
+      limit: { from: "limit" },
+    });
   });
 
-  test("review and selection are awaitSignal gates after analyze and scan", () => {
+  test("curate is an inline-inference step over collected Reddit evidence", () => {
+    const curate = stepPrimitive("curate");
+    expect(curate.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(curate.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
+    expect(curate.agent.systemPrompt.length).toBeGreaterThan(0);
+    expect(curate.agent.capabilities).toEqual([]);
+    expect(curate.agent.inference.sources).toEqual([]);
+    // Scoped to the approved plan + collected results only — the heavy scrape
+    // markdown and analyze blob are kept out of the curate inference context.
+    expect(curate.input).toEqual({
+      project: { from: "steps" },
+      fields: ["review", "collect"],
+    });
+    expect(curate.after).toContain("collect");
+  });
+
+  test("review and selection are awaitSignal gates after analyze and curate", () => {
     const review = awaitSignalPrimitive("review");
     expect(review.name).toBe("recommendation-review");
     expect(review.after).toContain("analyze");
 
     const selection = awaitSignalPrimitive("selection");
     expect(selection.name).toBe("opportunity-selection");
-    expect(selection.after).toContain("scan");
+    expect(selection.after).toContain("curate");
   });
 
   test("persist is a map of deterministic artifact_create steps over selected", () => {
@@ -270,8 +302,8 @@ describe("reddit-opportunity-scanner native workflow", () => {
       throw new Error("expected argMap on persist inner step");
     expect(JSON.parse(argMap)).toEqual({
       title: { from: "title" },
-      kind: { literal: "document" },
-      content: { from: "detail" },
+      kind: { literal: "reddit-opportunity-scan" },
+      content: { from: "content" },
     });
   });
 });
