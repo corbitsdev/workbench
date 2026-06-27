@@ -7,9 +7,10 @@ import {
   readLastActiveThreadId,
   useCreateMyraThread,
   useMyraThreads,
+  useRelaunchMyraThread,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
-import type { MyraThread } from "../lib/hub-api";
+import type { MyraThreadListItem } from "../lib/hub-api";
 
 const DAY_MS = 86_400_000;
 
@@ -35,7 +36,11 @@ function bucketFor(iso: string, now: number): Bucket {
   return "older";
 }
 
-type ThreadGroup = { key: Bucket; label: string; threads: MyraThread[] };
+type ThreadGroup = {
+  key: Bucket;
+  label: string;
+  threads: MyraThreadListItem[];
+};
 
 const GROUP_ORDER: { key: Bucket; label: string }[] = [
   { key: "today", label: "Today" },
@@ -44,7 +49,10 @@ const GROUP_ORDER: { key: Bucket; label: string }[] = [
   { key: "older", label: "Older" },
 ];
 
-function buildGroups(threads: MyraThread[], now: number): ThreadGroup[] {
+function buildGroups(
+  threads: MyraThreadListItem[],
+  now: number,
+): ThreadGroup[] {
   const sorted = [...threads].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt),
   );
@@ -103,13 +111,33 @@ function CenteredState({
 export function ChatsListPage() {
   const { data: threads, isLoading, isError, refetch } = useMyraThreads();
   const createThread = useCreateMyraThread();
+  const relaunch = useRelaunchMyraThread();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [newChatError, setNewChatError] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const open = (thread: MyraThread) => {
+  const open = (thread: MyraThreadListItem) => {
     writeLastActiveThreadId(thread.id);
     navigate(`/chats/${thread.id}`);
+  };
+
+  // Opt-in "Update Myra" for one old thread (CL-2518): relaunch it against the
+  // latest def so the newest tools load. The list refetches on success, which
+  // clears this thread's `updateAvailable` and removes the button.
+  const updateMyra = (threadId: string) => {
+    setUpdateError(null);
+    relaunch.mutate(threadId, {
+      onSuccess: (result) => {
+        // applied=false means the live session couldn't be torn down in time;
+        // the thread is unchanged. Surface it so the user can retry (the badge
+        // stays). A successful apply leaves no error and refetches the list.
+        if (!result.applied) {
+          setUpdateError("Could not update Myra. Try again.");
+        }
+      },
+      onError: () => setUpdateError("Could not update Myra. Try again."),
+    });
   };
 
   const newChat = () => {
@@ -143,9 +171,9 @@ export function ChatsListPage() {
         <div className="flex-1" />
         {hasThreads && (
           <>
-            {newChatError && (
+            {(newChatError || updateError) && (
               <span className="text-[12px] text-orange-deep">
-                {newChatError}
+                {newChatError ?? updateError}
               </span>
             )}
             <input
@@ -228,24 +256,43 @@ export function ChatsListPage() {
                 {group.label}
               </div>
               {group.threads.map((thread) => (
-                <button
+                <div
                   key={thread.id}
-                  type="button"
-                  onClick={() => open(thread)}
                   className={cn(
-                    "group relative flex h-[46px] w-full items-center gap-3 border-b border-border px-4 text-left transition-[background-color] duration-150 ease-[var(--ease)] last:border-b-0 hover:bg-row-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange active:bg-surface-2 sm:px-7",
+                    "group relative flex h-[46px] w-full items-center border-b border-border transition-[background-color] duration-150 ease-[var(--ease)] last:border-b-0 hover:bg-row-hover",
                     thread.id === lastActiveId &&
                       "bg-surface-2 before:absolute before:left-0 before:top-0 before:h-full before:w-[2px] before:bg-accent before:content-['']",
                   )}
                 >
-                  <span className="truncate text-[14px] font-medium text-text">
-                    {thread.label}
-                  </span>
-                  <span className="flex-1" />
-                  <span className="shrink-0 text-[12px] tabular-nums text-text-3">
-                    {formatRelativeTime(thread.createdAt, now)}
-                  </span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => open(thread)}
+                    className="flex h-full flex-1 items-center gap-3 px-4 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange active:bg-surface-2 sm:px-7"
+                  >
+                    <span className="truncate text-[14px] font-medium text-text">
+                      {thread.label}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="shrink-0 text-[12px] tabular-nums text-text-3">
+                      {formatRelativeTime(thread.createdAt, now)}
+                    </span>
+                  </button>
+                  {thread.updateAvailable && (
+                    <button
+                      type="button"
+                      onClick={() => updateMyra(thread.id)}
+                      disabled={
+                        relaunch.isPending && relaunch.variables === thread.id
+                      }
+                      title="Update this chat to Myra's latest tools"
+                      className="mr-4 grid h-[34px] shrink-0 place-items-center rounded-[6px] px-[11px] text-[11.5px] font-medium text-text-3 opacity-0 transition-[opacity,color,background-color,transform] duration-150 ease-out hover:bg-surface-2 hover:text-text focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97] group-hover:opacity-100 disabled:cursor-default disabled:opacity-100 sm:mr-7"
+                    >
+                      {relaunch.isPending && relaunch.variables === thread.id
+                        ? "Updating…"
+                        : "Update Myra"}
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           ))}
