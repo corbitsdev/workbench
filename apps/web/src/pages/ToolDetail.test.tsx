@@ -81,7 +81,7 @@ describe("ToolDetail", () => {
     renderPage();
 
     await waitFor(() =>
-      expect(document.body.textContent).toContain("Attio Query Records"),
+      expect(document.body.textContent).toContain("Attio query records"),
     );
     expect(document.body.textContent).toContain("v0.2.3");
   });

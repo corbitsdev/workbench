@@ -6,6 +6,7 @@ import { useToolDetail } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
 import { ApiError } from "../lib/api";
 import { toHumanLabel } from "@workbench/ui";
+import { ProviderLogo } from "../components/ProviderLogo";
 
 type ParamRow = {
   name: string;
@@ -98,6 +99,11 @@ export function ToolDetail() {
           {!toolQuery.isLoading && !toolQuery.isError && toolQuery.data && (
             <div className="max-w-[760px]">
               <div className="flex items-center gap-2">
+                <ProviderLogo
+                  providerName={toolQuery.data.providerName}
+                  size={18}
+                  hideFallback
+                />
                 <span className="inline-block rounded-full bg-surface-2 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-text-2">
                   {toolQuery.data.providerName}
                 </span>

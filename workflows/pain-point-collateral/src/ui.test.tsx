@@ -1020,9 +1020,9 @@ describe("Panel — review generated pieces (step 5)", () => {
     );
 
     // Shown both as the body placeholder and on the persistent live status line.
-    expect(screen.getAllByText("Generating collateral…").length).toBeGreaterThan(
-      0,
-    );
+    expect(
+      screen.getAllByText("Generating collateral…").length,
+    ).toBeGreaterThan(0);
   });
 
   it("reads generated pieces wrapped in a JSON markdown fence", () => {

@@ -1,7 +1,6 @@
 import {
   CATALOG_GLYPH_FILLS,
   CATALOG_GLYPH_KINDS,
-  CatalogGlyph,
   catalogCardClassName,
   DataTable,
   hashString,
@@ -17,6 +16,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useToolsLibrary, type ToolSummary } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
 import { providerLabel } from "../lib/tool-providers";
+import { ProviderLogo } from "../components/ProviderLogo";
 
 interface ToolGroup {
   provider: string;
@@ -76,7 +76,11 @@ function ToolCard({
       <div
         className={`relative grid h-[112px] place-items-center overflow-hidden ${fill}`}
       >
-        <CatalogGlyph kind={glyph} />
+        <ProviderLogo
+          providerName={tool.providerName}
+          fallbackGlyph={glyph}
+          size={56}
+        />
         <span className="absolute bottom-[10px] right-3 font-mono text-[13px] font-bold text-[rgba(255,255,255,0.85)]">
           T{index.toString().padStart(2, "0")}
         </span>
@@ -252,6 +256,11 @@ export function ToolsLibrary() {
               {groups.map((group) => (
                 <section key={group.provider}>
                   <h2 className="mb-3 flex items-center gap-[9px] text-[13px] font-semibold uppercase tracking-[0.04em] text-text-2">
+                    <ProviderLogo
+                      providerName={group.provider}
+                      size={18}
+                      hideFallback
+                    />
                     {group.label}
                     <span className="rounded-[6px] bg-surface-2 px-[7px] py-[2px] font-mono text-[11px] font-normal text-text-3">
                       {group.tools.length}
