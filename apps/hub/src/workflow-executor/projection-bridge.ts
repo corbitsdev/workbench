@@ -109,29 +109,63 @@ export function isNewWorkflowRunFailure(
   return previousStatus !== "failed" && nextStatus === "failed";
 }
 
+export interface RunFailureContext {
+  runId: string;
+  kind: string;
+  deploymentId: string | null;
+  version?: string;
+  sha?: string;
+}
+
+export interface RunFailureReport {
+  message: string;
+  // The Error forwarded under the `error` property the Sentry sink captures via
+  // captureException — so the event carries a stack (synthesized here at the
+  // hub when the on-disk StepFailed event has only a message; the originating
+  // per-step throw's full stack is captured separately in the workflow-child,
+  // which CL-2503 wired to Sentry). Named after the failing step(s) so the
+  // event title is the specific failure, not the opaque aggregate.
+  error: Error;
+  properties: Record<string, unknown>;
+}
+
+// Build the structured failure report forwarded to the error log / Sentry on a
+// run's first transition to `failed`. Pure + exported so it is unit-testable:
+// the report names the failing step(s), carries an Error with a stack, and
+// attaches the per-step failure breakdown as a property.
+export function buildRunFailureReport(
+  projected: ProjectedRun,
+  context: RunFailureContext,
+): RunFailureReport {
+  const detail = projected.error ?? "workflow run failed";
+  const error = new Error(detail);
+  error.name = "WorkflowRunFailedError";
+  return {
+    message: "workflow run failed",
+    error,
+    properties: {
+      runId: context.runId,
+      kind: context.kind,
+      ...(context.deploymentId !== null
+        ? { deploymentId: context.deploymentId }
+        : {}),
+      ...(context.version !== undefined ? { version: context.version } : {}),
+      ...(context.sha !== undefined ? { sha: context.sha } : {}),
+      ...(projected.failedSteps.length > 0
+        ? { failedSteps: projected.failedSteps }
+        : {}),
+    },
+  };
+}
+
 export function logNewWorkflowRunFailureIfNeeded(
   previousStatus: RunRecordStatus,
   projected: ProjectedRun,
-  context: {
-    runId: string;
-    kind: string;
-    deploymentId: string | null;
-    version?: string;
-    sha?: string;
-  },
+  context: RunFailureContext,
 ): void {
   if (!isNewWorkflowRunFailure(previousStatus, projected.status)) return;
-  const detail = projected.error ?? "workflow run failed";
-  log.error("workflow run failed", {
-    runId: context.runId,
-    kind: context.kind,
-    ...(context.deploymentId !== null
-      ? { deploymentId: context.deploymentId }
-      : {}),
-    ...(context.version !== undefined ? { version: context.version } : {}),
-    ...(context.sha !== undefined ? { sha: context.sha } : {}),
-    error: new Error(detail),
-  });
+  const report = buildRunFailureReport(projected, context);
+  log.error(report.message, { ...report.properties, error: report.error });
 }
 
 export interface RunEventEntry {
@@ -202,7 +236,9 @@ export function foldRunEvents(
         if (narrowed instanceof type.errors) {
           const msgOnly = WithErrorMessage(event);
           const message =
-            msgOnly instanceof type.errors ? "step failed" : msgOnly.error.message;
+            msgOnly instanceof type.errors
+              ? "step failed"
+              : msgOnly.error.message;
           run.error = message;
           run.failedSteps.push({ stepId: run.currentStepId ?? "?", message });
         } else {

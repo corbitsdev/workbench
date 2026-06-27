@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildRunFailureReport,
   createCoalescingScheduler,
   foldRunEvents,
   isNewWorkflowRunFailure,
@@ -237,5 +238,70 @@ describe("logNewWorkflowRunFailureIfNeeded", () => {
         sha: "def5678",
       }),
     ).not.toThrow();
+  });
+});
+
+// GOAL A (CL-2503): the failure forwarded to the error log / Sentry must carry
+// a real Error (with a stack, captured via captureException) and name the
+// failing step(s) — not a bare one-line message with no context.
+describe("buildRunFailureReport", () => {
+  function projected(
+    error: string | undefined,
+    failedSteps: { stepId: string; message: string }[] = [],
+  ): ProjectedRun {
+    return {
+      status: "failed",
+      currentStepId: null,
+      completedRefs: [],
+      ...(error !== undefined ? { error } : {}),
+      failedSteps,
+    };
+  }
+
+  test("forwards an Error carrying a stack and the failure detail", () => {
+    const report = buildRunFailureReport(
+      projected('step "groundQueries" failed: tool not registered'),
+      { runId: "wfr_1", kind: "last30days", deploymentId: "ses_dep1" },
+    );
+    expect(report.error).toBeInstanceOf(Error);
+    expect(report.error.message).toBe(
+      'step "groundQueries" failed: tool not registered',
+    );
+    expect(report.error.name).toBe("WorkflowRunFailedError");
+    expect(typeof report.error.stack).toBe("string");
+    expect(report.error.stack?.length ?? 0).toBeGreaterThan(0);
+  });
+
+  test("attaches the per-step failure breakdown as a Sentry property", () => {
+    const failedSteps = [
+      { stepId: "groundQueries", message: "tool not registered" },
+    ];
+    const report = buildRunFailureReport(
+      projected("one or more steps failed", failedSteps),
+      {
+        runId: "wfr_2",
+        kind: "last30days",
+        deploymentId: "ses_dep2",
+        version: "1.0.0",
+        sha: "abc1234",
+      },
+    );
+    expect(report.properties.failedSteps).toEqual(failedSteps);
+    expect(report.properties.runId).toBe("wfr_2");
+    expect(report.properties.deploymentId).toBe("ses_dep2");
+    expect(report.properties.version).toBe("1.0.0");
+    expect(report.properties.sha).toBe("abc1234");
+  });
+
+  test("omits optional context and failedSteps when absent", () => {
+    const report = buildRunFailureReport(projected(undefined), {
+      runId: "wfr_3",
+      kind: "last30days",
+      deploymentId: null,
+    });
+    expect(report.error.message).toBe("workflow run failed");
+    expect("deploymentId" in report.properties).toBe(false);
+    expect("version" in report.properties).toBe(false);
+    expect("failedSteps" in report.properties).toBe(false);
   });
 });

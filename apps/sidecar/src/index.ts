@@ -218,6 +218,28 @@ const multistepSubstrateEnv: Record<string, string> = {
     toolPackageCache.registryMaxTarballBytes,
   ),
 };
+// CL-2503: thread the sidecar's Sentry config to the workflow-child via the
+// spawn-time substrate env. The supervisor spawns the child with a FRESH env
+// (no inheritance of the sidecar's process env), and the workflow-child is
+// where every workflow STEP actually runs and throws — without this it
+// initializes no Sentry, so step failures (and their stacks) never reach
+// Sentry. Optional like HOME/TMPDIR: an absent DSN leaves the child
+// console-only, exactly as the sidecar process behaves locally.
+const sentryDsn = process.env["SENTRY_DSN"];
+if (sentryDsn !== undefined) {
+  multistepSubstrateEnv["SENTRY_DSN"] = sentryDsn;
+}
+const sentryEnvironment = process.env["SENTRY_ENVIRONMENT"];
+if (sentryEnvironment !== undefined) {
+  multistepSubstrateEnv["SENTRY_ENVIRONMENT"] = sentryEnvironment;
+}
+// CL-2503: the child derives its log format from NODE_ENV (dev = pretty,
+// production = structured JSON). Without threading it the child sees it
+// undefined and logs dev-formatted in production, diverging from the sidecar.
+const hostNodeEnv = process.env["NODE_ENV"];
+if (hostNodeEnv !== undefined) {
+  multistepSubstrateEnv["NODE_ENV"] = hostNodeEnv;
+}
 const hostHome = process.env["HOME"];
 if (hostHome !== undefined) {
   multistepSubstrateEnv["HOME"] = hostHome;
