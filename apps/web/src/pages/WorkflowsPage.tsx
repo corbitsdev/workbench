@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useNavigate, useParams } from "react-router";
 import { Button, toHumanLabel, useArchivedWorkflowRuns } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
@@ -99,6 +100,9 @@ function RunRow({
  * the shared WorkflowRunPane.
  */
 export function WorkflowsPage() {
+  const { workflowId } = useParams<{ workflowId?: string }>();
+  const navigate = useNavigate();
+  const selectedRunId = workflowId ?? null;
   const { activeTenantId } = useActiveWorkbench();
   const {
     data: runs,
@@ -106,13 +110,17 @@ export function WorkflowsPage() {
     isError,
     refetch,
   } = useWorkflowRuns(activeTenantId);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [filters, setFilters] = useState<RunFilters>(DEFAULT_RUN_FILTERS);
   const { archived, isArchived, setArchived } = useArchivedWorkflowRuns();
 
   const allRuns = runs ?? [];
+  const selectedRunMissing =
+    selectedRunId !== null &&
+    !isLoading &&
+    !isError &&
+    !allRuns.some((run) => run.runId === selectedRunId);
   const archivedCount = useMemo(
     () => allRuns.reduce((n, r) => (archived.has(r.runId) ? n + 1 : n), 0),
     [allRuns, archived],
@@ -241,7 +249,10 @@ export function WorkflowsPage() {
                   run={run}
                   selected={run.runId === selectedRunId}
                   archived={archived.has(run.runId)}
-                  onSelect={() => setSelectedRunId(run.runId)}
+                  onSelect={() => {
+                    if (run.runId === selectedRunId) return;
+                    navigate(`/workflows/${run.runId}`);
+                  }}
                   onToggleArchive={() => {
                     const nextArchived = !isArchived(run.runId);
                     setArchived(run.runId, nextArchived);
@@ -250,7 +261,7 @@ export function WorkflowsPage() {
                       !showArchived &&
                       run.runId === selectedRunId
                     ) {
-                      setSelectedRunId(null);
+                      navigate("/workflows", { replace: true });
                     }
                   }}
                 />
@@ -272,12 +283,12 @@ export function WorkflowsPage() {
       </div>
 
       <div className="min-w-0 flex-1 overflow-hidden">
-        {selectedRunId ? (
+        {selectedRunId && !selectedRunMissing ? (
           <ErrorBoundary>
             <WorkflowRunPane
               deploymentId={selectedRunId}
               tenantId={activeTenantId}
-              onClose={() => setSelectedRunId(null)}
+              onClose={() => navigate("/workflows", { replace: true })}
             />
           </ErrorBoundary>
         ) : (
@@ -293,7 +304,7 @@ export function WorkflowsPage() {
         onClose={() => setCatalogOpen(false)}
         onWorkflowStarted={(runId) => {
           setCatalogOpen(false);
-          setSelectedRunId(runId);
+          navigate(`/workflows/${runId}`);
         }}
       />
     </div>

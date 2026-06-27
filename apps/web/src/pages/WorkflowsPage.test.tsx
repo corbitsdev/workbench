@@ -3,6 +3,7 @@ import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
+import { createMemoryRouter, RouterProvider } from "react-router";
 
 let runsResult: {
   data?: unknown[];
@@ -88,6 +89,24 @@ afterEach(() => {
   lastCatalogProps = null;
 });
 
+function renderWorkflowsPage(initialPath = "/workflows") {
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/workflows",
+        element: React.createElement(WorkflowsPage),
+      },
+      {
+        path: "/workflows/:workflowId",
+        element: React.createElement(WorkflowsPage),
+      },
+    ],
+    { initialEntries: [initialPath] },
+  );
+  const view = render(React.createElement(RouterProvider, { router }));
+  return { router, ...view };
+}
+
 describe("WorkflowsPage", () => {
   it("shows a loading state", () => {
     runsResult = {
@@ -96,7 +115,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage();
     expect(screen.getByText(/loading runs/i)).toBeDefined();
   });
 
@@ -107,7 +126,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage();
     expect(screen.getByText(/no workflow runs yet/i)).toBeDefined();
   });
 
@@ -126,13 +145,12 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage("/workflows/run-1");
     expect(lastRunsTenantId).toBe("ten-42");
-    fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
     expect(lastPaneTenantId).toBe("ten-42");
   });
 
-  it("lists runs and opens the run pane on select", () => {
+  it("navigates to /workflows/:workflowId when a run is selected", () => {
     runsResult = {
       data: [
         {
@@ -146,11 +164,67 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
-    screen.getByText("Deck build", { selector: "span" });
-    expect(screen.queryByTestId("run-pane")).toBeNull();
+    const { router } = renderWorkflowsPage();
     fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
+    expect(router.state.location.pathname).toBe("/workflows/run-1");
+  });
+
+  it("opens run pane from /workflows/:workflowId deep link", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage("/workflows/run-1");
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
+  });
+
+  it("renders the empty state (not the run pane) when deep-linking to an unknown run id", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage("/workflows/does-not-exist");
+    expect(screen.queryByTestId("run-pane")).toBeNull();
+    screen.getByText(/select a run to view its details/i);
+  });
+
+  it("drops the URL back to /workflows when the currently-selected run is archived", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { router } = renderWorkflowsPage("/workflows/run-1");
+    expect(router.state.location.pathname).toBe("/workflows/run-1");
+
+    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
+    expect(router.state.location.pathname).toBe("/workflows");
   });
 
   it("archives a run (hidden by default) and reveals it via Show archived", () => {
@@ -173,7 +247,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage();
 
     // Archive the deck-build run via its row action.
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
@@ -207,7 +281,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage();
 
     screen.getByText("Deck build", { selector: "span" });
     screen.getByText("Last30days", { selector: "span" });
@@ -240,7 +314,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    renderWorkflowsPage();
 
     fireEvent.change(screen.getByLabelText("Search runs"), {
       target: { value: "last30" },
@@ -258,7 +332,7 @@ describe("WorkflowsPage", () => {
       isError: false,
       refetch: () => {},
     };
-    render(React.createElement(WorkflowsPage));
+    const { router } = renderWorkflowsPage();
 
     expect(screen.queryByTestId("stub-start")).toBeNull();
     fireEvent.click(screen.getByText(/new run/i));
@@ -266,8 +340,6 @@ describe("WorkflowsPage", () => {
     expect(lastCatalogProps?.tenantId).toBe("ten-7");
 
     fireEvent.click(screen.getByTestId("stub-start"));
-    // The new run's detail opens, scoped to the active tenant.
-    expect(screen.getByTestId("run-pane").textContent).toBe("run-new");
-    expect(lastPaneTenantId).toBe("ten-7");
+    expect(router.state.location.pathname).toBe("/workflows/run-new");
   });
 });
