@@ -53,7 +53,8 @@ import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "myra-threads"]);
 
-const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, grant, sessionAsset } =
+  intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
 
@@ -541,6 +542,18 @@ export async function relaunchMyraThread(
       );
       return { thread: row, applied: false };
     }
+
+    // Clear this instance's prior session_asset manifest rows before relaunching.
+    // launchAgentSession's pack phase does a plain INSERT keyed on the
+    // (instanceId, mountPath) PK (session-service.ts sendAttachmentPack); a
+    // re-launch of an EXISTING instance would otherwise collide with the rows
+    // from its first launch and 503 in the "pack" phase. createMyraThread never
+    // hits this (fresh instanceId) — deleting here makes the re-launch
+    // materialize fresh against the current def, exactly like a new instance.
+    // (CL-2539; the non-idempotent insert itself is tracked upstream in CL-2406.)
+    await db
+      .delete(sessionAsset)
+      .where(eq(sessionAsset.instanceId, instance.id));
 
     try {
       await launchAgentSession(

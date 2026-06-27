@@ -1025,11 +1025,18 @@ describe("listMyraThreads", () => {
 });
 
 describe("relaunchMyraThread", () => {
+  // Captures db.delete(sessionAsset).where(...) — the pre-relaunch manifest clear
+  // that stops the "pack" phase 503 on an existing instance (CL-2539).
+  const deleteSessionAssetSpy = mock((_table: unknown) => ({
+    where: mock(() => Promise.resolve()),
+  }));
+
   beforeEach(() => {
     ancestorChainResult = ["tn-global"];
     reseedResult = { reseeded: false, agentId: null };
     reseedSpy.mockClear();
     launchAgentSessionMock.mockClear();
+    deleteSessionAssetSpy.mockClear();
     launchShouldThrow = null;
   });
 
@@ -1058,6 +1065,7 @@ describe("relaunchMyraThread", () => {
           findFirst: mock(() => Promise.resolve(opts.instance)),
         },
       },
+      delete: deleteSessionAssetSpy,
     };
   }
 
@@ -1127,6 +1135,9 @@ describe("relaunchMyraThread", () => {
       "myra_thread_update",
     );
     expect(launchAgentSessionMock).toHaveBeenCalledTimes(1);
+    // The prior session_asset manifest is cleared before the relaunch so the
+    // pack-phase INSERT can't collide with the first launch's rows (CL-2539).
+    expect(deleteSessionAssetSpy).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       thread: {
         id: "map-1",
@@ -1288,6 +1299,9 @@ describe("relaunchMyraThread", () => {
 
     expect(result?.applied).toBe(false);
     expect(launchAgentSessionMock).not.toHaveBeenCalled();
+    // The early not-applied return happens before the manifest clear, so we
+    // never touch session_asset when we're not going to relaunch (CL-2539).
+    expect(deleteSessionAssetSpy).not.toHaveBeenCalled();
   });
 });
 
