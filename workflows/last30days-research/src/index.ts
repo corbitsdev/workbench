@@ -11,6 +11,14 @@ import {
   buildWriterSystemPrompt,
 } from "./prompts";
 
+// The writer's output-token ceiling. The synthesis turn produces a long-form,
+// multi-section report; without an explicit ceiling it ran on the kimi writer
+// source's small/unset `defaults.maxTokens` and truncated mid-sentence with a
+// clean `finish_reason:"length"` (no error). 16384 is comfortably above the
+// longest report the brief warrants; if the model caps lower internally that is
+// harmless — requesting the higher ceiling only removes our truncation.
+const WRITER_MAX_TOKENS = 16384;
+
 export const label = "last30days Research";
 export const description =
   "Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.";
@@ -183,6 +191,7 @@ export const workflow = defineWorkflow({
       id: "last30days-write-report",
       systemPrompt: buildWriterSystemPrompt(),
       model: LLM_WRITER_MODEL,
+      maxTokens: WRITER_MAX_TOKENS,
       input: {
         merge: [
           { from: "steps.intake.output" },

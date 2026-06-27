@@ -201,6 +201,12 @@ describe("last30days-research native workflow", () => {
       throw new Error("expected a step primitive for write");
     }
     expect(write.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
+    // The writer ceiling rides on the preferred source's parameters; the deploy
+    // lifts it onto the resolved InferenceSource.defaults.maxTokens. 16384 is the
+    // fix for the mid-sentence (finish_reason:"length") truncation.
+    expect(write.agent.inference.sources[0]?.parameters).toEqual({
+      maxTokens: 16384,
+    });
 
     for (const id of ["ground", "rerank"] as const) {
       const step = workflow.steps[id];

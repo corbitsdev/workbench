@@ -153,6 +153,16 @@ export interface InlineInferenceStepOpts {
    * step (e.g. `LLM_WRITER_MODEL`) while the rest stay on `LLM_DEFAULT_MODEL`.
    */
   model?: string;
+  /**
+   * Optional per-step output-token ceiling. Carried on the step's preferred
+   * inference source as `parameters.maxTokens`; the workflow deploy lifts it
+   * onto the resolved `InferenceSource.defaults.maxTokens` so the step's model
+   * turn runs with this ceiling instead of the source's small/unset default —
+   * the cause of clean `finish_reason:"length"` truncation on long writers.
+   * Only meaningful alongside `model`: with no `model` the step declares no
+   * preferred source, so there is nothing to carry the ceiling and it is ignored.
+   */
+  maxTokens?: number;
 }
 
 /**
@@ -186,7 +196,17 @@ export function inlineInferenceStep(
     // concrete pinned source from STEP_INFERENCE_SOURCES at runtime either way.
     inference:
       opts.model !== undefined
-        ? { sources: [{ provider: LLM_PROVIDER, model: opts.model }] }
+        ? {
+            sources: [
+              {
+                provider: LLM_PROVIDER,
+                model: opts.model,
+                ...(opts.maxTokens !== undefined
+                  ? { parameters: { maxTokens: opts.maxTokens } }
+                  : {}),
+              },
+            ],
+          }
         : { sources: [] },
     tags: {
       [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,

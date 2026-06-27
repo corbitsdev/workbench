@@ -25,6 +25,7 @@ mock.module("@intx/db", () => ({ ...intxDb, resolveModelSources }));
 
 const {
   collectDeclaredStepModels,
+  collectDeclaredStepModelMaxTokens,
   resolveWorkflowDeployConfig,
   assembleWorkflowDeployConfig,
 } = await import("./workflow-deploy-config");
@@ -69,6 +70,32 @@ const WRITER_DEF = {
       agent: {
         inference: {
           sources: [{ provider: "openai-compatible", model: LLM_WRITER_MODEL }],
+        },
+      },
+    },
+  },
+} as unknown as WorkflowDefinition;
+
+// A definition whose `write` step declares the writer model AND a per-step
+// maxTokens ceiling on its preferred source's parameters (what
+// inlineInferenceStep({ model, maxTokens }) emits). Drives the lift onto
+// InferenceSource.defaults.maxTokens.
+const WRITER_DEF_MAXTOKENS = {
+  id: "wf",
+  triggers: [{ type: "manual" }],
+  stepOrder: ["write"],
+  steps: {
+    write: {
+      kind: "step",
+      agent: {
+        inference: {
+          sources: [
+            {
+              provider: "openai-compatible",
+              model: LLM_WRITER_MODEL,
+              parameters: { maxTokens: 16384 },
+            },
+          ],
         },
       },
     },
@@ -128,6 +155,26 @@ describe("resolveWorkflowDeployConfig", () => {
     // the head stays the deploy default so steps with no preference ride it.
     expect(result.config.sources).toEqual([HEAD, WRITER]);
     expect(result.config.defaultSource).toBe(HEAD.id);
+  });
+
+  test("lifts a step-declared maxTokens onto the matching resolved source's defaults", async () => {
+    resolution = { ok: true, sources: [HEAD] };
+    writerResolution = { ok: true, sources: [WRITER] };
+
+    const result = await resolveWorkflowDeployConfig({
+      ...args,
+      definition: WRITER_DEF_MAXTOKENS,
+    });
+
+    const writer = result.config.sources.find(
+      (s) => s.model === LLM_WRITER_MODEL,
+    );
+    if (!writer) throw new Error("expected the writer source in the chain");
+    // The ceiling lands on the source the runtime reads for the write step, not
+    // on the default head — so only the writer turn gets the higher budget.
+    expect(writer.defaults?.maxTokens).toBe(16384);
+    const head = result.config.sources.find((s) => s.id === HEAD.id);
+    expect(head?.defaults?.maxTokens).toBeUndefined();
   });
 
   test("omits a declared model and never throws when the catalog lacks it", async () => {
@@ -228,7 +275,9 @@ describe("collectDeclaredStepModels", () => {
           kind: "step",
           agent: {
             inference: {
-              sources: [{ provider: "openai-compatible", model: LLM_DEFAULT_MODEL }],
+              sources: [
+                { provider: "openai-compatible", model: LLM_DEFAULT_MODEL },
+              ],
             },
           },
         },
@@ -237,6 +286,15 @@ describe("collectDeclaredStepModels", () => {
       },
     } as unknown as WorkflowDefinition;
     expect(collectDeclaredStepModels(def)).toEqual([]);
+  });
+
+  test("collectDeclaredStepModelMaxTokens reads the per-model ceiling off the source parameters", () => {
+    expect(collectDeclaredStepModelMaxTokens(WRITER_DEF_MAXTOKENS)).toEqual(
+      new Map([[LLM_WRITER_MODEL, 16384]]),
+    );
+    // A def with no declared ceiling yields an empty map (the default chain rides
+    // its own catalog defaults).
+    expect(collectDeclaredStepModelMaxTokens(WRITER_DEF)).toEqual(new Map());
   });
 
   test("dedupes a model declared by more than one step", () => {
@@ -249,7 +307,9 @@ describe("collectDeclaredStepModels", () => {
           kind: "step",
           agent: {
             inference: {
-              sources: [{ provider: "openai-compatible", model: LLM_WRITER_MODEL }],
+              sources: [
+                { provider: "openai-compatible", model: LLM_WRITER_MODEL },
+              ],
             },
           },
         },
@@ -257,7 +317,9 @@ describe("collectDeclaredStepModels", () => {
           kind: "step",
           agent: {
             inference: {
-              sources: [{ provider: "openai-compatible", model: LLM_WRITER_MODEL }],
+              sources: [
+                { provider: "openai-compatible", model: LLM_WRITER_MODEL },
+              ],
             },
           },
         },

@@ -44,22 +44,23 @@ async function runBrief(steps: Record<string, unknown>): Promise<Report> {
 }
 
 describe("last30days_workflow_brief rerank (W1.2)", () => {
-  // Both titled on-topic for the "Anthropic" intake so they are grounded and
-  // clear the brief's relevance floor under deterministic ranking; the rerank
-  // test then layers explicit LLM scores on top.
+  // Two on-topic Anthropic items that cover DIFFERENT stories (low entity
+  // overlap), so they stay in separate clusters and the floor judges each on its
+  // own rerank score rather than merging and sharing fate. The rerank test then
+  // layers explicit LLM scores on top.
   const twoHnItems = {
     output: {
       content: JSON.stringify([
         {
           url: "https://a.com",
-          title: "Anthropic viral post",
+          title: "Anthropic funding round goes viral",
           publishedAt: "2026-06-20T12:00:00Z",
           source: "hn",
           engagement: { upvotes: 5000, comments: 400 },
         },
         {
           url: "https://b.com",
-          title: "Quiet Anthropic note",
+          title: "Quiet Anthropic safety research note",
           publishedAt: "2026-06-20T12:00:00Z",
           source: "hn",
           engagement: { upvotes: 5, comments: 1 },

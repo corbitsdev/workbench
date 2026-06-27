@@ -1,6 +1,7 @@
 import { clusterMerge } from "./cluster-merge";
 import { dateFilter } from "./date-filter";
 import { dedupe } from "./dedupe";
+import { qualityFilter } from "./quality-filter";
 import { rankScore, type RankedCluster } from "./rank-score";
 import type {
   BestTake,
@@ -88,7 +89,10 @@ export function buildReport(
     nowIso: opts.nowIso,
   });
   const deduped = dedupe(windowed);
-  const clusters = clusterMerge(deduped);
+  // Drop low-value junk (bare handles, clone repos, zero-signal social posts)
+  // BEFORE clustering so it never seeds a cluster or pads topK.
+  const cleaned = qualityFilter(deduped);
+  const clusters = clusterMerge(cleaned);
   const ranked = rankScore(clusters, {
     topic: opts.topic,
     nowIso: opts.nowIso,

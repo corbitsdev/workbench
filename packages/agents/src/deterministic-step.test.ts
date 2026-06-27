@@ -182,4 +182,29 @@ describe("inlineInferenceStep", () => {
     });
     expect(primitive.agent.inference.sources).toEqual([]);
   });
+
+  test("maxTokens rides on the preferred source's parameters so the deploy can lift it onto defaults.maxTokens", () => {
+    const primitive = inlineInferenceStep({
+      id: "writer",
+      systemPrompt: SYSTEM_PROMPT,
+      model: "kimi-k2.6",
+      maxTokens: 16384,
+    });
+    expect(primitive.agent.inference.sources).toEqual([
+      {
+        provider: "openai-compatible",
+        model: "kimi-k2.6",
+        parameters: { maxTokens: 16384 },
+      },
+    ]);
+  });
+
+  test("maxTokens without a model is ignored — no preferred source to carry it", () => {
+    const primitive = inlineInferenceStep({
+      id: "analyze",
+      systemPrompt: SYSTEM_PROMPT,
+      maxTokens: 16384,
+    });
+    expect(primitive.agent.inference.sources).toEqual([]);
+  });
 });

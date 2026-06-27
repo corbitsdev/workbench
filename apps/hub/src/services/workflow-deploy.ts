@@ -43,6 +43,7 @@ import {
 import {
   assembleWorkflowDeployConfig,
   collectDeclaredStepModels,
+  collectDeclaredStepModelMaxTokens,
   resolveWorkflowDeploySource,
 } from "./workflow-deploy-config";
 
@@ -352,6 +353,7 @@ async function reestablishSupervisor(deps: {
     db: deps.db,
     tenantId: args.tenantId,
     extraModels: collectDeclaredStepModels(definition),
+    modelMaxTokens: collectDeclaredStepModelMaxTokens(definition),
   });
 
   // Revive the supervisor's agent + instance rows before re-sending the deploy

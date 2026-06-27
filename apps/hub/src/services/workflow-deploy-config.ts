@@ -36,6 +36,55 @@ export function collectDeclaredStepModels(
   return [...models];
 }
 
+// The per-step output-token ceiling a step declares on its preferred inference
+// source (via `inlineInferenceStep({ model, maxTokens })`, carried as
+// `parameters.maxTokens`). Keyed by model so the deploy can lift it onto the
+// matching resolved `InferenceSource.defaults.maxTokens` — the source-level knob
+// the runtime merges into each call. Without this a heavy writer step runs on the
+// source's small/unset default and truncates cleanly at `finish_reason:"length"`.
+// Defensive reads: the primitive is reconstructed from persisted JSON. When two
+// steps declare different ceilings for the same model, the larger wins (a higher
+// ceiling never truncates a step that wanted less).
+export function collectDeclaredStepModelMaxTokens(
+  definition: WorkflowDefinition,
+): Map<string, number> {
+  const byModel = new Map<string, number>();
+  for (const stepId of definition.stepOrder) {
+    const primitive = definition.steps[stepId];
+    if (primitive === undefined || primitive.kind !== "step") continue;
+    for (const source of primitive.agent?.inference?.sources ?? []) {
+      if (source.model === "" || source.model === LLM_DEFAULT_MODEL) continue;
+      const raw = source.parameters?.maxTokens;
+      if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0)
+        continue;
+      const existing = byModel.get(source.model);
+      if (existing === undefined || raw > existing) {
+        byModel.set(source.model, raw);
+      }
+    }
+  }
+  return byModel;
+}
+
+// Lift each declared per-model maxTokens onto the matching resolved source's
+// `defaults.maxTokens`. Returns fresh source objects (never mutates the
+// catalog-resolved ones) so the ceiling rides into STEP_INFERENCE_SOURCES via
+// pickStepInferenceSource without disturbing the resolver's cache.
+function applyModelMaxTokens(
+  sources: InferenceSource[],
+  modelMaxTokens: ReadonlyMap<string, number>,
+): InferenceSource[] {
+  if (modelMaxTokens.size === 0) return sources;
+  return sources.map((source) => {
+    const maxTokens = modelMaxTokens.get(source.model);
+    if (maxTokens === undefined) return source;
+    return {
+      ...source,
+      defaults: { ...source.defaults, maxTokens },
+    };
+  });
+}
+
 // Resolve the tenant's inference sources for native workflows from the tenant
 // catalog. `resolveModelSources` returns the offerings for the required model
 // ordered as a routing chain — head = default, tail = failover — so the deploy
@@ -53,6 +102,10 @@ export async function resolveWorkflowDeploySource(args: {
   // Extra models some step prefers (see `collectDeclaredStepModels`). Resolved
   // optionally and appended after the required default chain.
   extraModels?: readonly string[];
+  // Per-model output-token ceilings a step declared (see
+  // `collectDeclaredStepModelMaxTokens`). Lifted onto the matching resolved
+  // source's `defaults.maxTokens`.
+  modelMaxTokens?: ReadonlyMap<string, number>;
 }): Promise<InferenceSource[]> {
   const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
   const resolution = await resolveModelSources(args.db, args.tenantId, [
@@ -81,7 +134,9 @@ export async function resolveWorkflowDeploySource(args: {
   // so the deploy never fails on a preferred model the tenant lacks.
   const sources = [...resolution.sources];
   for (const model of args.extraModels ?? []) {
-    const extra = await resolveModelSources(args.db, args.tenantId, [{ model }]);
+    const extra = await resolveModelSources(args.db, args.tenantId, [
+      { model },
+    ]);
     if (!extra.ok) continue;
     for (const source of extra.sources) {
       const present = sources.some(
@@ -90,7 +145,7 @@ export async function resolveWorkflowDeploySource(args: {
       if (!present) sources.push(source);
     }
   }
-  return sources;
+  return applyModelMaxTokens(sources, args.modelMaxTokens ?? new Map());
 }
 
 // Assemble the base HarnessConfig from a resolved source chain and a
@@ -144,6 +199,7 @@ export async function resolveWorkflowDeployConfig(args: {
     db: args.db,
     tenantId: args.tenantId,
     extraModels: collectDeclaredStepModels(args.definition),
+    modelMaxTokens: collectDeclaredStepModelMaxTokens(args.definition),
   });
   return assembleWorkflowDeployConfig({
     deploymentId: generateId("session"),
