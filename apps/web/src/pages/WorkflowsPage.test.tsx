@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
@@ -114,6 +120,15 @@ function expandRail() {
   fireEvent.click(screen.getByRole("button", { name: /expand run list/i }));
 }
 
+// The no-selection landing dashboard renders the same kind labels as the rail
+// (active cards + recents), so rail-scoped assertions must query within the
+// rail overlay to stay unambiguous.
+function rail() {
+  const el = document.getElementById("workflow-rail-overlay");
+  if (!el) throw new Error("rail overlay not found");
+  return within(el);
+}
+
 describe("WorkflowsPage", () => {
   it("shows a loading state", () => {
     runsResult = {
@@ -173,7 +188,7 @@ describe("WorkflowsPage", () => {
     };
     const { router } = renderWorkflowsPage();
     expandRail();
-    fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
+    fireEvent.click(rail().getByText("Deck build", { selector: "span" }));
     expect(router.state.location.pathname).toBe("/workflows/run-1");
   });
 
@@ -195,7 +210,7 @@ describe("WorkflowsPage", () => {
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
   });
 
-  it("renders the empty state (not the run pane) when deep-linking to an unknown run id", () => {
+  it("renders the dashboard with a not-available note (not the run pane) when deep-linking to an unknown run id", () => {
     runsResult = {
       data: [
         {
@@ -211,7 +226,7 @@ describe("WorkflowsPage", () => {
     };
     renderWorkflowsPage("/workflows/does-not-exist");
     expect(screen.queryByTestId("run-pane")).toBeNull();
-    screen.getByText(/select a run to view its details/i);
+    screen.getByText(/that run is no longer available/i);
   });
 
   it("drops the URL back to /workflows when the currently-selected run is archived", () => {
@@ -262,13 +277,13 @@ describe("WorkflowsPage", () => {
     // Archive the deck-build run via its row action.
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
 
-    // It is now hidden from the default list; the other run stays.
-    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
-    screen.getByText("Last30days", { selector: "span" });
+    // It is now hidden from the default rail list; the other run stays.
+    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
+    rail().getByText("Last30days", { selector: "span" });
 
     // Reveal archived runs, then the archived run is shown again.
     fireEvent.click(screen.getByText(/show 1 archived/i));
-    screen.getByText("Deck build", { selector: "span" });
+    rail().getByText("Deck build", { selector: "span" });
   });
 
   it("filters the run list by status", () => {
@@ -294,13 +309,13 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
     expandRail();
 
-    screen.getByText("Deck build", { selector: "span" });
-    screen.getByText("Last30days", { selector: "span" });
+    rail().getByText("Deck build", { selector: "span" });
+    rail().getByText("Last30days", { selector: "span" });
 
     fireEvent.click(screen.getByRole("button", { name: "Failed" }));
 
-    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
-    screen.getByText("Last30days", { selector: "span" });
+    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
+    rail().getByText("Last30days", { selector: "span" });
   });
 
   it("resets filters from the toolbar control", () => {
@@ -327,10 +342,10 @@ describe("WorkflowsPage", () => {
     expandRail();
 
     fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
+    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
-    screen.getByText("Deck build", { selector: "span" });
+    rail().getByText("Deck build", { selector: "span" });
   });
 
   it("searches the run list by workflow kind", () => {
@@ -360,8 +375,8 @@ describe("WorkflowsPage", () => {
       target: { value: "last30" },
     });
 
-    expect(screen.queryByText("Deck build", { selector: "span" })).toBeNull();
-    screen.getByText("Last30days", { selector: "span" });
+    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
+    rail().getByText("Last30days", { selector: "span" });
   });
 
   it("opens the catalog on New run, and starting a run selects it", () => {
@@ -375,11 +390,171 @@ describe("WorkflowsPage", () => {
     const { router } = renderWorkflowsPage();
 
     expect(screen.queryByTestId("stub-start")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /new run/i }));
+    // With zero runs the rail and the dashboard empty-state each expose a
+    // New-run button; either opens the catalog.
+    fireEvent.click(screen.getAllByRole("button", { name: /new run/i })[0]);
     expect(lastCatalogProps?.open).toBe(true);
     expect(lastCatalogProps?.tenantId).toBe("ten-7");
 
     fireEvent.click(screen.getByTestId("stub-start"));
     expect(router.state.location.pathname).toBe("/workflows/run-new");
+  });
+
+  it("renders stat counts from the runs on the landing dashboard", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "running",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "awaiting",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+        {
+          runId: "run-3",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-03T00:00:00Z",
+        },
+        {
+          runId: "run-4",
+          kind: "last30days",
+          status: "failed",
+          createdAt: "2026-01-04T00:00:00Z",
+        },
+        {
+          runId: "run-5",
+          kind: "deck-build",
+          status: "failed",
+          createdAt: "2026-01-05T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    screen.getByLabelText("Show 1 running runs");
+    screen.getByLabelText("Show 1 awaiting runs");
+    screen.getByLabelText("Show 1 completed runs");
+    screen.getByLabelText("Show 2 failed runs");
+  });
+
+  it("clicking a stat tile applies the status filter and pins the rail", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+        {
+          runId: "run-2",
+          kind: "last30days",
+          status: "failed",
+          createdAt: "2026-01-02T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    const failedTile = screen.getByLabelText("Show 1 failed runs");
+    expect(failedTile.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(failedTile);
+
+    expect(
+      screen.getByLabelText("Show 1 failed runs").getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(localStorage.getItem("workflow-rail-pinned")).toBe("1");
+  });
+
+  it("clicking an active workflow card navigates to that run", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-active",
+          kind: "deck-build",
+          status: "awaiting",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { router } = renderWorkflowsPage();
+    fireEvent.click(screen.getByText("Needs you"));
+    expect(router.state.location.pathname).toBe("/workflows/run-active");
+  });
+
+  it("renders the recent runs section on the dashboard", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    screen.getByText("Recent");
+    screen.getByRole("button", { name: "View all" });
+  });
+
+  it("pivots to a New-run empty state when there are zero runs", () => {
+    runsResult = {
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    screen.getByText(/no workflows yet/i);
+    screen.getByText(/start your first workflow/i);
+    expect(
+      screen.getAllByRole("button", { name: /new run/i }).length,
+    ).toBeGreaterThan(1);
+  });
+
+  it("favoriting a kind persists to localStorage and toggles aria-pressed", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    const star = screen.getByLabelText("Favorite Deck build");
+    expect(star.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(star);
+
+    expect(localStorage.getItem("workflow-favorite-kinds")).toBe(
+      JSON.stringify(["deck-build"]),
+    );
+    expect(
+      screen.getAllByLabelText("Remove from favorites").length,
+    ).toBeGreaterThan(0);
   });
 });

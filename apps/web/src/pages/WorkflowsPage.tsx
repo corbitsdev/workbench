@@ -4,6 +4,7 @@ import { toHumanLabel, useArchivedWorkflowRuns } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
+import { WorkflowsDashboard } from "../components/WorkflowsDashboard";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useWorkflowRuns, type WorkflowRun } from "../hooks/use-workflow";
 import {
@@ -58,7 +59,7 @@ function writePinned(next: boolean): void {
   else window.localStorage.removeItem(PIN_STORAGE_KEY);
 }
 
-function statusLabel(status: string): string {
+export function statusLabel(status: string): string {
   const match = STATUS_FILTER_OPTIONS.find((opt) => opt.value === status);
   return match ? match.label : toHumanLabel(status);
 }
@@ -69,7 +70,7 @@ function statusTextClass(status: string): string {
   return "text-blue";
 }
 
-function statusDotClass(status: string): string {
+export function statusDotClass(status: string): string {
   if (status === "completed") return "bg-green";
   if (status === "failed") return "bg-red-500";
   return "bg-blue";
@@ -628,9 +629,26 @@ export function WorkflowsPage() {
             />
           </ErrorBoundary>
         ) : (
-          <div className="grid h-full place-items-center px-6 text-center text-sm text-text-3">
-            Select a run to view its details
-          </div>
+          <WorkflowsDashboard
+            runs={allRuns}
+            isLoading={isLoading}
+            isError={isError}
+            pinned={pinned}
+            statusFilter={filters.status}
+            selectedRunMissing={selectedRunMissing}
+            onSelectRun={(runId) => navigate(`/workflows/${runId}`)}
+            onNewRun={() => setCatalogOpen(true)}
+            onFilterStatus={(status) => {
+              setFilters((f) => ({ ...f, status }));
+              setPinned(true);
+              writePinned(true);
+            }}
+            onShowAll={() => {
+              setFilters(DEFAULT_RUN_FILTERS);
+              setPinned(true);
+              writePinned(true);
+            }}
+          />
         )}
       </div>
 

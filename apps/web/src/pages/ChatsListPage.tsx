@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { Button, PagePanel, cn } from "@workbench/ui";
 import { Plus } from "lucide-react";
+import { formatRelativeTime } from "../lib/relative-time";
 import {
   readLastActiveThreadId,
   useCreateMyraThread,
@@ -11,28 +12,6 @@ import {
 import type { MyraThread } from "../lib/hub-api";
 
 const DAY_MS = 86_400_000;
-
-/**
- * Relative time derived from a thread's creation timestamp: "just now", "5m",
- * "2h", "3d" while recent, then a short absolute date ("Apr 3") once older than
- * a week. Pure so it can be unit-tested; `now` is injectable for determinism.
- */
-function formatRelativeTime(iso: string, now: number = Date.now()): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
-  const diffMs = Math.max(0, now - t);
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(t).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
 
 type Bucket = "today" | "week" | "month" | "older";
 
