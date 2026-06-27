@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "react-router";
 import {
   ChatLauncher,
@@ -17,7 +17,6 @@ import {
   useMyraThreads,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
-import { takePendingFirstMessage } from "../lib/pending-first-message";
 import { ExpandedChatOverlay, MyraChatSurface } from "./MyraChatSurface";
 import { ThreadSwitcher } from "./ThreadSwitcher";
 
@@ -76,8 +75,6 @@ export function PersonalAgentChat() {
     registerReconnect,
     pendingMessage,
     clearPendingMessage,
-    pendingDockThreadId,
-    clearPendingDockThread,
   } = useChatLauncher();
 
   useEffect(() => {
@@ -124,34 +121,6 @@ export function PersonalAgentChat() {
       onSuccess: (thread) => selectThread(thread.id),
     });
   };
-
-  // Deliver a first message seeded by another surface (e.g. the artifact panel
-  // handing its thread to the dock before its own session finished launching).
-  // Delete-on-read makes this safe even if another surface also tries.
-  const deliveredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (session.state.phase !== "ready" || !activeThread) return;
-    if (deliveredRef.current === activeThread.id) return;
-    const pending = takePendingFirstMessage(activeThread.id);
-    if (pending) {
-      deliveredRef.current = activeThread.id;
-      maybeTitleFromFirstMessage(pending);
-      session.send(pending);
-    }
-    // session.send is recreated each render; gate on phase + thread id instead.
-  }, [session.state.phase, activeThread]);
-
-  // Consume a "Open in dock" handoff (e.g. from the artifact panel): bind to the
-  // requested thread, switch to docked mode, open, then clear it once.
-  useEffect(() => {
-    if (pendingDockThreadId === null) return;
-    selectThread(pendingDockThreadId);
-    setDockState("docked");
-    writeDockState("docked");
-    setOpen(true);
-    clearPendingDockThread();
-    // selectThread is recreated each render; the pending id gates this.
-  }, [pendingDockThreadId, clearPendingDockThread]);
 
   // The full-page chat owns the session on '/' and /chats routes; suppress the
   // launcher there so there is exactly one Myra surface on screen.

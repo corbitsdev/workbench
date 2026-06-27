@@ -1,16 +1,9 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
-import { setPendingFirstMessage } from "../lib/pending-first-message";
 
 type Thread = {
   id: string;
@@ -21,9 +14,7 @@ type Thread = {
 
 const sendSpy = mock((_text: string) => {});
 const autoTitleSpy = mock((_text: string) => {});
-const clearPendingDockThread = mock(() => {});
 let threads: Thread[];
-let pendingDockThreadId: string | null;
 
 mock.module("../lib/chat-launcher-context", () => ({
   useChatLauncher: () => ({
@@ -31,8 +22,6 @@ mock.module("../lib/chat-launcher-context", () => ({
     registerReconnect: () => {},
     pendingMessage: null,
     clearPendingMessage: () => {},
-    pendingDockThreadId,
-    clearPendingDockThread,
   }),
 }));
 mock.module("../hooks/use-myra-session", () => ({
@@ -118,7 +107,6 @@ function renderAt(pathname: string) {
 beforeEach(() => {
   sendSpy.mockClear();
   autoTitleSpy.mockClear();
-  clearPendingDockThread.mockClear();
   threads = [
     {
       id: "thr-other",
@@ -133,40 +121,16 @@ beforeEach(() => {
       createdAt: "2026-01-02",
     },
   ];
-  pendingDockThreadId = null;
 });
 afterEach(() => cleanup());
 
-describe("PersonalAgentChat dock handoff", () => {
-  it("delivers a seeded first message to the handed-off thread exactly once", async () => {
-    // A surface (e.g. the artifact panel) seeds a thread it never delivered, then
-    // hands it to the dock before its own session was ready.
-    setPendingFirstMessage("thr-target", "seeded question");
-    pendingDockThreadId = "thr-target";
-
-    renderAt("/artifacts/art-1");
-
-    await waitFor(() =>
-      expect(sendSpy).toHaveBeenCalledWith("seeded question"),
-    );
-    expect(sendSpy).toHaveBeenCalledTimes(1);
-    expect(autoTitleSpy).toHaveBeenCalledWith("seeded question");
-    expect(clearPendingDockThread).toHaveBeenCalled();
-  });
-
+describe("PersonalAgentChat dock", () => {
   it("auto-titles when the user sends the first message via the dock surface", () => {
     // The bug being fixed: the dock surface must wire onUserSend so a typed
     // first message titles the thread, not just the programmatic handoff paths.
     renderAt("/artifacts/art-1");
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(autoTitleSpy).toHaveBeenCalledWith("typed in dock");
-  });
-
-  it("does not send when there is no pending message for the active thread", async () => {
-    pendingDockThreadId = "thr-target";
-    renderAt("/artifacts/art-1");
-    await waitFor(() => expect(clearPendingDockThread).toHaveBeenCalled());
-    expect(sendSpy).not.toHaveBeenCalled();
   });
 
   it("keeps the thread switcher and drops the inline popup when expanded", () => {

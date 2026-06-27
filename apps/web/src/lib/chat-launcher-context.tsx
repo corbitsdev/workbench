@@ -20,12 +20,6 @@ interface ChatLauncherContextValue {
   pendingMessage: string | null;
   openWithMessage: (message: string) => void;
   clearPendingMessage: () => void;
-  // Hand an existing thread to the global docked chat (e.g. "Open in dock" from
-  // the artifact panel). PersonalAgentChat selects the thread, switches to
-  // docked mode, and opens, then calls clearPendingDockThread.
-  pendingDockThreadId: string | null;
-  openThreadInDock: (threadId: string) => void;
-  clearPendingDockThread: () => void;
 }
 
 export const ChatLauncherContext = createContext<ChatLauncherContextValue>({
@@ -36,9 +30,6 @@ export const ChatLauncherContext = createContext<ChatLauncherContextValue>({
   pendingMessage: null,
   openWithMessage: () => {},
   clearPendingMessage: () => {},
-  pendingDockThreadId: null,
-  openThreadInDock: () => {},
-  clearPendingDockThread: () => {},
 });
 
 export function ChatLauncherProvider({
@@ -48,9 +39,6 @@ export function ChatLauncherProvider({
 }) {
   const [hidden, setHidden] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
-  const [pendingDockThreadId, setPendingDockThreadId] = useState<string | null>(
-    null,
-  );
   const reconnectRef = useRef<(() => void) | null>(null);
 
   const registerReconnect = useCallback((fn: () => void) => {
@@ -70,15 +58,6 @@ export function ChatLauncherProvider({
     setPendingMessage(null);
   }, []);
 
-  const openThreadInDock = useCallback((threadId: string) => {
-    setHidden(false);
-    setPendingDockThreadId(threadId);
-  }, []);
-
-  const clearPendingDockThread = useCallback(() => {
-    setPendingDockThreadId(null);
-  }, []);
-
   return (
     <ChatLauncherContext
       value={{
@@ -89,9 +68,6 @@ export function ChatLauncherProvider({
         pendingMessage,
         openWithMessage,
         clearPendingMessage,
-        pendingDockThreadId,
-        openThreadInDock,
-        clearPendingDockThread,
       }}
     >
       {children}
