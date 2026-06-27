@@ -10,6 +10,7 @@ import {
   isTheme,
   useTheme,
   useCompactToolActivity,
+  useExperimentalArtifactCards,
   useToolSummaryStyle,
   THEMES,
   THEME_LABELS,
@@ -77,6 +78,13 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
           label: TOOL_SUMMARY_STYLE_LABELS[s],
         })),
       },
+      {
+        key: "experimentalArtifactCards",
+        label: "Experimental artifact cards",
+        kind: "toggle",
+        description:
+          "Preview calmer, higher-contrast artifact cards before they become the default.",
+      },
     ],
   },
 ];
@@ -90,6 +98,10 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { compact: compactToolActivity, setCompact: setCompactToolActivity } =
     useCompactToolActivity();
+  const {
+    enabled: experimentalArtifactCards,
+    setEnabled: setExperimentalArtifactCards,
+  } = useExperimentalArtifactCards();
   const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } =
     useToolSummaryStyle();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
@@ -119,6 +131,9 @@ export default function Settings() {
     if (key === "toolSummaryStyle" && isToolSummaryStyle(value)) {
       setToolSummaryStyle(value);
     }
+    if (key === "experimentalArtifactCards" && typeof value === "boolean") {
+      setExperimentalArtifactCards(value);
+    }
     if (key === "displayName") {
       saveMutation.reset();
     }
@@ -143,7 +158,13 @@ export default function Settings() {
     <div className="h-full overflow-y-auto">
       <SettingsPage
         sections={SECTIONS}
-        values={{ ...values, theme, compactToolActivity, toolSummaryStyle }}
+        values={{
+          ...values,
+          theme,
+          compactToolActivity,
+          toolSummaryStyle,
+          experimentalArtifactCards,
+        }}
         onChange={handleChange}
         description="Manage your workbench preferences."
       />

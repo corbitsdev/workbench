@@ -50,10 +50,14 @@ describe("hydrateServerPreferences", () => {
       theme: "notion",
       compactToolActivity: true,
       toolSummaryStyle: "mixed",
+      experimentalArtifactCards: true,
     });
     expect(getPreferenceRaw(PREFERENCE_KEYS.theme)).toBe("notion");
     expect(getPreferenceRaw(PREFERENCE_KEYS.compactToolActivity)).toBe("true");
     expect(getPreferenceRaw(PREFERENCE_KEYS.toolSummaryStyle)).toBe("mixed");
+    expect(getPreferenceRaw(PREFERENCE_KEYS.experimentalArtifactCards)).toBe(
+      "true",
+    );
   });
 
   it("ignores keys with the wrong type", () => {
@@ -90,7 +94,7 @@ describe("per-key subscriptions", () => {
 });
 
 describe("serverPatchForRawChange", () => {
-  it("coerces the compact flag back to a boolean for the server patch", () => {
+  it("coerces boolean flags back to booleans for the server patch", () => {
     expect(
       serverPatchForRawChange(PREFERENCE_KEYS.compactToolActivity, "true"),
     ).toEqual({
@@ -100,6 +104,14 @@ describe("serverPatchForRawChange", () => {
       serverPatchForRawChange(PREFERENCE_KEYS.compactToolActivity, "false"),
     ).toEqual({
       compactToolActivity: false,
+    });
+    expect(
+      serverPatchForRawChange(
+        PREFERENCE_KEYS.experimentalArtifactCards,
+        "true",
+      ),
+    ).toEqual({
+      experimentalArtifactCards: true,
     });
   });
 

@@ -14,6 +14,8 @@ const LINKEDIN_POST_VISUAL: ArtifactVisual = {
   viz: "lines",
   fill: "bg-blue",
   span: "row-span-2",
+  experimentalFill: "bg-blue/85",
+  experimentalSpan: "row-span-2",
 };
 
 const REPORT_VISUAL: ArtifactVisual = {
@@ -21,6 +23,8 @@ const REPORT_VISUAL: ArtifactVisual = {
   viz: "deck",
   fill: "bg-charcoal",
   span: "row-span-4",
+  experimentalFill: "bg-charcoal/90",
+  experimentalSpan: "row-span-4",
 };
 
 const KIND_VISUALS: Record<string, ArtifactVisual> = {
@@ -29,66 +33,88 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     viz: "lines",
     fill: "bg-orange",
     span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
   },
   "twitter-post": {
     label: "Tweet",
     viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
+    experimentalFill: "bg-blue/85",
+    experimentalSpan: "row-span-2",
   },
   "founder-pov-post": {
     label: "Founder POV",
     viz: "lines",
     fill: "bg-blue",
     span: "row-span-2",
+    experimentalFill: "bg-blue/85",
+    experimentalSpan: "row-span-2",
   },
   "one-pager": {
     label: "One-Pager",
     viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
   },
   blog: {
     label: "Blog Post",
     viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
   },
   "case-study": {
     label: "Case Study",
     viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
   },
   "objection-handling": {
     label: "Objection Handling",
     viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
   },
   "customer-quotes": {
     label: "Customer Quotes",
     viz: "deck",
     fill: "bg-charcoal",
     span: "row-span-4",
+    experimentalFill: "bg-charcoal/90",
+    experimentalSpan: "row-span-4",
   },
   battlecard: {
     label: "Battlecard",
     viz: "grid",
     fill: "bg-green",
     span: "row-span-3",
+    experimentalFill: "bg-green/85",
+    experimentalSpan: "row-span-3",
   },
   "pain-points": {
     label: "Pain Points",
     viz: "bars",
     fill: "bg-orange",
     span: "row-span-3",
+    experimentalFill: "bg-orange/85",
+    experimentalSpan: "row-span-3",
   },
   "call-transcript": {
     label: "Transcript",
     viz: "lines",
     fill: "bg-cream",
     span: "row-span-4",
+    experimentalFill: "bg-cream",
+    experimentalSpan: "row-span-4",
   },
   // Both the workflow's persisted `research` kind and a generic `report` kind
   // share one tile treatment.
@@ -101,6 +127,8 @@ const FALLBACK_VISUAL: ArtifactVisual = {
   viz: "lines",
   fill: "bg-cream",
   span: "row-span-3",
+  experimentalFill: "bg-cream",
+  experimentalSpan: "row-span-3",
 };
 
 export function visualForKind(kind: string): ArtifactVisual {

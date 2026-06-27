@@ -18,6 +18,7 @@ export const PREFERENCE_KEYS = {
   theme: "cw-theme",
   compactToolActivity: "cw-compact-tools",
   toolSummaryStyle: "cw-tool-summary-style",
+  experimentalArtifactCards: "cw-experimental-artifact-cards",
   archivedWorkflowRuns: "cw-archived-workflow-runs",
 } as const;
 
@@ -142,6 +143,7 @@ export const ServerPreferencesSchema = type({
   "theme?": "string",
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": "string",
+  "experimentalArtifactCards?": "boolean",
   "archivedWorkflowRuns?": "string[]",
   "[string]": "unknown",
 });
@@ -164,6 +166,12 @@ export function hydrateServerPreferences(prefs: unknown): void {
     hydratePreference(
       PREFERENCE_KEYS.toolSummaryStyle,
       parsed.toolSummaryStyle,
+    );
+  }
+  if (parsed.experimentalArtifactCards !== undefined) {
+    hydratePreference(
+      PREFERENCE_KEYS.experimentalArtifactCards,
+      String(parsed.experimentalArtifactCards),
     );
   }
   if (parsed.archivedWorkflowRuns !== undefined) {
@@ -195,6 +203,9 @@ export function serverPatchForRawChange(
   }
   if (key === PREFERENCE_KEYS.toolSummaryStyle)
     return { toolSummaryStyle: value };
+  if (key === PREFERENCE_KEYS.experimentalArtifactCards) {
+    return { experimentalArtifactCards: value === "true" };
+  }
   if (key === PREFERENCE_KEYS.archivedWorkflowRuns)
     return { archivedWorkflowRuns: parseStringList(value) };
   for (const scope of VIEW_MODE_SCOPES) {

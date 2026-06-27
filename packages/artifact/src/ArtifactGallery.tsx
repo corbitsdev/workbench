@@ -59,6 +59,8 @@ export interface ArtifactGalleryProps {
   onAdvancedFilterChange?: (next: AdvancedArtifactFilter) => void;
   /** Current layout. When omitted, defaults to the grid. */
   viewMode?: ViewMode;
+  /** Opt-in card polish preview. Defaults off so the current grid remains unchanged. */
+  experimentalArtifactCards?: boolean;
   /** Called when the user toggles between grid and rows. When omitted, the toggle is hidden. */
   onViewModeChange?: (mode: ViewMode) => void;
 }
@@ -124,6 +126,7 @@ export function ArtifactGallery({
   onAdvancedFilterChange,
   viewMode = "grid",
   onViewModeChange,
+  experimentalArtifactCards = false,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
@@ -353,6 +356,7 @@ export function ArtifactGallery({
                 key={tile.id}
                 artifact={tile}
                 index={i + 1}
+                experimental={experimentalArtifactCards}
                 {...(onOpen ? { onOpen } : {})}
               />
             ))}

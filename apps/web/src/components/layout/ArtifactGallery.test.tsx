@@ -11,6 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import React from "react";
+import { PREFERENCE_KEYS } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { ChatLauncherContext } from "../../lib/chat-launcher-context";
 
@@ -48,7 +49,10 @@ const fakeArtifact: ArtifactWithSession = {
   ownerName: null,
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 function renderWithSeededArtifacts(
   tenantId: string,
@@ -137,6 +141,38 @@ describe("ArtifactGallery", () => {
       view.getByText("Sales automation ROI");
     });
     view.getByText("Acme Corp");
+  });
+
+  it("uses the default card treatment until the experiment is opted in", async () => {
+    const view = renderWithSeededArtifacts(
+      "tenant-workbench",
+      [fakeArtifact],
+      React.createElement(ArtifactGallery, { tenantId: "tenant-workbench" }),
+    );
+
+    const card = await view.findByRole("button", {
+      name: "Open Sales automation ROI",
+    });
+    expect(card.className).toContain("hover:rotate-[-1deg]");
+    expect(card.className).not.toContain("shadow-sm");
+  });
+
+  it("uses the experimental card treatment when the member preference is on", async () => {
+    window.localStorage.setItem(
+      PREFERENCE_KEYS.experimentalArtifactCards,
+      "true",
+    );
+    const view = renderWithSeededArtifacts(
+      "tenant-workbench",
+      [fakeArtifact],
+      React.createElement(ArtifactGallery, { tenantId: "tenant-workbench" }),
+    );
+
+    const card = await view.findByRole("button", {
+      name: "Open Sales automation ROI",
+    });
+    expect(card.className).not.toContain("hover:rotate-[-1deg]");
+    expect(card.className).toContain("shadow-sm");
   });
 
   it("renders an empty state when the query returns no artifacts", async () => {
