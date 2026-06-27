@@ -24,6 +24,7 @@ mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => threadsResult,
   useCreateMyraThread: () => ({ mutate: createMutate, isPending: false }),
   writeLastActiveThreadId: () => {},
+  readLastActiveThreadId: () => null,
 }));
 
 const { ChatsListPage } = require("./ChatsListPage");
@@ -65,10 +66,32 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ChatsListPage", () => {
-  it("lists all chats", () => {
+  it("lists each chat as a clickable row", () => {
     renderPage();
-    expect(screen.getByText("Pricing strategy")).toBeDefined();
-    expect(screen.getByText("Onboarding flow")).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /pricing strategy/i }),
+    ).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: /onboarding flow/i }),
+    ).not.toBeNull();
+  });
+
+  it("renders a relative timestamp derived from createdAt", () => {
+    threadsResult = {
+      data: [
+        {
+          id: "t1",
+          instanceId: "i1",
+          label: "Recent thread",
+          createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderPage();
+    expect(screen.getByText("2h")).not.toBeNull();
   });
 
   it("filters by the search query", () => {
@@ -76,7 +99,9 @@ describe("ChatsListPage", () => {
     fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
       target: { value: "pricing" },
     });
-    expect(screen.getByText("Pricing strategy")).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: /pricing strategy/i }),
+    ).not.toBeNull();
     expect(screen.queryByText("Onboarding flow")).toBeNull();
   });
 
@@ -85,7 +110,31 @@ describe("ChatsListPage", () => {
     fireEvent.change(screen.getByPlaceholderText(/search chats/i), {
       target: { value: "zzz" },
     });
-    expect(screen.getByText(/no chats match/i)).toBeDefined();
+    expect(screen.getByText(/no chats match/i)).not.toBeNull();
+  });
+
+  it("renders skeleton rows while loading and no thread rows", () => {
+    threadsResult = {
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: () => {},
+    };
+    renderPage();
+    expect(screen.queryByText(/loading chats/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /new chat/i })).toBeNull();
+  });
+
+  it("shows a legible error state with a retry action", () => {
+    threadsResult = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch: () => {},
+    };
+    renderPage();
+    expect(screen.getByText(/could not load chats/i)).not.toBeNull();
+    expect(screen.getByRole("button", { name: /try again/i })).not.toBeNull();
   });
 
   it("shows an empty state and creates a chat", () => {
@@ -96,7 +145,7 @@ describe("ChatsListPage", () => {
       refetch: () => {},
     };
     renderPage();
-    expect(screen.getByText(/no chats yet/i)).toBeDefined();
+    expect(screen.getByText(/no chats yet/i)).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /new chat/i }));
     expect(createMutate).toHaveBeenCalledTimes(1);
   });

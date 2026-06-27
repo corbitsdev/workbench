@@ -1,22 +1,120 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { PagePanel } from "@workbench/ui";
+import { Button, PagePanel, cn } from "@workbench/ui";
 import { Plus } from "lucide-react";
 import {
+  readLastActiveThreadId,
   useCreateMyraThread,
   useMyraThreads,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
 import type { MyraThread } from "../lib/hub-api";
 
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, {
+const DAY_MS = 86_400_000;
+
+/**
+ * Relative time derived from a thread's creation timestamp: "just now", "5m",
+ * "2h", "3d" while recent, then a short absolute date ("Apr 3") once older than
+ * a week. Pure so it can be unit-tested; `now` is injectable for determinism.
+ */
+function formatRelativeTime(iso: string, now: number = Date.now()): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  const diffMs = Math.max(0, now - t);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(t).toLocaleDateString(undefined, {
     month: "short",
     day: "numeric",
-    year: "numeric",
   });
+}
+
+type Bucket = "today" | "week" | "month" | "older";
+
+function isSameLocalDay(a: number, b: number): boolean {
+  const da = new Date(a);
+  const db = new Date(b);
+  return (
+    da.getFullYear() === db.getFullYear() &&
+    da.getMonth() === db.getMonth() &&
+    da.getDate() === db.getDate()
+  );
+}
+
+function bucketFor(iso: string, now: number): Bucket {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "older";
+  if (isSameLocalDay(t, now)) return "today";
+  const diffDays = (now - t) / DAY_MS;
+  if (diffDays < 7) return "week";
+  if (diffDays < 31) return "month";
+  return "older";
+}
+
+type ThreadGroup = { key: Bucket; label: string; threads: MyraThread[] };
+
+const GROUP_ORDER: { key: Bucket; label: string }[] = [
+  { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
+  { key: "month", label: "This month" },
+  { key: "older", label: "Older" },
+];
+
+function buildGroups(threads: MyraThread[], now: number): ThreadGroup[] {
+  const sorted = [...threads].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
+  return GROUP_ORDER.map(({ key, label }) => ({
+    key,
+    label,
+    threads: sorted.filter((t) => bucketFor(t.createdAt, now) === key),
+  })).filter((group) => group.threads.length > 0);
+}
+
+const SKELETON_WIDTHS = [220, 160, 250, 140, 200, 180, 230];
+
+function NewChatButton({
+  onClick,
+  pending,
+}: {
+  onClick: () => void;
+  pending: boolean;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="primary"
+      onClick={onClick}
+      disabled={pending}
+      className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px] active:scale-[0.97]"
+    >
+      <Plus size={16} />
+      {pending ? "Creating…" : "New chat"}
+    </Button>
+  );
+}
+
+function CenteredState({
+  headline,
+  subline,
+  children,
+}: {
+  headline: string;
+  subline: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-2 px-4 py-20 text-center">
+      <p className="text-[14px] font-medium text-text-2">{headline}</p>
+      <p className="text-[12.5px] text-text-3">{subline}</p>
+      {children}
+    </div>
+  );
 }
 
 /**
@@ -48,100 +146,130 @@ export function ChatsListPage() {
     });
   };
 
+  const now = Date.now();
+  const lastActiveId = readLastActiveThreadId();
+  const hasThreads = (threads?.length ?? 0) > 0;
   const normalized = query.trim().toLowerCase();
   const filtered = (threads ?? []).filter((t) =>
     t.label.toLowerCase().includes(normalized),
   );
+  const groups = buildGroups(filtered, now);
 
   return (
     <PagePanel>
       <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
+        <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-text">
           Chats
         </h1>
-        {!isLoading && (
-          <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-            {filtered.length} {filtered.length === 1 ? "chat" : "chats"}
-          </span>
-        )}
         <div className="flex-1" />
-        {newChatError && (
-          <span className="text-[12px] text-orange-deep">{newChatError}</span>
+        {hasThreads && (
+          <>
+            {newChatError && (
+              <span className="text-[12px] text-orange-deep">
+                {newChatError}
+              </span>
+            )}
+            <input
+              type="search"
+              aria-label="Search chats"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search chats"
+              className="h-[32px] w-[180px] rounded-[8px] border border-transparent bg-transparent px-[10px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border focus:bg-surface focus:outline-none"
+            />
+            <NewChatButton onClick={newChat} pending={createThread.isPending} />
+          </>
         )}
-        <input
-          type="search"
-          aria-label="Search chats"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search chats"
-          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={newChat}
-          disabled={createThread.isPending}
-          className="flex items-center gap-[7px] rounded-[9px] border border-border bg-transparent px-[13px] py-[7px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface disabled:opacity-50"
-        >
-          <Plus size={16} className="text-orange" />
-          {createThread.isPending ? "Creating…" : "New chat"}
-        </button>
       </div>
 
-      <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
+      <div className="flex-1 pb-10">
         {isLoading && (
-          <div className="py-10 text-[13px] text-text-3">Loading chats…</div>
+          <div>
+            {SKELETON_WIDTHS.map((width, i) => (
+              <div
+                key={i}
+                className="flex h-[46px] items-center border-b border-border px-4 last:border-b-0 sm:px-7"
+              >
+                <div
+                  className="h-[14px] rounded bg-row-hover"
+                  style={{ width }}
+                />
+              </div>
+            ))}
+          </div>
         )}
 
         {isError && (
-          <div className="flex flex-col items-start gap-3 py-10 text-[13px] text-text-3">
-            <span>Could not load chats.</span>
-            <button
+          <CenteredState
+            headline="Could not load chats."
+            subline="Something went wrong while loading your chats."
+          >
+            <Button
               type="button"
+              variant="secondary"
               onClick={() => void refetch()}
-              className="rounded-[9px] border border-border px-[11px] py-[6px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface"
+              className="mt-1 px-[14px] py-[7px] text-[12.5px]"
             >
               Try again
-            </button>
-          </div>
+            </Button>
+          </CenteredState>
         )}
 
-        {!isLoading && !isError && (threads?.length ?? 0) === 0 && (
-          <div className="py-10 text-[13px] text-text-3">
-            No chats yet. Start a new chat when you're ready.
-          </div>
+        {!isLoading && !isError && !hasThreads && (
+          <CenteredState
+            headline="No chats yet"
+            subline="Start a new chat when you're ready."
+          >
+            <div className="flex flex-col items-center gap-2 pt-1">
+              <NewChatButton
+                onClick={newChat}
+                pending={createThread.isPending}
+              />
+              {newChatError && (
+                <span className="text-[12px] text-orange-deep">
+                  {newChatError}
+                </span>
+              )}
+            </div>
+          </CenteredState>
+        )}
+
+        {!isLoading && !isError && hasThreads && filtered.length === 0 && (
+          <CenteredState
+            headline={`No chats match “${query.trim()}”`}
+            subline="Try a different search."
+          />
         )}
 
         {!isLoading &&
           !isError &&
-          (threads?.length ?? 0) > 0 &&
-          filtered.length === 0 && (
-            <div className="py-10 text-[13px] text-text-3">
-              No chats match &ldquo;{query.trim()}&rdquo;.
-            </div>
-          )}
-
-        {!isLoading && !isError && filtered.length > 0 && (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-[var(--gap)]">
-            {filtered.map((thread) => (
-              <button
-                key={thread.id}
-                type="button"
-                onClick={() => open(thread)}
-                className="group flex min-h-[104px] flex-col justify-between rounded-lg border border-border bg-surface p-[13px] text-left transition-colors hover:border-border-strong hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange"
-              >
-                <span className="line-clamp-2 text-[13.5px] font-semibold leading-snug text-text">
-                  {thread.label}
-                </span>
-                <span className="mt-5 flex items-center justify-between gap-3 font-mono text-[11px] text-text-3">
-                  <span>{formatWhen(thread.createdAt)}</span>
-                  <span className="font-sans text-[12px] font-medium text-text-3 transition-colors group-hover:text-text-2">
-                    Open chat
+          groups.map((group) => (
+            <div key={group.key}>
+              <div className="px-4 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.08em] text-text-3 sm:px-7">
+                {group.label}
+              </div>
+              {group.threads.map((thread) => (
+                <button
+                  key={thread.id}
+                  type="button"
+                  onClick={() => open(thread)}
+                  className={cn(
+                    "group relative flex h-[46px] w-full items-center gap-3 border-b border-border px-4 text-left transition-[background-color] duration-150 ease-[var(--ease)] last:border-b-0 hover:bg-row-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange active:bg-surface-2 sm:px-7",
+                    thread.id === lastActiveId &&
+                      "bg-surface-2 before:absolute before:left-0 before:top-0 before:h-full before:w-[2px] before:bg-accent before:content-['']",
+                  )}
+                >
+                  <span className="truncate text-[14px] font-medium text-text">
+                    {thread.label}
                   </span>
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
+                  <span className="flex-1" />
+                  <span className="shrink-0 text-[12px] tabular-nums text-text-3">
+                    {formatRelativeTime(thread.createdAt, now)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
       </div>
     </PagePanel>
   );
