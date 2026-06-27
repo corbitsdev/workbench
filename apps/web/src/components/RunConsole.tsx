@@ -111,7 +111,7 @@ export function RunConsole({
       : (deploymentId ?? "");
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
+    <div className="flex h-full flex-col overflow-hidden border border-border bg-bg">
       <header className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="min-w-0">
           <p className="truncate text-[14px] font-medium text-text">

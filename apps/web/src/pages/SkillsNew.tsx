@@ -76,7 +76,7 @@ export function SkillsNew() {
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
-      <div className="flex flex-1 flex-col overflow-hidden rounded-panel border border-border bg-bg">
+      <div className="flex flex-1 flex-col overflow-hidden border border-border bg-bg">
         <div className="flex items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
           <div className="flex items-center gap-2">
             <BookOpen className="h-4 w-4 text-text-3" />

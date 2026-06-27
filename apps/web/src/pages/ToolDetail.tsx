@@ -73,7 +73,7 @@ export function ToolDetail() {
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
-      <section className="flex min-h-full flex-1 flex-col overflow-y-auto rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+      <section className="flex min-h-full flex-1 flex-col overflow-y-auto border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
         <div className="px-4 pt-5 sm:px-7">
           <button
             type="button"
