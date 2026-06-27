@@ -4,6 +4,7 @@ import { runLocal } from "@intx/workflow/runlocal";
 import {
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
+  LLM_WRITER_MODEL,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
   STEP_NONFATAL_TAG,
@@ -270,7 +271,12 @@ describe("reddit-opportunity-scanner native workflow", () => {
     expect(curate.agent.tags?.[STEP_TOOL_TAG]).toBeUndefined();
     expect(curate.agent.systemPrompt.length).toBeGreaterThan(0);
     expect(curate.agent.capabilities).toEqual([]);
-    expect(curate.agent.inference.sources).toEqual([]);
+    // Long-form synthesis (up to 12 markdown briefs): pins the heavier writer
+    // model with an explicit maxTokens so the JSON reply doesn't truncate.
+    expect(curate.agent.inference.sources[0]?.model).toBe(LLM_WRITER_MODEL);
+    expect(curate.agent.inference.sources[0]?.parameters).toEqual({
+      maxTokens: 16384,
+    });
     // Scoped to the approved plan + collected results only — the heavy scrape
     // markdown and analyze blob are kept out of the curate inference context.
     expect(curate.input).toEqual({

@@ -1,6 +1,17 @@
 import { awaitSignal, defineWorkflow, map } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
+import {
+  deterministicToolStep,
+  inlineInferenceStep,
+  LLM_WRITER_MODEL,
+} from "@workbench/agents";
 import { buildAnalyzeSystemPrompt, buildCurateSystemPrompt } from "./prompts";
+
+// Curate emits up to 12 opportunities, each carrying a full markdown brief in
+// `content` — long-form output. On the fast default model's small/unset
+// maxTokens it truncated mid-JSON (the reply came back as an unterminated
+// string and the panel could parse no opportunities). Run it on the heavier
+// writer model with an explicit ceiling, matching last30days' curate step.
+const CURATE_MAX_TOKENS = 16384;
 
 // -------------------------------------------------------------------------
 // Workflow metadata
@@ -97,6 +108,8 @@ export const workflow = defineWorkflow({
       id: "reddit-opp-curate",
       systemPrompt: buildCurateSystemPrompt(),
       input: { project: { from: "steps" }, fields: ["review", "collect"] },
+      model: LLM_WRITER_MODEL,
+      maxTokens: CURATE_MAX_TOKENS,
       after: ["collect"],
     }),
 
