@@ -67,6 +67,19 @@ async function layAllForms(
   return dirs;
 }
 
+async function layConversationState(
+  dataDir: string,
+  d: LiveDeployment,
+): Promise<string> {
+  const dir = join(dataDir, "agent-conversation-state", d.workflowRunSlug);
+  await mkdir(join(dir, encodeURIComponent("step-1")), { recursive: true });
+  await writeFile(
+    join(dir, encodeURIComponent("step-1"), "checkpoint.json"),
+    "x",
+  );
+  return dir;
+}
+
 async function exists(path: string): Promise<boolean> {
   try {
     await stat(path);
@@ -187,6 +200,29 @@ describe("reconcileOrphanedDeploymentDirs — deployment-id-token keying", () =>
   });
 });
 
+describe("reconcileOrphanedDeploymentDirs — durable conversation state", () => {
+  test("reaps conversation mirrors whose deployment is no longer live", async () => {
+    const live = liveDeployment(LIVE_ID, ["plan"]);
+    const dead = liveDeployment(DEAD_ID, ["plan"]);
+    const liveConversation = await layConversationState(dataDir, live);
+    const deadConversation = await layConversationState(dataDir, dead);
+
+    await run([live]);
+
+    expect(await exists(liveConversation)).toBe(true);
+    expect(await exists(deadConversation)).toBe(false);
+  });
+
+  test("keeps conversation mirrors for live deployments without active runs", async () => {
+    const terminal = liveDeployment(LIVE_ID, ["plan"]);
+    const conversation = await layConversationState(dataDir, terminal);
+
+    await run([terminal], []);
+
+    expect(await exists(conversation)).toBe(true);
+  });
+});
+
 describe("reconcileOrphanedDeploymentDirs — CL-2248 terminal-run second pass", () => {
   test("deletes ALL dir forms of a LIVE deployment that has NO active run", async () => {
     const terminal = liveDeployment(LIVE_ID, ["plan", "execute"]);
@@ -280,6 +316,25 @@ describe("reconcileOrphanedDeploymentDirs — fail-safes", () => {
     });
 
     for (const dir of orphanDirs) expect(await exists(dir)).toBe(true);
+    expect(warned).toBe(true);
+  });
+
+  test("FAIL-SAFE: an empty live set with only conversation mirrors deletes nothing", async () => {
+    const orphan = liveDeployment("ses_aaaabbbbccccddddeeeeffff00001111", [
+      "plan",
+    ]);
+    const conversation = await layConversationState(dataDir, orphan);
+
+    let warned = false;
+    await reconcileOrphanedDeploymentDirs({
+      dataDir,
+      hubHttpUrl: "http://hub",
+      sidecarToken: "t",
+      logger: { info: () => {}, warn: () => (warned = true), error: () => {} },
+      fetchFn: okFetch([]),
+    });
+
+    expect(await exists(conversation)).toBe(true);
     expect(warned).toBe(true);
   });
 

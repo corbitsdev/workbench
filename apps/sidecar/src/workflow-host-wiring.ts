@@ -61,6 +61,11 @@ import {
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 import { STEP_ID_PATTERN } from "@intx/workflow";
 import { deriveWorkflowRunRepoId } from "@intx/workflow-deploy";
+import {
+  DETERMINISTIC_TOOL_KIND,
+  INLINE_INFERENCE_KIND,
+  STEP_KIND_TAG,
+} from "@workbench/agents";
 
 import type {
   MultistepDrainRouter,
@@ -724,6 +729,37 @@ function derivePrincipalPublicKeyHex(signingKeySeed: Uint8Array): string {
   return der.subarray(der.length - 32).toString("hex");
 }
 
+// WORKBENCH-LOCAL (CL-2356): narrows warm-keep (a documented T2 duck-typed
+// seam) away from deterministic-tool / inline-inference single-step deploys,
+// which are no-launch shapes with no resumable agent to restore — retaining a
+// durable conversation mirror for them only burns memory/inodes. Depends on
+// `@workbench/agents` step-kind constants that do not exist upstream, so a
+// literal pin-bump re-sync of this vendored file must re-apply this block (and
+// the call site below) rather than reverting warm-keep to `stepOrder.length === 1`.
+type WorkflowStepWithOptionalAgent = {
+  kind?: string;
+  agent?: { tags?: Record<string, string | undefined> };
+  step?: { agent?: { tags?: Record<string, string | undefined> } };
+};
+
+export function shouldWarmKeepDeployment(
+  definition: NonNullable<AgentDeployFrame["workflow"]>["definition"],
+): boolean {
+  if (definition.stepOrder.length !== 1) return false;
+  const stepId = definition.stepOrder[0];
+  if (stepId === undefined) return false;
+  const primitive = definition.steps[stepId] as
+    | WorkflowStepWithOptionalAgent
+    | undefined;
+  const agent =
+    primitive?.kind === "map" ? primitive.step?.agent : primitive?.agent;
+  if (agent === undefined) return false;
+  const stepKind = agent.tags?.[STEP_KIND_TAG];
+  return (
+    stepKind !== DETERMINISTIC_TOOL_KIND && stepKind !== INLINE_INFERENCE_KIND
+  );
+}
+
 export function createSidecarDeployRouter(deps: {
   sessions: SessionManager;
   keyStore: AgentKeyStore;
@@ -1242,13 +1278,11 @@ export function createSidecarDeployRouter(deps: {
       const stepOrder = [...projection.definition.stepOrder];
       // Warm-keep is the single-step launched-agent deploy (design §3b):
       // the sole step IS the long-lived agent, so the child warm-keeps it
-      // across messages. A genuine multi-step deploy keeps
-      // instantiate-send-teardown per step -- warm-keeping N steps would
-      // hold N agents and N LSP subprocesses for no benefit. The signal
-      // is carried explicitly from this projection-level recognition down
-      // through the spawn env to the child's run-loop, never re-derived
-      // heuristically there.
-      const warmKeep = projection.definition.stepOrder.length === 1;
+      // across messages. Deterministic-tool and inline-inference steps are
+      // no-launch shapes; retaining a child-level durable conversation mirror
+      // for them burns memory/inodes without a resumable agent to restore.
+      // WORKBENCH-LOCAL (CL-2356): see shouldWarmKeepDeployment above.
+      const warmKeep = shouldWarmKeepDeployment(projection.definition);
       // `satisfies` (not a bare annotation) so a future SpawnOpts field that
       // gains a required member fails the build here (CL-2336) rather than
       // silently widening past this construction site.
@@ -1688,10 +1722,11 @@ export interface TrivialRunCell {
 
 /**
  * Placeholder definition hash baked into the trivial workflow's
- * `RunStarted` envelopes. The trivial workflow's content-addressed
- * definition lands with the trivial-deploy capability walk; until
- * then the on-disk envelope carries a stable sentinel so audit-log
- * consumers see a consistent value across deployments.
+ * `RunStarted` envelopes. CL-2356 leaves the sentinel in place because
+ * the trivial path does not yet carry a serialized WorkflowDefinition to
+ * hash; the trivial-deploy capability walk will replace it with a real
+ * content hash. Until then the on-disk envelope carries a stable value
+ * instead of pretending to provide per-definition provenance.
  */
 const TRIVIAL_DEFINITION_HASH = "trivial:v1";
 

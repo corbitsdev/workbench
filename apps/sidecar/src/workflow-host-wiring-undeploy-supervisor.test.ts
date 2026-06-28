@@ -27,6 +27,7 @@ import {
   type SubprocessSpawner,
 } from "@workbench/workflow-host";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
+import { DETERMINISTIC_TOOL_KIND, STEP_KIND_TAG } from "@workbench/agents";
 
 import {
   createSidecarDeployRouter,
@@ -304,7 +305,14 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
           id: "wf-undeploy-supervisor",
           triggers: [{ type: "manual" }],
           stepOrder: ["step-1"],
-          steps: { "step-1": { kind: "step" } },
+          steps: {
+            "step-1": {
+              kind: "step",
+              agent: {
+                tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND },
+              },
+            },
+          },
         },
         sources: {
           "step-1": {
@@ -325,6 +333,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
     }
     const spawn = spawns[0];
     if (spawn === undefined) throw new Error("unreachable");
+    expect(spawn.env.WARM_KEEP).toBe("false");
 
     const channelId = spawn.env.IPC_CHANNEL_ID;
     if (channelId === undefined) {

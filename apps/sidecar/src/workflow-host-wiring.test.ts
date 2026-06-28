@@ -25,10 +25,16 @@ import {
   createSidecarDeployRouter,
   createSidecarWorkflowSupervisor,
   driveTrivialRunChain,
+  shouldWarmKeepDeployment,
   STEP_INFERENCE_SOURCES_ENV_KEY,
   validateWorkflowProjection,
   type TrivialRunCell,
 } from "./workflow-host-wiring";
+import {
+  DETERMINISTIC_TOOL_KIND,
+  INLINE_INFERENCE_KIND,
+  STEP_KIND_TAG,
+} from "@workbench/agents";
 import {
   createMultistepMailRouter,
   type MultistepMailRouter,
@@ -2057,5 +2063,93 @@ describe("sanitizeAddress (CL-2231 reclaim dir-name contract)", () => {
     // wrong dir and silently re-introduce the sidecar-volume inode leak. Pin
     // the mapping here so such a change fails this test instead.
     expect(sanitizeAddress("ins_x@abklabs.com")).toBe("ins_x_at_abklabs_com");
+  });
+});
+
+describe("shouldWarmKeepDeployment — single-step warm-keep gate (CL-2356)", () => {
+  type WorkflowDefinition = NonNullable<
+    AgentDeployFrame["workflow"]
+  >["definition"];
+
+  function def(
+    steps: Record<string, unknown>,
+    stepOrder?: string[],
+  ): WorkflowDefinition {
+    return {
+      id: "wf-warmkeep",
+      triggers: [{ type: "manual" }],
+      stepOrder: stepOrder ?? Object.keys(steps),
+      steps,
+    } as unknown as WorkflowDefinition;
+  }
+
+  test("keeps warm a single untagged launched-agent step (the Myra invariant)", () => {
+    // A genuine reasoning/launched agent step is plain `step({ agent })` with
+    // no STEP_KIND_TAG — it must stay warm-kept so its conversation mirror is
+    // restorable. This is the load-bearing positive case.
+    expect(
+      shouldWarmKeepDeployment(def({ "step-1": { kind: "step", agent: {} } })),
+    ).toBe(true);
+  });
+
+  test("does not warm-keep a single deterministic-tool step", () => {
+    expect(
+      shouldWarmKeepDeployment(
+        def({
+          "step-1": {
+            kind: "step",
+            agent: { tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND } },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("does not warm-keep a single inline-inference step", () => {
+    expect(
+      shouldWarmKeepDeployment(
+        def({
+          "step-1": {
+            kind: "step",
+            agent: { tags: { [STEP_KIND_TAG]: INLINE_INFERENCE_KIND } },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("reads the nested agent of a single map step", () => {
+    expect(
+      shouldWarmKeepDeployment(
+        def({
+          "step-1": {
+            kind: "map",
+            step: {
+              agent: { tags: { [STEP_KIND_TAG]: DETERMINISTIC_TOOL_KIND } },
+            },
+          },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  test("does not warm-keep a step with no agent (awaitSignal/sleep)", () => {
+    expect(
+      shouldWarmKeepDeployment(def({ "step-1": { kind: "awaitSignal" } })),
+    ).toBe(false);
+  });
+
+  test("does not warm-keep a multi-step deployment", () => {
+    expect(
+      shouldWarmKeepDeployment(
+        def(
+          {
+            "step-1": { kind: "step", agent: {} },
+            "step-2": { kind: "step", agent: {} },
+          },
+          ["step-1", "step-2"],
+        ),
+      ),
+    ).toBe(false);
   });
 });
