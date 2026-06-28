@@ -42,6 +42,26 @@ There are two kinds of vendoring:
   The runtime (`@intx/workflow`) is **not** changed — resume is the host's job by
   the runtime's own design. See the project "Resumable workflow runs (survive
   redeploys)".
+- **WORKBENCH-LOCAL change (CL-2537):** a LIVE SIGNAL WATCHER on `runWorkflowChild`,
+  all in `child/run-child.ts` (marked `// WORKBENCH-LOCAL (CL-2537)`). The
+  self-discovery loop is restructured into a classifier: a run parked at an
+  `awaitSignal` gate STILL waiting (the host hook cleanly returned `null` — no
+  signal delivered yet) now installs a fire-and-forget, process-scoped watcher
+  instead of letting `runtimeRun` reject the unresumable tail. The watcher builds
+  a per-run `createWorkflowHostSignalChannel`, subscribes-then-rechecks (closing
+  the deliver-before-subscribe race, since `subscribeKind` tails from `head`), and
+  on signal arrival re-reads the log, calls the same `recoverParkedRun` hook to
+  satisfy the gate, and resumes via `runtimeRun` with the same terminal-event
+  continuation as the resume/trigger paths — saving the parked HITL run across a
+  sidecar restart and letting it reach terminal so the supervisor's serial
+  dispatch loop unwedges. A `parkedWatchers` set is aborted+awaited in the
+  run-loop `finally` so no `subscribeKind` iterator leaks. The watcher's
+  `recoverFromCurrentLog` read is wrapped in `readRunLogTolerant` (bounded ENOENT
+  retry) because the raw working-tree read can race a concurrent commit's
+  checkout. Process-scoped on purpose: single-live-child is the safety guarantee
+  against double-drive, so it is NOT hoisted to the supervisor (recycle awaits
+  `handle.exited` before respawn; redeploy mints a fresh deploymentId →
+  disjoint workflow-run repo). The runtime is **not** changed.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.

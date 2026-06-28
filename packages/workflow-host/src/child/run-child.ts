@@ -85,7 +85,7 @@ import type {
   WorkflowRun,
   WorkflowRuntimeEnv,
 } from "@intx/workflow";
-import { emptyState, runtimeRun } from "@intx/workflow";
+import { emptyState, resumeFromLog, runtimeRun } from "@intx/workflow";
 
 import {
   createWorkflowHostDrainController,
@@ -452,6 +452,61 @@ function hasUnresumableTail(run: DiscoveredRun): boolean {
   return false;
 }
 
+// WORKBENCH-LOCAL (CL-2537): locate a run's gate parked in `awaiting-signal`
+// with a named signal — the install target for the live signal watcher. A run
+// parks one gate at a time today, so the first match is the one to watch.
+// Returns `undefined` when the unresumable tail is an `awaiting-timer` /
+// `in-flight` step the watcher does not handle; those fall through to the
+// default resume path unchanged (the awaiting-timer watcher is a follow-up).
+function findAwaitingSignalGate(
+  run: DiscoveredRun,
+): { stepId: string; name: string } | undefined {
+  for (const [stepId, step] of run.resumedState.steps) {
+    if (step.phase === "awaiting-signal" && step.awaitingSignal !== undefined) {
+      return { stepId, name: step.awaitingSignal.name };
+    }
+  }
+  return undefined;
+}
+
+// WORKBENCH-LOCAL (CL-2537): a live watcher tracked for teardown. `abort`
+// cancels the watch-phase `awaitNext` subscription; `done` settles when the
+// watch phase (subscribe + recheck + signal-channel stop) has fully torn down,
+// so the run-loop's `finally` can await it without blocking on a resumed run.
+type ParkedWatcher = {
+  abort: AbortController;
+  done: Promise<void>;
+};
+
+// WORKBENCH-LOCAL (CL-2537): the watcher reads the run log from the
+// per-deployment working tree while another writer (another run's append, a
+// `signal.deliver` commit) may be checking the tree out — transiently
+// unlinking a `<seq>.json` the read just enumerated and surfacing ENOENT. The
+// raw working-tree read (`createWorkflowRunRepoStore.read`) is not locked
+// against writes; the inconsistency is momentary, so a bounded retry re-reads
+// the settled tree rather than letting a benign concurrent-checkout race throw
+// the gate-recovery read (which would leave a recoverable run parked).
+async function readRunLogTolerant(
+  read: () => Promise<readonly WorkflowEvent[]>,
+): Promise<readonly WorkflowEvent[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    try {
+      return await read();
+    } catch (cause) {
+      if (!isErrnoNotFound(cause)) throw cause;
+      lastError = cause;
+      await new Promise((resolve) => setTimeout(resolve, 8));
+    }
+  }
+  throw lastError;
+}
+
+function isErrnoNotFound(cause: unknown): boolean {
+  if (cause === null || typeof cause !== "object") return false;
+  return (cause as { code?: unknown }).code === "ENOENT";
+}
+
 export async function runWorkflowChild(
   opts: RunWorkflowChildOpts,
 ): Promise<RunWorkflowChildResult> {
@@ -531,6 +586,179 @@ export async function runWorkflowChild(
     runtimeRepoStore,
   });
   const resumedRunIds: string[] = [];
+
+  // WORKBENCH-LOCAL (CL-2537): live signal watchers installed for runs
+  // discovered parked at an `awaitSignal` gate that is STILL waiting for a
+  // human (no signal delivered yet). The run-loop's `finally` aborts every
+  // live watcher and awaits its `done` so no `subscribeKind` iterator outlives
+  // the child.
+  const parkedWatchers = new Set<ParkedWatcher>();
+
+  // WORKBENCH-LOCAL (CL-2537): runIds a live signal watcher currently owns (from
+  // self-discovery install through resume-to-terminal). The control loop's
+  // `trigger.fire` handler consults this set so the supervisor's restart re-fire
+  // (`replayProcessingToInbox` re-queues the parked run's orphaned `processing/`
+  // entry) does NOT start a SECOND `runtimeRun` alongside the watcher. The single
+  // live child is the whole double-drive guarantee; the watcher is the sole
+  // driver and its terminal.event still unwedges the dispatch loop, so the
+  // re-fire must be a no-op — exactly as a freshly-parked run yields no second
+  // driver. Membership is held until the watcher's resume reaches terminal (or it
+  // aborts / woke unsatisfied) so a re-fire landing mid-resume is also deduped.
+  const watchedRunIds = new Set<string>();
+
+  // WORKBENCH-LOCAL (CL-2537): install a live signal watcher for a run parked
+  // at an `awaitSignal` gate whose human signal has NOT arrived. Today such a
+  // run dies on restart: `runtimeRun` rejects the still-waiting tail
+  // (`RuntimeResumeUnsupportedError`), the run is never driven to terminal, AND
+  // the orphaned mid-dispatch entry wedges the supervisor's strictly-serial
+  // dispatch loop so new runs never dispatch. Instead, keep the run parked
+  // in-process, subscribe to the gate's signal source, and when the human
+  // signal lands, host-satisfy + resume — which both saves the run and lets it
+  // reach terminal so the loop unwedges.
+  //
+  // Fire-and-forget, so it NEVER blocks `ready`. Process-scoped on purpose:
+  // single-live-child is the entire safety guarantee against double-drive, so
+  // the watcher is NOT hoisted to the supervisor/host. `recover` is the host's
+  // gate-completion hook (production wiring: `recoverParkedRunFromLog`); the
+  // watcher re-reads the log on signal arrival and calls it to append the
+  // missing `StepCompleted` from the now-durable `SignalReceived`.
+  function installSignalWatcher(
+    run: DiscoveredRun,
+    signalName: string,
+    recover: NonNullable<RunWorkflowChildOpts["recoverParkedRun"]>,
+  ): void {
+    const abort = new AbortController();
+    const signalChannel = createWorkflowHostSignalChannel({
+      repoStore: opts.bindings.substrate,
+      principal: opts.bindings.principal,
+      repoId: opts.bindings.workflowRunRepoId,
+      ref: opts.bindings.workflowRunRef,
+      runId: run.runId,
+      readState: () => emptyState(run.runId),
+      newId: () => newId("sig"),
+      clock,
+    });
+
+    const recoverFromCurrentLog = async (): Promise<
+      readonly WorkflowEvent[] | null
+    > => {
+      const log = await readRunLogTolerant(() =>
+        runtimeRepoStore.read(run.runId),
+      );
+      const blobs = createWorkflowRunBlobSubstrate({
+        substrate: opts.bindings.substrate,
+        repoId: opts.bindings.workflowRunRepoId,
+        principal: opts.bindings.principal,
+        runId: run.runId,
+        ref: opts.bindings.workflowRunRef,
+      });
+      const freshRun: DiscoveredRun = {
+        runId: run.runId,
+        seedEvents: log,
+        resumedState: resumeFromLog(run.runId, log),
+      };
+      return recover(freshRun, { blobs });
+    };
+
+    const resume = async (seed: readonly WorkflowEvent[]): Promise<void> => {
+      const env = buildRuntimeEnv({
+        runId: run.runId,
+        bindings: opts.bindings,
+        runtimeRepoStore,
+        authorize,
+        directors,
+        clock,
+        newId,
+        drainController,
+        warmCache,
+        onEvent: (event) => {
+          void eventSender.send(event).catch((cause) => {
+            logger.error`event-channel send failed during watcher resume run ${run.runId}: ${String(cause)}`;
+          });
+        },
+      });
+      const handle = runtimeRun(definition, env, {
+        runId: run.runId,
+        resumeFromEvents: seed,
+      });
+      await handle.complete
+        .then((result) => {
+          reclaimRunStorageIfCold({
+            warmKeep: opts.env.warmKeep,
+            cleanupRunStorage: opts.bindings.cleanupRunStorage,
+            runId: run.runId,
+          });
+          return emitTerminalEvent(upstreamSender, result);
+        })
+        .catch((cause) => {
+          logger.error`watcher-resumed run ${run.runId} failed: ${String(cause)}`;
+        });
+    };
+
+    // Watch phase. SUBSCRIBE-THEN-RECHECK closes the deliver-before-subscribe
+    // race: `subscribeKind` tails from `head` and never replays a signal
+    // committed before we subscribed, so after subscribing we re-read the log
+    // and try to satisfy the gate immediately; only if that finds nothing do we
+    // wait for a fresh delivery. The `done` promise this resolves into covers
+    // ONLY the watch phase (subscribe + recheck + channel stop) — never the
+    // resumed run — so teardown cannot block on an in-flight resume.
+    const watchPhase = (async (): Promise<readonly WorkflowEvent[] | null> => {
+      try {
+        const nextSignal = signalChannel.awaitNext(signalName, abort.signal);
+        // If the early recheck satisfies the gate we abort `nextSignal`;
+        // attach a no-op catch so the abort-rejection is never unhandled.
+        void nextSignal.catch(() => undefined);
+        const early = await recoverFromCurrentLog();
+        if (early !== null) {
+          abort.abort();
+          return early;
+        }
+        await nextSignal;
+        return await recoverFromCurrentLog();
+      } finally {
+        await signalChannel.stop().catch(() => undefined);
+      }
+    })();
+
+    const watcher: ParkedWatcher = {
+      abort,
+      done: watchPhase.then(
+        () => undefined,
+        () => undefined,
+      ),
+    };
+    parkedWatchers.add(watcher);
+    // WORKBENCH-LOCAL (CL-2537): claim the run for the watcher so a re-fired
+    // `trigger.fire` for it is deduped. Released only once the watcher's resume
+    // has reached terminal (or the watcher aborted / woke unsatisfied) — NOT when
+    // `resume` starts — so a re-fire landing mid-resume is also deduped.
+    watchedRunIds.add(run.runId);
+
+    void watchPhase
+      .then(async (outcome) => {
+        parkedWatchers.delete(watcher);
+        if (outcome !== null) {
+          try {
+            await resume(outcome);
+          } finally {
+            watchedRunIds.delete(run.runId);
+          }
+          return;
+        }
+        // Aborted (teardown) reaches here as a rejection, not this branch; a
+        // `null` outcome means the awaiter woke without a satisfiable seed.
+        watchedRunIds.delete(run.runId);
+        logger.warn`signal watcher for run ${run.runId} woke without a satisfiable seed; leaving parked`;
+      })
+      .catch((cause) => {
+        parkedWatchers.delete(watcher);
+        watchedRunIds.delete(run.runId);
+        if (!abort.signal.aborted) {
+          logger.error`signal watcher for run ${run.runId} failed: ${String(cause)}`;
+        }
+      });
+  }
+
   for (const run of discovered) {
     // WORKBENCH-LOCAL (CL-2535): a run whose tail the runtime cannot resume is
     // offered to the host first. The hook returns a seed log with the parked
@@ -540,6 +768,8 @@ export async function runWorkflowChild(
     // run is left undriven, exactly as it was before this hook existed, and the
     // hub's `failOrphanedRuns` reconciler fails it on its next pass).
     let seedEvents: readonly WorkflowEvent[] = run.seedEvents;
+    let recovered = false;
+    let recoverThrew = false;
     if (opts.recoverParkedRun !== undefined && hasUnresumableTail(run)) {
       // WORKBENCH-LOCAL (CL-2535): a recovery-hook failure must NEVER crash the
       // child. This runs during self-discovery, BEFORE `ready` is announced, so
@@ -561,12 +791,38 @@ export async function runWorkflowChild(
         const satisfied = await opts.recoverParkedRun(run, { blobs });
         if (satisfied !== null) {
           seedEvents = satisfied;
+          recovered = true;
         }
       } catch (cause) {
         logger.error`recoverParkedRun failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
         seedEvents = run.seedEvents;
+        recoverThrew = true;
       }
     }
+
+    // WORKBENCH-LOCAL (CL-2537): classifier branch. The host hook ran and
+    // cleanly DECLINED (returned null: no signal delivered yet) AND the run is
+    // parked at a still-waiting `awaitSignal` gate → install a LIVE WATCHER
+    // instead of letting the default path drive `runtimeRun` into a
+    // `RuntimeResumeUnsupportedError`. Do NOT call `runtimeRun`; do NOT push to
+    // `resumedRunIds` (the watcher resumes the run later, off the startup path).
+    // A hook that THREW (recoverThrew) is unreliable — a watcher reusing it
+    // could never satisfy the gate — so that case falls through to the default
+    // path unchanged (preserving the CL-2535 throw-guard behaviour). Guarded
+    // like the CL-2535 hook above: an install throw must NOT crash the child
+    // before `ready`, so on throw we fall through to the default path.
+    if (!recovered && !recoverThrew && opts.recoverParkedRun !== undefined) {
+      const gate = findAwaitingSignalGate(run);
+      if (gate !== undefined) {
+        try {
+          installSignalWatcher(run, gate.name, opts.recoverParkedRun);
+          continue;
+        } catch (cause) {
+          logger.error`signal watcher install failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
+        }
+      }
+    }
+
     const env = buildRuntimeEnv({
       runId: run.runId,
       bindings: opts.bindings,
@@ -658,6 +914,9 @@ export async function runWorkflowChild(
           upstreamSender,
           drainController,
           triggeredRunIds,
+          // WORKBENCH-LOCAL (CL-2537): read-only view so the trigger.fire
+          // handler can dedup a re-fire against a watcher-owned run.
+          watchedRunIds,
           warmCache,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
@@ -689,6 +948,18 @@ export async function runWorkflowChild(
     if (opts.outboundMailBridge !== undefined) {
       opts.outboundMailBridge.cancelAll("workflow-child control loop exited");
     }
+    // WORKBENCH-LOCAL (CL-2537): abort every live parked-signal watcher on any
+    // exit path and await its watch-phase teardown so no `subscribeKind`
+    // iterator outlives the run-loop. A watcher that already handed off to a
+    // resumed run has removed itself from the set; aborting an already-settled
+    // watcher is a no-op. The awaited `done` covers only the watch phase
+    // (subscribe + recheck + signal-channel stop), never the resumed run's
+    // completion, so teardown cannot block on an in-flight resume.
+    const liveWatchers = [...parkedWatchers];
+    for (const watcher of liveWatchers) {
+      watcher.abort.abort();
+    }
+    await Promise.all(liveWatchers.map((watcher) => watcher.done));
     // Evict the warm-agent cache (design §3b) on every exit path:
     // graceful (shutdown frame -> iterator end), dirty (thrown error),
     // or the control channel closing. Eviction runs the wrapped
@@ -730,6 +1001,8 @@ async function handleControlPayload(
     upstreamSender: ControlChannelSender;
     drainController: DrainController;
     triggeredRunIds: string[];
+    // WORKBENCH-LOCAL (CL-2537): runIds owned by a live signal watcher.
+    watchedRunIds: ReadonlySet<string>;
     warmCache: WarmAgentCache | undefined;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
@@ -737,6 +1010,24 @@ async function handleControlPayload(
 ): Promise<boolean> {
   switch (payload.type) {
     case "trigger.fire": {
+      // WORKBENCH-LOCAL (CL-2537): dedup. A live signal watcher installed by
+      // self-discovery already owns this runId — it IS the run's sole driver.
+      // After a sidecar restart the supervisor's `replayProcessingToInbox`
+      // re-queues the parked run's orphaned `processing/` entry and the dispatch
+      // loop re-fires `trigger.fire` for it; without this guard the handler would
+      // start a SECOND `runtimeRun` racing the watcher's resume (the double-drive
+      // — surfaces as an ERR-level "seq conflict … single-writer invariant
+      // violated" when the loser's append loses). Treat it as a no-op: the
+      // watcher drives the run to terminal and emits the lone `terminal.event`
+      // that unwedges the dispatch loop, so the run still completes — identical
+      // to a freshly-parked run, which likewise spawns no second driver. The
+      // dispatch loop stays blocked on this run's terminal until the human
+      // signals (the strictly-serial dispatchOne→waitForRunTerminal→markConsumed
+      // contract), exactly as it does for a normally-parked run.
+      if (ctx.watchedRunIds.has(payload.data.runId)) {
+        logger.info`workflow-child trigger.fire deduped: run ${payload.data.runId} is owned by a live signal watcher; not starting a second driver`;
+        return false;
+      }
       // Resolve the inbound mail bytes for this messageId from the
       // claim-check processing entry the supervisor created when it
       // dequeued the message. The bytes become the run's trigger
