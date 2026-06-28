@@ -52,6 +52,7 @@ COPY packages/tools-skills/package.json packages/tools-skills/
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/test-utils/package.json packages/test-utils/
+COPY packages/tools-interchange-contract/package.json packages/tools-interchange-contract/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
