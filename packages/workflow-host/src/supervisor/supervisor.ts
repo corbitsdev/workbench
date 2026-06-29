@@ -626,7 +626,7 @@ export function createWorkflowSupervisor(
   }
 
   function onChildCrash(reason: string): void {
-    logger.error`workflow-process control channel crash: {reason}`;
+    logger.error`workflow-process control channel crash: ${reason}`;
     void shutdownInternal({ reason });
   }
 
