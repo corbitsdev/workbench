@@ -17,8 +17,15 @@ import { recoverParkedRunFromLog } from "../src/workflow-resume";
 // the sidecar via `multistepSubstrateEnv` (the child gets a fresh env); an
 // absent DSN leaves the child console-only. The warn-category prefixes match
 // the sidecar process so warning-level workflow-host failures are captured too.
+// WORKBENCH-LOCAL (CL-2503): force `dev: false`. The child's stdout IS the
+// control-channel IPC (newline-delimited JSON). In dev mode the @intx/log
+// console sink uses the ANSI color formatter, so the first warning-level log
+// line writes an ESC byte (\x1B) onto stdout and the supervisor crashes with
+// "control channel received non-JSON line". NODE_ENV is absent from the child's
+// filtered substrate env, so the prior `NODE_ENV !== "production"` evaluated
+// dev=true in prod. JSON output is mandatory here regardless of NODE_ENV.
 await setupObservability(
-  { dev: process.env.NODE_ENV !== "production" },
+  { dev: false },
   {
     warnCategoryPrefixes: [
       ["workflow-host"],
