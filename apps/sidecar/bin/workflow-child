@@ -17,13 +17,27 @@ import { recoverParkedRunFromLog } from "../src/workflow-resume";
 // the sidecar via `multistepSubstrateEnv` (the child gets a fresh env); an
 // absent DSN leaves the child console-only. The warn-category prefixes match
 // the sidecar process so warning-level workflow-host failures are captured too.
-// WORKBENCH-LOCAL (CL-2503): force `dev: false`. The child's stdout IS the
-// control-channel IPC (newline-delimited JSON). In dev mode the @intx/log
-// console sink uses the ANSI color formatter, so the first warning-level log
-// line writes an ESC byte (\x1B) onto stdout and the supervisor crashes with
-// "control channel received non-JSON line". NODE_ENV is absent from the child's
-// filtered substrate env, so the prior `NODE_ENV !== "production"` evaluated
-// dev=true in prod. JSON output is mandatory here regardless of NODE_ENV.
+// WORKBENCH-LOCAL (CL-2503): the child's stdout (fd 1) IS the supervisor
+// control-channel IPC (newline-delimited signed JSON). ANY byte written to
+// stdout corrupts that stream and crashes the channel ("received non-JSON
+// line" / "envelope failed validation"). The @intx/log console sink — and any
+// stray console.* or library banner — writes to stdout, so a single
+// warning-level log mid-run wedged the run. Redirect every console method to
+// stderr (fd 2) BEFORE installing logging, leaving fd 1 exclusively for the
+// control channel; the IPC FrameWriter uses process.stdout.write directly and
+// is unaffected. Railway captures stderr, so logs are preserved. `dev: false`
+// keeps that (now stderr) output as JSON since NODE_ENV is absent from the
+// child's filtered substrate env.
+const logToStderr = (...args: unknown[]): void => {
+  process.stderr.write(
+    args.map((a) => (typeof a === "string" ? a : String(a))).join(" ") + "\n",
+  );
+};
+console.log = logToStderr;
+console.info = logToStderr;
+console.debug = logToStderr;
+console.warn = logToStderr;
+console.error = logToStderr;
 await setupObservability(
   { dev: false },
   {
