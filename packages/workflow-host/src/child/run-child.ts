@@ -885,19 +885,6 @@ export async function runWorkflowChild(
 
   const triggeredRunIds: string[] = [];
 
-  // WORKBENCH-LOCAL (CL-2537): signalIds whose `signal.deliver` commit has been
-  // started in this child. The hub redelivers a signal (same signalId) when an
-  // ack is lost, and the commit runs as a fire-and-forget async write whose
-  // pack-push round-trip leaves a multi-second window before it lands. A second
-  // delivery in that window reads the pre-commit tree (maxSeq unchanged) and
-  // appends a SECOND event at the same seq, which the runtime rejects on apply
-  // with `TransitionError: non-monotonic sequence` and the run dies before its
-  // gate completes. The on-disk dedup-by-signalId in the signal channel cannot
-  // see an in-flight peer; gate it here so the same signalId commits at most
-  // once per child lifetime. (Distinct intended signals always carry distinct
-  // signalIds, so this only collapses true redeliveries.)
-  const deliveredSignalIds = new Set<string>();
-
   // Control-loop. The receiver iterator yields one verified payload
   // per call; any signature/channelId/seq violation crashes the
   // receiver via `onCrash` and ends the iterator.
@@ -930,9 +917,6 @@ export async function runWorkflowChild(
           // WORKBENCH-LOCAL (CL-2537): read-only view so the trigger.fire
           // handler can dedup a re-fire against a watcher-owned run.
           watchedRunIds,
-          // WORKBENCH-LOCAL (CL-2537): dedup set so signal.deliver commits a
-          // given signalId at most once (redelivery race -> duplicate seq).
-          deliveredSignalIds,
           warmCache,
           ...(opts.substrateWriteBridge !== undefined
             ? { substrateWriteBridge: opts.substrateWriteBridge }
@@ -1019,9 +1003,6 @@ async function handleControlPayload(
     triggeredRunIds: string[];
     // WORKBENCH-LOCAL (CL-2537): runIds owned by a live signal watcher.
     watchedRunIds: ReadonlySet<string>;
-    // WORKBENCH-LOCAL (CL-2537): signalIds already committed (or in-flight) so a
-    // redelivered signal.deliver does not append a duplicate-seq SignalReceived.
-    deliveredSignalIds: Set<string>;
     warmCache: WarmAgentCache | undefined;
     substrateWriteBridge?: SubstrateWriteResponseSink;
     outboundMailBridge?: ChildOutboundMailBridge;
@@ -1140,18 +1121,6 @@ async function handleControlPayload(
       return false;
     }
     case "signal.deliver": {
-      // WORKBENCH-LOCAL (CL-2537): dedup a redelivered signal by signalId. The
-      // commit below is fire-and-forget and its pack-push round-trip leaves a
-      // multi-second window; a second frame for the same signalId in that window
-      // would read the pre-commit tree and append a duplicate-seq SignalReceived
-      // (-> runtime TransitionError, run dies). Commit each signalId at most
-      // once per child lifetime; the on-disk dedup-by-signalId remains the
-      // cross-restart backstop.
-      if (ctx.deliveredSignalIds.has(payload.data.signalId)) {
-        logger.info`workflow-child signal.deliver deduped: signalId ${payload.data.signalId} already committed for run ${payload.data.runId}`;
-        return false;
-      }
-      ctx.deliveredSignalIds.add(payload.data.signalId);
       // Land the signal as a `SignalReceived` commit on the run's
       // event log. The signal-channel substrate's `subscribeKind`
       // peer (the per-run signal channel installed at run start) is
