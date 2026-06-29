@@ -51,6 +51,14 @@ type RunRow = {
 // to the next — so findFirst dequeues candidates in order and update writes
 // back to the row findFirst just handed out. This round-trips the real
 // status/error transition rather than asserting a mock.
+//
+// CAVEAT: findFirst serves by dequeue ORDER, not by the requested run id (the
+// real loadRunRecord looks up by id; this mock cannot extract it from drizzle's
+// SQL expression). So `nonRoutableIdsInOrder` MUST match the exact order the
+// reconciler reaches loadRunRecord. Keep failOrphanedRuns tests to at most ONE
+// served candidate (the others routable/awaiting/empty) so a mismatched order
+// can never silently write to the wrong row — the failure mode that made a
+// multi-candidate test pass on broken code (CL-2575 review).
 function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
   const rows = new Map<string, RunRow & { error: string | null }>(
     runs.map((r) => [r.id, { ...r, error: null }]),
@@ -67,6 +75,7 @@ function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
             [...rows.values()].map((r) => ({
               id: r.id,
               deploymentId: r.deploymentId,
+              status: r.status,
             })),
           ),
       }),
@@ -332,9 +341,9 @@ describe("failOrphanedRuns", () => {
     expect(rows.get("run_1")!.error).toBe("interrupted by restart");
   });
 
-  it("leaves a run whose supervisor IS routable untouched (safety invariant)", async () => {
+  it("leaves a running run whose supervisor IS routable untouched (safety invariant)", async () => {
     const runs: RunRow[] = [
-      { id: "run_live", deploymentId: "ses_live", status: "awaiting" },
+      { id: "run_live", deploymentId: "ses_live", status: "running" },
     ];
     // ses_live's supervisor IS in the routable snapshot — never fail it.
     const { db, rows } = makeFailDb(runs, []);
@@ -348,30 +357,39 @@ describe("failOrphanedRuns", () => {
 
     await reconciler.failOrphanedRuns();
 
-    expect(rows.get("run_live")!.status).toBe("awaiting");
+    expect(rows.get("run_live")!.status).toBe("running");
     expect(rows.get("run_live")!.error).toBeNull();
   });
 
-  it("fails only the non-routable runs in a mixed set, keeping the routable one", async () => {
+  it("leaves an awaitSignal-parked (awaiting) run untouched even when its supervisor is NOT routable (CL-2575)", async () => {
+    // The regression fix: a run parked at an awaitSignal gate is resumable
+    // across a restart (CL-2535/2537). failOrphanedRuns must NOT fail it even
+    // though its supervisor is absent from the pre-reconcile routable snapshot —
+    // failing it would flip the record terminal, drop the deployment out of
+    // activeRunDeploymentIds, and let the sidecar boot-reconciler reap the
+    // workflow-run repo → resume push dangles → reason=corrupt.
     const runs: RunRow[] = [
-      { id: "run_live", deploymentId: "ses_live", status: "running" },
-      { id: "run_gone", deploymentId: "ses_gone", status: "awaiting" },
+      { id: "run_parked", deploymentId: "ses_gone", status: "awaiting" },
     ];
-    // run_live is routable (skipped, no findFirst); run_gone is the only
-    // non-routable candidate, so it is the only id the dequeue serves.
-    const { db, rows } = makeFailDb(runs, ["run_gone"]);
+    // Seed the dequeue with run_parked so this test is RED on the pre-fix code:
+    // without the CL-2575 status guard, this non-routable run reaches
+    // loadRunRecord and is marked failed. The guard skips it BEFORE
+    // loadRunRecord, so on the fixed code findFirst is never called and the
+    // seeded id is simply never consumed → the run stays awaiting. (Single
+    // candidate, so the order-based dequeue cannot serve the wrong row.)
+    const { db, rows } = makeFailDb(runs, ["run_parked"]);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
       ensureDeploymentRoutable: noopEnsure,
-      getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
+      getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
     });
 
     await reconciler.failOrphanedRuns();
 
-    expect(rows.get("run_live")!.status).toBe("running");
-    expect(rows.get("run_gone")!.status).toBe("failed");
+    expect(rows.get("run_parked")!.status).toBe("awaiting");
+    expect(rows.get("run_parked")!.error).toBeNull();
   });
 
   it("is idempotent: a second pass with no in-flight rows fails nothing", async () => {

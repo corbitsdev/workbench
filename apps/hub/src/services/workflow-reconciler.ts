@@ -26,20 +26,26 @@ const log = getLogger(["services", "workflow-reconciler"]);
 // Caveats (documented honestly, not silently): (1) re-establishing a supervisor
 // creates a live instance; under the "a deployed workflow has zero live
 // instances" model these are transient and reaped by idle-harness eviction
-// (CL-2219). (2) A run parked at an awaitSignal step cannot actually RESUME
-// until interchange's @intx/workflow runtime supports re-arming awaiting-signal
-// steps (today its self-discovery throws RuntimeResumeUnsupportedError); this
-// reconciler re-establishes the supervisor so NEW runs work and so resume works
-// end-to-end once that upstream fix lands.
+// (CL-2219). (2) A run parked at an awaitSignal gate IS now resumable across a
+// restart: CL-2535/2537 host-satisfies the resume — the sidecar self-discovers
+// the parked run from disk and installs a live signal watcher that resumes it
+// when the human signals. This reconciler re-establishes the supervisor so NEW
+// runs work and so a parked run resumes end-to-end.
 export interface WorkflowReconciler {
-  // CL-2248: fail in-flight `workflow_run_record` rows whose supervisor is NOT
-  // routable. MUST be called on hub startup BEFORE `reconcileAll()`, while the
-  // routable snapshot still reflects only sessions the sidecar restored on its
-  // own — once `reconcileAll()` re-registers supervisors, every run would look
-  // routable and nothing would be failed. A run parked at a gate/in-flight
-  // cannot be resumed today (CL-2221 RuntimeResumeUnsupportedError), so a
-  // supervisor that is gone after a restart means the run is unrecoverable;
-  // failing it deterministically stops the frozen UI and the reconnect storm.
+  // CL-2248: fail genuinely-interrupted `workflow_run_record` rows whose
+  // supervisor is NOT routable. MUST be called on hub startup BEFORE
+  // `reconcileAll()`, while the routable snapshot still reflects only sessions
+  // the sidecar restored on its own — once `reconcileAll()` re-registers
+  // supervisors, every run would look routable and nothing would be failed.
+  //
+  // CL-2575: only `running` (mid-execution) runs are failed. A run parked at an
+  // awaitSignal gate (`awaiting`) is NOT failed — CL-2535/2537 made it resumable
+  // across a restart (the sidecar self-discovers it and resumes on signal).
+  // Failing an `awaiting` run flips its record terminal, which drops its
+  // deployment out of `activeRunDeploymentIds`; the sidecar boot-reconciler then
+  // reaps the deployment's `workflow-runs/<slug>` repo out from under the live
+  // watcher, so the resume push ships a pack whose base is gone →
+  // `pack_walk_dangling_parent` → `reason=corrupt`, retried forever (CL-2575).
   // Idempotent: already-terminal rows are not selected.
   failOrphanedRuns(): Promise<void>;
   // Re-establish supervisors for every active (non-deleted) deployment. Run on
@@ -77,6 +83,7 @@ export function createWorkflowReconciler(deps: {
       .select({
         id: workflowRunRecord.id,
         deploymentId: workflowRunRecord.deploymentId,
+        status: workflowRunRecord.status,
       })
       .from(workflowRunRecord)
       .where(
@@ -90,7 +97,23 @@ export function createWorkflowReconciler(deps: {
 
     const runStore = createRunStore(deps.db);
     let failed = 0;
+    let preservedParked = 0;
     for (const run of stuckRuns) {
+      // CL-2575: this is THE resumability decision. A run parked at an
+      // awaitSignal gate (`awaiting`) is resumable across a restart — CL-2535/
+      // 2537 host-satisfies it (the sidecar self-discovers the parked run from
+      // disk and resumes on signal). Failing it would flip its record terminal,
+      // drop the deployment out of `activeRunDeploymentIds`, and let the sidecar
+      // boot-reconciler reap the `workflow-runs/<slug>` repo out from under the
+      // live watcher → the resume push ships a pack whose base is gone →
+      // `pack_walk_dangling_parent` → `reason=corrupt`, retried forever. Only a
+      // genuinely-interrupted `running` run is unrecoverable, so only it is
+      // failed. (The query selects both statuses so this single in-loop branch
+      // owns the decision and is unit-testable; awaiting runs are few.)
+      if (run.status !== "running") {
+        preservedParked += 1;
+        continue;
+      }
       // A run with no deployment can never have a routable supervisor, so it
       // is unconditionally orphaned by a restart.
       const supervisorAddress =
@@ -118,10 +141,13 @@ export function createWorkflowReconciler(deps: {
       }
     }
 
-    if (failed > 0) {
+    if (failed > 0 || preservedParked > 0) {
       log.info("failOrphanedRuns: marked interrupted runs failed", {
         candidates: stuckRuns.length,
         failed,
+        // CL-2575: awaitSignal-parked runs left intact for the sidecar watcher
+        // to resume — failing them would strand them with reason=corrupt.
+        preservedParked,
       });
     }
   }
