@@ -11,7 +11,7 @@ describe("PagePanel", () => {
     );
     getByText("content");
     const panel = container.querySelector("section");
-    expect(panel?.className).toContain("rounded-panel");
+    expect(panel?.className).not.toContain("rounded-panel");
     expect(panel?.className).toContain("border");
   });
 

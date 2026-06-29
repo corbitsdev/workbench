@@ -62,6 +62,45 @@ describe("ArtifactCard", () => {
     expect(chip.className).toContain("truncate");
   });
 
+  it("leaves the default card treatment unchanged when the experiment is off", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, { artifact, index: 1 }),
+    );
+    const card = container.firstElementChild as HTMLElement;
+    const label = screen.getByText("Email");
+    const viz = card.querySelector(".bg-orange");
+
+    expect(card.className).toContain("hover:rotate-[-1deg]");
+    expect(card.className).toContain("hover:scale-[1.02]");
+    expect(card.className).toContain("row-span-3");
+    expect(label.className).toContain("bg-[rgba(0,0,0,0.32)]");
+    expect(viz).not.toBeNull();
+  });
+
+  it("uses restrained motion and stronger overlay contrast when opted in", () => {
+    const { container } = render(
+      React.createElement(ArtifactCard, {
+        artifact: {
+          ...artifact,
+          experimentalFill: "bg-orange/85",
+          experimentalSpan: "row-span-2",
+        },
+        index: 1,
+        experimental: true,
+      }),
+    );
+    const card = container.firstElementChild as HTMLElement;
+    const label = screen.getByText("Email");
+    const viz = card.querySelector(".bg-orange\\/85");
+
+    expect(card.className).not.toContain("hover:rotate-[-1deg]");
+    expect(card.className).not.toContain("hover:scale-[1.02]");
+    expect(card.className).toContain("hover:-translate-y-1");
+    expect(card.className).toContain("row-span-2");
+    expect(label.className).toContain("bg-[rgba(18,18,18,0.58)]");
+    expect(viz).not.toBeNull();
+  });
+
   it("exposes no button role when onOpen is omitted", () => {
     render(React.createElement(ArtifactCard, { artifact, index: 1 }));
     expect(screen.queryByRole("button")).toBeNull();

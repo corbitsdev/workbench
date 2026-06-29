@@ -11,20 +11,6 @@ import type {
 
 afterEach(cleanup);
 
-// framer-motion (used by HorizontalStepper) is not compatible with Happy DOM.
-mock.module("framer-motion", () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-  motion: {
-    div: ({
-      children,
-      className,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-    }) => React.createElement("div", { className }, children),
-  },
-}));
-
 const { Panel } = await import("./ui");
 
 type Phase = StepState["phase"];
@@ -169,6 +155,16 @@ describe("ab-compare Panel — guided routing (ONLY active step shown)", () => {
     });
     screen.getByText("Running the prompt across variants…");
     expect(screen.queryByText("Comparison 1")).toBeNull();
+  });
+
+  it("does not rewind to config when the config gate's output is absent but execute is running (CL-2506)", () => {
+    // The config awaitSignal gate's StepCompleted is missing from the
+    // synthesized state, but execute is in-flight: the panel must stay on
+    // Execute, not fall back to the "Waiting for the run to start…" config gate.
+    renderPanel({ state: makeState({ execute: "in-flight" }) });
+    screen.getByText("Running the prompt across variants…");
+    expect(screen.queryByText("Comparisons")).toBeNull();
+    expect(screen.queryByText("Waiting for the run to start…")).toBeNull();
   });
 
   it("shows the compare screen while compare is in-flight", () => {

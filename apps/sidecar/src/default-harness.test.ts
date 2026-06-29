@@ -350,8 +350,8 @@ describe("createDefaultHarnessBuilder", () => {
         });
 
         // The whole harness (inference + tools) must come up despite the stale
-        // marker — every named basename is now unregistered (MEMORY.md included,
-        // CL-2413), so all are skipped, not thrown.
+        // marker — MEMORY.md is classified retired (silent, CL-2413) and the
+        // others skipped, none thrown.
         await expect(build).resolves.toBeDefined();
 
         const seeded = await fs.promises.readdir(

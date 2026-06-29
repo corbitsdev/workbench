@@ -5,6 +5,7 @@ import type { DB } from "@intx/db";
 import type {
   SessionService,
   EventCollectorRegistry,
+  SidecarRouter,
 } from "@intx/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import { requestBodySchema } from "../lib/openapi";
@@ -15,6 +16,7 @@ import {
   generateMyraThreadTitle,
   listMyraThreads,
   MyraThreadLaunchError,
+  relaunchMyraThread,
   renameMyraThread,
   resolveMyraThreadContext,
 } from "../services/myra-threads";
@@ -26,7 +28,17 @@ const MyraThread = type({
   createdAt: "string",
 });
 
-const MyraThreadList = type({ threads: MyraThread.array() });
+// The list carries a per-thread `updateAvailable` flag; the create/rename/title
+// responses do not (they describe a single just-mutated thread). (CL-2518)
+const MyraThreadListItem = type({
+  id: "string",
+  instanceId: "string",
+  label: "string",
+  createdAt: "string",
+  updateAvailable: "boolean",
+});
+
+const MyraThreadList = type({ threads: MyraThreadListItem.array() });
 
 const CreateMyraThreadBody = type({
   label: "string?",
@@ -45,6 +57,7 @@ export function createMyraThreadsRouter(
   sessionService: SessionService,
   grantStore: GrantStore,
   eventCollectors: EventCollectorRegistry,
+  sidecarRouter: SidecarRouter,
 ) {
   const app = new Hono<{ Variables: { userId: string } }>();
   const hubDb = db as unknown as HubDb;
@@ -288,6 +301,92 @@ export function createMyraThreadsRouter(
         },
       );
       return c.json({ thread });
+    },
+  );
+
+  app.post(
+    "/tenants/:tenantId/me/myra/threads/:id/relaunch",
+    describeRoute({
+      tags: ["Agents"],
+      summary:
+        "Update Myra for one thread: reseed the tenant def if stale and relaunch this thread's session against it so the latest tools load",
+      parameters: [
+        {
+          name: "tenantId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+        { name: "id", in: "path", required: true, schema: { type: "string" } },
+      ],
+      responses: {
+        200: {
+          description:
+            "Relaunch attempted. `applied` is false when the live session could not be torn down in time — the thread is unchanged and the member can retry.",
+          content: {
+            "application/json": {
+              schema: resolver(
+                type({ thread: MyraThread, applied: "boolean" }),
+              ),
+            },
+          },
+        },
+        403: { description: "Not a member of this tenant" },
+        404: { description: "Thread not found" },
+        503: {
+          description: "The chat session failed to relaunch",
+          content: {
+            "application/json": {
+              schema: resolver(
+                type({
+                  error: "string",
+                  "phase?": "string | null",
+                  "detail?": "string",
+                  "leakedAgent?": "boolean",
+                }),
+              ),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const tenantId = c.req.param("tenantId");
+      const threadId = c.req.param("id");
+      const ctx = await resolveMyraThreadContext(hubDb, userId, tenantId);
+      if (!ctx) {
+        return c.json({ error: "Not a member of this tenant" }, 403);
+      }
+      try {
+        const result = await relaunchMyraThread(
+          hubDb,
+          { sessionService, grantStore, eventCollectors, sidecarRouter },
+          {
+            tenantId: ctx.tenantId,
+            tenantDomain: ctx.tenantDomain,
+            memberPrincipalId: ctx.memberPrincipalId,
+            threadId,
+          },
+        );
+        if (!result) {
+          return c.json({ error: "Thread not found" }, 404);
+        }
+        return c.json({ thread: result.thread, applied: result.applied });
+      } catch (err) {
+        if (err instanceof MyraThreadLaunchError) {
+          return c.json(
+            {
+              error: "Failed to relaunch Myra chat session",
+              phase: err.phase,
+              detail: err.detail,
+              leakedAgent: err.leakedAgent,
+            },
+            503,
+          );
+        }
+        throw err;
+      }
     },
   );
 

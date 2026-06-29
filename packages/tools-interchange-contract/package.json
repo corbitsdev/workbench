@@ -1,0 +1,35 @@
+{
+  "name": "@workbench/tools-interchange-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --isolate src",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "devDependencies": {
+    "@intx/agent": "workspace:*",
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tools-agents": "workspace:*",
+    "@workbench/tools-artifact": "workspace:*",
+    "@workbench/tools-attio": "workspace:*",
+    "@workbench/tools-bluesky": "workspace:*",
+    "@workbench/tools-dispatch": "workspace:*",
+    "@workbench/tools-exa": "workspace:*",
+    "@workbench/tools-firecrawl": "workspace:*",
+    "@workbench/tools-gamma": "workspace:*",
+    "@workbench/tools-github": "workspace:*",
+    "@workbench/tools-granola": "workspace:*",
+    "@workbench/tools-hackernews": "workspace:*",
+    "@workbench/tools-last30days": "workspace:*",
+    "@workbench/tools-linear": "workspace:*",
+    "@workbench/tools-polymarket": "workspace:*",
+    "@workbench/tools-reddit": "workspace:*",
+    "@workbench/tools-scrapecreators": "workspace:*",
+    "@workbench/tools-skills": "workspace:*",
+    "@workbench/tools-x": "workspace:*",
+    "@workbench/tools-youtube": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

@@ -36,7 +36,7 @@ export function WorkflowRunPane({
   // Guard an empty id so no record query fires against a missing runId.
   if (!deploymentId) {
     return (
-      <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
+      <div className="flex h-full items-center justify-center border border-border bg-bg">
         <p className="text-[13px] text-text-3">Loading…</p>
       </div>
     );
@@ -113,7 +113,7 @@ function WorkflowRunPaneInner({
 
   if (isError) {
     return (
-      <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
+      <div className="flex h-full items-center justify-center border border-border bg-bg">
         <p className="text-[13px] text-text-3">
           We couldn't load this workflow run. Close and reopen it to retry.
         </p>
@@ -123,7 +123,7 @@ function WorkflowRunPaneInner({
 
   if (isLoading || !record || !state) {
     return (
-      <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
+      <div className="flex h-full items-center justify-center border border-border bg-bg">
         <p className="text-[13px] text-text-3">Loading run…</p>
       </div>
     );
@@ -164,7 +164,7 @@ function WorkflowRunPaneInner({
   return (
     <ErrorBoundary
       fallback={
-        <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
+        <div className="flex h-full items-center justify-center border border-border bg-bg">
           <p className="text-[13px] text-text-3">
             This workflow view ran into a problem rendering. The run is still
             active — close and reopen it to retry.
@@ -174,7 +174,7 @@ function WorkflowRunPaneInner({
     >
       <Suspense
         fallback={
-          <div className="flex h-full items-center justify-center rounded-panel border border-border bg-bg">
+          <div className="flex h-full items-center justify-center border border-border bg-bg">
             <p className="text-[13px] text-text-3">Loading workflow…</p>
           </div>
         }

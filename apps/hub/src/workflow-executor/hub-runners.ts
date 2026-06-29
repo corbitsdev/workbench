@@ -37,7 +37,10 @@ export function createHubToolRunner(deps: {
     async run({ tool, input, state }) {
       const dispatchTool = localToolName(tool);
       const entry = KNOWN_TOOLS[dispatchTool];
-      if (!entry) throw new Error(`workflow executor: unknown tool "${tool}"`);
+      if (!entry)
+        throw new Error(
+          `workflow executor: tool "${tool}" is not registered/available for this deployment`,
+        );
 
       // Gate the invoke exactly as the native sidecar step path does: the run
       // principal must hold a `tool:<name>`/`invoke` allow grant. Runs as the

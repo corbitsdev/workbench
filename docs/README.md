@@ -7,18 +7,19 @@ here rather than duplicated — duplicated detail drifts.
 
 ## Read first
 
-| If you are…                                            | Read                                                                                                                  |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                               |
-| Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary |
-| Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                          |
-| Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                    |
-| Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                        |
-| Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                        |
-| Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                      |
-| Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                       |
-| Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                        |
-| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                        |
+| If you are…                                            | Read                                                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                                   |
+| Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary     |
+| Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                              |
+| Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                        |
+| Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                            |
+| Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                            |
+| Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                          |
+| Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                           |
+| Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added |
+| Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                            |
+| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                            |
 
 ## Scope: root docs vs. package docs
 

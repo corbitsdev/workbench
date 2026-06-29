@@ -33,9 +33,11 @@ import {
   ensureMember,
   lookupMember,
   getEnabledTemplateKeys,
+  agentDefMatchesTemplate,
+  reseedAgentTemplateIfStale,
   type ProvisioningDB,
 } from "./tenant-provisioning";
-import { AGENT_TEMPLATES } from "@workbench/agents";
+import { AGENT_TEMPLATES, templateModelRequirements } from "@workbench/agents";
 
 // Build a mock DB that satisfies the ProvisioningDB structural type including
 // the transaction contract (immediately calls the callback with itself).
@@ -1017,4 +1019,144 @@ describe("getEnabledTemplateKeys", () => {
       getEnabledTemplateKeys(db as never, "tnt_global"),
     ).rejects.toThrow(/not found/);
   });
+});
+
+describe("agentDefMatchesTemplate (CL-2517)", () => {
+  const myra = AGENT_TEMPLATES.find((t) => t.key === "myra")!;
+  const defFromTemplate = (
+    overrides: Record<string, unknown> = {},
+    // biome-ignore lint/suspicious/noExplicitAny: test builds a partial agent row
+  ): any => ({
+    id: "agt_test",
+    tenantId: "tnt_test",
+    name: myra.name,
+    description: myra.description,
+    systemPrompt: myra.systemPrompt,
+    capabilities: myra.capabilities,
+    toolPackages: myra.toolPackages,
+    credentialRequirements: myra.credentialRequirements,
+    grantRequirements: myra.grantRequirements,
+    modelRequirements: templateModelRequirements(myra),
+    modelConfig: myra.modelConfig ?? null,
+    ...overrides,
+  });
+
+  it("is true when the def equals the template on every seeded field", () => {
+    expect(agentDefMatchesTemplate(defFromTemplate(), myra)).toBe(true);
+  });
+
+  it("is false when a tool package was dropped from the def (the actual bug)", () => {
+    const stale = defFromTemplate({
+      toolPackages: (myra.toolPackages ?? []).filter(
+        (p) => !p.name.includes("linear"),
+      ),
+    });
+    expect(agentDefMatchesTemplate(stale, myra)).toBe(false);
+  });
+
+  it("ignores jsonb object-key order (PG normalizes it) — no false drift", () => {
+    const reordered = defFromTemplate({
+      toolPackages: (myra.toolPackages ?? []).map((p) => ({
+        version: p.version,
+        name: p.name,
+      })),
+    });
+    expect(agentDefMatchesTemplate(reordered, myra)).toBe(true);
+  });
+
+  it("is false when the system prompt drifts", () => {
+    expect(
+      agentDefMatchesTemplate(
+        defFromTemplate({ systemPrompt: `${myra.systemPrompt} (edited)` }),
+        myra,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("reseedAgentTemplateIfStale (CL-2517)", () => {
+  const myra = AGENT_TEMPLATES.find((t) => t.key === "myra")!;
+  const fullDef = () => ({
+    id: "agt_test",
+    tenantId: "tnt_test",
+    name: myra.name,
+    description: myra.description,
+    systemPrompt: myra.systemPrompt,
+    capabilities: myra.capabilities,
+    toolPackages: myra.toolPackages,
+    credentialRequirements: myra.credentialRequirements,
+    grantRequirements: myra.grantRequirements,
+    modelRequirements: templateModelRequirements(myra),
+    modelConfig: myra.modelConfig ?? null,
+  });
+
+  it("is a no-op when no def exists for the template", async () => {
+    const db = makeMockDB();
+    const res = await reseedAgentTemplateIfStale(db as never, "tnt_x", myra);
+    expect(res).toEqual({ reseeded: false, agentId: null });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("does NOT reseed or open a transaction when the def already matches", async () => {
+    const db = makeMockDB({
+      query: { agent: { findFirst: mock(() => Promise.resolve(fullDef())) } },
+    });
+    const res = await reseedAgentTemplateIfStale(db as never, "tnt_x", myra);
+    expect(res).toEqual({ reseeded: false, agentId: "agt_test" });
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("reseeds the def with the template's toolPackages when it drifted", async () => {
+    const stale = fullDef();
+    stale.toolPackages = [];
+    // Capture what the seed actually writes — assert the corrected toolPackages
+    // land in the row, not merely that an update was issued.
+    let written: Record<string, unknown> | null = null;
+    const db = makeMockDB({
+      query: {
+        agent: { findFirst: mock(() => Promise.resolve(stale)) },
+        principal: {
+          findFirst: mock(() => Promise.resolve({ id: "prn_sys" })),
+        },
+      },
+      update: mock(() => ({
+        set: mock((values: Record<string, unknown>) => {
+          written = values;
+          return { where: mock(() => Promise.resolve()) };
+        }),
+      })),
+    });
+    const res = await reseedAgentTemplateIfStale(db as never, "tnt_x", myra);
+    expect(res.reseeded).toBe(true);
+    expect(res.agentId).toBe("agt_test");
+    expect(written).not.toBeNull();
+    expect(
+      (written as unknown as { toolPackages: unknown }).toolPackages,
+    ).toEqual(myra.toolPackages);
+  });
+});
+
+describe("agentDefMatchesTemplate — every template round-trips clean (CL-2517)", () => {
+  // A freshly-seeded def, once persisted as jsonb (simulated via a JSON
+  // round-trip), MUST compare equal to its own template — otherwise the
+  // self-heal would re-detect drift and rewrite on every thread create (a write
+  // loop + relaunch churn). Covers all templates, not just Myra, so a future
+  // template field that doesn't round-trip cleanly fails here loudly.
+  for (const template of AGENT_TEMPLATES) {
+    it(`'${template.key}' def equals its template after a jsonb round-trip`, () => {
+      const stored = JSON.parse(
+        JSON.stringify({
+          description: template.description,
+          systemPrompt: template.systemPrompt,
+          capabilities: template.capabilities,
+          toolPackages: template.toolPackages ?? [],
+          credentialRequirements: template.credentialRequirements,
+          grantRequirements: template.grantRequirements,
+          modelRequirements: templateModelRequirements(template),
+          modelConfig: template.modelConfig ?? null,
+        }),
+      );
+      expect(agentDefMatchesTemplate(stored, template)).toBe(true);
+    });
+  }
 });

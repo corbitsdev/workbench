@@ -1,0 +1,25 @@
+{
+  "name": "@workbench/test-utils",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./preload": {
+      "types": "./src/preload.ts",
+      "default": "./src/preload.ts"
+    },
+    "./framer-motion": {
+      "types": "./src/framer-motion-mock.ts",
+      "default": "./src/framer-motion-mock.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^20.9.0",
+    "@types/bun": "latest",
+    "@types/react": "^19.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}

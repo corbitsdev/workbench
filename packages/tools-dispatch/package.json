@@ -11,8 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test src",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+    "test": "bun test --isolate src",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
     "@workbench/tool-credentials": "workspace:*",

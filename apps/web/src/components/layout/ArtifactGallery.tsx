@@ -4,7 +4,7 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
-import { useViewMode } from "@workbench/ui";
+import { useExperimentalArtifactCards, useViewMode } from "@workbench/ui";
 import { useArtifacts, useTenantMembers } from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
@@ -21,6 +21,9 @@ import { AddArtifactModal } from "../AddArtifactModal";
 import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
+import { buildArtifactMessage } from "../../lib/artifact-chat-message";
+
+export { buildArtifactMessage };
 
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -36,19 +39,6 @@ interface ArtifactGalleryProps {
    * artifact view) instead of the built-in preview modal.
    */
   onOpenArtifact?: (artifact: ArtifactWithSession) => void;
-}
-
-// Hand the agent a reference, not the body: it loads the current content via
-// the artifact_read tool, so the chat message stays small and never goes stale.
-export function buildArtifactMessage(
-  artifact: ArtifactWithSession,
-  tenantId?: string,
-): string {
-  if (artifact.id === "") {
-    throw new Error("Cannot reference an artifact with an empty id");
-  }
-  const tenantClause = tenantId ? ` in tenant ${tenantId}` : "";
-  return `I'd like to work with the artifact ${JSON.stringify(artifact.title)} (id: ${artifact.id}${tenantClause}). Load it with artifact_read before responding.`;
 }
 
 export function ArtifactGallery({
@@ -68,6 +58,7 @@ export function ArtifactGallery({
   );
   const [addOpen, setAddOpen] = useState(false);
   const { mode: viewMode, setMode: setViewMode } = useViewMode("artifacts");
+  const { enabled: experimentalArtifactCards } = useExperimentalArtifactCards();
 
   const {
     data: artifacts,
@@ -147,6 +138,7 @@ export function ArtifactGallery({
         onAdvancedFilterChange={setAdvancedFilter}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
+        experimentalArtifactCards={experimentalArtifactCards}
       />
       <ArtifactModal
         open={selected !== null}

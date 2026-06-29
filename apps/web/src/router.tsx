@@ -129,6 +129,7 @@ export const router = createBrowserRouter([
             element: <Navigate to="/artifacts" replace />,
           },
           { path: "/workflows", element: <WorkflowsPage /> },
+          { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/settings", element: <Settings /> },
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },

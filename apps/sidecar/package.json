@@ -5,9 +5,9 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "test:authz": "bun test src/step-tool-authz.test.ts",
-    "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text"
+    "test": "bun test --isolate",
+    "test:authz": "bun test --isolate src/step-tool-authz.test.ts",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
     "@intx/agent": "workspace:*",
@@ -25,7 +25,6 @@
     "@intx/types": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@intx/workflow-deploy": "workspace:*",
-    "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/approvals": "workspace:*",
     "@workbench/context-repair": "workspace:*",
@@ -33,7 +32,8 @@
     "@workbench/prompts": "workspace:*",
     "@workbench/sentry": "workspace:*",
     "@workbench/storage-isogit": "workspace:*",
-    "@workbench/tool-credentials": "workspace:*"
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/workflow-host": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

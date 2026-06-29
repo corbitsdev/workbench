@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import type { RunState, StepState } from "@intx/workflow";
@@ -10,19 +10,6 @@ import type {
 } from "@workbench/ui";
 
 afterEach(cleanup);
-
-mock.module("framer-motion", () => ({
-  AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
-  motion: {
-    div: ({
-      children,
-      className,
-    }: {
-      children: React.ReactNode;
-      className?: string;
-    }) => React.createElement("div", { className }, children),
-  },
-}));
 
 const { Panel } = await import("./ui");
 
@@ -115,6 +102,21 @@ describe("ab-compare-hitl Panel — header & stepper", () => {
     for (const label of ["Configure", "Execute", "Decide", "Persist"]) {
       screen.getByText(label);
     }
+  });
+});
+
+describe("ab-compare-hitl Panel — guided routing", () => {
+  it("does not rewind to config when the config gate's output is absent but execute is running (CL-2506)", () => {
+    // config (an awaitSignal gate) is missing from the synthesized state, but
+    // execute is in-flight: the panel must stay on Execute, not fall back to the
+    // config wizard.
+    renderPanel({ state: makeState({ execute: "in-flight" }) });
+    screen.getByText("Running the prompt across variants…");
+    expect(
+      screen.queryByPlaceholderText(
+        "Paste the prompt you want to run across all providers…",
+      ),
+    ).toBeNull();
   });
 });
 

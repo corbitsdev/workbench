@@ -83,7 +83,7 @@ function OnePagerBody({ body }: { body: string }) {
     return <TableBody headers={tableData.headers} rows={tableData.rows} />;
   }
   return (
-    <div className="prose prose-sm max-w-none">
+    <div className="prose prose-sm max-w-[68ch]">
       <MarkdownBlock text={body} />
     </div>
   );
@@ -126,7 +126,11 @@ function BattlecardBody({ body }: { body: string }) {
   if (tableData) {
     return <TableBody headers={tableData.headers} rows={tableData.rows} />;
   }
-  return <p className="text-sm text-text-2 whitespace-pre-wrap">{body}</p>;
+  return (
+    <p className="max-w-[68ch] whitespace-pre-wrap text-sm text-text-2">
+      {body}
+    </p>
+  );
 }
 
 function CsvExportBody({

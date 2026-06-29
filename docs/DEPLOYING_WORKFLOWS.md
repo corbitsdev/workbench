@@ -168,8 +168,14 @@ the sidecar's in-memory map. The **boot reconciler**
 hub-link connects, it fetches the live deployment set from the hub
 (`GET /api/internal/deployments/live`, read-only) and prunes only on-disk dirs
 whose embedded `ses_<deploymentId>` token is confirmed **absent** from that set.
-It is fail-safe — any fetch/parse failure, or an empty live set while orphans
-exist, deletes **nothing** — and sidecar-local only. The residual boot
+It also prunes durable-conversation mirrors under
+`agent-conversation-state/<workflowRunSlug>/` when their deployment token is no
+longer live, while preserving mirrors for live paused/terminal deployments so a
+redeploy or next message can resume. It is fail-safe — any fetch/parse failure,
+or an empty live set while tokenized sidecar state exists, deletes **nothing** —
+and sidecar-local only. Interim operator reclaim is therefore a sidecar restart:
+the boot reconciler performs the sweep before the hub-link restores sessions; do
+not issue hub-driven delete RPCs for sidecar-local mirrors. The residual boot
 `Reconnection rejected by governance` noise is _live_ step-agents re-establishing
 (bounded, benign); eliminating step agents entirely is the **CL-2232** spike
 (inline `@intx/agent` inference). See IMPLEMENTATION.md § Sidecar deployment

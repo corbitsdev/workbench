@@ -115,8 +115,8 @@ describe("AddArtifactModal", () => {
         onClose: () => {},
       }),
     );
-    expect(screen.getByRole("tab", { name: "Upload files" })).toBeDefined();
-    expect(screen.getByRole("tab", { name: "Upload folder" })).toBeDefined();
+    screen.getByRole("tab", { name: "Upload files" });
+    screen.getByRole("tab", { name: "Upload folder" });
   });
 
   it("uploads selected files via the upload mutation", async () => {

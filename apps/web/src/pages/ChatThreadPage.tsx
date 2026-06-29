@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { takePendingFirstMessage } from "../lib/pending-first-message";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -45,21 +44,6 @@ export function ChatThreadPage() {
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).
   const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(active);
-
-  // Deliver a message seeded by another surface (e.g. the artifact page's chat
-  // composer creating this thread). Once, when the session is ready.
-  const deliveredRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (session.state.phase !== "ready" || !active) return;
-    if (deliveredRef.current === active.id) return;
-    const pending = takePendingFirstMessage(active.id);
-    if (pending) {
-      deliveredRef.current = active.id;
-      maybeTitleFromFirstMessage(pending);
-      session.send(pending);
-    }
-    // session.send is recreated each render; gate on phase + thread id instead.
-  }, [session.state.phase, active]);
 
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;

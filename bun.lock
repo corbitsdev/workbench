@@ -105,7 +105,6 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@intx/workflow-deploy": "workspace:*",
-        "@intx/workflow-host": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
@@ -114,6 +113,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/workflow-host": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -133,6 +133,7 @@
         "@workbench/last30days-core": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/test-utils": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
         "@workbench/tools-granola": "workspace:*",
@@ -800,6 +801,16 @@
         "@intx/crypto-node": "workspace:*",
       },
     },
+    "packages/test-utils": {
+      "name": "@workbench/test-utils",
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tool-credentials": {
       "name": "@workbench/tool-credentials",
       "version": "0.1.0",
@@ -985,6 +996,34 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-interchange-contract": {
+      "name": "@workbench/tools-interchange-contract",
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@types/bun": "latest",
+        "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tools-agents": "workspace:*",
+        "@workbench/tools-artifact": "workspace:*",
+        "@workbench/tools-attio": "workspace:*",
+        "@workbench/tools-bluesky": "workspace:*",
+        "@workbench/tools-dispatch": "workspace:*",
+        "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-firecrawl": "workspace:*",
+        "@workbench/tools-gamma": "workspace:*",
+        "@workbench/tools-github": "workspace:*",
+        "@workbench/tools-granola": "workspace:*",
+        "@workbench/tools-hackernews": "workspace:*",
+        "@workbench/tools-last30days": "workspace:*",
+        "@workbench/tools-linear": "workspace:*",
+        "@workbench/tools-polymarket": "workspace:*",
+        "@workbench/tools-reddit": "workspace:*",
+        "@workbench/tools-scrapecreators": "workspace:*",
+        "@workbench/tools-skills": "workspace:*",
+        "@workbench/tools-x": "workspace:*",
+        "@workbench/tools-youtube": "workspace:*",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-last30days": {
       "name": "@workbench/tools-last30days",
       "version": "0.1.0",
@@ -1153,6 +1192,22 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/workflow-host": {
+      "name": "@workbench/workflow-host",
+      "version": "0.0.1",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/crypto-node": "workspace:*",
+        "@intx/hub-sessions": "workspace:*",
+        "@intx/inference": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@intx/mail-memory": "workspace:*",
+        "@intx/mime": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "arktype": "catalog:",
+      },
+    },
     "workflows/ab-compare": {
       "name": "@workbench/workflow-ab-compare",
       "version": "0.1.0",
@@ -1166,10 +1221,10 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1189,10 +1244,10 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1211,11 +1266,11 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@testing-library/user-event": "^14.6.1",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1234,10 +1289,10 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1257,11 +1312,11 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@testing-library/user-event": "^14.6.1",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1280,10 +1335,10 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -1302,10 +1357,10 @@
         "react": "^19.0.0",
       },
       "devDependencies": {
-        "@happy-dom/global-registrator": "^20.9.0",
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
@@ -2220,6 +2275,8 @@
 
     "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
 
+    "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
+
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 
     "@workbench/tools-ab-compare": ["@workbench/tools-ab-compare@workspace:packages/tools-ab-compare"],
@@ -2245,6 +2302,8 @@
     "@workbench/tools-granola": ["@workbench/tools-granola@workspace:packages/tools-granola"],
 
     "@workbench/tools-hackernews": ["@workbench/tools-hackernews@workspace:packages/tools-hackernews"],
+
+    "@workbench/tools-interchange-contract": ["@workbench/tools-interchange-contract@workspace:packages/tools-interchange-contract"],
 
     "@workbench/tools-last30days": ["@workbench/tools-last30days@workspace:packages/tools-last30days"],
 
@@ -2273,6 +2332,8 @@
     "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-host": ["@workbench/workflow-host@workspace:packages/workflow-host"],
 
     "@workbench/workflow-last30days-research": ["@workbench/workflow-last30days-research@workspace:workflows/last30days-research"],
 

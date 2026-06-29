@@ -4,17 +4,21 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-mock.module("@workbench/ui", () => ({
-  isTheme: () => false,
-  useTheme: () => ({ theme: "system", setTheme: () => {} }),
-  useCompactToolActivity: () => ({ compact: false, setCompact: () => {} }),
-  useToolSummaryStyle: () => ({ style: "concise", setStyle: () => {} }),
-  THEMES: ["system", "light", "dark"],
-  THEME_LABELS: { system: "System", light: "Light", dark: "Dark" },
-}));
-
 mock.module("@workbench/settings", () => ({
-  SettingsPage: () => <div>settings-page</div>,
+  SettingsPage: ({
+    sections,
+  }: {
+    sections: readonly { fields: readonly { label: string }[] }[];
+  }) => (
+    <div>
+      settings-page
+      {sections.flatMap((section) =>
+        section.fields.map((field) => (
+          <span key={field.label}>{field.label}</span>
+        )),
+      )}
+    </div>
+  ),
 }));
 
 mock.module("@workbench/agents/browser", () => ({
@@ -70,6 +74,14 @@ afterEach(() => {
 function bodyText() {
   return document.body.textContent ?? "";
 }
+
+describe("Settings preferences", () => {
+  it("exposes the experimental artifact cards toggle", () => {
+    neverResolvingVersion();
+    renderSettings();
+    expect(bodyText().includes("Experimental artifact cards")).toBe(true);
+  });
+});
 
 describe("Settings build version display", () => {
   it("shows the 7-char short SHA from /version", async () => {

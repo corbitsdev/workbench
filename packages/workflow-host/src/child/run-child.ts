@@ -1,0 +1,1614 @@
+// `runWorkflowChild` -- the workflow-process child's runtime body.
+//
+// The package-owned binary at `packages/workflow-host/bin/workflow-child`
+// is a thin wrapper that parses `process.env`, opens stdin/stdout for
+// the control channel, accepts the inherited event-channel fd, builds
+// the substrate `RepoStore`, and invokes this function. Tests bypass
+// the binary and call `runWorkflowChild` directly with mock streams
+// and an in-memory substrate.
+//
+// The signature accepts every I/O and substrate handle as an injected
+// dependency. Nothing inside this function reads `process.env` or
+// reaches into a singleton; the binary's job is to bridge the
+// process-shaped surfaces to this function's typed opts.
+//
+// Lifecycle:
+//   1. Open the control channel and event channel using the IPC
+//      primitives. Verify the supervisor's first signed control frame
+//      by virtue of the receiver iterator's per-frame signature check.
+//   2. Construct the `WorkflowRuntimeEnv` from the production env
+//      adapters (RepoStore, BlobSubstrate, StepInvoker, SpawnChild)
+//      and the substrate-shaped seams (signal channel; scheduler is a
+//      host-process singleton supplied by the binary).
+//   3. Discover any in-flight runs via the workflow-run repo's `runs/`
+//      subdirectory and call `runtimeRun` with `resumeFromEvents` for
+//      each one whose log lacks a terminal event.
+//   4. Emit `ready` on the control channel.
+//   5. Loop on control-channel frames:
+//        - `trigger.fired` -> open a new run via `runtimeRun`.
+//        - `grants-updated` -> replace the credentialsSnapshot.
+//        - `drain` -> forward to the drain controller (no-op here).
+//        - `shutdown` -> stop accepting new triggers and exit the
+//          loop.
+//
+// The `WorkflowAuthorize` closure evaluates grants against the active
+// `credentialsSnapshot`. The snapshot's initial value can arrive in
+// the spawn-time env bootstrap (multi-step deploys whose host wires
+// the snapshot up-front) or via the first `grants-updated` control
+// frame; the closure re-reads the closure-local snapshot on every
+// invocation so a live update applies to subsequent steps without
+// reconstructing the env.
+//
+// The DrainController is wired here against the production
+// `createWorkflowHostDrainController`: on receipt of the supervisor's
+// `drain` control mail the controller flips its signal, the runtime
+// body observes the change at its four observation points, and the
+// `behaviorFor` resolver derived from the loaded `WorkflowDefinition`
+// classifies each in-flight step as cancel-mode or wait-mode. The
+// supervisor's recycle policy is OS-driven (drain, SIGTERM, SIGKILL,
+// respawn) and does not require a child-side control frame.
+
+import { type } from "arktype";
+
+import { getLogger } from "@intx/log";
+import { generateKeyPair } from "@intx/crypto-node";
+
+import type {
+  Principal,
+  RepoId,
+  RepoStore as SubstrateRepoStore,
+} from "@intx/hub-sessions";
+import {
+  readProcessingEntry,
+  workflowDefinitionEnvelopeSchema,
+} from "@intx/hub-sessions";
+import {
+  extractPartByPath,
+  parseHeaderSection,
+  parseMimePart,
+} from "@intx/mime";
+import type { DirectorRegistry } from "@intx/agent";
+import { createDefaultDirectorRegistry } from "@intx/agent";
+import type { AuthzCallResult } from "@intx/inference";
+
+import type {
+  BlobSubstrate,
+  RunResult,
+  Scheduler,
+  StepInvokeRequest,
+  StepInvokeResult,
+  StepInvoker,
+  SpawnChildWorkflow,
+  WorkflowAuthorizeFn,
+  WorkflowDefinition,
+  WorkflowEvent,
+  WorkflowRun,
+  WorkflowRuntimeEnv,
+} from "@intx/workflow";
+import { emptyState, resumeFromLog, runtimeRun } from "@intx/workflow";
+
+import {
+  createWorkflowHostDrainController,
+  type WorkflowHostDrainController,
+} from "../drain-controller";
+
+import { createWorkflowRunRepoStore } from "../adapters/repo-store";
+import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
+import {
+  createControlChannelSender,
+  createEventChannelSender,
+  hexEncode,
+  receiveControlChannel,
+  type ControlChannelSender,
+  type ControlPayload,
+  type EventPayload,
+  type FrameWriter,
+  type NdjsonReader,
+  type NdjsonWriter,
+} from "../ipc/index";
+import { createWorkflowHostSignalChannel } from "../seams/signal-channel";
+import type { CredentialsSnapshot } from "../supervisor/credentials";
+import { hashGrants } from "../supervisor/credentials";
+
+import type { SpawnTimeEnv } from "./env-bootstrap";
+import { discoverInFlightRuns, type DiscoveredRun } from "./self-discovery";
+import type { ChildOutboundMailBridge } from "./outbound-mail-bridge";
+import { createWarmAgentCache, type WarmAgentCache } from "./warm-agent-cache";
+
+const logger = getLogger(["workflow-host", "child"]);
+
+const WORKFLOW_JSON_PATH = "workflow.json";
+
+/**
+ * `WorkflowAuthorize` closure factory shape. The child's authorize
+ * evaluates a `(resource, action)` request against the active
+ * credentialsSnapshot for the originating step. The closure used here
+ * is intentionally permissive on missing context: the workflow runtime
+ * supplies `stepId` from the `AuthorizeContext` it threads through
+ * every step's invoker, so a bare-call without a step id is a
+ * programming error rather than a security-sensitive path. The closure
+ * surfaces it loudly.
+ *
+ * Read-site: the closure consults a mutable reference so a
+ * `grants-updated` control frame swaps the snapshot in place without
+ * the caller having to reconstruct the closure.
+ */
+export type CredentialsSnapshotRef = {
+  current: CredentialsSnapshot | null;
+};
+
+/**
+ * Construct the workflow-level authorize closure backed by a
+ * mutable credentialsSnapshot reference.
+ *
+ * The closure looks up the step's grants by `stepId`, then delegates
+ * to the caller-supplied grant evaluator. The evaluator slot exists so
+ * the host wires its own grant-rule semantics without leaking the
+ * grant-rule grammar into the workflow-host package; tests inject a
+ * spy that records inputs.
+ */
+export type GrantEvaluator = (input: {
+  resource: string;
+  action: string;
+  stepId: string;
+  attempt: number | undefined;
+  runId: string | undefined;
+  grants: readonly unknown[];
+}) => Promise<AuthzCallResult>;
+
+export function createCredentialsBackedAuthorize(
+  ref: CredentialsSnapshotRef,
+  evaluate: GrantEvaluator,
+): WorkflowAuthorizeFn {
+  return async (resource, action, ctx) => {
+    const stepId = ctx?.stepId;
+    if (stepId === undefined) {
+      throw new Error(
+        "workflow-child authorize: missing stepId in AuthorizeContext; the runtime body must thread it through every step invocation",
+      );
+    }
+    const snapshot = ref.current;
+    if (snapshot === null) {
+      throw new Error(
+        "workflow-child authorize: no credentialsSnapshot active; the supervisor must push one before any step runs",
+      );
+    }
+    const entry = snapshot.steps.find((s) => s.stepId === stepId);
+    if (entry === undefined) {
+      throw new Error(
+        `workflow-child authorize: credentialsSnapshot has no entry for stepId ${stepId}`,
+      );
+    }
+    return evaluate({
+      resource,
+      action,
+      stepId,
+      attempt: ctx?.attempt,
+      runId: ctx?.runId,
+      grants: entry.grants,
+    });
+  };
+}
+
+/**
+ * The workflow-host child's drain controller is the production
+ * implementation defined in `../drain-controller.ts`. The control-loop
+ * calls `requestDrain()` on receipt of the supervisor's `drain`
+ * control mail; the controller flips its signal and the runtime body
+ * observes the change at its four observation points. The `behaviorFor`
+ * resolver consults the loaded `WorkflowDefinition`.
+ */
+export type DrainController = WorkflowHostDrainController;
+
+/**
+ * Step-invoker shape the child binds. Widens the workflow-runtime
+ * `StepInvoker` with an `onEvent` callback the harness fires for
+ * every `InferenceEvent` it emits during the step's run, plus the
+ * child's credentials-backed `authorize` closure so the step agent's
+ * tool-invocation gate evaluates the per-step grants the supervisor
+ * pushed (rather than the host minting its own authorize that cannot
+ * see the live credentials snapshot). The child's `buildRuntimeEnv`
+ * constructs the per-step `onEvent` closure (wrapping the
+ * HMAC-authenticated event-channel sender) and threads both here so
+ * every event reaches the supervisor over the wire and every tool
+ * call resolves against the agent's grants. The runtime-runtime
+ * `StepInvoker` exposed via `WorkflowRuntimeEnv` remains the narrower
+ * shape -- the child wraps this binding into a `StepInvoker` inside
+ * `buildRuntimeEnv` so the workflow-runtime never sees the
+ * host-specific surface.
+ *
+ * The `warmCache` argument carries the run-loop's per-deployment
+ * warm-agent cache (design §3b) when the deployment is a warm candidate,
+ * and `undefined` otherwise. The binding forwards it to the step-invoker
+ * adapter, which builds-or-reuses the cached agent on a warm cache and
+ * keeps instantiate-send-teardown when it is absent. The cache is owned
+ * by the run-loop (`runWorkflowChild`), not the binding: the binding
+ * only reads it through to the adapter.
+ */
+export type ChildStepInvoker = (
+  req: StepInvokeRequest,
+  onEvent: (event: EventPayload) => void,
+  authorize: WorkflowAuthorizeFn,
+  warmCache: WarmAgentCache | undefined,
+) => Promise<StepInvokeResult>;
+
+/**
+ * Bindings the binary owns: per-deployment substrate identity,
+ * principal credentials, the runtime-supplied callbacks the
+ * adapter-layer cannot construct from `process.env` alone. Tests
+ * supply a fully in-memory bindings object so `runWorkflowChild` runs
+ * without touching disk.
+ */
+export interface RunWorkflowChildBindings {
+  /** Workflow-run substrate (per-deployment workflow-run repo). */
+  substrate: SubstrateRepoStore;
+  /** Per-deployment workflow-run repo identity. */
+  workflowRunRepoId: RepoId;
+  /** Workflow-run repo ref the child reads/writes. */
+  workflowRunRef: string;
+  /**
+   * Substrate-shaped principal the child presents on every workflow-run
+   * read/write. Per the IPC threat model the child holds no private
+   * key of its own; the principal here is a substrate-level identity
+   * the host's substrate accepts for `runs/<runId>/` writes.
+   */
+  principal: Principal;
+  /** Workflow-asset repo identity (used to load `workflow.json`). */
+  workflowDefinitionRepoId: RepoId;
+  /** Workflow-asset ref the deploy orchestrator wrote to. */
+  workflowDefinitionRef: string;
+  /**
+   * Step-invoker callback the runtime body invokes per step. The
+   * shape is the workflow-runtime `StepInvoker` widened with an
+   * `onEvent` slot so the harness can emit `InferenceEvent` frames
+   * up through the event channel for every step invocation. The
+   * production binary wires this against `createWorkflowStepInvoker`
+   * with the host's per-step env builder; tests inject a stub.
+   */
+  invokeStep: ChildStepInvoker;
+  /**
+   * Child-spawn callback the runtime body invokes for `childWorkflow`
+   * primitives. The production binary wires this against
+   * `createWorkflowSpawnChild`; tests inject a stub.
+   */
+  spawnChild: SpawnChildWorkflow;
+  /** Host-process scheduler singleton. The child consumes the same instance. */
+  scheduler: Scheduler;
+  /** Grant evaluator wired against the host's grant-rule grammar. */
+  evaluateGrants: GrantEvaluator;
+  /**
+   * Reclaim the local-disk scratch a run produced once the run has
+   * reached its terminal status. The host owns the on-disk layout
+   * (`<dataDir>/workflow-step-state/<repoId>/runs/<runId>/`), so the
+   * teardown lives next to the path construction in the substrate
+   * factory and the run-loop merely fires it at the run-completion
+   * moment it observes. Invoked ONLY on the cold (non-warm) path -- a
+   * warm deployment's single agent reuses one stable workspace across
+   * runs, so deleting per run would wipe a live conversation's files
+   * mid-stream. A cleanup failure is logged and swallowed: it is a
+   * disk-reclamation best-effort, never a correctness gate on the run's
+   * terminal status. Optional so tests and the recursive child-workflow
+   * adapter (which roots no per-run scratch of its own) can omit it.
+   */
+  cleanupRunStorage?: (runId: string) => Promise<void>;
+  /** Optional director registry; defaults to the canonical built-ins. */
+  directors?: DirectorRegistry;
+  /** Optional clock override; production wires `() => new Date()`. */
+  clock?: () => Date;
+  /** Optional id generator override; production wires a monotonic one. */
+  newId?: (prefix: string) => string;
+  /**
+   * Optional bootstrap credentialsSnapshot. The host's production
+   * wiring supplies this for multi-step deploys whose snapshot is
+   * baked at spawn time; tests can pre-seed it directly. Absent
+   * value defers to the first `grants-updated` control frame.
+   */
+  initialCredentialsSnapshot?: CredentialsSnapshot;
+  /**
+   * Optional override for the child's Ed25519 keypair factory. The
+   * child mints a fresh keypair at startup, holds the private half
+   * in its own address space, signs every upstream control frame
+   * with it, and publishes the public half in the `ready` frame so
+   * the supervisor can verify subsequent upstream frames. Production
+   * wires this against `@intx/crypto-node`'s `generateKeyPair`;
+   * tests inject a deterministic factory so they can assert on the
+   * published key. The supervisor's private key is NEVER threaded
+   * into the child -- the child holds only its own private half.
+   */
+  ipcChildKeyPairFactory?: () => Promise<{
+    privateKey: Uint8Array;
+    publicKey: Uint8Array;
+  }>;
+}
+
+export interface RunWorkflowChildOpts {
+  /** Parsed spawn-time env. */
+  env: SpawnTimeEnv;
+  /** Control-channel reader (supervisor -> child). */
+  controlReader: NdjsonReader;
+  /**
+   * Control-channel writer back to the supervisor. The child does not
+   * sign frames here today (the only upstream control frame, the
+   * `ready` signal, rides as an unsigned wire shape because the
+   * supervisor receives it on its trusted side). Future upstream
+   * frames will adopt the same envelope-and-signature contract the
+   * downstream side enforces; the writer slot exists today so the
+   * control-channel boundary is symmetric in shape.
+   */
+  controlWriter: NdjsonWriter;
+  /**
+   * Event-channel writer (child -> supervisor). The child publishes
+   * verified `InferenceEvent` frames the harness emits up through
+   * here. Tests inject an in-memory writer; production wires the
+   * inherited socketpair fd into a FrameWriter.
+   */
+  eventWriter: FrameWriter;
+  /** Bindings the binary or test harness owns. */
+  bindings: RunWorkflowChildBindings;
+  /**
+   * Optional pre-built upstream control sender the child uses to emit
+   * `ready` and (today) `pack.push.request` frames. Defaults to a
+   * sender minted internally against the child's own Ed25519 keypair.
+   * The process-shaped wrapper `runWorkflowChildFromProcessEnv`
+   * supplies a pre-built sender so the same Ed25519-signed surface is
+   * shared with the pack-push bridge it constructs against the
+   * substrate factory.
+   */
+  upstreamSender?: ControlChannelSender;
+  /**
+   * Optional substrate-write bridge whose `handleMergeRequest` and
+   * `handleWriteResponse` the child's control loop invokes when the
+   * matching downstream frames land. When omitted, inbound
+   * `substrate.merge.request` / `substrate.write.response` frames are
+   * logged at warn-level and dropped -- the wire shapes are
+   * well-formed but nobody on the child side asked for them. The
+   * pre-built bridge is the path the process-shaped wrapper takes so
+   * the substrate factory's proxy `RepoStore` can resolve writes
+   * against it.
+   */
+  substrateWriteBridge?: SubstrateWriteResponseSink;
+  /**
+   * Optional outbound-mail bridge (OUTBOUND half of mailbox ownership,
+   * §3a). The step agent's mail tools are backed by a transport whose
+   * `send` routes through this bridge: it emits an `outbound.message`
+   * upstream control frame and resolves the agent's mail-tool `send`
+   * once the supervisor's matching `outbound.result` lands. The
+   * control loop routes the downstream `outbound.result` frame to the
+   * bridge's `handleResult` and invokes `cancelAll` on any exit path so
+   * a pending send does not leak an awaiter after the supervisor tears
+   * the IPC down. When omitted, inbound `outbound.result` frames are
+   * logged at warn-level and dropped -- the wire shape is well-formed
+   * but no agent on the child side asked for an outbound send.
+   */
+  outboundMailBridge?: ChildOutboundMailBridge;
+  /**
+   * WORKBENCH-LOCAL (CL-2535): host-driven recovery of a run discovered
+   * parked at an `awaitSignal` gate. The in-process runtime declines to
+   * resume an awaiting-signal tail (`RuntimeResumeUnsupportedError`) and by
+   * design delegates recovery to the host. When this hook is set, the resume
+   * loop calls it for each such run. Return a seed log with the gate
+   * host-satisfied (`SignalReceived` + `StepCompleted`) to resume the run, or
+   * `null` to leave it parked (e.g. the signal has not been delivered yet)
+   * rather than failing it.
+   */
+  recoverParkedRun?: (
+    run: DiscoveredRun,
+    ctx: { blobs: BlobSubstrate },
+  ) => Promise<readonly WorkflowEvent[] | null>;
+}
+
+/**
+ * Narrow interface the child's control loop calls when downstream
+ * substrate-write frames arrive, plus the `cancelAll` shutdown
+ * surface the loop invokes on any exit path. Decouples the loop from
+ * the bridge's `submit` side so a test can drop in a recording sink
+ * without standing up the full bridge.
+ */
+export interface SubstrateWriteResponseSink {
+  handleMergeRequest(
+    data: Extract<ControlPayload, { type: "substrate.merge.request" }>["data"],
+  ): void;
+  handleWriteResponse(
+    data: Extract<ControlPayload, { type: "substrate.write.response" }>["data"],
+  ): void;
+  cancelAll(reason: string): void;
+}
+
+/**
+ * Public result the test harness inspects. Production binaries discard
+ * the return value (the process exits when this function resolves);
+ * tests assert on the discovered-run ids and the active credentials
+ * snapshot to verify the loop's behaviour without scraping logs.
+ */
+export interface RunWorkflowChildResult {
+  /** RunIds the child resumed at startup. */
+  resumedRunIds: readonly string[];
+  /** RunIds the child started from `trigger.fired` after `ready`. */
+  triggeredRunIds: readonly string[];
+  /** Snapshot active at function return. */
+  finalCredentialsSnapshot: CredentialsSnapshot | null;
+}
+
+/**
+ * Run the workflow-process child. Resolves once the control channel
+ * emits `shutdown` (or ends without a frame, in which case the loop
+ * exits cleanly).
+ */
+// WORKBENCH-LOCAL (CL-2535): a discovered run has an "unresumable tail" when
+// any step's resumed phase is one the in-process runtime declines to resume
+// (`awaiting-signal` / `awaiting-timer` / `in-flight`) — exactly the runs
+// `runtimeRun` would reject with `RuntimeResumeUnsupportedError`. Those are
+// offered to the host's `recoverParkedRun` hook before the default path.
+function hasUnresumableTail(run: DiscoveredRun): boolean {
+  for (const step of run.resumedState.steps.values()) {
+    if (
+      step.phase === "awaiting-signal" ||
+      step.phase === "awaiting-timer" ||
+      step.phase === "in-flight"
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// WORKBENCH-LOCAL (CL-2537): locate a run's gate parked in `awaiting-signal`
+// with a named signal — the install target for the live signal watcher. A run
+// parks one gate at a time today, so the first match is the one to watch.
+// Returns `undefined` when the unresumable tail is an `awaiting-timer` /
+// `in-flight` step the watcher does not handle; those fall through to the
+// default resume path unchanged (the awaiting-timer watcher is a follow-up).
+function findAwaitingSignalGate(
+  run: DiscoveredRun,
+): { stepId: string; name: string } | undefined {
+  for (const [stepId, step] of run.resumedState.steps) {
+    if (step.phase === "awaiting-signal" && step.awaitingSignal !== undefined) {
+      return { stepId, name: step.awaitingSignal.name };
+    }
+  }
+  return undefined;
+}
+
+// WORKBENCH-LOCAL (CL-2537): a live watcher tracked for teardown. `abort`
+// cancels the watch-phase `awaitNext` subscription; `done` settles when the
+// watch phase (subscribe + recheck + signal-channel stop) has fully torn down,
+// so the run-loop's `finally` can await it without blocking on a resumed run.
+type ParkedWatcher = {
+  abort: AbortController;
+  done: Promise<void>;
+};
+
+// WORKBENCH-LOCAL (CL-2537): the watcher reads the run log from the
+// per-deployment working tree while another writer (another run's append, a
+// `signal.deliver` commit) may be checking the tree out — transiently
+// unlinking a `<seq>.json` the read just enumerated and surfacing ENOENT. The
+// raw working-tree read (`createWorkflowRunRepoStore.read`) is not locked
+// against writes; the inconsistency is momentary, so a bounded retry re-reads
+// the settled tree rather than letting a benign concurrent-checkout race throw
+// the gate-recovery read (which would leave a recoverable run parked).
+async function readRunLogTolerant(
+  read: () => Promise<readonly WorkflowEvent[]>,
+): Promise<readonly WorkflowEvent[]> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 16; attempt += 1) {
+    try {
+      return await read();
+    } catch (cause) {
+      if (!isErrnoNotFound(cause)) throw cause;
+      lastError = cause;
+      await new Promise((resolve) => setTimeout(resolve, 8));
+    }
+  }
+  throw lastError;
+}
+
+function isErrnoNotFound(cause: unknown): boolean {
+  if (cause === null || typeof cause !== "object") return false;
+  return (cause as { code?: unknown }).code === "ENOENT";
+}
+
+export async function runWorkflowChild(
+  opts: RunWorkflowChildOpts,
+): Promise<RunWorkflowChildResult> {
+  const credentialsRef: CredentialsSnapshotRef = {
+    current: opts.bindings.initialCredentialsSnapshot ?? null,
+  };
+  const directors = opts.bindings.directors ?? createDefaultDirectorRegistry();
+  const clock = opts.bindings.clock ?? defaultClock;
+  const newId = opts.bindings.newId ?? defaultNewId;
+
+  // Mint the child's own upstream-signing keypair. The private half
+  // never leaves this address space; the public half rides on the
+  // `ready` frame's payload so the supervisor can verify subsequent
+  // upstream frames against it.
+  const childKeyPair = await (
+    opts.bindings.ipcChildKeyPairFactory ?? generateKeyPair
+  )();
+
+  const runtimeRepoStore = createWorkflowRunRepoStore({
+    substrate: opts.bindings.substrate,
+    repoId: opts.bindings.workflowRunRepoId,
+    principal: opts.bindings.principal,
+    ref: opts.bindings.workflowRunRef,
+  });
+
+  const eventSender = createEventChannelSender({
+    hmacKey: opts.env.hmacKey,
+    channelId: opts.env.channelId,
+    writer: opts.eventWriter,
+  });
+
+  const definition = await loadWorkflowDefinition(opts.bindings);
+
+  const authorize = createCredentialsBackedAuthorize(
+    credentialsRef,
+    opts.bindings.evaluateGrants,
+  );
+
+  const drainController = createWorkflowHostDrainController({ definition });
+
+  // Warm-agent cache (design §3b). Built only when the deployment is a
+  // warm candidate (the single-step long-lived agent the deploy
+  // projection marked). The cache lives in this run-loop's address
+  // space, holds the constructed agent across messages, and is evicted
+  // -- running the wrapped `agent.close()` that kills the LSP subprocess
+  // -- at the loop's teardown points (the shutdown frame and the
+  // exit-path `finally` below). A multi-step deployment leaves this
+  // `undefined`, so its steps keep instantiate-send-teardown and no
+  // multi-step agent is ever warm-kept.
+  const warmCache: WarmAgentCache | undefined = opts.env.warmKeep
+    ? createWarmAgentCache()
+    : undefined;
+
+  // Construct the upstream control-channel sender up-front. The
+  // supervisor's `waitForReady` consumes the `ready` frame and the
+  // upstream-control pump consumes every subsequent upstream payload
+  // (`pack.push.request`, `terminal.event`, `recycle.request`) on the
+  // same iterator. Building the sender here lets the resume loop
+  // below attach a terminal-event emitter onto every resumed run's
+  // `complete` promise without re-deriving the sender lazily.
+  const upstreamSender =
+    opts.upstreamSender ??
+    createControlChannelSender({
+      privateKeySeed: childKeyPair.privateKey,
+      channelId: opts.env.channelId,
+      writer: opts.controlWriter,
+    });
+
+  // Self-discovery before announcing `ready`. The runtime body must
+  // see every in-flight run before the supervisor starts forwarding
+  // `trigger.fired` frames; otherwise a fresh trigger could land
+  // ahead of a resume and the runtime would commit a duplicate run
+  // entry for the same id.
+  const discovered = await discoverInFlightRuns({
+    substrate: opts.bindings.substrate,
+    repoId: opts.bindings.workflowRunRepoId,
+    runtimeRepoStore,
+  });
+  const resumedRunIds: string[] = [];
+
+  // WORKBENCH-LOCAL (CL-2537): live signal watchers installed for runs
+  // discovered parked at an `awaitSignal` gate that is STILL waiting for a
+  // human (no signal delivered yet). The run-loop's `finally` aborts every
+  // live watcher and awaits its `done` so no `subscribeKind` iterator outlives
+  // the child.
+  const parkedWatchers = new Set<ParkedWatcher>();
+
+  // WORKBENCH-LOCAL (CL-2537): runIds a live signal watcher currently owns (from
+  // self-discovery install through resume-to-terminal). The control loop's
+  // `trigger.fire` handler consults this set so the supervisor's restart re-fire
+  // (`replayProcessingToInbox` re-queues the parked run's orphaned `processing/`
+  // entry) does NOT start a SECOND `runtimeRun` alongside the watcher. The single
+  // live child is the whole double-drive guarantee; the watcher is the sole
+  // driver and its terminal.event still unwedges the dispatch loop, so the
+  // re-fire must be a no-op — exactly as a freshly-parked run yields no second
+  // driver. Membership is held until the watcher's resume reaches terminal (or it
+  // aborts / woke unsatisfied) so a re-fire landing mid-resume is also deduped.
+  const watchedRunIds = new Set<string>();
+
+  // WORKBENCH-LOCAL (CL-2537): install a live signal watcher for a run parked
+  // at an `awaitSignal` gate whose human signal has NOT arrived. Today such a
+  // run dies on restart: `runtimeRun` rejects the still-waiting tail
+  // (`RuntimeResumeUnsupportedError`), the run is never driven to terminal, AND
+  // the orphaned mid-dispatch entry wedges the supervisor's strictly-serial
+  // dispatch loop so new runs never dispatch. Instead, keep the run parked
+  // in-process, subscribe to the gate's signal source, and when the human
+  // signal lands, host-satisfy + resume — which both saves the run and lets it
+  // reach terminal so the loop unwedges.
+  //
+  // Fire-and-forget, so it NEVER blocks `ready`. Process-scoped on purpose:
+  // single-live-child is the entire safety guarantee against double-drive, so
+  // the watcher is NOT hoisted to the supervisor/host. `recover` is the host's
+  // gate-completion hook (production wiring: `recoverParkedRunFromLog`); the
+  // watcher re-reads the log on signal arrival and calls it to append the
+  // missing `StepCompleted` from the now-durable `SignalReceived`.
+  function installSignalWatcher(
+    run: DiscoveredRun,
+    signalName: string,
+    recover: NonNullable<RunWorkflowChildOpts["recoverParkedRun"]>,
+  ): void {
+    const abort = new AbortController();
+    const signalChannel = createWorkflowHostSignalChannel({
+      repoStore: opts.bindings.substrate,
+      principal: opts.bindings.principal,
+      repoId: opts.bindings.workflowRunRepoId,
+      ref: opts.bindings.workflowRunRef,
+      runId: run.runId,
+      readState: () => emptyState(run.runId),
+      newId: () => newId("sig"),
+      clock,
+    });
+
+    const recoverFromCurrentLog = async (): Promise<
+      readonly WorkflowEvent[] | null
+    > => {
+      const log = await readRunLogTolerant(() =>
+        runtimeRepoStore.read(run.runId),
+      );
+      const blobs = createWorkflowRunBlobSubstrate({
+        substrate: opts.bindings.substrate,
+        repoId: opts.bindings.workflowRunRepoId,
+        principal: opts.bindings.principal,
+        runId: run.runId,
+        ref: opts.bindings.workflowRunRef,
+      });
+      const freshRun: DiscoveredRun = {
+        runId: run.runId,
+        seedEvents: log,
+        resumedState: resumeFromLog(run.runId, log),
+      };
+      return recover(freshRun, { blobs });
+    };
+
+    const resume = async (seed: readonly WorkflowEvent[]): Promise<void> => {
+      const env = buildRuntimeEnv({
+        runId: run.runId,
+        bindings: opts.bindings,
+        runtimeRepoStore,
+        authorize,
+        directors,
+        clock,
+        newId,
+        drainController,
+        warmCache,
+        onEvent: (event) => {
+          void eventSender.send(event).catch((cause) => {
+            logger.error`event-channel send failed during watcher resume run ${run.runId}: ${String(cause)}`;
+          });
+        },
+      });
+      const handle = runtimeRun(definition, env, {
+        runId: run.runId,
+        resumeFromEvents: seed,
+      });
+      await handle.complete
+        .then((result) => {
+          reclaimRunStorageIfCold({
+            warmKeep: opts.env.warmKeep,
+            cleanupRunStorage: opts.bindings.cleanupRunStorage,
+            runId: run.runId,
+          });
+          return emitTerminalEvent(upstreamSender, result);
+        })
+        .catch((cause) => {
+          logger.error`watcher-resumed run ${run.runId} failed: ${String(cause)}`;
+        });
+    };
+
+    // Watch phase. SUBSCRIBE-THEN-RECHECK closes the deliver-before-subscribe
+    // race: `subscribeKind` tails from `head` and never replays a signal
+    // committed before we subscribed, so after subscribing we re-read the log
+    // and try to satisfy the gate immediately; only if that finds nothing do we
+    // wait for a fresh delivery. The `done` promise this resolves into covers
+    // ONLY the watch phase (subscribe + recheck + channel stop) — never the
+    // resumed run — so teardown cannot block on an in-flight resume.
+    const watchPhase = (async (): Promise<readonly WorkflowEvent[] | null> => {
+      try {
+        const nextSignal = signalChannel.awaitNext(signalName, abort.signal);
+        // If the early recheck satisfies the gate we abort `nextSignal`;
+        // attach a no-op catch so the abort-rejection is never unhandled.
+        void nextSignal.catch(() => undefined);
+        const early = await recoverFromCurrentLog();
+        if (early !== null) {
+          abort.abort();
+          return early;
+        }
+        await nextSignal;
+        return await recoverFromCurrentLog();
+      } finally {
+        await signalChannel.stop().catch(() => undefined);
+      }
+    })();
+
+    const watcher: ParkedWatcher = {
+      abort,
+      done: watchPhase.then(
+        () => undefined,
+        () => undefined,
+      ),
+    };
+    parkedWatchers.add(watcher);
+    // WORKBENCH-LOCAL (CL-2537): claim the run for the watcher so a re-fired
+    // `trigger.fire` for it is deduped. Released only once the watcher's resume
+    // has reached terminal (or the watcher aborted / woke unsatisfied) — NOT when
+    // `resume` starts — so a re-fire landing mid-resume is also deduped.
+    watchedRunIds.add(run.runId);
+
+    void watchPhase
+      .then(async (outcome) => {
+        parkedWatchers.delete(watcher);
+        if (outcome !== null) {
+          try {
+            await resume(outcome);
+          } finally {
+            watchedRunIds.delete(run.runId);
+          }
+          return;
+        }
+        // Aborted (teardown) reaches here as a rejection, not this branch; a
+        // `null` outcome means the awaiter woke without a satisfiable seed.
+        watchedRunIds.delete(run.runId);
+        logger.warn`signal watcher for run ${run.runId} woke without a satisfiable seed; leaving parked`;
+      })
+      .catch((cause) => {
+        parkedWatchers.delete(watcher);
+        watchedRunIds.delete(run.runId);
+        if (!abort.signal.aborted) {
+          logger.error`signal watcher for run ${run.runId} failed: ${String(cause)}`;
+        }
+      });
+  }
+
+  for (const run of discovered) {
+    // WORKBENCH-LOCAL (CL-2535): a run whose tail the runtime cannot resume is
+    // offered to the host first. The hook returns a seed log with the parked
+    // gate host-satisfied (gate completed from the durable signal), or `null`
+    // if it cannot recover — in which case we fall through to the default
+    // resume path: `runtimeRun` rejects the unresumable tail (logged below; the
+    // run is left undriven, exactly as it was before this hook existed, and the
+    // hub's `failOrphanedRuns` reconciler fails it on its next pass).
+    let seedEvents: readonly WorkflowEvent[] = run.seedEvents;
+    let recovered = false;
+    let recoverThrew = false;
+    if (opts.recoverParkedRun !== undefined && hasUnresumableTail(run)) {
+      // WORKBENCH-LOCAL (CL-2535): a recovery-hook failure must NEVER crash the
+      // child. This runs during self-discovery, BEFORE `ready` is announced, so
+      // an uncaught throw here rejects `runWorkflowChild`, trips the binary's
+      // `unhandledRejection` -> `flushAndExit(1)`, and the child dies before
+      // `ready` — wedging the whole deployment's supervisor (it can no longer
+      // service triggers), durably across restarts. The self-discovery loop's
+      // invariant is that one bad run cannot block `ready`; the hook must honor
+      // it. On any throw, fall through to the default resume path (identical to
+      // no hook): `runtimeRun` rejects the unresumable tail, caught below.
+      try {
+        const blobs = createWorkflowRunBlobSubstrate({
+          substrate: opts.bindings.substrate,
+          repoId: opts.bindings.workflowRunRepoId,
+          principal: opts.bindings.principal,
+          runId: run.runId,
+          ref: opts.bindings.workflowRunRef,
+        });
+        const satisfied = await opts.recoverParkedRun(run, { blobs });
+        if (satisfied !== null) {
+          seedEvents = satisfied;
+          recovered = true;
+        }
+      } catch (cause) {
+        logger.error`recoverParkedRun failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
+        seedEvents = run.seedEvents;
+        recoverThrew = true;
+      }
+    }
+
+    // WORKBENCH-LOCAL (CL-2537): classifier branch. The host hook ran and
+    // cleanly DECLINED (returned null: no signal delivered yet) AND the run is
+    // parked at a still-waiting `awaitSignal` gate → install a LIVE WATCHER
+    // instead of letting the default path drive `runtimeRun` into a
+    // `RuntimeResumeUnsupportedError`. Do NOT call `runtimeRun`; do NOT push to
+    // `resumedRunIds` (the watcher resumes the run later, off the startup path).
+    // A hook that THREW (recoverThrew) is unreliable — a watcher reusing it
+    // could never satisfy the gate — so that case falls through to the default
+    // path unchanged (preserving the CL-2535 throw-guard behaviour). Guarded
+    // like the CL-2535 hook above: an install throw must NOT crash the child
+    // before `ready`, so on throw we fall through to the default path.
+    if (!recovered && !recoverThrew && opts.recoverParkedRun !== undefined) {
+      const gate = findAwaitingSignalGate(run);
+      if (gate !== undefined) {
+        try {
+          installSignalWatcher(run, gate.name, opts.recoverParkedRun);
+          continue;
+        } catch (cause) {
+          logger.error`signal watcher install failed for run ${run.runId}; falling through to default resume: ${String(cause)}`;
+        }
+      }
+    }
+
+    const env = buildRuntimeEnv({
+      runId: run.runId,
+      bindings: opts.bindings,
+      runtimeRepoStore,
+      authorize,
+      directors,
+      clock,
+      newId,
+      drainController,
+      warmCache,
+      onEvent: (event) => {
+        void eventSender.send(event).catch((cause) => {
+          logger.error`event-channel send failed during resume run ${run.runId}: ${String(cause)}`;
+        });
+      },
+    });
+    const handle = runtimeRun(definition, env, {
+      runId: run.runId,
+      resumeFromEvents: seedEvents,
+    });
+    // Fire-and-forget: the runtime body's `complete` settles when the
+    // run reaches a terminal phase; the child's control-loop does not
+    // block on resumed runs. The supervisor's dispatch loop / drain
+    // accumulator subscribes to the resumed run's terminal via the
+    // `terminal.event` upstream frame the child emits below.
+    void handle.complete
+      .then((result) => {
+        reclaimRunStorageIfCold({
+          warmKeep: opts.env.warmKeep,
+          cleanupRunStorage: opts.bindings.cleanupRunStorage,
+          runId: run.runId,
+        });
+        return emitTerminalEvent(upstreamSender, result);
+      })
+      .catch((cause) => {
+        logger.error`resumed run ${run.runId} failed: ${String(cause)}`;
+      });
+    resumedRunIds.push(run.runId);
+  }
+
+  // `ready` rides over the control channel back to the supervisor.
+  // The supervisor's `waitForReady` consumes it on its receive side.
+  // The upstream sender is constructed above so the resume loop can
+  // attach a terminal-event emitter onto every resumed run's
+  // `complete` promise; the same sender lives behind the pack-push
+  // bridge the process wrapper builds (when the caller supplies one),
+  // so the upstream frame sequence is monotonic across `ready`,
+  // every `pack.push.request`, every `terminal.event`, and any
+  // future child-originated upstream payload. Upstream frames are
+  // signed by the child's own private key; the `ready` payload
+  // publishes the matching public half so the supervisor can verify
+  // every subsequent upstream frame.
+  await upstreamSender.send({
+    type: "ready",
+    data: {
+      childPid: process.pid,
+      childPublicKey: hexEncode(childKeyPair.publicKey),
+    },
+  });
+
+  const triggeredRunIds: string[] = [];
+
+  // Control-loop. The receiver iterator yields one verified payload
+  // per call; any signature/channelId/seq violation crashes the
+  // receiver via `onCrash` and ends the iterator.
+  const iter = receiveControlChannel({
+    publicKey: opts.env.hostPublicKey,
+    channelId: opts.env.channelId,
+    reader: opts.controlReader,
+    onCrash: (reason) => {
+      logger.error`workflow-child control channel crash: ${reason}`;
+    },
+  });
+
+  try {
+    for await (const payload of iter) {
+      if (
+        await handleControlPayload(payload, {
+          env: opts.env,
+          bindings: opts.bindings,
+          credentialsRef,
+          runtimeRepoStore,
+          definition,
+          authorize,
+          directors,
+          clock,
+          newId,
+          eventSender,
+          upstreamSender,
+          drainController,
+          triggeredRunIds,
+          // WORKBENCH-LOCAL (CL-2537): read-only view so the trigger.fire
+          // handler can dedup a re-fire against a watcher-owned run.
+          watchedRunIds,
+          warmCache,
+          ...(opts.substrateWriteBridge !== undefined
+            ? { substrateWriteBridge: opts.substrateWriteBridge }
+            : {}),
+          ...(opts.outboundMailBridge !== undefined
+            ? { outboundMailBridge: opts.outboundMailBridge }
+            : {}),
+        })
+      ) {
+        // shutdown received; the shutdown case already cancelled any
+        // pending substrate writes before returning true.
+        break;
+      }
+    }
+  } finally {
+    // Any exit path -- clean (iterator end), dirty (thrown error),
+    // shutdown (already cancelled, repeat is a no-op on an empty map)
+    // -- cancels every still-pending substrate write so the runtime
+    // call site that fired the write surfaces a structured rejection
+    // rather than awaiting indefinitely on a control channel the
+    // supervisor has already torn down.
+    if (opts.substrateWriteBridge !== undefined) {
+      opts.substrateWriteBridge.cancelAll("workflow-child control loop exited");
+    }
+    // Same contract for outbound mail: a step agent's mail-tool send
+    // that is still awaiting the supervisor's `outbound.result` when
+    // the control loop exits must surface a structured rejection rather
+    // than hang on a torn-down channel.
+    if (opts.outboundMailBridge !== undefined) {
+      opts.outboundMailBridge.cancelAll("workflow-child control loop exited");
+    }
+    // WORKBENCH-LOCAL (CL-2537): abort every live parked-signal watcher on any
+    // exit path and await its watch-phase teardown so no `subscribeKind`
+    // iterator outlives the run-loop. A watcher that already handed off to a
+    // resumed run has removed itself from the set; aborting an already-settled
+    // watcher is a no-op. The awaited `done` covers only the watch phase
+    // (subscribe + recheck + signal-channel stop), never the resumed run's
+    // completion, so teardown cannot block on an in-flight resume.
+    const liveWatchers = [...parkedWatchers];
+    for (const watcher of liveWatchers) {
+      watcher.abort.abort();
+    }
+    await Promise.all(liveWatchers.map((watcher) => watcher.done));
+    // Evict the warm-agent cache (design §3b) on every exit path:
+    // graceful (shutdown frame -> iterator end), dirty (thrown error),
+    // or the control channel closing. Eviction runs the wrapped
+    // `agent.close()` that disposes plugins and kills the LSP
+    // subprocess, so no warm agent or LSP outlives the run-loop. On a
+    // production hard kill (recycle/SIGKILL) the process dies before
+    // this runs, but the OS reaps the LSP grandchild regardless; this
+    // path covers the graceful teardown the eviction contract names.
+    if (warmCache !== undefined) {
+      await warmCache.evictAll("workflow-child control loop exited");
+    }
+  }
+
+  return {
+    resumedRunIds,
+    triggeredRunIds,
+    finalCredentialsSnapshot: credentialsRef.current,
+  };
+}
+
+/**
+ * Handle a single control-channel payload. Returns `true` when the
+ * payload signals shutdown so the caller exits the loop; otherwise
+ * `false`.
+ */
+async function handleControlPayload(
+  payload: ControlPayload,
+  ctx: {
+    env: SpawnTimeEnv;
+    bindings: RunWorkflowChildBindings;
+    credentialsRef: CredentialsSnapshotRef;
+    runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
+    definition: WorkflowDefinition;
+    authorize: WorkflowAuthorizeFn;
+    directors: DirectorRegistry;
+    clock: () => Date;
+    newId: (prefix: string) => string;
+    eventSender: ReturnType<typeof createEventChannelSender>;
+    upstreamSender: ControlChannelSender;
+    drainController: DrainController;
+    triggeredRunIds: string[];
+    // WORKBENCH-LOCAL (CL-2537): runIds owned by a live signal watcher.
+    watchedRunIds: ReadonlySet<string>;
+    warmCache: WarmAgentCache | undefined;
+    substrateWriteBridge?: SubstrateWriteResponseSink;
+    outboundMailBridge?: ChildOutboundMailBridge;
+  },
+): Promise<boolean> {
+  switch (payload.type) {
+    case "trigger.fire": {
+      // WORKBENCH-LOCAL (CL-2537): dedup. A live signal watcher installed by
+      // self-discovery already owns this runId — it IS the run's sole driver.
+      // After a sidecar restart the supervisor's `replayProcessingToInbox`
+      // re-queues the parked run's orphaned `processing/` entry and the dispatch
+      // loop re-fires `trigger.fire` for it; without this guard the handler would
+      // start a SECOND `runtimeRun` racing the watcher's resume (the double-drive
+      // — surfaces as an ERR-level "seq conflict … single-writer invariant
+      // violated" when the loser's append loses). Treat it as a no-op: the
+      // watcher drives the run to terminal and emits the lone `terminal.event`
+      // that unwedges the dispatch loop, so the run still completes — identical
+      // to a freshly-parked run, which likewise spawns no second driver. The
+      // dispatch loop stays blocked on this run's terminal until the human
+      // signals (the strictly-serial dispatchOne→waitForRunTerminal→markConsumed
+      // contract), exactly as it does for a normally-parked run.
+      if (ctx.watchedRunIds.has(payload.data.runId)) {
+        logger.info`workflow-child trigger.fire deduped: run ${payload.data.runId} is owned by a live signal watcher; not starting a second driver`;
+        return false;
+      }
+      // Resolve the inbound mail bytes for this messageId from the
+      // claim-check processing entry the supervisor created when it
+      // dequeued the message. The bytes become the run's trigger
+      // payload; the one-step workflow's first step defaults its input
+      // selector to `trigger.payload` (defineWorkflow's default-input
+      // convention), so the step input resolves to the inbound message
+      // and `agent.send` receives it. A missing or unreadable entry
+      // surfaces loudly -- the run cannot proceed without its input,
+      // and silently running the agent with empty input would mask a
+      // real mailbox-ownership failure.
+      const triggerPayload = await resolveTriggerPayload({
+        substrate: ctx.bindings.substrate,
+        principal: ctx.bindings.principal,
+        workflowRunRepoId: ctx.bindings.workflowRunRepoId,
+        mailboxAddress: ctx.env.mailboxAddress,
+        messageId: payload.data.messageId,
+      });
+      const env = buildRuntimeEnv({
+        runId: payload.data.runId,
+        bindings: ctx.bindings,
+        runtimeRepoStore: ctx.runtimeRepoStore,
+        authorize: ctx.authorize,
+        directors: ctx.directors,
+        clock: ctx.clock,
+        newId: ctx.newId,
+        drainController: ctx.drainController,
+        warmCache: ctx.warmCache,
+        onEvent: (event) => {
+          void ctx.eventSender.send(event).catch((cause) => {
+            logger.error`event-channel send failed during run ${payload.data.runId}: ${String(cause)}`;
+          });
+        },
+      });
+      const handle: WorkflowRun = runtimeRun(ctx.definition, env, {
+        runId: payload.data.runId,
+        consumedMessageId: payload.data.messageId,
+        triggerPayload,
+      });
+      // Fan the run's terminal status back to the supervisor over the
+      // upstream control channel. The supervisor's dispatch loop and
+      // any armed drainTimeout accumulator subscribe through the
+      // per-cohort broadcaster the supervisor owns; the broadcaster
+      // settles when this frame lands. The runtime body commits the
+      // terminal event to the workflow-run substrate as part of the
+      // same lifecycle moment, so the on-disk audit chain and the
+      // peer notification originate from the same code path.
+      void handle.complete
+        .then((result) => {
+          reclaimRunStorageIfCold({
+            warmKeep: ctx.env.warmKeep,
+            cleanupRunStorage: ctx.bindings.cleanupRunStorage,
+            runId: payload.data.runId,
+          });
+          return emitTerminalEvent(ctx.upstreamSender, result);
+        })
+        .catch((cause) => {
+          logger.error`triggered run ${payload.data.runId} failed: ${String(cause)}`;
+        });
+      ctx.triggeredRunIds.push(payload.data.runId);
+      return false;
+    }
+    case "grants-updated": {
+      // The supervisor pushes the fresh snapshot inline. Replace the
+      // closure-local snapshot reference so every subsequent
+      // `authorize` call against the credentials-backed closure
+      // (`createCredentialsBackedAuthorize`) reads the new per-step
+      // grants without reconstructing the workflow env. The optional
+      // `stepHashes` cross-check is informational: when present, a
+      // mismatch against the snapshot's per-step contentHash crashes
+      // the child rather than silently honoring a desynchronized
+      // push.
+      const snapshot: CredentialsSnapshot = {
+        steps: payload.data.snapshot.steps.map((s) => ({
+          stepId: s.stepId,
+          address: s.address,
+          grants: s.grants,
+          contentHash: s.contentHash,
+        })),
+      };
+      if (payload.data.stepHashes !== undefined) {
+        for (const step of snapshot.steps) {
+          const expected = payload.data.stepHashes[step.stepId];
+          if (expected !== undefined && expected !== step.contentHash) {
+            throw new Error(
+              `workflow-child grants-updated: stepHashes pin for ${step.stepId} (${expected}) does not match snapshot contentHash (${step.contentHash})`,
+            );
+          }
+        }
+      }
+      ctx.credentialsRef.current = snapshot;
+      return false;
+    }
+    case "signal.deliver": {
+      // Land the signal as a `SignalReceived` commit on the run's
+      // event log. The signal-channel substrate's `subscribeKind`
+      // peer (the per-run signal channel installed at run start) is
+      // what resolves any pending `awaitNext` awaiter -- the
+      // control-loop's job is just to commit. Constructing an
+      // ad-hoc signal channel scoped to this runId keeps the
+      // control-loop free of per-run signal-channel bookkeeping
+      // while still routing through the canonical writer path.
+      //
+      // The deliver path writes through `writeTreePreservingPrefix`,
+      // which the sidecar's substrate factory wraps with a pack-push
+      // hook. The hook emits a `pack.push.request` on the upstream
+      // control channel and awaits the supervisor's matching
+      // `pack.push.response` on the same downstream stream this
+      // iterator pulls from. Awaiting the deliver inline blocks the
+      // iterator from pulling the response that resolves the deliver
+      // -- a deadlock observed end-to-end with the workflow-run
+      // pack-pushing wrapper. Fire the deliver off the loop so the
+      // iterator continues pumping `pack.push.response` (and any other
+      // downstream payload) while the deliver settles in the
+      // background. A commit failure surfaces via the logger; the
+      // runtime body's `signalChannel.awaitNext` peer either resolves
+      // (deliver landed) or remains pending until a subsequent
+      // delivery.
+      const transientSignalChannel = createWorkflowHostSignalChannel({
+        repoStore: ctx.bindings.substrate,
+        principal: ctx.bindings.principal,
+        repoId: ctx.bindings.workflowRunRepoId,
+        ref: ctx.bindings.workflowRunRef,
+        runId: payload.data.runId,
+        readState: () => emptyState(payload.data.runId),
+        newId: () => ctx.newId("sig"),
+        clock: ctx.clock,
+      });
+      void (async () => {
+        try {
+          await transientSignalChannel.deliver(
+            payload.data.signalName,
+            payload.data.payload,
+            payload.data.signalId,
+          );
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          logger.warn`signal.deliver commit failed runId=${payload.data.runId} signalName=${payload.data.signalName}: ${reason}`;
+        } finally {
+          await transientSignalChannel.stop();
+        }
+      })();
+      return false;
+    }
+    case "drain": {
+      // The supervisor's `drain` control mail flips the controller's
+      // signal. The runtime body's four observation points read the
+      // signal on their next tick; cancel-mode steps abort their
+      // local controllers, wait-mode steps continue. The
+      // supervisor's drainTimeout accumulator (host-side) escalates
+      // to a signed CancelRequested if cancel-mode work outlasts the
+      // deadline.
+      logger.info`workflow-child drain requested (deadlineMs=${String(payload.data.deadlineMs)})`;
+      ctx.drainController.requestDrain();
+      return false;
+    }
+    case "shutdown": {
+      logger.info`workflow-child shutdown requested (${payload.data.reason})`;
+      if (ctx.substrateWriteBridge !== undefined) {
+        ctx.substrateWriteBridge.cancelAll("workflow-child shutdown requested");
+      }
+      return true;
+    }
+    case "sources-updated": {
+      logger.info`workflow-child sources-updated: ${JSON.stringify(payload.data)}`;
+      return false;
+    }
+    case "ready": {
+      // `ready` is a child->supervisor frame; receiving one on the
+      // child's downstream side is a protocol violation that the
+      // sender should not be able to produce against the typed union.
+      throw new Error(
+        "workflow-child received a `ready` frame on its inbound control channel; this is a supervisor-only payload",
+      );
+    }
+    case "recycle.request": {
+      // `recycle.request` is the child->supervisor self-initiated
+      // recycle path; receiving one on the child's downstream side is
+      // the same shape of protocol violation as a downstream `ready`.
+      throw new Error(
+        "workflow-child received a `recycle.request` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "substrate.write.request": {
+      // `substrate.write.request` is the child->supervisor proxied
+      // write path; receiving one on the child's downstream side is a
+      // protocol violation in the same shape as a downstream `ready`.
+      throw new Error(
+        "workflow-child received a `substrate.write.request` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "substrate.merge.response": {
+      // `substrate.merge.response` is the child->supervisor merge
+      // result frame; receiving one on the child's downstream side is
+      // a protocol violation in the same shape as a downstream
+      // `ready`.
+      throw new Error(
+        "workflow-child received a `substrate.merge.response` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "terminal.event": {
+      // `terminal.event` is the child->supervisor terminal-run
+      // notification frame; receiving one on the child's downstream
+      // side is a protocol violation in the same shape as a downstream
+      // `ready` or `recycle.request`.
+      throw new Error(
+        "workflow-child received a `terminal.event` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "outbound.message": {
+      // `outbound.message` is the child->supervisor outbound-mail
+      // request frame; receiving one on the child's downstream side is a
+      // protocol violation in the same shape as a downstream `ready`.
+      throw new Error(
+        "workflow-child received an `outbound.message` frame on its inbound control channel; this is a child-only upstream payload",
+      );
+    }
+    case "outbound.result": {
+      // Route the supervisor's signed-send result to the outbound-mail
+      // bridge if one is wired. A result that lands without an active
+      // bridge means a stale supervisor frame for which no awaiter
+      // exists; log and drop rather than throwing so the runtime keeps
+      // progressing.
+      if (ctx.outboundMailBridge === undefined) {
+        logger.warn`workflow-child outbound.result received without a bridge wired; requestId=${payload.data.requestId} dropped`;
+        return false;
+      }
+      ctx.outboundMailBridge.handleResult(payload.data);
+      return false;
+    }
+    case "substrate.merge.request": {
+      // Route the request to the substrate-write bridge if one is
+      // wired. A request that lands without an active bridge means a
+      // stale supervisor frame for which no awaiter exists; log and
+      // drop rather than throwing so the runtime keeps progressing.
+      if (ctx.substrateWriteBridge === undefined) {
+        logger.warn`workflow-child substrate.merge.request received without a bridge wired; requestId=${payload.data.requestId} dropped`;
+        return false;
+      }
+      ctx.substrateWriteBridge.handleMergeRequest(payload.data);
+      return false;
+    }
+    case "substrate.write.response": {
+      // Route the response to the substrate-write bridge if one is
+      // wired. A response that lands without an active bridge means a
+      // stale supervisor frame for which no awaiter exists; log and
+      // drop rather than throwing so the runtime keeps progressing.
+      if (ctx.substrateWriteBridge === undefined) {
+        logger.warn`workflow-child substrate.write.response received without a bridge wired; requestId=${payload.data.requestId} dropped`;
+        return false;
+      }
+      ctx.substrateWriteBridge.handleWriteResponse(payload.data);
+      return false;
+    }
+  }
+}
+
+/**
+ * Construct a `WorkflowRuntimeEnv` for one run. Each run gets its own
+ * `BlobSubstrate` and `SignalChannel` because both are per-run by
+ * shape; the substrate handle and per-deployment `RepoStore` adapter
+ * are shared across runs.
+ */
+function buildRuntimeEnv(args: {
+  runId: string;
+  bindings: RunWorkflowChildBindings;
+  runtimeRepoStore: ReturnType<typeof createWorkflowRunRepoStore>;
+  authorize: WorkflowAuthorizeFn;
+  directors: DirectorRegistry;
+  clock: () => Date;
+  newId: (prefix: string) => string;
+  drainController: DrainController;
+  warmCache: WarmAgentCache | undefined;
+  onEvent: (event: EventPayload) => void;
+}): WorkflowRuntimeEnv {
+  const signalChannel = createWorkflowHostSignalChannel({
+    repoStore: args.bindings.substrate,
+    principal: args.bindings.principal,
+    repoId: args.bindings.workflowRunRepoId,
+    ref: args.bindings.workflowRunRef,
+    runId: args.runId,
+    readState: () => emptyState(args.runId),
+    newId: () => args.newId("sig"),
+    clock: args.clock,
+  });
+  const blobs = createWorkflowRunBlobSubstrate({
+    substrate: args.bindings.substrate,
+    repoId: args.bindings.workflowRunRepoId,
+    principal: args.bindings.principal,
+    runId: args.runId,
+    ref: args.bindings.workflowRunRef,
+  });
+  // Wrap the step invoker so every `InferenceEvent` the harness emits
+  // funnels through the per-run `onEvent` closure, which forwards
+  // the event up the HMAC-authenticated event channel. The wrap is
+  // the only translation point between the workflow-runtime's
+  // narrow `StepInvoker` shape (no event slot) and the host's
+  // `ChildStepInvoker` shape (carries onEvent), so the workflow-
+  // runtime never has to know an event firehose exists.
+  const invokeStep: StepInvoker = async (req) => {
+    return args.bindings.invokeStep(
+      req,
+      args.onEvent,
+      args.authorize,
+      args.warmCache,
+    );
+  };
+  return {
+    repoStore: args.runtimeRepoStore,
+    scheduler: args.bindings.scheduler,
+    signalChannel,
+    blobs,
+    directors: args.directors,
+    authorize: args.authorize,
+    invokeStep,
+    spawnChild: args.bindings.spawnChild,
+    clock: args.clock,
+    newId: args.newId,
+    drain: args.drainController,
+  };
+}
+
+/**
+ * Mirror a run's terminal status back to the supervisor over the
+ * upstream control channel. Fired once per run from the resume and
+ * trigger.fire paths' `complete` continuation. The supervisor's
+ * per-cohort terminal broadcaster fans the event out to the dispatch
+ * loop and any armed drainTimeout accumulator subscribed for the
+ * runId.
+ *
+ * The mapping is total: every `terminalStatus` the runtime body
+ * surfaces corresponds to exactly one `kind` in the wire union. The
+ * `error.message` on `RunFailed` is taken from the last
+ * `RunFailed`/`StepFailed` event the runtime emitted; when the log
+ * does not carry one the supervisor's downstream consumers see an
+ * empty message rather than a thrown error (the wire shape requires
+ * the field).
+ *
+ * Errors flowing out of `upstreamSender.send` are logged but not
+ * rethrown -- the supervisor's dispatch loop is the authoritative
+ * settler for the dispatch entry through its cohort abort signal, so a
+ * lost terminal frame surfaces structurally as a wedged dispatch
+ * rather than a silent lifecycle failure.
+ */
+function emitTerminalEvent(
+  upstreamSender: ControlChannelSender,
+  result: RunResult,
+): Promise<void> {
+  const at = new Date().toISOString();
+  // Recover the terminal event blob from the committed event log so
+  // the wire frame's seq matches the on-disk audit-log entry. The
+  // runtime body commits the terminal event last; walking from the
+  // end finds it in one step without rebuilding the state machine.
+  let terminalEvent: (typeof result.events)[number] | null = null;
+  for (let i = result.events.length - 1; i >= 0; i -= 1) {
+    const candidate = result.events[i];
+    if (candidate === undefined) continue;
+    if (
+      candidate.kind === "RunCompleted" ||
+      candidate.kind === "RunFailed" ||
+      candidate.kind === "RunCancelled"
+    ) {
+      terminalEvent = candidate;
+      break;
+    }
+  }
+  const seq = terminalEvent?.seq ?? 0;
+  const eventAt = terminalEvent?.at ?? at;
+  let payload: Extract<ControlPayload, { type: "terminal.event" }>["data"];
+  if (result.terminalStatus === "completed") {
+    payload = {
+      runId: result.runId,
+      seq,
+      kind: "RunCompleted",
+      at: eventAt,
+    };
+  } else if (result.terminalStatus === "cancelled") {
+    payload = {
+      runId: result.runId,
+      seq,
+      kind: "RunCancelled",
+      at: eventAt,
+    };
+  } else {
+    const message =
+      terminalEvent !== null && terminalEvent.kind === "RunFailed"
+        ? terminalEvent.error.message
+        : "";
+    payload = {
+      runId: result.runId,
+      seq,
+      kind: "RunFailed",
+      at: eventAt,
+      error: { message },
+    };
+  }
+  return upstreamSender
+    .send({
+      type: "terminal.event",
+      data: payload,
+    })
+    .catch((cause) => {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      logger.error`terminal.event upstream send failed for runId=${result.runId}: ${message}`;
+    });
+}
+
+/**
+ * Reclaim a completed run's local-disk scratch on the COLD path.
+ *
+ * Gated on `!warmKeep`: a warm deployment's single agent reuses one
+ * stable workspace across runs (the substrate factory roots its scratch
+ * per agent, not per run), so per-run deletion there would wipe a live
+ * conversation's files mid-stream. On the cold path each run rebuilds
+ * its agent + scratch, so once the run is terminal nothing reopens its
+ * `runs/<runId>/` subtree (resume reads the substrate run log, not local
+ * step state) and the subtree is safe to drop.
+ *
+ * Best-effort: a reclamation failure is logged and swallowed -- it must
+ * never gate the run's terminal status or the upstream terminal.event.
+ */
+function reclaimRunStorageIfCold(opts: {
+  warmKeep: boolean;
+  cleanupRunStorage: ((runId: string) => Promise<void>) | undefined;
+  runId: string;
+}): void {
+  if (opts.warmKeep) return;
+  if (opts.cleanupRunStorage === undefined) return;
+  void opts.cleanupRunStorage(opts.runId).catch((cause) => {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    logger.warn`workflow-step-state cleanup failed for runId=${opts.runId}: ${message}`;
+  });
+}
+
+/**
+ * Resolve the run's trigger payload from the inbound mail message the
+ * supervisor moved to the claim-check processing queue. Reads the
+ * processing entry by messageId (a read-only snapshot of the
+ * `refs/heads/events` tip that cannot race the supervisor's
+ * `markConsumed` write), decodes the inlined raw MIME bytes, and
+ * extracts the conversation text the agent's `agent.send` receives.
+ *
+ * Defensive: a missing processing entry, an entry with no inlined
+ * bytes, or unparseable mail all throw. The run cannot proceed without
+ * its input, and a placeholder would mask a mailbox-ownership failure.
+ */
+async function resolveTriggerPayload(args: {
+  substrate: SubstrateRepoStore;
+  principal: Principal;
+  workflowRunRepoId: RepoId;
+  mailboxAddress: string;
+  messageId: string;
+}): Promise<string> {
+  const entry = await readProcessingEntry(
+    args.substrate,
+    args.principal,
+    args.workflowRunRepoId,
+    args.mailboxAddress,
+    args.messageId,
+  );
+  if (entry === null) {
+    throw new Error(
+      `workflow-child trigger.fire: no claim-check processing entry for messageId ${args.messageId} at ${args.mailboxAddress}; the run has no input to deliver to the agent`,
+    );
+  }
+  const rawMessageBase64 = entry.envelope.rawMessage;
+  if (rawMessageBase64 === undefined) {
+    throw new Error(
+      `workflow-child trigger.fire: processing entry for messageId ${args.messageId} carries no inlined rawMessage; the supervisor must inline the inbound mail bytes for the child to deliver them as the step input`,
+    );
+  }
+  const raw = new Uint8Array(Buffer.from(rawMessageBase64, "base64"));
+  return extractConversationText(raw, args.messageId);
+}
+
+/**
+ * Extract the conversation body text from a raw inbound MIME message.
+ *
+ * Three on-wire shapes are handled, matching every producer the mail
+ * bus accepts:
+ *   1. The Interchange assembler's `multipart/signed` envelope whose
+ *      first part is a `multipart/mixed` body carrying the text at part
+ *      path `1.1`.
+ *   2. A `multipart/signed` envelope wrapping a bare `text/plain` part
+ *      (a sender that signs without the `multipart/mixed` wrapper); the
+ *      text is at part path `1`.
+ *   3. A flat top-level `text/plain` message (no multipart structure at
+ *      all); the body is the bytes after the header section.
+ *
+ * The top-level `Content-Type` selects the shape: only a `multipart/*`
+ * root walks into parts; anything else reads the single body directly.
+ * This mirrors the conversation branch of mail-memory's `fetchFull`
+ * while also tolerating the flat single-part case the in-process agent
+ * accepts, so a non-standard inbound mail still delivers its text to
+ * the agent rather than crashing the run.
+ */
+function extractConversationText(raw: Uint8Array, messageId: string): string {
+  const { headers, bodyOffset } = parseHeaderSection(raw);
+  const rootMime = (headers.get("content-type") ?? "")
+    .split(";")[0]
+    ?.trim()
+    .toLowerCase();
+  if (rootMime === undefined || !rootMime.startsWith("multipart/")) {
+    // Flat single-part message: the body is everything after the
+    // header section.
+    return new TextDecoder("utf-8", { fatal: false }).decode(
+      raw.subarray(bodyOffset),
+    );
+  }
+  let part1: ReturnType<typeof parseMimePart>;
+  try {
+    part1 = parseMimePart(extractPartByPath(raw, "1"));
+  } catch (cause) {
+    throw new Error(
+      `workflow-child trigger.fire: cannot parse inbound mail part 1 for messageId ${messageId}`,
+      { cause },
+    );
+  }
+  const part1Mime = (part1.contentType.split(";")[0] ?? "")
+    .trim()
+    .toLowerCase();
+  const bodyBytes = part1Mime.startsWith("multipart/")
+    ? parseMimePart(extractPartByPath(raw, "1.1")).body
+    : part1.body;
+  return new TextDecoder("utf-8", { fatal: false }).decode(bodyBytes);
+}
+
+/**
+ * Load the `WorkflowDefinition` from the workflow asset repo's deploy
+ * ref. Mirrors the sibling `spawn-child` adapter's working-tree-read
+ * pattern -- the deploy orchestrator's `writeTree` materializes
+ * `workflow.json` under the substrate's repo dir, so a flat
+ * `fs.readFile` returns the bytes without round-tripping through git.
+ */
+async function loadWorkflowDefinition(
+  bindings: RunWorkflowChildBindings,
+): Promise<WorkflowDefinition> {
+  const fs = await import("node:fs/promises");
+  const path = await import("node:path");
+  const dir = bindings.substrate.getRepoDir(bindings.workflowDefinitionRepoId);
+  const workflowPath = path.join(dir, WORKFLOW_JSON_PATH);
+  let raw: string;
+  try {
+    raw = await fs.readFile(workflowPath, "utf8");
+  } catch (cause) {
+    throw new Error(
+      `workflow-child: cannot read ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef}`,
+      { cause },
+    );
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(
+      `workflow-child: ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef} is not valid JSON`,
+      { cause },
+    );
+  }
+  const validated = workflowDefinitionEnvelopeSchema(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `workflow-child: ${WORKFLOW_JSON_PATH} for ${bindings.workflowDefinitionRepoId.kind}/${bindings.workflowDefinitionRepoId.id} on ${bindings.workflowDefinitionRef} failed envelope validation: ${validated.summary}`,
+    );
+  }
+  // The envelope schema enforces the structural shape; the
+  // discriminated narrow over every primitive variant lives downstream
+  // in the runtime body. The sibling `spawn-child` adapter follows the
+  // same pattern at the same boundary.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- envelope schema enforces structural shape; primitive narrows live downstream in the runtime body
+  return validated as unknown as WorkflowDefinition;
+}
+
+function defaultClock(): Date {
+  return new Date();
+}
+
+let idCounter = 0;
+function defaultNewId(prefix: string): string {
+  idCounter += 1;
+  return `${prefix}-${String(idCounter)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** Re-export the hash helper so callers can verify the snapshot's pin. */
+export { hashGrants };

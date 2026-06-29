@@ -154,6 +154,27 @@ describe("gamma-presentation-creator Panel", () => {
     screen.getByText("No Granola calls available.");
   });
 
+  it("does not rewind to the template gate when its output is absent but the source step is running (CL-2506)", () => {
+    // The template awaitSignal gate's StepCompleted is missing from the
+    // synthesized state, but the source step is in-flight: the panel must stay
+    // on the Source screen, not fall back to the template gate/loading screen.
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ source: "in-flight" })}
+        connected
+        signalPending={false}
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    screen.getByText("Loading calls…");
+    expect(screen.queryByText("Set up the deck")).toBeNull();
+    expect(screen.queryByText("Loading templates…")).toBeNull();
+  });
+
   it("renders brief content resolved from template and source step outputs", () => {
     render(
       <Panel

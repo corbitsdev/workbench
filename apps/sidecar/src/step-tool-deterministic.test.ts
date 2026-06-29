@@ -157,7 +157,7 @@ describe("runDeterministicToolStep", () => {
         input: {},
         signal: new AbortController().signal,
       }),
-    ).rejects.toThrow(/not in the step's loaded runner/);
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
   });
 
   test("reshapes the evaluated input into tool args via the argMap (rename + literal)", async () => {
@@ -237,7 +237,7 @@ describe("runDeterministicToolStep", () => {
     const output = result.output as Record<string, unknown>;
     expect(output.isError).toBe(true);
     expect(output.content as string).toContain(
-      "not in the step's loaded runner",
+      "is not registered/available for this deployment",
     );
   });
 

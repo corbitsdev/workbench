@@ -1,3 +1,4 @@
+import { toHumanLabel } from "@workbench/ui";
 import type { WorkflowRun } from "../hooks/use-workflow";
 
 export type RunStatusFilter = "all" | WorkflowRun["status"];
@@ -31,7 +32,7 @@ function matchesFilters(run: WorkflowRun, filters: RunFilters): boolean {
   if (filters.kind !== ALL_KINDS && run.kind !== filters.kind) return false;
   const query = filters.search.trim().toLowerCase();
   if (query.length > 0) {
-    const haystacks = [run.kind, run.runId];
+    const haystacks = [run.kind, run.runId, toHumanLabel(run.kind)];
     if (!haystacks.some((field) => field.toLowerCase().includes(query))) {
       return false;
     }

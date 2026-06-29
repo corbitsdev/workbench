@@ -10,7 +10,7 @@ export default function CompareBody({ content }: { content: string }) {
     return <ComparisonView result={result} />;
   }
   return (
-    <div className="prose prose-sm max-w-none">
+    <div className="prose prose-sm max-w-[68ch]">
       <MarkdownBlock text={content} />
     </div>
   );

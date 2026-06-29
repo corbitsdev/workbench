@@ -26,6 +26,34 @@ export function providerLabel(providerKey: string): string {
   return TOOL_PROVIDER_LABELS[key] ?? toHumanLabel(providerKey);
 }
 
+// Brand logo filenames in the brands API library, keyed by provider. Values are
+// the variant that reads on the near-black `bg-surface` (the brands-API naming:
+// `name-dark`/`-light` = the explicit dark/light artwork; inherently-colored
+// marks use the base file). `scrapecreators` maps to Reddit's mark because the
+// Reddit tools report `providerName: "scrapecreators"` — the card should show the
+// end tool (Reddit), per CL-2522.
+export const PROVIDER_LOGO_FILES: Record<string, string> = {
+  firecrawl: "firecrawl.svg",
+  granola: "granola-light.svg",
+  gamma: "gamma.svg",
+  exa: "exa-dark.svg",
+  reddit: "reddit.svg",
+  scrapecreators: "reddit.svg",
+  attio: "attio-dark.svg",
+  linear: "linear.svg",
+  bluesky: "bluesky.svg",
+  youtube: "youtube.svg",
+  xai: "xai_light.svg",
+};
+
+/**
+ * Resolve the brand logo filename for a provider key, or `null` when we have no
+ * mark for it (the consumer then falls back to the generic glyph).
+ */
+export function providerLogoFile(providerKey: string): string | null {
+  return PROVIDER_LOGO_FILES[providerKey.toLowerCase()] ?? null;
+}
+
 /**
  * Derive the ordered, de-duplicated set of provider labels referenced by a list
  * of tool factory ids (e.g. `firecrawl_search`). Only providers present in the

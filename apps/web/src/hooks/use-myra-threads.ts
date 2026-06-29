@@ -5,8 +5,10 @@ import {
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
+  relaunchMyraThread,
   renameMyraThread,
   type MyraThread,
+  type MyraThreadListItem,
 } from "../lib/hub-api";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
@@ -74,11 +76,30 @@ function requireActiveTenant(tenantId: string | null): string {
 
 export function useMyraThreads() {
   const { activeTenantId } = useActiveWorkbench();
-  return useQuery<MyraThread[]>({
+  return useQuery<MyraThreadListItem[]>({
     queryKey: myraThreadsKey(activeTenantId),
     queryFn: () => listMyraThreads(requireActiveTenant(activeTenantId)),
     enabled: !!activeTenantId,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Opt-in "Update Myra" for one old thread (CL-2518). Relaunches that thread's
+ * session against the latest Myra def so new tools load, then refetches the
+ * list so the thread's `updateAvailable` flag clears.
+ */
+export function useRelaunchMyraThread() {
+  const queryClient = useQueryClient();
+  const { activeTenantId } = useActiveWorkbench();
+  return useMutation({
+    mutationFn: (id: string) =>
+      relaunchMyraThread(requireActiveTenant(activeTenantId), id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
+    },
   });
 }
 

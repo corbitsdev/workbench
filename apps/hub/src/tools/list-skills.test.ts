@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { createFakeDrizzleQuery } from "../testing/fake-drizzle";
 
 type Skill = { id: string; name: string; displayName: string | null };
 
@@ -39,13 +40,11 @@ const principals = new Map<
 >();
 
 function fakeDb() {
-  return {
-    query: {
-      principal: {
-        findFirst: async () => principals.get("prn_1") ?? null,
-      },
+  return createFakeDrizzleQuery({
+    findFirst: {
+      principal: async () => principals.get("prn_1") ?? null,
     },
-  } as never;
+  }) as never;
 }
 
 function tools(principalId = "prn_1") {

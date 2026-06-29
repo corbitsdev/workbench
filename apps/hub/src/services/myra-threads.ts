@@ -23,6 +23,7 @@ import {
 import type {
   SessionService,
   EventCollectorRegistry,
+  SidecarRouter,
 } from "@intx/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
 import {
@@ -32,18 +33,28 @@ import {
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
-import { lookupMember } from "../lib/tenant-provisioning";
+import {
+  lookupMember,
+  reseedAgentTemplateIfStale,
+} from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
+  isAgentAlreadyExistsError,
   launchAgentSession,
   resolveInstanceSourcesFromDefinition,
   type LaunchErrorDescription,
 } from "./agent-provisioning";
+import {
+  assessPersonalAgentSync,
+  refreshInstanceGrantsFromDefinition,
+} from "./grant-reconcile";
+import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "myra-threads"]);
 
-const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
+const { agent, agentInstance, agentSession, principal, grant, sessionAsset } =
+  intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
 
@@ -75,6 +86,15 @@ export type MyraThreadRow = {
   label: string;
   createdAt: string;
 };
+
+/**
+ * A thread as shown in the list, carrying the per-thread `updateAvailable`
+ * flag. CL-2518: an OLD thread keeps the toolset its session launched with; we
+ * never auto-relaunch a live thread (that evicts it → 502), so a thread whose
+ * org def has since gained a tool is surfaced as opt-in updatable. Computed from
+ * `assessPersonalAgentSync` against the thread's own instance.
+ */
+export type MyraThreadListRow = MyraThreadRow & { updateAvailable: boolean };
 
 function defaultThreadLabel(index: number): string {
   if (index === 0) return "Chat";
@@ -117,7 +137,7 @@ async function resolveMyraDefinition(
 export async function listMyraThreads(
   db: HubDb,
   opts: { tenantId: string; memberPrincipalId: string },
-): Promise<MyraThreadRow[]> {
+): Promise<MyraThreadListRow[]> {
   const rows = await db.query.memberAgentInstance.findMany({
     where: and(
       eq(memberAgentInstance.tenantId, opts.tenantId),
@@ -127,12 +147,26 @@ export async function listMyraThreads(
     orderBy: [memberAgentInstance.createdAt],
   });
 
-  return rows.map((row, index) => ({
-    id: row.id,
-    instanceId: row.instanceId,
-    label: row.label?.trim() || defaultThreadLabel(index),
-    createdAt: row.createdAt.toISOString(),
-  }));
+  // Per-thread updateAvailable: each Myra thread is its own instance, so a
+  // thread is updatable iff its instance has drifted from the current org def
+  // (a tool the def gained after the thread launched). Run the per-instance
+  // assessments concurrently — a member has only a handful of threads, so this
+  // stays cheap on the list path. (CL-2518)
+  return Promise.all(
+    rows.map(async (row, index) => {
+      const assessment = await assessPersonalAgentSync(
+        db as unknown as DB["db"],
+        row.instanceId,
+      );
+      return {
+        id: row.id,
+        instanceId: row.instanceId,
+        label: row.label?.trim() || defaultThreadLabel(index),
+        createdAt: row.createdAt.toISOString(),
+        updateAvailable: assessment.available,
+      };
+    }),
+  );
 }
 
 /**
@@ -191,11 +225,46 @@ export async function createMyraThread(
     throw new Error("Myra template is not registered");
   }
 
-  const def = await resolveMyraDefinition(db, opts.tenantId);
+  let def = await resolveMyraDefinition(db, opts.tenantId);
   if (!def) {
     throw new Error(
       "Myra org definition is not seeded in this tenant hierarchy",
     );
+  }
+
+  // CL-2517: keep THIS tenant's own Myra def current so the new thread launches
+  // with the latest tools — a template that later gains a tool (e.g. Linear) is
+  // only written at member-join and otherwise never reaches existing tenants.
+  // Two deliberate constraints:
+  //   - scoped to the tenant's OWN def (`def.tenantId === opts.tenantId`): an
+  //     inherited/shared parent def is left to the org seed/admin path, never
+  //     rewritten as a side effect of one member creating a thread.
+  //   - best-effort: a reseed failure must NOT block thread creation. Launching
+  //     with the prior def (missing only the newest tool) beats failing the
+  //     create outright. reseedAgentTemplateIfStale is idempotent + a no-op once
+  //     current, so this stays cheap on the hot path.
+  // Live/old threads are untouched (CL-1651); CL-2518 gives those an opt-in update.
+  if (def.tenantId === opts.tenantId) {
+    try {
+      const { reseeded } = await reseedAgentTemplateIfStale(
+        db,
+        opts.tenantId,
+        template,
+      );
+      if (reseeded) {
+        def = (await resolveMyraDefinition(db, opts.tenantId)) ?? def;
+      }
+    } catch (err) {
+      // log.error (not warn): the hub Sentry sink drops warns, and a persistent
+      // reseed failure silently strands a tenant on the old toolset — the exact
+      // bug CL-2517 exists to kill. Best-effort still launches with the prior
+      // def, but the failure must page someone (and this un-swallows real seed
+      // bugs that would otherwise vanish at warn level).
+      log.error("Myra def reseed failed; launched thread with stale def", {
+        tenantId: opts.tenantId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
   }
 
   const now = new Date();
@@ -345,6 +414,198 @@ export async function createMyraThread(
       createdAt: now.toISOString(),
     },
   };
+}
+
+/**
+ * Opt-in "Update Myra" for a single OLD thread (CL-2518). Brings the thread's
+ * agent onto the latest tools by (a) reseeding the tenant's own Myra def if it
+ * has drifted from the template, then (b) relaunching THAT thread's session
+ * against the current def so the new toolPackages load. Deliberately
+ * single-thread and user-initiated: we never auto-relaunch live threads because
+ * re-deploying a live agent evicts it from the sidecar router (→ mail 502).
+ *
+ * Returns the thread row on success, or null when the caller does not own a
+ * thread with this id. Throws MyraThreadLaunchError when the relaunch itself
+ * fails (so the HTTP layer can surface the failing tool package).
+ */
+export async function relaunchMyraThread(
+  db: HubDb,
+  deps: {
+    sessionService: SessionService;
+    grantStore: GrantStore;
+    eventCollectors: EventCollectorRegistry;
+    sidecarRouter: SidecarRouter;
+  },
+  opts: {
+    tenantId: string;
+    tenantDomain: string;
+    memberPrincipalId: string;
+    threadId: string;
+  },
+): Promise<{ thread: MyraThreadRow; applied: boolean } | null> {
+  const mapping = await db.query.memberAgentInstance.findFirst({
+    where: and(
+      eq(memberAgentInstance.id, opts.threadId),
+      eq(memberAgentInstance.tenantId, opts.tenantId),
+      eq(memberAgentInstance.memberPrincipalId, opts.memberPrincipalId),
+      eq(memberAgentInstance.templateKey, MYRA_TEMPLATE_KEY),
+    ),
+  });
+  if (!mapping) return null;
+
+  // Serialize a member's relaunches: a double-click (or two tabs) must not
+  // interleave two teardown→launch sequences on the same instance, which would
+  // race into "Agent already exists". (CL-2518)
+  return runSerializedPerPrincipal(opts.memberPrincipalId, async () => {
+    const template = AGENT_TEMPLATES.find((t) => t.key === MYRA_TEMPLATE_KEY);
+    if (!template) {
+      throw new Error("Myra template is not registered");
+    }
+
+    let def = await resolveMyraDefinition(db, opts.tenantId);
+    if (!def) {
+      throw new Error(
+        "Myra org definition is not seeded in this tenant hierarchy",
+      );
+    }
+    // Reseed only the tenant's OWN def (same own-def gate as createMyraThread): an
+    // inherited parent def is left to the org seed/admin path, never rewritten as
+    // a side effect of one member updating a thread. (CL-2518/CL-2517)
+    if (def.tenantId === opts.tenantId) {
+      const { reseeded } = await reseedAgentTemplateIfStale(
+        db,
+        opts.tenantId,
+        template,
+      );
+      if (reseeded) {
+        def = (await resolveMyraDefinition(db, opts.tenantId)) ?? def;
+      }
+    }
+
+    const instance = await db.query.agentInstance.findFirst({
+      where: eq(agentInstance.id, mapping.instanceId),
+    });
+    if (!instance) {
+      throw new Error(
+        `Myra thread mapping ${opts.threadId} references missing instance ${mapping.instanceId}`,
+      );
+    }
+    if (!instance.principalId) {
+      throw new Error(
+        `Myra thread instance ${mapping.instanceId} has no principalId; cannot relaunch`,
+      );
+    }
+    const principalId = instance.principalId;
+
+    const row: MyraThreadRow = {
+      id: mapping.id,
+      instanceId: instance.id,
+      label: mapping.label?.trim() || defaultThreadLabel(0),
+      createdAt: mapping.createdAt.toISOString(),
+    };
+
+    // The whole safety of this rests on NEVER calling launchAgentSession while
+    // the thread's address is still routable: launchAgentSession's
+    // provision-failure cleanup DELETES the instance's tool grants and ends its
+    // session, so an "Agent already exists" there would silently strip the
+    // thread of every tool and report success anyway.
+    //   1. If the address is live, end the session. endSession (sendAgentUndeploy)
+    //      awaits the sidecar's undeploy ack and only then drops the address from
+    //      the router — a RESOLVED endSession means the agent is genuinely gone.
+    //   2. If endSession rejects (timeout / lost ack), the sidecar may still hold
+    //      the agent: do NOT launch (would evict it → 502, CL-1651, or
+    //      already-exists → grant wipe). Report not-applied; the member retries.
+    //   3. Launch only once the address is confirmed un-routable.
+    if (deps.sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+      try {
+        await deps.sessionService.endSession(
+          instance.address,
+          "myra_thread_update",
+        );
+      } catch (err) {
+        log.warn(
+          "Myra thread update: session teardown did not complete; not relaunching",
+          {
+            instanceId: instance.id,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        );
+        return { thread: row, applied: false };
+      }
+    }
+
+    // Guard a reconnect re-adding the address between teardown and launch.
+    if (deps.sidecarRouter.getRoutableAddresses().includes(instance.address)) {
+      log.warn(
+        "Myra thread update: address still routable after teardown; not relaunching",
+        { instanceId: instance.id },
+      );
+      return { thread: row, applied: false };
+    }
+
+    // Clear this instance's prior session_asset manifest rows before relaunching.
+    // launchAgentSession's pack phase does a plain INSERT keyed on the
+    // (instanceId, mountPath) PK (session-service.ts sendAttachmentPack); a
+    // re-launch of an EXISTING instance would otherwise collide with the rows
+    // from its first launch and 503 in the "pack" phase. createMyraThread never
+    // hits this (fresh instanceId) — deleting here makes the re-launch
+    // materialize fresh against the current def, exactly like a new instance.
+    // (CL-2539; the non-idempotent insert itself is tracked upstream in CL-2406.)
+    await db
+      .delete(sessionAsset)
+      .where(eq(sessionAsset.instanceId, instance.id));
+
+    try {
+      await launchAgentSession(
+        db,
+        deps.sessionService,
+        deps.grantStore,
+        deps.eventCollectors,
+        {
+          agentId: def.id,
+          instanceId: instance.id,
+          instancePrincipalId: principalId,
+          tenantId: opts.tenantId,
+          tenantDomain: opts.tenantDomain,
+          systemPrompt: def.systemPrompt ?? "",
+          now: new Date(),
+        },
+      );
+    } catch (err) {
+      if (isAgentAlreadyExistsError(err)) {
+        // A reconnect re-claimed the address inside the launch window.
+        // launchAgentSession's cleanup dropped this instance's tool grants AND
+        // ended its session row — restore the grants from the def so the thread
+        // is not left tool-less, and report not-applied. We INTENTIONALLY leave
+        // the session row 'ended': instance.updatedAt was never bumped, so the
+        // badge stays (assessPersonalAgentSync still sees org_template_newer) and
+        // the member's retry finds the address routable → clean relaunch. Do not
+        // "repair" the ended row here — it's the resume signal for the retry. (R1)
+        log.warn(
+          "Myra thread update: agent re-appeared during relaunch; restoring grants, not applied",
+          { instanceId: instance.id },
+        );
+        await refreshInstanceGrantsFromDefinition(db as unknown as DB["db"], {
+          agentId: def.id,
+          tenantId: opts.tenantId,
+          principalId,
+          address: instance.address,
+        });
+        return { thread: row, applied: false };
+      }
+      const failure = describeLaunchError(err);
+      log.error("Myra thread relaunch failed", {
+        instanceId: instance.id,
+        phase: failure.phase,
+        detail: failure.detail,
+        leakedAgent: failure.leakedAgent,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+      throw new MyraThreadLaunchError(failure, { cause: err });
+    }
+
+    return { thread: row, applied: true };
+  });
 }
 
 export async function renameMyraThread(

@@ -24,7 +24,7 @@
     "react": "^19.0.0"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.9.0",
+    "@workbench/test-utils": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",
     "@types/react": "^19.0.0",

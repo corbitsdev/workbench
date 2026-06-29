@@ -28,7 +28,7 @@ export function PagePanel({
     <div className="flex h-full overflow-hidden bg-bg">
       <section
         className={cn(
-          "flex flex-1 flex-col rounded-panel border border-border bg-bg",
+          "flex flex-1 flex-col border border-border bg-bg",
           scroll ? "min-h-full overflow-y-auto" : "overflow-hidden",
           !flat && "shadow-[var(--shadow)]",
           className,

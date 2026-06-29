@@ -68,15 +68,15 @@ afterEach(() => cleanup());
 describe("CommandPalette", () => {
   it("uses the combobox/listbox ARIA roles, not a dialog", () => {
     renderPalette();
-    expect(screen.getByRole("combobox")).toBeDefined();
-    expect(screen.getByRole("listbox")).toBeDefined();
+    screen.getByRole("combobox");
+    screen.getByRole("listbox");
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("groups nav and entity results under category headers", () => {
     renderPalette();
-    expect(screen.getByText("Go to")).toBeDefined();
-    expect(screen.getByText("Conversations")).toBeDefined();
+    screen.getByText("Go to");
+    screen.getByText("Conversations");
   });
 
   it("fuzzy-filters nav commands client-side as the query changes", () => {
@@ -95,15 +95,13 @@ describe("CommandPalette", () => {
     // entity matching is the server's job, not the client's.
     const { input } = renderPalette();
     fireEvent.change(input, { target: { value: "zzzz" } });
-    expect(
-      screen.getByRole("option", { name: /Acme onboarding/ }),
-    ).toBeDefined();
+    screen.getByRole("option", { name: /Acme onboarding/ });
   });
 
   it("shows an empty state when nothing matches and not loading", () => {
     renderPalette({ navItems: [], entityItems: [], query: "nope" });
     expect(screen.queryAllByRole("option")).toHaveLength(0);
-    expect(screen.getByText(/No matches/)).toBeDefined();
+    screen.getByText(/No matches/);
   });
 
   it("shows a searching state while loading with no results yet", () => {
@@ -113,7 +111,7 @@ describe("CommandPalette", () => {
       query: "ac",
       loading: true,
     });
-    expect(screen.getByText(/Searching/)).toBeDefined();
+    screen.getByText(/Searching/);
   });
 
   it("shows an error state when the search failed", () => {
@@ -123,7 +121,7 @@ describe("CommandPalette", () => {
       query: "ac",
       error: true,
     });
-    expect(screen.getByText(/Search failed/)).toBeDefined();
+    screen.getByText(/Search failed/);
   });
 
   it("moves the active row up and down with the Arrow keys", () => {

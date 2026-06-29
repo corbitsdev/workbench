@@ -6,6 +6,7 @@ import { useToolDetail } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
 import { ApiError } from "../lib/api";
 import { toHumanLabel } from "@workbench/ui";
+import { ProviderLogo } from "../components/ProviderLogo";
 
 type ParamRow = {
   name: string;
@@ -72,7 +73,7 @@ export function ToolDetail() {
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
-      <section className="flex min-h-full flex-1 flex-col overflow-y-auto rounded-panel border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+      <section className="flex min-h-full flex-1 flex-col overflow-y-auto border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
         <div className="px-4 pt-5 sm:px-7">
           <button
             type="button"
@@ -98,6 +99,11 @@ export function ToolDetail() {
           {!toolQuery.isLoading && !toolQuery.isError && toolQuery.data && (
             <div className="max-w-[760px]">
               <div className="flex items-center gap-2">
+                <ProviderLogo
+                  providerName={toolQuery.data.providerName}
+                  size={18}
+                  hideFallback
+                />
                 <span className="inline-block rounded-full bg-surface-2 px-2 py-[3px] text-[10px] font-bold uppercase tracking-[0.03em] text-text-2">
                   {toolQuery.data.providerName}
                 </span>

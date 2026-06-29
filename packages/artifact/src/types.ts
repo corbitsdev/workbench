@@ -37,6 +37,8 @@ export const ArtifactVisualSchema = type({
   viz: "'bars'|'donut'|'grid'|'lines'|'nodes'|'heat'|'deck'|'cal'",
   fill: "string",
   span: "string",
+  "experimentalFill?": "string",
+  "experimentalSpan?": "string",
 });
 
 export type ArtifactVisual = typeof ArtifactVisualSchema.infer;

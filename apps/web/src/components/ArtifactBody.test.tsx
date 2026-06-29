@@ -178,6 +178,31 @@ describe("ArtifactBody rendering", () => {
     }
   });
 
+  it("caps a prose document body at the 68ch reading measure", () => {
+    const { container } = renderKind("blog");
+    const prose = container.querySelector("div.prose");
+    if (prose === null) throw new Error("expected a prose wrapper");
+    expect(prose.className).toContain("max-w-[68ch]");
+    expect(prose.className).not.toContain("max-w-none");
+    // Left-aligned (no centering), matching ResearchBody's measure so prose
+    // shares the page's left edge with the header rather than floating centered.
+    expect(prose.className).not.toContain("mx-auto");
+  });
+
+  it("does not cap a table body — it stays full-width for horizontal scroll", () => {
+    const { container } = render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          content: "| A | B |\n| --- | --- |\n| 1 | 2 |",
+          kind: "one-pager",
+        },
+      }),
+    );
+    // The table render path has no prose wrapper and no reading-measure cap.
+    expect(container.querySelector("table")).not.toBeNull();
+    expect(container.querySelector(".max-w-\\[68ch\\]")).toBeNull();
+  });
+
   it("does not render a download link for non-export kinds", () => {
     render(
       React.createElement(ArtifactBody, {

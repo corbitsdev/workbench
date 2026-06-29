@@ -31,11 +31,7 @@ import { createPosixTools } from "@intx/tools-posix";
 import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
-import {
-  hasSeedMarker,
-  parseSeedMarker,
-  stripSeedMarker,
-} from "@workbench/agents/seed";
+import { resolveSeedMarker, stripSeedMarker } from "@workbench/agents/seed";
 import { PERSONAL_AGENT_NAME } from "@workbench/agents";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
@@ -141,8 +137,11 @@ export function createDefaultHarnessBuilder({
       // control-plane sentinel for the harness; the live model must never see
       // its own seed instructions (it would surface as raw text the agent could
       // echo or be confused by) — CL-1952.
-      const { files: declaredSeedFiles, skipped: skippedSeedFiles } =
-        parseSeedMarker(basePrompt);
+      const {
+        files: declaredSeedFiles,
+        skipped: skippedSeedFiles,
+        malformed: seedMarkerMalformed,
+      } = resolveSeedMarker(basePrompt);
       const cleanedPrompt = stripSeedMarker(basePrompt);
 
       // Append the unified active-context block at launch so every agent shares
@@ -170,10 +169,13 @@ export function createDefaultHarnessBuilder({
       // its first read never fails (CL-1952). Marker presence IS the signal: a
       // prompt with no marker is simply a non-marker-bearing agent (normal), so
       // there is no phrase-based heuristic to guess "should have been seeded".
-      if (declaredSeedFiles.length === 0 && hasSeedMarker(basePrompt)) {
-        // A marker that resolves zero files is a malformed/empty marker — a
+      if (seedMarkerMalformed) {
+        // A marker present but resolving to nothing — not a seeded file, a
+        // skipped name, or a retired one — is a malformed/empty marker, a
         // contract break between the prompt builder and the seed table. Surface
-        // it rather than silently seed nothing (CL-1952).
+        // it rather than silently seed nothing (CL-1952). A marker naming only
+        // since-retired files (an old prompt's MEMORY.md, CL-2413) resolves to
+        // `retired`, not malformed, and stays silent (CL-2509).
         logger.warn(
           "Seed marker for {address} resolved zero files (malformed)",
           {

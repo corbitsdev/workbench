@@ -101,7 +101,7 @@ afterEach(() => {
 describe("DitherBackground", () => {
   it("starts the animation loop once the image loads", () => {
     render(<DitherBackground />);
-    const img = createdImages.at(-1);
+    const img = createdImages[createdImages.length - 1];
     if (!img) throw new Error("expected the component to construct an Image");
 
     img.onload?.();
@@ -111,7 +111,7 @@ describe("DitherBackground", () => {
 
   it("schedules no frame when the image loads after unmount", () => {
     const view = render(<DitherBackground />);
-    const img = createdImages.at(-1);
+    const img = createdImages[createdImages.length - 1];
     if (!img) throw new Error("expected the component to construct an Image");
 
     // Capture the in-flight handler before teardown: a real browser can fire a

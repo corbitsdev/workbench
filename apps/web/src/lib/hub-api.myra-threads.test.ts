@@ -5,6 +5,7 @@ import {
   createMyraThread,
   deleteMyraThread,
   listMyraThreads,
+  relaunchMyraThread,
   renameMyraThread,
 } from "./hub-api";
 
@@ -32,6 +33,15 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+// List items carry `updateAvailable` (CL-2518); create/rename/relaunch responses do not.
+const threadListItem = {
+  id: "map-1",
+  instanceId: "inst-1",
+  label: "Chat",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updateAvailable: false,
+};
+
 const thread = {
   id: "map-1",
   instanceId: "inst-1",
@@ -40,11 +50,11 @@ const thread = {
 };
 
 describe("hub-api Myra threads", () => {
-  it("lists threads and parses the response", async () => {
+  it("lists threads and parses the response including updateAvailable (CL-2518)", async () => {
     const calls: Call[] = [];
-    stubFetch({ threads: [thread] }, calls);
+    stubFetch({ threads: [threadListItem] }, calls);
     const result = await listMyraThreads("tnt_child");
-    expect(result).toEqual([thread]);
+    expect(result).toEqual([threadListItem]);
     expect(calls[0]?.method).toBe("GET");
     expect(calls[0]?.url).toContain(
       "/api/v1/tenants/tnt_child/me/myra/threads",
@@ -89,6 +99,24 @@ describe("hub-api Myra threads", () => {
     expect(calls[0]?.method).toBe("DELETE");
     expect(calls[0]?.url).toContain(
       "/api/v1/tenants/tnt_child/me/myra/threads/map-1",
+    );
+  });
+
+  it("relaunches a thread via POST and parses the {thread, applied} response (CL-2518)", async () => {
+    const calls: Call[] = [];
+    stubFetch({ thread, applied: true }, calls);
+    const result = await relaunchMyraThread("tnt_child", "map-1");
+    expect(result).toEqual({ thread, applied: true });
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads/map-1/relaunch",
+    );
+  });
+
+  it("throws on a malformed relaunch response", async () => {
+    stubFetch({ thread: { id: "x" } });
+    await expect(relaunchMyraThread("tnt_child", "map-1")).rejects.toThrow(
+      /Invalid Myra thread relaunch response/,
     );
   });
 });

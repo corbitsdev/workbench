@@ -80,6 +80,8 @@ describe("artifact-visuals", () => {
       viz: "lines",
       fill: "bg-cream",
       span: "row-span-3",
+      experimentalFill: "bg-cream",
+      experimentalSpan: "row-span-3",
     });
   });
 

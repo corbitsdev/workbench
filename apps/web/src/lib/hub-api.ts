@@ -160,13 +160,28 @@ const MyraThreadSchema = type({
   createdAt: "string",
 });
 export type MyraThread = typeof MyraThreadSchema.infer;
-const MyraThreadListSchema = type({ threads: MyraThreadSchema.array() });
+
+// List items carry the per-thread `updateAvailable` flag (CL-2518); the
+// create/rename/title responses describe a single thread without it.
+export const MyraThreadListItemSchema = type({
+  id: "string",
+  instanceId: "string",
+  label: "string",
+  createdAt: "string",
+  updateAvailable: "boolean",
+});
+export type MyraThreadListItem = typeof MyraThreadListItemSchema.infer;
+const MyraThreadListSchema = type({
+  threads: MyraThreadListItemSchema.array(),
+});
 
 function myraThreadsBase(tenantId: string): string {
   return `v1/tenants/${encodeURIComponent(tenantId)}/me/myra/threads`;
 }
 
-export async function listMyraThreads(tenantId: string): Promise<MyraThread[]> {
+export async function listMyraThreads(
+  tenantId: string,
+): Promise<MyraThreadListItem[]> {
   const raw = await hubFetch<unknown>("GET", myraThreadsBase(tenantId));
   const parsed = MyraThreadListSchema(raw);
   if (parsed instanceof type.errors) {
@@ -245,6 +260,32 @@ export async function generateMyraThreadTitle(
   const parsed = type({ thread: MyraThreadSchema.or("null") })(raw);
   if (parsed instanceof type.errors) return null;
   return parsed.thread;
+}
+
+const MyraThreadRelaunchSchema = type({
+  thread: MyraThreadSchema,
+  applied: "boolean",
+});
+
+/**
+ * Opt-in "Update Myra" for a single old thread (CL-2518): asks the hub to
+ * reseed the tenant def if stale and relaunch this thread's session so the
+ * latest tools load. `applied` is false when the live session could not be torn
+ * down in time — the thread is unchanged and the caller can retry.
+ */
+export async function relaunchMyraThread(
+  tenantId: string,
+  id: string,
+): Promise<{ thread: MyraThread; applied: boolean }> {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `${myraThreadsBase(tenantId)}/${encodeURIComponent(id)}/relaunch`,
+  );
+  const parsed = MyraThreadRelaunchSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid Myra thread relaunch response: ${parsed.summary}`);
+  }
+  return { thread: parsed.thread, applied: parsed.applied };
 }
 
 export async function getMyPrincipals(): Promise<Principal[]> {

@@ -70,6 +70,7 @@ const RESERVED_TOP_LEVEL = new Set([
 // Subdir names of `<dataDir>` the repo-store keys deployment repos under.
 const AGENT_STATE_DIR = "agents";
 const WORKFLOW_RUN_DIR = "workflow-runs";
+const CONVERSATION_STATE_DIR = "agent-conversation-state";
 
 // A deployment AGENT dir (supervisor or step) is the sanitized mail address,
 // which always begins `ins_` (every workflow address is `ins_<...>@<...>`).
@@ -123,6 +124,7 @@ async function scanCandidates(dataDir: string): Promise<{
   topLevelAgents: string[];
   workflowRuns: string[];
   agentStates: string[];
+  conversationStates: string[];
 }> {
   const topLevel = await listSubdirNames(dataDir);
   const topLevelAgents = topLevel
@@ -138,7 +140,11 @@ async function scanCandidates(dataDir: string): Promise<{
     await listSubdirNames(join(dataDir, AGENT_STATE_DIR))
   ).map((name) => join(dataDir, AGENT_STATE_DIR, name));
 
-  return { topLevelAgents, workflowRuns, agentStates };
+  const conversationStates = (
+    await listSubdirNames(join(dataDir, CONVERSATION_STATE_DIR))
+  ).map((name) => join(dataDir, CONVERSATION_STATE_DIR, name));
+
+  return { topLevelAgents, workflowRuns, agentStates, conversationStates };
 }
 
 /**
@@ -272,6 +278,7 @@ export async function reconcileOrphanedDeploymentDirs(
     ...candidates.topLevelAgents,
     ...candidates.workflowRuns,
     ...candidates.agentStates,
+    ...candidates.conversationStates,
   ].filter((abs) => extractDeploymentIdToken(basename(abs)) !== null).length;
 
   const skipWorkflowReaping =
@@ -301,20 +308,31 @@ export async function reconcileOrphanedDeploymentDirs(
 
   // CL-2264: reconcile a top-level ins_ agent dir that has no deployment-id
   // token. The dir name is compared against the sanitized form of every live
-  // agent address. If it matches → live agent, keep. If NOT → orphaned agent
+  // agent address. If it matches -> live agent, keep. If NOT -> orphaned agent
   // dir (hub row gone), reap. Fail-safe: only reaches here when the hub
   // returned a valid `liveAgentAddresses` field (schema requires it; a
-  // missing/malformed field causes parse failure → early return above).
+  // missing/malformed field causes parse failure -> early return above).
   async function reconcileAgentDir(absPath: string): Promise<void> {
     const dirName = basename(absPath);
     if (extractDeploymentIdToken(dirName) !== null) {
-      // Has a deployment-id token → handled as a deployment dir above, not here.
+      // Has a deployment-id token -> handled as a deployment dir above, not here.
       return;
     }
     if (liveAgentDirNames.has(dirName)) {
       keptNoToken += 1;
       return;
     }
+    await pruneOrphan(absPath);
+  }
+
+  async function reconcileConversationState(absPath: string): Promise<void> {
+    if (skipWorkflowReaping) return;
+    const token = extractDeploymentIdToken(basename(absPath));
+    if (token === null) {
+      keptNoToken += 1;
+      return;
+    }
+    if (liveDeploymentIds.has(token)) return;
     await pruneOrphan(absPath);
   }
 
@@ -326,6 +344,8 @@ export async function reconcileOrphanedDeploymentDirs(
     await reconcileDeploymentCandidate(abs);
   for (const abs of candidates.agentStates)
     await reconcileDeploymentCandidate(abs);
+  for (const abs of candidates.conversationStates)
+    await reconcileConversationState(abs);
 
   logger.info(
     "boot reconciler: pruned {removed} orphan dir(s) ({removedTerminal} of them live-but-terminal-run, {failed} failures, {keptNoToken} kept with no deployment-id token) across {live} live deployment(s)",

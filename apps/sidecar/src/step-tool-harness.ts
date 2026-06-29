@@ -40,6 +40,41 @@ import {
 const logger = getLogger(["sidecar", "step-tool-harness"]);
 
 /**
+ * A workflow step declared a tool that was not pinned/loaded into the step's
+ * runner — the exact failure when a tool's package-registry tarball is stale or
+ * missing, so the tool never "links up" for the deployment. Named + carrying the
+ * tool name and the set of tools that DID load, so the run-failure detail and the
+ * Sentry event are explicit and actionable instead of a generic step failure.
+ */
+export class StepToolNotRegisteredError extends Error {
+  readonly toolName: string;
+  readonly loadedTools: readonly string[];
+  constructor(toolName: string, loadedTools: readonly string[]) {
+    const loaded = loadedTools.length > 0 ? loadedTools.join(", ") : "none";
+    super(
+      `tool "${toolName}" is not registered/available for this deployment ` +
+        `(the workflow step declared a tool that is not pinned; loaded tools: ${loaded})`,
+    );
+    this.name = "StepToolNotRegisteredError";
+    this.toolName = toolName;
+    this.loadedTools = loadedTools;
+  }
+}
+
+/**
+ * Throw a clear, named {@link StepToolNotRegisteredError} when a step's declared
+ * tool is absent from the tools that actually loaded for the step.
+ */
+export function assertStepToolAvailable(
+  toolName: string,
+  available: ReadonlySet<string>,
+): void {
+  if (!available.has(toolName)) {
+    throw new StepToolNotRegisteredError(toolName, [...available]);
+  }
+}
+
+/**
  * Per-step identity + hub-connection context the step agentFactory needs
  * to materialize tools. `buildEnv` (which has the StepInvokeRequest in
  * scope) stashes this on the env under `STEP_TOOL_CONTEXT_KEY`; the
@@ -439,11 +474,7 @@ export async function runDeterministicToolStep(args: {
 
   try {
     const available = new Set(runner.definitions.map((d) => d.name));
-    if (!available.has(args.toolName)) {
-      throw new Error(
-        `step-tool-harness: deterministic step declared tool "${args.toolName}" but it is not in the step's loaded runner; the workflow declared a tool that is not pinned (loaded: ${[...available].join(", ") || "none"})`,
-      );
-    }
+    assertStepToolAvailable(args.toolName, available);
     const toolArguments =
       args.argMapJson !== undefined
         ? reshapeWithArgMap(args.toolName, args.input, args.argMapJson)
@@ -463,6 +494,16 @@ export async function runDeterministicToolStep(args: {
     // rethrow it so the runtime propagates the cancel instead of letting the
     // run march on into brief/write/persist.
     if (args.nonFatal !== true || args.signal.aborted) {
+      // Log WITH the Error so the child's Sentry sink captures the stack via
+      // captureException — the on-disk StepFailed event keeps only the message.
+      // Skip on cancellation (signal aborted): teardown is not a fault.
+      if (!args.signal.aborted) {
+        logger.error("Deterministic step tool {tool} failed for {address}", {
+          tool: args.toolName,
+          address: ctx.stepAddress,
+          error: cause instanceof Error ? cause : new Error(String(cause)),
+        });
+      }
       throw cause;
     }
     const reason = cause instanceof Error ? cause.message : String(cause);
