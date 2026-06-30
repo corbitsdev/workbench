@@ -22,6 +22,7 @@ export {
   type ComparisonViewProps,
 } from "./comparison";
 export { PagePanel } from "./PagePanel";
+export { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
 export {
   CatalogGlyph,
   CATALOG_GLYPH_KINDS,

@@ -64,6 +64,7 @@
 
 @theme {
   --radius-sm: 8px;
+  --radius-input: 9px;
   --radius: 12px;
   --radius-lg: 18px;
   --radius-xl: 24px;
@@ -71,6 +72,11 @@
 
   --font-body: "Red Hat Display", "Open Sans", Roboto, Arial, sans-serif;
   --font-mono: "Space Mono", "Fira Code", Monaco, Consolas, monospace;
+
+  --text-library-title: 21px;
+  --text-library-title--font-weight: 700;
+  --text-library-title-sm: 17px;
+  --text-library-title-sm--font-weight: 600;
 
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 }
