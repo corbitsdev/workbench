@@ -106,6 +106,17 @@ describe("LibraryRail", () => {
     expect(view.getAllByText("Workflows").length).toBeGreaterThan(0);
   });
 
+  it("hides the rail below the md breakpoint (mobile)", async () => {
+    const { LibraryRail } = await import("./LibraryRail");
+    const view = renderWithClient(React.createElement(LibraryRail));
+
+    // The rail is the only complementary landmark; its container must carry the
+    // max-md:hidden guard so it collapses on phones (CL-2600) while staying a
+    // static column at desktop widths.
+    const rail = view.getByRole("complementary");
+    expect(rail.className).toContain("max-md:hidden");
+  });
+
   it("renders the + button when onNew is provided and workbenches are present", async () => {
     const { listWorkbenches, listAgentInstances } = await import(
       "../../lib/hub-api"
