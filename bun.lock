@@ -567,6 +567,7 @@
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",

@@ -26,6 +26,7 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "arktype": "catalog:",
     "@intx/agent": "workspace:*",
     "@intx/hub-client": "workspace:*",
     "@intx/inference": "workspace:*",

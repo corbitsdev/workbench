@@ -184,3 +184,4 @@ export {
   FANNIE_MODEL_CONFIG,
   FANNIE_DEPLOY_DESCRIPTOR,
 } from "./fannie/definition";
+export { AgentDeployDescriptor } from "./deploy-descriptor";
