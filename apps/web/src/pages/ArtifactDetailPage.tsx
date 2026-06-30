@@ -10,6 +10,7 @@ import { resolveKindLabel } from "../lib/resolve-kind-label";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
+import { usePublishActiveContext } from "../lib/active-context-store";
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
@@ -42,6 +43,19 @@ export function ArtifactDetailPage() {
 
   const artifact: ArtifactWithSession | null =
     (artifacts ?? []).find((a) => a.id === artifactId) ?? null;
+
+  usePublishActiveContext(
+    artifact
+      ? {
+          kind: "artifact",
+          id: artifact.id,
+          label: artifact.title,
+          artifactKind: artifact.kind,
+          body: artifact.content,
+        }
+      : null,
+    artifact ? String(artifact.version) : undefined,
+  );
 
   if (isLoading) return <CenteredNotice>Loading artifact…</CenteredNotice>;
 

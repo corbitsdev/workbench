@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
+import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   resolveActiveThread,
   useAutoTitleFirstMessage,
@@ -44,6 +45,31 @@ export function ChatThreadPage() {
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).
   const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(active);
+
+  const threadTurns = useMemo(
+    () =>
+      session.messages
+        .filter(
+          (m) =>
+            (m.role === "user" || m.role === "agent") &&
+            m.kind !== "tool" &&
+            m.content.trim().length > 0,
+        )
+        .map((m) => ({ role: m.role as "user" | "agent", text: m.content })),
+    [session.messages],
+  );
+
+  usePublishActiveContext(
+    active
+      ? {
+          kind: "thread",
+          id: active.id,
+          label: active.label ?? "Chat",
+          turns: threadTurns,
+        }
+      : null,
+    active ? String(threadTurns.length) : undefined,
+  );
 
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;

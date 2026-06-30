@@ -6,6 +6,7 @@ import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
 import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
+import { ActiveContextProvider } from "./lib/active-context-store";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
 import { ChatsListPage } from "./pages/ChatsListPage";
@@ -89,15 +90,17 @@ function AppShell() {
     <ActiveWorkbenchProvider>
       <ChatLauncherProvider>
         <CommandPaletteProvider>
-          <div className="flex h-screen flex-row bg-page">
-            <AppSidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <main className="flex-1 overflow-hidden">
-                <Outlet />
-              </main>
-              <PersonalAgentChat />
+          <ActiveContextProvider>
+            <div className="flex h-screen flex-row bg-page">
+              <AppSidebar />
+              <div className="flex flex-1 flex-col overflow-hidden">
+                <main className="flex-1 overflow-hidden">
+                  <Outlet />
+                </main>
+                <PersonalAgentChat />
+              </div>
             </div>
-          </div>
+          </ActiveContextProvider>
         </CommandPaletteProvider>
       </ChatLauncherProvider>
     </ActiveWorkbenchProvider>

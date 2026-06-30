@@ -62,6 +62,8 @@ export interface ChatPanelProps {
   summarizeToolCalls?: ChatThreadProps["summarizeToolCalls"];
   className?: string;
   notice?: React.ReactNode;
+  /** Rendered directly above the input (e.g. attached-context pills). */
+  inputAccessory?: React.ReactNode;
 }
 
 /**
@@ -93,6 +95,7 @@ export function ChatPanel({
   summarizeToolCalls,
   className,
   notice,
+  inputAccessory,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
 
@@ -174,6 +177,10 @@ export function ChatPanel({
             <QuickReplyChips replies={quickReplies} onSelect={onQuickReply} />
           </div>
         )}
+
+      {inputAccessory !== undefined && inputAccessory !== null && (
+        <div className="px-4 pb-1">{inputAccessory}</div>
+      )}
 
       <ChatInput
         onSend={onSend}
