@@ -211,9 +211,9 @@ export function UnifiedCatalogModal({
 
             {/* Grid */}
             <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {workflowsPending && (
-                  <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                  <p className="col-span-1 py-6 text-center sm:col-span-2 text-[13px] text-text-3">
                     Loading workflows…
                   </p>
                 )}
@@ -246,14 +246,14 @@ export function UnifiedCatalogModal({
                 {!workflowsPending &&
                   filteredWorkflows.length === 0 &&
                   deployedWorkflows.length === 0 && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                    <p className="col-span-1 py-6 text-center sm:col-span-2 text-[13px] text-text-3">
                       No workflows deployed yet.
                     </p>
                   )}
                 {!workflowsPending &&
                   filteredWorkflows.length === 0 &&
                   deployedWorkflows.length > 0 && (
-                    <p className="col-span-2 py-6 text-center text-[13px] text-text-3">
+                    <p className="col-span-1 py-6 text-center sm:col-span-2 text-[13px] text-text-3">
                       No workflows match your search.
                     </p>
                   )}

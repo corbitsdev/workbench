@@ -34,7 +34,7 @@ export function LibraryPageHeader({
   return (
     <div
       className={cn(
-        "flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7",
+        "flex flex-wrap items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7",
         className,
       )}
     >

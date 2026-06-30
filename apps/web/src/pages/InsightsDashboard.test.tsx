@@ -298,6 +298,24 @@ describe("InsightsDashboard", () => {
     expect(screen.getByText("10")).toBeDefined();
   });
 
+  it("lets the date-preset row wrap and the breakdown tables scroll within themselves at mobile widths", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("By person")).toBeDefined();
+    });
+
+    // The preset buttons wrap rather than forcing the header past the viewport.
+    const presetGroup = screen.getByText("7 days").parentElement;
+    expect(presetGroup?.className).toContain("flex-wrap");
+
+    // Each breakdown table is min-width-constrained, so it must live inside an
+    // overflow-x-auto wrapper that scrolls the table — not the page.
+    const personTable = screen.getByText("Person").closest("table");
+    expect(personTable?.className).toContain("min-w-[520px]");
+    expect(personTable?.parentElement?.className).toContain("overflow-x-auto");
+  });
+
   it("renders a By-person breakdown marking the caller and a total row", async () => {
     renderPage();
 

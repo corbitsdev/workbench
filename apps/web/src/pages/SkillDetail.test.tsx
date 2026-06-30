@@ -220,6 +220,9 @@ describe("SkillDetail", () => {
     const treePane = document.querySelector(".w-56");
     expect(treePane).not.toBeNull();
     expect(treePane?.textContent).toContain("run.ts");
+    // The fixed-width tree narrows on phones so the file content beside it
+    // keeps a usable column rather than being squeezed off-screen.
+    expect(treePane?.className).toContain("max-md:w-40");
   });
 
   it("orders file content above versioning and delete actions (CL-2429)", async () => {

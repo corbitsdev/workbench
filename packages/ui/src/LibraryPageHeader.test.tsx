@@ -32,6 +32,12 @@ describe("LibraryPageHeader", () => {
     expect(sm.className).not.toContain("text-[17px]");
   });
 
+  it("wraps so trailing controls reflow below the title on narrow viewports", () => {
+    render(<LibraryPageHeader title="Skills" />);
+    const header = screen.getByRole("heading", { level: 1 }).parentElement;
+    expect(header?.className).toContain("flex-wrap");
+  });
+
   it("renders action children on the trailing edge", () => {
     render(
       <LibraryPageHeader title="Skills">
