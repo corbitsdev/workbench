@@ -301,3 +301,66 @@ button {
     transform: scale(0.95);
   }
 }
+
+/*
+ * A fenced code block is a <code> nested in the <pre> surface. The shared
+ * <Markdown> component styles every <code> as an inline chip; this reset sheds
+ * that chip inside a <pre> so block code sits flat on the surface and inherits
+ * the <pre>'s sizing rather than carrying a bordered pill per line.
+ */
+.wb-markdown pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+  color: inherit;
+}
+
+/*
+ * Markdown footnote citations. The shared <Markdown> component (Markdown.tsx)
+ * themes every element through its component map, but GFM footnotes render as a
+ * <section class="footnotes"> with inline <sup> refs that the map cannot key on
+ * — so they are styled here, scoped to `.wb-markdown`, still token-driven.
+ * Footnote refs read as first-class citation markers, and the trailing section
+ * as a quiet, rule-separated source list. (Streamdown's rehype-sanitize strips
+ * the `data-footnote-ref` attribute but keeps the `footnotes` class, so the ref
+ * is matched structurally as the only `sup > a` markdown produces.)
+ */
+.wb-markdown sup a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.1em;
+  padding: 0 0.3em;
+  margin: 0 0.1em;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--charcoal);
+  font-family: var(--font-mono);
+  font-size: 0.7em;
+  font-weight: 600;
+  line-height: 1.4;
+  text-decoration: none;
+}
+
+.wb-markdown .footnotes {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 0.85em;
+}
+
+.wb-markdown .footnotes h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+
+.wb-markdown .footnotes a {
+  color: var(--accent);
+}

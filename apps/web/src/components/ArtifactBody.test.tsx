@@ -180,7 +180,7 @@ describe("ArtifactBody rendering", () => {
 
   it("caps a prose document body at the 68ch reading measure", () => {
     const { container } = renderKind("blog");
-    const prose = container.querySelector("div.prose");
+    const prose = container.querySelector("div.wb-markdown");
     if (prose === null) throw new Error("expected a prose wrapper");
     expect(prose.className).toContain("max-w-[68ch]");
     expect(prose.className).not.toContain("max-w-none");
@@ -189,7 +189,7 @@ describe("ArtifactBody rendering", () => {
     expect(prose.className).not.toContain("mx-auto");
   });
 
-  it("does not cap a table body — it stays full-width for horizontal scroll", () => {
+  it("renders a GFM table inside the prose surface in a horizontal-scroll container", () => {
     const { container } = render(
       React.createElement(ArtifactBody, {
         artifact: {
@@ -198,9 +198,15 @@ describe("ArtifactBody rendering", () => {
         },
       }),
     );
-    // The table render path has no prose wrapper and no reading-measure cap.
-    expect(container.querySelector("table")).not.toBeNull();
-    expect(container.querySelector(".max-w-\\[68ch\\]")).toBeNull();
+    // One rendering path: the table is parsed by the shared <Markdown> (GFM) and
+    // lives inside the prose surface, each table wrapped for horizontal scroll
+    // rather than overflowing the narrow dock width.
+    const table = container.querySelector("table");
+    if (table === null) throw new Error("expected a rendered <table>");
+    expect(table.closest(".wb-markdown")).not.toBeNull();
+    const scroller = table.closest(".overflow-x-auto");
+    if (scroller === null)
+      throw new Error("expected the table in a horizontal-scroll container");
   });
 
   it("does not render a download link for non-export kinds", () => {

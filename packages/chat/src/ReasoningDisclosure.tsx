@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
-import { Streamdown } from "streamdown";
-import { cn } from "@workbench/ui";
+import { cn, Markdown } from "@workbench/ui";
 
 export interface ReasoningDisclosureProps {
   /** The agent's reasoning text. */
@@ -72,12 +71,13 @@ export function ReasoningDisclosure({
             transition={{ duration: 0.18, ease: EASE_OUT }}
             className="overflow-hidden"
           >
-            <div className="border-l border-border pl-3 text-xs leading-relaxed text-text-3">
-              <div className="chat-md chat-md-reasoning">
-                <Streamdown mode={streaming ? "streaming" : "static"}>
-                  {reasoning}
-                </Streamdown>
-              </div>
+            <div className="border-l border-border pl-3">
+              <Markdown
+                mode={streaming ? "streaming" : "static"}
+                className="text-xs leading-relaxed text-text-3"
+              >
+                {reasoning}
+              </Markdown>
             </div>
           </motion.div>
         )}

@@ -44,7 +44,7 @@ describe("MessageBubble", () => {
       createdAt: "2026-06-04T00:01:00Z",
     };
     const { container } = render(<MessageBubble message={message} />);
-    const body = container.querySelector(".chat-md")
+    const body = container.querySelector(".wb-markdown")
       ?.parentElement as HTMLElement;
     expect(body).not.toBeNull();
     expect(body.className).not.toContain("bg-surface-2");
