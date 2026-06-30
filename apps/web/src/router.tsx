@@ -105,7 +105,7 @@ function AppShell() {
       <ChatLauncherProvider>
         <CommandPaletteProvider>
           <ActiveContextProvider>
-            <div className="flex h-screen flex-row bg-page">
+            <div className="flex h-dvh flex-row overflow-hidden bg-page">
               <AppSidebar
                 mobileOpen={drawerOpen}
                 onNavigate={() => setDrawerOpen(false)}
