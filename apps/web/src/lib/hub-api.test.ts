@@ -5,6 +5,7 @@ import {
   deployAgentFromTemplate,
   getMe,
   postMe,
+  patchMeProfile,
   ensureMeSynced,
   getMyPrincipals,
   getAnalyticsSummary,
@@ -224,6 +225,20 @@ describe("hub-api network helpers", () => {
     expect(calls[0]!.init?.credentials).toBe("include");
     expect(calls[0]!.init?.body).toBe(
       JSON.stringify({ syncPersonalAgent: true }),
+    );
+  });
+
+  it("patchMeProfile PATCHes the display name to /api/v1/me/profile", async () => {
+    const calls = installFetch(() => ({ body: { userName: "Sawyer C" } }));
+
+    expect((await patchMeProfile("Sawyer C")) as unknown).toEqual({
+      userName: "Sawyer C",
+    });
+    expect(calls[0]!.url).toContain("/api/v1/me/profile");
+    expect(calls[0]!.init?.method).toBe("PATCH");
+    expect(calls[0]!.init?.credentials).toBe("include");
+    expect(calls[0]!.init?.body).toBe(
+      JSON.stringify({ displayName: "Sawyer C" }),
     );
   });
 

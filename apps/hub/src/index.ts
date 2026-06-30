@@ -95,6 +95,7 @@ import {
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
@@ -1033,6 +1034,7 @@ v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
+v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route("/", createToolsRouter(db, assetService));
