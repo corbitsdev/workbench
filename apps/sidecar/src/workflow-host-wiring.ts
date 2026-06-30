@@ -259,31 +259,48 @@ const SIDECAR_WORKFLOW_CHILD_BINARY: string = (() => {
  * Child fd the supervisor inherits the event-channel pipe on. The
  * supervisor's spawn-time convention is:
  *
- *   fd 0 stdin  -- downstream control channel (supervisor -> child)
- *   fd 1 stdout -- upstream control channel (child -> supervisor)
- *   fd 2 stderr -- inherited so child diagnostics land on the
+ *   fd 0 stdin  -- inherited (free for the child)
+ *   fd 1 stdout -- inherited so child INFO/DEBUG logs land on the
+ *                  sidecar's stdout at correct severity
+ *   fd 2 stderr -- inherited so child WARN/ERROR logs land on the
  *                  sidecar's stderr
  *   fd 3        -- event-channel write side (child writes
  *                  HMAC-authenticated InferenceEvent frames here;
  *                  the supervisor reads the parent end as a
  *                  `FrameReader`)
+ *   fd 4        -- downstream control channel (supervisor -> child;
+ *                  the supervisor writes, the child reads)
+ *   fd 5        -- upstream control channel (child -> supervisor; the
+ *                  child writes, the supervisor reads)
  *
- * The child opens fd 3 via `EVENT_CHANNEL_FD` in
- * `@intx/workflow-host`'s `from-process-env`. The two ends of the
- * pipe are provisioned by `Bun.spawn`'s `stdio` slot: setting
- * `stdio[3] = "pipe"` makes Bun mint a pipe pair where the child
- * inherits the write half at fd 3 and the parent receives the read
- * half as a numeric fd at `proc.stdio[3]` in its own address space.
+ * WORKBENCH-LOCAL (CL-2585): the control channel used to ride fd 0/1
+ * (stdin/stdout). But stdout is also where `@intx/log` routes
+ * INFO/DEBUG, so a log line interleaved into the NDJSON control
+ * stream and crashed the supervisor's control reader (-> reason=corrupt).
+ * Control now lives on its own dedicated fds (4 down, 5 up) so
+ * stdin/stdout/stderr are free to inherit. The control channel is
+ * bidirectional, so it needs TWO pipes (a single Bun `"pipe"` slot is
+ * unidirectional). The child opens fds 3/4/5 via `EVENT_CHANNEL_FD` /
+ * `CONTROL_DOWN_FD` / `CONTROL_UP_FD` in `@workbench/workflow-host`'s
+ * `from-process-env`; these indices must stay in lockstep with the
+ * `stdio` slots below. Each `stdio[n] = "pipe"` for n >= 3 makes Bun
+ * mint a pipe pair where the child inherits one half at fd n and the
+ * parent receives the other half as a numeric fd at `proc.stdio[n]`.
  */
 const CHILD_EVENT_CHANNEL_FD = 3;
+// WORKBENCH-LOCAL (CL-2585): dedicated control-channel fds; mirror
+// `CONTROL_DOWN_FD` / `CONTROL_UP_FD` in the workflow-child's
+// `from-process-env`. Must stay in lockstep with the `stdio` indices.
+const CHILD_CONTROL_DOWN_FD = 4;
+const CHILD_CONTROL_UP_FD = 5;
 
 /**
  * Wrap a Bun `FileSink` as the supervisor's `NdjsonWriter`. The
  * supervisor's control-channel sender writes one JSON line per
  * frame (already including the trailing newline); the writer is
- * responsible for passing the bytes through to the child's stdin
- * without buffering across frames so each frame surfaces on the
- * far side as soon as `write()` resolves.
+ * responsible for passing the bytes through to the child's downstream
+ * control fd (fd 4) without buffering across frames so each frame
+ * surfaces on the far side as soon as `write()` resolves.
  */
 function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
   return {
@@ -297,11 +314,12 @@ function ndjsonWriterFromFileSink(sink: Bun.FileSink): NdjsonWriter {
 }
 
 /**
- * Wrap a Bun stdout `ReadableStream` as the supervisor's
- * `NdjsonReader`. The pipe is a byte stream; this reader buffers
- * partial chunks and yields one complete line per iteration. The
- * receiver's iterator finalises only on EOF, which mirrors the
- * `defaultControlReader` shape the child wires for `process.stdin`.
+ * Wrap a Bun `ReadableStream` (the upstream control pipe on fd 5) as
+ * the supervisor's `NdjsonReader`. The pipe is a byte stream; this
+ * reader buffers partial chunks and yields one complete line per
+ * iteration. The receiver's iterator finalises only on EOF, which
+ * mirrors the `defaultControlReader` shape the child wires for
+ * `CONTROL_DOWN_FD`.
  */
 function ndjsonReaderFromReadableStream(
   stream: ReadableStream<Uint8Array>,
@@ -370,9 +388,10 @@ function frameReaderFromFd(fd: number): FrameReader {
  * Real `Bun.spawn`-backed subprocess spawner. Constructs a fresh env
  * carrying exactly the trust anchors and substrate-config keys the
  * supervisor passed in (no inheritance of the sidecar's process env);
- * inherits stdio 0/1/2 as control + stderr; pipes fd 3 for the event
- * channel and surfaces the parent-side read fd as the supervisor's
- * `FrameReader`.
+ * inherits stdio 0/1/2 so child logs reach container stdout/stderr;
+ * pipes fd 3 for the event channel and fds 4/5 for the down/up
+ * control channels (CL-2585), surfacing the parent-side fds as the
+ * supervisor's `FrameReader` / control reader & writer.
  *
  * Failure modes flow through the returned handle's `exited` promise.
  * A `Bun.spawn` that fails to launch (binary missing, env malformed,
@@ -385,8 +404,11 @@ export const defaultSubprocessSpawner: SubprocessSpawner = ({
   binaryPath,
   env,
 }): SubprocessHandle => {
+  // WORKBENCH-LOCAL (CL-2585): inherit stdin/stdout/stderr (so child logs
+  // reach container logs at correct severity) and dedicate fd 3 to the event
+  // channel and fds 4/5 to the down/up control channels.
   const proc = Bun.spawn([binaryPath], {
-    stdio: ["pipe", "pipe", "inherit", "pipe"],
+    stdio: ["inherit", "inherit", "inherit", "pipe", "pipe", "pipe"],
     env,
   });
   const eventFd = proc.stdio[CHILD_EVENT_CHANNEL_FD];
@@ -395,10 +417,26 @@ export const defaultSubprocessSpawner: SubprocessSpawner = ({
       `workflow-host-wiring: Bun.spawn did not return a numeric fd at stdio[${String(CHILD_EVENT_CHANNEL_FD)}] for the event channel; got ${typeof eventFd}`,
     );
   }
+  const controlDownFd = proc.stdio[CHILD_CONTROL_DOWN_FD];
+  if (typeof controlDownFd !== "number") {
+    throw new Error(
+      `workflow-host-wiring: Bun.spawn did not return a numeric fd at stdio[${String(CHILD_CONTROL_DOWN_FD)}] for the downstream control channel; got ${typeof controlDownFd}`,
+    );
+  }
+  const controlUpFd = proc.stdio[CHILD_CONTROL_UP_FD];
+  if (typeof controlUpFd !== "number") {
+    throw new Error(
+      `workflow-host-wiring: Bun.spawn did not return a numeric fd at stdio[${String(CHILD_CONTROL_UP_FD)}] for the upstream control channel; got ${typeof controlUpFd}`,
+    );
+  }
   return {
     pid: proc.pid,
-    controlWriter: ndjsonWriterFromFileSink(proc.stdin),
-    controlReader: ndjsonReaderFromReadableStream(proc.stdout),
+    // WORKBENCH-LOCAL (CL-2585): control channel rides dedicated fds 4 (down)
+    // and 5 (up) instead of the child's stdin/stdout.
+    controlWriter: ndjsonWriterFromFileSink(Bun.file(controlDownFd).writer()),
+    controlReader: ndjsonReaderFromReadableStream(
+      Bun.file(controlUpFd).stream(),
+    ),
     eventReader: frameReaderFromFd(eventFd),
     kill(signal?: number | string): void {
       // The supervisor's `SubprocessHandle.kill` widens the signal

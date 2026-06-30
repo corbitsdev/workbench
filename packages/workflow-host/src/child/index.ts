@@ -48,6 +48,12 @@ export {
 
 export {
   EVENT_CHANNEL_FD,
+  // WORKBENCH-LOCAL (CL-2585): dedicated control-channel fds + default
+  // reader/writer bound to them.
+  CONTROL_DOWN_FD,
+  CONTROL_UP_FD,
+  defaultControlReader,
+  defaultControlWriter,
   runWorkflowChildFromProcessEnv,
   type RunWorkflowChildFromProcessEnvOpts,
   type SubstrateFactory,
