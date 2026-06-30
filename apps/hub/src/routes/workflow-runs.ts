@@ -139,6 +139,18 @@ export type EnsureDeploymentRoutableFn = (args: {
   creatorPrincipalId: string;
 }) => Promise<{ reestablished: boolean }>;
 
+// Provision a fresh, single-use deployment for ONE workflow run (per-run
+// deployment, CL-2582): read the kind's published definition, resolve a fresh
+// deploymentId + config, and deploy the supervisor + steps. Pre-bound in
+// index.ts over deploymentDomain + hubPublicKey. The run-start handler awaits it
+// and triggers the returned deployment, which is torn down when the run reaches
+// a terminal status.
+export type ProvisionRunDeploymentFn = (args: {
+  kind: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}) => Promise<{ deploymentId: string }>;
+
 // Shared helper: replay the run-event log once and collect every StepCompleted
 // entry as `{ stepId, outputRef, runId }`. Callers can filter or resolve refs
 // as needed. Returns the discovered runId (from the first event) alongside the

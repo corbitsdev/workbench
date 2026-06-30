@@ -1,11 +1,13 @@
-import { and, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, gt, inArray, isNotNull, isNull, like } from "drizzle-orm";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
+import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
 import { createRunStore, loadRunRecord } from "../workflow-executor/run-store";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
+import type { ReclaimDeploymentFn } from "./workflow-deploy";
 
 const log = getLogger(["services", "workflow-reconciler"]);
 
@@ -48,14 +50,28 @@ export interface WorkflowReconciler {
   // `pack_walk_dangling_parent` → `reason=corrupt`, retried forever (CL-2575).
   // Idempotent: already-terminal rows are not selected.
   failOrphanedRuns(): Promise<void>;
-  // Re-establish supervisors for every active (non-deleted) deployment. Run on
-  // hub startup and on sidecar reconnect. Best-effort: a single deployment's
-  // failure is logged and never aborts the pass.
+  // Re-establish supervisors for every per-run deployment that still has a
+  // non-terminal run record (CL-2582: the per-run deploymentId lives on the
+  // record, not on `workflow_run`). Run on hub startup and on sidecar reconnect.
+  // Best-effort: a single deployment's failure is logged and never aborts the
+  // pass.
   reconcileAll(): Promise<void>;
+  // CL-2582 Step D (class 2): reclaim per-run deployments whose run reached a
+  // terminal status but whose teardown did not fire (the hub crashed between the
+  // projection-bridge save and the fire-and-forget teardown). Bounded to runs
+  // that terminated recently and gated on the deployment STILL having live
+  // instance rows, so it is a cheap no-op for the normal case where teardown
+  // already ran. Run on hub startup after `reconcileAll`.
+  reclaimOrphanedDeployments(): Promise<void>;
   // Subscribe to sidecar reconnect events and reconcile on each (coalesced to
   // one in-flight pass). Returns an unsubscribe handle.
   start(): () => void;
 }
+
+// How far back the orphan janitor looks for terminated-but-not-torn-down runs.
+// A hub crash between the terminal save and the teardown is recovered on the
+// next boot; 24h covers any realistic restart gap while keeping the scan small.
+const ORPHAN_RECLAIM_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export function createWorkflowReconciler(deps: {
   db: HubDb;
@@ -63,6 +79,8 @@ export function createWorkflowReconciler(deps: {
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
   getRoutableAddresses: SidecarRouter["getRoutableAddresses"];
   deploymentDomain: string;
+  // CL-2582: tear a terminal run's orphaned deployment down (class 2 janitor).
+  reclaimDeployment: ReclaimDeploymentFn;
 }): WorkflowReconciler {
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
@@ -156,9 +174,21 @@ export function createWorkflowReconciler(deps: {
     if (reconciling) return;
     reconciling = true;
     try {
-      const rows = await deps.db
+      // Per-run deployment (CL-2582): a run's deployment id lives on its
+      // `workflow_run_record`, NOT on `workflow_run` — a per-run deploy writes no
+      // registry row. So re-establish supervisors by walking the NON-TERMINAL
+      // records (the parked runs that must resume after a restart), not the
+      // registry. The registry rows supply only the DEPLOY principal:
+      // `ensureDeploymentRoutable` revives the supervisor's agent/instance rows
+      // as that principal, but the record's `principalId` is the run OWNER, so we
+      // recover the deployer from the kind's registry row (keyed by kind+tenant).
+      //
+      // A run whose record is terminal is never re-established (it needs no live
+      // supervisor — that was the staging restart-loop resurrection vector). A
+      // kind that has never run, or whose runs are all terminal, re-establishes
+      // nothing — a new run self-provisions its own deployment at start.
+      const registryRows = await deps.db
         .select({
-          deploymentId: workflowRun.deploymentId,
           kind: workflowRun.kind,
           tenantId: workflowRun.tenantId,
           principalId: workflowRun.principalId,
@@ -170,73 +200,63 @@ export function createWorkflowReconciler(deps: {
             isNull(workflowRun.deletedAt),
           ),
         );
+      const deployPrincipalByKind = new Map<string, string>();
+      for (const r of registryRows) {
+        deployPrincipalByKind.set(`${r.kind} ${r.tenantId}`, r.principalId);
+      }
 
-      // Only re-establish a supervisor for a deployment that still has work to
-      // resume. A deployment whose run records are ALL terminal — `failed`
-      // (e.g. `failOrphanedRuns` just marked it) or `completed` — needs no live
-      // supervisor; re-establishing it re-spawns a child that replays a
-      // dead/wedged run forever. That is the recurrence vector behind the
-      // staging restart loop: `failOrphanedRuns` failed the run record, but
-      // this pass re-established the deployment anyway (it keyed only off the
-      // un-filtered `workflow_run` row), so the failed run was resurrected on
-      // every sidecar reconnect. A deployment with NO record yet (freshly
-      // deployed, never run) is deliberately left untouched — its supervisor
-      // comes up on first run — so the only deployments SKIPPED are those that
-      // have records and none are non-terminal.
-      const recordRows = await deps.db
+      const activeRecords = await deps.db
         .select({
           deploymentId: workflowRunRecord.deploymentId,
-          status: workflowRunRecord.status,
+          kind: workflowRunRecord.kind,
+          tenantId: workflowRunRecord.tenantId,
         })
         .from(workflowRunRecord)
         .where(
           and(
+            inArray(workflowRunRecord.status, ["running", "awaiting"]),
             isNotNull(workflowRunRecord.deploymentId),
             isNull(workflowRunRecord.deletedAt),
           ),
         );
-      const deploymentsWithRecord = new Set<string>();
-      const deploymentsWithActiveRecord = new Set<string>();
-      for (const r of recordRows) {
-        if (r.deploymentId === null) continue;
-        deploymentsWithRecord.add(r.deploymentId);
-        if (r.status === "running" || r.status === "awaiting") {
-          deploymentsWithActiveRecord.add(r.deploymentId);
-        }
-      }
 
+      const seen = new Set<string>();
       let reestablished = 0;
-      let skippedTerminal = 0;
-      for (const row of rows) {
-        if (!row.deploymentId) continue;
-        if (
-          deploymentsWithRecord.has(row.deploymentId) &&
-          !deploymentsWithActiveRecord.has(row.deploymentId)
-        ) {
-          skippedTerminal += 1;
+      let skippedNoPrincipal = 0;
+      for (const rec of activeRecords) {
+        if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
+        seen.add(rec.deploymentId);
+        const deployPrincipal = deployPrincipalByKind.get(
+          `${rec.kind} ${rec.tenantId}`,
+        );
+        if (deployPrincipal === undefined) {
+          // The kind was undeployed since the run started — no registry row to
+          // recover the deploy principal from, so the supervisor can't be
+          // revived. Leave it (the run can't resume against a gone definition).
+          skippedNoPrincipal += 1;
           continue;
         }
         try {
           const result = await deps.ensureDeploymentRoutable({
-            deploymentId: row.deploymentId,
-            kind: row.kind,
-            tenantId: row.tenantId,
-            creatorPrincipalId: row.principalId,
+            deploymentId: rec.deploymentId,
+            kind: rec.kind,
+            tenantId: rec.tenantId,
+            creatorPrincipalId: deployPrincipal,
           });
           if (result.reestablished) reestablished += 1;
         } catch (err) {
           log.warn("workflow reconcile: re-establish failed for deployment", {
-            deploymentId: row.deploymentId,
-            kind: row.kind,
+            deploymentId: rec.deploymentId,
+            kind: rec.kind,
             error: err instanceof Error ? err.message : String(err),
           });
         }
       }
-      if (reestablished > 0 || skippedTerminal > 0) {
+      if (reestablished > 0 || skippedNoPrincipal > 0) {
         log.info("workflow reconcile pass complete", {
-          active: rows.length,
+          activeRecords: activeRecords.length,
           reestablished,
-          skippedTerminal,
+          skippedNoPrincipal,
         });
       }
     } finally {
@@ -244,9 +264,67 @@ export function createWorkflowReconciler(deps: {
     }
   }
 
+  async function reclaimOrphanedDeployments(): Promise<void> {
+    const cutoff = new Date(Date.now() - ORPHAN_RECLAIM_WINDOW_MS);
+    const recentTerminal = await deps.db
+      .select({
+        deploymentId: workflowRunRecord.deploymentId,
+        tenantId: workflowRunRecord.tenantId,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          inArray(workflowRunRecord.status, ["completed", "failed"]),
+          isNotNull(workflowRunRecord.deploymentId),
+          isNull(workflowRunRecord.deletedAt),
+          gt(workflowRunRecord.updatedAt, cutoff),
+        ),
+      );
+
+    const seen = new Set<string>();
+    let reclaimed = 0;
+    for (const rec of recentTerminal) {
+      if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
+      seen.add(rec.deploymentId);
+      // Scoped, per-deploymentId liveness check — a LIKE on this exact
+      // deploymentId's instance prefix, never a broad `ins_ses_%` sweep, so it
+      // can only ever match THIS workflow deployment's supervisor/step rows
+      // (no risk of touching a non-workflow agent's instances). A terminal run
+      // whose teardown already fired has no live rows → skipped.
+      const live = await deps.db
+        .select({ id: intxSchema.agentInstance.id })
+        .from(intxSchema.agentInstance)
+        .where(
+          and(
+            like(intxSchema.agentInstance.address, `ins_${rec.deploymentId}%`),
+            isNull(intxSchema.agentInstance.endedAt),
+          ),
+        )
+        .limit(1);
+      if (live.length === 0) continue;
+      try {
+        await deps.reclaimDeployment({
+          deploymentId: rec.deploymentId,
+          tenantId: rec.tenantId,
+          reason: "terminal run deployment reclaimed by janitor (CL-2582)",
+        });
+        reclaimed += 1;
+      } catch (err) {
+        log.warn("orphan reclaim failed for deployment", {
+          deploymentId: rec.deploymentId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    if (reclaimed > 0) {
+      log.info("reclaimed orphaned terminal deployments", { reclaimed });
+    }
+  }
+
   return {
     failOrphanedRuns,
     reconcileAll,
+    reclaimOrphanedDeployments,
     start() {
       // The handler is awaited by the sidecar-handler's reconnect flow; it must
       // never throw, or it would fail the address's reconnection. reconcileAll is

@@ -90,14 +90,22 @@ const sentSignals: {
   payload: unknown;
 }[] = [];
 const ensureCalls: { deploymentId: string; creatorPrincipalId: string }[] = [];
+const provisionCalls: {
+  kind: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}[] = [];
 let sendShouldThrow = false;
+let provisionShouldThrow = false;
 
 function resetCaptures(): void {
   runs.clear();
   sentMessages.length = 0;
   sentSignals.length = 0;
   ensureCalls.length = 0;
+  provisionCalls.length = 0;
   sendShouldThrow = false;
+  provisionShouldThrow = false;
 }
 
 const sessionService = {
@@ -142,6 +150,23 @@ const ensureDeploymentRoutable = async (args: {
   return { reestablished: false };
 };
 
+// Each call mints a fresh, single-use deployment id distinct from the shared
+// registry row's `ses_dep1` — proving run-start deploys per run, not the shared
+// deployment.
+const provisionRunDeployment = async (args: {
+  kind: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+}) => {
+  if (provisionShouldThrow) throw new Error("deploy failed");
+  provisionCalls.push({
+    kind: args.kind,
+    tenantId: args.tenantId,
+    creatorPrincipalId: args.creatorPrincipalId,
+  });
+  return { deploymentId: `ses_run_${provisionCalls.length}` };
+};
+
 const DEFAULT_DEPLOYMENT = {
   deploymentId: "ses_dep1",
   tenantId: "tn-1",
@@ -184,6 +209,7 @@ function routerWith(opts: {
       cryptoProvider: {} as CryptoProvider,
       deploymentDomain: "wf.localhost",
       ensureDeploymentRoutable,
+      provisionRunDeployment,
       resolveContext: async () => ({
         context: opts.context ?? { tenantId: "tn-1", principalId: "prn-1" },
         forbidden: false,
@@ -229,7 +255,7 @@ async function get(
 }
 
 describe("workflow runs on the sidecar (records router)", () => {
-  test("start seeds a running run record and fires the sidecar trigger with messageId == runId", async () => {
+  test("start provisions a FRESH per-run deployment from the definition and triggers IT, not the shared registry deployment (CL-2582)", async () => {
     resetCaptures();
     const a = app();
     const { status, json } = await post(
@@ -245,24 +271,33 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(json.currentStepId).toBeNull();
     expect(json.outputs).toEqual({});
     expect(typeof json.runId).toBe("string");
-    // The response surfaces the producing deployment so the UI can resolve the
-    // exact deployed version that ran (CL-2321), not the newest of the kind.
-    expect(json.deploymentId).toBe("ses_dep1");
+
+    // Provisioned once, into the DEFINITION's tenant + deploy principal (the
+    // shared registry row), NOT the caller's principal.
+    expect(provisionCalls).toHaveLength(1);
+    expect(provisionCalls[0]).toEqual({
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      creatorPrincipalId: "prn-deployer",
+    });
+
+    // The run runs on its OWN fresh deployment, never the shared `ses_dep1`.
+    expect(json.deploymentId).toBe("ses_run_1");
+    expect(json.deploymentId).not.toBe("ses_dep1");
 
     // The linchpin of the projection bridge: the trigger mail's messageId IS the
-    // run record id, so the supervisor-derived runId on every emitted event
-    // matches the seeded row.
+    // run record id, and it targets the fresh per-run deployment's address.
     expect(sentMessages).toHaveLength(1);
     expect(sentMessages[0]?.messageId).toBe(json.runId);
+    expect(sentMessages[0]?.agentAddress).toBe("ins_ses_run_1@wf.localhost");
     expect(sentMessages[0]?.content).toBe(JSON.stringify({ topic: "Acme" }));
 
-    // Supervisor re-established with the DEPLOYMENT owner's principal, not the caller's.
-    expect(ensureCalls).toHaveLength(1);
-    expect(ensureCalls[0]?.deploymentId).toBe("ses_dep1");
-    expect(ensureCalls[0]?.creatorPrincipalId).toBe("prn-deployer");
+    // A freshly-deployed supervisor is routable by construction — the start path
+    // no longer calls ensureDeploymentRoutable (that is the resume path's job).
+    expect(ensureCalls).toHaveLength(0);
   });
 
-  test("start returns 404 when no workflow of the kind is deployed", async () => {
+  test("start returns 404 and provisions nothing when no workflow of the kind is deployed", async () => {
     resetCaptures();
     const a = routerWith({ db: makeDb([]) });
     const { status } = await post(
@@ -271,6 +306,23 @@ describe("workflow runs on the sidecar (records router)", () => {
       { input: {} },
     );
     expect(status).toBe(404);
+    expect(provisionCalls).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+  });
+
+  test("start 500s and seeds no run record when per-run provision fails", async () => {
+    resetCaptures();
+    provisionShouldThrow = true;
+    const a = app();
+    const { status, json } = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    expect(status).toBe(500);
+    expect(json.error).toMatch(/failed to provision/);
+    // No row seeded and no trigger sent — the run never came into being.
+    expect([...runs.values()]).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
   });
 
@@ -287,7 +339,10 @@ describe("workflow runs on the sidecar (records router)", () => {
     );
     expect(status).toBe(500);
     expect(json.error).toMatch(/failed to start/);
-    // The seeded row was flipped to failed so the UI doesn't poll a phantom run.
+    // The run was provisioned and the row seeded before the trigger failed; the
+    // row is flipped to failed so the UI doesn't poll a phantom run (its orphaned
+    // deployment is reclaimed by the terminal-teardown + janitor sweep).
+    expect(provisionCalls).toHaveLength(1);
     const seeded = [...runs.values()][0];
     expect(seeded?.status).toBe("failed");
   });
@@ -319,6 +374,53 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentSignals[0]?.runId).toBe(runId);
     expect(sentSignals[0]?.signalName).toBe("note-selection");
     expect(sentSignals[0]?.payload).toEqual({ noteId: "n1" });
+    // The signal targets the run's OWN per-run deployment, and re-establish uses
+    // that id with the deploy principal recovered from the kind's registry row.
+    expect(sentSignals[0]?.agentAddress).toBe("ins_ses_run_1@wf.localhost");
+    expect(ensureCalls).toHaveLength(1);
+    expect(ensureCalls[0]?.deploymentId).toBe("ses_run_1");
+    expect(ensureCalls[0]?.creatorPrincipalId).toBe("prn-deployer");
+  });
+
+  test("resume delivers the signal even though the per-run deployment has NO workflow_run registry row (CL-2582 / B1 regression)", async () => {
+    resetCaptures();
+    // A db whose registry lookup-by-deploymentId finds NOTHING (per-run
+    // deployments write no workflow_run row) but whose kind resolution still
+    // returns the operator's row (so the deploy principal is recoverable). Under
+    // the pre-fix resume — which located the deployment via findFirst(by
+    // deploymentId) — this 404'd, breaking every HITL run. Resume must instead
+    // address the run's own deployment and recover the principal by kind.
+    const db = {
+      query: {
+        workflowRun: {
+          findMany: async () => [DEFAULT_DEPLOYMENT],
+          findFirst: async () => undefined,
+        },
+      },
+    } as unknown as HubDb;
+    const a = routerWith({ db });
+
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    const parked = runs.get(runId);
+    if (parked)
+      runs.set(runId, {
+        ...parked,
+        status: "awaiting",
+        currentStepId: "select",
+      });
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: { noteId: "n1" },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.agentAddress).toBe("ins_ses_run_1@wf.localhost");
+    expect(ensureCalls[0]?.creatorPrincipalId).toBe("prn-deployer");
   });
 
   test("resume on an unknown run is 404 and sends no signal", async () => {
@@ -342,8 +444,9 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(read.status).toBe(200);
     expect(read.json.runId).toBe(start.json.runId);
     expect(read.json.status).toBe("running");
-    // deploymentId persisted at start round-trips through the read DTO.
-    expect(read.json.deploymentId).toBe("ses_dep1");
+    // The fresh per-run deploymentId persisted at start round-trips through the
+    // read DTO.
+    expect(read.json.deploymentId).toBe("ses_run_1");
   });
 
   test("GET /records lists only the callers own runs (per-user private)", async () => {
