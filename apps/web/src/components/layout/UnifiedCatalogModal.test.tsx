@@ -31,7 +31,7 @@ mock.module("../../hooks/use-workflow", () => ({
       {
         // No meta — the card falls back to the humanized kind, no description.
         deploymentId: "dep-2",
-        kind: "presentation-generation",
+        kind: "gamma-presentation-creator",
         status: "running",
         createdAt: "",
       },
@@ -98,7 +98,7 @@ describe("UnifiedCatalogModal", () => {
     await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
     screen().getByText("Analyze a call transcript and generate collateral.");
     screen().getByText("SEO Enrichment Report");
-    screen().getByText("Presentation generation");
+    screen().getByText("Gamma presentation creator");
 
     expect(screen().queryByRole("button", { name: "Agents" })).toBeNull();
     expect(screen().queryByRole("button", { name: "Workflows" })).toBeNull();

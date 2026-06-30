@@ -8,36 +8,50 @@ import {
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
-  Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState, StepState } from "@intx/workflow";
-
-// ── Step ordering ────────────────────────────────────────────────────────────
-
-// Logical UX steps drive the stepper and `activeStep`. Internal substrate steps
-// (list-templates, list-notes, source) are sub-steps within the first two UX
-// phases and are not shown separately in the stepper.
-const STEP_ORDER = [
-  "template",
-  "source",
-  "generate",
-  "review",
-  "render",
-] as const;
-
-type StepKey = (typeof STEP_ORDER)[number];
-
-const STEP_LABELS: Record<StepKey, string> = {
-  template: "Template",
-  source: "Source",
-  generate: "Generate",
-  review: "Review",
-  render: "Render",
-};
+import { MAX_ROUNDS } from "./index";
 
 type StepPhase = StepState["phase"];
+
+const ROUNDS = Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1);
+
+// Four display steps cluster the repeating per-round runtime steps. The
+// machine-work groups carry a verb `activityLabel` for the live status line;
+// the source and review groups carry none (they wait on the user).
+const DISPLAY_STEPS: DisplayStep[] = [
+  {
+    key: "source",
+    label: "Source",
+    stepIds: [
+      "list-templates",
+      "list-artifacts",
+      "list-notes",
+      "intake",
+      "fetch-artifact",
+      "fetch-note",
+    ],
+  },
+  {
+    key: "draft",
+    label: "Draft",
+    stepIds: ROUNDS.flatMap((r) => [`generate-${r}`, `render-${r}`]),
+    activityLabel: "Building the deck",
+  },
+  {
+    key: "review",
+    label: "Review",
+    stepIds: ROUNDS.map((r) => `preview-${r}`),
+  },
+  {
+    key: "done",
+    label: "Done",
+    stepIds: ROUNDS.map((r) => `persist-${r}`),
+    activityLabel: "Saving to workbench",
+  },
+];
 
 function phaseFor(
   state: RunState | null,
@@ -46,68 +60,24 @@ function phaseFor(
   return state?.steps.get(stepId)?.phase;
 }
 
-// One runtime step per display step; the shared helpers encode the robust
-// "passed = completed OR a later step progressed" rule so a gate whose output is
-// missing from the synthesized record can't rewind the panel mid-run (CL-2506).
-// Machine-work steps carry a verb `activityLabel` for the live line; the
-// template, source, and review gates carry none.
-const STEP_ACTIVITY: Partial<Record<StepKey, string>> = {
-  generate: "Drafting the presentation",
-  render: "Building the presentation",
-};
-
-const DISPLAY_STEPS: DisplayStep[] = STEP_ORDER.map((id) => ({
-  key: id,
-  label: STEP_LABELS[id],
-  stepIds: [id],
-  ...(STEP_ACTIVITY[id] !== undefined
-    ? { activityLabel: STEP_ACTIVITY[id] }
-    : {}),
-}));
-
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
   return buildRunStepperSteps(state, DISPLAY_STEPS);
 }
 
-function activeStep(state: RunState | null): StepKey {
-  return activeDisplayStep(state, DISPLAY_STEPS)?.key as StepKey;
-}
+// ── Output parsing ────────────────────────────────────────────────────────────
 
-// ── Output parsing schemas ────────────────────────────────────────────────────
-
-// `deterministicToolStep` wraps its tool return value in this envelope.
 const ToolResultEnvelope = type({ "callId?": "string", content: "string" });
 
-// gamma_list_templates handler returns JSON.stringify([{ gammaId, name, ... }])
 const TemplateItem = type({ gammaId: "string", name: "string" });
 const TemplateArray = TemplateItem.array();
 
-// granola_list_notes handler returns JSON.stringify({ notes: [...], hasMore })
+const ArtifactItem = type({ id: "string", "title?": "string | null" });
+const ArtifactListResult = ArtifactItem.array();
+
 const NoteItem = type({ id: "string", "title?": "string | null" });
 const NotesResult = type({ notes: NoteItem.array() });
 
-// granola_get_note handler returns JSON.stringify({ id, title, summary, ... })
-const GranolaNote = type({
-  "id?": "string",
-  "title?": "string | null",
-  "summary?": "string",
-});
-
-// Agent `step` output shape: { reply: string, turn: unknown }
-const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
-
-// gamma_create_from_template handler returns { gammaUrl, gammaId }
 const GammaResult = type({ "gammaUrl?": "string", "url?": "string" });
-
-// Template awaitSignal payload carrying the user's brief
-const TemplateBrief = type({
-  "gammaId?": "string",
-  "audience?": "string",
-  "tone?": "string",
-  "goal?": "string",
-});
-
-// ── Parsing helpers ───────────────────────────────────────────────────────────
 
 function peelEnvelope(raw: unknown): unknown {
   const envelope = ToolResultEnvelope(raw);
@@ -125,54 +95,50 @@ function readString(value: unknown): string | undefined {
     : undefined;
 }
 
-type TemplateOption = { gammaId: string; name: string };
+type Option = { id: string; title: string };
 
-function readTemplateOptions(
-  stepOutputs: Record<string, unknown>,
-): TemplateOption[] {
+// `failed` distinguishes "the source tool errored / returned a shape we can't
+// read" from a genuinely empty list, so the UI can say "couldn't load" instead
+// of silently presenting an outage as "you have nothing."
+type OptionLoad = { options: Option[]; failed: boolean };
+
+function readTemplateOptions(stepOutputs: Record<string, unknown>): OptionLoad {
   const inner = peelEnvelope(stepOutputs["list-templates"]);
-  if (inner === undefined) return [];
+  if (inner === undefined) return { options: [], failed: true };
   const parsed = TemplateArray(inner);
-  if (parsed instanceof type.errors) return [];
-  return parsed.map((t) => ({ gammaId: t.gammaId, name: t.name }));
+  if (parsed instanceof type.errors) return { options: [], failed: true };
+  return {
+    options: parsed.map((t) => ({ id: t.gammaId, title: t.name })),
+    failed: false,
+  };
 }
 
-type NoteOption = { id: string; title: string };
+function readArtifactOptions(stepOutputs: Record<string, unknown>): OptionLoad {
+  const inner = peelEnvelope(stepOutputs["list-artifacts"]);
+  if (inner === undefined) return { options: [], failed: true };
+  const parsed = ArtifactListResult(inner);
+  if (parsed instanceof type.errors) return { options: [], failed: true };
+  return {
+    options: parsed.map((a) => ({
+      id: a.id,
+      title: readString(a.title) ?? a.id,
+    })),
+    failed: false,
+  };
+}
 
-function readNoteOptions(stepOutputs: Record<string, unknown>): NoteOption[] {
+function readNoteOptions(stepOutputs: Record<string, unknown>): OptionLoad {
   const inner = peelEnvelope(stepOutputs["list-notes"]);
-  if (inner === undefined) return [];
+  if (inner === undefined) return { options: [], failed: true };
   const parsed = NotesResult(inner);
-  if (parsed instanceof type.errors) return [];
-  return parsed.notes.map((n) => ({
-    id: n.id,
-    title: readString(n.title) ?? n.id,
-  }));
-}
-
-type GenerateResult =
-  | { kind: "ready"; reply: string }
-  | { kind: "loading" }
-  | { kind: "malformed" };
-
-function readGenerate(
-  output: unknown,
-  generatePhase: StepPhase | undefined,
-): GenerateResult {
-  if (generatePhase !== "completed") return { kind: "loading" };
-  const parsed = AgentStepOutput(output);
-  if (parsed instanceof type.errors) return { kind: "malformed" };
-  return { kind: "ready", reply: parsed.reply };
-}
-
-function readSourceTitle(
-  stepOutputs: Record<string, unknown>,
-): string | undefined {
-  const inner = peelEnvelope(stepOutputs["source"]);
-  if (inner === undefined) return undefined;
-  const parsed = GranolaNote(inner);
-  if (parsed instanceof type.errors) return undefined;
-  return readString(parsed.title);
+  if (parsed instanceof type.errors) return { options: [], failed: true };
+  return {
+    options: parsed.notes.map((n) => ({
+      id: n.id,
+      title: readString(n.title) ?? n.id,
+    })),
+    failed: false,
+  };
 }
 
 function isSafePresentationURL(value: string | undefined): value is string {
@@ -184,47 +150,55 @@ function isSafePresentationURL(value: string | undefined): value is string {
   }
 }
 
-function readGammaURL(
+function readRenderURL(
   stepOutputs: Record<string, unknown>,
+  round: number,
 ): string | undefined {
-  const inner = peelEnvelope(stepOutputs["render"]);
+  const inner = peelEnvelope(stepOutputs[`render-${round}`]);
   if (inner === undefined) return undefined;
   const parsed = GammaResult(inner);
   if (parsed instanceof type.errors) return undefined;
   return readString(parsed.gammaUrl) ?? readString(parsed.url);
 }
 
-function briefRows(
+// ── Routing helpers ───────────────────────────────────────────────────────────
+
+function awaitingPreviewRound(state: RunState | null): number | undefined {
+  return ROUNDS.find(
+    (r) => phaseFor(state, `preview-${r}`) === "awaiting-signal",
+  );
+}
+
+// A gate prunes the not-selected branch by committing a `{ skipped: true }`
+// sentinel and a real `StepCompleted` for every step in its closure (the
+// runtime has no `skipped` phase — pruned steps land in `completed`). So a
+// persist step in a pruned round reads as `completed` too; we must ignore it,
+// or an early approval/refine would resolve to the wrong round (showing the
+// Done screen mid-refine, or reading a never-rendered deck URL).
+function isSkippedOutput(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as Record<string, unknown>).skipped === true
+  );
+}
+
+function persistedRound(
+  state: RunState | null,
   stepOutputs: Record<string, unknown>,
-): { label: string; value: string }[] {
-  const rows: { label: string; value: string }[] = [];
-
-  const template = TemplateBrief(stepOutputs["template"]);
-  if (!(template instanceof type.errors)) {
-    const templateId = readString(template.gammaId);
-    if (templateId !== undefined)
-      rows.push({ label: "Template", value: templateId });
-    const audience = readString(template.audience);
-    if (audience !== undefined)
-      rows.push({ label: "Audience", value: audience });
-    const tone = readString(template.tone);
-    if (tone !== undefined) rows.push({ label: "Tone", value: tone });
-    const goal = readString(template.goal);
-    if (goal !== undefined) rows.push({ label: "Goal", value: goal });
-  }
-
-  const sourceTitle = readSourceTitle(stepOutputs);
-  if (sourceTitle !== undefined)
-    rows.push({ label: "Source", value: sourceTitle });
-
-  return rows;
+): number | undefined {
+  return ROUNDS.find(
+    (r) =>
+      phaseFor(state, `persist-${r}`) === "completed" &&
+      !isSkippedOutput(stepOutputs[`persist-${r}`]),
+  );
 }
 
 // ── Shared layout ─────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: ReactNode }) {
   return (
-    <section className="rounded-panel border border-border bg-surface p-6">
+    <section className="rounded-[14px] border border-border bg-surface p-6 shadow-sm">
       {children}
     </section>
   );
@@ -237,14 +211,101 @@ function CardTitle({ children }: { children: ReactNode }) {
 function LoadingState({ label }: { label: string }) {
   return (
     <Card>
-      <p className="text-sm text-text-3">{label}</p>
+      <div className="flex items-center gap-3 text-sm text-text-3">
+        <span
+          aria-hidden
+          className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-border border-t-orange motion-reduce:animate-none"
+        />
+        <span>{label}</span>
+      </div>
     </Card>
   );
 }
 
-// ── Step screens ──────────────────────────────────────────────────────────────
+function DeckFrame({ url }: { url: string }) {
+  return (
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
+      <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+        <iframe
+          src={url}
+          allow="fullscreen"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
+          className="absolute inset-0 h-full w-full border-0"
+          title="Generated Gamma presentation"
+        />
+      </div>
+    </div>
+  );
+}
 
-function TemplateScreen({
+const fieldClass =
+  "w-full rounded-sm border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange";
+
+// External Gamma links can't be a <Button> (they navigate), so match the
+// secondary Button treatment here for a consistent affordance + hit area.
+const linkButtonClass =
+  "inline-flex items-center justify-center rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-surface-2 active:scale-[0.97] motion-reduce:active:scale-100";
+
+// ── Intake ────────────────────────────────────────────────────────────────────
+
+type SourceTab = "artifact" | "granola" | "paste";
+
+type IntakePayload = {
+  deckTitle: string;
+  gammaId: string;
+  audience: string;
+  tone: string;
+  goal: string;
+  artifactId?: string;
+  noteId?: string;
+  text?: string;
+};
+
+function PickList({
+  options,
+  selected,
+  onSelect,
+  empty,
+  failed,
+  failedLabel,
+}: {
+  options: Option[];
+  selected: string;
+  onSelect: (id: string) => void;
+  empty: string;
+  failed: boolean;
+  failedLabel: string;
+}) {
+  if (failed) {
+    return (
+      <p className="text-sm text-text-2" role="status">
+        {failedLabel}
+      </p>
+    );
+  }
+  if (options.length === 0) {
+    return <p className="text-sm text-text-3">{empty}</p>;
+  }
+  return (
+    <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border bg-surface">
+      {options.map((o) => (
+        <li key={o.id}>
+          <button
+            type="button"
+            onClick={() => onSelect(o.id)}
+            className={`block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 ${
+              selected === o.id ? "bg-surface-2 text-text" : "text-text-2"
+            }`}
+          >
+            {o.title}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function IntakeScreen({
   phase,
   connected,
   signalPending,
@@ -255,61 +316,150 @@ function TemplateScreen({
   connected: boolean;
   signalPending: boolean;
   stepOutputs: Record<string, unknown>;
-  onSubmit: (payload: {
-    gammaId: string;
-    templateId: string;
-    audience: string;
-    tone: string;
-    goal: string;
-  }) => void;
+  onSubmit: (payload: IntakePayload) => void;
 }) {
   const templates = readTemplateOptions(stepOutputs);
-  const [gammaId, setGammaId] = useState(templates[0]?.gammaId ?? "");
+  const artifacts = readArtifactOptions(stepOutputs);
+  const notes = readNoteOptions(stepOutputs);
+
+  const [tab, setTab] = useState<SourceTab>("artifact");
+  const [gammaId, setGammaId] = useState(templates.options[0]?.id ?? "");
+  const [deckTitle, setDeckTitle] = useState("");
   const [audience, setAudience] = useState("");
   const [tone, setTone] = useState("");
   const [goal, setGoal] = useState("");
+  const [artifactId, setArtifactId] = useState("");
+  const [noteId, setNoteId] = useState("");
+  const [text, setText] = useState("");
+
+  // Only one source feeds a run; clear the others on switch so the attached
+  // source is always exactly what the visible tab shows (no invisible
+  // cross-tab selection riding along on submit).
+  function selectTab(next: SourceTab) {
+    setTab(next);
+    if (next !== "artifact") setArtifactId("");
+    if (next !== "granola") setNoteId("");
+    if (next !== "paste") setText("");
+  }
+
+  if (phase !== "awaiting-signal") {
+    return <LoadingState label="Loading sources…" />;
+  }
+
+  const sourceChosen =
+    (tab === "artifact" && artifactId.length > 0) ||
+    (tab === "granola" && noteId.length > 0) ||
+    (tab === "paste" && text.trim().length > 0);
   const canSubmit =
     connected &&
     !signalPending &&
     gammaId.trim().length > 0 &&
-    goal.trim().length > 0;
+    deckTitle.trim().length > 0 &&
+    sourceChosen;
 
-  if (phase !== "awaiting-signal") {
-    return <LoadingState label="Loading templates…" />;
-  }
-
-  const fieldClass =
-    "w-full rounded-[8px] border border-border bg-surface px-3 py-2 text-[13px] text-text";
+  const tabClass = (t: SourceTab) =>
+    `rounded-[8px] px-3 py-1.5 text-[12px] ${
+      tab === t ? "bg-surface-2 text-text" : "text-text-3 hover:text-text-2"
+    }`;
 
   return (
     <Card>
-      <CardTitle>Set up the deck</CardTitle>
+      <CardTitle>Build a deck</CardTitle>
       <form
-        className="space-y-3"
+        className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
           if (!canSubmit) return;
-          onSubmit({
+          const base = {
+            deckTitle: deckTitle.trim(),
             gammaId: gammaId.trim(),
-            templateId: gammaId.trim(),
             audience: audience.trim(),
             tone: tone.trim(),
             goal: goal.trim(),
-          });
+          };
+          if (tab === "artifact") onSubmit({ ...base, artifactId });
+          else if (tab === "granola") onSubmit({ ...base, noteId });
+          else onSubmit({ ...base, text: text.trim() });
         }}
       >
+        <div className="space-y-2">
+          <span className="text-[12px] text-text-3">Source</span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={tabClass("artifact")}
+              onClick={() => selectTab("artifact")}
+            >
+              Artifact
+            </button>
+            <button
+              type="button"
+              className={tabClass("granola")}
+              onClick={() => selectTab("granola")}
+            >
+              Granola call
+            </button>
+            <button
+              type="button"
+              className={tabClass("paste")}
+              onClick={() => selectTab("paste")}
+            >
+              Paste text
+            </button>
+          </div>
+          {tab === "artifact" && (
+            <PickList
+              options={artifacts.options}
+              selected={artifactId}
+              onSelect={setArtifactId}
+              empty="No saved artifacts available."
+              failed={artifacts.failed}
+              failedLabel="Couldn't load artifacts — the integration may be unavailable. Try a Granola call or paste text."
+            />
+          )}
+          {tab === "granola" && (
+            <PickList
+              options={notes.options}
+              selected={noteId}
+              onSelect={setNoteId}
+              empty="No Granola calls available."
+              failed={notes.failed}
+              failedLabel="Couldn't load Granola calls — the integration may be unavailable. Try an artifact or paste text."
+            />
+          )}
+          {tab === "paste" && (
+            <textarea
+              aria-label="Pasted text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={6}
+              placeholder="Paste the source text for the deck"
+              className={fieldClass}
+            />
+          )}
+        </div>
+
+        <label className="block space-y-1">
+          <span className="text-[12px] text-text-3">Deck title</span>
+          <input
+            aria-label="Deck title"
+            value={deckTitle}
+            onChange={(e) => setDeckTitle(e.target.value)}
+            className={fieldClass}
+          />
+        </label>
         <label className="block space-y-1">
           <span className="text-[12px] text-text-3">Template</span>
-          {templates.length > 0 ? (
+          {templates.options.length > 0 ? (
             <select
               aria-label="Template"
               value={gammaId}
               onChange={(e) => setGammaId(e.target.value)}
               className={fieldClass}
             >
-              {templates.map((t) => (
-                <option key={t.gammaId} value={t.gammaId}>
-                  {t.name}
+              {templates.options.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.title}
                 </option>
               ))}
             </select>
@@ -321,6 +471,11 @@ function TemplateScreen({
               placeholder="Template gammaId"
               className={fieldClass}
             />
+          )}
+          {templates.failed && (
+            <span className="block text-[12px] text-text-2" role="status">
+              Couldn't load templates — enter a template ID manually.
+            </span>
           )}
         </label>
         <label className="block space-y-1">
@@ -350,8 +505,9 @@ function TemplateScreen({
             className={fieldClass}
           />
         </label>
+
         <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
-          Continue
+          Generate deck
         </Button>
         {!connected && (
           <p className="text-xs text-text-3">
@@ -363,133 +519,104 @@ function TemplateScreen({
   );
 }
 
-function SourceScreen({
-  phase,
-  signalPending,
-  stepOutputs,
-  onSelect,
-}: {
-  phase: StepPhase | undefined;
-  signalPending: boolean;
-  stepOutputs: Record<string, unknown>;
-  onSelect: (noteId: string) => void;
-}) {
-  const notes = readNoteOptions(stepOutputs);
+// ── Per-round preview ───────────────────────────────────────────────────────────
 
-  if (phase !== "awaiting-signal") {
-    return <LoadingState label="Loading calls…" />;
-  }
-
-  return (
-    <Card>
-      <CardTitle>Choose a call</CardTitle>
-      {notes.length === 0 ? (
-        <p className="text-sm text-text-3">No Granola calls available.</p>
-      ) : (
-        <ul className="divide-y divide-border rounded-[10px] border border-border bg-surface">
-          {notes.map((n) => (
-            <li key={n.id}>
-              <button
-                type="button"
-                disabled={signalPending}
-                onClick={() => onSelect(n.id)}
-                className="block w-full px-3 py-2 text-left text-[13px] text-text transition-colors enabled:hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {n.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
-  );
-}
-
-function GenerateScreen({ phase }: { phase: StepPhase | undefined }) {
-  if (phase === "in-flight" || phase === undefined) {
-    return <LoadingState label="Drafting the presentation content…" />;
-  }
-  return <LoadingState label="Drafting complete — preparing review…" />;
-}
-
-function ReviewScreen({
-  phase,
-  stepOutputs,
-  draftPhase,
+function PreviewScreen({
+  round,
   connected,
   signalPending,
-  onApprove,
+  stepOutputs,
+  onSignal,
 }: {
-  phase: StepPhase | undefined;
-  stepOutputs: Record<string, unknown>;
-  draftPhase: StepPhase | undefined;
+  round: number;
   connected: boolean;
   signalPending: boolean;
-  onApprove: () => void;
+  stepOutputs: Record<string, unknown>;
+  onSignal: (name: string, payload: Record<string, unknown>) => void;
 }) {
-  const generate = readGenerate(
-    stepOutputs["brand-review"] ?? stepOutputs["generate"],
-    draftPhase,
-  );
-  const rows = briefRows(stepOutputs);
+  const url = readRenderURL(stepOutputs, round);
+  const safeUrl = isSafePresentationURL(url) ? url : undefined;
+  const canRefine = round < MAX_ROUNDS;
+  const [feedback, setFeedback] = useState("");
+  const disabled = !connected || signalPending;
 
+  // Even when the rendered URL is unusable we keep the controls on screen — the
+  // preview gate is still open server-side, so the user must be able to refine
+  // (regenerate) or, on the last round, approve. Returning only an error here
+  // would strand the run at an unanswerable gate.
   return (
     <div className="space-y-4">
-      {rows.length > 0 && (
+      {safeUrl ? (
+        <DeckFrame url={safeUrl} />
+      ) : (
         <Card>
-          <CardTitle>Brief</CardTitle>
-          <dl className="divide-y divide-border">
-            {rows.map((row) => (
-              <div key={row.label} className="flex gap-3 px-3 py-2">
-                <dt className="w-24 shrink-0 text-[12px] text-text-3">
-                  {row.label}
-                </dt>
-                <dd className="break-words text-[12px] text-text">
-                  {row.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Card>
-      )}
-
-      {generate.kind === "ready" && (
-        <Card>
-          <CardTitle>Draft content</CardTitle>
-          <Markdown>{generate.reply}</Markdown>
-        </Card>
-      )}
-
-      {generate.kind === "malformed" && (
-        <Card>
-          <p className="text-sm text-orange">
-            Couldn't read the draft outline.
-          </p>
-          <p className="mt-1 text-xs text-text-3">
-            The generate step finished but its result was malformed.
+          <p className="text-sm text-text-2">
+            The deck preview couldn't be loaded.{" "}
+            {canRefine
+              ? "Refine to regenerate it, or open it in Gamma if a link is available."
+              : "You can still approve to save this draft, or open it in Gamma."}
           </p>
         </Card>
       )}
-
       <Card>
-        <CardTitle>Review the draft</CardTitle>
-        <p className="mb-4 text-sm text-text-2">
-          Approve the generated content to render the deck in Gamma.
-        </p>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={
-              !connected || signalPending || phase !== "awaiting-signal"
-            }
-            onClick={onApprove}
-          >
-            Approve
-          </Button>
+        <CardTitle>
+          <span className="tabular-nums">
+            Draft {round} of up to {MAX_ROUNDS}
+          </span>
+        </CardTitle>
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={disabled}
+              onClick={() => onSignal(`preview-${round}`, { approved: true })}
+            >
+              Looks good — approve
+            </Button>
+            {safeUrl && (
+              <a
+                href={safeUrl}
+                target="_blank"
+                rel="noreferrer"
+                className={linkButtonClass}
+              >
+                Open in Gamma
+              </a>
+            )}
+          </div>
+          {canRefine ? (
+            <div className="space-y-2">
+              <textarea
+                aria-label="Refine feedback"
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+                rows={3}
+                placeholder="What should change? The next draft will revise from this."
+                className={fieldClass}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={disabled || feedback.trim().length === 0}
+                onClick={() =>
+                  onSignal(`preview-${round}`, {
+                    approved: false,
+                    feedback: feedback.trim(),
+                  })
+                }
+              >
+                Refine with these notes
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-text-3">
+              This is the final draft — approve to save it.
+            </p>
+          )}
           {!connected && (
             <p className="text-xs text-text-3">
-              Reconnecting — approval unavailable.
+              Reconnecting — input unavailable.
             </p>
           )}
         </div>
@@ -498,60 +625,40 @@ function ReviewScreen({
   );
 }
 
-function RenderScreen({
-  phase,
+function DoneScreen({
+  round,
   stepOutputs,
   onClose,
 }: {
-  phase: StepPhase | undefined;
+  round: number;
   stepOutputs: Record<string, unknown>;
   onClose: () => void;
 }) {
-  if (phase === "in-flight" || phase === undefined) {
-    return <LoadingState label="Rendering the deck in Gamma…" />;
-  }
-
-  const gammaURL = readGammaURL(stepOutputs);
-
-  if (!isSafePresentationURL(gammaURL)) {
-    if (phase === "completed") {
-      return (
-        <Card>
-          <p className="text-sm text-orange">
-            Presentation URL is invalid or unavailable.
-          </p>
-        </Card>
-      );
-    }
-    return <LoadingState label="Rendering the deck in Gamma…" />;
-  }
-
+  const url = readRenderURL(stepOutputs, round);
   return (
     <div className="space-y-4">
-      <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
-        <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-          <iframe
-            src={gammaURL}
-            allow="fullscreen"
-            sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-            className="absolute inset-0 h-full w-full border-0"
-            title="Generated Gamma presentation"
-          />
+      {isSafePresentationURL(url) && <DeckFrame url={url} />}
+      <Card>
+        <p className="text-sm font-medium text-text">Saved to workbench</p>
+        <p className="mt-1 text-sm text-text-3">
+          The approved deck is saved as a presentation artifact.
+        </p>
+        <div className="mt-4 flex items-center gap-3">
+          {isSafePresentationURL(url) && (
+            <a
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className={linkButtonClass}
+            >
+              Open in Gamma
+            </a>
+          )}
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
         </div>
-      </div>
-      <div className="flex gap-3">
-        <a
-          href={gammaURL}
-          target="_blank"
-          rel="noreferrer"
-          className="btn-primary block flex-1 text-center"
-        >
-          Open in Gamma
-        </a>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -562,18 +669,72 @@ export function Panel(props: WorkflowPanelProps) {
   const { state, connected, signalPending, stepOutputs, onSignal, onClose } =
     props;
   const failed = state?.phase === "failed";
-  const current = activeStep(state);
   const liveLabel = liveStatusLabel(state, DISPLAY_STEPS);
 
+  const done = persistedRound(state, stepOutputs);
+  const previewRound = awaitingPreviewRound(state);
+  const intakeAwaiting = phaseFor(state, "intake") === "awaiting-signal";
+  const group = activeDisplayStep(state, DISPLAY_STEPS)?.key;
+
+  function body(): ReactNode {
+    if (failed) {
+      return (
+        <Card>
+          <p className="text-sm font-medium text-text">Generation failed</p>
+          <p className="mt-1 text-sm text-text-3">
+            The deck could not be generated. Close this run and start a new one
+            to try again.
+          </p>
+          <div className="mt-4">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </Card>
+      );
+    }
+    if (done !== undefined) {
+      return (
+        <DoneScreen round={done} stepOutputs={stepOutputs} onClose={onClose} />
+      );
+    }
+    if (previewRound !== undefined) {
+      return (
+        <PreviewScreen
+          round={previewRound}
+          connected={connected}
+          signalPending={signalPending}
+          stepOutputs={stepOutputs}
+          onSignal={onSignal}
+        />
+      );
+    }
+    if (intakeAwaiting) {
+      return (
+        <IntakeScreen
+          phase={phaseFor(state, "intake")}
+          connected={connected}
+          signalPending={signalPending}
+          stepOutputs={stepOutputs}
+          onSubmit={(payload) => onSignal("intake", payload)}
+        />
+      );
+    }
+    if (group === "draft") {
+      return <LoadingState label="Building the deck in Gamma…" />;
+    }
+    return <LoadingState label="Loading sources…" />;
+  }
+
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <h2 className="text-base font-medium text-text">
             Gamma Presentation
           </h2>
           <p className="text-xs text-text-3">
-            Build a Gamma deck from a Granola call
+            Turn an artifact, call, or pasted text into a deck
           </p>
         </div>
         <Button
@@ -589,50 +750,7 @@ export function Panel(props: WorkflowPanelProps) {
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />
 
-      <div className="flex-1 overflow-y-auto p-6">
-        {failed ? (
-          <Card>
-            <p className="text-sm font-medium text-text">Generation failed</p>
-            <p className="mt-1 text-sm text-text-3">
-              The deck could not be generated. Start a new run to try again.
-            </p>
-          </Card>
-        ) : current === "template" ? (
-          <TemplateScreen
-            phase={phaseFor(state, "template")}
-            connected={connected}
-            signalPending={signalPending}
-            stepOutputs={stepOutputs}
-            onSubmit={(payload) => onSignal("template", payload)}
-          />
-        ) : current === "source" ? (
-          <SourceScreen
-            phase={phaseFor(state, "source-selection")}
-            signalPending={signalPending}
-            stepOutputs={stepOutputs}
-            onSelect={(noteId) => onSignal("source-selection", { noteId })}
-          />
-        ) : current === "generate" ? (
-          <GenerateScreen phase={phaseFor(state, "generate")} />
-        ) : current === "review" ? (
-          <ReviewScreen
-            phase={phaseFor(state, "review")}
-            stepOutputs={stepOutputs}
-            draftPhase={
-              phaseFor(state, "brand-review") ?? phaseFor(state, "generate")
-            }
-            connected={connected}
-            signalPending={signalPending}
-            onApprove={() => onSignal("review-approval", { approved: true })}
-          />
-        ) : (
-          <RenderScreen
-            phase={phaseFor(state, "render")}
-            stepOutputs={stepOutputs}
-            onClose={onClose}
-          />
-        )}
-      </div>
+      <div className="flex-1 overflow-y-auto p-6">{body()}</div>
     </div>
   );
 }
