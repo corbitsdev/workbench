@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import ArtifactBody from "./ArtifactBody";
 
@@ -134,6 +134,48 @@ describe("ArtifactBody rendering", () => {
     expect(link.getAttribute("href")).toMatch(
       /\/api\/v1\/artifacts\/art-9\/download$/,
     );
+  });
+
+  it("renders web artifacts in a sandboxed iframe with a full-screen toggle", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          content:
+            "<!doctype html><html><body><h1>Pitch deck</h1></body></html>",
+          kind: "web",
+        },
+      }),
+    );
+
+    const frame = screen.getByTitle(
+      "Web artifact preview",
+    ) as HTMLIFrameElement;
+    expect(frame.getAttribute("srcdoc")).toContain("Pitch deck");
+    expect(frame.getAttribute("sandbox")).toContain("allow-scripts");
+    // Null-origin isolation plus no popup/form escape hatches (see WebBody).
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-popups");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-forms");
+
+    fireEvent.click(screen.getByRole("button", { name: /open full screen/i }));
+    screen.getByRole("dialog", { name: /web artifact full screen preview/i });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /open full screen/i }));
+    screen.getByRole("dialog", { name: /web artifact full screen preview/i });
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows an empty state instead of a blank iframe for a contentless web artifact", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: { content: "   ", kind: "web" },
+      }),
+    );
+    expect(screen.queryByTitle("Web artifact preview")).toBeNull();
+    screen.getByText(/no content to preview/i);
   });
 
   it("renders unrecognized kinds with the document fallback", () => {

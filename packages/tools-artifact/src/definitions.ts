@@ -37,7 +37,7 @@ export const ARTIFACT_CREATE_DEFINITION: ToolDefinition = {
       kind: {
         type: "string",
         description:
-          "Artifact kind, such as document, email, memo, article, essay, or note.",
+          "Artifact kind, such as document, email, memo, article, essay, note, or web for a single-file HTML artifact with built-in CSS and JS.",
       },
       content: {
         type: "string",

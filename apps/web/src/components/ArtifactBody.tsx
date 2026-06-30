@@ -1,4 +1,5 @@
 import { usesSocialPostPreview } from "@workbench/artifact";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
 import PresentationBody from "./PresentationBody";
@@ -139,6 +140,138 @@ function FileBody({
   );
 }
 
+// Untrusted, model-generated HTML: render in a null-origin sandbox (no
+// `allow-same-origin`, so it can't reach the app's cookies/storage/DOM). Only
+// `allow-scripts` is granted — `allow-popups`/`allow-forms` are withheld so the
+// content can't open phishing tabs or POST to exfiltrate; a static preview
+// needs neither.
+const WEB_ARTIFACT_SANDBOX = "allow-scripts";
+const FOCUSABLE =
+  'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+function WebFrame({ html }: { html: string }) {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => setLoaded(false), [html]);
+  return (
+    <div className="relative h-full w-full">
+      <iframe
+        srcDoc={html}
+        title="Web artifact preview"
+        sandbox={WEB_ARTIFACT_SANDBOX}
+        onLoad={() => setLoaded(true)}
+        className="h-full w-full border-0 bg-white"
+      />
+      {loaded ? null : (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-surface text-sm text-text-3">
+          Loading preview…
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WebBody({ html }: { html: string }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  // Lock background scroll and restore focus to the trigger on close, so the
+  // `aria-modal` contract the dialog advertises is actually enforced.
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const trigger = triggerRef.current;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsFullscreen(false);
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      trigger?.focus();
+    };
+  }, [isFullscreen]);
+
+  // Move focus into the dialog when it opens (synchronously, pre-paint).
+  useLayoutEffect(() => {
+    if (!isFullscreen || !dialogRef.current) return;
+    const items = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+    (items[0] ?? dialogRef.current).focus();
+  }, [isFullscreen]);
+
+  function trapTab(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || !dialogRef.current) return;
+    const items = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+    if (items.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = items[0]!;
+    const last = items[items.length - 1]!;
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  if (html.trim().length === 0) {
+    return (
+      <div className="rounded border border-border bg-surface-2/40 px-4 py-8 text-center text-sm text-text-3">
+        This web artifact has no content to preview yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded border border-border bg-surface">
+        <div className="h-[60vh] max-h-[640px] min-h-[360px] w-full">
+          <WebFrame html={html} />
+        </div>
+      </div>
+      <div className="text-right">
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setIsFullscreen(true)}
+          className="rounded border border-border px-3 py-1.5 text-xs text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.98]"
+        >
+          Open full screen &rarr;
+        </button>
+      </div>
+      {isFullscreen ? (
+        <div
+          ref={dialogRef}
+          onKeyDown={trapTab}
+          tabIndex={-1}
+          className="fixed inset-0 z-50 flex flex-col bg-surface"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Web artifact full screen preview"
+        >
+          <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
+            <span className="text-sm font-medium text-text">Web preview</span>
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(false)}
+              className="rounded border border-border px-3 py-1.5 text-sm text-text-2 transition-colors hover:bg-surface-2 hover:text-text active:scale-[0.98]"
+            >
+              Close
+            </button>
+          </div>
+          <div className="min-h-0 flex-1">
+            <WebFrame html={html} />
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
@@ -168,6 +301,9 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       }
       return <CsvExportBody body={body} artifactId={artifact.id} />;
     }
+    // single-file HTML app or landing page
+    case "web":
+      return <WebBody html={body} />;
     // email
     case "email":
     case "follow-up-email":
