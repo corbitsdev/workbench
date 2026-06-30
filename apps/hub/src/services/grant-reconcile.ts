@@ -14,6 +14,7 @@ import {
   persistInstanceGrantRequirements,
   type GrantRequirementRow,
 } from "./agent-provisioning";
+import { isInRelaunchCooldown } from "./relaunch-breaker";
 
 const { agent, agentInstance, grant } = intxSchema;
 const log = getLogger("grant-reconcile");
@@ -232,7 +233,8 @@ export type PersonalAgentSyncReason =
   | "instance_ended"
   | "missing_org_agent"
   | "tool_grant_drift"
-  | "org_template_newer";
+  | "org_template_newer"
+  | "recent_launch_failure";
 
 export type PersonalAgentSyncAssessment = {
   available: boolean;
@@ -246,6 +248,13 @@ export async function assessPersonalAgentSync(
 ): Promise<PersonalAgentSyncAssessment> {
   if (!paInstanceId) {
     return { available: true, reason: "no_myra_instance" };
+  }
+
+  // A launch for this instance just failed; suppress the sync recommendation
+  // until the breaker's cooldown elapses so the client's poll loop stops
+  // re-firing POST /v1/me into a wedged launch (CL-2407).
+  if (isInRelaunchCooldown(paInstanceId)) {
+    return { available: false, reason: "recent_launch_failure" };
   }
 
   const instance = await db.query.agentInstance.findFirst({

@@ -62,6 +62,10 @@ import {
   launchAgentSession,
   relaunchInstanceIfNeeded,
 } from "./agent-provisioning";
+import {
+  resetRelaunchBreaker,
+  setRelaunchBreakerClock,
+} from "./relaunch-breaker";
 
 const mockSessionService: SessionService = {
   launchSession: mock(() => Promise.resolve()),
@@ -241,6 +245,105 @@ describe("relaunchInstanceIfNeeded", () => {
     );
 
     expect(launchSession).not.toHaveBeenCalled();
+  });
+
+  it("bounds launch attempts across repeated polls while launch keeps failing", async () => {
+    resetRelaunchBreaker();
+    let nowMs = 10_000_000;
+    setRelaunchBreakerClock(() => nowMs);
+
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(coldInstance()),
+    );
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve(AGENT_WITH_REQUIREMENT),
+    );
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // Non-retryable so each launchAgentSession maps to exactly one launchSession
+    // call (no internal retry/backoff sleeps) — keeps the assertion at the
+    // relaunch granularity the breaker bounds.
+    const launchSession = mock(() =>
+      Promise.reject(
+        new SessionLaunchError(
+          "provision",
+          new Error("launch keeps failing"),
+          false,
+        ),
+      ),
+    );
+    const sessionService = { ...mockSessionService, launchSession };
+
+    // 100 client polls, 1s apart. Without the breaker this launches 100 times;
+    // with it, the failure cooldown bounds attempts to the backoff tiers.
+    for (let i = 0; i < 100; i++) {
+      nowMs += 1_000;
+      await relaunchInstanceIfNeeded(
+        db as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        "ins-1",
+        makeSidecarRouter() as never,
+      ).catch(() => {});
+    }
+
+    expect(launchSession.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(launchSession.mock.calls.length).toBeLessThanOrEqual(5);
+    resetRelaunchBreaker();
+  });
+
+  it("coalesces concurrent relaunches onto a single launch", async () => {
+    resetRelaunchBreaker();
+
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(coldInstance()),
+    );
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve(AGENT_WITH_REQUIREMENT),
+    );
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    let resolveLaunch: () => void = () => {};
+    const launchSession = mock(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveLaunch = resolve;
+        }),
+    );
+    const sessionService = { ...mockSessionService, launchSession };
+
+    const a = relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      "ins-1",
+      makeSidecarRouter() as never,
+    );
+    const b = relaunchInstanceIfNeeded(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      "ins-1",
+      makeSidecarRouter() as never,
+    );
+
+    // Let both calls' async guard chains resolve and reach the coalescing
+    // point (a macrotask flush drains the immediately-resolved db-mock awaits).
+    await new Promise((r) => setTimeout(r, 0));
+    expect(launchSession).toHaveBeenCalledTimes(1);
+
+    resolveLaunch();
+    await Promise.all([a, b]);
+    resetRelaunchBreaker();
   });
 });
 
