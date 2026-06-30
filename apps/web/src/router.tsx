@@ -1,9 +1,11 @@
+import { useState } from "react";
 import {
   createBrowserRouter,
   Navigate,
   Outlet,
   useLocation,
 } from "react-router";
+import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
@@ -94,14 +96,42 @@ function ProtectedLayout() {
 }
 
 function AppShell() {
+  // Drawer state only drives the mobile layout; at desktop widths the sidebar
+  // is a static column and ignores `mobileOpen` (see AppSidebar's max-md: rules).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
     <ActiveWorkbenchProvider>
       <ChatLauncherProvider>
         <CommandPaletteProvider>
           <ActiveContextProvider>
             <div className="flex h-screen flex-row bg-page">
-              <AppSidebar />
-              <div className="flex flex-1 flex-col overflow-hidden">
+              <AppSidebar
+                mobileOpen={drawerOpen}
+                onNavigate={() => setDrawerOpen(false)}
+              />
+              {drawerOpen && (
+                <button
+                  type="button"
+                  aria-label="Close menu"
+                  onClick={() => setDrawerOpen(false)}
+                  className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                />
+              )}
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setDrawerOpen(true)}
+                    aria-label="Open menu"
+                    className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
+                  >
+                    <Menu size={20} />
+                  </button>
+                  <span className="text-sm font-semibold text-text">
+                    Workbench
+                  </span>
+                </header>
                 <main className="flex-1 overflow-hidden">
                   <Outlet />
                 </main>
