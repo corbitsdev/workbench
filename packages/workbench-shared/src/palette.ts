@@ -31,11 +31,12 @@ export const PaletteSearchResponseSchema = type({
 });
 export type PaletteSearchResponse = typeof PaletteSearchResponseSchema.infer;
 
-export interface FuzzyMatchResult {
-  score: number;
-  /** Character indices in the matched text, ascending, for highlight. */
-  indices: number[];
-}
+export const FuzzyMatchResultSchema = type({
+  score: "number",
+  // Character indices in the matched text, ascending, for highlight.
+  indices: "number[]",
+});
+export type FuzzyMatchResult = typeof FuzzyMatchResultSchema.infer;
 
 const CONSECUTIVE_BONUS = 4;
 const WORD_BOUNDARY_BONUS = 6;
@@ -80,12 +81,14 @@ export function fuzzyMatch(
   return { score, indices };
 }
 
-export interface RankedPaletteItem {
-  item: PaletteResultItem;
-  /** Indices into `item.title` to highlight; empty when matched only on subtitle/keywords. */
-  titleIndices: number[];
-  score: number;
-}
+export const RankedPaletteItemSchema = type({
+  item: PaletteResultItemSchema,
+  // Indices into `item.title` to highlight; empty when matched only on
+  // subtitle/keywords.
+  titleIndices: "number[]",
+  score: "number",
+});
+export type RankedPaletteItem = typeof RankedPaletteItemSchema.infer;
 
 /**
  * Rank items against a query. An empty query returns every item unranked (score

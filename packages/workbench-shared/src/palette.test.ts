@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import {
+  FuzzyMatchResultSchema,
   PaletteResultItemSchema,
+  RankedPaletteItemSchema,
   fuzzyMatch,
   rankPaletteItems,
   type PaletteResultItem,
@@ -22,6 +24,38 @@ describe("PaletteResultItemSchema", () => {
       category: "spaceship",
       title: "X",
       to: "/x",
+    });
+    expect(bad instanceof type.errors).toBe(true);
+  });
+});
+
+describe("FuzzyMatchResultSchema", () => {
+  test("accepts a well-formed result", () => {
+    const ok = FuzzyMatchResultSchema({ score: 7, indices: [0, 1] });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("rejects a non-numeric index array", () => {
+    const bad = FuzzyMatchResultSchema({ score: 7, indices: ["0"] });
+    expect(bad instanceof type.errors).toBe(true);
+  });
+});
+
+describe("RankedPaletteItemSchema", () => {
+  test("accepts a ranked item wrapping a valid palette item", () => {
+    const ok = RankedPaletteItemSchema({
+      item: { id: "a", category: "navigation", title: "X", to: "/x" },
+      titleIndices: [0],
+      score: 12,
+    });
+    expect(ok instanceof type.errors).toBe(false);
+  });
+
+  test("rejects a ranked item whose nested item is malformed", () => {
+    const bad = RankedPaletteItemSchema({
+      item: { id: "a", category: "spaceship", title: "X", to: "/x" },
+      titleIndices: [0],
+      score: 12,
     });
     expect(bad instanceof type.errors).toBe(true);
   });

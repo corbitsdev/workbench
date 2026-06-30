@@ -1188,6 +1188,9 @@
     },
     "packages/workbench-shared": {
       "name": "@workbench/shared",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
