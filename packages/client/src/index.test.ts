@@ -13,6 +13,10 @@ import {
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
+// A well-formed empty `GET /artifacts` page. listArtifacts now validates its
+// response, so URL-construction tests must return a parseable page body.
+const emptyArtifactsPage = { artifacts: [], nextCursor: null };
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -44,7 +48,9 @@ describe("@workbench/client request construction", () => {
   });
 
   it("builds the artifacts URL under the api/v1 prefix against the provided baseUrl", async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
 
     await listArtifacts({ baseUrl: "http://localhost:4000", fetch: fetcher });
 
@@ -213,7 +219,9 @@ describe("@workbench/client request construction", () => {
   });
 
   it("appends a url-encoded tenantId query param for artifacts", async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
 
     await listArtifacts(
       { baseUrl: "http://localhost:4000", fetch: fetcher },
@@ -226,7 +234,9 @@ describe("@workbench/client request construction", () => {
   });
 
   it("omits the query string when tenantId is null or absent", async () => {
-    const { spy, fetcher } = makeFetch(() => Promise.resolve(jsonResponse([])));
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
 
     await listArtifacts(
       { baseUrl: "http://localhost:4000", fetch: fetcher },
@@ -356,17 +366,52 @@ describe("@workbench/client response and error handling", () => {
   });
 
   it("uses the global fetch when no custom fetch is supplied", async () => {
-    const page = { artifacts: [{ id: "a" }], nextCursor: null };
+    const page = {
+      artifacts: [
+        {
+          id: "a",
+          sessionId: null,
+          parentId: null,
+          painPointId: null,
+          kind: "link",
+          title: "T",
+          content: "C",
+          status: "draft",
+          version: 1,
+          ownerPrincipalId: "prn-1",
+          createdAt: "2026-06-26T00:00:00.000Z",
+          updatedAt: "2026-06-26T00:00:00.000Z",
+          source: { origin: "imported" },
+          sessionName: null,
+          sessionStatus: "done",
+          ownerName: null,
+        },
+      ],
+      nextCursor: null,
+    };
     const globalSpy = mock(() => Promise.resolve(jsonResponse(page)));
     globalThis.fetch = Object.assign(globalSpy, {
       preconnect: mock(() => {}),
     }) as typeof fetch;
 
-    const result: unknown = await listArtifacts({
+    const result = await listArtifacts({
       baseUrl: "http://localhost:4000",
     });
 
     expect(globalSpy).toHaveBeenCalledTimes(1);
-    expect(result).toEqual(page);
+    expect(result.artifacts[0]?.id).toBe("a");
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("throws when the /artifacts page fails schema validation", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ artifacts: [{ id: "a" }], nextCursor: null }),
+      ),
+    );
+
+    await expect(
+      listArtifacts({ baseUrl: "http://localhost:4000", fetch: fetcher }),
+    ).rejects.toThrow(/Invalid \/artifacts response/);
   });
 });

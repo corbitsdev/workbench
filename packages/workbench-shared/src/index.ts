@@ -107,7 +107,7 @@ export type ArtifactWithVersions = Artifact & { versions: ArtifactVersion[] };
  */
 export type ArtifactWithSession = Artifact & {
   sessionName: string | null;
-  sessionStatus: SessionStatus;
+  sessionStatus: SessionStatus | null;
   ownerName: string | null;
 };
 
