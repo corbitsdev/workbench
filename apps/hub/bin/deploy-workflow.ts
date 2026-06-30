@@ -194,7 +194,7 @@ export function resolveWorkflowEntry(kind: string): string {
   return resolve(pkgDir, entry);
 }
 
-interface LoadedWorkflow {
+export interface LoadedWorkflow {
   definition: unknown;
   label?: string;
   description?: string;
@@ -207,7 +207,7 @@ function readStringExport(mod: object, key: string): string | undefined {
     : undefined;
 }
 
-async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
+export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   const entry = resolveWorkflowEntry(kind);
   const mod: unknown = await import(entry);
   if (typeof mod !== "object" || mod === null || !("workflow" in mod)) {

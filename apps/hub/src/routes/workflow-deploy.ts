@@ -207,6 +207,112 @@ export function createWorkflowDeployGrantGuard(deps: {
   };
 }
 
+// Thrown when the target tenant has no `user` principal to deploy as. The
+// route maps it to 409; the boot bootstrap (CL-2593) treats it as a skip.
+export class NoDeployingPrincipalError extends Error {
+  constructor(tenantId: string) {
+    super(`no deploying principal in tenant ${tenantId}`);
+    this.name = "NoDeployingPrincipalError";
+  }
+}
+
+// Parse the optional deploy-time meta (version, sha, deployedAt, label,
+// description). Absent or malformed → null. Shared by the HTTP handler (reads
+// it off the `?meta=` query the CLI sends) and the boot bootstrap.
+export function parseDeployMeta(
+  raw: string | undefined,
+): typeof WorkflowMeta.infer | null {
+  if (raw === undefined || raw === "") return null;
+  try {
+    const parsed = WorkflowMeta(JSON.parse(raw));
+    return parsed instanceof type.errors ? null : parsed;
+  } catch {
+    return null;
+  }
+}
+
+// Commit a validated workflow definition to the registry and launch it: resolve
+// the deploying principal, build the deploy config, hand it to the orchestrator
+// (which writes the git-backed `workflow` repo + sends the deploy frames),
+// index the `workflow_run` row, and supersede prior deployments of this
+// (kind, tenant). Extracted from the HTTP handler so the boot bootstrap
+// (CL-2593) can publish embedded defs through the exact same path.
+export async function publishWorkflowDefinition(
+  deps: WorkflowDeployCoreDeps,
+  args: {
+    definition: WorkflowDefinition;
+    targetTenantId: string;
+    deployMeta: typeof WorkflowMeta.infer | null;
+  },
+): Promise<{
+  deploymentId: string;
+  result: Awaited<ReturnType<WorkflowDeployService["deployWorkflow"]>>;
+}> {
+  const { definition, targetTenantId, deployMeta } = args;
+  const owner = await deps.db.query.principal.findFirst({
+    where: and(
+      eq(intxSchema.principal.tenantId, targetTenantId),
+      eq(intxSchema.principal.kind, "user"),
+    ),
+  });
+  if (!owner) throw new NoDeployingPrincipalError(targetTenantId);
+
+  const { deploymentId, config, deployContent } =
+    await resolveWorkflowDeployConfig({
+      db: deps.db,
+      tenantId: targetTenantId,
+      principalId: owner.id,
+      deploymentDomain: deps.deploymentDomain,
+      definition,
+    });
+
+  const result = await deps.workflowDeployService.deployWorkflow({
+    // Validated envelope; the orchestrator (deployWorkflow → validateWorkflowDefinition)
+    // re-runs full definition validation before launch.
+    workflow: definition,
+    deploymentId,
+    deploymentDomain: deps.deploymentDomain,
+    tenantId: targetTenantId,
+    creatorPrincipalId: owner.id,
+    config,
+    deployContent,
+    hubPublicKey: deps.hubPublicKey,
+  });
+
+  // Index the deployment so the user-facing /workflow-runs routes can list it
+  // by tenant without re-walking the workflow-run repos.
+  await deps.db.insert(workflowRun).values({
+    deploymentId,
+    tenantId: targetTenantId,
+    principalId: owner.id,
+    kind: definition.id,
+    status: "running",
+    ...(deployMeta !== null ? { meta: deployMeta } : {}),
+  });
+
+  // Redeploy supersedes: the newest deploy of a (kind, tenant) is the only
+  // active one. Mark every prior active deployment of this kind in this tenant
+  // deleted and tear it down. Best-effort — a supersede failure on an old
+  // deployment must never fail the new deploy, so the block is guarded.
+  await supersedePriorDeployments({
+    db: deps.db,
+    sessionService: deps.sessionService,
+    deploymentDomain: deps.deploymentDomain,
+    kind: definition.id,
+    tenantId: targetTenantId,
+    newDeploymentId: deploymentId,
+  }).catch((err) => {
+    log.warn("workflow redeploy supersede failed", {
+      kind: definition.id,
+      tenantId: targetTenantId,
+      newDeploymentId: deploymentId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+
+  return { deploymentId, result };
+}
+
 // The deploy handler body, independent of the auth path. Validates the posted
 // @intx/workflow definition, resolves the tenant deploy config, and hands it to
 // the orchestrator, which commits the definition to its git-backed `workflow`
@@ -256,93 +362,23 @@ export function deployWorkflowHandler(
       targetTenantId = targetTenant.id;
     }
 
-    // Deploying principal: a user principal of the target tenant. Per-step
-    // execution principals are derived by the orchestrator.
-    const owner = await deps.db.query.principal.findFirst({
-      where: and(
-        eq(intxSchema.principal.tenantId, targetTenantId),
-        eq(intxSchema.principal.kind, "user"),
-      ),
-    });
-    if (!owner) {
-      return c.json(
-        { error: "no deploying principal in the target tenant" },
-        409,
-      );
-    }
+    // Optional deploy-time meta (version, sha, deployedAt) the CLI sends.
+    const deployMeta = parseDeployMeta(c.req.query("meta"));
 
     try {
-      const { deploymentId, config, deployContent } =
-        await resolveWorkflowDeployConfig({
-          db: deps.db,
-          tenantId: targetTenantId,
-          principalId: owner.id,
-          deploymentDomain: deps.deploymentDomain,
-          definition: definition as WorkflowDefinition,
-        });
-
-      const result = await deps.workflowDeployService.deployWorkflow({
-        // Validated envelope; the orchestrator (deployWorkflow → validateWorkflowDefinition)
-        // re-runs full definition validation before launch.
-        workflow: definition as WorkflowDefinition,
-        deploymentId,
-        deploymentDomain: deps.deploymentDomain,
-        tenantId: targetTenantId,
-        creatorPrincipalId: owner.id,
-        config,
-        deployContent,
-        hubPublicKey: deps.hubPublicKey,
+      const { deploymentId, result } = await publishWorkflowDefinition(deps, {
+        definition: definition as WorkflowDefinition,
+        targetTenantId,
+        deployMeta,
       });
-
-      // Parse optional deploy-time meta (version, sha, deployedAt) from the
-      // query param the deploy-workflow CLI sends. Absent or malformed → null.
-      let deployMeta: typeof WorkflowMeta.infer | null = null;
-      const rawMeta = c.req.query("meta");
-      if (rawMeta !== undefined && rawMeta !== "") {
-        try {
-          const parsed = WorkflowMeta(JSON.parse(rawMeta));
-          if (!(parsed instanceof type.errors)) {
-            deployMeta = parsed;
-          }
-        } catch {
-          // ignore — old callers won't send meta
-        }
-      }
-
-      // Index the deployment so the user-facing /workflow-runs routes can list it
-      // by tenant without re-walking the workflow-run repos.
-      await deps.db.insert(workflowRun).values({
-        deploymentId,
-        tenantId: targetTenantId,
-        principalId: owner.id,
-        kind: definition.id,
-        status: "running",
-        ...(deployMeta !== null ? { meta: deployMeta } : {}),
-      });
-
-      // Redeploy supersedes: the newest deploy of a (kind, tenant) is the only
-      // active one. Mark every prior active deployment of this kind in this
-      // tenant deleted and tear it down. Best-effort — a supersede failure on an
-      // old deployment must never fail the new deploy, so the whole block is
-      // guarded and only logs.
-      await supersedePriorDeployments({
-        db: deps.db,
-        sessionService: deps.sessionService,
-        deploymentDomain: deps.deploymentDomain,
-        kind: definition.id,
-        tenantId: targetTenantId,
-        newDeploymentId: deploymentId,
-      }).catch((err) => {
-        log.warn("workflow redeploy supersede failed", {
-          kind: definition.id,
-          tenantId: targetTenantId,
-          newDeploymentId: deploymentId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-
       return c.json({ kind: definition.id, deploymentId, result });
     } catch (err) {
+      if (err instanceof NoDeployingPrincipalError) {
+        return c.json(
+          { error: "no deploying principal in the target tenant" },
+          409,
+        );
+      }
       const error = err instanceof Error ? err : new Error(String(err));
       log.error(
         `workflow deploy failed for kind ${definition.id} in tenant ${targetTenantId}: ${error.message}`,

@@ -2,3 +2,6 @@ bun.lock
 dist
 interchange
 temporary
+# Build-generated workflow defs (deterministic output of build:workflow-defs);
+# prettier would reformat arrays and fight the generator + drift test (CL-2593).
+apps/hub/generated

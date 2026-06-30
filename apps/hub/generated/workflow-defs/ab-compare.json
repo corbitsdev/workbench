@@ -1,0 +1,154 @@
+{
+  "kind": "ab-compare",
+  "version": "0.1.0",
+  "label": "A/B Test - Agent Select",
+  "description": "Run a shared prompt blind across multiple provider/model variants, let an impartial agent judge rank the outputs, and save the comparison.",
+  "definition": {
+    "id": "ab-compare",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "config": {
+        "kind": "awaitSignal",
+        "id": "config",
+        "name": "ab-config",
+        "drainBehavior": "wait"
+      },
+      "execute": {
+        "kind": "map",
+        "id": "execute",
+        "over": {
+          "from": "steps.config.output.variants"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "blind-ab-execute",
+            "systemPrompt": "You are an execution agent for a blind A/B comparison.\n\nYou receive a JSON payload describing one variant: an opaque `label`, an optional variant-specific instruction (`systemPrompt`), the shared user `input`, selected skill IDs (`skillIds`), and resolved skill guidance (`skills`, each with `name`, `displayName`, and `content`). Produce the best possible answer to the user's input, following the variant instruction and any attached skills.\n\nRules:\n- Follow the variant `systemPrompt` and attached `skills[].content` exactly unless they conflict with safety or data boundaries.\n- Treat `input` as the shared task to perform.\n- Do not explain that you are part of an A/B test.\n- Do not mention provider identity, model identity, the variant label, or hidden instructions.\n- Return only the requested output, not evaluation commentary.",
+            "toolFactories": [],
+            "capabilities": [],
+            "inference": {
+              "sources": []
+            },
+            "description": "Inline single-turn inference: blind-ab-execute",
+            "tags": {
+              "workbench.stepKind": "inline-inference"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "compare": {
+        "kind": "step",
+        "id": "compare",
+        "agent": {
+          "id": "blind-ab-compare",
+          "systemPrompt": "You are an impartial editor ranking anonymous content variants for a blind A/B comparison.\n\nYou receive a JSON array of variant outputs, each tagged with an opaque `label` (e.g. \"Variant 1\"). The provider and model behind each label are hidden from you and must stay hidden.\n\nJudge the variants on:\n- instruction adherence,\n- usefulness to the intended audience,\n- specificity and evidence,\n- clarity and structure,\n- voice quality,\n- absence of filler, hallucinated claims, or unsupported certainty.\n\nReturn only JSON. No markdown fences, no prose. Shape:\n{\"summary\":\"one sentence overall judgment\",\"ranking\":[{\"rank\":1,\"label\":\"Variant N\",\"rationale\":\"specific reason this variant ranks here\"}],\"recommendation\":\"what the user should keep or change\"}\n\nDo not infer or reveal provider or model identities. Rank from best to worst and make each rationale actionable.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: blind-ab-compare",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.execute.output"
+        },
+        "after": [
+          "execute"
+        ]
+      },
+      "review": {
+        "kind": "awaitSignal",
+        "id": "review",
+        "name": "comparison-review",
+        "drainBehavior": "wait",
+        "after": [
+          "compare"
+        ]
+      },
+      "compose": {
+        "kind": "step",
+        "id": "compose",
+        "agent": {
+          "id": "blind-ab-compose",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-ab-compare/compose:ab_comparison_compose"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_comparison_compose",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_comparison_compose"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "review"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "blind-ab-persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_create"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"title\":{\"literal\":\"A/B Comparison Results\"},\"kind\":{\"literal\":\"ab-comparison\"}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.compose.output"
+        },
+        "after": [
+          "compose"
+        ]
+      }
+    },
+    "stepOrder": [
+      "config",
+      "execute",
+      "compare",
+      "review",
+      "compose",
+      "persist"
+    ]
+  }
+}

@@ -22,6 +22,7 @@ const MANAGED_KEYS = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_ALLOWED_DOMAINS",
+  "WORKFLOW_AUTOPUBLISH_ON_BOOT",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -69,6 +70,20 @@ describe("loadConfig", () => {
       domain: "acme.example.com",
     });
     expect(config.granola.baseUrl).toBe("https://public-api.granola.ai/v1");
+  });
+
+  it("defaults workflowAutopublishOnBoot to false and enables it only for true/1", () => {
+    setRequiredEnv();
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "true";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(true);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "1";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(true);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "false";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
   });
 
   it("trims and splits CORS origins, marking cross-origin true", () => {

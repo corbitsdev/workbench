@@ -67,6 +67,7 @@ import {
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
@@ -1136,6 +1137,20 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   deploymentDomain: config.rootTenant.domain,
   rootTenantId,
 };
+
+// CL-2593: auto-publish the build-serialized workflow defs to the global tenant
+// on boot, gated by WORKFLOW_AUTOPUBLISH_ON_BOOT (default off). Detached so a
+// slow publish never blocks startup; the bootstrap is fail-safe per def.
+void publishEmbeddedWorkflowDefs({
+  coreDeps: workflowDeployCoreDeps,
+  repoStore,
+  enabled: config.workflowAutopublishOnBoot,
+  buildSha: config.buildSha,
+}).catch((err) => {
+  log.error("workflow autopublish-on-boot failed", {
+    error: err instanceof Error ? err.message : String(err),
+  });
+});
 
 v1.post(
   "/workflows/deploy",

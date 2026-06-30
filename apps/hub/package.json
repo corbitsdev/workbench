@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build:workflow-defs": "bun run bin/build-workflow-defs.ts",
+    "build": "bun run build:workflow-defs && bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "start": "bun run dist/index.js",
     "test": "bun test --isolate",

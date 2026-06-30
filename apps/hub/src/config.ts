@@ -20,6 +20,11 @@ function parseOrigins(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseBooleanEnv(name: string): boolean {
+  const value = process.env[name];
+  return value === "true" || value === "1";
+}
+
 export function loadConfig() {
   const isDev = process.env["NODE_ENV"] !== "production";
 
@@ -94,6 +99,10 @@ export function loadConfig() {
     // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
     // Absent in local dev — null is the correct value there.
     buildSha: optionalEnv("RAILWAY_GIT_COMMIT_SHA") ?? null,
+    // When true, the hub publishes its embedded (build-serialized) workflow
+    // definitions to the global tenant on boot (CL-2593). Default false — an
+    // opt-in kill switch; off restores the manual `deploy-workflow` flow.
+    workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
   };
 
   log.info("Configuration loaded", {
