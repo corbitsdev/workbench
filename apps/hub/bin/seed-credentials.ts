@@ -282,6 +282,17 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const vercelKey = env("VERCEL_API_KEY");
+  if (vercelKey) {
+    entries.push({
+      providerName: "vercel",
+      providerPlugin: "vercel",
+      credentialName: "Vercel",
+      secret: vercelKey,
+      metadata: { baseURL: "https://api.vercel.com" },
+    });
+  }
+
   const youtubeKey = env("YOUTUBE_API_KEY");
   if (youtubeKey) {
     entries.push({

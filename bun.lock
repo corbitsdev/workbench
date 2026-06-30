@@ -1107,6 +1107,20 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-vercel": {
+      "name": "@workbench/tools-vercel",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
       "version": "0.1.0",
@@ -2320,6 +2334,8 @@
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
 
     "@workbench/tools-skills": ["@workbench/tools-skills@workspace:packages/tools-skills"],
+
+    "@workbench/tools-vercel": ["@workbench/tools-vercel@workspace:packages/tools-vercel"],
 
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
 
