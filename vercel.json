@@ -1,17 +1,21 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "cd apps/web && bunx vite build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "git submodule update --init --recursive && bun install && cd apps/web && CONFIGURE_VERCEL_HUB_PROXY=1 bun -e \"await import('./vite.config.ts')\"",
+  "installCommand": "git submodule update --init --recursive && bun install",
   "framework": "vite",
-  "rewrites": [
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://corbits-workbench.up.railway.app/api/:path*"
+      "src": "/api/(.*)",
+      "dest": "${HUB_UPSTREAM_URL}/api/$1",
+      "env": ["HUB_UPSTREAM_URL"]
     },
     {
-      "source": "/sidecar/:path*",
-      "destination": "https://corbits-workbench.up.railway.app/sidecar/:path*"
+      "src": "/sidecar/(.*)",
+      "dest": "${HUB_UPSTREAM_URL}/sidecar/$1",
+      "env": ["HUB_UPSTREAM_URL"]
     },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
