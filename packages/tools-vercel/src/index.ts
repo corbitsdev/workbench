@@ -106,7 +106,7 @@ export const VERCEL_LIST_DEPLOYMENTS_DEFINITION: ToolDefinition = {
 export const VERCEL_DEPLOY_STATIC_FILE_DEFINITION: ToolDefinition = {
   name: "vercel_deploy_static_file",
   description:
-    'Deploy one static HTML file to a public Vercel URL. This is an irreversible write action that publishes content the user can see. Before calling it you MUST obtain explicit human approval through the ask_principal tool (action describing the deploy, resource "vercel://deploy") and only proceed once the principal approves — never deploy on your own judgement. Defaults to a preview deployment; only request target "production" when the human explicitly approves a production deploy.',
+    'Deploy one static HTML file to a public Vercel URL. This is an irreversible write action that publishes content the user can see. It pauses for explicit human approval before it runs, so call it directly when the user asks to deploy — do not ask for approval separately. Defaults to a preview deployment; only request target "production" when the user asks to deploy to production.',
   inputSchema: {
     type: "object",
     properties: {
