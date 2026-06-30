@@ -8,6 +8,24 @@ import {
 } from "../src/workflow-substrate-factory";
 import { recoverParkedRunFromLog } from "../src/workflow-resume";
 
+// WORKBENCH-LOCAL: this process's STDOUT is the NDJSON control channel to the
+// supervisor (`defaultControlWriter` writes frames straight to process.stdout).
+// @intx/log / LogTape route info+debug to console.info/console.debug, which land
+// on stdout and interleave log text into the control frames — a colored line
+// then crashes the supervisor's reader on its `\x1B` byte ("control channel
+// received non-JSON line") → supervisor shutdown → reason=corrupt. Forward those
+// console methods to stderr so the logs still reach the sidecar's container logs
+// without poisoning the control channel. warn/error already go to stderr, and
+// control frames use process.stdout.write directly so they are untouched. The
+// proper fix — a dedicated control FD so logs keep normal stdout severity — is
+// tracked as a follow-up.
+const forwardConsoleToStderr = (...args: unknown[]): void => {
+  console.error(...args);
+};
+console.log = forwardConsoleToStderr;
+console.info = forwardConsoleToStderr;
+console.debug = forwardConsoleToStderr;
+
 // WORKBENCH-LOCAL (CL-2503): the workflow-child is the process where every
 // workflow STEP actually runs and throws, but upstream's entrypoint inits no
 // observability — so step failures never reached Sentry (a hard blindspot for
