@@ -25,11 +25,9 @@ export function hubProxyRewrites(hubUpstreamUrl: string | undefined): {
 }
 
 function applyVercelHubProxyRewrites(): void {
-  const hub = process.env["HUB_UPSTREAM_URL"];
-  if (process.env["VERCEL"] === "1" && !hub?.trim()) {
-    throw new Error(
-      "HUB_UPSTREAM_URL must be set on Vercel (Railway hub origin) so /api is proxied same-origin for OAuth.",
-    );
+  const hub = process.env["HUB_UPSTREAM_URL"]?.trim();
+  if (!hub) {
+    return;
   }
   const vercelJsonPath = path.resolve(__dirname, "../../vercel.json");
   const config = JSON.parse(readFileSync(vercelJsonPath, "utf8")) as Record<

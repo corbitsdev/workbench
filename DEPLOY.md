@@ -122,9 +122,11 @@ The Vercel **install** step generates root `middleware.ts`, which proxies `/api`
 
 Set `HUB_UPSTREAM_URL` for **Production and Preview** in Vercel. Without it, `/api/auth/callback/google` returns **404** on the Vercel host.
 
-**405 on `POST /api/auth/sign-in/social`:** Vercel is serving the SPA for `/api` (static hosting rejects POST). Fix with **Rewrites** (not Redirects) to the Railway hub, or commit the `/api/:path*` external rewrite in root `vercel.json` and redeploy.
+**405 on `POST /api/auth/sign-in/social`:** Vercel is serving the SPA for `/api` (static hosting rejects POST). Fix is in **root `vercel.json`** (`/api/:path*` → Railway hub). Redeploy after that file is on your branch.
 
-**Immediate fix (no redeploy):** Vercel → Project → Settings → **Rewrites** → add source `/api/:path*`, destination `https://<railway-hub>/api/:path*` (and `/sidecar/:path*` if needed). Must be type **rewrite**, not redirect.
+Vercel often has **no separate “Rewrites” screen** in Settings (rules come from `vercel.json`). Some teams see **Settings → Redirects** (rewrites may appear there on older UI). You do **not** need the dashboard if `vercel.json` is correct.
+
+**Project → Settings → General → Root Directory** must be **empty** (repo root). If it is `apps/web`, Vercel ignores root `vercel.json` — either clear Root Directory or copy the same `rewrites` into `apps/web/vercel.json`.
 
 **Railway hub**:
 
