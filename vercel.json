@@ -1,5 +1,5 @@
 {
-  "buildCommand": "cd apps/web && bunx vite build",
+  "buildCommand": "cd apps/web && CONFIGURE_VERCEL_HUB_PROXY=1 bunx vite build",
   "outputDirectory": "apps/web/dist",
   "installCommand": "git submodule update --init --recursive && bun install",
   "framework": "vite",

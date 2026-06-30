@@ -1,4 +1,9 @@
-import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  useLocation,
+} from "react-router";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
@@ -78,9 +83,12 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
 
 function ProtectedLayout() {
   const { session } = useAuth();
+  const location = useLocation();
 
   if (session.status === "unauthenticated")
-    return <Navigate to="/login" replace />;
+    return (
+      <Navigate to={{ pathname: "/login", search: location.search }} replace />
+    );
   if (session.status === "loading") return null;
   return <Outlet />;
 }

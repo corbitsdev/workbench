@@ -96,6 +96,32 @@ describe("loadConfig", () => {
     expect(config.cors.isCrossOrigin).toBe(true);
   });
 
+  it("marks auth as served from the web app when BETTER_AUTH_BASE_URL matches a CORS origin", () => {
+    setRequiredEnv();
+    process.env["NODE_ENV"] = "production";
+    process.env["BETTER_AUTH_BASE_URL"] = "https://app.example.com";
+    process.env["SUPPORTED_CORS_ORIGINS"] = "https://app.example.com";
+
+    const config = loadConfig();
+
+    expect(config.auth.servedFromWebApp).toBe(true);
+    expect(config.auth.useCrossSiteCookies).toBe(false);
+  });
+
+  it("uses cross-site auth cookies when web and auth base URLs differ", () => {
+    setRequiredEnv();
+    process.env["NODE_ENV"] = "production";
+    process.env["BETTER_AUTH_BASE_URL"] = "https://hub.example.com";
+    process.env["SUPPORTED_CORS_ORIGINS"] = "https://app.example.com";
+
+    const config = loadConfig();
+
+    expect(config.auth.servedFromWebApp).toBe(false);
+    expect(config.auth.useCrossSiteCookies).toBe(true);
+  });
+
+
+
   it("treats empty CORS origins as same-origin in dev", () => {
     setRequiredEnv();
 

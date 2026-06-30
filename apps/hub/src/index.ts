@@ -178,6 +178,7 @@ const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
 // ─── Auth ──────────────────────────────────────────────────────────
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
+const { useCrossSiteCookies } = authConfig;
 
 log.info("CORS config loaded", { corsOrigins, corsCount: corsOrigins.length });
 
@@ -199,10 +200,13 @@ const auth = betterAuth({
       verify: ({ hash, password }) => Bun.password.verify(password, hash),
     },
   },
-  advanced:
-    !isDev && isCrossOrigin
-      ? { defaultCookieAttributes: { sameSite: "none", secure: true } }
-      : undefined,
+  advanced: !isDev
+    ? {
+        defaultCookieAttributes: useCrossSiteCookies
+          ? { sameSite: "none", secure: true }
+          : { sameSite: "lax", secure: true },
+      }
+    : undefined,
   socialProviders:
     google.clientId && google.clientSecret
       ? {

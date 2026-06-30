@@ -1,7 +1,48 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+
+export function hubProxyRewrites(hubUpstreamUrl: string | undefined): {
+  source: string;
+  destination: string;
+}[] {
+  const hub = hubUpstreamUrl?.trim().replace(/\/+$/, "");
+  const rewrites: { source: string; destination: string }[] = [];
+  if (hub) {
+    rewrites.push({
+      source: "/api/:path*",
+      destination: `${hub}/api/:path*`,
+    });
+    rewrites.push({
+      source: "/sidecar/:path*",
+      destination: `${hub}/sidecar/:path*`,
+    });
+  }
+  rewrites.push({ source: "/(.*)", destination: "/index.html" });
+  return rewrites;
+}
+
+function applyVercelHubProxyRewrites(): void {
+  const hub = process.env["HUB_UPSTREAM_URL"];
+  if (process.env["VERCEL"] === "1" && !hub?.trim()) {
+    throw new Error(
+      "HUB_UPSTREAM_URL must be set on Vercel (Railway hub origin) so /api is proxied same-origin for OAuth.",
+    );
+  }
+  const vercelJsonPath = path.resolve(__dirname, "../../vercel.json");
+  const config = JSON.parse(readFileSync(vercelJsonPath, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  config["rewrites"] = hubProxyRewrites(hub);
+  writeFileSync(vercelJsonPath, `${JSON.stringify(config, null, 2)}\n`);
+}
+
+if (process.env["CONFIGURE_VERCEL_HUB_PROXY"] === "1") {
+  applyVercelHubProxyRewrites();
+}
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
