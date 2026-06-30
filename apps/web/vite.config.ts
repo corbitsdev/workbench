@@ -60,11 +60,14 @@ export default async function middleware(request: Request): Promise<Response> {
   const body =
     method === "GET" || method === "HEAD" ? undefined : request.body;
 
+  const hasBody = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+
   return fetch(target, {
     method,
     headers,
-    body,
+    body: hasBody ? request.body : undefined,
     redirect: "manual",
+    ...(hasBody ? { duplex: "half" as const } : {}),
   });
 }
 `;

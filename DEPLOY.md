@@ -122,7 +122,9 @@ The Vercel **install** step generates root `middleware.ts`, which proxies `/api`
 
 Set `HUB_UPSTREAM_URL` for **Production and Preview** in Vercel. Without it, `/api/auth/callback/google` returns **404** on the Vercel host.
 
-**Immediate fix (no redeploy):** Vercel → Project → Settings → **Rewrites** → add source `/api/:path*`, destination `https://<railway-hub>/api/:path*` (and `/sidecar/:path*` if needed).
+**405 on `POST /api/auth/sign-in/social`:** Vercel is serving the SPA for `/api` (static hosting rejects POST). Fix with **Rewrites** (not Redirects) to the Railway hub, or commit the `/api/:path*` external rewrite in root `vercel.json` and redeploy.
+
+**Immediate fix (no redeploy):** Vercel → Project → Settings → **Rewrites** → add source `/api/:path*`, destination `https://<railway-hub>/api/:path*` (and `/sidecar/:path*` if needed). Must be type **rewrite**, not redirect.
 
 **Railway hub**:
 
@@ -137,6 +139,8 @@ Set `HUB_UPSTREAM_URL` for **Production and Preview** in Vercel. Without it, `/a
 - Redirect URI: `https://<your-vercel-production-domain>/api/auth/callback/google`
 
 Redeploy the hub after env changes, then trigger a **new Vercel production build** (so rewrites are applied and the bundle has no embedded hub URL).
+
+Forks: replace the Railway host in root `vercel.json` `/api` + `/sidecar` rewrites, or rely on `HUB_UPSTREAM_URL` during install (overwrites `vercel.json` rewrites when set).
 
 ---
 
