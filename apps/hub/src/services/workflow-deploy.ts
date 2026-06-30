@@ -44,6 +44,7 @@ import {
   assembleWorkflowDeployConfig,
   collectDeclaredStepModels,
   collectDeclaredStepModelMaxTokens,
+  resolveWorkflowDeployConfig,
   resolveWorkflowDeploySource,
 } from "./workflow-deploy-config";
 
@@ -101,8 +102,29 @@ export type EnsureDeploymentRoutableResult = {
   reestablished: boolean;
 };
 
+export type ProvisionRunDeploymentArgs = {
+  // The workflow definition id (== workflowRun.kind == workflow repo id) the
+  // persisted definition is read back under.
+  kind: string;
+  tenantId: string;
+  creatorPrincipalId: string;
+  deploymentDomain: string;
+  hubPublicKey: string;
+};
+
 export interface WorkflowDeployService {
   deployWorkflow(params: DeployWorkflowParams): Promise<DeployWorkflowResult>;
+  // Provision a fresh, single-use deployment for ONE workflow run (per-run
+  // deployment, CL-2582). Reads the kind's published definition from its
+  // `workflow`-kind repo (the definition registry), resolves a fresh
+  // deploymentId + HarnessConfig, and deploys the supervisor + steps. Unlike the
+  // operator deploy route this writes NO `workflow_run` registry row — the
+  // registry row stays the operator's published-definition entry, so run-start
+  // resolution never starts picking ephemeral per-run deployments. The returned
+  // deployment is torn down when the run reaches a terminal status.
+  provisionRunDeployment(
+    args: ProvisionRunDeploymentArgs,
+  ): Promise<{ deploymentId: string }>;
   // Idempotently ensure a deployment's supervisor is routable, re-establishing
   // it from persisted state (workflow repo + DB rows) when the hub's
   // addressIndex has lost it (hub restart) or the sidecar dropped it (sidecar
@@ -121,12 +143,24 @@ export interface WorkflowDeployService {
 // Hub-owned multi-step workflow deploy: interchange's
 // SessionService only deploys trivial single-step workflows, so we wire the
 // exported orchestrator with the Workbench directors and our own repo writer.
+// Tear a deployment's runtime down by id (CL-2582). Injected so the deploy
+// service can roll back a partial per-run provision without importing the route
+// layer; bound to `tearDownDeployment` in index.ts.
+export type ReclaimDeploymentFn = (args: {
+  deploymentId: string;
+  tenantId: string;
+  reason: string;
+}) => Promise<void>;
+
 export function createWorkflowDeployService(deps: {
   db: HubDb;
   repoStore: AgentRepoStore;
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
   directorRegistry: DirectorRegistry;
+  // Optional: roll back a partial per-run deploy on failure. Absent in unit
+  // tests that never exercise the failure path.
+  reclaimDeployment?: ReclaimDeploymentFn;
 }): WorkflowDeployService {
   const { db, directorRegistry } = deps;
 
@@ -140,7 +174,7 @@ export function createWorkflowDeployService(deps: {
     Promise<EnsureDeploymentRoutableResult>
   >();
 
-  return {
+  const service: WorkflowDeployService = {
     deployWorkflow: async (params) => {
       const walk = walkCapabilities(params.workflow, directorRegistry);
       // Pin the npm tool packages the workflow's steps declare so the sidecar
@@ -324,7 +358,63 @@ export function createWorkflowDeployService(deps: {
         ensureInFlight.delete(args.deploymentId);
       }
     },
+
+    provisionRunDeployment: async (args) => {
+      const definition = await readWorkflowDefinition(
+        deps.repoStore,
+        args.kind,
+      );
+      const { deploymentId, config, deployContent } =
+        await resolveWorkflowDeployConfig({
+          db,
+          tenantId: args.tenantId,
+          principalId: args.creatorPrincipalId,
+          deploymentDomain: args.deploymentDomain,
+          definition,
+        });
+      try {
+        await service.deployWorkflow({
+          workflow: definition,
+          deploymentId,
+          deploymentDomain: args.deploymentDomain,
+          tenantId: args.tenantId,
+          creatorPrincipalId: args.creatorPrincipalId,
+          config,
+          deployContent,
+          hubPublicKey: args.hubPublicKey,
+        });
+      } catch (err) {
+        // Roll back the partial deploy so a provision failure leaves no orphaned
+        // supervisor/step rows (CL-2582 Step D, class 1). Best-effort; the
+        // original error is what the caller sees.
+        if (deps.reclaimDeployment !== undefined) {
+          await deps
+            .reclaimDeployment({
+              deploymentId,
+              tenantId: args.tenantId,
+              reason: "per-run provision failed",
+            })
+            .catch((reclaimErr) => {
+              log.warn("per-run provision rollback failed", {
+                deploymentId,
+                error:
+                  reclaimErr instanceof Error
+                    ? reclaimErr.message
+                    : String(reclaimErr),
+              });
+            });
+        }
+        throw err;
+      }
+      log.info("provisioned per-run workflow deployment", {
+        deploymentId,
+        kind: args.kind,
+        tenantId: args.tenantId,
+      });
+      return { deploymentId };
+    },
   };
+  return service;
 }
 
 // Re-establish a deployment's supervisor from persisted state by re-sending

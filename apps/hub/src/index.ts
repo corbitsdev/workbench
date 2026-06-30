@@ -42,11 +42,13 @@ import {
   createWorkflowDeployRouter,
   deployWorkflowHandler,
   deleteWorkflowHandler,
+  tearDownDeployment,
   type WorkflowDeployCoreDeps,
 } from "./routes/workflow-deploy";
 import {
   createWorkflowRunsRouter,
   type EnsureDeploymentRoutableFn,
+  type ProvisionRunDeploymentFn,
 } from "./routes/workflow-runs";
 import { createWorkflowRunRecordsRouter } from "./routes/workflow-run-records";
 import {
@@ -55,8 +57,14 @@ import {
   abortRunRouteDescription,
   abortActiveRunsRouteDescription,
 } from "./routes/workflow-run-abort";
-import { wrapRepoStoreWithProjection } from "./workflow-executor/projection-bridge";
-import { createWorkflowDeployService } from "./services/workflow-deploy";
+import {
+  wrapRepoStoreWithProjection,
+  type ReclaimRunDeploymentFn,
+} from "./workflow-executor/projection-bridge";
+import {
+  createWorkflowDeployService,
+  type ReclaimDeploymentFn,
+} from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
@@ -275,12 +283,22 @@ log.info("Loaded signing key registry: active version {version}", {
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
+// Per-run deployment teardown (CL-2582). The reclaim callback needs
+// `sessionService`, which is constructed below from this very repo store, so it
+// is late-bound: the projection bridge calls through this holder, which stays a
+// no-op until the wiring below installs the real teardown. A terminal pack can
+// only arrive after the sidecar connects and runs — long after startup — so the
+// no-op window is never hit in practice, and the janitor reclaims anything that
+// somehow slips through.
+const reclaimRunDeploymentRef: { fn: ReclaimRunDeploymentFn | undefined } = {
+  fn: undefined,
+};
 const repoStore = wrapRepoStoreWithProjection(
   createAgentRepoStore({
     dataDir: hub.dataDir,
     signingKey: registry.active,
   }),
-  { db },
+  { db, reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args) },
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
 
@@ -428,6 +446,43 @@ const sessionService = createSessionService({
     defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
 });
+
+// Per-run deployment teardown (CL-2582), shared by the projection bridge
+// (terminal teardown), the deploy service (provision-failure rollback), and the
+// reconciler janitor (crash-orphan reclaim). All run state needed for history is
+// already in `workflow_run_record` before this fires, so reclaiming the
+// ephemeral per-run deployment loses nothing.
+const reclaimDeployment: ReclaimDeploymentFn = ({
+  deploymentId,
+  tenantId,
+  reason,
+}) =>
+  tearDownDeployment({
+    db,
+    sessionService,
+    deploymentDomain: config.rootTenant.domain,
+    deploymentId,
+    tenantId,
+    reason,
+  });
+
+// Install the projection-bridge hook: when a run reaches a terminal status the
+// bridge fires this to tear its single-use deployment down. Fire-and-forget with
+// a logged catch — teardown is best-effort and must never block pack receipt; a
+// miss is reclaimed by the janitor.
+reclaimRunDeploymentRef.fn = ({ deploymentId, tenantId, runId }) => {
+  void reclaimDeployment({
+    deploymentId,
+    tenantId,
+    reason: `run ${runId} reached terminal status`,
+  }).catch((err) => {
+    log.warn("per-run deployment teardown failed", {
+      deploymentId,
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
+};
 
 // ─── Hub app ────────────────────────────────────────────────────────
 //
@@ -985,6 +1040,7 @@ const workflowDeployService = createWorkflowDeployService({
   sidecarRouter,
   sessionService,
   directorRegistry: createWorkbenchDirectorRegistry(),
+  reclaimDeployment,
 });
 
 const hubPublicKeyHex = hexEncode(registry.active.publicKey);
@@ -996,6 +1052,13 @@ const ensureDeploymentRoutable: EnsureDeploymentRoutableFn = (args) =>
   workflowDeployService.ensureDeploymentRoutable({
     ...args,
     deploymentDomain: config.rootTenant.domain,
+  });
+
+const provisionRunDeployment: ProvisionRunDeploymentFn = (args) =>
+  workflowDeployService.provisionRunDeployment({
+    ...args,
+    deploymentDomain: config.rootTenant.domain,
+    hubPublicKey: hubPublicKeyHex,
   });
 
 v1.route(
@@ -1024,6 +1087,7 @@ v1.route(
     cryptoProvider: createNodeCrypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
+    provisionRunDeployment,
   }),
 );
 
@@ -1037,6 +1101,7 @@ const workflowReconciler = createWorkflowReconciler({
   ensureDeploymentRoutable,
   getRoutableAddresses: sidecarRouter.getRoutableAddresses,
   deploymentDomain: config.rootTenant.domain,
+  reclaimDeployment,
 });
 workflowReconciler.start();
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
@@ -1050,6 +1115,10 @@ void workflowReconciler
     });
   })
   .then(() => workflowReconciler.reconcileAll())
+  // CL-2582: reclaim per-run deployments whose terminal teardown didn't fire
+  // (hub crashed between the terminal save and teardown). After reconcileAll so
+  // a re-established live run is never mistaken for an orphan.
+  .then(() => workflowReconciler.reclaimOrphanedDeployments())
   .catch((err) => {
     log.warn("initial workflow reconcile failed", {
       error: err instanceof Error ? err : new Error(String(err)),

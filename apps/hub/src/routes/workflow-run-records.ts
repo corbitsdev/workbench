@@ -19,7 +19,10 @@ import {
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import type { EnsureDeploymentRoutableFn } from "./workflow-runs";
+import type {
+  EnsureDeploymentRoutableFn,
+  ProvisionRunDeploymentFn,
+} from "./workflow-runs";
 
 const log = getLogger(["api", "workflow-run-records"]);
 
@@ -144,6 +147,7 @@ export function createWorkflowRunRecordsRouter(deps: {
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
+  provisionRunDeployment: ProvisionRunDeploymentFn;
   // Injectable for tests only.
   resolveContext?: typeof getRequestedUserContext;
 }): Hono<{ Variables: { userId: string } }> {
@@ -210,8 +214,11 @@ export function createWorkflowRunRecordsRouter(deps: {
 
       const kind = c.req.param("kind");
       const chain = await getAncestorChain(deps.db, context.tenantId);
-      const deployment = await resolveDeployment(deps.db, chain, kind);
-      if (!deployment)
+      // The registry row resolves the kind's tenant + deploy principal; its
+      // deploymentId is the operator's shared deployment and is NOT reused —
+      // each run gets its own (per-run deployment, CL-2582).
+      const definition = await resolveDeployment(deps.db, chain, kind);
+      if (!definition)
         return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
 
       let body: unknown = {};
@@ -228,28 +235,40 @@ export function createWorkflowRunRecordsRouter(deps: {
       // the seeded row and every run event the sidecar emits share this id — the
       // projection bridge folds those events back into this exact row.
       const runId = mintRunId();
+
+      // A freshly-deployed supervisor is routable by construction, so the start
+      // path needs no ensureDeploymentRoutable (resume still does — a parked run's
+      // deployment can lose its address to a restart).
+      let deploymentId: string;
+      try {
+        ({ deploymentId } = await deps.provisionRunDeployment({
+          kind,
+          tenantId: definition.tenantId,
+          creatorPrincipalId: definition.principalId,
+        }));
+      } catch (err) {
+        log.error("workflow run provision failed", {
+          runId,
+          kind,
+          tenantId: definition.tenantId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+        return c.json({ error: "failed to provision workflow run" }, 500);
+      }
+
       const state = await insertRunRecord(deps.db, {
         runId,
-        deploymentId: deployment.deploymentId,
+        deploymentId,
         kind,
-        tenantId: deployment.tenantId,
+        tenantId: definition.tenantId,
         principalId: context.principalId,
         input,
       });
 
       try {
-        // The supervisor may have been dropped from the hub's addressIndex by a
-        // restart since deploy; re-establish before delivering so the run does
-        // not dead-end on `agent is unreachable` (CL-2225).
-        await deps.ensureDeploymentRoutable({
-          deploymentId: deployment.deploymentId,
-          kind,
-          tenantId: deployment.tenantId,
-          creatorPrincipalId: deployment.principalId,
-        });
         await deps.sessionService.sendUserMessage({
           agentAddress: deriveDeploymentAddress({
-            deploymentId: deployment.deploymentId,
+            deploymentId,
             deploymentDomain: deps.deploymentDomain,
           }),
           from: `hub@${deps.deploymentDomain}`,
@@ -257,14 +276,14 @@ export function createWorkflowRunRecordsRouter(deps: {
           date: new Date(),
           content: JSON.stringify(input),
           sessionId: randomUUID(),
-          tenantId: deployment.tenantId,
+          tenantId: definition.tenantId,
           cryptoProvider: deps.cryptoProvider,
         });
       } catch (err) {
         log.error("workflow run-start failed", {
           runId,
           kind,
-          deploymentId: deployment.deploymentId,
+          deploymentId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
         const failed: RunState = {
@@ -467,22 +486,21 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: "run has no deployment to signal" }, 400);
       }
 
-      // Re-establish + address the run's supervisor, then deliver the gate signal.
-      const deployment = await deps.db.query.workflowRun.findFirst({
-        where: and(
-          eq(workflowRun.deploymentId, state.deploymentId),
-          inArray(workflowRun.tenantId, chain),
-        ),
-      });
-      if (!deployment)
+      // The run owns its single-use deployment (`state.deploymentId`) — a per-run
+      // deployment writes NO `workflow_run` registry row, so we must NOT look it
+      // up there. Recover only the deploy principal (needed to revive the
+      // supervisor's rows if a restart dropped it) from the kind's registry row,
+      // exactly as start does; a kind with no active deployment can't be resumed.
+      const definition = await resolveDeployment(deps.db, chain, state.kind);
+      if (!definition)
         return c.json({ error: "workflow deployment not found" }, 404);
 
       try {
         await deps.ensureDeploymentRoutable({
           deploymentId: state.deploymentId,
           kind: state.kind,
-          tenantId: deployment.tenantId,
-          creatorPrincipalId: deployment.principalId,
+          tenantId: state.tenantId,
+          creatorPrincipalId: definition.principalId,
         });
         deps.sidecarRouter.sendSignalDeliver({
           agentAddress: deriveDeploymentAddress({

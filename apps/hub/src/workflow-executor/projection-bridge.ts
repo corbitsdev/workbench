@@ -12,6 +12,7 @@ import { createWorkflowRunBlobSubstrate } from "@intx/workflow-host";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createRunStore, loadRunRecord } from "./run-store";
+import { becameTerminal } from "./run-status";
 import { WorkflowMeta } from "../lib/workflow-meta";
 
 // Projection bridge (CL-2243). Workflows execute on the sidecar supervisor and
@@ -167,6 +168,17 @@ export function logNewWorkflowRunFailureIfNeeded(
   const report = buildRunFailureReport(projected, context);
   log.error(report.message, { ...report.properties, error: report.error });
 }
+
+// Fired once when a run's record transitions non-terminal → terminal, so the
+// caller can tear down the run's single-use deployment (per-run deployment,
+// CL-2582). NEVER fired for an `awaiting` run — `becameTerminal` excludes it
+// (the CL-2575 invariant). Best-effort: the implementation owns its own error
+// handling and must not block pack receipt.
+export type ReclaimRunDeploymentFn = (args: {
+  deploymentId: string;
+  tenantId: string;
+  runId: string;
+}) => void;
 
 export interface RunEventEntry {
   runId: string;
@@ -352,6 +364,7 @@ export async function projectWorkflowRunRepo(
   repoStore: RepoStore,
   db: HubDb,
   repoId: RepoId,
+  onTerminalRun?: ReclaimRunDeploymentFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -395,6 +408,23 @@ export async function projectWorkflowRunRepo(
       outputs,
       ...(projected.error !== undefined ? { error: projected.error } : {}),
     });
+
+    // Tear down the run's single-use deployment the moment it reaches a terminal
+    // status (per-run deployment, CL-2582). Gated on the first non-terminal →
+    // terminal transition so it fires exactly once, and never for `awaiting`
+    // (CL-2575). Best-effort: the callback owns its errors and must not block the
+    // projection.
+    if (
+      onTerminalRun !== undefined &&
+      becameTerminal(existing.status, projected.status) &&
+      existing.deploymentId
+    ) {
+      onTerminalRun({
+        deploymentId: existing.deploymentId,
+        tenantId: existing.tenantId,
+        runId,
+      });
+    }
 
     const deployMeta: { version?: string; sha?: string } = {};
     if (
@@ -473,14 +503,16 @@ export function createCoalescingScheduler(
 // next pack).
 export function wrapRepoStoreWithProjection(
   base: AgentRepoStore,
-  deps: { db: HubDb },
+  deps: { db: HubDb; reclaimDeployment?: ReclaimRunDeploymentFn },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
     try {
-      await projectWorkflowRunRepo(base.repoStore, deps.db, {
-        kind: "workflow-run",
-        id,
-      });
+      await projectWorkflowRunRepo(
+        base.repoStore,
+        deps.db,
+        { kind: "workflow-run", id },
+        deps.reclaimDeployment,
+      );
     } catch (err) {
       log.error("workflow projection failed", {
         repoId: id,

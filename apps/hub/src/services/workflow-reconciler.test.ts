@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { schema as intxSchema } from "@intx/db";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
@@ -12,16 +13,21 @@ type Row = {
   principalId: string;
 };
 
+// Per-run records (CL-2582): the reconciler re-establishes a supervisor per
+// NON-terminal record, keyed by the record's OWN per-run deploymentId + kind +
+// tenant. The mock returns these for the workflowRunRecord query (which the real
+// reconciler filters to running/awaiting — so seed only non-terminal rows here).
 type RecordRow = {
   deploymentId: string | null;
-  status: "running" | "awaiting" | "completed" | "failed";
+  kind: string;
+  tenantId: string;
 };
 
-// db whose select(...).from(...).where(...) resolves to the given active rows —
-// matching the reconciler's query shape (no orderBy). reconcileAll now issues a
-// SECOND select against workflowRunRecord (to skip terminal-only deployments);
-// the `from` table identity disambiguates which result set to hand back, so
-// callers that pass no record rows keep the original single-query behavior.
+// db whose select(...).from(...).where(...) resolves to the given rows —
+// matching the reconciler's query shape (no orderBy). reconcileAll issues two
+// selects: `workflowRun` (registry → deploy principal per kind+tenant) and
+// `workflowRunRecord` (the non-terminal per-run records to re-establish); the
+// `from` table identity disambiguates which result set to hand back.
 function makeDb(rows: Row[], recordRows: RecordRow[] = []): HubDb {
   return {
     select: () => ({
@@ -38,6 +44,7 @@ function makeDb(rows: Row[], recordRows: RecordRow[] = []): HubDb {
 const RECONCILE_ONLY_DEPS = {
   getRoutableAddresses: () => [],
   deploymentDomain: "abklabs.com",
+  reclaimDeployment: () => Promise.resolve(),
 };
 
 type RunRow = {
@@ -149,91 +156,51 @@ function makeEvents() {
 }
 
 describe("createWorkflowReconciler", () => {
-  it("re-establishes every active deployment, skipping rows without a deploymentId", async () => {
+  it("re-establishes each non-terminal run's OWN per-run deployment, recovering the deploy principal from the kind's registry row (CL-2582)", async () => {
     const calls: {
       deploymentId: string;
       kind: string;
       tenantId: string;
+      creatorPrincipalId: string;
     }[] = [];
     const ensure: EnsureDeploymentRoutableFn = (args) => {
       calls.push({
         deploymentId: args.deploymentId,
         kind: args.kind,
         tenantId: args.tenantId,
+        creatorPrincipalId: args.creatorPrincipalId,
       });
       return Promise.resolve({ reestablished: true });
     };
     const reconciler = createWorkflowReconciler({
-      db: makeDb([
-        {
-          deploymentId: "ses_a",
-          kind: "pain-point-collateral",
-          tenantId: "t1",
-          principalId: "p1",
-        },
-        {
-          deploymentId: null,
-          kind: "orphan",
-          tenantId: "t1",
-          principalId: "p1",
-        },
-        {
-          deploymentId: "ses_b",
-          kind: "deck",
-          tenantId: "t2",
-          principalId: "p2",
-        },
-      ]),
-      events: makeEvents().events,
-      ensureDeploymentRoutable: ensure,
-      ...RECONCILE_ONLY_DEPS,
-    });
-
-    await reconciler.reconcileAll();
-
-    expect(calls).toEqual([
-      { deploymentId: "ses_a", kind: "pain-point-collateral", tenantId: "t1" },
-      { deploymentId: "ses_b", kind: "deck", tenantId: "t2" },
-    ]);
-  });
-
-  it("skips deployments whose run records are all terminal, but re-establishes ones with an active record or no record", async () => {
-    const seen: string[] = [];
-    const ensure: EnsureDeploymentRoutableFn = (args) => {
-      seen.push(args.deploymentId);
-      return Promise.resolve({ reestablished: true });
-    };
-    const reconciler = createWorkflowReconciler({
       db: makeDb(
+        // Registry rows: supply the DEPLOY principal per kind+tenant. Their own
+        // `ses_op_*` deploymentId is the operator's shared deployment and is
+        // NEVER re-established under per-run.
         [
-          // active record → re-established
           {
-            deploymentId: "ses_active",
-            kind: "k",
-            tenantId: "t",
-            principalId: "p",
+            deploymentId: "ses_op_a",
+            kind: "pain-point-collateral",
+            tenantId: "t1",
+            principalId: "deployer1",
           },
-          // record(s) all terminal → SKIPPED (the wedged/failed run must not
-          // be resurrected)
           {
-            deploymentId: "ses_failed",
-            kind: "k",
-            tenantId: "t",
-            principalId: "p",
-          },
-          // no record at all (freshly deployed) → re-established unchanged
-          {
-            deploymentId: "ses_norecord",
-            kind: "k",
-            tenantId: "t",
-            principalId: "p",
+            deploymentId: "ses_op_b",
+            kind: "deck",
+            tenantId: "t2",
+            principalId: "deployer2",
           },
         ],
+        // Per-run records: the deployments that actually ran, each with its OWN
+        // id. The null-deploymentId record is skipped.
         [
-          { deploymentId: "ses_active", status: "awaiting" },
-          { deploymentId: "ses_failed", status: "failed" },
-          // a second terminal record for the same deployment must not flip it
-          { deploymentId: "ses_failed", status: "completed" },
+          {
+            deploymentId: "ses_run_a",
+            kind: "pain-point-collateral",
+            tenantId: "t1",
+          },
+          { deploymentId: null, kind: "pain-point-collateral", tenantId: "t1" },
+          { deploymentId: "ses_run_b", kind: "deck", tenantId: "t2" },
         ],
       ),
       events: makeEvents().events,
@@ -243,22 +210,47 @@ describe("createWorkflowReconciler", () => {
 
     await reconciler.reconcileAll();
 
-    expect(seen).toEqual(["ses_active", "ses_norecord"]);
+    // Each per-run deployment re-established with the DEPLOY principal (recovered
+    // from the registry by kind+tenant — NOT the run owner). The operator's
+    // shared ses_op_* deployments are never touched.
+    expect(calls).toEqual([
+      {
+        deploymentId: "ses_run_a",
+        kind: "pain-point-collateral",
+        tenantId: "t1",
+        creatorPrincipalId: "deployer1",
+      },
+      {
+        deploymentId: "ses_run_b",
+        kind: "deck",
+        tenantId: "t2",
+        creatorPrincipalId: "deployer2",
+      },
+    ]);
   });
 
-  it("is best-effort: one deployment failing does not abort the pass", async () => {
+  it("skips a record whose kind has no registry row (undeployed since the run started)", async () => {
     const seen: string[] = [];
     const ensure: EnsureDeploymentRoutableFn = (args) => {
       seen.push(args.deploymentId);
-      if (args.deploymentId === "ses_a")
-        return Promise.reject(new Error("boom"));
       return Promise.resolve({ reestablished: true });
     };
     const reconciler = createWorkflowReconciler({
-      db: makeDb([
-        { deploymentId: "ses_a", kind: "k", tenantId: "t", principalId: "p" },
-        { deploymentId: "ses_b", kind: "k", tenantId: "t", principalId: "p" },
-      ]),
+      db: makeDb(
+        [
+          {
+            deploymentId: "ses_op",
+            kind: "live",
+            tenantId: "t",
+            principalId: "deployer",
+          },
+        ],
+        [
+          { deploymentId: "ses_run_live", kind: "live", tenantId: "t" },
+          // its kind has no registry row → no deploy principal → skipped
+          { deploymentId: "ses_run_orphan", kind: "undeployed", tenantId: "t" },
+        ],
+      ),
       events: makeEvents().events,
       ensureDeploymentRoutable: ensure,
       ...RECONCILE_ONLY_DEPS,
@@ -266,7 +258,40 @@ describe("createWorkflowReconciler", () => {
 
     await reconciler.reconcileAll();
 
-    expect(seen).toEqual(["ses_a", "ses_b"]);
+    expect(seen).toEqual(["ses_run_live"]);
+  });
+
+  it("is best-effort: one deployment failing does not abort the pass", async () => {
+    const seen: string[] = [];
+    const ensure: EnsureDeploymentRoutableFn = (args) => {
+      seen.push(args.deploymentId);
+      if (args.deploymentId === "ses_run_a")
+        return Promise.reject(new Error("boom"));
+      return Promise.resolve({ reestablished: true });
+    };
+    const reconciler = createWorkflowReconciler({
+      db: makeDb(
+        [
+          {
+            deploymentId: "ses_op",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+        ],
+        [
+          { deploymentId: "ses_run_a", kind: "k", tenantId: "t" },
+          { deploymentId: "ses_run_b", kind: "k", tenantId: "t" },
+        ],
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: ensure,
+      ...RECONCILE_ONLY_DEPS,
+    });
+
+    await reconciler.reconcileAll();
+
+    expect(seen).toEqual(["ses_run_a", "ses_run_b"]);
   });
 
   it("reconciles on agent.reconnected, coalescing concurrent triggers into one pass", async () => {
@@ -280,9 +305,17 @@ describe("createWorkflowReconciler", () => {
     };
     const evt = makeEvents();
     const reconciler = createWorkflowReconciler({
-      db: makeDb([
-        { deploymentId: "ses_a", kind: "k", tenantId: "t", principalId: "p" },
-      ]),
+      db: makeDb(
+        [
+          {
+            deploymentId: "ses_op",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+        ],
+        [{ deploymentId: "ses_run_a", kind: "k", tenantId: "t" }],
+      ),
       events: evt.events,
       ensureDeploymentRoutable: ensure,
       ...RECONCILE_ONLY_DEPS,
@@ -333,6 +366,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
     });
 
     await reconciler.failOrphanedRuns();
@@ -353,6 +387,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
       deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
     });
 
     await reconciler.failOrphanedRuns();
@@ -384,6 +419,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
     });
 
     await reconciler.failOrphanedRuns();
@@ -403,10 +439,82 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
     });
 
     await reconciler.failOrphanedRuns();
 
     expect(rows.size).toBe(0);
+  });
+});
+
+describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
+  // db whose workflowRunRecord query returns the given recent-terminal rows, and
+  // whose agentInstance query returns `liveRows` (the per-deploymentId liveness
+  // check). The mock can't read the LIKE arg, so each test uses a uniform
+  // liveness answer to exercise one branch.
+  function makeJanitorDb(
+    terminal: { deploymentId: string | null; tenantId: string }[],
+    liveRows: { id: string }[],
+  ): HubDb {
+    return {
+      select: () => ({
+        from: (table: unknown) => ({
+          where: () => {
+            if (table === intxSchema.agentInstance) {
+              return { limit: () => Promise.resolve(liveRows) };
+            }
+            return Promise.resolve(terminal);
+          },
+        }),
+      }),
+    } as unknown as HubDb;
+  }
+
+  it("reclaims a terminal run's deployment that still has live instances (teardown didn't fire)", async () => {
+    const calls: { deploymentId: string; tenantId: string }[] = [];
+    const reconciler = createWorkflowReconciler({
+      db: makeJanitorDb(
+        [{ deploymentId: "ses_run_x", tenantId: "t1" }],
+        [{ id: "ins_ses_run_x" }], // still live → orphan
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: noopEnsure,
+      getRoutableAddresses: () => [],
+      deploymentDomain: DOMAIN,
+      reclaimDeployment: (args) => {
+        calls.push({
+          deploymentId: args.deploymentId,
+          tenantId: args.tenantId,
+        });
+        return Promise.resolve();
+      },
+    });
+
+    await reconciler.reclaimOrphanedDeployments();
+
+    expect(calls).toEqual([{ deploymentId: "ses_run_x", tenantId: "t1" }]);
+  });
+
+  it("does NOT reclaim a terminal run whose deployment has no live instances (teardown already ran)", async () => {
+    let reclaimCount = 0;
+    const reconciler = createWorkflowReconciler({
+      db: makeJanitorDb(
+        [{ deploymentId: "ses_run_done", tenantId: "t1" }],
+        [], // no live instances → already reclaimed → skip
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: noopEnsure,
+      getRoutableAddresses: () => [],
+      deploymentDomain: DOMAIN,
+      reclaimDeployment: () => {
+        reclaimCount += 1;
+        return Promise.resolve();
+      },
+    });
+
+    await reconciler.reclaimOrphanedDeployments();
+
+    expect(reclaimCount).toBe(0);
   });
 });
