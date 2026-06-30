@@ -626,7 +626,9 @@ export function createWorkflowSupervisor(
   }
 
   function onChildCrash(reason: string): void {
-    logger.error`workflow-process control channel crash: {reason}`;
+    // WORKBENCH-LOCAL: upstream logs a literal `{reason}` (missing the `$`), so
+    // the crash cause never prints. Interpolate it so the reason is visible.
+    logger.error`workflow-process control channel crash: ${reason}`;
     void shutdownInternal({ reason });
   }
 
