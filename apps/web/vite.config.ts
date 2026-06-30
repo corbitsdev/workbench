@@ -40,8 +40,43 @@ function applyVercelHubProxyRewrites(): void {
   writeFileSync(vercelJsonPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
+const VERCEL_MIDDLEWARE_SOURCE = `export const config = {
+  matcher: ["/api/:path*", "/sidecar/:path*"],
+};
+
+export default async function middleware(request: Request): Promise<Response> {
+  const hub = process.env["HUB_UPSTREAM_URL"]?.trim().replace(/\\/$/, "");
+  if (!hub) {
+    return new Response("HUB_UPSTREAM_URL is not configured", { status: 500 });
+  }
+
+  const incoming = new URL(request.url);
+  const target = \`\${hub}\${incoming.pathname}\${incoming.search}\`;
+
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+
+  const method = request.method.toUpperCase();
+  const body =
+    method === "GET" || method === "HEAD" ? undefined : request.body;
+
+  return fetch(target, {
+    method,
+    headers,
+    body,
+    redirect: "manual",
+  });
+}
+`;
+
+export function writeVercelMiddlewareFile(): void {
+  const middlewarePath = path.resolve(__dirname, "../../middleware.ts");
+  writeFileSync(middlewarePath, VERCEL_MIDDLEWARE_SOURCE);
+}
+
 if (process.env["CONFIGURE_VERCEL_HUB_PROXY"] === "1") {
   applyVercelHubProxyRewrites();
+  writeVercelMiddlewareFile();
 }
 
 export default defineConfig({

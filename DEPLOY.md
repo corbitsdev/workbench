@@ -118,7 +118,11 @@ This is the supported split layout. The browser must call **same-origin** `/api`
 | `HUB_UPSTREAM_URL`  | `https://<your-hub>.up.railway.app` (no trailing slash) |
 | `VITE_API_BASE_URL` | **Delete** or leave empty for Production/Preview        |
 
-The Vercel build runs `CONFIGURE_VERCEL_HUB_PROXY=1` (see root `vercel.json`) and writes `/api` + `/sidecar` rewrites to the Railway hub before `vite build`.
+The Vercel **install** step generates root `middleware.ts`, which proxies `/api` and `/sidecar` to `HUB_UPSTREAM_URL` at runtime (rewrites written to `vercel.json` during install are not sufficient on their own).
+
+Set `HUB_UPSTREAM_URL` for **Production and Preview** in Vercel. Without it, `/api/auth/callback/google` returns **404** on the Vercel host.
+
+**Immediate fix (no redeploy):** Vercel → Project → Settings → **Rewrites** → add source `/api/:path*`, destination `https://<railway-hub>/api/:path*` (and `/sidecar/:path*` if needed).
 
 **Railway hub**:
 

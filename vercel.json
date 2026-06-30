@@ -1,7 +1,7 @@
 {
-  "buildCommand": "cd apps/web && CONFIGURE_VERCEL_HUB_PROXY=1 bunx vite build",
+  "buildCommand": "cd apps/web && bunx vite build",
   "outputDirectory": "apps/web/dist",
-  "installCommand": "git submodule update --init --recursive && bun install",
+  "installCommand": "git submodule update --init --recursive && bun install && cd apps/web && CONFIGURE_VERCEL_HUB_PROXY=1 bun -e \"await import('./vite.config.ts')\"",
   "framework": "vite",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
