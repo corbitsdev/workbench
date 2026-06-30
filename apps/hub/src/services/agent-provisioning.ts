@@ -541,6 +541,15 @@ export function describeLaunchError(err: unknown): LaunchErrorDescription {
   return { phase: null, detail: String(err), leakedAgent: false };
 }
 
+/** One-line message for ops logs (Railway often hides structured fields). */
+export function launchFailureLogMessage(
+  prefix: string,
+  failure: LaunchErrorDescription,
+): string {
+  const phase = failure.phase ?? "unknown";
+  return `${prefix} phase=${phase}: ${failure.detail}`;
+}
+
 /**
  * Returns true when the error indicates the sidecar already has the agent
  * provisioned. This can happen in a race between the orchestrator's reconnect
