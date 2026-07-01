@@ -468,6 +468,17 @@ describe("InsightsDashboard", () => {
     expect(screen.getByText("24 hours")).toBeDefined();
   });
 
+  it("labels agent instances as Agents deployed and drops the Deployments stat", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Operational ledger")).toBeDefined();
+    });
+    expect(screen.getByText("Agents deployed")).toBeDefined();
+    expect(screen.queryByText("Agent instances")).toBeNull();
+    expect(screen.queryByText("Deployments")).toBeNull();
+  });
+
   it("paginates the By-agent-instance table 10 at a time", async () => {
     const original = mockOverview.inference.byInstance;
     mockOverview.inference.byInstance = Array.from({ length: 23 }, (_, i) => ({

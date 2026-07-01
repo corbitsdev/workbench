@@ -473,7 +473,7 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Operational ledger</SectionLabel>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           label="Artifacts"
           value={formatNumber(data.artifacts.total)}
@@ -485,14 +485,9 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
           sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
         />
         <Stat
-          label="Agent instances"
+          label="Agents deployed"
           value={formatNumber(data.agentInstances.total)}
           sub={`${formatNumber(data.agentInstances.active)} active`}
-        />
-        <Stat
-          label="Deployments"
-          value={formatNumber(data.workflowRuns.deploymentsIndexed)}
-          sub="indexed"
         />
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
