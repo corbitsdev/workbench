@@ -288,22 +288,38 @@ function linkedRecordRefs(task: unknown): LinkedRecordRef[] {
   return task.linked_records.filter(isRecord) as LinkedRecordRef[];
 }
 
+// Normalize a raw Attio linked-record ref to `{ object, recordId }` — the one
+// shape the rest of the system (canonical AttioLinkedRecordSchema, the workflow
+// UI) reads. Emitting the raw `target_*` keys here is what let the UI parser
+// drift and silently fail (CL-2622 review); the tool is the right place to
+// normalize so there is a single shape end to end.
+function normalizeRef(
+  ref: LinkedRecordRef,
+): { object: string; recordId: string } | null {
+  const object =
+    optionalString(ref.target_object) ?? optionalString(ref.target_object_id);
+  const recordId = optionalString(ref.target_record_id);
+  if (object === null || recordId === null) return null;
+  return { object, recordId };
+}
+
 async function hydrateLinkedRecord(
   config: AttioToolsConfig,
   ref: LinkedRecordRef,
   signal: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const object =
-    optionalString(ref.target_object) ?? optionalString(ref.target_object_id);
-  const recordId = optionalString(ref.target_record_id);
-  if (object === null || recordId === null) {
-    return { ...ref, error: "linked record is missing object or record id" };
+  const normalized = normalizeRef(ref);
+  if (normalized === null) {
+    return { error: "linked record is missing object or record id" };
   }
   try {
-    const record = await getRecord(config, { object, recordId }, signal);
-    return { ...ref, record };
+    const record = await getRecord(config, normalized, signal);
+    return { ...normalized, record };
   } catch (err) {
-    return { ...ref, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ...normalized,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -324,7 +340,10 @@ async function getTask(
 
   const refs = linkedRecordRefs(task);
   if (args.hydrateLinkedRecords === false) {
-    return { task, linkedRecords: refs };
+    return {
+      task,
+      linkedRecords: refs.map(normalizeRef).filter((r) => r !== null),
+    };
   }
 
   const linkedRecords = await Promise.all(

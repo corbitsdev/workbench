@@ -587,8 +587,8 @@ describe("attio_get_task handler", () => {
     expect(parsed.task.content_plaintext).toBe("Reach out");
     expect(parsed.linkedRecords).toEqual([
       {
-        target_object: "companies",
-        target_record_id: "rec_1",
+        object: "companies",
+        recordId: "rec_1",
         record: { id: { record_id: "rec_1" }, values: { name: "Acme" } },
       },
     ]);
@@ -643,7 +643,7 @@ describe("attio_get_task handler", () => {
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(String(result.content));
     expect(parsed.linkedRecords).toEqual([
-      { target_object: "companies", target_record_id: "rec_1" },
+      { object: "companies", recordId: "rec_1" },
     ]);
     // Only the task GET happened — no record hydration.
     expect(fetcher.mock.calls).toHaveLength(1);
@@ -679,7 +679,7 @@ describe("attio_get_task handler", () => {
 
     expect(result.isError).toBeUndefined();
     const parsed = JSON.parse(String(result.content));
-    expect(parsed.linkedRecords[0].target_record_id).toBe("rec_1");
+    expect(parsed.linkedRecords[0].recordId).toBe("rec_1");
     expect(parsed.linkedRecords[0].record).toBeUndefined();
     expect(String(parsed.linkedRecords[0].error)).toContain("404");
   });
