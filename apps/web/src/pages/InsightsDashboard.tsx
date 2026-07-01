@@ -518,13 +518,9 @@ function PersonBreakdown({
 }) {
   if (people.length === 0) return null;
 
-  // Server sorts by total tokens, but those columns collapse to "—" under the
-  // caveat — leaving the table ordered by an invisible key. Re-sort by a
-  // visible metric (turns) so the ordering is always explainable.
-  const orderedPeople =
-    tokenCaveat === null
-      ? people
-      : [...people].sort((a, b) => b.turnCount - a.turnCount);
+  // Server sorts by total tokens; tokens are always shown (a caveat note flags
+  // ranges that predate token recording) so the ordering is always explainable.
+  const orderedPeople = people;
 
   const totals = people.reduce(
     (acc, p) => ({
@@ -535,9 +531,6 @@ function PersonBreakdown({
     }),
     { turnCount: 0, toolCallCount: 0, inputTokens: 0, outputTokens: 0 },
   );
-
-  const tokenCell = (value: number) =>
-    tokenCaveat === null ? formatNumber(value) : "—";
 
   return (
     <div className="flex flex-col gap-3">
@@ -571,7 +564,7 @@ function PersonBreakdown({
                   {formatNumber(row.toolCallCount)}
                 </td>
                 <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {tokenCell(row.inputTokens + row.outputTokens)}
+                  {formatNumber(row.inputTokens + row.outputTokens)}
                 </td>
               </tr>
             ))}
@@ -588,7 +581,7 @@ function PersonBreakdown({
                 {formatNumber(totals.toolCallCount)}
               </td>
               <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
-                {tokenCell(totals.inputTokens + totals.outputTokens)}
+                {formatNumber(totals.inputTokens + totals.outputTokens)}
               </td>
             </tr>
           </tfoot>

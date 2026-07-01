@@ -361,12 +361,11 @@ describe("InsightsDashboard", () => {
     expect(bodyRows[1]?.textContent).toContain("Dana");
   });
 
-  it("re-orders the By-person table by a visible metric (turns) under the token caveat", async () => {
+  it("keeps the By-person table in server token order even under the token caveat", async () => {
     const original = mockOverview.tokensRecordedFrom;
-    // Make Dana out-rank Sawyer on tokens but trail on turns, so token-order
-    // and turn-order disagree.
     const originalPeople = mockOverview.byPerson;
     mockOverview.tokensRecordedFrom = isoDay(-1);
+    // Server order is token-desc: Dana (9000) ahead of Sawyer (10).
     mockOverview.byPerson = [
       {
         principalId: "pri_other",
@@ -397,17 +396,17 @@ describe("InsightsDashboard", () => {
       const bodyRows = Array.from(
         personTable?.querySelectorAll("tbody tr") ?? [],
       );
-      // Under the caveat tokens are hidden, so the visible Turns column drives
-      // the order: Sawyer (50 turns) ahead of Dana (1 turn).
-      expect(bodyRows[0]?.textContent).toContain("Sawyer");
-      expect(bodyRows[1]?.textContent).toContain("Dana");
+      // Tokens stay visible under the caveat, so the server's token ordering
+      // holds: Dana (9,000) ahead of Sawyer (10).
+      expect(bodyRows[0]?.textContent).toContain("Dana");
+      expect(bodyRows[1]?.textContent).toContain("Sawyer");
     } finally {
       mockOverview.tokensRecordedFrom = original;
       mockOverview.byPerson = originalPeople;
     }
   });
 
-  it("hides token-cost columns in the By-person table when the range crosses the live/history boundary", async () => {
+  it("shows per-person token totals with a caveat note when the range crosses the live/history boundary", async () => {
     const original = mockOverview.tokensRecordedFrom;
     mockOverview.tokensRecordedFrom = isoDay(-1);
     try {
