@@ -16,6 +16,9 @@ const DEFAULT_BASE_URL = "https://api.attio.com";
 const DEFAULT_LIMIT = 25;
 const DEFAULT_OFFSET = 0;
 const MAX_LIMIT = 100;
+// The notes list endpoint caps `limit` at 50 (unlike records/tasks at 100);
+// requesting more can be rejected. Used by the idempotency preflight.
+const NOTES_MAX_LIMIT = 50;
 
 function attioHeaders(apiKey: string): Record<string, string> {
   return {
@@ -420,7 +423,7 @@ async function findNoteByMarker(
   const url = attioUrl(config, "/v2/notes");
   url.searchParams.set("parent_object", parentObject);
   url.searchParams.set("parent_record_id", parentRecordId);
-  url.searchParams.set("limit", String(MAX_LIMIT));
+  url.searchParams.set("limit", String(NOTES_MAX_LIMIT));
   url.searchParams.set("offset", String(DEFAULT_OFFSET));
 
   const notes = parseDataResponse(
