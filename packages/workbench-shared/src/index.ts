@@ -283,6 +283,10 @@ export const MemberPreferences = type({
   // Run ids the member has archived (hidden by default) from the workflow-runs
   // list. Persisted per-member so the choice follows them across devices.
   "archivedWorkflowRuns?": "string[]",
+  // The Attio workspace-member id/email this account maps to. Saved by the
+  // Attio Task Agent workflow's member-selection gate so returning runs default
+  // to "you" (and skip the picker) while staying switchable to another member.
+  "attioMemberId?": "string",
   "[string]": "unknown",
 });
 export type MemberPreferences = typeof MemberPreferences.infer;
