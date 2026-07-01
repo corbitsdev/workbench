@@ -3,8 +3,23 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactElement } from "react";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { RunState } from "@intx/workflow";
 import { Panel } from "./ui";
+
+// Guard: ui.tsx is lazily imported into the browser via the package's `/ui`
+// export. It must NOT value-import ./index (the server-only workflow
+// definition), which would pull @intx/agent into the browser chunk, throw on
+// load, and drop the run view to the generic RunConsole fallback (CL-2621).
+describe("ui.tsx browser-safety", () => {
+  it("does not value-import the server-only ./index module", () => {
+    const src = readFileSync(join(import.meta.dir, "ui.tsx"), "utf8");
+    expect(src).not.toMatch(/import\s+\{[^}]*\}\s+from\s+["']\.\/index["']/);
+    // MAX_ROUNDS comes from the browser-safe constants module instead.
+    expect(src).toMatch(/from\s+["']\.\/constants["']/);
+  });
+});
 
 const originalFetch = globalThis.fetch;
 

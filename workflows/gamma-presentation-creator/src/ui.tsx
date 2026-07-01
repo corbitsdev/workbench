@@ -14,7 +14,9 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState, StepState } from "@intx/workflow";
-import { MAX_ROUNDS } from "./index";
+// From ./constants, NOT ./index: importing the server-only workflow definition
+// here would pull @intx/agent into the browser `/ui` chunk and break panel load.
+import { MAX_ROUNDS } from "./constants";
 
 type StepPhase = StepState["phase"];
 
