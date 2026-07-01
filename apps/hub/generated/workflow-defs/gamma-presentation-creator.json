@@ -27,7 +27,8 @@
           "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_list",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list"
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
+            "workbench.argMap": "{}"
           }
         },
         "drainBehavior": "cancel",
@@ -51,7 +52,8 @@
           "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes"
+            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
+            "workbench.argMap": "{}"
           }
         },
         "drainBehavior": "cancel"
