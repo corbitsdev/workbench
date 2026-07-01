@@ -238,6 +238,101 @@ async function listWorkspaceMembers(
   );
 }
 
+async function listTasks(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const limit = optionalPositiveInteger(args.limit, DEFAULT_LIMIT, MAX_LIMIT);
+  const offset = optionalNonNegativeInteger(args.offset, DEFAULT_OFFSET);
+
+  const url = attioUrl(config, "/v2/tasks");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  const assignee = optionalString(args.assignee);
+  if (assignee !== null) {
+    url.searchParams.set("assignee", assignee);
+  }
+  if (typeof args.isCompleted === "boolean") {
+    url.searchParams.set("is_completed", String(args.isCompleted));
+  }
+  const linkedObject = optionalString(args.linkedObject);
+  if (linkedObject !== null) {
+    url.searchParams.set("linked_object", linkedObject);
+  }
+  const linkedRecordId = optionalString(args.linkedRecordId);
+  if (linkedRecordId !== null) {
+    url.searchParams.set("linked_record_id", linkedRecordId);
+  }
+  const sort = optionalString(args.sort);
+  if (sort !== null) {
+    url.searchParams.set("sort", sort);
+  }
+
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+}
+
+type LinkedRecordRef = Record<string, unknown> & {
+  target_object?: unknown;
+  target_object_id?: unknown;
+  target_record_id?: unknown;
+};
+
+function linkedRecordRefs(task: unknown): LinkedRecordRef[] {
+  if (!isRecord(task) || !Array.isArray(task.linked_records)) {
+    return [];
+  }
+  return task.linked_records.filter(isRecord) as LinkedRecordRef[];
+}
+
+async function hydrateLinkedRecord(
+  config: AttioToolsConfig,
+  ref: LinkedRecordRef,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const object =
+    optionalString(ref.target_object) ?? optionalString(ref.target_object_id);
+  const recordId = optionalString(ref.target_record_id);
+  if (object === null || recordId === null) {
+    return { ...ref, error: "linked record is missing object or record id" };
+  }
+  try {
+    const record = await getRecord(config, { object, recordId }, signal);
+    return { ...ref, record };
+  } catch (err) {
+    return { ...ref, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+async function getTask(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const taskId = optionalString(args.taskId);
+  if (taskId === null) {
+    throw new Error("taskId is required");
+  }
+
+  const url = attioUrl(config, `/v2/tasks/${encodeURIComponent(taskId)}`);
+  const task = parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+
+  const refs = linkedRecordRefs(task);
+  if (args.hydrateLinkedRecords === false) {
+    return { task, linkedRecords: refs };
+  }
+
+  const linkedRecords = await Promise.all(
+    refs.map((ref) => hydrateLinkedRecord(config, ref, signal)),
+  );
+  return { task, linkedRecords };
+}
+
 const QUERY_RECORDS_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -315,6 +410,60 @@ const GET_RECORD_INPUT_SCHEMA = {
   required: ["object", "recordId"],
 };
 
+const LIST_TASKS_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    assignee: {
+      type: "string",
+      description:
+        'Scope tasks to one assignee — pass a workspace member email (e.g. "sawyer@abklabs.com") or workspace member id. Use this to list only the tasks assigned to a specific person.',
+    },
+    isCompleted: {
+      type: "boolean",
+      description:
+        "Filter by completion state: false for open tasks, true for completed. Omit to return both.",
+    },
+    linkedObject: {
+      type: "string",
+      description:
+        'Only return tasks linked to this object slug (e.g. "companies"). Use with linkedRecordId to scope to one record.',
+    },
+    linkedRecordId: {
+      type: "string",
+      description: "Only return tasks linked to this record id.",
+    },
+    sort: {
+      type: "string",
+      description:
+        'Sort order, e.g. "created_at:desc" (newest first) or "created_at:asc".',
+    },
+    limit: {
+      type: "number",
+      description: "Maximum number of tasks to return (1-100, default 25).",
+    },
+    offset: {
+      type: "number",
+      description: "Number of tasks to skip for pagination (default 0).",
+    },
+  },
+};
+
+const GET_TASK_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    taskId: {
+      type: "string",
+      description: "The id of the task to fetch.",
+    },
+    hydrateLinkedRecords: {
+      type: "boolean",
+      description:
+        "When true (default), fetch each linked record's full data so you get the company/person context in one call. Set false to return only the linked-record references.",
+    },
+  },
+  required: ["taskId"],
+};
+
 const EMPTY_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {},
@@ -354,6 +503,20 @@ export const ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION: ToolDefinition = {
   inputSchema: EMPTY_INPUT_SCHEMA,
 };
 
+export const ATTIO_LIST_TASKS_DEFINITION: ToolDefinition = {
+  name: "attio_list_tasks",
+  description:
+    'List Attio tasks. To scope to one person\'s tasks (e.g. "my tasks"), pass `assignee` with their workspace member email or id. Filter open work with `isCompleted: false`, or scope to a record with `linkedObject`+`linkedRecordId`. Supports `sort` and pagination. Returns an array of tasks, each with an `id` (containing `task_id`), `content_plaintext`, `deadline_at`, `is_completed`, `assignees`, and `linked_records`. Read-only.',
+  inputSchema: LIST_TASKS_INPUT_SCHEMA,
+};
+
+export const ATTIO_GET_TASK_DEFINITION: ToolDefinition = {
+  name: "attio_get_task",
+  description:
+    "Fetch a single Attio task by id and, by default, hydrate its linked records so you get the full company/person context in one call. Returns `{ task, linkedRecords }` where each linked record includes the fetched `record` (or an `error` if it could not be fetched). Read-only.",
+  inputSchema: GET_TASK_INPUT_SCHEMA,
+};
+
 function buildListObjectsHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listObjects(config, signal));
@@ -377,6 +540,16 @@ function buildGetRecordHandler(config: AttioToolsConfig) {
 function buildListWorkspaceMembersHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listWorkspaceMembers(config, signal));
+}
+
+function buildListTasksHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await listTasks(config, args, signal));
+}
+
+function buildGetTaskHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await getTask(config, args, signal));
 }
 
 export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
@@ -408,6 +581,16 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
       definition: ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
       handler: buildListWorkspaceMembersHandler(config),
     },
+    {
+      kind: "string",
+      definition: ATTIO_LIST_TASKS_DEFINITION,
+      handler: buildListTasksHandler(config),
+    },
+    {
+      kind: "string",
+      definition: ATTIO_GET_TASK_DEFINITION,
+      handler: buildGetTaskHandler(config),
+    },
   ];
 }
 
@@ -423,6 +606,10 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildGetRecordHandler(config);
     case ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION.name:
       return buildListWorkspaceMembersHandler(config);
+    case ATTIO_LIST_TASKS_DEFINITION.name:
+      return buildListTasksHandler(config);
+    case ATTIO_GET_TASK_DEFINITION.name:
+      return buildGetTaskHandler(config);
     default:
       throw new Error(`Unknown attio tool: ${name}`);
   }
@@ -500,5 +687,17 @@ export const ATTIO_HUB_TOOLS = {
         resolveBaseUrl(config),
         ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
       ),
+  },
+  attio_list_tasks: {
+    definition: ATTIO_LIST_TASKS_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_TASKS_DEFINITION),
+  },
+  attio_get_task: {
+    definition: ATTIO_GET_TASK_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_TASK_DEFINITION),
   },
 };
