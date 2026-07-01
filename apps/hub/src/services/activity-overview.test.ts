@@ -211,11 +211,16 @@ describe("getUsageByWorkflowType", () => {
 
     const result = await getUsageByWorkflowType({ db, tenantId: "tnt_1" });
 
-    // A deployment-dedup subquery guards against run-count fan-out.
+    // Structural regression guard only: the mocked chain does not execute SQL,
+    // so this asserts the dedup subquery is still wired (a `DISTINCT ON`) — it
+    // does NOT exercise the LIKE-prefix join, tenant scoping, or the actual
+    // fan-out collapse. Those join semantics have no DB-level coverage here (the
+    // hub suite has no live-DB harness); they are validated on staging per
+    // docs/ANALYTICS.md.
     expect(capture.distinctOnCount).toBe(1);
-    // Grouping is on a single column (the deduped deployment kind).
     expect(capture.groupByCols).toHaveLength(1);
-    // Sorted by total tokens desc: last30days (590) before mvt (150).
+    // Real behavior: mapping + sort by total tokens desc — last30days (590)
+    // before mvt-landing-page (150), with turn counts passed through.
     expect(result.map((r) => r.kind)).toEqual([
       "last30days",
       "mvt-landing-page",

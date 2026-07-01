@@ -297,7 +297,10 @@ export async function getUsageByWorkflowType(args: {
   // ran many serial runs per deployment, so historical rows can share one — and
   // a naive join to `workflow_run` would fan out, multiplying each instance's
   // tokens by the run count. Collapse to one (deploymentId, kind) per deployment
-  // first (kind is constant per deployment) so the join is 1:1 per instance.
+  // first so the join is 1:1 per instance. Exclude soft-deleted runs to match
+  // the ledger's other `workflow_run` reads, and add `kind` as a `DISTINCT ON`
+  // tiebreaker so the picked row is deterministic (kind is constant per
+  // deployment today, so the tiebreaker only guards against future drift).
   const runByDeployment = db
     .selectDistinctOn([workflowRun.deploymentId], {
       deploymentId: workflowRun.deploymentId,
@@ -307,10 +310,11 @@ export async function getUsageByWorkflowType(args: {
     .where(
       and(
         eq(workflowRun.tenantId, tenantId),
+        isNull(workflowRun.deletedAt),
         isNotNull(workflowRun.deploymentId),
       ),
     )
-    .orderBy(workflowRun.deploymentId)
+    .orderBy(workflowRun.deploymentId, workflowRun.kind)
     .as("run_by_deployment");
 
   const rows = await db

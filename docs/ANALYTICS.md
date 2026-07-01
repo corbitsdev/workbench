@@ -49,6 +49,7 @@ Requires an active principal on the tenant (Interchange `resolveTenant` on `/api
 4. Run a multi-step workflow deployment and complete one step that invokes inference; confirm supervisor-address events appear (hub logs: no `Skipping analytics event for unknown agent address` for the deployment supervisor).
 5. Call `GET /api/tenants/<tenantId>/analytics/summary` with a session cookie; validate JSON fields against the UI.
 6. Optional: `GET .../summary/by-agent` to confirm per-agent split matches known agents.
+7. **`byWorkflowType`** — the address→`workflow_run.kind` LIKE join has no live-DB unit coverage (the hub suite mocks the db chain). After a workflow run completes on staging, confirm its kind appears in the **Tokens by workflow type** table with non-zero tokens, and that totals across kinds do not exceed the tenant token summary (a fan-out regression would inflate them).
 
 ## Operational notes
 
