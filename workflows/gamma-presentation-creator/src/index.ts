@@ -1,7 +1,14 @@
 import { awaitSignal, defineWorkflow, gate } from "@intx/workflow";
 import type { Primitive, Selector } from "@intx/workflow";
-import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
-import { PRESENTATION_GENERATE_SYSTEM_PROMPT } from "./prompts";
+import {
+  deterministicToolStep,
+  inlineInferenceStep,
+  LLM_DEFAULT_MODEL,
+} from "@workbench/agents";
+import {
+  PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
+  PRESENTATION_GENERATE_SYSTEM_PROMPT,
+} from "./prompts";
 import { MAX_ROUNDS } from "./constants";
 
 export const label = "Gamma Presentation Creator";
@@ -30,6 +37,7 @@ const SOURCE_MERGE: Selector[] = [
 function roundSteps(round: number): Record<string, Primitive> {
   const gen = `generate-${round}`;
   const rnd = `render-${round}`;
+  const dsc = `describe-${round}`;
   const prev = `preview-${round}`;
   const chk = `check-${round}`;
   const per = `persist-${round}`;
@@ -66,21 +74,30 @@ function roundSteps(round: number): Record<string, Primitive> {
       },
       argMap: { gammaId: { from: "gammaId" }, prompt: { from: "reply" } },
     }),
+    [dsc]: inlineInferenceStep({
+      id: `presentation-${dsc}`,
+      systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
+      model: LLM_DEFAULT_MODEL,
+      after: [gen],
+      input: { from: `steps.${gen}.output` },
+    }),
     [prev]: awaitSignal({ name: prev, after: [rnd] }),
     [per]: deterministicToolStep({
       id: `presentation-${per}`,
-      tool: "artifact_create",
-      after: isLast ? [prev] : [chk],
+      tool: "artifact_link_gamma_presentation",
+      after: isLast ? [prev, dsc] : [chk, dsc],
       input: {
         merge: [
           { from: "steps.intake.output" },
-          { from: `steps.${gen}.output` },
+          { from: `steps.${rnd}.output` },
+          { from: `steps.${dsc}.output` },
         ],
       },
       argMap: {
         title: { from: "deckTitle" },
-        kind: { literal: "presentation" },
-        content: { from: "reply" },
+        url: { from: "gammaUrl" },
+        description: { from: "reply" },
+        gammaId: { from: "gammaId" },
       },
     }),
   };

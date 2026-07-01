@@ -29,9 +29,21 @@ export type ArtifactKind =
   | "battlecard"
   | "pain-points"
   | "call-transcript"
-  | "presentation";
+  | "presentation"
+  | "gamma_presentation";
 
 export type ArtifactStatus = "draft" | "approved" | "rejected";
+
+// Structured content stored in a `gamma_presentation` artifact. The DB `content`
+// column holds the JSON serialization of this shape; hub writes it, web parses it
+// to render the deck (iframe with a View-in-Gamma fallback).
+export const GammaPresentationContentSchema = type({
+  url: "string",
+  description: "string",
+  gammaId: "string",
+});
+export type GammaPresentationContent =
+  typeof GammaPresentationContentSchema.infer;
 
 export const PainPoint = type({
   id: "string",

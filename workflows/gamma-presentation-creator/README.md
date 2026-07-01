@@ -31,7 +31,11 @@ The body is a bounded `MAX_ROUNDS` (3) refine loop, each round:
    remaining rounds; refusal feeds the draft + notes into the next round. The
    final round has no gate — its preview leads straight to persistence.
 
-The approved deck is saved as a `presentation` artifact via `artifact_create`.
+Each round also runs a cheap `describe-N` inference step that writes a one-line
+deck description. The approved deck is saved as a `gamma_presentation` artifact
+via `artifact_link_gamma_presentation`, whose content is the JSON
+`{ url, description, gammaId }` (the rendered deck URL, the description, and the
+new deck's Gamma id) — not the LLM's slide text.
 
 Steps declare their tools as serializable `capabilities`, never inline tool
 factories — the definition is pushed as JSON.

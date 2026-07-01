@@ -39,6 +39,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "artifact_find_by_title",
     "artifact_link_file",
     "artifact_link_presentation",
+    "artifact_link_gamma_presentation",
     "write_artifact",
     "memory_load",
     "memory_save",

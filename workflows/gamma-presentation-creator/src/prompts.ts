@@ -17,3 +17,11 @@ SLIDE N: [Title]
 [Content - 2-5 sentences or a clean list, no padding]
 
 Produce the number of slides appropriate for the brief.`;
+
+export const PRESENTATION_DESCRIBE_SYSTEM_PROMPT = `You are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.
+
+- One sentence, under 160 characters. No preamble, no "This deck", no quotes.
+- Name the subject and the point of the deck, not the slide structure.
+- Use "workbench", never "workspace". No em dashes, no hashtags, no corporate superlatives.
+
+Output only the sentence.`;
