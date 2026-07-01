@@ -7,6 +7,10 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./ui": {
+      "types": "./src/ui.tsx",
+      "default": "./src/ui.tsx"
     }
   },
   "scripts": {
@@ -19,10 +23,15 @@
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/ui": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/react": "^19.0.0",
     "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "react": "*"
   }
 }

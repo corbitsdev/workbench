@@ -1,0 +1,144 @@
+import { describe, expect, test } from "bun:test";
+import type { RunState } from "@intx/workflow";
+import {
+  activeGate,
+  parseArtifacts,
+  parseDecision,
+  parseFirstLinkedRecord,
+  parseMembers,
+  parseTasks,
+  peelOutput,
+} from "./ui";
+
+// A deterministic tool step's output is a JSON envelope; an inference step's is
+// a { reply } envelope. peelOutput must handle both plus bare objects.
+function envelope(value: unknown) {
+  return { content: JSON.stringify(value) };
+}
+function reply(value: unknown) {
+  return { reply: JSON.stringify(value) };
+}
+
+function runStateAwaiting(stepId: string): RunState {
+  return {
+    steps: new Map([[stepId, { phase: "awaiting-signal" }]]),
+  } as unknown as RunState;
+}
+
+describe("peelOutput", () => {
+  test("peels a { content } JSON envelope", () => {
+    expect(peelOutput(envelope([1, 2]))).toEqual([1, 2]);
+  });
+  test("peels a { reply } JSON envelope", () => {
+    expect(peelOutput(reply({ a: 1 }))).toEqual({ a: 1 });
+  });
+  test("returns a bare object unchanged", () => {
+    expect(peelOutput({ a: 1 })).toEqual({ a: 1 });
+  });
+  test("returns undefined for nullish", () => {
+    expect(peelOutput(undefined)).toBeUndefined();
+    expect(peelOutput(null)).toBeUndefined();
+  });
+});
+
+describe("activeGate", () => {
+  test("returns the awaiting gate", () => {
+    expect(activeGate(runStateAwaiting("clarify"))).toBe("clarify");
+    expect(activeGate(runStateAwaiting("approveSync"))).toBe("approveSync");
+  });
+  test("returns null when no gate is awaiting", () => {
+    expect(activeGate(null)).toBeNull();
+    expect(activeGate(runStateAwaiting("analyze"))).toBeNull();
+  });
+});
+
+describe("parseMembers", () => {
+  test("maps members to assignee + label, preferring name then email", () => {
+    const raw = envelope([
+      {
+        id: { workspace_member_id: "wm_1" },
+        email_address: "sawyer@abklabs.com",
+        first_name: "Sawyer",
+        last_name: "Cutler",
+      },
+      { id: { workspace_member_id: "wm_2" }, email: "p@abklabs.com" },
+    ]);
+    expect(parseMembers(raw)).toEqual([
+      { assignee: "sawyer@abklabs.com", label: "Sawyer Cutler" },
+      { assignee: "p@abklabs.com", label: "p@abklabs.com" },
+    ]);
+  });
+  test("returns [] for an unparseable payload", () => {
+    expect(parseMembers(envelope({ nope: true }))).toEqual([]);
+  });
+});
+
+describe("parseTasks", () => {
+  test("maps tasks to taskId + label + deadline", () => {
+    const raw = envelope([
+      {
+        id: { task_id: "task_1" },
+        content_plaintext: "Follow up",
+        deadline_at: "2026-07-10T00:00:00Z",
+      },
+    ]);
+    expect(parseTasks(raw)).toEqual([
+      {
+        taskId: "task_1",
+        label: "Follow up",
+        deadline: "2026-07-10T00:00:00Z",
+      },
+    ]);
+  });
+  test("falls back to task id when content is empty", () => {
+    expect(parseTasks(envelope([{ id: { task_id: "t2" } }]))).toEqual([
+      { taskId: "t2", label: "t2" },
+    ]);
+  });
+});
+
+describe("parseDecision", () => {
+  test("parses a decision with questions", () => {
+    const d = parseDecision(
+      reply({ status: "need_clarification", questions: ["Which region?"] }),
+    );
+    expect(d.status).toBe("need_clarification");
+    expect(d.questions).toEqual(["Which region?"]);
+  });
+  test("returns {} for garbage", () => {
+    expect(parseDecision("not json")).toEqual({});
+  });
+});
+
+describe("parseArtifacts", () => {
+  test("extracts the artifacts array", () => {
+    const raw = reply({
+      artifacts: [{ kind: "cold-email", title: "T", content: "C" }],
+    });
+    expect(parseArtifacts(raw)).toEqual([
+      { kind: "cold-email", title: "T", content: "C" },
+    ]);
+  });
+  test("returns [] when artifacts is missing", () => {
+    expect(parseArtifacts(reply({}))).toEqual([]);
+  });
+});
+
+describe("parseFirstLinkedRecord", () => {
+  test("returns the first linked record", () => {
+    const raw = envelope({
+      task: {},
+      linkedRecords: [
+        { object: "companies", recordId: "rec_1" },
+        { object: "people", recordId: "rec_2" },
+      ],
+    });
+    expect(parseFirstLinkedRecord(raw)).toEqual({
+      object: "companies",
+      recordId: "rec_1",
+    });
+  });
+  test("returns null when there are no linked records", () => {
+    expect(parseFirstLinkedRecord(envelope({ task: {} }))).toBeNull();
+  });
+});
