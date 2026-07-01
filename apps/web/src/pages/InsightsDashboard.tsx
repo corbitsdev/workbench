@@ -6,9 +6,9 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
   ActivityOverview,
-  AnalyticsAgentRow,
   AnalyticsSummary,
   UsageByPersonRow,
+  UsageByWorkflowTypeRow,
 } from "../lib/hub-api";
 import {
   DeltaBadge,
@@ -592,28 +592,33 @@ function PersonBreakdown({
   );
 }
 
-function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
-  if (agents.length === 0) return null;
+function WorkflowTypeBreakdown({
+  workflowTypes,
+  tokenCaveat,
+}: {
+  workflowTypes: UsageByWorkflowTypeRow[];
+  tokenCaveat: string | null;
+}) {
+  if (workflowTypes.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3">
-      <SectionLabel>By agent</SectionLabel>
+      <SectionLabel>Tokens by workflow type</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="overflow-x-auto rounded-[12px] border border-border">
         <table className="w-full min-w-[480px] text-left text-[13px]">
           <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
             <tr>
-              <th className="px-4 py-2 font-medium">Agent</th>
+              <th className="px-4 py-2 font-medium">Workflow type</th>
               <th className="px-4 py-2 text-right font-medium">Turns</th>
               <th className="px-4 py-2 text-right font-medium">Tool calls</th>
               <th className="px-4 py-2 text-right font-medium">Tokens</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
-            {agents.map((row) => (
-              <tr key={row.agentId}>
-                <td className="px-4 py-2 text-text">
-                  {row.agentName ?? row.agentId}
-                </td>
+            {workflowTypes.map((row) => (
+              <tr key={row.kind}>
+                <td className="px-4 py-2 text-text">{humanizeKey(row.kind)}</td>
                 <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.turnCount)}
                 </td>
@@ -661,7 +666,7 @@ function InstanceBreakdown({
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
-            {instances.map((row) => (
+            {visible.map((row) => (
               <tr key={row.instanceId}>
                 <td className="px-4 py-2 font-mono text-[12px] text-text-2">
                   {row.instanceId}
@@ -791,7 +796,10 @@ export function InsightsDashboard() {
                 people={overview.byPerson}
                 tokenCaveat={tokenCaveat}
               />
-              <AgentBreakdown agents={overview.inference.byAgent} />
+              <WorkflowTypeBreakdown
+                workflowTypes={overview.byWorkflowType}
+                tokenCaveat={tokenCaveat}
+              />
               <InstanceBreakdown instances={overview.inference.byInstance} />
             </div>
           </div>

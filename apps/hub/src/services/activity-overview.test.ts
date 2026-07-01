@@ -4,6 +4,7 @@ import {
   computePreviousRange,
   deriveAgentActivity,
   getUsageByPerson,
+  getUsageByWorkflowType,
 } from "./activity-overview";
 
 type PersonRow = {
@@ -150,5 +151,75 @@ describe("getUsageByPerson", () => {
 
     expect(result[0]?.name).toBeNull();
     expect(result[0]?.isSelf).toBe(false);
+  });
+});
+
+function makeWorkflowTypeDb(
+  rows: {
+    kind: string;
+    turnCount: number;
+    toolCallCount: number;
+    inputTokens: number;
+    outputTokens: number;
+  }[],
+  capture: { groupByCols?: unknown[]; distinctOnCount?: number },
+) {
+  capture.distinctOnCount = 0;
+  const chain = {
+    select: mock(() => chain),
+    // The deployment-dedup subquery collapses many-runs-per-deployment to one
+    // (deploymentId, kind) so the LIKE join can't fan out and double-count.
+    selectDistinctOn: mock(() => {
+      capture.distinctOnCount = (capture.distinctOnCount ?? 0) + 1;
+      return chain;
+    }),
+    from: mock(() => chain),
+    innerJoin: mock(() => chain),
+    where: mock(() => chain),
+    orderBy: mock(() => chain),
+    as: mock(() => ({})),
+    groupBy: mock((...cols: unknown[]) => {
+      capture.groupByCols = cols;
+      return Promise.resolve(rows);
+    }),
+  };
+  return chain as never;
+}
+
+describe("getUsageByWorkflowType", () => {
+  it("dedupes deployments, groups by workflow kind, and sorts by total tokens desc", async () => {
+    const capture: { groupByCols?: unknown[]; distinctOnCount?: number } = {};
+    const db = makeWorkflowTypeDb(
+      [
+        {
+          kind: "mvt-landing-page",
+          turnCount: 2,
+          toolCallCount: 1,
+          inputTokens: 120,
+          outputTokens: 30,
+        },
+        {
+          kind: "last30days",
+          turnCount: 6,
+          toolCallCount: 2,
+          inputTokens: 500,
+          outputTokens: 90,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByWorkflowType({ db, tenantId: "tnt_1" });
+
+    // A deployment-dedup subquery guards against run-count fan-out.
+    expect(capture.distinctOnCount).toBe(1);
+    // Grouping is on a single column (the deduped deployment kind).
+    expect(capture.groupByCols).toHaveLength(1);
+    // Sorted by total tokens desc: last30days (590) before mvt (150).
+    expect(result.map((r) => r.kind)).toEqual([
+      "last30days",
+      "mvt-landing-page",
+    ]);
+    expect(result[0]?.turnCount).toBe(6);
   });
 });

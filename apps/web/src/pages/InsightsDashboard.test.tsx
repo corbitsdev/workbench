@@ -109,6 +109,22 @@ const mockOverview = {
       outputTokens: 60,
     },
   ],
+  byWorkflowType: [
+    {
+      kind: "last30days",
+      turnCount: 6,
+      toolCallCount: 2,
+      inputTokens: 500,
+      outputTokens: 90,
+    },
+    {
+      kind: "mvt-landing-page",
+      turnCount: 2,
+      toolCallCount: 1,
+      inputTokens: 120,
+      outputTokens: 30,
+    },
+  ],
   inference: {
     summary: {
       tenantId: "tenant-1",
@@ -295,13 +311,38 @@ describe("InsightsDashboard", () => {
     expect(screen.getByText("Workflow runs")).toBeDefined();
   });
 
-  it("renders per-agent breakdown when by-agent data is available", async () => {
+  it("renders tokens by workflow type with humanized kind labels", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Myra")).toBeDefined();
+      expect(screen.getByText("Tokens by workflow type")).toBeDefined();
     });
-    expect(screen.getByText("10")).toBeDefined();
+    // Kinds are humanized from kebab-case to Title Case.
+    const row = screen.getByText("Mvt Landing Page").closest("tr");
+    // Tokens = input 120 + output 30 = 150.
+    expect(row?.textContent).toContain("150");
+    expect(screen.getByText("Last30days")).toBeDefined();
+    // The removed "By agent" section no longer renders.
+    expect(screen.queryByText("By agent")).toBeNull();
+  });
+
+  it("flags the tokens-by-workflow-type table with a caveat note across the live/history boundary", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("Tokens by workflow type")).toBeDefined();
+      });
+      const section = screen
+        .getByText("Tokens by workflow type")
+        .closest("div");
+      const caveat = section?.querySelector('[data-testid="data-caveat"]');
+      expect(caveat?.textContent).toContain("not recorded");
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+    }
   });
 
   it("lets the date-preset row wrap and the breakdown tables scroll within themselves at mobile widths", async () => {

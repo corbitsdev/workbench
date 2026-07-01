@@ -23,6 +23,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  like,
   lte,
   ne,
   sql,
@@ -50,6 +51,15 @@ export type UsageByPersonRow = {
 };
 
 export type ActivityCountRow = { key: string; count: number };
+
+export type UsageByWorkflowTypeRow = {
+  /** Workflow kind (e.g. `last30days`, `mvt-landing-page`). */
+  kind: string;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+};
 
 export type ActivityOverview = {
   tenantId: string;
@@ -103,6 +113,15 @@ export type ActivityOverview = {
    * agents) are excluded — their usage cannot be attributed to one person.
    */
   byPerson: UsageByPersonRow[];
+  /**
+   * Token/turn usage attributed to each workflow kind. Workflow-run inference
+   * runs under per-deployment agent instances whose `address` embeds the
+   * deployment id (`ins_<deploymentId>…`); joining the rollup through that
+   * address to `workflow_run.kind` aggregates usage by workflow type. Non-
+   * workflow agents (Myra, member instances) have no matching `workflow_run`
+   * row and are excluded.
+   */
+  byWorkflowType: UsageByWorkflowTypeRow[];
   inference: {
     summary: AnalyticsSummary;
     previousSummary: AnalyticsSummary | null;
@@ -262,6 +281,88 @@ export async function getUsageByPerson(args: {
     );
 }
 
+export async function getUsageByWorkflowType(args: {
+  db: DB["db"];
+  tenantId: string;
+  range?: AnalyticsDateRange;
+}): Promise<UsageByWorkflowTypeRow[]> {
+  const { db, tenantId, range } = args;
+
+  // Workflow-run inference is recorded against per-deployment agent instances
+  // whose `address` is `ins_<deploymentId>@…` (or `ins_<deploymentId>-<stepId>@…`
+  // for step agents). The rollup only stores the resolved `instanceId`, so we
+  // rejoin `agentInstance` to recover the address, then match its `ins_<id>`
+  // prefix to a deployment's `kind` (the same LIKE convention the deploy route
+  // uses). `deployment_id` has no DB-level uniqueness — the pre-CL-2582 model
+  // ran many serial runs per deployment, so historical rows can share one — and
+  // a naive join to `workflow_run` would fan out, multiplying each instance's
+  // tokens by the run count. Collapse to one (deploymentId, kind) per deployment
+  // first (kind is constant per deployment) so the join is 1:1 per instance.
+  const runByDeployment = db
+    .selectDistinctOn([workflowRun.deploymentId], {
+      deploymentId: workflowRun.deploymentId,
+      kind: workflowRun.kind,
+    })
+    .from(workflowRun)
+    .where(
+      and(
+        eq(workflowRun.tenantId, tenantId),
+        isNotNull(workflowRun.deploymentId),
+      ),
+    )
+    .orderBy(workflowRun.deploymentId)
+    .as("run_by_deployment");
+
+  const rows = await db
+    .select({
+      kind: runByDeployment.kind,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      agentInstance,
+      and(
+        eq(agentInstance.id, analyticsRollupDaily.instanceId),
+        eq(agentInstance.tenantId, analyticsRollupDaily.tenantId),
+      ),
+    )
+    .innerJoin(
+      runByDeployment,
+      like(
+        agentInstance.address,
+        sql`'ins_' || ${runByDeployment.deploymentId} || '%'`,
+      ),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(runByDeployment.kind);
+
+  return rows
+    .map((row) => ({
+      kind: row.kind,
+      turnCount: row.turnCount,
+      toolCallCount: row.toolCallCount,
+      inputTokens: row.inputTokens,
+      outputTokens: row.outputTokens,
+    }))
+    .sort(
+      (a, b) =>
+        b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
+    );
+}
+
 export async function getActivityOverview(args: {
   db: DB["db"];
   tenantId: string;
@@ -391,6 +492,7 @@ export async function getActivityOverview(args: {
     previousSummary,
     tokensRecordedFrom,
     byPerson,
+    byWorkflowType,
   ] = await Promise.all([
     getAnalyticsSummary(inferenceFilter),
     getAnalyticsSummaryByAgent(inferenceFilter),
@@ -403,6 +505,7 @@ export async function getActivityOverview(args: {
       : Promise.resolve(null),
     getTokenDataStartDate({ db, tenantId }),
     getUsageByPerson({ db, tenantId, callerPrincipalId, range }),
+    getUsageByWorkflowType({ db, tenantId, range }),
   ]);
 
   return {
@@ -450,6 +553,7 @@ export async function getActivityOverview(args: {
     })),
     tokensRecordedFrom,
     byPerson,
+    byWorkflowType,
     inference: { summary, previousSummary, byAgent, byInstance },
   };
 }
