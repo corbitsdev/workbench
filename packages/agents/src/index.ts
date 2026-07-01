@@ -185,3 +185,11 @@ export {
   FANNIE_DEPLOY_DESCRIPTOR,
 } from "./fannie/definition";
 export { AgentDeployDescriptor } from "./deploy-descriptor";
+export {
+  attachmentCapabilityForAgent,
+  attachmentPolicyForAgent,
+  acceptedMimeTypes,
+  ATTACHMENT_CAPABILITIES,
+  type AttachmentCapability,
+  type AgentAttachmentPolicy,
+} from "./attachment-capabilities";

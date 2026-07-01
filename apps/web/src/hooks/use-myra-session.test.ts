@@ -14,9 +14,11 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 class FakeApiError extends Error {
   status: number;
-  constructor(status: number) {
+  code?: string;
+  constructor(status: number, code?: string) {
     super("api error");
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -61,6 +63,8 @@ mock.module("../lib/hub-api", () => ({
 
 mock.module("../lib/instance-transport", () => ({
   createHubTransport: () => ({}),
+  fetchBlobObjectUrl: (_tenantId: string, _blobId: string) =>
+    Promise.resolve("blob:test"),
 }));
 
 mock.module("@workbench/agents/browser", () => ({
@@ -71,7 +75,14 @@ mock.module("@workbench/agents/browser", () => ({
   createImageTracker: () => ({ stop: () => {}, images: [] }),
 }));
 
-const { useMyraSession, deliverMessage } = await import("./use-myra-session");
+const {
+  useMyraSession,
+  deliverMessage,
+  deliverMessageWithAttachments,
+  attachmentErrorMessage,
+} = await import("./use-myra-session");
+
+type DeliverTransport = Parameters<typeof deliverMessageWithAttachments>[0];
 
 beforeEach(() => {
   launchInstanceSession.mockClear();
@@ -171,5 +182,84 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));
     expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
     expect(destroyed[0]).toBe(1);
+  });
+});
+
+describe("attachmentErrorMessage", () => {
+  it("maps oversize codes to plain-language limits", () => {
+    expect(
+      attachmentErrorMessage(new FakeApiError(413, "oversize_attachment")),
+    ).toContain("10 MB");
+    expect(
+      attachmentErrorMessage(new FakeApiError(413, "oversize_total")),
+    ).toContain("30 MB");
+  });
+
+  it("maps a disallowed type to a readable message", () => {
+    expect(
+      attachmentErrorMessage(new FakeApiError(415, "disallowed_mime_type")),
+    ).toContain("cannot read");
+  });
+
+  it("maps the server per-agent rejection to a readable message", () => {
+    expect(
+      attachmentErrorMessage(new FakeApiError(422, "disallowed_for_agent")),
+    ).toContain("can't read");
+  });
+
+  it("falls back to a connection message for a non-API error", () => {
+    expect(attachmentErrorMessage(new Error("boom"))).toContain("connection");
+  });
+});
+
+describe("deliverMessageWithAttachments", () => {
+  const attachments = [{ mimeType: "image/png", data: "AAAA", name: "a.png" }];
+
+  it("POSTs content and attachments to the instance mail route", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.resolve(undefined),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await deliverMessageWithAttachments(
+      transport,
+      "tnt-acme",
+      "inst-1",
+      "hi",
+      attachments,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("POST");
+    expect(fetchMock.mock.calls[0]?.[1]).toBe(
+      "/api/tenants/tnt-acme/agents/instances/inst-1/mail",
+    );
+    expect(fetchMock.mock.calls[0]?.[2]).toEqual({
+      content: "hi",
+      attachments,
+    });
+  });
+
+  it("relaunches and retries once on a 409", async () => {
+    let calls = 0;
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new FakeApiError(409));
+      return Promise.resolve(undefined);
+    });
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await deliverMessageWithAttachments(
+      transport,
+      "tnt-acme",
+      "inst-1",
+      "hi",
+      attachments,
+    );
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

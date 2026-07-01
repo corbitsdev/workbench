@@ -69,6 +69,8 @@ export interface ChatThreadProps {
     subjectId: string,
     subjectKind: FeedbackSubjectKind,
   ) => 1 | -1 | null | undefined;
+  /** Resolves a message attachment's blob to a displayable/downloadable URL. */
+  resolveAttachmentUrl?: (blobId: string) => Promise<string>;
   className?: string;
 }
 
@@ -88,6 +90,7 @@ export function ChatThread({
   onAction,
   onRate,
   getRating,
+  resolveAttachmentUrl,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -144,6 +147,9 @@ export function ChatThread({
               {...(onAction !== undefined ? { onAction } : {})}
               {...(onRate !== undefined ? { onRate } : {})}
               {...(getRating !== undefined ? { getRating } : {})}
+              {...(resolveAttachmentUrl !== undefined
+                ? { resolveAttachmentUrl }
+                : {})}
             />
             {urls.map((url) => (
               <UrlImageCard key={url} url={url} />

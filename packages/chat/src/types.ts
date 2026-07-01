@@ -44,6 +44,20 @@ export const ChatImageSchema = type({
 /** An inline image captured from the agent's response stream. */
 export type ChatImage = typeof ChatImageSchema.infer;
 
+export const ChatAttachmentSchema = type({
+  blobId: "string",
+  /** Display name; derived from the blob when the mail carried a null name. */
+  name: "string",
+  type: "string",
+  size: "number",
+});
+/**
+ * A stored mail attachment, on either a sent or received message. The bytes are
+ * fetched lazily by blobId through the host-supplied `resolveAttachmentUrl` — the
+ * chat package stays transport-free and never fetches directly.
+ */
+export type ChatAttachment = typeof ChatAttachmentSchema.infer;
+
 export const ChatMessageSchema = type({
   id: "string",
   role: ChatRoleSchema,
@@ -56,6 +70,7 @@ export const ChatMessageSchema = type({
   "toolCalls?": ToolCallSchema.array(),
   "reasoning?": "string",
   "images?": ChatImageSchema.array(),
+  "attachments?": ChatAttachmentSchema.array(),
 });
 /** A single message in a chat thread. */
 export type ChatMessage = typeof ChatMessageSchema.infer;

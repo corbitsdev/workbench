@@ -1,14 +1,33 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+} from "@testing-library/react";
 import React from "react";
 
 import { MessageBubble } from "./MessageBubble";
 import { type ChatMessage } from "./types";
 
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:test";
+  URL.revokeObjectURL = () => {};
+}
+
 afterEach(() => {
   cleanup();
 });
+
+// Let the resolver promise settle and React commit the resulting state; wrapped
+// in act so the tests observe the resolved thumbnail / chip without warnings.
+async function flush(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
 
 describe("MessageBubble", () => {
   it("renders user message as plain text", () => {
@@ -314,5 +333,129 @@ describe("MessageBubble", () => {
     fireEvent.error(img);
     expect(container.querySelector("img")).toBeNull();
     expect(screen.getByText("Image unavailable")).not.toBeNull();
+  });
+
+  it("renders a downloadable file chip for a document attachment", async () => {
+    const resolveAttachmentUrl = mock(async () => "blob:doc");
+    const message: ChatMessage = {
+      id: "att-doc",
+      role: "user",
+      content: "See attached",
+      createdAt: "2026-06-04T00:07:00Z",
+      attachments: [
+        {
+          blobId: "b1",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 2048,
+        },
+      ],
+    };
+    render(
+      <MessageBubble
+        message={message}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />,
+    );
+    expect(screen.getByText("report.pdf")).not.toBeNull();
+    expect(screen.getByText("2 KB")).not.toBeNull();
+    // A document chip does not eagerly fetch bytes; it fetches on download.
+    expect(resolveAttachmentUrl).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a download error instead of swallowing it when the resolver rejects", async () => {
+    const resolveAttachmentUrl = mock(() => Promise.reject(new Error("nope")));
+    const message: ChatMessage = {
+      id: "att-fail",
+      role: "user",
+      content: "See attached",
+      createdAt: "2026-06-04T00:07:00Z",
+      attachments: [
+        {
+          blobId: "b2",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 2048,
+        },
+      ],
+    };
+    render(
+      <MessageBubble
+        message={message}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /report\.pdf/ }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't download");
+  });
+
+  it("renders an <img> thumbnail for an image attachment via the resolver", async () => {
+    const resolveAttachmentUrl = mock(async () => "blob:image-xyz");
+    const message: ChatMessage = {
+      id: "att-img",
+      role: "user",
+      content: "pic",
+      createdAt: "2026-06-04T00:08:00Z",
+      attachments: [
+        { blobId: "b2", name: "shot.png", type: "image/png", size: 512 },
+      ],
+    };
+    const { container } = render(
+      <MessageBubble
+        message={message}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />,
+    );
+    await flush();
+    expect(resolveAttachmentUrl).toHaveBeenCalledWith("b2");
+    const img = container.querySelector(
+      "img[src='blob:image-xyz']",
+    ) as HTMLImageElement;
+    expect(img).not.toBeNull();
+    expect(img.alt).toBe("shot.png");
+  });
+
+  it("falls back to a file chip when an image attachment fails to resolve", async () => {
+    const resolveAttachmentUrl = mock(async () => {
+      throw new Error("no bytes");
+    });
+    const message: ChatMessage = {
+      id: "att-img-fail",
+      role: "user",
+      content: "pic",
+      createdAt: "2026-06-04T00:09:00Z",
+      attachments: [
+        { blobId: "b3", name: "broken.png", type: "image/png", size: 128 },
+      ],
+    };
+    const { container } = render(
+      <MessageBubble
+        message={message}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />,
+    );
+    await flush();
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText("broken.png")).not.toBeNull();
+  });
+
+  it("does not render attachments when no resolver is supplied", () => {
+    const message: ChatMessage = {
+      id: "att-noresolve",
+      role: "user",
+      content: "See attached",
+      createdAt: "2026-06-04T00:10:00Z",
+      attachments: [
+        {
+          blobId: "b4",
+          name: "report.pdf",
+          type: "application/pdf",
+          size: 2048,
+        },
+      ],
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.queryByText("report.pdf")).toBeNull();
   });
 });

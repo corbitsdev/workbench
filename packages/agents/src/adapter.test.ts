@@ -29,6 +29,63 @@ describe("convertInstanceEvents", () => {
     expect(msg.createdAt).toBe("2024-01-01T00:00:00.000Z");
   });
 
+  it("carries mail attachments onto the ChatMessage, deriving a name for null-named blobs", () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: "mail",
+        id: "msg-att",
+        role: "user",
+        content: "See attached",
+        sender: { name: "Alice", email: "alice@example.com" },
+        recipients: [{ name: "Myra", email: "myra@workbench.example" }],
+        timestamp: "2024-01-01T00:00:00.000Z",
+        attachments: [
+          {
+            blobId: "blob-1",
+            name: "report.pdf",
+            type: "application/pdf",
+            size: 2048,
+          },
+          { blobId: "blob-2", name: null, type: "image/png", size: 512 },
+        ],
+      },
+    ];
+
+    const messages = convertInstanceEvents(events);
+    const msg = messages[0];
+    expect(msg).toBeDefined();
+    if (!msg) return;
+    expect(msg.attachments).toEqual([
+      {
+        blobId: "blob-1",
+        name: "report.pdf",
+        type: "application/pdf",
+        size: 2048,
+      },
+      { blobId: "blob-2", name: "Attachment", type: "image/png", size: 512 },
+    ]);
+  });
+
+  it("omits attachments when the mail carried none", () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: "mail",
+        id: "msg-none",
+        role: "user",
+        content: "no files",
+        sender: { name: "Alice", email: "alice@example.com" },
+        recipients: [{ name: "Myra", email: "myra@workbench.example" }],
+        timestamp: "2024-01-01T00:00:00.000Z",
+        attachments: [],
+      },
+    ];
+
+    const msg = convertInstanceEvents(events)[0];
+    expect(msg).toBeDefined();
+    if (!msg) return;
+    expect(msg.attachments).toBeUndefined();
+  });
+
   it("converts a mail event with role assistant to a ChatMessage with agent role", () => {
     const events: InstanceEvent[] = [
       {

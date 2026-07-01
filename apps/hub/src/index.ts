@@ -4,6 +4,7 @@ import { logger as honoLogger } from "hono/logger";
 import { describeRoute, openAPIRouteHandler } from "hono-openapi";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { schema as intxSchema, createGrantStore } from "@intx/db";
+import { createAttachmentCapabilityGuard } from "./attachment-capability-guard";
 import { createApp } from "@intx/hub-api";
 import {
   createAgentRepoStore,
@@ -611,6 +612,14 @@ app.get(
     },
     exclude: ["/openapi.json", /^\/api\/auth\//],
   }),
+);
+
+// Server-side backstop for the per-agent attachment gate: reject a document
+// the instance's adapter can't consume before interchange's mail route stores
+// it. Registered before the hub app so it runs ahead of that route.
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  createAttachmentCapabilityGuard(db),
 );
 
 // Mount hub app

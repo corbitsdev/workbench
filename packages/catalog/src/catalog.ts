@@ -3,6 +3,10 @@ import type { ModelRequirement } from "@intx/types";
 import { CATALOG_PROVIDERS } from "./providers";
 import { CATALOG_MODELS } from "./models";
 import { CATALOG_OFFERINGS } from "./offerings";
+import {
+  attachmentCapability,
+  type AttachmentCapability,
+} from "./attachment-capabilities";
 
 const MODEL_PLUGINS = [
   "anthropic",
@@ -63,6 +67,13 @@ export function templateModelRequirements(
   template: AgentTemplateInput,
 ): ModelRequirement[] {
   return [{ model: templateModelName(template) }];
+}
+
+export function templateAttachmentCapability(
+  template: AgentTemplateInput,
+): AttachmentCapability {
+  const { plugin } = inferenceCredential(template);
+  return attachmentCapability(plugin, templateModelName(template));
 }
 
 function inferenceCredential(template: AgentTemplateInput): {

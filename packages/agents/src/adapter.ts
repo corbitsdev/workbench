@@ -1,8 +1,29 @@
 import type { InstanceEvent } from "@intx/hub-client";
-import type { ChatMessage, ToolCall } from "@workbench/chat/types";
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ToolCall,
+} from "@workbench/chat/types";
 
 function stripContextBlock(content: string): string {
   return content.replace(/^<context>[\s\S]*?<\/context>\n*/u, "");
+}
+
+type MailAttachment = Extract<
+  InstanceEvent,
+  { kind: "mail" }
+>["attachments"][number];
+
+// The blob carries a nullable name; the transcript needs a stable label to show
+// and to name a download, so fall back to a generic word rather than an empty
+// chip.
+function toChatAttachment(a: MailAttachment): ChatAttachment {
+  return {
+    blobId: a.blobId,
+    name: a.name !== null && a.name.trim() !== "" ? a.name : "Attachment",
+    type: a.type,
+    size: a.size,
+  };
 }
 
 // Anthropic raw call IDs (e.g. "call_00_AbCdEf123456") are not human-readable.
@@ -74,6 +95,7 @@ export function convertInstanceEvents(
       const senderLabel = isAgentToAgent
         ? resolveSenderLabel(event.sender)
         : undefined;
+      const attachments = event.attachments.map(toChatAttachment);
       return {
         id: event.id,
         role: isAgentToAgent ? "agent" : isInbound ? "user" : "agent",
@@ -82,6 +104,7 @@ export function convertInstanceEvents(
         ...(senderLabel !== undefined && senderLabel !== ""
           ? { senderLabel }
           : {}),
+        ...(attachments.length > 0 ? { attachments } : {}),
         ...(event.isError === true ? { status: "failed" as const } : {}),
       };
     }
