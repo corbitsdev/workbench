@@ -2,6 +2,7 @@ import { type } from "arktype";
 
 export * from "./palette";
 export * from "./active-context";
+export * from "./attio-task-agent";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
