@@ -96,10 +96,6 @@ function roundSteps(round: number): Record<string, Primitive> {
 }
 
 const setupSteps: Record<string, Primitive> = {
-  "list-templates": deterministicToolStep({
-    id: "presentation-list-templates",
-    tool: "gamma_list_templates",
-  }),
   "list-artifacts": deterministicToolStep({
     id: "presentation-list-artifacts",
     tool: "artifact_list",
@@ -110,7 +106,7 @@ const setupSteps: Record<string, Primitive> = {
   }),
   intake: awaitSignal({
     name: "intake",
-    after: ["list-templates", "list-artifacts", "list-notes"],
+    after: ["list-artifacts", "list-notes"],
   }),
   "fetch-artifact": deterministicToolStep({
     id: "presentation-fetch-artifact",

@@ -52,6 +52,7 @@ export {
   SidebarMenuButton,
 } from "./sidebar";
 export { cn, toHumanLabel } from "./utils";
+export { inputFieldClass } from "./input-field";
 export {
   useTheme,
   isTheme,

@@ -247,6 +247,33 @@ export const ThemeSchema = type(
 );
 export type Theme = typeof ThemeSchema.infer;
 
+// One Gamma template as returned by `GET /gamma-templates`. Canonical wire
+// shape shared by the hub route (emit + OpenAPI) and the web hook (parse) so
+// the two can never drift. `canManage` is computed per-caller from the grant
+// store; `description` is the human-facing label (the workflow owns generation
+// instructions, not the template).
+export const GammaTemplateSchema = type({
+  id: "string",
+  version: "number",
+  name: "string",
+  gammaId: "string",
+  description: "string",
+  authorId: "string",
+  canManage: "boolean",
+  createdAt: "string",
+});
+export type GammaTemplate = typeof GammaTemplateSchema.infer;
+
+// Request body for create/update. `description` is required and non-empty
+// (the server trims and rejects blanks); it is the one field the workflow does
+// not need but humans do.
+export const GammaTemplateBodySchema = type({
+  name: "string",
+  gammaId: "string",
+  description: "string",
+});
+export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
+
 export const MemberPreferences = type({
   "theme?": ThemeSchema,
   "compactToolActivity?": "boolean",

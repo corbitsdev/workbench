@@ -4,7 +4,7 @@ Gamma deck-generation tools for GTM Workbench agents.
 
 ## What this package is
 
-This package wraps the Gamma SaaS API (https://gamma.app) as a set of `AgentTool` instances. Agents use these tools to list themes, generate decks from a template, and list the workbench's curated template registry.
+This package wraps the Gamma SaaS API (https://gamma.app) as a set of `AgentTool` instances. Agents use these tools to list themes, generate decks from a template, and list the workbench's Gamma templates.
 
 ## Direct HTTP is acceptable here
 
@@ -20,6 +20,15 @@ Verified against the official docs (https://developers.gamma.app). The REST API 
 
 Gamma's REST API has **no** endpoint to list templates — and no endpoint to list gammas/documents at all. A "template" is simply an existing single-page gamma referenced by its `gammaId` (copied from the Gamma app); `POST /generations/from-template` takes that `gammaId` plus a prompt that fills placeholder tokens.
 
-Because of this, `gamma_list_templates` and the hub route `GET /workflows/gamma/templates` return a **workbench-owned curated registry** (`GAMMA_TEMPLATES` in `templates.ts`), not a live Gamma call. The registry is empty until templates are added.
+Because of this, templates are a **workbench-owned, DB-backed resource**, not a live Gamma call. Each template is a row in `workbench_template` / `workbench_template_version` (kind `gamma`) whose config is `{ gammaId, description }` — a human-facing `description` plus the `gammaId` to render from. There is no static `GAMMA_TEMPLATES` array.
 
-The only way to enumerate templates programmatically is the **MCP** tool `get_gammas` (`type: template`), which requires OAuth 2.0 / Dynamic Client Registration rather than the REST `X-API-KEY`. That auto-sourcing path is not yet implemented.
+Templates are managed over the hub REST API:
+
+- `GET /api/v1/gamma-templates` — list templates visible to the active workbench (its own plus those inherited from ancestor tenants up to the global tenant). Each row carries `canManage`, computed per-caller from the grant store.
+- `POST /api/v1/gamma-templates` — create; the creator is granted `manage` on `template:<id>` via the Interchange grant system.
+- `PUT` / `DELETE /api/v1/gamma-templates/:id` — gated on a `manage` grant (`authorize(...)`), so anyone in the tenant can use a template but only its owner (or a delegate/admin) can edit or delete it.
+- `POST /api/v1/gamma-templates/:id/delegates` — grant `manage` to another principal (owner-only).
+
+Two consumers list templates: the **agent** uses the `gamma_list_templates` ContextToolEntry (reads the tenant DB in-process); the **web** (the `/settings/tools/:id` manager and the workflow intake UI) uses `GET /api/v1/gamma-templates`. The workflow does **not** list templates via a deterministic step — `gamma_list_templates` is a hub ContextToolEntry and cannot run inside a workflow deployment.
+
+The Gamma **MCP** tool `get_gammas` (`type: template`) can enumerate the user's own Gamma templates, but requires OAuth 2.0 / Dynamic Client Registration rather than the REST `X-API-KEY`; that auto-sourcing path is not implemented.

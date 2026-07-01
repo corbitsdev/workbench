@@ -10,9 +10,12 @@ This is a native `@intx/workflow` package. It exports:
 - `kind` — `'gamma-presentation-creator'`
 - `workflow` — a `defineWorkflow(...)` definition
 
-Setup steps list the available templates, artifacts, and Granola notes, then an
+Setup steps list the available artifacts and Granola notes, then an
 `intake` `awaitSignal` gate collects the chosen source (artifact / call / pasted
-text) plus template, deck title, and audience/tone/goal. Both readers
+text) plus template, deck title, and audience/tone/goal. The intake UI fetches
+the Gamma templates from the hub (`GET /api/v1/gamma-templates`) rather than a
+workflow step — `gamma_list_templates` is a hub ContextToolEntry and cannot run
+inside a workflow deployment. Both readers
 (`artifact_read`, `granola_get_note`) run `nonFatal`; the unused one degrades and
 `generate` uses whichever source resolved.
 

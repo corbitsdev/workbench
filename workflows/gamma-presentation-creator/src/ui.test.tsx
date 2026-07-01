@@ -1,8 +1,50 @@
-import { describe, expect, it, mock } from "bun:test";
-import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactElement } from "react";
 import type { RunState } from "@intx/workflow";
 import { Panel } from "./ui";
+
+const originalFetch = globalThis.fetch;
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    json: () => Promise.resolve(body),
+  } as unknown as Response;
+}
+
+// Templates now load from the hub (GET /gamma-templates), not a workflow step.
+// Default mock returns one template so the intake selector has options.
+function mockTemplatesFetch(
+  templates: unknown = [{ gammaId: "tmpl_pro", name: "Investor Deck" }],
+) {
+  globalThis.fetch = mock((url: string) => {
+    if (String(url).includes("/gamma-templates")) {
+      return Promise.resolve(jsonResponse(templates));
+    }
+    return Promise.resolve(jsonResponse({}, 404));
+  }) as unknown as typeof fetch;
+}
+
+function renderPanel(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(createElement(QueryClientProvider, { client }, ui));
+}
+
+beforeEach(() => {
+  mockTemplatesFetch();
+});
+
+afterEach(() => {
+  cleanup();
+  globalThis.fetch = originalFetch;
+});
 
 type StepPhase =
   | "in-flight"
@@ -43,9 +85,6 @@ function toolEnvelope(callId: string, value: unknown): unknown {
 const noop = () => {};
 
 const sourceLists = {
-  "list-templates": toolEnvelope("c1", [
-    { gammaId: "tmpl_pro", name: "Investor Deck" },
-  ]),
   "list-artifacts": toolEnvelope("c2", [{ id: "art_1", title: "Q3 Brief" }]),
   "list-notes": toolEnvelope("c3", {
     notes: [{ id: "note_1", title: "Acme call" }],
@@ -56,7 +95,7 @@ const sourceLists = {
 describe("artifact → gamma deck Panel", () => {
   it("submits an artifact-sourced intake with the deck title and template", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
@@ -87,7 +126,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("does not submit intake without a deck title", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
@@ -108,7 +147,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("submits a pasted-text intake from the paste tab", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
@@ -135,7 +174,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("submits a granola-sourced intake from the call tab", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
@@ -162,7 +201,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("shows the rendered deck and approves the round", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -192,7 +231,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("sends refine feedback from a non-final round", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -225,7 +264,7 @@ describe("artifact → gamma deck Panel", () => {
   });
 
   it("offers no refine on the final round", () => {
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -251,7 +290,7 @@ describe("artifact → gamma deck Panel", () => {
   });
 
   it("disables approval while a signal is pending", () => {
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -278,7 +317,7 @@ describe("artifact → gamma deck Panel", () => {
 
   it("does not render an unsafe (non-https) deck url but keeps the gate answerable", async () => {
     const onSignal = mock(() => {});
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -312,7 +351,7 @@ describe("artifact → gamma deck Panel", () => {
     // every pruned step, including persist-2/persist-3. The done screen must
     // resolve to the round that actually persisted (1) and show ITS deck — not
     // the highest completed persist (a skipped 3 with no rendered deck).
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState(
@@ -359,7 +398,7 @@ describe("artifact → gamma deck Panel", () => {
     // Refusing round 1 routes to generate-2 and prunes the persist-1 branch, so
     // persist-1 lands in `completed` with a skip sentinel. The panel must NOT
     // mistake that for a finished run and show the done screen mid-refine.
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({
@@ -392,7 +431,7 @@ describe("artifact → gamma deck Panel", () => {
   });
 
   it("distinguishes a failed source load from an empty list", () => {
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
@@ -414,7 +453,7 @@ describe("artifact → gamma deck Panel", () => {
   });
 
   it("shows the saved-to-workbench done screen once a round is persisted", () => {
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState(
@@ -439,8 +478,97 @@ describe("artifact → gamma deck Panel", () => {
     ).toBe("https://gamma.app/docs/deck-1");
   });
 
+  it("fetches templates from the hub /api/v1 path", async () => {
+    const fetchMock = mock((url: string, _init?: RequestInit) => {
+      if (String(url).includes("/gamma-templates")) {
+        return Promise.resolve(
+          jsonResponse([{ gammaId: "tmpl_pro", name: "Investor Deck" }]),
+        );
+      }
+      return Promise.resolve(jsonResponse({}, 404));
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u]) =>
+          String(u).endsWith("/api/v1/gamma-templates"),
+        ),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(([u]) =>
+      String(u).includes("/gamma-templates"),
+    );
+    expect(call).toBeDefined();
+    const [url, init] = call!;
+    // Base URL prefix (VITE_API_BASE_URL ?? "") + the hub path; credentials
+    // ride along so a split-origin deploy still authenticates.
+    expect(url).toBe("/api/v1/gamma-templates");
+    expect(init?.credentials).toBe("include");
+  });
+
+  it("surfaces a failed template load as the manual-ID fallback, not a silent empty list", async () => {
+    globalThis.fetch = mock((url: string) => {
+      if (String(url).includes("/gamma-templates")) {
+        return Promise.resolve(jsonResponse({ error: "boom" }, 500));
+      }
+      return Promise.resolve(jsonResponse({}, 404));
+    }) as unknown as typeof fetch;
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await waitFor(() => screen.getByText(/enter a template ID manually/i));
+    // A manual-ID input (not the loading placeholder) is offered on failure.
+    const input = screen.getByLabelText("Template") as HTMLInputElement;
+    expect(input.tagName).toBe("INPUT");
+    expect(input.getAttribute("placeholder")).toBe("Gamma template ID");
+  });
+
+  it("shows a distinct loading state for the template selector", () => {
+    // A never-resolving fetch keeps the query in `isLoading`.
+    globalThis.fetch = mock(
+      () => new Promise(() => {}),
+    ) as unknown as typeof fetch;
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    const select = screen.getByLabelText("Template") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(select.disabled).toBe(true);
+    screen.getByText("Loading templates…");
+  });
+
   it("shows the generation-failed banner when the run failed", () => {
-    render(
+    renderPanel(
       <Panel
         deploymentId="dep_1"
         state={makeState({ "generate-1": "failed" }, "failed")}

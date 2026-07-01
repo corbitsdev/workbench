@@ -227,6 +227,23 @@ describe("artifact → gamma deck workflow", () => {
     expect(check.else).toBe("generate-2");
   });
 
+  test("there is no list-templates step; the hub serves templates to the intake UI", () => {
+    expect(workflow.steps["list-templates"]).toBeUndefined();
+    const ids = Object.values(workflow.steps).flatMap((step) =>
+      step.kind === "step" ? [step.agent.tags?.[STEP_TOOL_TAG]] : [],
+    );
+    expect(ids).not.toContain("gamma_list_templates");
+  });
+
+  test("intake waits only on the two readers, not on list-templates", () => {
+    const intakeStep = workflow.steps["intake"];
+    if (intakeStep === undefined || intakeStep.kind !== "awaitSignal") {
+      throw new Error("expected an awaitSignal primitive for intake");
+    }
+    expect(intakeStep.after).toEqual(["list-artifacts", "list-notes"]);
+    expect(intakeStep.after).not.toContain("list-templates");
+  });
+
   test("the final round has no gate; its preview leads straight to persist", () => {
     expect(workflow.steps[`check-${MAX_ROUNDS}`]).toBeUndefined();
     const persist = workflow.steps[`persist-${MAX_ROUNDS}`];

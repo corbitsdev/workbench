@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import { type } from "arktype";
 import {
   createTemplateTools,
   GAMMA_CREATE_FROM_TEMPLATE_DEFINITION,
+  GAMMA_LIST_TEMPLATES_DEFINITION,
+  GammaTemplateSchema,
 } from "./templates";
 import type { GammaFetch } from "./shared";
 
@@ -20,6 +23,36 @@ function makeFetcher(
 }
 
 const baseConfig = { apiKey: "test-key" };
+
+describe("GammaTemplateSchema", () => {
+  it("accepts a template with a description and rejects a systemPrompt-only shape", () => {
+    const ok = GammaTemplateSchema({
+      id: "t1",
+      gammaId: "g1",
+      name: "Sales Deck",
+      description: "A deck for sales calls",
+    });
+    expect(ok).toMatchObject({ description: "A deck for sales calls" });
+    expect("description" in (ok as Record<string, unknown>)).toBe(true);
+
+    const missingDescription = GammaTemplateSchema({
+      id: "t1",
+      gammaId: "g1",
+      name: "Sales Deck",
+      systemPrompt: "old field",
+    });
+    expect(missingDescription instanceof type.errors).toBe(true);
+  });
+});
+
+describe("GAMMA_LIST_TEMPLATES_DEFINITION", () => {
+  it("describes description (not systemPrompt) and how to use names and gammaId", () => {
+    const { description } = GAMMA_LIST_TEMPLATES_DEFINITION;
+    expect(description).toContain("description");
+    expect(description).not.toContain("systemPrompt");
+    expect(description).toContain("gamma_create_from_template");
+  });
+});
 
 describe("createTemplateTools", () => {
   it("does not include gamma_list_templates — it is a hub ContextToolEntry", () => {

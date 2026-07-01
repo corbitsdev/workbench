@@ -26,6 +26,7 @@ import { SkillsNew } from "./pages/SkillsNew";
 import { SkillDetail } from "./pages/SkillDetail";
 import { ToolsLibrary } from "./pages/ToolsLibrary";
 import { ToolDetail } from "./pages/ToolDetail";
+import { SettingsToolDetail } from "./pages/SettingsToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
 
 // Static navigation commands for the command palette, kept beside the route
@@ -172,6 +173,7 @@ export const router = createBrowserRouter([
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/settings", element: <Settings /> },
+          { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
           { path: "/skills/:id", element: <SkillDetail /> },

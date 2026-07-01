@@ -115,6 +115,8 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Workflow step credentials**: A native workflow declares its inference needs per step in its `defineWorkflow` definition. At deploy time the hub's workflow-deploy service resolves the tenant deploy config (the base inference source from the tenant LLM credential) and the orchestrator binds it; credentials remain tenant-owned and resolved down the ancestor chain, never passed as IDs through the deploy call.
 
+**Grant-based resource ownership (generalized)**: The same "creator holds a manage grant; mutations gated by `authorize`; reads are broader than writes" pattern applies to more than credentials. Any hub-owned, per-principal-managed resource follows it: on create, the hub writes a `grant` row (`resource: <kind>:<id>`, `action: manage`, `origin: creator`) for the creating principal; `PUT`/`DELETE` call `authorize(grantStore, principalId, tenantId, "<kind>:<id>", "manage")` and 403 unless the effect is `allow`; list responses expose a per-caller `canManage` flag computed from `collectGrants`. Delegation is a second `manage` grant to another principal (owner-only). **Gamma templates** (`workbench_template`, kind `gamma`) are managed this way: reads walk the tenant ancestor chain (anyone in the workbench can use a template), while create/update/delete/delegate are grant-gated to the owner — served over `GET/POST/PUT/DELETE /api/v1/gamma-templates` and `POST /api/v1/gamma-templates/:id/delegates`. An admin/owner wildcard grant authorizes management of any template, exactly as with credentials.
+
 ### Credentials at Rest
 
 Credential secrets are stored as plaintext at the application layer in Interchange's `credential` table. Encryption at rest is handled by the storage layer, not by application code. The hub reads secrets directly and passes them to agents without any encrypt or decrypt step. The application-layer encryption package (`@workbench/hub-crypto`) was removed.
@@ -123,7 +125,7 @@ Credential secrets are stored as plaintext at the application layer in Interchan
 
 All org management (credentials, providers, agent definitions, instances, principals, roles, grants) is handled by **`@intx/admin-ui`** — Interchange's native admin SPA. It is deployed as a separate subdomain (`admin.*`) pointed at the hub's `/api` routes, which are already mounted by `createApp`. Admins authenticate via admin-ui's email/password login; this is separate from the workbench's Google session.
 
-The workbench product app contains no management UI — no credential settings pages, no principal management, no agent provisioning forms.
+The workbench product app contains no **org** management UI — no credential settings pages, no principal management, no agent provisioning forms. It does surface management for **user-owned content** that the admin SPA has no concept of: e.g. `/settings/tools/:id` lets a member manage their own Gamma templates (create/edit/delete, owner-gated via the grant model above). This is product content owned by a principal, not org/tenant administration.
 
 ## Component Diagram
 

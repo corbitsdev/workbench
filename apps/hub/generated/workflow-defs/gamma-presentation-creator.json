@@ -11,30 +11,6 @@
       }
     ],
     "steps": {
-      "list-templates": {
-        "kind": "step",
-        "id": "list-templates",
-        "agent": {
-          "id": "presentation-list-templates",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-gamma/gamma:gamma_list_templates"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-gamma/gamma:gamma_list_templates",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-gamma/gamma:gamma_list_templates"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "from": "trigger.payload"
-        }
-      },
       "list-artifacts": {
         "kind": "step",
         "id": "list-artifacts",
@@ -54,7 +30,10 @@
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list"
           }
         },
-        "drainBehavior": "cancel"
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
       },
       "list-notes": {
         "kind": "step",
@@ -83,7 +62,6 @@
         "name": "intake",
         "drainBehavior": "wait",
         "after": [
-          "list-templates",
           "list-artifacts",
           "list-notes"
         ]
@@ -524,7 +502,6 @@
       }
     },
     "stepOrder": [
-      "list-templates",
       "list-artifacts",
       "list-notes",
       "intake",

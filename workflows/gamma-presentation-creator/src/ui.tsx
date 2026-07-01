@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import {
   activeDisplayStep,
@@ -6,6 +7,7 @@ import {
   Button,
   type DisplayStep,
   HorizontalStepper,
+  inputFieldClass,
   LiveStatusSlot,
   liveStatusLabel,
   type WorkflowPanelProps,
@@ -26,7 +28,6 @@ const DISPLAY_STEPS: DisplayStep[] = [
     key: "source",
     label: "Source",
     stepIds: [
-      "list-templates",
       "list-artifacts",
       "list-notes",
       "intake",
@@ -68,7 +69,13 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
 
 const ToolResultEnvelope = type({ "callId?": "string", content: "string" });
 
-const TemplateItem = type({ gammaId: "string", name: "string" });
+// The hub's GET /gamma-templates item. The selector needs only gammaId + name;
+// the remaining fields are tolerated so a richer payload still parses.
+const TemplateItem = type({
+  gammaId: "string",
+  name: "string",
+  "description?": "string",
+});
 const TemplateArray = TemplateItem.array();
 
 const ArtifactItem = type({ id: "string", "title?": "string | null" });
@@ -102,14 +109,41 @@ type Option = { id: string; title: string };
 // of silently presenting an outage as "you have nothing."
 type OptionLoad = { options: Option[]; failed: boolean };
 
-function readTemplateOptions(stepOutputs: Record<string, unknown>): OptionLoad {
-  const inner = peelEnvelope(stepOutputs["list-templates"]);
-  if (inner === undefined) return { options: [], failed: true };
-  const parsed = TemplateArray(inner);
-  if (parsed instanceof type.errors) return { options: [], failed: true };
+type TemplateOptions = { options: Option[]; failed: boolean; loading: boolean };
+
+// The hub base URL — mirrors apps/web/src/lib/api.ts. Empty string means
+// same-origin; a split-origin deploy sets VITE_API_BASE_URL so this UI hits the
+// hub (and sends its cookie) rather than the web app's own origin.
+const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+
+// Templates now come from the hub (GET /gamma-templates) rather than a workflow
+// step — the `list-templates` step was removed because it crashed deploys. The
+// custom Panel always renders inside the app's QueryClientProvider, so a
+// fetch via TanStack Query is the layering-correct path (this leaf package can't
+// import apps/web's `api` client). Catalog data → 5-min staleTime.
+function useTemplateOptions(): TemplateOptions {
+  const query = useQuery({
+    queryKey: ["gamma-templates", null],
+    queryFn: async (): Promise<Option[]> => {
+      const res = await fetch(`${apiBase}/api/v1/gamma-templates`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to load templates: HTTP ${res.status}`);
+      }
+      const raw: unknown = await res.json();
+      const parsed = TemplateArray(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(parsed.summary);
+      }
+      return parsed.map((t) => ({ id: t.gammaId, title: t.name }));
+    },
+    staleTime: 5 * 60_000,
+  });
   return {
-    options: parsed.map((t) => ({ id: t.gammaId, title: t.name })),
-    failed: false,
+    options: query.data ?? [],
+    failed: query.isError,
+    loading: query.isLoading,
   };
 }
 
@@ -238,9 +272,6 @@ function DeckFrame({ url }: { url: string }) {
   );
 }
 
-const fieldClass =
-  "w-full rounded-sm border border-border bg-surface px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange";
-
 // External Gamma links can't be a <Button> (they navigate), so match the
 // secondary Button treatment here for a consistent affordance + hit area.
 const linkButtonClass =
@@ -318,12 +349,13 @@ function IntakeScreen({
   stepOutputs: Record<string, unknown>;
   onSubmit: (payload: IntakePayload) => void;
 }) {
-  const templates = readTemplateOptions(stepOutputs);
+  const templates = useTemplateOptions();
   const artifacts = readArtifactOptions(stepOutputs);
   const notes = readNoteOptions(stepOutputs);
 
   const [tab, setTab] = useState<SourceTab>("artifact");
-  const [gammaId, setGammaId] = useState(templates.options[0]?.id ?? "");
+  const [gammaId, setGammaId] = useState("");
+  const [userPickedTemplate, setUserPickedTemplate] = useState(false);
   const [deckTitle, setDeckTitle] = useState("");
   const [audience, setAudience] = useState("");
   const [tone, setTone] = useState("");
@@ -331,6 +363,22 @@ function IntakeScreen({
   const [artifactId, setArtifactId] = useState("");
   const [noteId, setNoteId] = useState("");
   const [text, setText] = useState("");
+
+  const firstTemplateId = templates.options[0]?.id ?? "";
+  // Single source of truth for the selection: seed it from the first loaded
+  // template once options arrive, then leave it alone. This is state-seeding,
+  // not data fetching, so it does not fall under the no-useEffect-fetch rule. A
+  // user's explicit pick sets `userPickedTemplate`, which locks the seed out so
+  // a later refetch can never clobber their choice.
+  useEffect(() => {
+    if (userPickedTemplate) return;
+    if (gammaId === "" && firstTemplateId !== "") setGammaId(firstTemplateId);
+  }, [firstTemplateId, gammaId, userPickedTemplate]);
+
+  function pickTemplate(id: string) {
+    setUserPickedTemplate(true);
+    setGammaId(id);
+  }
 
   // Only one source feeds a run; clear the others on switch so the attached
   // source is always exactly what the visible tab shows (no invisible
@@ -434,7 +482,7 @@ function IntakeScreen({
               onChange={(e) => setText(e.target.value)}
               rows={6}
               placeholder="Paste the source text for the deck"
-              className={fieldClass}
+              className={inputFieldClass}
             />
           )}
         </div>
@@ -445,17 +493,27 @@ function IntakeScreen({
             aria-label="Deck title"
             value={deckTitle}
             onChange={(e) => setDeckTitle(e.target.value)}
-            className={fieldClass}
+            className={inputFieldClass}
           />
         </label>
         <label className="block space-y-1">
           <span className="text-[12px] text-text-3">Template</span>
-          {templates.options.length > 0 ? (
+          {templates.loading && (
+            <select
+              aria-label="Template"
+              disabled
+              value=""
+              className={inputFieldClass}
+            >
+              <option value="">Loading templates…</option>
+            </select>
+          )}
+          {!templates.loading && templates.options.length > 0 && (
             <select
               aria-label="Template"
               value={gammaId}
-              onChange={(e) => setGammaId(e.target.value)}
-              className={fieldClass}
+              onChange={(e) => pickTemplate(e.target.value)}
+              className={inputFieldClass}
             >
               {templates.options.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -463,13 +521,14 @@ function IntakeScreen({
                 </option>
               ))}
             </select>
-          ) : (
+          )}
+          {!templates.loading && templates.options.length === 0 && (
             <input
               aria-label="Template"
               value={gammaId}
-              onChange={(e) => setGammaId(e.target.value)}
-              placeholder="Template gammaId"
-              className={fieldClass}
+              onChange={(e) => pickTemplate(e.target.value)}
+              placeholder="Gamma template ID"
+              className={inputFieldClass}
             />
           )}
           {templates.failed && (
@@ -484,7 +543,7 @@ function IntakeScreen({
             aria-label="Audience"
             value={audience}
             onChange={(e) => setAudience(e.target.value)}
-            className={fieldClass}
+            className={inputFieldClass}
           />
         </label>
         <label className="block space-y-1">
@@ -493,7 +552,7 @@ function IntakeScreen({
             aria-label="Tone"
             value={tone}
             onChange={(e) => setTone(e.target.value)}
-            className={fieldClass}
+            className={inputFieldClass}
           />
         </label>
         <label className="block space-y-1">
@@ -502,7 +561,7 @@ function IntakeScreen({
             aria-label="Goal"
             value={goal}
             onChange={(e) => setGoal(e.target.value)}
-            className={fieldClass}
+            className={inputFieldClass}
           />
         </label>
 
@@ -593,7 +652,7 @@ function PreviewScreen({
                 onChange={(e) => setFeedback(e.target.value)}
                 rows={3}
                 placeholder="What should change? The next draft will revise from this."
-                className={fieldClass}
+                className={inputFieldClass}
               />
               <Button
                 variant="ghost"
