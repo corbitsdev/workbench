@@ -42,7 +42,12 @@ function daysAgoISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Analytics are bucketed by calendar day, so "24 hours" resolves to a
+// startDate one day back — today plus yesterday inclusive, matching the other
+// presets' N-days-ago convention and avoiding an empty view just after
+// midnight.
 const PRESET_DAYS: Record<Exclude<Preset, "all">, number> = {
+  "24h": 1,
   "7d": 7,
   "30d": 30,
   "90d": 90,

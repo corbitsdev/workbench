@@ -453,6 +453,15 @@ describe("InsightsDashboard", () => {
     expect(screen.getByText("Acme Corp")).toBeDefined();
   });
 
+  it("offers a 24 hours preset", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Operational ledger")).toBeDefined();
+    });
+    expect(screen.getByText("24 hours")).toBeDefined();
+  });
+
   it("shows a select-a-workbench state and fires no query when no workbench is active", async () => {
     activeContext = {
       workbenches: [],
