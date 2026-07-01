@@ -873,7 +873,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "attio_create_note",
-            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"}}"
+            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}"
           }
         },
         "drainBehavior": "cancel",

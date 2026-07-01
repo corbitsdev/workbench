@@ -242,9 +242,10 @@ describe("attio-task-agent native workflow", () => {
     expect(note.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_create_note");
     // FATAL now — a real Attio failure must fail the run, not be swallowed.
     expect(note.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
-    expect(
-      JSON.parse(note.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}").content,
-    ).toEqual({ from: "note" });
+    const noteArgMap = JSON.parse(note.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}");
+    expect(noteArgMap.content).toEqual({ from: "note" });
+    // Keyed by task id so a re-run dedupes the note instead of duplicating it.
+    expect(noteArgMap.idempotencyKey).toEqual({ from: "taskId" });
 
     const complete = stepPrimitive("writeComplete");
     expect(complete.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_update_task");

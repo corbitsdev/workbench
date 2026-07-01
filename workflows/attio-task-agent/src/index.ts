@@ -97,8 +97,9 @@ const analyzeAgent = defineAgent({
 // Write-back is human-gated on an explicit `confirm` flag (syncGate) and the
 // writes are FATAL — a real Attio failure fails the run loudly rather than being
 // swallowed. Note-first ordering: if writeComplete fails after writeNote, the
-// task stays visibly open (not "done but empty"); a re-run could create a
-// duplicate note (attio_create_note is not idempotent) — a documented caveat.
+// task stays visibly open (not "done but empty"). writeNote passes the task id
+// as its idempotencyKey, so re-running the same task dedupes the note instead of
+// creating a duplicate.
 // -------------------------------------------------------------------------
 
 const persistStep = deterministicToolStep({
@@ -271,6 +272,9 @@ export const workflow = defineWorkflow({
         parentObject: { from: "parentObject" },
         parentRecordId: { from: "parentRecordId" },
         content: { from: "note" },
+        // Key the note by the task id so a re-run of the SAME task after a
+        // mid-write-back failure dedupes instead of creating a second note.
+        idempotencyKey: { from: "taskId" },
       },
       after: ["syncGate"],
     }),
