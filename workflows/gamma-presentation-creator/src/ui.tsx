@@ -81,7 +81,11 @@ const TemplateItem = type({
 const TemplateArray = TemplateItem.array();
 
 const ArtifactItem = type({ id: "string", "title?": "string | null" });
-const ArtifactListResult = ArtifactItem.array();
+// artifact_list returns an object wrapper `{ artifacts: [...] }` (hub
+// createListHandler), mirroring granola_list_notes' `{ notes: [...] }` — not a
+// bare array. Parsing it as a bare array made every real payload fail to
+// validate, surfacing as "couldn't load artifacts" (CL-2624).
+const ArtifactListResult = type({ artifacts: ArtifactItem.array() });
 
 const NoteItem = type({ id: "string", "title?": "string | null" });
 const NotesResult = type({ notes: NoteItem.array() });
@@ -155,7 +159,7 @@ function readArtifactOptions(stepOutputs: Record<string, unknown>): OptionLoad {
   const parsed = ArtifactListResult(inner);
   if (parsed instanceof type.errors) return { options: [], failed: true };
   return {
-    options: parsed.map((a) => ({
+    options: parsed.artifacts.map((a) => ({
       id: a.id,
       title: readString(a.title) ?? a.id,
     })),
