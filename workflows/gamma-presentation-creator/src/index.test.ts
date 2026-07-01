@@ -235,14 +235,19 @@ describe("artifact → gamma deck workflow", () => {
     expect(ids).not.toContain("gamma_list_templates");
   });
 
-  test("the source readers preload the 50 most recent for client-side paging", () => {
-    for (const key of ["list-artifacts", "list-notes"] as const) {
+  test("the source readers preload each tool's max for client-side paging", () => {
+    // Each limit is the tool's own ceiling — a higher literal is silently
+    // truncated. artifact_list allows 50; granola_list_notes clamps to 30.
+    for (const [key, limit] of [
+      ["list-artifacts", 50],
+      ["list-notes", 30],
+    ] as const) {
       const step = workflow.steps[key];
       if (step === undefined || step.kind !== "step") {
         throw new Error(`expected a deterministic tool step for ${key}`);
       }
       expect(JSON.parse(step.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
-        limit: { literal: 50 },
+        limit: { literal: limit },
       });
     }
   });

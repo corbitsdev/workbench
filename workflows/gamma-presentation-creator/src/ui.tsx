@@ -294,10 +294,21 @@ type IntakePayload = {
   text?: string;
 };
 
-// Sources are preloaded (50 most recent) by the list steps and paginated
-// client-side here — the workflow DAG is acyclic/fire-once, so there is no
-// "fetch the next page" round-trip; the panel slices what it already holds.
+// Sources are preloaded by the list steps and paginated client-side here — the
+// workflow DAG is acyclic/fire-once, so there is no "fetch the next page"
+// round-trip; the panel slices what it already holds. The preload is capped by
+// the tool (artifacts 50, Granola 30), so `capNote` warns when the list is at
+// that ceiling — search/paging only cover the loaded window, and older sources
+// won't appear (use paste text for those).
 const SOURCE_PAGE_SIZE = 10;
+
+// Tool-side caps on the preload (see index.ts argMap + each tool's MAX_LIST_LIMIT):
+// artifact_list allows 50, granola_list_notes clamps to 30.
+const ARTIFACT_PRELOAD = 50;
+const NOTE_PRELOAD = 30;
+
+const pageButtonClass =
+  "min-h-[40px] rounded-[8px] px-3 py-2 transition-transform enabled:hover:text-text-2 enabled:active:scale-[0.97] disabled:opacity-40 motion-reduce:enabled:active:scale-100";
 
 function PaginatedPickList({
   options,
@@ -307,6 +318,7 @@ function PaginatedPickList({
   failed,
   failedLabel,
   searchLabel,
+  capNote,
 }: {
   options: Option[];
   selected: string;
@@ -316,6 +328,11 @@ function PaginatedPickList({
   failedLabel: string;
   // When set, renders a client-side title filter with this aria-label.
   searchLabel?: string;
+  // When set (list is at the preload ceiling), a muted "showing the N most
+  // recent" note so a bounded search/list never reads as the whole corpus.
+  // `| undefined` so callers can pass the computed value directly under
+  // exactOptionalPropertyTypes.
+  capNote?: string | undefined;
 }) {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
@@ -337,6 +354,7 @@ function PaginatedPickList({
   const clampedPage = Math.min(page, pageCount - 1);
   const start = clampedPage * SOURCE_PAGE_SIZE;
   const visible = filtered.slice(start, start + SOURCE_PAGE_SIZE);
+  const selectedTitle = options.find((o) => o.id === selected)?.title;
 
   const search = searchLabel ? (
     <input
@@ -351,11 +369,16 @@ function PaginatedPickList({
     />
   ) : null;
 
+  const capHint = capNote ? (
+    <p className="text-[12px] text-text-3">{capNote}</p>
+  ) : null;
+
   if (filtered.length === 0) {
     return (
       <div className="space-y-2">
         {search}
         <p className="text-sm text-text-3">{trimmed ? "No matches." : empty}</p>
+        {capHint}
       </div>
     );
   }
@@ -363,11 +386,17 @@ function PaginatedPickList({
   return (
     <div className="space-y-2">
       {search}
+      {/* A selection made on one page stays visible after paging away, so an
+          off-screen pick can never ship invisibly. */}
+      {selectedTitle && (
+        <p className="text-[12px] text-text-2">Selected: {selectedTitle}</p>
+      )}
       <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border bg-surface">
         {visible.map((o) => (
           <li key={o.id}>
             <button
               type="button"
+              aria-pressed={selected === o.id}
               onClick={() => onSelect(o.id)}
               className={`block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 ${
                 selected === o.id ? "bg-surface-2 text-text" : "text-text-2"
@@ -378,6 +407,7 @@ function PaginatedPickList({
           </li>
         ))}
       </ul>
+      {capHint}
       {pageCount > 1 && (
         <div className="flex items-center justify-between text-[12px] text-text-3">
           <button
@@ -385,11 +415,11 @@ function PaginatedPickList({
             aria-label="Previous page"
             disabled={clampedPage === 0}
             onClick={() => setPage(clampedPage - 1)}
-            className="rounded-[6px] px-2 py-1 enabled:hover:text-text-2 disabled:opacity-40"
+            className={pageButtonClass}
           >
             Prev
           </button>
-          <span className="tabular-nums">
+          <span className="tabular-nums" aria-live="polite">
             Page {clampedPage + 1} of {pageCount}
           </span>
           <button
@@ -397,7 +427,7 @@ function PaginatedPickList({
             aria-label="Next page"
             disabled={clampedPage >= pageCount - 1}
             onClick={() => setPage(clampedPage + 1)}
-            className="rounded-[6px] px-2 py-1 enabled:hover:text-text-2 disabled:opacity-40"
+            className={pageButtonClass}
           >
             Next
           </button>
@@ -476,9 +506,25 @@ function IntakeScreen({
     connected && !signalPending && deckFieldsReady && sourceChosen;
 
   const tabClass = (t: SourceTab) =>
-    `rounded-[8px] px-3 py-1.5 text-[12px] ${
+    `min-h-[40px] rounded-[8px] px-3 py-2 text-[12px] transition-[background-color,color,transform] active:scale-[0.97] motion-reduce:active:scale-100 ${
       tab === t ? "bg-surface-2 text-text" : "text-text-3 hover:text-text-2"
     }`;
+
+  // The preload is capped by each tool (artifacts 50, Granola 30). When the
+  // loaded list is at that ceiling, warn that search/paging only cover the
+  // loaded window (older sources → paste text).
+  const artifactCapNote =
+    artifacts.options.length >= ARTIFACT_PRELOAD
+      ? "Showing the 50 most recent — search covers only these. For older artifacts, paste the text."
+      : undefined;
+  const noteCapNote =
+    notes.options.length >= NOTE_PRELOAD
+      ? "Showing the 30 most recent Granola calls. For older calls, paste the text."
+      : undefined;
+
+  const pageTitle = { 1: "Deck details", 2: "Choose a source", 3: "Review" }[
+    page
+  ];
 
   const templateName =
     templates.options.find((t) => t.id === gammaId)?.title ?? gammaId;
@@ -508,7 +554,7 @@ function IntakeScreen({
 
   return (
     <Card>
-      <CardTitle>Build a deck · Step {page} of 3</CardTitle>
+      <CardTitle>{pageTitle}</CardTitle>
       <form
         className="space-y-4"
         onSubmit={(e) => {
@@ -646,6 +692,7 @@ function IntakeScreen({
                   failed={artifacts.failed}
                   failedLabel="Couldn't load artifacts — the integration may be unavailable. Try a Granola call or paste text."
                   searchLabel="Search artifacts"
+                  capNote={artifactCapNote}
                 />
               )}
               {tab === "granola" && (
@@ -656,8 +703,12 @@ function IntakeScreen({
                   empty="No Granola calls available."
                   failed={notes.failed}
                   failedLabel="Couldn't load Granola calls — the integration may be unavailable. Try an artifact or paste text."
+                  capNote={noteCapNote}
                 />
               )}
+              {/* Granola has no search box: the tool caps the preload at 30,
+                  so a title filter over that small window would hide more than
+                  it helps — paste text is the escape hatch for older calls. */}
               {tab === "paste" && (
                 <textarea
                   aria-label="Pasted text"
@@ -694,11 +745,15 @@ function IntakeScreen({
 
         {page === 3 && (
           <>
+            {/* The deck title leads as the review's anchor; the rest is
+                supporting config in a muted key/value list below it. */}
+            <div className="space-y-1">
+              <span className="text-[12px] text-text-3">Deck title</span>
+              <p className="text-base font-medium text-text">
+                {deckTitle.trim()}
+              </p>
+            </div>
             <dl className="space-y-2 text-[13px]">
-              <div className="flex justify-between gap-4">
-                <dt className="text-text-3">Deck title</dt>
-                <dd className="text-text">{deckTitle.trim()}</dd>
-              </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-text-3">Template</dt>
                 <dd className="text-text">{templateName}</dd>

@@ -143,7 +143,7 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    screen.getByText(/Build a deck/);
+    screen.getByText("Deck details");
     await advanceFromDeckFields("Q3 Deck");
     await userEvent.click(screen.getByRole("button", { name: "Q3 Brief" }));
     await advanceFromSource();
@@ -626,6 +626,100 @@ describe("artifact → gamma deck Panel", () => {
     expect(screen.queryByRole("button", { name: "Artifact 01" })).toBeNull();
     // Filtering collapses to a single page — no pagination control.
     expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("warns that only the 50 most recent artifacts are shown when the list is capped", async () => {
+    const capped = Array.from({ length: 50 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", capped),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    screen.getByText(/showing the 50 most recent/i);
+  });
+
+  it("does not warn about a cap when the artifact list is below the ceiling", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    expect(screen.queryByText(/showing the 50 most recent/i)).toBeNull();
+  });
+
+  it("keeps a selected artifact visible after paging away from it", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", many),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    await userEvent.click(screen.getByRole("button", { name: "Artifact 01" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    // The selected item is on page 1, but its selection stays visible on page 2
+    // so an off-screen pick can't ship invisibly.
+    screen.getByText(/Selected: Artifact 01/);
+    expect(screen.queryByRole("button", { name: "Artifact 01" })).toBeNull();
+  });
+
+  it("marks the chosen pick-list row with aria-pressed", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    const row = screen.getByRole("button", { name: "Q3 Brief" });
+    expect(row.getAttribute("aria-pressed")).toBe("false");
+    await userEvent.click(row);
+    expect(
+      screen
+        .getByRole("button", { name: "Q3 Brief" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
   it("offers no search box on the Granola tab", async () => {
