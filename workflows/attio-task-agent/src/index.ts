@@ -70,28 +70,35 @@ const analyzeAgent = defineAgent({
 // -------------------------------------------------------------------------
 // Workflow graph
 //
-//   listTasks    deterministicToolStep  attio_list_tasks {isCompleted:false}
-//   selectTask   awaitSignal            task-selection      → {taskId}
-//   fetchTask    deterministicToolStep  attio_get_task      from selectTask
-//   analyze      step({agent})          ReAct, read-only    → AttioAnalyzeDecision
-//   clarify      awaitSignal            clarification       → {answers?}   (⚠️ surfaces when status≠ready)
-//   generate     inlineInferenceStep    merge fetch+analyze+clarify → {artifacts:[{kind,title,content}]}
-//   review       awaitSignal            review              → {approvedPieces:[{kind,title,content}]}
-//   persist      map artifact_create    over approvedPieces
-//   suggest      inlineInferenceStep    merge fetch+analyze → completion summary + follow-ups
-//   approveSync  awaitSignal            sync-approval       → {parentObject?,parentRecordId?,note?,markComplete?,taskId?}
-//   writeNote    deterministicToolStep  attio_create_note   nonFatal (skips on empty approval)
-//   writeComplete deterministicToolStep attio_update_task   nonFatal (skips on empty approval)
+//   listMembers   deterministicToolStep  attio_list_workspace_members
+//   selectMember  awaitSignal            member-selection    → {assignee}
+//   listTasks     deterministicToolStep  attio_list_tasks    scoped to assignee
+//   selectTask    awaitSignal            task-selection      → {taskId}
+//   fetchTask     deterministicToolStep  attio_get_task      from selectTask
+//   analyze       step({agent})          ReAct, read-only    → AttioAnalyzeDecision
+//   clarify       awaitSignal            clarification       → {answers?}
+//   selectKinds   awaitSignal            kind-selection      → {generate: {<kind>: bool …all kinds}}
+//   gate-<kind>   gate on selectKinds.generate.<kind> → gen-<kind> | skip-<kind>  (per kind)
+//   gen-<kind>    inlineInferenceStep    dedicated per-kind prompt (writer model)
+//   skip-<kind>   sleep                  no-op leaf
+//   review        awaitSignal            review              → {approvedPieces:[{kind,title,content}]}
+//   persist       map artifact_create    over approvedPieces
+//   suggest       inlineInferenceStep    merge fetch+analyze → completion summary + follow-ups
+//   approveSync   awaitSignal            sync-approval       → {confirm,taskId,parentObject,parentRecordId,note}
+//   syncGate      gate on confirm        → writeNote | skipWriteBack
+//   writeNote     deterministicToolStep  attio_create_note   FATAL (loud on real Attio errors)
+//   writeComplete deterministicToolStep  attio_update_task   FATAL, after writeNote
 //
-// The clarify loop is realized as a single always-present HITL checkpoint whose
-// UI presentation is driven by analyze.output.status: a ⚠️ questions chat when
-// the agent is blocked, a light confirm when it is ready. The ReAct agent does
-// its own unbounded gathering WITHIN the analyze step, so most runs need no
-// human clarification. (Multi-round human Q&A is a follow-up.)
+// Clarify is a single always-present HITL checkpoint; the panel shows the
+// agent's questions when status is need_clarification, else a light confirm. The
+// ReAct agent gathers autonomously within analyze, so most runs need no human
+// clarification. (Multi-round human Q&A is a follow-up.)
 //
-// Write-back is human-gated by the approveSync signal and executed by nonFatal
-// deterministic steps: an empty/declined approval payload makes each write no-op
-// (a recorded skip) rather than mutating Attio.
+// Write-back is human-gated on an explicit `confirm` flag (syncGate) and the
+// writes are FATAL — a real Attio failure fails the run loudly rather than being
+// swallowed. Note-first ordering: if writeComplete fails after writeNote, the
+// task stays visibly open (not "done but empty"); a re-run could create a
+// duplicate note (attio_create_note is not idempotent) — a documented caveat.
 // -------------------------------------------------------------------------
 
 const persistStep = deterministicToolStep({
@@ -153,7 +160,7 @@ function generationSteps(): Record<string, Primitive> {
       input: KIND_CONTEXT,
       after: [k.gate],
     });
-    steps[k.skip] = sleep({ duration: 1, after: [k.gate] });
+    steps[k.skip] = sleep({ duration: 0, after: [k.gate] });
   }
   return steps;
 }
@@ -279,10 +286,8 @@ export const workflow = defineWorkflow({
       after: ["writeNote"],
     }),
 
-    skipWriteBack: inlineInferenceStep({
-      id: "attio-task-agent-skip-writeback",
-      systemPrompt: "Reply with exactly: skipped. Output nothing else.",
-      after: ["syncGate"],
-    }),
+    // Declining the write-back is a no-op leaf — a sleep, not an LLM call
+    // (a decline is not reasoning; matches the per-kind skip leaves).
+    skipWriteBack: sleep({ duration: 0, after: ["syncGate"] }),
   },
 });

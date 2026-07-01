@@ -39,6 +39,12 @@ describe("peelOutput", () => {
     expect(peelOutput(undefined)).toBeUndefined();
     expect(peelOutput(null)).toBeUndefined();
   });
+  test("recovers JSON wrapped in a code fence", () => {
+    expect(peelOutput({ reply: '```json\n{"a":1}\n```' })).toEqual({ a: 1 });
+  });
+  test("recovers JSON with a prose preamble", () => {
+    expect(peelOutput({ reply: 'Here you go:\n{"a":1}' })).toEqual({ a: 1 });
+  });
 });
 
 describe("activeGate", () => {
@@ -137,6 +143,21 @@ describe("parseGeneratedByKind", () => {
 
   test("returns [] when nothing generated", () => {
     expect(parseGeneratedByKind({})).toEqual([]);
+  });
+
+  test("kind comes from the step key, not the model (writer can't mis-file it)", () => {
+    // The model omits/mislabels kind; the gen-cold-email step key is authoritative.
+    const got = parseGeneratedByKind({
+      "gen-cold-email": reply({ kind: "WRONG", title: "T", content: "C" }),
+    });
+    expect(got).toEqual([{ kind: "cold-email", title: "T", content: "C" }]);
+  });
+
+  test("a fenced writer reply still yields the artifact", () => {
+    const got = parseGeneratedByKind({
+      "gen-blog": { reply: '```json\n{"title":"P","content":"B"}\n```' },
+    });
+    expect(got).toEqual([{ kind: "blog", title: "P", content: "B" }]);
   });
 });
 

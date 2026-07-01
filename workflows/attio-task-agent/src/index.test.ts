@@ -235,6 +235,8 @@ describe("attio-task-agent native workflow", () => {
     expect(syncGate.when).toEqual({ from: "steps.approveSync.output.confirm" });
     expect(syncGate.then).toBe("writeNote");
     expect(syncGate.else).toBe("skipWriteBack");
+    // The skip is a no-op sleep leaf — no wasted LLM call.
+    expect(workflow.steps.skipWriteBack?.kind).toBe("sleep");
 
     const note = stepPrimitive("writeNote");
     expect(note.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_create_note");
@@ -266,7 +268,6 @@ describe("attio-task-agent native workflow", () => {
       },
       "attio-task-agent-persist": { artifactId: "a" },
       "attio-task-agent-suggest": "done",
-      "attio-task-agent-skip-writeback": "skipped",
     });
     const run = runLocal(workflow, { invokeStep: invoker });
     await run.signal("member-selection", { assignee: "x" });
@@ -278,9 +279,9 @@ describe("attio-task-agent native workflow", () => {
     });
     await run.signal("sync-approval", { confirm: false });
     const result = await run.complete;
+    // Declined: the run completes via the skip leaf, and neither write ran.
     expect(result.terminalStatus).toBe("completed");
     const ranIds = ran.map((r) => r.id);
-    expect(ranIds).toContain("attio-task-agent-skip-writeback");
     expect(ranIds).not.toContain("attio-task-agent-write-note");
     expect(ranIds).not.toContain("attio-task-agent-write-complete");
   });

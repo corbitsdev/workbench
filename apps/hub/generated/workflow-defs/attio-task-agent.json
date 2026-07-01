@@ -234,7 +234,7 @@
         "kind": "sleep",
         "id": "skip-cold-email",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-cold-email"
         ]
@@ -297,7 +297,7 @@
         "kind": "sleep",
         "id": "skip-follow-up-email",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-follow-up-email"
         ]
@@ -360,7 +360,7 @@
         "kind": "sleep",
         "id": "skip-twitter-post",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-twitter-post"
         ]
@@ -423,7 +423,7 @@
         "kind": "sleep",
         "id": "skip-linkedin-post",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-linkedin-post"
         ]
@@ -486,7 +486,7 @@
         "kind": "sleep",
         "id": "skip-research-brief",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-research-brief"
         ]
@@ -549,7 +549,7 @@
         "kind": "sleep",
         "id": "skip-task-explanation",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-task-explanation"
         ]
@@ -612,7 +612,7 @@
         "kind": "sleep",
         "id": "skip-gamma-presentation",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-gamma-presentation"
         ]
@@ -675,7 +675,7 @@
         "kind": "sleep",
         "id": "skip-blog",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-blog"
         ]
@@ -738,7 +738,7 @@
         "kind": "sleep",
         "id": "skip-single-page-website",
         "drainBehavior": "cancel",
-        "duration": 1,
+        "duration": 0,
         "after": [
           "gate-single-page-website"
         ]
@@ -913,28 +913,13 @@
         ]
       },
       "skipWriteBack": {
-        "kind": "step",
+        "kind": "sleep",
         "id": "skipWriteBack",
-        "agent": {
-          "id": "attio-task-agent-skip-writeback",
-          "systemPrompt": "Reply with exactly: skipped. Output nothing else.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": []
-          },
-          "description": "Inline single-turn inference: attio-task-agent-skip-writeback",
-          "tags": {
-            "workbench.stepKind": "inline-inference"
-          }
-        },
         "drainBehavior": "cancel",
+        "duration": 0,
         "after": [
           "syncGate"
-        ],
-        "input": {
-          "from": "steps.syncGate.output"
-        }
+        ]
       }
     },
     "stepOrder": [

@@ -43,18 +43,36 @@ export function activeGate(state: RunState | null): GateId | null {
 // object. `peelOutput` returns the inner value for any of these shapes.
 const Envelope = type({ "content?": "string", "reply?": "string" });
 
+// Parse JSON that a model may have wrapped in a ```json fence or prefixed with
+// prose — a bare JSON.parse silently drops those, which loses the whole artifact
+// or decision (the writer model routinely fences at 16k tokens). Falls back to
+// the first {...} / [...] slice.
+function parseLooseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // strip a leading/trailing code fence
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    const body = fenced?.[1] ?? text;
+    const start = body.search(/[[{]/);
+    const end = Math.max(body.lastIndexOf("}"), body.lastIndexOf("]"));
+    if (start !== -1 && end > start) {
+      try {
+        return JSON.parse(body.slice(start, end + 1));
+      } catch {
+        return text;
+      }
+    }
+    return text;
+  }
+}
+
 export function peelOutput(raw: unknown): unknown {
   if (raw === undefined || raw === null) return undefined;
   const env = Envelope(raw);
   if (!(env instanceof type.errors)) {
     const text = env.content ?? env.reply;
-    if (typeof text === "string") {
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text;
-      }
-    }
+    if (typeof text === "string") return parseLooseJson(text);
   }
   return raw;
 }
@@ -132,12 +150,15 @@ export function suggestedKinds(
     .filter((k): k is AttioTaskArtifactKind => known.has(k));
 }
 
-const GeneratedArtifact = type({
-  kind: "string",
-  title: "string",
-  content: "string",
-});
-export type GeneratedArtifact = typeof GeneratedArtifact.infer;
+// The writer must return title + content; `kind` is authoritative from the
+// step key (`gen-<kind>`), NOT trusted from the model — so a writer that omits
+// or mislabels `kind` can't drop or mis-file the artifact.
+const GeneratedBody = type({ title: "string", content: "string" });
+export type GeneratedArtifact = {
+  kind: AttioTaskArtifactKind;
+  title: string;
+  content: string;
+};
 
 // Each kind that ran produced its own `gen-<kind>` step output. Aggregate the
 // ones that resolved to a valid artifact; a kind whose branch was pruned (not
@@ -147,8 +168,10 @@ export function parseGeneratedByKind(
 ): GeneratedArtifact[] {
   const out: GeneratedArtifact[] = [];
   for (const kind of attioTaskArtifactKinds) {
-    const parsed = GeneratedArtifact(peelOutput(stepOutputs[`gen-${kind}`]));
-    if (!(parsed instanceof type.errors)) out.push(parsed);
+    const parsed = GeneratedBody(peelOutput(stepOutputs[`gen-${kind}`]));
+    if (!(parsed instanceof type.errors)) {
+      out.push({ kind, title: parsed.title, content: parsed.content });
+    }
   }
   return out;
 }
@@ -172,9 +195,13 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
   const gate = activeGate(state);
 
   if (gate === "selectMember") {
+    const members = parseMembers(stepOutputs.listMembers);
+    // Key by the loaded data so the form resets (picking up defaults) when the
+    // upstream step output arrives after the gate first mounts.
     return (
       <SelectMember
-        members={parseMembers(stepOutputs.listMembers)}
+        key={members.map((m) => m.assignee).join(",")}
+        members={members}
         pending={signalPending}
         onSubmit={(assignee) => onSignal("member-selection", { assignee })}
       />
@@ -199,18 +226,22 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
     );
   }
   if (gate === "selectKinds") {
+    const suggested = suggestedKinds(parseDecision(stepOutputs.analyze));
     return (
       <SelectKinds
-        suggested={suggestedKinds(parseDecision(stepOutputs.analyze))}
+        key={suggested.join(",")}
+        suggested={suggested}
         pending={signalPending}
         onSubmit={(generate) => onSignal("kind-selection", { generate })}
       />
     );
   }
   if (gate === "review") {
+    const artifacts = parseGeneratedByKind(stepOutputs);
     return (
       <Review
-        artifacts={parseGeneratedByKind(stepOutputs)}
+        key={artifacts.map((a) => a.kind).join(",")}
+        artifacts={artifacts}
         pending={signalPending}
         onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
       />
@@ -231,7 +262,63 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
     );
   }
 
+  // No gate awaiting: the run is either terminal or between steps.
+  const terminal = state?.phase;
+  if (terminal === "completed") {
+    const summary = peelOutput(stepOutputs.suggest);
+    return (
+      <Done
+        summary={typeof summary === "string" ? summary : null}
+        onClose={props.onClose}
+      />
+    );
+  }
+  if (terminal === "failed" || terminal === "cancelled") {
+    return <Failed status={terminal} onClose={props.onClose} />;
+  }
   return <p className="text-text-3 text-sm">Working…</p>;
+}
+
+function Done(props: {
+  summary: string | null;
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="text-text text-sm font-medium">Done</h3>
+      {props.summary ? (
+        <p className="text-text-2 whitespace-pre-wrap text-sm">
+          {props.summary}
+        </p>
+      ) : (
+        <p className="text-text-3 text-sm">Artifacts saved to your library.</p>
+      )}
+      <Button variant="secondary" onClick={props.onClose}>
+        Close
+      </Button>
+    </div>
+  );
+}
+
+function Failed(props: {
+  status: "failed" | "cancelled";
+  onClose: () => void;
+}): ReactNode {
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="text-text text-sm font-medium">
+        {props.status === "cancelled" ? "Cancelled" : "Run failed"}
+      </h3>
+      <p className="text-text-3 text-sm">
+        {props.status === "cancelled"
+          ? "This run was cancelled."
+          : "Something went wrong. Check the run logs or start a new run."}
+      </p>
+      <Button variant="secondary" onClick={props.onClose}>
+        Close
+      </Button>
+    </div>
+  );
 }
 
 function parseSelectedTaskId(raw: unknown): string | null {
