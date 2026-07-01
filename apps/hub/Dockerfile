@@ -36,6 +36,7 @@ COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
 COPY packages/tools-dispatch/package.json packages/tools-dispatch/
 COPY packages/tools-exa/package.json packages/tools-exa/
+COPY packages/tools-fileparser/package.json packages/tools-fileparser/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
@@ -89,6 +90,7 @@ COPY packages/tools-artifact/ packages/tools-artifact/
 COPY packages/tools-bluesky/ packages/tools-bluesky/
 COPY packages/tools-dispatch/ packages/tools-dispatch/
 COPY packages/tools-exa/ packages/tools-exa/
+COPY packages/tools-fileparser/ packages/tools-fileparser/
 COPY packages/tools-firecrawl/ packages/tools-firecrawl/
 COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/

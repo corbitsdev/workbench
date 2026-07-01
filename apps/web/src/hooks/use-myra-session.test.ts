@@ -80,6 +80,9 @@ const {
   deliverMessage,
   deliverMessageWithAttachments,
   attachmentErrorMessage,
+  composeWithDocumentContext,
+  parseDocumentAttachment,
+  DocumentParseError,
 } = await import("./use-myra-session");
 
 type DeliverTransport = Parameters<typeof deliverMessageWithAttachments>[0];
@@ -261,5 +264,83 @@ describe("deliverMessageWithAttachments", () => {
     );
     expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("document diversion (CL-2628)", () => {
+  it("POSTs a document to the parse route, not the mail route", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.resolve({
+        artifactId: "art_1",
+        filename: "report.pdf",
+        parsedText: "the parsed text",
+      }),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+
+    const doc = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "report.pdf",
+      mimeType: "application/pdf",
+      data: "BASE64",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("POST");
+    expect(fetchMock.mock.calls[0]?.[1]).toBe(
+      "/api/v1/instances/inst-1/parse-file",
+    );
+    expect(doc.parsedText).toBe("the parsed text");
+  });
+
+  it("rejects a malformed parse response instead of trusting it", async () => {
+    const transport = {
+      fetch: mock(() => Promise.resolve({ artifactId: "art_1" })),
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    const err = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "x.pdf",
+      mimeType: "application/pdf",
+      data: "AAAA",
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DocumentParseError);
+  });
+
+  it("folds parsed document text into a leading context block ahead of the user's message", () => {
+    const composed = composeWithDocumentContext("what does this say?", [
+      { artifactId: "art_1", filename: "report.pdf", parsedText: "PDF BODY" },
+    ]);
+    expect(composed).toBe(
+      "<context>\n[Attached document: report.pdf]\nPDF BODY\n</context>\n\nwhat does this say?",
+    );
+  });
+
+  it("returns the message unchanged when there are no documents", () => {
+    expect(composeWithDocumentContext("hello", [])).toBe("hello");
+  });
+
+  it("maps a parse-route timeout (504) to a clear, non-connectivity message", async () => {
+    const transport = {
+      fetch: mock(() => Promise.reject(new FakeApiError(504))),
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    const err = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "big.pdf",
+      mimeType: "application/pdf",
+      data: "AAAA",
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DocumentParseError);
+    expect(attachmentErrorMessage(err)).toContain("too long");
+    // Not the generic connectivity fallback.
+    expect(attachmentErrorMessage(err)).not.toContain("connection");
+  });
+
+  it("surfaces a DocumentParseError's message rather than a connectivity error", () => {
+    expect(
+      attachmentErrorMessage(
+        new DocumentParseError("That document couldn't be read."),
+      ),
+    ).toBe("That document couldn't be read.");
   });
 });

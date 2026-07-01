@@ -560,6 +560,19 @@ Both services require a **persistent volume** mounted in the Railway dashboard.
 | `SIDECAR_TOKEN`    | Auth token for hub registration                                                                    |
 | `SIDECAR_DATA_DIR` | Path on the persistent volume (e.g. `/data`)                                                       |
 
+## File Parsing (CL-2628)
+
+Model-agnostic document understanding for agents whose adapter cannot read documents (see ARCHITECTURE.md § File Parsing).
+
+- **File Parser definition** — `packages/agents/src/file-parser/`. An `AGENT_TEMPLATES` entry (`deployable: false`) bound to `anthropic` / `claude-sonnet-4-6`, reusing the tenant's existing `anthropic-api` inference credential (the same one Fannie/Freddie use — no new seed/env).
+- **Parse turn** — `apps/hub/src/services/file-parser.ts` `parseDocument()`. Resolves the File Parser definition across the tenant ancestor chain, resolves its inference source (`resolveInstanceSourcesFromDefinition`), and runs one non-streaming `@intx/agent` turn, sending the bytes as a `MessageAttachment`. The anthropic adapter marshals them into a native `document` block (`interchange/packages/inference/src/turns.ts` → `providers/anthropic.ts`). The turn is recorded under the caller's session for cost attribution.
+- **`parse_file` tool** — `@workbench/tools-fileparser` (hub-backed, keyless) + `apps/hub/src/lib/file-parser-tools.ts`. Reads a file artifact, decodes its data URL, and calls `parseDocument`. Granted to Myra; the on-demand path over an existing artifact.
+- **Upload route** — `POST /api/v1/instances/:instanceId/parse-file` (`apps/hub/src/routes/file-parse.ts`). Auth'd against the instance tenant via `getRequestedUserContext`, size-capped, stores the doc as a `kind: "file"` artifact, parses it, and returns `{ artifactId, filename, parsedText }`. The user-upload path.
+- **Client diversion** — `apps/web/src/hooks/use-myra-session.ts` splits images (inline mail, unchanged) from documents (parse route). Parsed text is folded into a leading `<context>` block, which `packages/agents/src/adapter.ts` `stripContextBlock` hides from the rendered bubble while delivering the full text to Myra; a document chip renders from optimistic client state.
+- **Gate** — `packages/agents/src/attachment-capabilities.ts`. The composer policy for a parser-equipped agent unions document MIME types onto its native accepted set; the hub inline-mail guard (`apps/hub/src/attachment-capability-guard.ts`) is unchanged and stays native, so documents can only flow via the parser.
+
+**v1 storage/latency stopgaps (fast-follow):** uploaded file bytes are stored base64 in `artifact.content` (a text column), and the upload route parses **synchronously in-request** and **eagerly on every upload**. This is intentional for v1 simplicity; the durable direction is binary/object storage with a lifecycle, moving the parse off the request thread (background job + notify), and revisiting eager-vs-lazy once those land.
+
 ## Agent Runtime and LLM Inference
 
 All LLM inference uses `@intx/agent` from `interchange/packages/agent`. The agent runtime provides:

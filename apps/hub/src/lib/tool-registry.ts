@@ -19,6 +19,7 @@ import { SCRAPECREATORS_HUB_TOOLS } from "@workbench/tools-scrapecreators";
 import { X_HUB_TOOLS } from "@workbench/tools-x";
 import { YOUTUBE_HUB_TOOLS } from "@workbench/tools-youtube";
 import { ARTIFACT_HUB_TOOLS } from "./artifact-tools";
+import { FILEPARSER_HUB_TOOLS } from "./file-parser-tools";
 import { MEMORY_HUB_TOOLS } from "./memory-tools";
 import { DISPATCH_HUB_TOOLS } from "@workbench/tools-dispatch";
 import { WRITE_ARTIFACT_HUB_TOOLS } from "../tools/write-artifact";
@@ -64,6 +65,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...LAST30DAYS_CORE_HUB_TOOLS,
   // Hub-backed (permanent; need hub db/services)
   ...ARTIFACT_HUB_TOOLS,
+  ...FILEPARSER_HUB_TOOLS,
   ...MEMORY_HUB_TOOLS,
   ...DISPATCH_HUB_TOOLS,
   ...AGENTS_HUB_TOOLS,

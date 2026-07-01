@@ -44,6 +44,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "memory_save",
   ],
   "@workbench/tools-bluesky/bluesky": ["bluesky_search"],
+  "@workbench/tools-fileparser/fileparser": ["parse_file"],
   "@workbench/tools-dispatch/dispatch": ["dispatch_agent"],
   "@workbench/tools-exa/exa": ["exa_search", "web_search"],
   "@workbench/tools-firecrawl/firecrawl": [

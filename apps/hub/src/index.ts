@@ -86,6 +86,7 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
+import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
 import { createActivityRouter } from "./routes/activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
@@ -1039,6 +1040,7 @@ v1.route(
   ),
 );
 v1.route("/", createArtifactsRouter(db));
+v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
 v1.route("/", createFeedbackRouter(db));

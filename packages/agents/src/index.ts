@@ -184,6 +184,13 @@ export {
   FANNIE_MODEL_CONFIG,
   FANNIE_DEPLOY_DESCRIPTOR,
 } from "./fannie/definition";
+export {
+  FILE_PARSER_NAME,
+  FILE_PARSER_SYSTEM_PROMPT,
+  FILE_PARSER_CREDENTIAL_REQUIREMENTS,
+  FILE_PARSER_GRANT_REQUIREMENTS,
+  FILE_PARSER_MODEL_CONFIG,
+} from "./file-parser/definition";
 export { AgentDeployDescriptor } from "./deploy-descriptor";
 export {
   attachmentCapabilityForAgent,

@@ -189,6 +189,19 @@ See [CREATING_AGENTS_AND_TOOLS.md](./CREATING_AGENTS_AND_TOOLS.md) for the full 
 
 These grants **must** be persisted, not synthesized in memory at launch. Interchange's reconnect path (`collectGrants` → `sendGrantsUpdate`) re-sends only what it reads from the `grant` table, so in-memory tool grants are dropped on every sidecar reconnect — the agent then fails every tool call with `No matching grants for tool:<name>`. Persisting makes launch and reconnect agree, since both resolve grants the same way.
 
+### File Parsing (model-agnostic document understanding)
+
+An agent's ability to read an attachment is set by its inference **adapter**, not just its model: the Anthropic and Google adapters marshal document (PDF) content blocks natively; the openai-compatible adapter (Myra's, on kimi via opencode-zen) throws on any document block. So a document can never be sent inline to Myra.
+
+The **File Parser** decouples "file understanding" from "the chat model's multimodal capability." It is a dedicated agent definition bound to a doc-capable adapter, seeded but never surfaced in the user agent catalog. It runs as a **one-shot in-hub inference turn** (not a launched session): the document's bytes are sent as an attachment and the turn returns the extracted text.
+
+Two paths reach it:
+
+- **User uploads a document to Myra** — the client diverts the document away from the inline-mail path to an upload endpoint, which stores it as a file **artifact**, runs the File Parser, and returns the extracted text. The client folds that text into the message (invisible to the rendered bubble) so Myra reasons over it, and shows the document as a chip. The document is never sent inline.
+- **An agent reads an existing file artifact** — a `parse_file` tool (hub-backed) runs the same parse turn on demand over an artifact the agent references.
+
+The composer's attachment gate is **additive**: a parser-equipped agent accepts documents so a user can attach one, while the agent's _native_ capability — and the inline-mail guard that enforces it — stays unchanged (images-only for Myra). Documents therefore only ever flow through the parser, never inline to a doc-incapable model.
+
 ## Skill Library
 
 Skills are first-class **Interchange assets** (`kind: 'skill'`). Their lifecycle is owned entirely by the Interchange asset substrate — the workbench never reimplements asset storage or versioning.

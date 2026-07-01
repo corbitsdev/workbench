@@ -62,6 +62,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   "artifact_read",
   "artifact_write",
   "artifact_list",
+  "parse_file",
   "vercel_list_projects",
   "vercel_list_deployments",
   "vercel_deploy_static_file",
