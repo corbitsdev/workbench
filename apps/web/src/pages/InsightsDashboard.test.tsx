@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ActivityOverview } from "../lib/hub-api";
 
 let activeContext: {
   workbenches: unknown[];
@@ -165,7 +166,7 @@ const mockOverview = {
         thinkingTokens: 0,
       },
     ],
-    byInstance: [],
+    byInstance: [] as ActivityOverview["inference"]["byInstance"],
   },
 };
 
