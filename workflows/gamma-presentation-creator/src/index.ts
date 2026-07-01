@@ -98,19 +98,20 @@ function roundSteps(round: number): Record<string, Primitive> {
 }
 
 const setupSteps: Record<string, Primitive> = {
-  // Root steps receive the run's initial input; these listing tools take no
-  // arguments, so an empty argMap ignores that input and calls them with `{}`
-  // (a bare `input` would be passed verbatim and a string run-input fails the
-  // step-tool harness).
+  // Root steps receive the run's initial input; the argMap replaces that input
+  // with an explicit `{ limit: 50 }` (a bare `input` would be passed verbatim
+  // and a string run-input fails the step-tool harness). The 50 most recent are
+  // preloaded so the intake panel can paginate + search client-side — the DAG
+  // is acyclic/fire-once, so there is no "next page" round-trip.
   "list-artifacts": deterministicToolStep({
     id: "presentation-list-artifacts",
     tool: "artifact_list",
-    argMap: {},
+    argMap: { limit: { literal: 50 } },
   }),
   "list-notes": deterministicToolStep({
     id: "presentation-list-notes",
     tool: "granola_list_notes",
-    argMap: {},
+    argMap: { limit: { literal: 50 } },
   }),
   intake: awaitSignal({
     name: "intake",

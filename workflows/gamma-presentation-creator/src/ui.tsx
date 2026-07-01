@@ -294,13 +294,19 @@ type IntakePayload = {
   text?: string;
 };
 
-function PickList({
+// Sources are preloaded (50 most recent) by the list steps and paginated
+// client-side here — the workflow DAG is acyclic/fire-once, so there is no
+// "fetch the next page" round-trip; the panel slices what it already holds.
+const SOURCE_PAGE_SIZE = 10;
+
+function PaginatedPickList({
   options,
   selected,
   onSelect,
   empty,
   failed,
   failedLabel,
+  searchLabel,
 }: {
   options: Option[];
   selected: string;
@@ -308,7 +314,12 @@ function PickList({
   empty: string;
   failed: boolean;
   failedLabel: string;
+  // When set, renders a client-side title filter with this aria-label.
+  searchLabel?: string;
 }) {
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+
   if (failed) {
     return (
       <p className="text-sm text-text-2" role="status">
@@ -316,25 +327,83 @@ function PickList({
       </p>
     );
   }
-  if (options.length === 0) {
-    return <p className="text-sm text-text-3">{empty}</p>;
+
+  const trimmed = query.trim().toLowerCase();
+  const filtered =
+    searchLabel && trimmed
+      ? options.filter((o) => o.title.toLowerCase().includes(trimmed))
+      : options;
+  const pageCount = Math.max(1, Math.ceil(filtered.length / SOURCE_PAGE_SIZE));
+  const clampedPage = Math.min(page, pageCount - 1);
+  const start = clampedPage * SOURCE_PAGE_SIZE;
+  const visible = filtered.slice(start, start + SOURCE_PAGE_SIZE);
+
+  const search = searchLabel ? (
+    <input
+      aria-label={searchLabel}
+      value={query}
+      onChange={(e) => {
+        setQuery(e.target.value);
+        setPage(0);
+      }}
+      placeholder="Search by title"
+      className={inputFieldClass}
+    />
+  ) : null;
+
+  if (filtered.length === 0) {
+    return (
+      <div className="space-y-2">
+        {search}
+        <p className="text-sm text-text-3">{trimmed ? "No matches." : empty}</p>
+      </div>
+    );
   }
+
   return (
-    <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border bg-surface">
-      {options.map((o) => (
-        <li key={o.id}>
+    <div className="space-y-2">
+      {search}
+      <ul className="max-h-48 divide-y divide-border overflow-y-auto rounded-lg border border-border bg-surface">
+        {visible.map((o) => (
+          <li key={o.id}>
+            <button
+              type="button"
+              onClick={() => onSelect(o.id)}
+              className={`block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 ${
+                selected === o.id ? "bg-surface-2 text-text" : "text-text-2"
+              }`}
+            >
+              {o.title}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {pageCount > 1 && (
+        <div className="flex items-center justify-between text-[12px] text-text-3">
           <button
             type="button"
-            onClick={() => onSelect(o.id)}
-            className={`block w-full px-3 py-2 text-left text-[13px] transition-colors hover:bg-surface-2 focus:outline-none focus-visible:bg-surface-2 ${
-              selected === o.id ? "bg-surface-2 text-text" : "text-text-2"
-            }`}
+            aria-label="Previous page"
+            disabled={clampedPage === 0}
+            onClick={() => setPage(clampedPage - 1)}
+            className="rounded-[6px] px-2 py-1 enabled:hover:text-text-2 disabled:opacity-40"
           >
-            {o.title}
+            Prev
           </button>
-        </li>
-      ))}
-    </ul>
+          <span className="tabular-nums">
+            Page {clampedPage + 1} of {pageCount}
+          </span>
+          <button
+            type="button"
+            aria-label="Next page"
+            disabled={clampedPage >= pageCount - 1}
+            onClick={() => setPage(clampedPage + 1)}
+            className="rounded-[6px] px-2 py-1 enabled:hover:text-text-2 disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -355,6 +424,7 @@ function IntakeScreen({
   const artifacts = readArtifactOptions(stepOutputs);
   const notes = readNoteOptions(stepOutputs);
 
+  const [page, setPage] = useState<1 | 2 | 3>(1);
   const [tab, setTab] = useState<SourceTab>("artifact");
   const [gammaId, setGammaId] = useState("");
   const [userPickedTemplate, setUserPickedTemplate] = useState(false);
@@ -400,180 +470,287 @@ function IntakeScreen({
     (tab === "artifact" && artifactId.length > 0) ||
     (tab === "granola" && noteId.length > 0) ||
     (tab === "paste" && text.trim().length > 0);
+  const deckFieldsReady =
+    gammaId.trim().length > 0 && deckTitle.trim().length > 0;
   const canSubmit =
-    connected &&
-    !signalPending &&
-    gammaId.trim().length > 0 &&
-    deckTitle.trim().length > 0 &&
-    sourceChosen;
+    connected && !signalPending && deckFieldsReady && sourceChosen;
 
   const tabClass = (t: SourceTab) =>
     `rounded-[8px] px-3 py-1.5 text-[12px] ${
       tab === t ? "bg-surface-2 text-text" : "text-text-3 hover:text-text-2"
     }`;
 
+  const templateName =
+    templates.options.find((t) => t.id === gammaId)?.title ?? gammaId;
+  const sourceSummary = (() => {
+    if (tab === "artifact") {
+      return artifacts.options.find((o) => o.id === artifactId)?.title ?? "—";
+    }
+    if (tab === "granola") {
+      return notes.options.find((o) => o.id === noteId)?.title ?? "—";
+    }
+    return "Pasted text";
+  })();
+
+  function submit() {
+    if (!canSubmit) return;
+    const base = {
+      deckTitle: deckTitle.trim(),
+      gammaId: gammaId.trim(),
+      audience: audience.trim(),
+      tone: tone.trim(),
+      goal: goal.trim(),
+    };
+    if (tab === "artifact") onSubmit({ ...base, artifactId });
+    else if (tab === "granola") onSubmit({ ...base, noteId });
+    else onSubmit({ ...base, text: text.trim() });
+  }
+
   return (
     <Card>
-      <CardTitle>Build a deck</CardTitle>
+      <CardTitle>Build a deck · Step {page} of 3</CardTitle>
       <form
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
-          if (!canSubmit) return;
-          const base = {
-            deckTitle: deckTitle.trim(),
-            gammaId: gammaId.trim(),
-            audience: audience.trim(),
-            tone: tone.trim(),
-            goal: goal.trim(),
-          };
-          if (tab === "artifact") onSubmit({ ...base, artifactId });
-          else if (tab === "granola") onSubmit({ ...base, noteId });
-          else onSubmit({ ...base, text: text.trim() });
+          submit();
         }}
       >
-        <div className="space-y-2">
-          <span className="text-[12px] text-text-3">Source</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className={tabClass("artifact")}
-              onClick={() => selectTab("artifact")}
-            >
-              Artifact
-            </button>
-            <button
-              type="button"
-              className={tabClass("granola")}
-              onClick={() => selectTab("granola")}
-            >
-              Granola call
-            </button>
-            <button
-              type="button"
-              className={tabClass("paste")}
-              onClick={() => selectTab("paste")}
-            >
-              Paste text
-            </button>
-          </div>
-          {tab === "artifact" && (
-            <PickList
-              options={artifacts.options}
-              selected={artifactId}
-              onSelect={setArtifactId}
-              empty="No saved artifacts available."
-              failed={artifacts.failed}
-              failedLabel="Couldn't load artifacts — the integration may be unavailable. Try a Granola call or paste text."
-            />
-          )}
-          {tab === "granola" && (
-            <PickList
-              options={notes.options}
-              selected={noteId}
-              onSelect={setNoteId}
-              empty="No Granola calls available."
-              failed={notes.failed}
-              failedLabel="Couldn't load Granola calls — the integration may be unavailable. Try an artifact or paste text."
-            />
-          )}
-          {tab === "paste" && (
-            <textarea
-              aria-label="Pasted text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={6}
-              placeholder="Paste the source text for the deck"
-              className={inputFieldClass}
-            />
-          )}
-        </div>
+        {page === 1 && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-3">Deck title</span>
+              <input
+                aria-label="Deck title"
+                value={deckTitle}
+                onChange={(e) => setDeckTitle(e.target.value)}
+                className={inputFieldClass}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-3">Template</span>
+              {templates.loading && (
+                <select
+                  aria-label="Template"
+                  disabled
+                  value=""
+                  className={inputFieldClass}
+                >
+                  <option value="">Loading templates…</option>
+                </select>
+              )}
+              {!templates.loading && templates.options.length > 0 && (
+                <select
+                  aria-label="Template"
+                  value={gammaId}
+                  onChange={(e) => pickTemplate(e.target.value)}
+                  className={inputFieldClass}
+                >
+                  {templates.options.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title}
+                    </option>
+                  ))}
+                </select>
+              )}
+              {!templates.loading && templates.options.length === 0 && (
+                <input
+                  aria-label="Template"
+                  value={gammaId}
+                  onChange={(e) => pickTemplate(e.target.value)}
+                  placeholder="Gamma template ID"
+                  className={inputFieldClass}
+                />
+              )}
+              {templates.failed && (
+                <span className="block text-[12px] text-text-2" role="status">
+                  Couldn't load templates — enter a template ID manually.
+                </span>
+              )}
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-3">Audience</span>
+              <input
+                aria-label="Audience"
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                className={inputFieldClass}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-3">Tone</span>
+              <input
+                aria-label="Tone"
+                value={tone}
+                onChange={(e) => setTone(e.target.value)}
+                className={inputFieldClass}
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-[12px] text-text-3">Goal</span>
+              <input
+                aria-label="Goal"
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                className={inputFieldClass}
+              />
+            </label>
 
-        <label className="block space-y-1">
-          <span className="text-[12px] text-text-3">Deck title</span>
-          <input
-            aria-label="Deck title"
-            value={deckTitle}
-            onChange={(e) => setDeckTitle(e.target.value)}
-            className={inputFieldClass}
-          />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-[12px] text-text-3">Template</span>
-          {templates.loading && (
-            <select
-              aria-label="Template"
-              disabled
-              value=""
-              className={inputFieldClass}
-            >
-              <option value="">Loading templates…</option>
-            </select>
-          )}
-          {!templates.loading && templates.options.length > 0 && (
-            <select
-              aria-label="Template"
-              value={gammaId}
-              onChange={(e) => pickTemplate(e.target.value)}
-              className={inputFieldClass}
-            >
-              {templates.options.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
-          )}
-          {!templates.loading && templates.options.length === 0 && (
-            <input
-              aria-label="Template"
-              value={gammaId}
-              onChange={(e) => pickTemplate(e.target.value)}
-              placeholder="Gamma template ID"
-              className={inputFieldClass}
-            />
-          )}
-          {templates.failed && (
-            <span className="block text-[12px] text-text-2" role="status">
-              Couldn't load templates — enter a template ID manually.
-            </span>
-          )}
-        </label>
-        <label className="block space-y-1">
-          <span className="text-[12px] text-text-3">Audience</span>
-          <input
-            aria-label="Audience"
-            value={audience}
-            onChange={(e) => setAudience(e.target.value)}
-            className={inputFieldClass}
-          />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-[12px] text-text-3">Tone</span>
-          <input
-            aria-label="Tone"
-            value={tone}
-            onChange={(e) => setTone(e.target.value)}
-            className={inputFieldClass}
-          />
-        </label>
-        <label className="block space-y-1">
-          <span className="text-[12px] text-text-3">Goal</span>
-          <input
-            aria-label="Goal"
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            className={inputFieldClass}
-          />
-        </label>
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={!deckFieldsReady}
+                onClick={() => setPage(2)}
+              >
+                Next
+              </Button>
+            </div>
+          </>
+        )}
 
-        <Button type="submit" variant="primary" size="sm" disabled={!canSubmit}>
-          Generate deck
-        </Button>
-        {!connected && (
-          <p className="text-xs text-text-3">
-            Reconnecting — input unavailable.
-          </p>
+        {page === 2 && (
+          <>
+            <div className="space-y-2">
+              <span className="text-[12px] text-text-3">Source</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={tabClass("artifact")}
+                  onClick={() => selectTab("artifact")}
+                >
+                  Artifact
+                </button>
+                <button
+                  type="button"
+                  className={tabClass("granola")}
+                  onClick={() => selectTab("granola")}
+                >
+                  Granola call
+                </button>
+                <button
+                  type="button"
+                  className={tabClass("paste")}
+                  onClick={() => selectTab("paste")}
+                >
+                  Paste text
+                </button>
+              </div>
+              {tab === "artifact" && (
+                <PaginatedPickList
+                  options={artifacts.options}
+                  selected={artifactId}
+                  onSelect={setArtifactId}
+                  empty="No saved artifacts available."
+                  failed={artifacts.failed}
+                  failedLabel="Couldn't load artifacts — the integration may be unavailable. Try a Granola call or paste text."
+                  searchLabel="Search artifacts"
+                />
+              )}
+              {tab === "granola" && (
+                <PaginatedPickList
+                  options={notes.options}
+                  selected={noteId}
+                  onSelect={setNoteId}
+                  empty="No Granola calls available."
+                  failed={notes.failed}
+                  failedLabel="Couldn't load Granola calls — the integration may be unavailable. Try an artifact or paste text."
+                />
+              )}
+              {tab === "paste" && (
+                <textarea
+                  aria-label="Pasted text"
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={6}
+                  placeholder="Paste the source text for the deck"
+                  className={inputFieldClass}
+                />
+              )}
+            </div>
+
+            <div className="flex justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage(1)}
+              >
+                Back
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={!sourceChosen}
+                onClick={() => setPage(3)}
+              >
+                Next
+              </Button>
+            </div>
+          </>
+        )}
+
+        {page === 3 && (
+          <>
+            <dl className="space-y-2 text-[13px]">
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-3">Deck title</dt>
+                <dd className="text-text">{deckTitle.trim()}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-3">Template</dt>
+                <dd className="text-text">{templateName}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-3">Source</dt>
+                <dd className="text-text">{sourceSummary}</dd>
+              </div>
+              {audience.trim() && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-text-3">Audience</dt>
+                  <dd className="text-text">{audience.trim()}</dd>
+                </div>
+              )}
+              {tone.trim() && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-text-3">Tone</dt>
+                  <dd className="text-text">{tone.trim()}</dd>
+                </div>
+              )}
+              {goal.trim() && (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-text-3">Goal</dt>
+                  <dd className="text-text">{goal.trim()}</dd>
+                </div>
+              )}
+            </dl>
+
+            <div className="flex justify-between">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage(2)}
+              >
+                Back
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="sm"
+                disabled={!canSubmit}
+              >
+                Generate deck
+              </Button>
+            </div>
+            {!connected && (
+              <p className="text-xs text-text-3">
+                Reconnecting — input unavailable.
+              </p>
+            )}
+          </>
         )}
       </form>
     </Card>
