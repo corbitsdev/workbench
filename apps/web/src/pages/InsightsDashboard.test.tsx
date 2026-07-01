@@ -216,7 +216,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Total turns")).toBeDefined();
+      screen.getByText("Total turns");
     });
     expect(screen.getAllByText("12").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Tool calls").length).toBeGreaterThanOrEqual(1);
@@ -226,7 +226,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Total turns")).toBeDefined();
+      screen.getByText("Total turns");
     });
     expect(screen.getAllByText("100.0% success").length).toBe(2);
     expect(screen.queryByText(/failure rate/)).toBeNull();
@@ -302,11 +302,11 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Conversations")).toBeDefined();
+      screen.getByText("Conversations");
     });
-    expect(screen.getByText("20")).toBeDefined();
-    expect(screen.getByText("Messages")).toBeDefined();
-    expect(screen.getByText("140")).toBeDefined();
+    screen.getByText("20");
+    screen.getByText("Messages");
+    screen.getByText("140");
   });
 
   it("renders the model distribution as mini bars", async () => {
@@ -347,23 +347,23 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Operational ledger")).toBeDefined();
+      screen.getByText("Operational ledger");
     });
-    expect(screen.getByText("Artifacts")).toBeDefined();
-    expect(screen.getByText("Workflow runs")).toBeDefined();
+    screen.getByText("Artifacts");
+    screen.getByText("Workflow runs");
   });
 
   it("renders tokens by workflow type with humanized kind labels", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Tokens by workflow type")).toBeDefined();
+      screen.getByText("Tokens by workflow type");
     });
     // Kinds are humanized from kebab-case to Title Case.
     const row = screen.getByText("Mvt Landing Page").closest("tr");
     // Tokens = input 120 + output 30 = 150.
     expect(row?.textContent).toContain("150");
-    expect(screen.getByText("Last30days")).toBeDefined();
+    screen.getByText("Last30days");
     // The removed "By agent" section no longer renders.
     expect(screen.queryByText("By agent")).toBeNull();
   });
@@ -375,7 +375,7 @@ describe("InsightsDashboard", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("Tokens by workflow type")).toBeDefined();
+        screen.getByText("Tokens by workflow type");
       });
       const section = screen
         .getByText("Tokens by workflow type")
@@ -391,7 +391,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("By person")).toBeDefined();
+      screen.getByText("By person");
     });
 
     // The preset buttons wrap rather than forcing the header past the viewport.
@@ -409,11 +409,11 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("By person")).toBeDefined();
+      screen.getByText("By person");
     });
-    expect(screen.getByText("Sawyer")).toBeDefined();
-    expect(screen.getByText("(me)")).toBeDefined();
-    expect(screen.getByText("Dana")).toBeDefined();
+    screen.getByText("Sawyer");
+    screen.getByText("(me)");
+    screen.getByText("Dana");
     // Total row: turns 8 + 4 = 12. Footer is labeled as attributed-only since
     // shared-agent usage is excluded from the per-person breakdown.
     const total = screen.getByText("Attributed total").closest("tr");
@@ -421,14 +421,14 @@ describe("InsightsDashboard", () => {
     // Combined token total shown as a real value (default mock has old
     // tokensRecordedFrom): inputTokens 1000 + outputTokens 150 = 1,150.
     expect(total?.textContent).toContain("1,150");
-    expect(screen.getByText("Excludes shared agents")).toBeDefined();
+    screen.getByText("Excludes shared agents");
   });
 
   it("orders the By-person table by tokens and lists Turns before Tool calls", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("By person")).toBeDefined();
+      screen.getByText("By person");
     });
     const personTable = screen.getByText("Person").closest("table");
     const headers = Array.from(
@@ -473,7 +473,7 @@ describe("InsightsDashboard", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("By person")).toBeDefined();
+        screen.getByText("By person");
       });
       const personTable = screen.getByText("Person").closest("table");
       const bodyRows = Array.from(
@@ -496,7 +496,7 @@ describe("InsightsDashboard", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("By person")).toBeDefined();
+        screen.getByText("By person");
       });
       const sawyerRow = screen.getByText("Sawyer").closest("tr");
       // Tokens are shown (input 700 + output 90 = 790), not hidden.
@@ -522,7 +522,7 @@ describe("InsightsDashboard", () => {
         expect(screen.getAllByTestId("data-caveat").length).toBeGreaterThan(0);
       });
       // Real token data exists, so the mosaic renders rather than hiding.
-      expect(screen.getByTestId("token-mosaic")).toBeDefined();
+      screen.getByTestId("token-mosaic");
       expect(
         screen
           .getAllByTestId("data-caveat")
@@ -537,28 +537,28 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Operational ledger")).toBeDefined();
+      screen.getByText("Operational ledger");
     });
     expect(lastTenantId).toBe("tenant-1");
-    expect(screen.getByText("Acme Corp")).toBeDefined();
+    screen.getByText("Acme Corp");
   });
 
   it("offers a 24 hours preset", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Operational ledger")).toBeDefined();
+      screen.getByText("Operational ledger");
     });
-    expect(screen.getByText("24 hours")).toBeDefined();
+    screen.getByText("24 hours");
   });
 
   it("labels agent instances as Agents deployed and drops the Deployments stat", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Operational ledger")).toBeDefined();
+      screen.getByText("Operational ledger");
     });
-    expect(screen.getByText("Agents deployed")).toBeDefined();
+    screen.getByText("Agents deployed");
     expect(screen.queryByText("Agent instances")).toBeNull();
     expect(screen.queryByText("Deployments")).toBeNull();
   });
@@ -567,7 +567,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Artifacts by status")).toBeDefined();
+      screen.getByText("Artifacts by status");
     });
     const tablesGrid = screen.getByText("Artifacts by status").closest(".grid");
     expect(tablesGrid?.className).toContain("items-start");
@@ -593,14 +593,14 @@ describe("InsightsDashboard", () => {
       renderPage();
 
       await waitFor(() => {
-        expect(screen.getByText("By agent instance")).toBeDefined();
+        screen.getByText("By agent instance");
       });
       const table = screen.getByText("Instance").closest("table");
       const bodyRowCount = () =>
         table?.querySelectorAll("tbody tr").length ?? 0;
       // First page shows 10 of 23.
       expect(bodyRowCount()).toBe(10);
-      expect(screen.getByText("Showing 10 of 23")).toBeDefined();
+      screen.getByText("Showing 10 of 23");
 
       fireEvent.click(screen.getByText("Show 10 more"));
       expect(bodyRowCount()).toBe(20);

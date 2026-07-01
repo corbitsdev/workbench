@@ -64,7 +64,7 @@ describe("WorkbenchSelector", () => {
       setActiveWorkbench,
     };
     render(React.createElement(WorkbenchSelector));
-    expect(screen.getByText("Acme Corp")).toBeDefined();
+    screen.getByText("Acme Corp");
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     fireEvent.click(screen.getByRole("option", { name: "Globex" }));
     expect(setActiveWorkbench).toHaveBeenCalledWith("p2");

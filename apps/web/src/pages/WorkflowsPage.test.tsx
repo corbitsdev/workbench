@@ -163,7 +163,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
-    expect(screen.getByText(/loading runs/i)).toBeDefined();
+    screen.getByText(/loading runs/i);
   });
 
   it("shows an empty state when there are no runs", () => {
@@ -174,7 +174,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
-    expect(screen.getByText(/no workflow runs yet/i)).toBeDefined();
+    screen.getByText(/no workflow runs yet/i);
   });
 
   it("scopes the run list and run pane to the active workbench tenant", () => {

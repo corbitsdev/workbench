@@ -35,7 +35,7 @@ describe("ThreadSwitcher", () => {
       }),
     );
     // active label visible on the trigger
-    expect(screen.getByText("Alpha")).toBeDefined();
+    screen.getByText("Alpha");
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     fireEvent.click(screen.getByRole("option", { name: /beta/i }));
     expect(onSelect).toHaveBeenCalledWith("b");
@@ -51,12 +51,12 @@ describe("ThreadSwitcher", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { expanded: false }));
-    expect(screen.getByRole("option", { name: /beta/i })).toBeDefined();
+    screen.getByRole("option", { name: /beta/i });
     fireEvent.change(screen.getByPlaceholderText("Search chats"), {
       target: { value: "alph" },
     });
     expect(screen.queryByRole("option", { name: /beta/i })).toBeNull();
-    expect(screen.getByRole("option", { name: /alpha/i })).toBeDefined();
+    screen.getByRole("option", { name: /alpha/i });
   });
 
   it("fires onNew from the New chat action", () => {

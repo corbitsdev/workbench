@@ -69,7 +69,7 @@ describe("MyraChatSurface", () => {
       }),
     );
     expect(screen.getByTestId("notice").textContent).toMatch(/Setting up Myra/);
-    expect(screen.getByTestId("disabled")).toBeDefined();
+    screen.getByTestId("disabled");
   });
 
   it("shows the credential notice when no key resolves", () => {

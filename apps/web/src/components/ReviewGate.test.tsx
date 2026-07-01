@@ -86,18 +86,18 @@ describe("ReviewGate — pending approvals", () => {
   it("renders a pending approval with action description and resource", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId("review-gate")).toBeDefined();
+      screen.getByTestId("review-gate");
     });
-    expect(screen.getByText(pending.action)).toBeDefined();
-    expect(screen.getByText(pending.resource)).toBeDefined();
+    screen.getByText(pending.action);
+    screen.getByText(pending.resource);
   });
 
   it("renders an Approve button and a Reject button", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
+      screen.getByTestId(`approve-${pending.id}`);
     });
-    expect(screen.getByTestId(`reject-${pending.id}`)).toBeDefined();
+    screen.getByTestId(`reject-${pending.id}`);
   });
 });
 
@@ -119,7 +119,7 @@ describe("ReviewGate — approve action", () => {
   it("calls approveRequest with correct tenantId, approvalId and scope once", async () => {
     renderGate("tenant-1");
     await waitFor(() => {
-      expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
+      screen.getByTestId(`approve-${pending.id}`);
     });
 
     fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
@@ -136,13 +136,13 @@ describe("ReviewGate — approve action", () => {
   it("shows the approved status badge after a successful approval", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId(`approve-${pending.id}`)).toBeDefined();
+      screen.getByTestId(`approve-${pending.id}`);
     });
 
     fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
 
     await waitFor(() => {
-      expect(screen.getByText("approved")).toBeDefined();
+      screen.getByText("approved");
     });
   });
 });
@@ -165,7 +165,7 @@ describe("ReviewGate — reject action", () => {
   it("calls rejectRequest with correct tenantId and approvalId", async () => {
     renderGate("tenant-1");
     await waitFor(() => {
-      expect(screen.getByTestId(`reject-${pending.id}`)).toBeDefined();
+      screen.getByTestId(`reject-${pending.id}`);
     });
 
     fireEvent.click(screen.getByTestId(`reject-${pending.id}`));
@@ -178,13 +178,13 @@ describe("ReviewGate — reject action", () => {
   it("shows the rejected status badge after a successful rejection", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId(`reject-${pending.id}`)).toBeDefined();
+      screen.getByTestId(`reject-${pending.id}`);
     });
 
     fireEvent.click(screen.getByTestId(`reject-${pending.id}`));
 
     await waitFor(() => {
-      expect(screen.getByText("rejected")).toBeDefined();
+      screen.getByText("rejected");
     });
   });
 });
@@ -206,7 +206,7 @@ describe("ReviewGate — sessionId filter", () => {
   it("shows only approvals matching the given sessionId", async () => {
     renderGate("tenant-1", "sess-target");
     await waitFor(() => {
-      expect(screen.getByTestId(`approval-appr-match`)).toBeDefined();
+      screen.getByTestId(`approval-appr-match`);
     });
     expect(screen.queryByTestId("approval-appr-other")).toBeNull();
   });
@@ -225,7 +225,7 @@ describe("ReviewGate — resolved items reduced opacity", () => {
   it("renders resolved approvals with reduced opacity class", async () => {
     renderGate();
     await waitFor(() => {
-      expect(screen.getByTestId(`approval-${resolved.id}`)).toBeDefined();
+      screen.getByTestId(`approval-${resolved.id}`);
     });
     const el = screen.getByTestId(`approval-${resolved.id}`);
     expect(el.className).toContain("opacity-50");

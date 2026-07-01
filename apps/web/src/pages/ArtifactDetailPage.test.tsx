@@ -68,7 +68,7 @@ describe("ArtifactDetailPage", () => {
 
   it("shows a not-found state for an unknown id", () => {
     renderAt("does-not-exist");
-    expect(screen.getByText(/couldn't be found/i)).toBeDefined();
+    screen.getByText(/couldn't be found/i);
   });
 
   it("does not render the in-pane chat composer (Myra lives in the dock)", () => {

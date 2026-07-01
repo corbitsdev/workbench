@@ -42,7 +42,7 @@ describe("ArtifactsPage", () => {
       setActiveWorkbench: () => {},
     };
     renderPage();
-    expect(screen.getByText("Loading…")).toBeDefined();
+    screen.getByText("Loading…");
   });
 
   it("shows a no-access message when the member has no workbenches", () => {
@@ -54,6 +54,6 @@ describe("ArtifactsPage", () => {
       setActiveWorkbench: () => {},
     };
     renderPage();
-    expect(screen.getByText(/not been provided access/i)).toBeDefined();
+    screen.getByText(/not been provided access/i);
   });
 });

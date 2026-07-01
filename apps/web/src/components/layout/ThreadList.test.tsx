@@ -53,8 +53,8 @@ function renderList(path = "/chats/t1") {
 describe("ThreadList", () => {
   it("lists the member threads", () => {
     renderList();
-    expect(screen.getByText("First")).toBeDefined();
-    expect(screen.getByText("Second")).toBeDefined();
+    screen.getByText("First");
+    screen.getByText("Second");
   });
 
   it("renames a thread via the options menu", () => {

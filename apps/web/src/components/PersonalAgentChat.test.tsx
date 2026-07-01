@@ -154,11 +154,11 @@ describe("PersonalAgentChat dock", () => {
   it("minimizing from the overlay returns to the inline surface, not closed", () => {
     renderAt("/artifacts/art-1");
     fireEvent.click(screen.getByRole("button", { name: "expand" }));
-    expect(screen.getByTestId("expanded-overlay")).toBeDefined();
+    screen.getByTestId("expanded-overlay");
 
     fireEvent.click(screen.getByRole("button", { name: "minimize" }));
     expect(screen.queryByTestId("expanded-overlay")).toBeNull();
-    expect(screen.getByTestId("surface")).toBeDefined();
+    screen.getByTestId("surface");
   });
 
   it("renders nothing on the full-page chat route", () => {
