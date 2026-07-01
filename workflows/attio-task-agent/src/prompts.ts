@@ -34,7 +34,7 @@ export function buildAnalyzeSystemPrompt(): string {
     '  "status": "ready" | "need_clarification" | "need_more_context",',
     '  "reasoning": string,                       // one or two sentences',
     '  "questions"?: string[],                    // REQUIRED when status is need_clarification',
-    `  "selectedArtifactKinds"?: string[],        // choose the relevant subset of: ${ARTIFACT_KIND_LIST}`,
+    `  "selectedArtifactKinds"?: [{ "kind": string }],  // objects; choose the relevant subset of: ${ARTIFACT_KIND_LIST}`,
     '  "proposedTaskUpdate"?: { "markComplete"?: boolean, "note"?: string }',
     "}",
     "",
@@ -47,9 +47,9 @@ export function buildAnalyzeSystemPrompt(): string {
 
 export function buildGenerateSystemPrompt(): string {
   return [
-    "You are a business-development writer. Given an Attio task, its record context, the prior analysis decision, and any human clarifications, produce the requested BD artifacts.",
+    "You are a business-development writer. Given an Attio task, its record context, the prior analysis decision, any human clarifications, and a single target artifact kind (the input's top-level `kind` field), produce exactly ONE artifact of that kind.",
     "",
-    "Generate one artifact per kind in the decision's selectedArtifactKinds. Honor these rules:",
+    "Honor these rules by kind:",
     "- Emails (cold-email, follow-up-email): ready to send, specific to the record; no placeholders.",
     "- Social posts (twitter-post, linkedin-post): ANONYMIZED — no company names, personal names, or identifying details.",
     "- research-brief: grounded, cited where possible, skimmable.",
@@ -60,9 +60,9 @@ export function buildGenerateSystemPrompt(): string {
     "",
     "Return ONLY a JSON object (no prose, no code fence):",
     "{",
-    '  "artifacts": [ { "kind": string, "title": string, "content": string } ]',
+    '  "kind": string, "title": string, "content": string',
     "}",
-    "kind MUST be one of the selectedArtifactKinds. Do not invent kinds.",
+    "kind MUST equal the target kind you were given. Do not invent kinds.",
   ].join("\n");
 }
 

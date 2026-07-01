@@ -114,7 +114,7 @@
         "id": "analyze",
         "agent": {
           "id": "attio-task-agent-analyze",
-          "systemPrompt": "You are a business-development task agent. You are given one Attio task and its linked record (a company or person).\n\nYour job this turn is to GATHER enough context to complete the task, then DECIDE whether you can proceed.\n\n## Grounding\nUse your read-only tools to ground yourself before deciding. Prefer, in order:\n- The Attio task and its linked record (already provided; fetch more with attio_get_record / attio_query_records / attio_search_records if useful).\n- Internal knowledge: granola_get_note / granola_list_notes for call context, artifact_read / artifact_find_by_title / artifact_list for prior collateral.\n- The web via exa_search for public company/person facts.\nGather aggressively and autonomously — only stop to ask the human when a genuine blocker remains.\n\n## Decide\nReturn ONLY a JSON object matching this shape (no prose, no code fence):\n{\n  \"status\": \"ready\" | \"need_clarification\" | \"need_more_context\",\n  \"reasoning\": string,                       // one or two sentences\n  \"questions\"?: string[],                    // REQUIRED when status is need_clarification\n  \"selectedArtifactKinds\"?: string[],        // choose the relevant subset of: cold-email, follow-up-email, twitter-post, linkedin-post, research-brief, task-explanation, gamma-presentation, blog, single-page-website\n  \"proposedTaskUpdate\"?: { \"markComplete\"?: boolean, \"note\"?: string }\n}\n\n- status=ready: you have enough to generate. Populate selectedArtifactKinds with the kinds that fit THIS task (do not select all of them by default).\n- status=need_clarification: you are blocked on something only the human knows. Put crisp, specific questions in questions[].\n- status=need_more_context: you could not gather enough from tools but no human input is needed; the run will still proceed best-effort.\n- proposedTaskUpdate: if the task should be marked done and/or a note attached to the record once the human approves, propose it here.",
+          "systemPrompt": "You are a business-development task agent. You are given one Attio task and its linked record (a company or person).\n\nYour job this turn is to GATHER enough context to complete the task, then DECIDE whether you can proceed.\n\n## Grounding\nUse your read-only tools to ground yourself before deciding. Prefer, in order:\n- The Attio task and its linked record (already provided; fetch more with attio_get_record / attio_query_records / attio_search_records if useful).\n- Internal knowledge: granola_get_note / granola_list_notes for call context, artifact_read / artifact_find_by_title / artifact_list for prior collateral.\n- The web via exa_search for public company/person facts.\nGather aggressively and autonomously — only stop to ask the human when a genuine blocker remains.\n\n## Decide\nReturn ONLY a JSON object matching this shape (no prose, no code fence):\n{\n  \"status\": \"ready\" | \"need_clarification\" | \"need_more_context\",\n  \"reasoning\": string,                       // one or two sentences\n  \"questions\"?: string[],                    // REQUIRED when status is need_clarification\n  \"selectedArtifactKinds\"?: [{ \"kind\": string }],  // objects; choose the relevant subset of: cold-email, follow-up-email, twitter-post, linkedin-post, research-brief, task-explanation, gamma-presentation, blog, single-page-website\n  \"proposedTaskUpdate\"?: { \"markComplete\"?: boolean, \"note\"?: string }\n}\n\n- status=ready: you have enough to generate. Populate selectedArtifactKinds with the kinds that fit THIS task (do not select all of them by default).\n- status=need_clarification: you are blocked on something only the human knows. Put crisp, specific questions in questions[].\n- status=need_more_context: you could not gather enough from tools but no human input is needed; the run will still proceed best-effort.\n- proposedTaskUpdate: if the task should be marked done and/or a note attached to the record once the human approves, propose it here.",
           "toolFactories": [],
           "capabilities": [
             "attio_get_task",
@@ -168,42 +168,52 @@
         ]
       },
       "generate": {
-        "kind": "step",
+        "kind": "map",
         "id": "generate",
-        "agent": {
-          "id": "attio-task-agent-generate",
-          "systemPrompt": "You are a business-development writer. Given an Attio task, its record context, the prior analysis decision, and any human clarifications, produce the requested BD artifacts.\n\nGenerate one artifact per kind in the decision's selectedArtifactKinds. Honor these rules:\n- Emails (cold-email, follow-up-email): ready to send, specific to the record; no placeholders.\n- Social posts (twitter-post, linkedin-post): ANONYMIZED — no company names, personal names, or identifying details.\n- research-brief: grounded, cited where possible, skimmable.\n- task-explanation: restate the task with full context and rationale.\n- gamma-presentation: a deck outline (titled slides with bullet content).\n- blog: long-form post.\n- single-page-website: copy + section structure for a landing page.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"artifacts\": [ { \"kind\": string, \"title\": string, \"content\": string } ]\n}\nkind MUST be one of the selectedArtifactKinds. Do not invent kinds.",
-          "toolFactories": [],
-          "capabilities": [],
-          "inference": {
-            "sources": [
-              {
-                "provider": "openai-compatible",
-                "model": "kimi-k2.6",
-                "parameters": {
-                  "maxTokens": 16384
+        "over": {
+          "from": "steps.analyze.output.selectedArtifactKinds"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "attio-task-agent-generate-one",
+            "systemPrompt": "You are a business-development writer. Given an Attio task, its record context, the prior analysis decision, any human clarifications, and a single target artifact kind (the input's top-level `kind` field), produce exactly ONE artifact of that kind.\n\nHonor these rules by kind:\n- Emails (cold-email, follow-up-email): ready to send, specific to the record; no placeholders.\n- Social posts (twitter-post, linkedin-post): ANONYMIZED — no company names, personal names, or identifying details.\n- research-brief: grounded, cited where possible, skimmable.\n- task-explanation: restate the task with full context and rationale.\n- gamma-presentation: a deck outline (titled slides with bullet content).\n- blog: long-form post.\n- single-page-website: copy + section structure for a landing page.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": string, \"title\": string, \"content\": string\n}\nkind MUST equal the target kind you were given. Do not invent kinds.",
+            "toolFactories": [],
+            "capabilities": [],
+            "inference": {
+              "sources": [
+                {
+                  "provider": "openai-compatible",
+                  "model": "kimi-k2.6",
+                  "parameters": {
+                    "maxTokens": 16384
+                  }
                 }
+              ]
+            },
+            "description": "Inline single-turn inference: attio-task-agent-generate-one",
+            "tags": {
+              "workbench.stepKind": "inline-inference"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "merge": [
+              {
+                "from": "steps.fetchTask.output"
+              },
+              {
+                "from": "steps.analyze.output"
+              },
+              {
+                "from": "steps.clarify.output"
+              },
+              {
+                "from": "trigger.payload"
               }
             ]
-          },
-          "description": "Inline single-turn inference: attio-task-agent-generate",
-          "tags": {
-            "workbench.stepKind": "inline-inference"
           }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "steps.fetchTask.output"
-            },
-            {
-              "from": "steps.analyze.output"
-            },
-            {
-              "from": "steps.clarify.output"
-            }
-          ]
         },
         "after": [
           "clarify"
@@ -293,6 +303,18 @@
           "suggest"
         ]
       },
+      "syncGate": {
+        "kind": "gate",
+        "id": "syncGate",
+        "when": {
+          "from": "steps.approveSync.output.confirm"
+        },
+        "then": "writeNote",
+        "else": "skipWriteBack",
+        "after": [
+          "approveSync"
+        ]
+      },
       "writeNote": {
         "kind": "step",
         "id": "writeNote",
@@ -310,8 +332,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "attio_create_note",
-            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"}}",
-            "workbench.nonFatal": "true"
+            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"}}"
           }
         },
         "drainBehavior": "cancel",
@@ -319,7 +340,7 @@
           "from": "steps.approveSync.output"
         },
         "after": [
-          "approveSync"
+          "syncGate"
         ]
       },
       "writeComplete": {
@@ -339,8 +360,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "attio_update_task",
-            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"from\":\"markComplete\"}}",
-            "workbench.nonFatal": "true"
+            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}"
           }
         },
         "drainBehavior": "cancel",
@@ -350,6 +370,30 @@
         "after": [
           "writeNote"
         ]
+      },
+      "skipWriteBack": {
+        "kind": "step",
+        "id": "skipWriteBack",
+        "agent": {
+          "id": "attio-task-agent-skip-writeback",
+          "systemPrompt": "Reply with exactly: skipped. Output nothing else.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: attio-task-agent-skip-writeback",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "after": [
+          "syncGate"
+        ],
+        "input": {
+          "from": "steps.syncGate.output"
+        }
       }
     },
     "stepOrder": [
@@ -365,8 +409,10 @@
       "persist",
       "suggest",
       "approveSync",
+      "syncGate",
       "writeNote",
-      "writeComplete"
+      "writeComplete",
+      "skipWriteBack"
     ]
   }
 }

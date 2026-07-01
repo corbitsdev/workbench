@@ -127,7 +127,10 @@ describe("AttioAnalyzeDecisionSchema", () => {
     const out = AttioAnalyzeDecisionSchema({
       status: "ready",
       reasoning: "Have enough context",
-      selectedArtifactKinds: ["cold-email", "research-brief"],
+      selectedArtifactKinds: [
+        { kind: "cold-email" },
+        { kind: "research-brief" },
+      ],
       proposedTaskUpdate: { markComplete: true, note: "Drafted outreach" },
     });
     expect(out instanceof type.errors).toBe(false);
@@ -145,7 +148,7 @@ describe("AttioAnalyzeDecisionSchema", () => {
     const out = AttioAnalyzeDecisionSchema({
       status: "ready",
       reasoning: "x",
-      selectedArtifactKinds: ["cold-email", "hologram"],
+      selectedArtifactKinds: [{ kind: "cold-email" }, { kind: "hologram" }],
     });
     expect(out instanceof type.errors).toBe(true);
   });

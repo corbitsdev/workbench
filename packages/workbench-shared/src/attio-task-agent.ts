@@ -228,11 +228,20 @@ export const ProposedTaskUpdateSchema = type({
 });
 export type ProposedTaskUpdate = typeof ProposedTaskUpdateSchema.infer;
 
+// Each selected kind is wrapped in an object so the workflow's `generate` map
+// can iterate them and MERGE the shared task/decision context per item — the
+// runtime's `merge` selector requires object operands, so a bare string[] can't
+// be mapped-with-context. `resolveArtifactKinds` still validates the flat keys.
+export const SelectedArtifactKindSchema = type({
+  kind: AttioTaskArtifactKindSchema,
+});
+export type SelectedArtifactKind = typeof SelectedArtifactKindSchema.infer;
+
 export const AttioAnalyzeDecisionSchema = type({
   status: AnalyzeStatusSchema,
   reasoning: "string",
   "questions?": "string[]",
-  "selectedArtifactKinds?": AttioTaskArtifactKindSchema.array(),
+  "selectedArtifactKinds?": SelectedArtifactKindSchema.array(),
   "proposedTaskUpdate?": ProposedTaskUpdateSchema,
 });
 export type AttioAnalyzeDecision = typeof AttioAnalyzeDecisionSchema.infer;

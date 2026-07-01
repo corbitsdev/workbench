@@ -1,4 +1,4 @@
-import { awaitSignal, defineWorkflow, map, step } from "@intx/workflow";
+import { awaitSignal, defineWorkflow, gate, map, step } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import {
   LLM_CREDENTIAL_NAME,
@@ -96,6 +96,24 @@ const persistStep = deterministicToolStep({
   },
 });
 
+// One inference per selected artifact kind (mapped). trigger.payload carries the
+// kind for this iteration; the shared task/decision/clarification context is
+// merged from the prior steps.
+const generateOneStep = inlineInferenceStep({
+  id: "attio-task-agent-generate-one",
+  systemPrompt: buildGenerateSystemPrompt(),
+  model: LLM_WRITER_MODEL,
+  maxTokens: 16384,
+  input: {
+    merge: [
+      { from: "steps.fetchTask.output" },
+      { from: "steps.analyze.output" },
+      { from: "steps.clarify.output" },
+      { from: "trigger.payload" },
+    ],
+  },
+});
+
 export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
@@ -149,21 +167,15 @@ export const workflow = defineWorkflow({
 
     clarify: awaitSignal({ name: "clarification", after: ["analyze"] }),
 
-    // Generation is the quality-sensitive step, so it runs on the heavier
-    // writer model with a larger token ceiling. analyze (tool reasoning) and
-    // suggest (a short wrap-up) stay on the cheaper default model.
-    generate: inlineInferenceStep({
-      id: "attio-task-agent-generate",
-      systemPrompt: buildGenerateSystemPrompt(),
-      model: LLM_WRITER_MODEL,
-      maxTokens: 16384,
-      input: {
-        merge: [
-          { from: "steps.fetchTask.output" },
-          { from: "steps.analyze.output" },
-          { from: "steps.clarify.output" },
-        ],
-      },
+    // Generate ONE artifact per selected kind via map, each its own inference —
+    // so a long blog/deck can't blow the token ceiling mid-array and lose the
+    // whole batch (the last30days-poison failure). Quality-sensitive, so each
+    // runs on the heavier writer model; analyze and suggest stay on the cheaper
+    // default. Each map item is a kind string; shared task/decision context is
+    // merged from the prior steps.
+    generate: map({
+      over: { from: "steps.analyze.output.selectedArtifactKinds" },
+      step: generateOneStep,
       after: ["clarify"],
     }),
 
@@ -189,6 +201,20 @@ export const workflow = defineWorkflow({
 
     approveSync: awaitSignal({ name: "sync-approval", after: ["suggest"] }),
 
+    // Write-back is human-gated on an explicit `confirm` flag — NOT on a
+    // swallowed validation error. Confirming means "attach the approved output
+    // as a note AND mark the task complete"; the writes are FATAL so a real
+    // Attio failure (403/500) fails the run loudly instead of the user believing
+    // a note landed when it didn't. Declining routes to a no-op leaf. The ids
+    // (taskId, parentObject, parentRecordId) are assembled by the panel from
+    // prior step state, not typed by the human.
+    syncGate: gate({
+      when: { from: "steps.approveSync.output.confirm" },
+      then: "writeNote",
+      else: "skipWriteBack",
+      after: ["approveSync"],
+    }),
+
     writeNote: deterministicToolStep({
       id: "attio-task-agent-write-note",
       tool: "attio_create_note",
@@ -198,8 +224,7 @@ export const workflow = defineWorkflow({
         parentRecordId: { from: "parentRecordId" },
         content: { from: "note" },
       },
-      nonFatal: true,
-      after: ["approveSync"],
+      after: ["syncGate"],
     }),
 
     writeComplete: deterministicToolStep({
@@ -208,10 +233,15 @@ export const workflow = defineWorkflow({
       input: { from: "steps.approveSync.output" },
       argMap: {
         taskId: { from: "taskId" },
-        isCompleted: { from: "markComplete" },
+        isCompleted: { literal: true },
       },
-      nonFatal: true,
       after: ["writeNote"],
+    }),
+
+    skipWriteBack: inlineInferenceStep({
+      id: "attio-task-agent-skip-writeback",
+      systemPrompt: "Reply with exactly: skipped. Output nothing else.",
+      after: ["syncGate"],
     }),
   },
 });

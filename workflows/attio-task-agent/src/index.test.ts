@@ -64,7 +64,10 @@ describe("attio-task-agent native workflow", () => {
     const decision = {
       status: "ready",
       reasoning: "Have enough context.",
-      selectedArtifactKinds: ["cold-email", "research-brief"],
+      selectedArtifactKinds: [
+        { kind: "cold-email" },
+        { kind: "research-brief" },
+      ],
       proposedTaskUpdate: { markComplete: true, note: "Drafted outreach." },
     };
     const { invoker, ran } = makeRecordingInvoker({
@@ -81,8 +84,10 @@ describe("attio-task-agent native workflow", () => {
         linkedRecords: [{ object: "companies", recordId: "rec_1" }],
       },
       "attio-task-agent-analyze": decision,
-      "attio-task-agent-generate": {
-        artifacts: [{ kind: "cold-email", title: "Outreach", content: "Hi…" }],
+      "attio-task-agent-generate-one": {
+        kind: "cold-email",
+        title: "Outreach",
+        content: "Hi…",
       },
       "attio-task-agent-persist": { artifactId: "art_1" },
       "attio-task-agent-suggest": "Sent the draft. Next: schedule a follow-up.",
@@ -101,10 +106,10 @@ describe("attio-task-agent native workflow", () => {
       ],
     });
     await run.signal("sync-approval", {
+      confirm: true,
       parentObject: "companies",
       parentRecordId: "rec_1",
       note: "Drafted outreach.",
-      markComplete: true,
       taskId: "task_1",
     });
 
@@ -116,7 +121,7 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds).toContain("attio-task-agent-list-tasks");
     expect(ranIds).toContain("attio-task-agent-fetch-task");
     expect(ranIds).toContain("attio-task-agent-analyze");
-    expect(ranIds).toContain("attio-task-agent-generate");
+    expect(ranIds).toContain("attio-task-agent-generate-one");
     expect(ranIds).toContain("attio-task-agent-persist");
     expect(ranIds).toContain("attio-task-agent-write-note");
     expect(ranIds).toContain("attio-task-agent-write-complete");
@@ -161,22 +166,26 @@ describe("attio-task-agent native workflow", () => {
     expect(fetch.input).toEqual({ from: "steps.selectTask.output" });
   });
 
-  test("generate runs on the writer model; suggest stays on the cheaper default", () => {
-    const generate = stepPrimitive("generate");
-    // A per-step model preference is declared as the step's inference source.
-    expect(generate.agent.inference.sources.length).toBe(1);
-    expect(generate.agent.inference.sources[0]?.model).not.toBe("");
-    // suggest declares no preferred source → falls back to the deploy default.
-    expect(stepPrimitive("suggest").agent.inference.sources).toEqual([]);
+  test("generate maps one inference per selected artifact kind, on the writer model", () => {
+    const generate = mapPrimitive("generate");
+    expect(generate.over).toEqual({
+      from: "steps.analyze.output.selectedArtifactKinds",
+    });
+    const inner = generate.step;
+    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(inner.agent.capabilities).toEqual([]);
+    // A per-step model preference is declared as the inner step's inference source.
+    expect(inner.agent.inference.sources.length).toBe(1);
+    expect(inner.agent.inference.sources[0]?.model).not.toBe("");
   });
 
-  test("generate and suggest are inline-inference steps", () => {
-    for (const id of ["generate", "suggest"]) {
-      const s = stepPrimitive(id);
-      expect(s.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
-      expect(s.agent.capabilities).toEqual([]);
-      expect(s.agent.systemPrompt.length).toBeGreaterThan(0);
-    }
+  test("suggest is an inline-inference step on the cheaper default model", () => {
+    const s = stepPrimitive("suggest");
+    expect(s.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(s.agent.capabilities).toEqual([]);
+    expect(s.agent.systemPrompt.length).toBeGreaterThan(0);
+    // no preferred source → falls back to the deploy default.
+    expect(s.agent.inference.sources).toEqual([]);
   });
 
   test("persist maps artifact_create over the approved pieces", () => {
@@ -195,18 +204,61 @@ describe("attio-task-agent native workflow", () => {
     });
   });
 
-  test("write-back steps are deterministic, non-fatal, and human-gated on the approval signal", () => {
+  test("write-back is gated on an explicit confirm flag with FATAL writes (no swallowed errors)", () => {
+    const syncGate = workflow.steps.syncGate;
+    if (!syncGate || syncGate.kind !== "gate") {
+      throw new Error("expected a gate for syncGate");
+    }
+    expect(syncGate.when).toEqual({ from: "steps.approveSync.output.confirm" });
+    expect(syncGate.then).toBe("writeNote");
+    expect(syncGate.else).toBe("skipWriteBack");
+
     const note = stepPrimitive("writeNote");
     expect(note.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_create_note");
-    expect(note.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-    expect(note.input).toEqual({ from: "steps.approveSync.output" });
+    // FATAL now — a real Attio failure must fail the run, not be swallowed.
+    expect(note.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
     expect(
       JSON.parse(note.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}").content,
     ).toEqual({ from: "note" });
 
     const complete = stepPrimitive("writeComplete");
     expect(complete.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_update_task");
-    expect(complete.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+    expect(complete.agent.tags?.[STEP_NONFATAL_TAG]).toBeUndefined();
+  });
+
+  test("declining the write-back routes to the no-op skip leaf, not a write", async () => {
+    const decision = {
+      status: "ready",
+      selectedArtifactKinds: [{ kind: "cold-email" }],
+    };
+    const { invoker, ran } = makeRecordingInvoker({
+      "attio-task-agent-list-members": { members: [] },
+      "attio-task-agent-list-tasks": { tasks: [] },
+      "attio-task-agent-fetch-task": { task: {}, linkedRecords: [] },
+      "attio-task-agent-analyze": decision,
+      "attio-task-agent-generate-one": {
+        kind: "cold-email",
+        title: "T",
+        content: "C",
+      },
+      "attio-task-agent-persist": { artifactId: "a" },
+      "attio-task-agent-suggest": "done",
+      "attio-task-agent-skip-writeback": "skipped",
+    });
+    const run = runLocal(workflow, { invokeStep: invoker });
+    await run.signal("member-selection", { assignee: "x" });
+    await run.signal("task-selection", { taskId: "task_1" });
+    await run.signal("clarification", { answers: "" });
+    await run.signal("review", {
+      approvedPieces: [{ kind: "cold-email", title: "T", content: "C" }],
+    });
+    await run.signal("sync-approval", { confirm: false });
+    const result = await run.complete;
+    expect(result.terminalStatus).toBe("completed");
+    const ranIds = ran.map((r) => r.id);
+    expect(ranIds).toContain("attio-task-agent-skip-writeback");
+    expect(ranIds).not.toContain("attio-task-agent-write-note");
+    expect(ranIds).not.toContain("attio-task-agent-write-complete");
   });
 
   test("HITL gates carry the expected signal names", () => {
