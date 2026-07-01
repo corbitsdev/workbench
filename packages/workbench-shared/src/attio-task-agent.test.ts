@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import {
   AttioAnalyzeDecisionSchema,
+  KindSelectionPayloadSchema,
+  SyncApprovalPayloadSchema,
   artifactKindRegistry,
   attioTaskArtifactKinds,
   nextLoopAction,
@@ -150,6 +152,58 @@ describe("AttioAnalyzeDecisionSchema", () => {
       reasoning: "x",
       selectedArtifactKinds: [{ kind: "cold-email" }, { kind: "hologram" }],
     });
+    expect(out instanceof type.errors).toBe(true);
+  });
+});
+
+describe("KindSelectionPayloadSchema", () => {
+  it("accepts a complete boolean map over every kind", () => {
+    const generate = Object.fromEntries(
+      attioTaskArtifactKinds.map((kind) => [kind, kind === "cold-email"]),
+    );
+    const out = KindSelectionPayloadSchema({ generate });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  it("rejects a map missing a kind", () => {
+    const generate = Object.fromEntries(
+      attioTaskArtifactKinds
+        .filter((kind) => kind !== "blog")
+        .map((kind) => [kind, false]),
+    );
+    const out = KindSelectionPayloadSchema({ generate });
+    expect(out instanceof type.errors).toBe(true);
+  });
+
+  it("rejects a non-boolean value for a kind", () => {
+    const generate = Object.fromEntries(
+      attioTaskArtifactKinds.map((kind) => [kind, false]),
+    );
+    generate["cold-email"] = "yes" as unknown as boolean;
+    const out = KindSelectionPayloadSchema({ generate });
+    expect(out instanceof type.errors).toBe(true);
+  });
+});
+
+describe("SyncApprovalPayloadSchema", () => {
+  it("accepts a confirm payload with record locators and note", () => {
+    const out = SyncApprovalPayloadSchema({
+      confirm: true,
+      taskId: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+      note: "Attached outreach",
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  it("accepts a bare skip payload", () => {
+    const out = SyncApprovalPayloadSchema({ confirm: false });
+    expect(out instanceof type.errors).toBe(false);
+  });
+
+  it("rejects a non-boolean confirm", () => {
+    const out = SyncApprovalPayloadSchema({ confirm: "yes" });
     expect(out instanceof type.errors).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ import {
   listRunRecords,
   loadRunRecord,
 } from "../workflow-executor/run-store";
+import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
@@ -480,6 +481,20 @@ export function createWorkflowRunRecordsRouter(deps: {
       const parsed = ResumeBody(body);
       if (parsed instanceof type.errors) {
         return c.json({ error: `invalid resume body: ${parsed.summary}` }, 400);
+      }
+
+      // Validate the gate payload at the trust boundary for workflows/signals
+      // that register a schema; unregistered ones pass through untouched.
+      const payloadCheck = validateResumePayload(
+        state.kind,
+        parsed.signalName,
+        parsed.payload ?? {},
+      );
+      if (!payloadCheck.ok) {
+        return c.json(
+          { error: `invalid resume payload: ${payloadCheck.error}` },
+          400,
+        );
       }
 
       if (state.deploymentId === undefined) {

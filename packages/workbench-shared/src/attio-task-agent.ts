@@ -228,6 +228,36 @@ export const ProposedTaskUpdateSchema = type({
 });
 export type ProposedTaskUpdate = typeof ProposedTaskUpdateSchema.infer;
 
+// ---------------------------------------------------------------------------
+// HITL signal payloads (resume-boundary contracts)
+// ---------------------------------------------------------------------------
+
+// The kind-selection gate emits a COMPLETE boolean map over every kind so no
+// per-kind gate downstream reads a missing key. The completeness invariant used
+// to live only in the React panel; this schema pulls it to the resume boundary
+// so a raw payload that omits a kind is rejected before it reaches step outputs.
+// The object shape is built programmatically from the kind tuple — adding a kind
+// tightens this schema automatically.
+const generateMapDefinition = Object.fromEntries(
+  attioTaskArtifactKinds.map((kind) => [kind, "boolean"] as const),
+) as Record<AttioTaskArtifactKind, "boolean">;
+
+export const KindSelectionPayloadSchema = type({
+  generate: generateMapDefinition,
+});
+export type KindSelectionPayload = typeof KindSelectionPayloadSchema.infer;
+
+// The sync-approval gate confirms (or skips) the Attio write-back. `confirm` is
+// required; the record/task locators and note are present only on a confirm.
+export const SyncApprovalPayloadSchema = type({
+  confirm: "boolean",
+  "taskId?": "string",
+  "parentObject?": "string",
+  "parentRecordId?": "string",
+  "note?": "string",
+});
+export type SyncApprovalPayload = typeof SyncApprovalPayloadSchema.infer;
+
 // Each selected kind is wrapped in an object so the workflow's `generate` map
 // can iterate them and MERGE the shared task/decision context per item — the
 // runtime's `merge` selector requires object operands, so a bare string[] can't
