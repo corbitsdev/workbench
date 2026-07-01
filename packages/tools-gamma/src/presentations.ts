@@ -7,6 +7,7 @@ import {
   pollGeneration,
   resolveConfig,
   stringTool,
+  WORKSPACE_SHARING_OPTIONS,
   type GammaToolsConfig,
   type ResolvedGammaConfig,
 } from "./shared";
@@ -44,6 +45,7 @@ async function duplicatePresentation(
     gammaId,
     prompt,
     ...(title !== null ? { title } : {}),
+    sharingOptions: WORKSPACE_SHARING_OPTIONS,
   };
 
   const response = await gammaFetchJSON(

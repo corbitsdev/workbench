@@ -29,6 +29,16 @@ export type ResolvedGammaConfig = {
   fetcher?: GammaFetch;
 };
 
+// Generated decks are created under the API key's identity. Without explicit
+// sharing they default to private-to-that-identity and never surface for the
+// workspace members who own the key — so every generation is shared with the
+// whole workspace, and view-only via its link (externalAccess "view" is
+// link-gated, not public/indexed, per the Gamma generations API).
+export const WORKSPACE_SHARING_OPTIONS = {
+  workspaceAccess: "fullAccess",
+  externalAccess: "view",
+} as const;
+
 const GenerationResultSchema = type({
   gammaUrl: "string",
   gammaId: "string",

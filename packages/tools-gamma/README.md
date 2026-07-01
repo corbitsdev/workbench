@@ -16,6 +16,10 @@ See AGENTS.md "Third-party generation APIs (Gamma)" for the authoritative explan
 
 Verified against the official docs (https://developers.gamma.app). The REST API exposes: `POST /generations`, `POST /generations/from-template`, `GET /generations/{id}`, `GET /themes`, `GET /folders`, `POST /gammas/{gammaId}/archive`, `DELETE /gammas/{gammaId}`.
 
+## Generated decks are shared with the workspace by default
+
+Gamma creates each generation under the API key's own identity. Without an explicit `sharingOptions`, the deck defaults to private-to-that-identity and never surfaces for the workspace members who own the key (CL-2635). So both generate call sites send `WORKSPACE_SHARING_OPTIONS` (`shared.ts`): `workspaceAccess: "fullAccess"` (visible + editable to the whole workspace) and `externalAccess: "view"` — which Gamma documents as "Access level for external users (via shared link)", i.e. link-gated viewing, not public/indexed. Any future plain `POST /generations` path must send the same constant.
+
 ## There is no list-templates endpoint
 
 Gamma's REST API has **no** endpoint to list templates — and no endpoint to list gammas/documents at all. A "template" is simply an existing single-page gamma referenced by its `gammaId` (copied from the Gamma app); `POST /generations/from-template` takes that `gammaId` plus a prompt that fills placeholder tokens.
