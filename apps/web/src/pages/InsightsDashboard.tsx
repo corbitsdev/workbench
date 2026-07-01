@@ -21,13 +21,15 @@ import {
   cacheHitRate,
   computeDelta,
   fillDailySeries,
+  humanizeKey,
   ratePct,
   tokenDataCaveat,
 } from "./insights/metrics";
 
-type Preset = "7d" | "30d" | "90d" | "all";
+type Preset = "24h" | "7d" | "30d" | "90d" | "all";
 
 const PRESETS: { label: string; value: Preset }[] = [
+  { label: "24 hours", value: "24h" },
   { label: "7 days", value: "7d" },
   { label: "30 days", value: "30d" },
   { label: "90 days", value: "90d" },
@@ -447,7 +449,9 @@ function CountTable({
           <tbody className="divide-y divide-border">
             {rows.map((row) => (
               <tr key={row.key}>
-                <td className="py-1.5 text-[12px] text-text-2">{row.key}</td>
+                <td className="py-1.5 text-[12px] text-text-2">
+                  {humanizeKey(row.key)}
+                </td>
                 <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-text">
                   {formatNumber(row.count)}
                 </td>
