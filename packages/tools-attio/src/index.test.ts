@@ -861,6 +861,125 @@ describe("attio_create_note handler", () => {
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
+  it("skips the POST and returns the existing note when idempotencyKey already marks a note", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (u) => u.includes("/v2/notes?"),
+        body: {
+          data: [
+            {
+              id: { note_id: "note_existing" },
+              content_markdown:
+                "Approved outreach draft\n\n<!-- idem:run_42 -->",
+            },
+          ],
+        },
+      },
+    ]);
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "Approved outreach draft",
+          idempotencyKey: "run_42",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.deduped).toBe(true);
+    expect(parsed.note.id.note_id).toBe("note_existing");
+    // Only the list-notes GET happened — no create POST.
+    expect(fetcher.mock.calls).toHaveLength(1);
+    const listCall = fetcher.mock.calls[0];
+    const listUrl = new URL(String(listCall?.[0]));
+    expect(listUrl.pathname).toBe("/v2/notes");
+    expect(listUrl.searchParams.get("parent_object")).toBe("companies");
+    expect(listUrl.searchParams.get("parent_record_id")).toBe("rec_1");
+    expect(listCall?.[1].method).toBe("GET");
+  });
+
+  it("POSTs with the marker appended when idempotencyKey has no matching note", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (u) => u.includes("/v2/notes?"),
+        body: { data: [] },
+      },
+      {
+        match: (u) => u.endsWith("/v2/notes"),
+        body: { data: { id: { note_id: "note_new" } } },
+      },
+    ]);
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "Approved outreach draft",
+          idempotencyKey: "run_42",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({
+      id: { note_id: "note_new" },
+    });
+
+    const postCall = fetcher.mock.calls.find(
+      (c) => c[1].method === "POST" && String(c[0]).endsWith("/v2/notes"),
+    );
+    expect(postCall).toBeDefined();
+    const body = JSON.parse(String(postCall?.[1].body));
+    expect(body.data.content).toBe(
+      "Approved outreach draft\n\n<!-- idem:run_42 -->",
+    );
+  });
+
+  it("does not list or append a marker when idempotencyKey is absent", async () => {
+    const fetcher = makeFetchStub({ data: { id: { note_id: "note_1" } } });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "Approved outreach draft",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    // Single POST, no preflight list-notes GET.
+    expect(fetcher.mock.calls).toHaveLength(1);
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe("https://api.attio.com/v2/notes");
+    expect(call?.[1].method).toBe("POST");
+    const body = JSON.parse(String(call?.[1].body));
+    expect(body.data.content).toBe("Approved outreach draft");
+  });
+
   it("rejects an invalid format", async () => {
     const fetcher = makeFetchStub({ data: {} });
     const runner = createToolRunner(

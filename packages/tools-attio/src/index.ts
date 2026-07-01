@@ -387,6 +387,51 @@ async function updateTask(
   );
 }
 
+function idempotencyMarker(key: string): string {
+  return `<!-- idem:${key} -->`;
+}
+
+// Attio note create takes a single `content` string, but list responses expose
+// the body under content_plaintext / content_markdown (and sometimes a nested
+// `content`). Scan every string leaf so the marker is found regardless of which
+// field the API populated for the note's format.
+function noteContainsMarker(note: unknown, marker: string): boolean {
+  if (typeof note === "string") {
+    return note.includes(marker);
+  }
+  if (Array.isArray(note)) {
+    return note.some((item) => noteContainsMarker(item, marker));
+  }
+  if (isRecord(note)) {
+    return Object.values(note).some((value) =>
+      noteContainsMarker(value, marker),
+    );
+  }
+  return false;
+}
+
+async function findNoteByMarker(
+  config: AttioToolsConfig,
+  parentObject: string,
+  parentRecordId: string,
+  marker: string,
+  signal: AbortSignal,
+): Promise<unknown | null> {
+  const url = attioUrl(config, "/v2/notes");
+  url.searchParams.set("parent_object", parentObject);
+  url.searchParams.set("parent_record_id", parentRecordId);
+  url.searchParams.set("limit", String(MAX_LIMIT));
+  url.searchParams.set("offset", String(DEFAULT_OFFSET));
+
+  const notes = parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+  if (!Array.isArray(notes)) {
+    return null;
+  }
+  return notes.find((note) => noteContainsMarker(note, marker)) ?? null;
+}
+
 async function createNote(
   config: AttioToolsConfig,
   args: Record<string, unknown>,
@@ -409,6 +454,23 @@ async function createNote(
     throw new Error('format must be "plaintext" or "markdown"');
   }
 
+  const idempotencyKey = optionalString(args.idempotencyKey);
+  let noteContent = content;
+  if (idempotencyKey !== null) {
+    const marker = idempotencyMarker(idempotencyKey);
+    const existing = await findNoteByMarker(
+      config,
+      parentObject,
+      parentRecordId,
+      marker,
+      signal,
+    );
+    if (existing !== null) {
+      return { deduped: true, note: existing };
+    }
+    noteContent = `${content}\n\n${marker}`;
+  }
+
   const url = attioUrl(config, "/v2/notes");
   const body = {
     data: {
@@ -416,7 +478,7 @@ async function createNote(
       parent_record_id: parentRecordId,
       title: optionalString(args.title) ?? "",
       format,
-      content,
+      content: noteContent,
     },
   };
   return parseDataResponse(
@@ -598,6 +660,11 @@ const CREATE_NOTE_INPUT_SCHEMA = {
       type: "string",
       description: 'Content format: "markdown" (default) or "plaintext".',
     },
+    idempotencyKey: {
+      type: "string",
+      description:
+        "Optional dedupe key. When set, a hidden marker carrying this key is appended to the note body on create; before creating, existing notes on the same record are checked for that marker and, if one is found, the create is skipped and the existing note is returned as `{ deduped: true, note }`. Pass a stable key (e.g. a workflow run id) so re-running after a failed write-back cannot create a duplicate note.",
+    },
   },
   required: ["parentObject", "parentRecordId", "content"],
 };
@@ -665,7 +732,7 @@ export const ATTIO_UPDATE_TASK_DEFINITION: ToolDefinition = {
 export const ATTIO_CREATE_NOTE_DEFINITION: ToolDefinition = {
   name: "attio_create_note",
   description:
-    "Create a note on an Attio record (e.g. attach approved outreach copy to a company). WRITES to Attio: use only after explicit human approval.",
+    "Create a note on an Attio record (e.g. attach approved outreach copy to a company). WRITES to Attio: use only after explicit human approval. Pass `idempotencyKey` to make the write safe to retry — a matching prior note is returned instead of creating a duplicate.",
   inputSchema: CREATE_NOTE_INPUT_SCHEMA,
 };
 
