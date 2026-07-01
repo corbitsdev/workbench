@@ -248,6 +248,24 @@ describe("InsightsDashboard", () => {
     );
   });
 
+  it("does not draw misleading two-point trend lines for the 24-hour preset", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("sparkline").length).toBeGreaterThan(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "24 hours" }));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("sparkline")).toBeNull();
+    });
+    expect(
+      screen.getAllByText(
+        "Trend line appears once 3+ daily buckets are selected",
+      ).length,
+    ).toBe(3);
+  });
+
   it("renders heatmap cells carrying each active day's turn count", async () => {
     renderPage();
 
@@ -300,6 +318,29 @@ describe("InsightsDashboard", () => {
     const bars = screen.getAllByTestId("mini-bar");
     expect(bars[0].getAttribute("data-label")).toBe("deepseek-v4-flash");
     expect(bars[0].getAttribute("data-value")).toBe("9");
+  });
+
+  it("omits zero-turn models from the model distribution", async () => {
+    mockOverview.models = [
+      { key: "deepseek-v4-flash", count: 0 },
+      { key: "kimi", count: 3 },
+    ];
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getAllByTestId("mini-bar").length).toBe(1);
+      });
+      expect(screen.getByTestId("mini-bar").getAttribute("data-label")).toBe(
+        "kimi",
+      );
+      expect(screen.queryByText("deepseek-v4-flash")).toBeNull();
+    } finally {
+      mockOverview.models = [
+        { key: "deepseek-v4-flash", count: 9 },
+        { key: "kimi", count: 3 },
+      ];
+    }
   });
 
   it("renders operational ledger totals from activity overview", async () => {
