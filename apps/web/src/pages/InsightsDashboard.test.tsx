@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let activeContext: {
@@ -460,6 +466,47 @@ describe("InsightsDashboard", () => {
       expect(screen.getByText("Operational ledger")).toBeDefined();
     });
     expect(screen.getByText("24 hours")).toBeDefined();
+  });
+
+  it("paginates the By-agent-instance table 10 at a time", async () => {
+    const original = mockOverview.inference.byInstance;
+    mockOverview.inference.byInstance = Array.from({ length: 23 }, (_, i) => ({
+      instanceId: `ins_${i}`,
+      agentId: `agt_${i}`,
+      agentName: `Agent ${i}`,
+      turnCount: i,
+      failedTurnCount: 0,
+      toolCallCount: 0,
+      toolErrorCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    }));
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("By agent instance")).toBeDefined();
+      });
+      const table = screen.getByText("Instance").closest("table");
+      const bodyRowCount = () =>
+        table?.querySelectorAll("tbody tr").length ?? 0;
+      // First page shows 10 of 23.
+      expect(bodyRowCount()).toBe(10);
+      expect(screen.getByText("Showing 10 of 23")).toBeDefined();
+
+      fireEvent.click(screen.getByText("Show 10 more"));
+      expect(bodyRowCount()).toBe(20);
+
+      // Last page clamps to the remaining 3.
+      fireEvent.click(screen.getByText("Show 3 more"));
+      expect(bodyRowCount()).toBe(23);
+      expect(screen.queryByText(/Show \d+ more/)).toBeNull();
+    } finally {
+      mockOverview.inference.byInstance = original;
+    }
   });
 
   it("shows a select-a-workbench state and fires no query when no workbench is active", async () => {
