@@ -96,13 +96,19 @@ function roundSteps(round: number): Record<string, Primitive> {
 }
 
 const setupSteps: Record<string, Primitive> = {
+  // Root steps receive the run's initial input; these listing tools take no
+  // arguments, so an empty argMap ignores that input and calls them with `{}`
+  // (a bare `input` would be passed verbatim and a string run-input fails the
+  // step-tool harness).
   "list-artifacts": deterministicToolStep({
     id: "presentation-list-artifacts",
     tool: "artifact_list",
+    argMap: {},
   }),
   "list-notes": deterministicToolStep({
     id: "presentation-list-notes",
     tool: "granola_list_notes",
+    argMap: {},
   }),
   intake: awaitSignal({
     name: "intake",
