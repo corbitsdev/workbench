@@ -6,7 +6,11 @@ import {
   type WorkflowPanelProps,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
-import { attioTaskArtifactKinds } from "@workbench/shared";
+import {
+  artifactKindRegistry,
+  attioTaskArtifactKinds,
+  type AttioTaskArtifactKind,
+} from "@workbench/shared";
 
 // ── Gate routing ────────────────────────────────────────────────────────────
 
@@ -16,6 +20,7 @@ export const GATES = [
   { stepId: "selectMember", signal: "member-selection" },
   { stepId: "selectTask", signal: "task-selection" },
   { stepId: "clarify", signal: "clarification" },
+  { stepId: "selectKinds", signal: "kind-selection" },
   { stepId: "review", signal: "review" },
   { stepId: "approveSync", signal: "sync-approval" },
 ] as const;
@@ -104,7 +109,7 @@ const Decision = type({
   "status?": "string",
   "reasoning?": "string",
   "questions?": "string[]",
-  "selectedArtifactKinds?": "string[]",
+  "selectedArtifactKinds?": type({ kind: "string" }).array(),
   "proposedTaskUpdate?": { "markComplete?": "boolean", "note?": "string" },
 });
 export type ParsedDecision = typeof Decision.infer;
@@ -116,19 +121,36 @@ export function parseDecision(raw: unknown): ParsedDecision {
   return parsed;
 }
 
+// The agent's suggested kinds, narrowed to the ones the workflow can produce —
+// the panel pre-checks these in the kind picker.
+export function suggestedKinds(
+  decision: ParsedDecision,
+): AttioTaskArtifactKind[] {
+  const known = new Set<string>(attioTaskArtifactKinds);
+  return (decision.selectedArtifactKinds ?? [])
+    .map((s) => s.kind)
+    .filter((k): k is AttioTaskArtifactKind => known.has(k));
+}
+
 const GeneratedArtifact = type({
   kind: "string",
   title: "string",
   content: "string",
 });
-const GenerateResult = type({ artifacts: GeneratedArtifact.array() });
 export type GeneratedArtifact = typeof GeneratedArtifact.infer;
 
-export function parseArtifacts(raw: unknown): GeneratedArtifact[] {
-  const inner = peelOutput(raw);
-  const parsed = GenerateResult(inner);
-  if (parsed instanceof type.errors) return [];
-  return parsed.artifacts;
+// Each kind that ran produced its own `gen-<kind>` step output. Aggregate the
+// ones that resolved to a valid artifact; a kind whose branch was pruned (not
+// selected) simply has no output.
+export function parseGeneratedByKind(
+  stepOutputs: Record<string, unknown>,
+): GeneratedArtifact[] {
+  const out: GeneratedArtifact[] = [];
+  for (const kind of attioTaskArtifactKinds) {
+    const parsed = GeneratedArtifact(peelOutput(stepOutputs[`gen-${kind}`]));
+    if (!(parsed instanceof type.errors)) out.push(parsed);
+  }
+  return out;
 }
 
 const LinkedRecordRef = type({ object: "string", recordId: "string" });
@@ -176,10 +198,19 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
       />
     );
   }
+  if (gate === "selectKinds") {
+    return (
+      <SelectKinds
+        suggested={suggestedKinds(parseDecision(stepOutputs.analyze))}
+        pending={signalPending}
+        onSubmit={(generate) => onSignal("kind-selection", { generate })}
+      />
+    );
+  }
   if (gate === "review") {
     return (
       <Review
-        artifacts={parseArtifacts(stepOutputs.generate)}
+        artifacts={parseGeneratedByKind(stepOutputs)}
         pending={signalPending}
         onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
       />
@@ -188,17 +219,25 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
   if (gate === "approveSync") {
     const decision = parseDecision(stepOutputs.analyze);
     const record = parseFirstLinkedRecord(stepOutputs.fetchTask);
+    const taskId = parseSelectedTaskId(stepOutputs.selectTask);
     return (
       <ApproveSync
         decision={decision}
         record={record}
+        taskId={taskId}
         pending={signalPending}
         onConfirm={(payload) => onSignal("sync-approval", payload)}
       />
     );
   }
 
-  return <p className="text-sm text-neutral-500">Working…</p>;
+  return <p className="text-text-3 text-sm">Working…</p>;
+}
+
+function parseSelectedTaskId(raw: unknown): string | null {
+  const parsed = type({ "taskId?": "string" })(peelOutput(raw));
+  if (parsed instanceof type.errors) return null;
+  return parsed.taskId ?? null;
 }
 
 function SelectMember(props: {
@@ -271,14 +310,14 @@ function Clarify(props: {
   const questions = props.decision.questions ?? [];
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium">
-        {needsInput ? "⚠️ The agent needs more info" : "Ready to continue"}
+      <h3 className="text-text text-sm font-medium">
+        {needsInput ? "More information needed" : "Ready to continue"}
       </h3>
       {props.decision.reasoning ? (
-        <p className="text-sm text-neutral-600">{props.decision.reasoning}</p>
+        <p className="text-text-2 text-sm">{props.decision.reasoning}</p>
       ) : null}
       {questions.length > 0 ? (
-        <ul className="list-disc pl-5 text-sm text-neutral-700">
+        <ul className="text-text-2 list-disc pl-5 text-sm">
           {questions.map((q, i) => (
             <li key={i}>{q}</li>
           ))}
@@ -288,13 +327,60 @@ function Clarify(props: {
         <textarea
           className={inputFieldClass}
           rows={4}
-          placeholder="Answer the agent…"
+          placeholder="Add the missing detail…"
           value={answers}
           onChange={(e) => setAnswers(e.target.value)}
         />
       ) : null}
       <Button disabled={props.pending} onClick={() => props.onSubmit(answers)}>
-        {needsInput ? "Send answers" : "Continue"}
+        Continue
+      </Button>
+    </div>
+  );
+}
+
+// The kind picker: pre-checks the agent's suggested kinds, and always emits a
+// COMPLETE boolean map over every kind so no per-kind gate reads a missing key.
+function SelectKinds(props: {
+  suggested: AttioTaskArtifactKind[];
+  pending: boolean;
+  onSubmit: (generate: Record<AttioTaskArtifactKind, boolean>) => void;
+}): ReactNode {
+  const [checked, setChecked] = useState<Set<AttioTaskArtifactKind>>(
+    () => new Set(props.suggested),
+  );
+  const toggle = (kind: AttioTaskArtifactKind) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  const submit = () => {
+    const generate = {} as Record<AttioTaskArtifactKind, boolean>;
+    for (const kind of attioTaskArtifactKinds)
+      generate[kind] = checked.has(kind);
+    props.onSubmit(generate);
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-text text-sm font-medium">Which artifacts?</h3>
+      {attioTaskArtifactKinds.map((kind) => (
+        <label
+          key={kind}
+          className="border-border flex gap-2 rounded-input border p-3 text-sm"
+        >
+          <input
+            type="checkbox"
+            className="accent-orange"
+            checked={checked.has(kind)}
+            onChange={() => toggle(kind)}
+          />
+          <span className="text-text">{artifactKindRegistry[kind].label}</span>
+        </label>
+      ))}
+      <Button disabled={props.pending || checked.size === 0} onClick={submit}>
+        Generate {checked.size} artifact{checked.size === 1 ? "" : "s"}
       </Button>
     </div>
   );
@@ -352,53 +438,73 @@ function Review(props: {
 function ApproveSync(props: {
   decision: ParsedDecision;
   record: { object: string; recordId: string } | null;
+  taskId: string | null;
   pending: boolean;
   onConfirm: (payload: unknown) => void;
 }): ReactNode {
-  const proposed = props.decision.proposedTaskUpdate;
-  const [note, setNote] = useState(proposed?.note ?? "");
-  const [markComplete, setMarkComplete] = useState(
-    proposed?.markComplete ?? false,
+  // Keyed by the record so if the bound record changes the form resets rather
+  // than showing a stale proposed note (state-from-props guard).
+  const recordKey = props.record?.recordId ?? "none";
+  return (
+    <ApproveSyncForm
+      key={recordKey}
+      decision={props.decision}
+      record={props.record}
+      taskId={props.taskId}
+      pending={props.pending}
+      onConfirm={props.onConfirm}
+    />
   );
-  const canWrite = props.record !== null;
+}
+
+function ApproveSyncForm(props: {
+  decision: ParsedDecision;
+  record: { object: string; recordId: string } | null;
+  taskId: string | null;
+  pending: boolean;
+  onConfirm: (payload: unknown) => void;
+}): ReactNode {
+  const [note, setNote] = useState(
+    props.decision.proposedTaskUpdate?.note ?? "",
+  );
+  const canWrite = props.record !== null && props.taskId !== null;
+  const noteReady = note.trim().length > 0;
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium">Write back to Attio?</h3>
+      <h3 className="text-text text-sm font-medium">Write back to Attio</h3>
       {canWrite ? (
         <>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={markComplete}
-              onChange={(e) => setMarkComplete(e.target.checked)}
-            />
-            Mark the task complete
-          </label>
+          <p className="text-text-3 text-xs">
+            Attaches the note to {props.record?.object} record{" "}
+            {props.record?.recordId} and marks the task complete.
+          </p>
           <textarea
             className={inputFieldClass}
             rows={3}
-            placeholder="Note to attach to the record (leave blank to skip)"
+            placeholder="Note to attach to the record…"
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
           <div className="flex gap-2">
             <Button
-              disabled={props.pending}
+              variant="primary"
+              disabled={props.pending || !noteReady}
               onClick={() =>
                 props.onConfirm({
+                  confirm: true,
                   parentObject: props.record?.object,
                   parentRecordId: props.record?.recordId,
-                  note: note.trim().length > 0 ? note : undefined,
-                  markComplete,
+                  note,
+                  taskId: props.taskId,
                 })
               }
             >
-              Write to Attio
+              Attach &amp; complete
             </Button>
             <Button
               variant="secondary"
               disabled={props.pending}
-              onClick={() => props.onConfirm({})}
+              onClick={() => props.onConfirm({ confirm: false })}
             >
               Skip
             </Button>
@@ -406,10 +512,13 @@ function ApproveSync(props: {
         </>
       ) : (
         <>
-          <p className="text-sm text-neutral-500">
-            No linked record to write back to.
+          <p className="text-text-3 text-sm">
+            No linked record to write back to — nothing to sync.
           </p>
-          <Button disabled={props.pending} onClick={() => props.onConfirm({})}>
+          <Button
+            disabled={props.pending}
+            onClick={() => props.onConfirm({ confirm: false })}
+          >
             Finish
           </Button>
         </>

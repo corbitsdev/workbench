@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { RunState } from "@intx/workflow";
 import {
   activeGate,
-  parseArtifacts,
+  parseGeneratedByKind,
   parseDecision,
   parseFirstLinkedRecord,
   parseMembers,
@@ -110,17 +110,33 @@ describe("parseDecision", () => {
   });
 });
 
-describe("parseArtifacts", () => {
-  test("extracts the artifacts array", () => {
-    const raw = reply({
-      artifacts: [{ kind: "cold-email", title: "T", content: "C" }],
+describe("parseGeneratedByKind", () => {
+  test("aggregates the per-kind gen-<kind> step outputs that produced an artifact", () => {
+    const stepOutputs: Record<string, unknown> = {
+      "gen-cold-email": reply({
+        kind: "cold-email",
+        title: "Outreach",
+        content: "Hi",
+      }),
+      "gen-blog": reply({ kind: "blog", title: "Post", content: "Body" }),
+      // a pruned kind has no output — must not appear
+    };
+    const got = parseGeneratedByKind(stepOutputs);
+    expect(got).toContainEqual({
+      kind: "cold-email",
+      title: "Outreach",
+      content: "Hi",
     });
-    expect(parseArtifacts(raw)).toEqual([
-      { kind: "cold-email", title: "T", content: "C" },
-    ]);
+    expect(got).toContainEqual({
+      kind: "blog",
+      title: "Post",
+      content: "Body",
+    });
+    expect(got.length).toBe(2);
   });
-  test("returns [] when artifacts is missing", () => {
-    expect(parseArtifacts(reply({}))).toEqual([]);
+
+  test("returns [] when nothing generated", () => {
+    expect(parseGeneratedByKind({})).toEqual([]);
   });
 });
 
