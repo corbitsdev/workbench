@@ -120,8 +120,6 @@ describe("loadConfig", () => {
     expect(config.auth.useCrossSiteCookies).toBe(true);
   });
 
-
-
   it("treats empty CORS origins as same-origin in dev", () => {
     setRequiredEnv();
 
