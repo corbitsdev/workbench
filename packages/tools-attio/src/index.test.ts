@@ -22,6 +22,7 @@ describe("createAttioTools", () => {
     const tools = createAttioTools({ apiKey: "test-key" });
     const names = tools.map((t) => t.definition.name).sort();
     expect(names).toEqual([
+      "attio_create_note",
       "attio_get_record",
       "attio_get_task",
       "attio_list_objects",
@@ -29,6 +30,7 @@ describe("createAttioTools", () => {
       "attio_list_workspace_members",
       "attio_query_records",
       "attio_search_records",
+      "attio_update_task",
     ]);
   });
 
@@ -680,6 +682,210 @@ describe("attio_get_task handler", () => {
     expect(parsed.linkedRecords[0].target_record_id).toBe("rec_1");
     expect(parsed.linkedRecords[0].record).toBeUndefined();
     expect(String(parsed.linkedRecords[0].error)).toContain("404");
+  });
+});
+
+describe("attio_update_task handler", () => {
+  it("PATCHes the encoded task with only the provided fields wrapped in data", async () => {
+    const fetcher = makeFetchStub({
+      data: { id: { task_id: "task_1" }, is_completed: true },
+    });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_update_task",
+        arguments: { taskId: "task/1", isCompleted: true },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe("https://api.attio.com/v2/tasks/task%2F1");
+    expect(call?.[1].method).toBe("PATCH");
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      data: { is_completed: true },
+    });
+    expect(JSON.parse(String(result.content))).toEqual({
+      id: { task_id: "task_1" },
+      is_completed: true,
+    });
+  });
+
+  it("forwards a deadline update", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "attio_update_task",
+        arguments: { taskId: "task_1", deadlineAt: "2026-08-01T00:00:00Z" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      data: { deadline_at: "2026-08-01T00:00:00Z" },
+    });
+  });
+
+  it("requires the taskId argument", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_update_task",
+        arguments: { isCompleted: true },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("taskId is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("errors when no updatable field is provided", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_update_task",
+        arguments: { taskId: "task_1" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("no task fields to update");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("attio_create_note handler", () => {
+  it("POSTs /v2/notes with the parent, content and defaults", async () => {
+    const fetcher = makeFetchStub({ data: { id: { note_id: "note_1" } } });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "Approved outreach draft",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe("https://api.attio.com/v2/notes");
+    expect(call?.[1].method).toBe("POST");
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      data: {
+        parent_object: "companies",
+        parent_record_id: "rec_1",
+        title: "",
+        format: "markdown",
+        content: "Approved outreach draft",
+      },
+    });
+    expect(JSON.parse(String(result.content))).toEqual({
+      id: { note_id: "note_1" },
+    });
+  });
+
+  it("forwards an explicit title and plaintext format", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "note",
+          title: "BD follow-up",
+          format: "plaintext",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body.data.title).toBe("BD follow-up");
+    expect(body.data.format).toBe("plaintext");
+  });
+
+  it("requires parentObject, parentRecordId and content", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: { parentObject: "companies", parentRecordId: "rec_1" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("content is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("rejects an invalid format", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_note",
+        arguments: {
+          parentObject: "companies",
+          parentRecordId: "rec_1",
+          content: "x",
+          format: "html",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      'format must be "plaintext" or "markdown"',
+    );
+    expect(fetcher.mock.calls).toHaveLength(0);
   });
 });
 
