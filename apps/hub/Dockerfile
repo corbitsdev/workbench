@@ -60,6 +60,7 @@ COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
+COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
