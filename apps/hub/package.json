@@ -70,6 +70,7 @@
     "jszip": "^3.10.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.3",
     "@types/bun": "latest",
     "@types/ssri": "^7.1.5",
     "drizzle-kit": "^0.31.1",
