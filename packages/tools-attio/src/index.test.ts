@@ -23,7 +23,9 @@ describe("createAttioTools", () => {
     const names = tools.map((t) => t.definition.name).sort();
     expect(names).toEqual([
       "attio_get_record",
+      "attio_get_task",
       "attio_list_objects",
+      "attio_list_tasks",
       "attio_list_workspace_members",
       "attio_query_records",
       "attio_search_records",
@@ -436,6 +438,248 @@ describe("attio_list_workspace_members handler", () => {
     expect(JSON.parse(String(result.content))).toEqual([
       { id: { workspace_member_id: "wm_1" } },
     ]);
+  });
+});
+
+describe("attio_list_tasks handler", () => {
+  it("GETs /v2/tasks with default pagination in the query string", async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      { id: "call_1", name: "attio_list_tasks", arguments: {} },
+      new AbortController().signal,
+    );
+
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe("https://api.attio.com/v2/tasks?limit=25&offset=0");
+    expect(call?.[1].method).toBe("GET");
+    const headers = call?.[1].headers as Record<string, string> | undefined;
+    expect(headers?.Authorization).toBe("Bearer test-key");
+  });
+
+  it("caps limit at 100", async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      { id: "call_1", name: "attio_list_tasks", arguments: { limit: 999 } },
+      new AbortController().signal,
+    );
+
+    const url = new URL(String(fetcher.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("limit")).toBe("100");
+  });
+
+  it("forwards assignee, is_completed and linked-record filters as snake_case query params", async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "attio_list_tasks",
+        arguments: {
+          assignee: "sawyer@abklabs.com",
+          isCompleted: false,
+          linkedObject: "companies",
+          linkedRecordId: "rec_1",
+          sort: "created_at:desc",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const url = new URL(String(fetcher.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("assignee")).toBe("sawyer@abklabs.com");
+    expect(url.searchParams.get("is_completed")).toBe("false");
+    expect(url.searchParams.get("linked_object")).toBe("companies");
+    expect(url.searchParams.get("linked_record_id")).toBe("rec_1");
+    expect(url.searchParams.get("sort")).toBe("created_at:desc");
+  });
+
+  it("returns the data field", async () => {
+    const fetcher = makeFetchStub({
+      data: [{ id: { task_id: "task_1" }, content_plaintext: "Follow up" }],
+    });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "call_1", name: "attio_list_tasks", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual([
+      { id: { task_id: "task_1" }, content_plaintext: "Follow up" },
+    ]);
+  });
+});
+
+type RouteStub = AttioFetch & {
+  mock: { calls: [string, RequestInit][] };
+};
+
+function makeRouterStub(
+  routes: {
+    match: (url: string) => boolean;
+    body: unknown;
+    status?: number;
+  }[],
+): RouteStub {
+  return mock((input: string, _init: RequestInit) => {
+    const route = routes.find((r) => r.match(input));
+    if (route === undefined) {
+      return Promise.resolve(new Response("", { status: 404 }));
+    }
+    return Promise.resolve(
+      new Response(JSON.stringify(route.body), {
+        status: route.status ?? 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+}
+
+describe("attio_get_task handler", () => {
+  it("GETs the encoded task and hydrates each linked record", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (u) => u.endsWith("/v2/tasks/task%2F1"),
+        body: {
+          data: {
+            id: { task_id: "task/1" },
+            content_plaintext: "Reach out",
+            linked_records: [
+              { target_object: "companies", target_record_id: "rec_1" },
+            ],
+          },
+        },
+      },
+      {
+        match: (u) => u.includes("/v2/objects/companies/records/rec_1"),
+        body: {
+          data: { id: { record_id: "rec_1" }, values: { name: "Acme" } },
+        },
+      },
+    ]);
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "call_1", name: "attio_get_task", arguments: { taskId: "task/1" } },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.task.content_plaintext).toBe("Reach out");
+    expect(parsed.linkedRecords).toEqual([
+      {
+        target_object: "companies",
+        target_record_id: "rec_1",
+        record: { id: { record_id: "rec_1" }, values: { name: "Acme" } },
+      },
+    ]);
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://api.attio.com/v2/tasks/task%2F1",
+    );
+  });
+
+  it("requires the taskId argument", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "call_1", name: "attio_get_task", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("taskId is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("skips hydration when hydrateLinkedRecords is false", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (u) => u.endsWith("/v2/tasks/task_1"),
+        body: {
+          data: {
+            id: { task_id: "task_1" },
+            linked_records: [
+              { target_object: "companies", target_record_id: "rec_1" },
+            ],
+          },
+        },
+      },
+    ]);
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_get_task",
+        arguments: { taskId: "task_1", hydrateLinkedRecords: false },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.linkedRecords).toEqual([
+      { target_object: "companies", target_record_id: "rec_1" },
+    ]);
+    // Only the task GET happened — no record hydration.
+    expect(fetcher.mock.calls).toHaveLength(1);
+  });
+
+  it("captures a hydration error per record without failing the whole call", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (u) => u.endsWith("/v2/tasks/task_1"),
+        body: {
+          data: {
+            id: { task_id: "task_1" },
+            linked_records: [
+              { target_object: "companies", target_record_id: "rec_1" },
+            ],
+          },
+        },
+      },
+      {
+        match: (u) => u.includes("/v2/objects/companies/records/rec_1"),
+        body: { message: "Not found" },
+        status: 404,
+      },
+    ]);
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "call_1", name: "attio_get_task", arguments: { taskId: "task_1" } },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(String(result.content));
+    expect(parsed.linkedRecords[0].target_record_id).toBe("rec_1");
+    expect(parsed.linkedRecords[0].record).toBeUndefined();
+    expect(String(parsed.linkedRecords[0].error)).toContain("404");
   });
 });
 
