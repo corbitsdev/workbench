@@ -1,9 +1,15 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { type } from "arktype";
 import {
+  buildRunStepperSteps,
   Button,
+  type DisplayStep,
+  HorizontalStepper,
   inputFieldClass,
+  LiveStatusSlot,
+  liveStatusLabel,
   type WorkflowPanelProps,
+  type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
 import {
@@ -36,7 +42,78 @@ export function activeGate(state: RunState | null): GateId | null {
   return null;
 }
 
+// ── Stepper configuration ─────────────────────────────────────────────────────
+
+// The generation branch fans out into one gate/gen/skip triple per artifact
+// kind. Building the ids from `attioTaskArtifactKinds` (NOT importing
+// GENERATION_LEAF_KEYS from ./index — that would pull @intx/agent into the
+// browser `/ui` chunk) keeps the stepper in step with whatever kinds exist.
+const GENERATION_STEP_IDS = [
+  "selectKinds",
+  ...attioTaskArtifactKinds.flatMap((kind) => [
+    `gate-${kind}`,
+    `gen-${kind}`,
+    `skip-${kind}`,
+  ]),
+];
+
+// Each stepper entry clusters the internal workflow steps it represents, in run
+// order. `buildRunStepperSteps` computes status with the "passed = completed OR
+// a later step progressed" rule, so a gate whose output is missing can't rewind
+// the panel. `activityLabel` drives the live line from in-flight machine work;
+// gate-only groups carry none.
+const DISPLAY_STEPS: DisplayStep[] = [
+  {
+    key: "setup",
+    label: "Task setup",
+    stepIds: [
+      "listMembers",
+      "selectMember",
+      "listTasks",
+      "selectTask",
+      "fetchTask",
+    ],
+  },
+  {
+    key: "analyze",
+    label: "Analyze",
+    stepIds: ["analyze", "clarify"],
+    activityLabel: "Analyzing the task",
+  },
+  {
+    key: "generate",
+    label: "Generate",
+    stepIds: GENERATION_STEP_IDS,
+    activityLabel: "Generating artifacts",
+  },
+  {
+    key: "review",
+    label: "Review",
+    stepIds: ["review", "persist"],
+    activityLabel: "Saving to workbench",
+  },
+  {
+    key: "sync",
+    label: "Sync",
+    stepIds: ["suggest", "approveSync", "writeNote", "writeComplete"],
+    activityLabel: "Writing back to Attio",
+  },
+];
+
+function buildStepperSteps(state: RunState | null): WorkflowStep[] {
+  return buildRunStepperSteps(state, DISPLAY_STEPS);
+}
+
 // ── Output parsing ──────────────────────────────────────────────────────────
+
+// A decoded step output is one of three states so the UI can render "still
+// loading" (pending), "the step produced output we can't read" (malformed), and
+// "genuinely empty" (ok with an empty value) differently — instead of every
+// failure collapsing to [] / {}.
+export type Decoded<T> =
+  | { status: "pending" }
+  | { status: "malformed" }
+  | { status: "ok"; value: T };
 
 // Deterministic tool outputs arrive as a `{ content: string }` envelope whose
 // content is JSON; inference/agent steps arrive as `{ reply: string }` or a bare
@@ -77,6 +154,15 @@ export function peelOutput(raw: unknown): unknown {
   return raw;
 }
 
+// A step with no output yet is `pending`; once output arrives it is peeled and
+// handed to the caller's schema, which decides `ok` vs `malformed`.
+function peelDecoded(
+  raw: unknown,
+): { status: "pending" } | { status: "peeled"; value: unknown } {
+  if (raw === undefined || raw === null) return { status: "pending" };
+  return { status: "peeled", value: peelOutput(raw) };
+}
+
 const MemberItem = type({
   id: { workspace_member_id: "string" },
   "email_address?": "string",
@@ -88,16 +174,21 @@ const MemberArray = MemberItem.array();
 
 export type MemberOption = { assignee: string; label: string };
 
-export function parseMembers(raw: unknown): MemberOption[] {
-  const inner = peelOutput(raw);
-  const parsed = MemberArray(inner);
-  if (parsed instanceof type.errors) return [];
-  return parsed.map((m) => {
-    const email = m.email_address ?? m.email;
-    const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
-    const label = name.length > 0 ? name : (email ?? m.id.workspace_member_id);
-    return { assignee: email ?? m.id.workspace_member_id, label };
-  });
+export function parseMembers(raw: unknown): Decoded<MemberOption[]> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = MemberArray(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return {
+    status: "ok",
+    value: parsed.map((m) => {
+      const email = m.email_address ?? m.email;
+      const name = [m.first_name, m.last_name].filter(Boolean).join(" ").trim();
+      const label =
+        name.length > 0 ? name : (email ?? m.id.workspace_member_id);
+      return { assignee: email ?? m.id.workspace_member_id, label };
+    }),
+  };
 }
 
 const TaskItem = type({
@@ -109,18 +200,22 @@ const TaskArray = TaskItem.array();
 
 export type TaskOption = { taskId: string; label: string; deadline?: string };
 
-export function parseTasks(raw: unknown): TaskOption[] {
-  const inner = peelOutput(raw);
-  const parsed = TaskArray(inner);
-  if (parsed instanceof type.errors) return [];
-  return parsed.map((t) => ({
-    taskId: t.id.task_id,
-    label:
-      t.content_plaintext && t.content_plaintext.length > 0
-        ? t.content_plaintext
-        : t.id.task_id,
-    ...(t.deadline_at ? { deadline: t.deadline_at } : {}),
-  }));
+export function parseTasks(raw: unknown): Decoded<TaskOption[]> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = TaskArray(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return {
+    status: "ok",
+    value: parsed.map((t) => ({
+      taskId: t.id.task_id,
+      label:
+        t.content_plaintext && t.content_plaintext.length > 0
+          ? t.content_plaintext
+          : t.id.task_id,
+      ...(t.deadline_at ? { deadline: t.deadline_at } : {}),
+    })),
+  };
 }
 
 const Decision = type({
@@ -132,11 +227,12 @@ const Decision = type({
 });
 export type ParsedDecision = typeof Decision.infer;
 
-export function parseDecision(raw: unknown): ParsedDecision {
-  const inner = peelOutput(raw);
-  const parsed = Decision(inner);
-  if (parsed instanceof type.errors) return {};
-  return parsed;
+export function parseDecision(raw: unknown): Decoded<ParsedDecision> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = Decision(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed };
 }
 
 // The agent's suggested kinds, narrowed to the ones the workflow can produce —
@@ -160,123 +256,229 @@ export type GeneratedArtifact = {
   content: string;
 };
 
-// Each kind that ran produced its own `gen-<kind>` step output. Aggregate the
-// ones that resolved to a valid artifact; a kind whose branch was pruned (not
-// selected) simply has no output.
+// Each kind that ran produced its own `gen-<kind>` step output. `pending` means
+// no generation output has landed yet; `malformed` means at least one landed
+// but none parsed to an artifact; `ok` returns the artifacts that resolved (a
+// kind whose branch was pruned simply has no output and contributes nothing).
 export function parseGeneratedByKind(
   stepOutputs: Record<string, unknown>,
-): GeneratedArtifact[] {
+): Decoded<GeneratedArtifact[]> {
   const out: GeneratedArtifact[] = [];
+  let anyPresent = false;
   for (const kind of attioTaskArtifactKinds) {
-    const parsed = GeneratedBody(peelOutput(stepOutputs[`gen-${kind}`]));
+    const raw = stepOutputs[`gen-${kind}`];
+    if (raw === undefined || raw === null) continue;
+    anyPresent = true;
+    const parsed = GeneratedBody(peelOutput(raw));
     if (!(parsed instanceof type.errors)) {
       out.push({ kind, title: parsed.title, content: parsed.content });
     }
   }
-  return out;
+  if (!anyPresent) return { status: "pending" };
+  if (out.length === 0) return { status: "malformed" };
+  return { status: "ok", value: out };
 }
 
 const LinkedRecordRef = type({ object: "string", recordId: "string" });
 const FetchTaskResult = type({ "linkedRecords?": LinkedRecordRef.array() });
 
+export type LinkedRecord = { object: string; recordId: string };
+
 export function parseFirstLinkedRecord(
   raw: unknown,
-): { object: string; recordId: string } | null {
-  const inner = peelOutput(raw);
-  const parsed = FetchTaskResult(inner);
+): Decoded<LinkedRecord | null> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = FetchTaskResult(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed.linkedRecords?.[0] ?? null };
+}
+
+function parseSelectedTaskId(raw: unknown): string | null {
+  const parsed = type({ "taskId?": "string" })(peelOutput(raw));
   if (parsed instanceof type.errors) return null;
-  return parsed.linkedRecords?.[0] ?? null;
+  return parsed.taskId ?? null;
+}
+
+// ── Shared chrome ─────────────────────────────────────────────────────────────
+
+function Placeholder({ label }: { label: string }): ReactNode {
+  return <p className="text-text-3 text-sm">{label}</p>;
+}
+
+function ErrorLine({ label }: { label: string }): ReactNode {
+  return <p className="text-orange text-sm">{label}</p>;
+}
+
+function Reconnecting(): ReactNode {
+  return (
+    <p className="text-text-3 text-xs">Reconnecting — input unavailable.</p>
+  );
+}
+
+function Shell(props: {
+  state: RunState | null;
+  connected: boolean;
+  onClose: () => void;
+  children: ReactNode;
+}): ReactNode {
+  const failed =
+    props.state?.phase === "failed" || props.state?.phase === "cancelled";
+  const liveLabel = failed ? null : liveStatusLabel(props.state, DISPLAY_STEPS);
+  return (
+    <div className="border-border bg-bg flex h-full flex-col overflow-hidden rounded-panel border">
+      <header className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
+        <div className="min-w-0">
+          <p className="text-text truncate text-sm font-semibold">
+            Attio Task Agent
+          </p>
+          <p className="text-text-3 mt-px text-xs">
+            {props.connected ? "Live" : "Reconnecting…"}
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={props.onClose}>
+          Close
+        </Button>
+      </header>
+
+      <HorizontalStepper steps={buildStepperSteps(props.state)} />
+      <LiveStatusSlot label={liveLabel} />
+
+      <div className="flex-1 overflow-y-auto p-5">{props.children}</div>
+    </div>
+  );
 }
 
 // ── Panel ─────────────────────────────────────────────────────────────────
 
 export function Panel(props: WorkflowPanelProps): ReactNode {
-  const { state, stepOutputs, signalPending, onSignal } = props;
+  const { state, connected, stepOutputs, signalPending, onSignal } = props;
   const gate = activeGate(state);
 
-  if (gate === "selectMember") {
-    const members = parseMembers(stepOutputs.listMembers);
-    // Key by the loaded data so the form resets (picking up defaults) when the
-    // upstream step output arrives after the gate first mounts.
-    return (
-      <SelectMember
-        key={members.map((m) => m.assignee).join(",")}
-        members={members}
-        pending={signalPending}
-        onSubmit={(assignee) => onSignal("member-selection", { assignee })}
-      />
-    );
-  }
-  if (gate === "selectTask") {
-    return (
-      <SelectTask
-        tasks={parseTasks(stepOutputs.listTasks)}
-        pending={signalPending}
-        onSubmit={(taskId) => onSignal("task-selection", { taskId })}
-      />
-    );
-  }
-  if (gate === "clarify") {
-    return (
-      <Clarify
-        decision={parseDecision(stepOutputs.analyze)}
-        pending={signalPending}
-        onSubmit={(answers) => onSignal("clarification", { answers })}
-      />
-    );
-  }
-  if (gate === "selectKinds") {
-    const suggested = suggestedKinds(parseDecision(stepOutputs.analyze));
-    return (
-      <SelectKinds
-        key={suggested.join(",")}
-        suggested={suggested}
-        pending={signalPending}
-        onSubmit={(generate) => onSignal("kind-selection", { generate })}
-      />
-    );
-  }
-  if (gate === "review") {
-    const artifacts = parseGeneratedByKind(stepOutputs);
-    return (
-      <Review
-        key={artifacts.map((a) => a.kind).join(",")}
-        artifacts={artifacts}
-        pending={signalPending}
-        onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
-      />
-    );
-  }
-  if (gate === "approveSync") {
-    const decision = parseDecision(stepOutputs.analyze);
-    const record = parseFirstLinkedRecord(stepOutputs.fetchTask);
-    const taskId = parseSelectedTaskId(stepOutputs.selectTask);
-    return (
-      <ApproveSync
-        decision={decision}
-        record={record}
-        taskId={taskId}
-        pending={signalPending}
-        onConfirm={(payload) => onSignal("sync-approval", payload)}
-      />
-    );
+  function body(): ReactNode {
+    if (gate === "selectMember") {
+      const members = parseMembers(stepOutputs.listMembers);
+      if (members.status === "pending")
+        return <Placeholder label="Loading workspace members…" />;
+      if (members.status === "malformed")
+        return <ErrorLine label="Couldn't load workspace members." />;
+      if (members.value.length === 0)
+        return <Placeholder label="No workspace members found." />;
+      // Key by the loaded data so the form resets (picking up defaults) when the
+      // upstream step output arrives after the gate first mounts.
+      return (
+        <SelectMember
+          key={members.value.map((m) => m.assignee).join(",")}
+          members={members.value}
+          connected={connected}
+          pending={signalPending}
+          onSubmit={(assignee) => onSignal("member-selection", { assignee })}
+        />
+      );
+    }
+    if (gate === "selectTask") {
+      const tasks = parseTasks(stepOutputs.listTasks);
+      if (tasks.status === "pending")
+        return <Placeholder label="Loading open tasks…" />;
+      if (tasks.status === "malformed")
+        return <ErrorLine label="Couldn't load the task list." />;
+      if (tasks.value.length === 0)
+        return <Placeholder label="No open tasks found." />;
+      return (
+        <SelectTask
+          tasks={tasks.value}
+          connected={connected}
+          pending={signalPending}
+          onSubmit={(taskId) => onSignal("task-selection", { taskId })}
+        />
+      );
+    }
+    if (gate === "clarify") {
+      const decision = parseDecision(stepOutputs.analyze);
+      if (decision.status === "pending")
+        return <Placeholder label="Analyzing the task…" />;
+      if (decision.status === "malformed")
+        return <ErrorLine label="Couldn't read the analysis." />;
+      return (
+        <Clarify
+          decision={decision.value}
+          connected={connected}
+          pending={signalPending}
+          onSubmit={(answers) => onSignal("clarification", { answers })}
+        />
+      );
+    }
+    if (gate === "selectKinds") {
+      const decision = parseDecision(stepOutputs.analyze);
+      const suggested =
+        decision.status === "ok" ? suggestedKinds(decision.value) : [];
+      return (
+        <SelectKinds
+          key={suggested.join(",")}
+          suggested={suggested}
+          connected={connected}
+          pending={signalPending}
+          onSubmit={(generate) => onSignal("kind-selection", { generate })}
+        />
+      );
+    }
+    if (gate === "review") {
+      const artifacts = parseGeneratedByKind(stepOutputs);
+      if (artifacts.status === "pending")
+        return <Placeholder label="Generating artifacts…" />;
+      if (artifacts.status === "malformed")
+        return <ErrorLine label="Couldn't read the generated artifacts." />;
+      return (
+        <Review
+          key={artifacts.value.map((a) => a.kind).join(",")}
+          artifacts={artifacts.value}
+          connected={connected}
+          pending={signalPending}
+          onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
+        />
+      );
+    }
+    if (gate === "approveSync") {
+      const decisionDecoded = parseDecision(stepOutputs.analyze);
+      const decision =
+        decisionDecoded.status === "ok" ? decisionDecoded.value : {};
+      const recordDecoded = parseFirstLinkedRecord(stepOutputs.fetchTask);
+      const record = recordDecoded.status === "ok" ? recordDecoded.value : null;
+      const taskId = parseSelectedTaskId(stepOutputs.selectTask);
+      return (
+        <ApproveSync
+          decision={decision}
+          record={record}
+          taskId={taskId}
+          connected={connected}
+          pending={signalPending}
+          onConfirm={(payload) => onSignal("sync-approval", payload)}
+        />
+      );
+    }
+
+    // No gate awaiting: the run is either terminal or between steps.
+    const terminal = state?.phase;
+    if (terminal === "completed") {
+      const summary = peelOutput(stepOutputs.suggest);
+      return (
+        <Done
+          summary={typeof summary === "string" ? summary : null}
+          onClose={props.onClose}
+        />
+      );
+    }
+    if (terminal === "failed" || terminal === "cancelled") {
+      return <Failed status={terminal} onClose={props.onClose} />;
+    }
+    return <Placeholder label="Working…" />;
   }
 
-  // No gate awaiting: the run is either terminal or between steps.
-  const terminal = state?.phase;
-  if (terminal === "completed") {
-    const summary = peelOutput(stepOutputs.suggest);
-    return (
-      <Done
-        summary={typeof summary === "string" ? summary : null}
-        onClose={props.onClose}
-      />
-    );
-  }
-  if (terminal === "failed" || terminal === "cancelled") {
-    return <Failed status={terminal} onClose={props.onClose} />;
-  }
-  return <p className="text-text-3 text-sm">Working…</p>;
+  return (
+    <Shell state={state} connected={connected} onClose={props.onClose}>
+      {body()}
+    </Shell>
+  );
 }
 
 function Done(props: {
@@ -321,24 +523,21 @@ function Failed(props: {
   );
 }
 
-function parseSelectedTaskId(raw: unknown): string | null {
-  const parsed = type({ "taskId?": "string" })(peelOutput(raw));
-  if (parsed instanceof type.errors) return null;
-  return parsed.taskId ?? null;
-}
-
 function SelectMember(props: {
   members: MemberOption[];
+  connected: boolean;
   pending: boolean;
   onSubmit: (assignee: string) => void;
 }): ReactNode {
   const [assignee, setAssignee] = useState(props.members[0]?.assignee ?? "");
+  const disabled = props.pending || !props.connected;
   return (
     <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-medium">Whose tasks?</h3>
+      <h3 className="text-text text-sm font-medium">Whose tasks?</h3>
       <select
         className={inputFieldClass}
         value={assignee}
+        disabled={disabled}
         onChange={(e) => setAssignee(e.target.value)}
       >
         {props.members.map((m) => (
@@ -348,51 +547,54 @@ function SelectMember(props: {
         ))}
       </select>
       <Button
-        disabled={props.pending || assignee === ""}
+        disabled={disabled || assignee === ""}
         onClick={() => props.onSubmit(assignee)}
       >
         List tasks
       </Button>
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }
 
 function SelectTask(props: {
   tasks: TaskOption[];
+  connected: boolean;
   pending: boolean;
   onSubmit: (taskId: string) => void;
 }): ReactNode {
-  if (props.tasks.length === 0) {
-    return <p className="text-sm text-neutral-500">No open tasks found.</p>;
-  }
+  const disabled = props.pending || !props.connected;
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Pick a task</h3>
+      <h3 className="text-text text-sm font-medium">Pick a task</h3>
       {props.tasks.map((t) => (
         <button
           key={t.taskId}
-          disabled={props.pending}
-          className="rounded border border-neutral-200 p-3 text-left text-sm hover:bg-neutral-50 disabled:opacity-50"
+          disabled={disabled}
+          className="border-border hover:bg-surface-2 rounded border p-3 text-left text-sm disabled:opacity-50"
           onClick={() => props.onSubmit(t.taskId)}
         >
-          <span>{t.label}</span>
+          <span className="text-text">{t.label}</span>
           {t.deadline ? (
-            <span className="ml-2 text-xs text-neutral-400">
+            <span className="text-text-3 ml-2 text-xs">
               due {t.deadline.slice(0, 10)}
             </span>
           ) : null}
         </button>
       ))}
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }
 
 function Clarify(props: {
   decision: ParsedDecision;
+  connected: boolean;
   pending: boolean;
   onSubmit: (answers: string) => void;
 }): ReactNode {
   const [answers, setAnswers] = useState("");
+  const disabled = props.pending || !props.connected;
   const needsInput = props.decision.status === "need_clarification";
   const questions = props.decision.questions ?? [];
   return (
@@ -416,12 +618,14 @@ function Clarify(props: {
           rows={4}
           placeholder="Add the missing detail…"
           value={answers}
+          disabled={disabled}
           onChange={(e) => setAnswers(e.target.value)}
         />
       ) : null}
-      <Button disabled={props.pending} onClick={() => props.onSubmit(answers)}>
+      <Button disabled={disabled} onClick={() => props.onSubmit(answers)}>
         Continue
       </Button>
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }
@@ -430,12 +634,14 @@ function Clarify(props: {
 // COMPLETE boolean map over every kind so no per-kind gate reads a missing key.
 function SelectKinds(props: {
   suggested: AttioTaskArtifactKind[];
+  connected: boolean;
   pending: boolean;
   onSubmit: (generate: Record<AttioTaskArtifactKind, boolean>) => void;
 }): ReactNode {
   const [checked, setChecked] = useState<Set<AttioTaskArtifactKind>>(
     () => new Set(props.suggested),
   );
+  const disabled = props.pending || !props.connected;
   const toggle = (kind: AttioTaskArtifactKind) =>
     setChecked((prev) => {
       const next = new Set(prev);
@@ -461,20 +667,23 @@ function SelectKinds(props: {
             type="checkbox"
             className="accent-orange"
             checked={checked.has(kind)}
+            disabled={disabled}
             onChange={() => toggle(kind)}
           />
           <span className="text-text">{artifactKindRegistry[kind].label}</span>
         </label>
       ))}
-      <Button disabled={props.pending || checked.size === 0} onClick={submit}>
+      <Button disabled={disabled || checked.size === 0} onClick={submit}>
         Generate {checked.size} artifact{checked.size === 1 ? "" : "s"}
       </Button>
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }
 
 function Review(props: {
   artifacts: GeneratedArtifact[];
+  connected: boolean;
   pending: boolean;
   onSubmit: (approved: GeneratedArtifact[]) => void;
 }): ReactNode {
@@ -482,6 +691,7 @@ function Review(props: {
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(props.artifacts.map((_, i) => i)),
   );
+  const disabled = props.pending || !props.connected;
   const toggle = (i: number) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -491,41 +701,45 @@ function Review(props: {
     });
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Review artifacts</h3>
+      <h3 className="text-text text-sm font-medium">Review artifacts</h3>
       {props.artifacts.map((a, i) => (
         <label
           key={i}
-          className="flex gap-2 rounded border border-neutral-200 p-3 text-sm"
+          className="border-border flex gap-2 rounded border p-3 text-sm"
         >
           <input
             type="checkbox"
+            className="accent-orange"
             checked={selected.has(i)}
+            disabled={disabled}
             onChange={() => toggle(i)}
           />
           <span>
-            <span className="font-medium">{a.title}</span>{" "}
-            <span className="text-xs text-neutral-400">
+            <span className="text-text font-medium">{a.title}</span>{" "}
+            <span className="text-text-3 text-xs">
               {known.has(a.kind) ? a.kind : `${a.kind} (unknown kind)`}
             </span>
           </span>
         </label>
       ))}
       <Button
-        disabled={props.pending}
+        disabled={disabled}
         onClick={() =>
           props.onSubmit(props.artifacts.filter((_, i) => selected.has(i)))
         }
       >
         Save selected
       </Button>
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }
 
 function ApproveSync(props: {
   decision: ParsedDecision;
-  record: { object: string; recordId: string } | null;
+  record: LinkedRecord | null;
   taskId: string | null;
+  connected: boolean;
   pending: boolean;
   onConfirm: (payload: unknown) => void;
 }): ReactNode {
@@ -538,6 +752,7 @@ function ApproveSync(props: {
       decision={props.decision}
       record={props.record}
       taskId={props.taskId}
+      connected={props.connected}
       pending={props.pending}
       onConfirm={props.onConfirm}
     />
@@ -546,14 +761,16 @@ function ApproveSync(props: {
 
 function ApproveSyncForm(props: {
   decision: ParsedDecision;
-  record: { object: string; recordId: string } | null;
+  record: LinkedRecord | null;
   taskId: string | null;
+  connected: boolean;
   pending: boolean;
   onConfirm: (payload: unknown) => void;
 }): ReactNode {
   const [note, setNote] = useState(
     props.decision.proposedTaskUpdate?.note ?? "",
   );
+  const disabled = props.pending || !props.connected;
   const canWrite = props.record !== null && props.taskId !== null;
   const noteReady = note.trim().length > 0;
   return (
@@ -570,12 +787,13 @@ function ApproveSyncForm(props: {
             rows={3}
             placeholder="Note to attach to the record…"
             value={note}
+            disabled={disabled}
             onChange={(e) => setNote(e.target.value)}
           />
           <div className="flex gap-2">
             <Button
               variant="primary"
-              disabled={props.pending || !noteReady}
+              disabled={disabled || !noteReady}
               onClick={() =>
                 props.onConfirm({
                   confirm: true,
@@ -590,7 +808,7 @@ function ApproveSyncForm(props: {
             </Button>
             <Button
               variant="secondary"
-              disabled={props.pending}
+              disabled={disabled}
               onClick={() => props.onConfirm({ confirm: false })}
             >
               Skip
@@ -603,13 +821,14 @@ function ApproveSyncForm(props: {
             No linked record to write back to — nothing to sync.
           </p>
           <Button
-            disabled={props.pending}
+            disabled={disabled}
             onClick={() => props.onConfirm({ confirm: false })}
           >
             Finish
           </Button>
         </>
       )}
+      {!props.connected ? <Reconnecting /> : null}
     </div>
   );
 }

@@ -69,13 +69,24 @@ describe("parseMembers", () => {
       },
       { id: { workspace_member_id: "wm_2" }, email: "p@abklabs.com" },
     ]);
-    expect(parseMembers(raw)).toEqual([
-      { assignee: "sawyer@abklabs.com", label: "Sawyer Cutler" },
-      { assignee: "p@abklabs.com", label: "p@abklabs.com" },
-    ]);
+    expect(parseMembers(raw)).toEqual({
+      status: "ok",
+      value: [
+        { assignee: "sawyer@abklabs.com", label: "Sawyer Cutler" },
+        { assignee: "p@abklabs.com", label: "p@abklabs.com" },
+      ],
+    });
   });
-  test("returns [] for an unparseable payload", () => {
-    expect(parseMembers(envelope({ nope: true }))).toEqual([]);
+  test("pending when the step has produced no output yet", () => {
+    expect(parseMembers(undefined)).toEqual({ status: "pending" });
+  });
+  test("malformed for a present-but-unparseable payload", () => {
+    expect(parseMembers(envelope({ nope: true }))).toEqual({
+      status: "malformed",
+    });
+  });
+  test("distinguishes a genuinely empty list from malformed", () => {
+    expect(parseMembers(envelope([]))).toEqual({ status: "ok", value: [] });
   });
 });
 
@@ -88,18 +99,29 @@ describe("parseTasks", () => {
         deadline_at: "2026-07-10T00:00:00Z",
       },
     ]);
-    expect(parseTasks(raw)).toEqual([
-      {
-        taskId: "task_1",
-        label: "Follow up",
-        deadline: "2026-07-10T00:00:00Z",
-      },
-    ]);
+    expect(parseTasks(raw)).toEqual({
+      status: "ok",
+      value: [
+        {
+          taskId: "task_1",
+          label: "Follow up",
+          deadline: "2026-07-10T00:00:00Z",
+        },
+      ],
+    });
   });
   test("falls back to task id when content is empty", () => {
-    expect(parseTasks(envelope([{ id: { task_id: "t2" } }]))).toEqual([
-      { taskId: "t2", label: "t2" },
-    ]);
+    expect(parseTasks(envelope([{ id: { task_id: "t2" } }]))).toEqual({
+      status: "ok",
+      value: [{ taskId: "t2", label: "t2" }],
+    });
+  });
+  test("pending vs malformed vs empty are distinct", () => {
+    expect(parseTasks(undefined)).toEqual({ status: "pending" });
+    expect(parseTasks(envelope({ nope: true }))).toEqual({
+      status: "malformed",
+    });
+    expect(parseTasks(envelope([]))).toEqual({ status: "ok", value: [] });
   });
 });
 
@@ -108,11 +130,16 @@ describe("parseDecision", () => {
     const d = parseDecision(
       reply({ status: "need_clarification", questions: ["Which region?"] }),
     );
-    expect(d.status).toBe("need_clarification");
-    expect(d.questions).toEqual(["Which region?"]);
+    expect(d.status).toBe("ok");
+    if (d.status !== "ok") throw new Error("expected ok");
+    expect(d.value.status).toBe("need_clarification");
+    expect(d.value.questions).toEqual(["Which region?"]);
   });
-  test("returns {} for garbage", () => {
-    expect(parseDecision("not json")).toEqual({});
+  test("pending when no output yet", () => {
+    expect(parseDecision(undefined)).toEqual({ status: "pending" });
+  });
+  test("malformed for garbage that is present", () => {
+    expect(parseDecision("not json")).toEqual({ status: "malformed" });
   });
 });
 
@@ -128,21 +155,29 @@ describe("parseGeneratedByKind", () => {
       // a pruned kind has no output — must not appear
     };
     const got = parseGeneratedByKind(stepOutputs);
-    expect(got).toContainEqual({
+    expect(got.status).toBe("ok");
+    if (got.status !== "ok") throw new Error("expected ok");
+    expect(got.value).toContainEqual({
       kind: "cold-email",
       title: "Outreach",
       content: "Hi",
     });
-    expect(got).toContainEqual({
+    expect(got.value).toContainEqual({
       kind: "blog",
       title: "Post",
       content: "Body",
     });
-    expect(got.length).toBe(2);
+    expect(got.value.length).toBe(2);
   });
 
-  test("returns [] when nothing generated", () => {
-    expect(parseGeneratedByKind({})).toEqual([]);
+  test("pending when no generation output has landed yet", () => {
+    expect(parseGeneratedByKind({})).toEqual({ status: "pending" });
+  });
+
+  test("malformed when generation ran but nothing parsed to an artifact", () => {
+    expect(parseGeneratedByKind({ "gen-blog": reply({ oops: true }) })).toEqual(
+      { status: "malformed" },
+    );
   });
 
   test("kind comes from the step key, not the model (writer can't mis-file it)", () => {
@@ -150,14 +185,20 @@ describe("parseGeneratedByKind", () => {
     const got = parseGeneratedByKind({
       "gen-cold-email": reply({ kind: "WRONG", title: "T", content: "C" }),
     });
-    expect(got).toEqual([{ kind: "cold-email", title: "T", content: "C" }]);
+    expect(got).toEqual({
+      status: "ok",
+      value: [{ kind: "cold-email", title: "T", content: "C" }],
+    });
   });
 
   test("a fenced writer reply still yields the artifact", () => {
     const got = parseGeneratedByKind({
       "gen-blog": { reply: '```json\n{"title":"P","content":"B"}\n```' },
     });
-    expect(got).toEqual([{ kind: "blog", title: "P", content: "B" }]);
+    expect(got).toEqual({
+      status: "ok",
+      value: [{ kind: "blog", title: "P", content: "B" }],
+    });
   });
 });
 
@@ -171,11 +212,20 @@ describe("parseFirstLinkedRecord", () => {
       ],
     });
     expect(parseFirstLinkedRecord(raw)).toEqual({
-      object: "companies",
-      recordId: "rec_1",
+      status: "ok",
+      value: { object: "companies", recordId: "rec_1" },
     });
   });
-  test("returns null when there are no linked records", () => {
-    expect(parseFirstLinkedRecord(envelope({ task: {} }))).toBeNull();
+  test("ok with null when there are no linked records", () => {
+    expect(parseFirstLinkedRecord(envelope({ task: {} }))).toEqual({
+      status: "ok",
+      value: null,
+    });
+  });
+  test("pending vs malformed are distinct from empty", () => {
+    expect(parseFirstLinkedRecord(undefined)).toEqual({ status: "pending" });
+    expect(parseFirstLinkedRecord(envelope("nope"))).toEqual({
+      status: "malformed",
+    });
   });
 });
