@@ -2,18 +2,20 @@ import { awaitSignal, defineWorkflow, gate } from "@intx/workflow";
 import type { Primitive, Selector } from "@intx/workflow";
 import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
 import { PRESENTATION_GENERATE_SYSTEM_PROMPT } from "./prompts";
+import { MAX_ROUNDS } from "./constants";
 
 export const label = "Gamma Presentation Creator";
 export const description =
   "Turn any artifact, call, or pasted text into a Gamma deck, refining it round by round until you approve it.";
 export const kind = "gamma-presentation-creator";
 
-// Number of generate → render → preview rounds. Each round re-renders a fresh
-// Gamma deck from the user's feedback (Gamma cannot edit a deck in place), and
-// the preview gate lets the user approve — which skips the remaining rounds via
-// `gate()` — or refine with notes. The last round has no gate: its preview
-// leads straight to persistence.
-export const MAX_ROUNDS = 3;
+// Number of generate → render → preview rounds (defined in ./constants so the
+// browser panel can share it without importing this server-only module). Each
+// round re-renders a fresh Gamma deck from the user's feedback (Gamma cannot
+// edit a deck in place), and the preview gate lets the user approve — which
+// skips the remaining rounds via `gate()` — or refine with notes. The last
+// round has no gate: its preview leads straight to persistence.
+export { MAX_ROUNDS };
 
 // The source feeding every round: the intake brief plus both readers. The
 // generate prompt uses whichever source resolved (or the pasted text).
