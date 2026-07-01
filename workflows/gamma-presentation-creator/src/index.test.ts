@@ -235,6 +235,18 @@ describe("artifact → gamma deck workflow", () => {
     expect(ids).not.toContain("gamma_list_templates");
   });
 
+  test("the source readers preload the 50 most recent for client-side paging", () => {
+    for (const key of ["list-artifacts", "list-notes"] as const) {
+      const step = workflow.steps[key];
+      if (step === undefined || step.kind !== "step") {
+        throw new Error(`expected a deterministic tool step for ${key}`);
+      }
+      expect(JSON.parse(step.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
+        limit: { literal: 50 },
+      });
+    }
+  });
+
   test("intake waits only on the two readers, not on list-templates", () => {
     const intakeStep = workflow.steps["intake"];
     if (intakeStep === undefined || intakeStep.kind !== "awaitSignal") {
