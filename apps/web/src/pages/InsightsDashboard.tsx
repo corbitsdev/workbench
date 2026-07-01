@@ -343,12 +343,12 @@ function InferenceSection({
       <HudCard
         label="Token mix"
         tag={
-          tokenCaveat === null ? (
+          tokens > 0 ? (
             <CardLabel>{formatNumber(tokens)} total</CardLabel>
           ) : undefined
         }
       >
-        {tokenCaveat === null ? (
+        {tokens > 0 ? (
           <TokenMosaic
             label="Token usage breakdown"
             parts={[
@@ -362,9 +362,9 @@ function InferenceSection({
         ) : (
           <div className="flex flex-col items-start gap-2 py-2">
             <span className="text-[12px] text-text-2">
-              Token mix unavailable for this range
+              No token data for this range
             </span>
-            <CaveatNote>{tokenCaveat}</CaveatNote>
+            {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
           </div>
         )}
       </HudCard>

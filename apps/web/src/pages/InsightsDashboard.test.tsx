@@ -417,18 +417,21 @@ describe("InsightsDashboard", () => {
         expect(screen.getByText("By person")).toBeDefined();
       });
       const sawyerRow = screen.getByText("Sawyer").closest("tr");
-      // Token columns collapse to em-dashes; turns/tools still show.
-      expect(sawyerRow?.textContent).not.toContain("700");
-      expect(sawyerRow?.textContent).toContain("—");
+      // Tokens are shown (input 700 + output 90 = 790), not hidden.
+      expect(sawyerRow?.textContent).toContain("790");
+      // The range is still flagged with a caveat note.
+      expect(
+        screen
+          .getAllByTestId("data-caveat")
+          .some((n) => n.textContent?.includes("not recorded")),
+      ).toBe(true);
     } finally {
       mockOverview.tokensRecordedFrom = original;
     }
   });
 
-  it("caveats token cards and hides token-cost for a range crossing the live/history boundary", async () => {
+  it("still renders the token mix with a caveat note when the range crosses the live/history boundary", async () => {
     const original = mockOverview.tokensRecordedFrom;
-    // Token recording begins in the future, so every preset range starts before
-    // it — the whole selectable window is history with no real token data.
     mockOverview.tokensRecordedFrom = isoDay(-1);
     try {
       renderPage();
@@ -436,9 +439,8 @@ describe("InsightsDashboard", () => {
       await waitFor(() => {
         expect(screen.getAllByTestId("data-caveat").length).toBeGreaterThan(0);
       });
-      // The token-cost mosaic must not present zero-filled history as a real
-      // breakdown.
-      expect(screen.queryByTestId("token-mosaic")).toBeNull();
+      // Real token data exists, so the mosaic renders rather than hiding.
+      expect(screen.getByTestId("token-mosaic")).toBeDefined();
       expect(
         screen
           .getAllByTestId("data-caveat")
