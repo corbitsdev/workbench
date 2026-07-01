@@ -22,6 +22,7 @@ function myraThreadsKey(tenantId: string | null) {
   return [MYRA_THREADS_KEY, tenantId] as const;
 }
 const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
+const inFlightCreates = new Map<string, Promise<MyraThread>>();
 
 export function readLastActiveThreadId(): string | null {
   try {
@@ -107,11 +108,29 @@ export function useCreateMyraThread() {
   const queryClient = useQueryClient();
   const { activeTenantId } = useActiveWorkbench();
   return useMutation({
-    mutationFn: (label?: string) =>
-      createMyraThread(requireActiveTenant(activeTenantId), label),
-    onSuccess: () => {
+    mutationFn: (label?: string) => {
+      const tenantId = requireActiveTenant(activeTenantId);
+      if (label !== undefined) return createMyraThread(tenantId, label);
+      const existing = inFlightCreates.get(tenantId);
+      if (existing) return existing;
+      const create = createMyraThread(tenantId).finally(() => {
+        inFlightCreates.delete(tenantId);
+      });
+      inFlightCreates.set(tenantId, create);
+      return create;
+    },
+    onMutate: () => ({ tenantId: requireActiveTenant(activeTenantId) }),
+    onSuccess: (thread, _label, context) => {
+      queryClient.setQueryData<MyraThreadListItem[]>(
+        myraThreadsKey(context.tenantId),
+        (existing) => {
+          if (!existing) return existing;
+          if (existing.some((item) => item.id === thread.id)) return existing;
+          return [{ ...thread, updateAvailable: false }, ...existing];
+        },
+      );
       void queryClient.invalidateQueries({
-        queryKey: myraThreadsKey(activeTenantId),
+        queryKey: myraThreadsKey(context.tenantId),
       });
     },
   });
