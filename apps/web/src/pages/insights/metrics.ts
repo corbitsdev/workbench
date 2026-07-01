@@ -114,6 +114,24 @@ function formatBoundaryDate(iso: string): string {
   });
 }
 
+/**
+ * Turns a machine key (kebab-case, snake_case, or lowercase — e.g.
+ * `in-review`, `landing_page`, `call-to-collateral`) into a display label in
+ * Title Case (`In Review`, `Landing Page`, `Call To Collateral`). Already
+ * spaced or capitalized input is preserved word-for-word. Empty input returns
+ * an em-dash so a blank key never renders as nothing.
+ */
+export function humanizeKey(key: string): string {
+  const words = key
+    .trim()
+    .split(/[-_\s]+/)
+    .filter(Boolean);
+  if (words.length === 0) return "—";
+  return words
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
 export function cacheHitRate(input: number, cacheRead: number): number {
   const denom = input + cacheRead;
   if (denom <= 0) return 0;

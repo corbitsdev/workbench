@@ -7,9 +7,33 @@ import {
   computeDelta,
   fillDailySeries,
   formatCompact,
+  humanizeKey,
   ratePct,
   tokenDataCaveat,
 } from "./metrics";
+
+describe("humanizeKey", () => {
+  it("title-cases kebab-case keys", () => {
+    expect(humanizeKey("call-to-collateral")).toBe("Call To Collateral");
+  });
+
+  it("title-cases snake_case keys", () => {
+    expect(humanizeKey("in_review")).toBe("In Review");
+  });
+
+  it("capitalizes a single lowercase word", () => {
+    expect(humanizeKey("draft")).toBe("Draft");
+  });
+
+  it("collapses repeated and surrounding separators", () => {
+    expect(humanizeKey("  landing--page  ")).toBe("Landing Page");
+  });
+
+  it("returns an em-dash for an empty or separator-only key", () => {
+    expect(humanizeKey("")).toBe("—");
+    expect(humanizeKey("--")).toBe("—");
+  });
+});
 
 describe("computeDelta", () => {
   it("reports an upward percentage change against a positive baseline", () => {

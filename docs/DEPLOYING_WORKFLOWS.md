@@ -230,6 +230,18 @@ genuine-reasoning steps are agents.** Three patterns cover the rest:
    The panel renders the list from `steps.intake.output` and fires
    `onSignal('note-selection', { noteId })`; the select step's output IS that payload.
 
+   **Browsing (pagination/search) is client-side over a preloaded batch, never
+   in the workflow.** The DAG is acyclic and fire-once — a "next page" would be a
+   cycle (re-running the list step), which no primitive supports. So the fetch
+   step preloads a bounded batch (`argMap: { limit: { literal: N } }`, where `N`
+   is the tool's own ceiling — `artifact_list` allows 50, `granola_list_notes`
+   clamps to 30) and the panel slices/filters that batch locally. The panel MUST
+   signal when a list is at its ceiling (e.g. "showing the 50 most recent") so a
+   bounded search never reads as the whole corpus. `gamma-presentation-creator`'s
+   3-page intake wizard (`workflows/gamma-presentation-creator/src/ui.tsx`) is the
+   reference: `list-artifacts`/`list-notes` preload 50/30, the panel paginates 10
+   at a time and searches artifacts by title client-side.
+
 3. **Human input form** — for pure data collection (a URL, a prompt, an uploaded
    file parsed client-side), use `awaitSignal({ name: '<step>' })` as the step (NO
    agent, NO tool). The panel renders a form and fires `onSignal('<step>', {...})`.

@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let activeContext: {
@@ -101,6 +107,22 @@ const mockOverview = {
       toolCallCount: 1,
       inputTokens: 300,
       outputTokens: 60,
+    },
+  ],
+  byWorkflowType: [
+    {
+      kind: "last30days",
+      turnCount: 6,
+      toolCallCount: 2,
+      inputTokens: 500,
+      outputTokens: 90,
+    },
+    {
+      kind: "mvt-landing-page",
+      turnCount: 2,
+      toolCallCount: 1,
+      inputTokens: 120,
+      outputTokens: 30,
     },
   ],
   inference: {
@@ -289,13 +311,38 @@ describe("InsightsDashboard", () => {
     expect(screen.getByText("Workflow runs")).toBeDefined();
   });
 
-  it("renders per-agent breakdown when by-agent data is available", async () => {
+  it("renders tokens by workflow type with humanized kind labels", async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Myra")).toBeDefined();
+      expect(screen.getByText("Tokens by workflow type")).toBeDefined();
     });
-    expect(screen.getByText("10")).toBeDefined();
+    // Kinds are humanized from kebab-case to Title Case.
+    const row = screen.getByText("Mvt Landing Page").closest("tr");
+    // Tokens = input 120 + output 30 = 150.
+    expect(row?.textContent).toContain("150");
+    expect(screen.getByText("Last30days")).toBeDefined();
+    // The removed "By agent" section no longer renders.
+    expect(screen.queryByText("By agent")).toBeNull();
+  });
+
+  it("flags the tokens-by-workflow-type table with a caveat note across the live/history boundary", async () => {
+    const original = mockOverview.tokensRecordedFrom;
+    mockOverview.tokensRecordedFrom = isoDay(-1);
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("Tokens by workflow type")).toBeDefined();
+      });
+      const section = screen
+        .getByText("Tokens by workflow type")
+        .closest("div");
+      const caveat = section?.querySelector('[data-testid="data-caveat"]');
+      expect(caveat?.textContent).toContain("not recorded");
+    } finally {
+      mockOverview.tokensRecordedFrom = original;
+    }
   });
 
   it("lets the date-preset row wrap and the breakdown tables scroll within themselves at mobile widths", async () => {
@@ -355,12 +402,11 @@ describe("InsightsDashboard", () => {
     expect(bodyRows[1]?.textContent).toContain("Dana");
   });
 
-  it("re-orders the By-person table by a visible metric (turns) under the token caveat", async () => {
+  it("keeps the By-person table in server token order even under the token caveat", async () => {
     const original = mockOverview.tokensRecordedFrom;
-    // Make Dana out-rank Sawyer on tokens but trail on turns, so token-order
-    // and turn-order disagree.
     const originalPeople = mockOverview.byPerson;
     mockOverview.tokensRecordedFrom = isoDay(-1);
+    // Server order is token-desc: Dana (9000) ahead of Sawyer (10).
     mockOverview.byPerson = [
       {
         principalId: "pri_other",
@@ -391,17 +437,17 @@ describe("InsightsDashboard", () => {
       const bodyRows = Array.from(
         personTable?.querySelectorAll("tbody tr") ?? [],
       );
-      // Under the caveat tokens are hidden, so the visible Turns column drives
-      // the order: Sawyer (50 turns) ahead of Dana (1 turn).
-      expect(bodyRows[0]?.textContent).toContain("Sawyer");
-      expect(bodyRows[1]?.textContent).toContain("Dana");
+      // Tokens stay visible under the caveat, so the server's token ordering
+      // holds: Dana (9,000) ahead of Sawyer (10).
+      expect(bodyRows[0]?.textContent).toContain("Dana");
+      expect(bodyRows[1]?.textContent).toContain("Sawyer");
     } finally {
       mockOverview.tokensRecordedFrom = original;
       mockOverview.byPerson = originalPeople;
     }
   });
 
-  it("hides token-cost columns in the By-person table when the range crosses the live/history boundary", async () => {
+  it("shows per-person token totals with a caveat note when the range crosses the live/history boundary", async () => {
     const original = mockOverview.tokensRecordedFrom;
     mockOverview.tokensRecordedFrom = isoDay(-1);
     try {
@@ -411,18 +457,21 @@ describe("InsightsDashboard", () => {
         expect(screen.getByText("By person")).toBeDefined();
       });
       const sawyerRow = screen.getByText("Sawyer").closest("tr");
-      // Token columns collapse to em-dashes; turns/tools still show.
-      expect(sawyerRow?.textContent).not.toContain("700");
-      expect(sawyerRow?.textContent).toContain("—");
+      // Tokens are shown (input 700 + output 90 = 790), not hidden.
+      expect(sawyerRow?.textContent).toContain("790");
+      // The range is still flagged with a caveat note.
+      expect(
+        screen
+          .getAllByTestId("data-caveat")
+          .some((n) => n.textContent?.includes("not recorded")),
+      ).toBe(true);
     } finally {
       mockOverview.tokensRecordedFrom = original;
     }
   });
 
-  it("caveats token cards and hides token-cost for a range crossing the live/history boundary", async () => {
+  it("still renders the token mix with a caveat note when the range crosses the live/history boundary", async () => {
     const original = mockOverview.tokensRecordedFrom;
-    // Token recording begins in the future, so every preset range starts before
-    // it — the whole selectable window is history with no real token data.
     mockOverview.tokensRecordedFrom = isoDay(-1);
     try {
       renderPage();
@@ -430,9 +479,8 @@ describe("InsightsDashboard", () => {
       await waitFor(() => {
         expect(screen.getAllByTestId("data-caveat").length).toBeGreaterThan(0);
       });
-      // The token-cost mosaic must not present zero-filled history as a real
-      // breakdown.
-      expect(screen.queryByTestId("token-mosaic")).toBeNull();
+      // Real token data exists, so the mosaic renders rather than hiding.
+      expect(screen.getByTestId("token-mosaic")).toBeDefined();
       expect(
         screen
           .getAllByTestId("data-caveat")
@@ -451,6 +499,77 @@ describe("InsightsDashboard", () => {
     });
     expect(lastTenantId).toBe("tenant-1");
     expect(screen.getByText("Acme Corp")).toBeDefined();
+  });
+
+  it("offers a 24 hours preset", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Operational ledger")).toBeDefined();
+    });
+    expect(screen.getByText("24 hours")).toBeDefined();
+  });
+
+  it("labels agent instances as Agents deployed and drops the Deployments stat", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Operational ledger")).toBeDefined();
+    });
+    expect(screen.getByText("Agents deployed")).toBeDefined();
+    expect(screen.queryByText("Agent instances")).toBeNull();
+    expect(screen.queryByText("Deployments")).toBeNull();
+  });
+
+  it("lets the operational-ledger tables size to their content rather than stretching", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Artifacts by status")).toBeDefined();
+    });
+    const tablesGrid = screen.getByText("Artifacts by status").closest(".grid");
+    expect(tablesGrid?.className).toContain("items-start");
+  });
+
+  it("paginates the By-agent-instance table 10 at a time", async () => {
+    const original = mockOverview.inference.byInstance;
+    mockOverview.inference.byInstance = Array.from({ length: 23 }, (_, i) => ({
+      instanceId: `ins_${i}`,
+      agentId: `agt_${i}`,
+      agentName: `Agent ${i}`,
+      turnCount: i,
+      failedTurnCount: 0,
+      toolCallCount: 0,
+      toolErrorCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    }));
+    try {
+      renderPage();
+
+      await waitFor(() => {
+        expect(screen.getByText("By agent instance")).toBeDefined();
+      });
+      const table = screen.getByText("Instance").closest("table");
+      const bodyRowCount = () =>
+        table?.querySelectorAll("tbody tr").length ?? 0;
+      // First page shows 10 of 23.
+      expect(bodyRowCount()).toBe(10);
+      expect(screen.getByText("Showing 10 of 23")).toBeDefined();
+
+      fireEvent.click(screen.getByText("Show 10 more"));
+      expect(bodyRowCount()).toBe(20);
+
+      // Last page clamps to the remaining 3.
+      fireEvent.click(screen.getByText("Show 3 more"));
+      expect(bodyRowCount()).toBe(23);
+      expect(screen.queryByText(/Show \d+ more/)).toBeNull();
+    } finally {
+      mockOverview.inference.byInstance = original;
+    }
   });
 
   it("shows a select-a-workbench state and fires no query when no workbench is active", async () => {

@@ -10,7 +10,7 @@ GTM Workbench records agent and workflow usage in PostgreSQL and exposes tenant-
 | Hub                    | Subscribes to sidecar `agent.event` frames; mounts `/api/tenants/:tenantId/analytics/*`                                                                                                                                                            |
 | Sidecar                | Forwards harness inference events (chat agents) and **multi-step workflow** supervisor events to the hub via `hubLink.sendEvent`                                                                                                                   |
 | Hub (activity)         | `GET /api/tenants/:tenantId/activity/overview` — operational counts (artifacts, workflow runs, instances), daily inference series, model distribution, conversation/message counts, agent-activity split, and a previous-window summary for deltas |
-| Web                    | `getActivityOverview` → Insights activity trends, engagement metrics, inference KPIs, and operational ledger                                                                                                                                       |
+| Web                    | `getActivityOverview` → Insights activity trends, engagement metrics, inference KPIs, per-person and per-workflow-type token tables, and operational ledger                                                                                        |
 
 Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter.events` → `createAnalyticsSubscriber` → `analytics_event` + `analytics_rollup_daily`.**
 
@@ -34,6 +34,10 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
   - `conversations` / `messages` — `agent_session` and `inference_turn` counts (`total` + `createdInRange`)
   - `agentActivity` — `{ active, idle }`: instances with vs. without turns in range (derived from `inference.byInstance`)
   - `inference.summary`, `inference.byAgent`, `inference.byInstance` from `analytics_rollup_daily`, plus `inference.previousSummary` — the equal-length window immediately before the selected range (or `null` for all-time), used for period-over-period deltas in the UI
+  - `byPerson` — token/turn usage attributed to the member who owns each instance via `member_agent_instance` (shared-agent instances, with no member link, are excluded)
+  - `byWorkflowType` — token/turn usage grouped by workflow `kind`. Workflow-run inference records against per-deployment agent instances whose `address` embeds the deployment id (`ins_<deploymentId>…`); the query rejoins `agent_instance` and matches that prefix to `workflow_run.kind`. Deployments are deduped to one `(deploymentId, kind)` first (kind is constant per deployment) so a deployment with multiple runs cannot fan out and double-count. Non-workflow agents (Myra, member instances) have no matching `workflow_run` row and are excluded. Surfaced as the **Tokens by workflow type** table, which replaced the per-agent table on the UI.
+
+The Insights UI presets are `24 hours`, `7 days`, `30 days`, `90 days`, and `All time`; `24 hours` resolves to a `startDate` one day back (analytics are daily-bucketed). Token metrics (token mix, per-person tokens, per-workflow-type tokens) are always shown when real tokens exist for the range; a range that starts before token recording began (`tokensRecordedFrom`) is flagged with an inline caveat note rather than hiding the numbers.
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 
@@ -45,6 +49,7 @@ Requires an active principal on the tenant (Interchange `resolveTenant` on `/api
 4. Run a multi-step workflow deployment and complete one step that invokes inference; confirm supervisor-address events appear (hub logs: no `Skipping analytics event for unknown agent address` for the deployment supervisor).
 5. Call `GET /api/tenants/<tenantId>/analytics/summary` with a session cookie; validate JSON fields against the UI.
 6. Optional: `GET .../summary/by-agent` to confirm per-agent split matches known agents.
+7. **`byWorkflowType`** — the address→`workflow_run.kind` LIKE join has no live-DB unit coverage (the hub suite mocks the db chain). After a workflow run completes on staging, confirm its kind appears in the **Tokens by workflow type** table with non-zero tokens, and that totals across kinds do not exceed the tenant token summary (a fan-out regression would inflate them).
 
 ## Operational notes
 

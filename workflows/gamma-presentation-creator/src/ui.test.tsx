@@ -107,6 +107,27 @@ const sourceLists = {
   }),
 };
 
+// The intake is a 3-page wizard: page 1 (deck fields) → page 2 (source) →
+// page 3 (review + submit). These helpers walk it so each test can express
+// only the transitions it cares about.
+function nextButton(): HTMLButtonElement {
+  return screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+}
+
+// Page 1 → page 2. Fills the deck title and advances once the template has
+// seeded (the hub fetch resolves during the awaits, enabling Next).
+async function advanceFromDeckFields(title = "Q3 Deck") {
+  await userEvent.type(screen.getByLabelText("Deck title"), title);
+  await waitFor(() => expect(nextButton().disabled).toBe(false));
+  await userEvent.click(nextButton());
+}
+
+// Page 2 → page 3.
+async function advanceFromSource() {
+  await waitFor(() => expect(nextButton().disabled).toBe(false));
+  await userEvent.click(nextButton());
+}
+
 describe("artifact → gamma deck Panel", () => {
   it("submits an artifact-sourced intake with the deck title and template", async () => {
     const onSignal = mock(() => {});
@@ -122,9 +143,10 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    screen.getByText("Build a deck");
+    screen.getByText("Deck details");
+    await advanceFromDeckFields("Q3 Deck");
     await userEvent.click(screen.getByRole("button", { name: "Q3 Brief" }));
-    await userEvent.type(screen.getByLabelText("Deck title"), "Q3 Deck");
+    await advanceFromSource();
     await userEvent.click(
       screen.getByRole("button", { name: "Generate deck" }),
     );
@@ -139,8 +161,7 @@ describe("artifact → gamma deck Panel", () => {
     );
   });
 
-  it("does not submit intake without a deck title", async () => {
-    const onSignal = mock(() => {});
+  it("cannot advance past the deck-fields page without a deck title", async () => {
     renderPanel(
       <Panel
         deploymentId="dep_1"
@@ -148,16 +169,39 @@ describe("artifact → gamma deck Panel", () => {
         connected
         signalPending={false}
         stepOutputs={sourceLists}
-        onSignal={onSignal}
+        onSignal={noop}
         onClose={noop}
       />,
     );
 
-    await userEvent.click(screen.getByRole("button", { name: "Q3 Brief" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "Generate deck" }),
+    // Template seeds from the hub fetch, but with no deck title Next stays
+    // disabled, so the source page (and its tabs) is never reachable.
+    await waitFor(() =>
+      expect(
+        (screen.getByLabelText("Template") as HTMLSelectElement).value,
+      ).toBe("tmpl_pro"),
     );
-    expect(onSignal).not.toHaveBeenCalled();
+    expect(nextButton().disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Granola call" })).toBeNull();
+  });
+
+  it("requires a chosen source before reaching review", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    // On the source page with nothing selected, Next stays disabled.
+    expect(nextButton().disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Generate deck" })).toBeNull();
   });
 
   it("submits a pasted-text intake from the paste tab", async () => {
@@ -174,9 +218,10 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
+    await advanceFromDeckFields("Pasted Deck");
     await userEvent.click(screen.getByRole("button", { name: "Paste text" }));
     await userEvent.type(screen.getByLabelText("Pasted text"), "raw notes");
-    await userEvent.type(screen.getByLabelText("Deck title"), "Pasted Deck");
+    await advanceFromSource();
     await userEvent.click(
       screen.getByRole("button", { name: "Generate deck" }),
     );
@@ -201,9 +246,10 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
+    await advanceFromDeckFields("Call Deck");
     await userEvent.click(screen.getByRole("button", { name: "Granola call" }));
     await userEvent.click(screen.getByRole("button", { name: "Acme call" }));
-    await userEvent.type(screen.getByLabelText("Deck title"), "Call Deck");
+    await advanceFromSource();
     await userEvent.click(
       screen.getByRole("button", { name: "Generate deck" }),
     );
@@ -211,6 +257,39 @@ describe("artifact → gamma deck Panel", () => {
     expect(onSignal).toHaveBeenCalledWith(
       "intake",
       expect.objectContaining({ noteId: "note_1", deckTitle: "Call Deck" }),
+    );
+  });
+
+  it("lets the user go Back from source to fix the deck title before submitting", async () => {
+    const onSignal = mock(() => {});
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={onSignal}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Wrong Title");
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    const titleInput = screen.getByLabelText("Deck title") as HTMLInputElement;
+    expect(titleInput.value).toBe("Wrong Title");
+    await userEvent.clear(titleInput);
+    await userEvent.type(titleInput, "Right Title");
+    await userEvent.click(nextButton());
+    await userEvent.click(screen.getByRole("button", { name: "Q3 Brief" }));
+    await advanceFromSource();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Generate deck" }),
+    );
+
+    expect(onSignal).toHaveBeenCalledWith(
+      "intake",
+      expect.objectContaining({ deckTitle: "Right Title" }),
     );
   });
 
@@ -445,7 +524,7 @@ describe("artifact → gamma deck Panel", () => {
     ).toBe("https://gamma.app/docs/deck-2");
   });
 
-  it("distinguishes a failed source load from an empty list", () => {
+  it("distinguishes a failed source load from an empty list", async () => {
     renderPanel(
       <Panel
         deploymentId="dep_1"
@@ -463,8 +542,204 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
+    await advanceFromDeckFields("Q3 Deck");
     screen.getByText(/couldn't load artifacts/i);
     expect(screen.queryByText("No saved artifacts available.")).toBeNull();
+  });
+
+  it("shows a calm empty state (not a load error) when there are no artifacts", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", []),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    screen.getByText("No saved artifacts available.");
+    expect(screen.queryByText(/couldn't load artifacts/i)).toBeNull();
+  });
+
+  it("paginates artifacts 10 at a time over the preloaded batch", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", many),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    // Page 1 of the list shows the first 10, not the 11th/12th.
+    screen.getByRole("button", { name: "Artifact 01" });
+    expect(screen.queryByRole("button", { name: "Artifact 11" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    // Page 2 shows the remainder; the first-page items are gone.
+    screen.getByRole("button", { name: "Artifact 11" });
+    screen.getByRole("button", { name: "Artifact 12" });
+    expect(screen.queryByRole("button", { name: "Artifact 01" })).toBeNull();
+  });
+
+  it("filters artifacts by title via client-side search", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", many),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    await userEvent.type(screen.getByLabelText("Search artifacts"), "11");
+    screen.getByRole("button", { name: "Artifact 11" });
+    expect(screen.queryByRole("button", { name: "Artifact 01" })).toBeNull();
+    // Filtering collapses to a single page — no pagination control.
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+  });
+
+  it("warns that only the 50 most recent artifacts are shown when the list is capped", async () => {
+    const capped = Array.from({ length: 50 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", capped),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    screen.getByText(/showing the 50 most recent/i);
+  });
+
+  it("does not warn about a cap when the artifact list is below the ceiling", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    expect(screen.queryByText(/showing the 50 most recent/i)).toBeNull();
+  });
+
+  it("keeps a selected artifact visible after paging away from it", async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({
+      id: `art_${i + 1}`,
+      title: `Artifact ${String(i + 1).padStart(2, "0")}`,
+    }));
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", many),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    await userEvent.click(screen.getByRole("button", { name: "Artifact 01" }));
+    await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+    // The selected item is on page 1, but its selection stays visible on page 2
+    // so an off-screen pick can't ship invisibly.
+    screen.getByText(/Selected: Artifact 01/);
+    expect(screen.queryByRole("button", { name: "Artifact 01" })).toBeNull();
+  });
+
+  it("marks the chosen pick-list row with aria-pressed", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    const row = screen.getByRole("button", { name: "Q3 Brief" });
+    expect(row.getAttribute("aria-pressed")).toBe("false");
+    await userEvent.click(row);
+    expect(
+      screen
+        .getByRole("button", { name: "Q3 Brief" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("offers no search box on the Granola tab", async () => {
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={sourceLists}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    await userEvent.click(screen.getByRole("button", { name: "Granola call" }));
+    screen.getByRole("button", { name: "Acme call" });
+    expect(screen.queryByLabelText("Search Granola calls")).toBeNull();
+    expect(screen.queryByLabelText("Search artifacts")).toBeNull();
   });
 
   it("shows the saved-to-workbench done screen once a round is persisted", () => {
