@@ -31,7 +31,7 @@ mock.module("../../hooks/use-workflow", () => ({
       {
         // No meta — the card falls back to the humanized kind, no description.
         deploymentId: "dep-2",
-        kind: "presentation-generation",
+        kind: "gamma-presentation-creator",
         status: "running",
         createdAt: "",
       },
@@ -98,11 +98,34 @@ describe("UnifiedCatalogModal", () => {
     await waitFor(() => screen().getByText("Pain Point Collateral Generation"));
     screen().getByText("Analyze a call transcript and generate collateral.");
     screen().getByText("SEO Enrichment Report");
-    screen().getByText("Presentation generation");
+    screen().getByText("Gamma presentation creator");
 
     expect(screen().queryByRole("button", { name: "Agents" })).toBeNull();
     expect(screen().queryByRole("button", { name: "Workflows" })).toBeNull();
     expect(screen().queryByRole("button", { name: "Add" })).toBeNull();
+  });
+
+  it("collapses the workflow grid to a single column at mobile widths", async () => {
+    render(
+      <UnifiedCatalogModal
+        open={true}
+        tenantId="tenant-1"
+        onClose={onClose}
+        onWorkflowStarted={onWorkflowStarted}
+      />,
+      { wrapper },
+    );
+
+    const card = await waitFor(() =>
+      screen().getByText("Pain Point Collateral Generation"),
+    );
+    // The card grid stacks to one column on phones (grid-cols-1) and only
+    // splits to two columns at the sm breakpoint, so it never overflows 375px.
+    const grid = card.closest("div.grid");
+    expect(grid).not.toBeNull();
+    expect(grid!.className).toContain("grid-cols-1");
+    expect(grid!.className).toContain("sm:grid-cols-2");
+    expect(grid!.className).not.toMatch(/(^|\s)grid-cols-2(\s|$)/);
   });
 
   it("filters workflows by search query", async () => {

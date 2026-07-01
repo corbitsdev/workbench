@@ -1,0 +1,47 @@
+{
+  "kind": "smoke-test",
+  "version": "0.1.0",
+  "label": "Smoke Test",
+  "description": "Single agent step, no tools — proves the workflow runtime dispatches a run.",
+  "definition": {
+    "id": "smoke-test",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "emit": {
+        "kind": "step",
+        "id": "emit",
+        "agent": {
+          "id": "smoke-test-emit",
+          "systemPrompt": "Reply with exactly: SMOKE_TEST_OK. Output nothing else.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Emits a fixed line to prove the workflow runtime dispatches a step.",
+          "tags": {
+            "credentialName": "opencode-zen"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "literal": {
+            "prompt": "ping"
+          }
+        }
+      }
+    },
+    "stepOrder": [
+      "emit"
+    ]
+  }
+}

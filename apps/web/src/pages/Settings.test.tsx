@@ -1,21 +1,46 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+type MockField = { key: string; label: string; kind: string };
 
 mock.module("@workbench/settings", () => ({
   SettingsPage: ({
     sections,
+    values,
+    onChange,
   }: {
-    sections: readonly { fields: readonly { label: string }[] }[];
+    sections: readonly { fields: readonly MockField[] }[];
+    values: Record<string, unknown>;
+    onChange: (key: string, value: string) => void;
   }) => (
     <div>
       settings-page
       {sections.flatMap((section) =>
-        section.fields.map((field) => (
-          <span key={field.label}>{field.label}</span>
-        )),
+        section.fields.map((field) =>
+          field.kind === "text" ? (
+            <input
+              key={field.label}
+              aria-label={field.label}
+              value={
+                typeof values[field.key] === "string"
+                  ? (values[field.key] as string)
+                  : ""
+              }
+              onChange={(e) => onChange(field.key, e.target.value)}
+            />
+          ) : (
+            <span key={field.label}>{field.label}</span>
+          ),
+        ),
       )}
     </div>
   ),
@@ -33,14 +58,21 @@ import { default as Settings } from "./Settings";
 
 const realFetch = globalThis.fetch;
 
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 function stubVersion(body: unknown, ok = true) {
   globalThis.fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : input.toString();
     if (url.includes("/version")) {
-      return new Response(JSON.stringify(body), {
-        status: ok ? 200 : 500,
-        headers: { "Content-Type": "application/json" },
-      });
+      return jsonResponse(body, ok ? 200 : 500);
+    }
+    if (url.includes("/api/v1/me")) {
+      return jsonResponse({ userId: "u1", userName: "" });
     }
     throw new Error(`unexpected fetch to ${url}`);
   }) as typeof fetch;
@@ -80,6 +112,59 @@ describe("Settings preferences", () => {
     neverResolvingVersion();
     renderSettings();
     expect(bodyText().includes("Experimental artifact cards")).toBe(true);
+  });
+});
+
+describe("Settings display name", () => {
+  it("seeds the display name field from the persisted userName", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/v1/me"))
+        return jsonResponse({ userId: "u1", userName: "Persisted Name" });
+      if (url.includes("/version")) return jsonResponse({ buildSha: null });
+      throw new Error(`unexpected fetch to ${url}`);
+    }) as typeof fetch;
+
+    renderSettings();
+
+    await waitFor(() => {
+      const input = screen.getByLabelText("Display name") as HTMLInputElement;
+      if (input.value !== "Persisted Name")
+        throw new Error(`not seeded: ${input.value}`);
+    });
+  });
+
+  it("PATCHes an edited name to /me/profile and surfaces the saved state", async () => {
+    const calls: { url: string; method?: string; body?: BodyInit | null }[] =
+      [];
+    globalThis.fetch = (async (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => {
+      const url = typeof input === "string" ? input : input.toString();
+      calls.push({ url, method: init?.method, body: init?.body ?? null });
+      if (url.includes("/api/v1/me/profile"))
+        return jsonResponse({ userName: "New Name" });
+      if (url.includes("/api/v1/me"))
+        return jsonResponse({ userId: "u1", userName: "Old Name" });
+      if (url.includes("/version")) return jsonResponse({ buildSha: null });
+      throw new Error(`unexpected fetch to ${url}`);
+    }) as typeof fetch;
+
+    renderSettings();
+
+    const input = await screen.findByLabelText("Display name");
+    fireEvent.change(input, { target: { value: "New Name" } });
+    fireEvent.click(await screen.findByText("Save display name"));
+
+    await waitFor(() => {
+      if (!bodyText().includes("Display name saved."))
+        throw new Error("success not shown");
+    });
+
+    const patch = calls.find((c) => c.url.includes("/api/v1/me/profile"));
+    expect(patch?.method).toBe("PATCH");
+    expect(patch?.body).toBe(JSON.stringify({ displayName: "New Name" }));
   });
 });
 

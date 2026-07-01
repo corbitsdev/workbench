@@ -1,5 +1,4 @@
-import { ComparisonView, parseComparisonResult } from "@workbench/ui";
-import { MarkdownBlock } from "./Markdown";
+import { ComparisonView, Markdown, parseComparisonResult } from "@workbench/ui";
 
 // The A/B comparison artifact `content` is the JSON string of a ComparisonResult.
 // Parse it through the shared schema and render the branded comparison view; on a
@@ -9,9 +8,5 @@ export default function CompareBody({ content }: { content: string }) {
   if (result !== null) {
     return <ComparisonView result={result} />;
   }
-  return (
-    <div className="prose prose-sm max-w-[68ch]">
-      <MarkdownBlock text={content} />
-    </div>
-  );
+  return <Markdown className="max-w-[68ch]">{content}</Markdown>;
 }

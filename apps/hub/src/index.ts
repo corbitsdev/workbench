@@ -67,6 +67,7 @@ import {
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
@@ -94,6 +95,7 @@ import {
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
@@ -177,6 +179,7 @@ const { isDev, cors: corsConfig, auth: authConfig, google, hub } = config;
 
 // ─── Auth ──────────────────────────────────────────────────────────
 const { origins: corsOrigins, isCrossOrigin } = corsConfig;
+const { useCrossSiteCookies } = authConfig;
 
 log.info("CORS config loaded", { corsOrigins, corsCount: corsOrigins.length });
 
@@ -198,10 +201,13 @@ const auth = betterAuth({
       verify: ({ hash, password }) => Bun.password.verify(password, hash),
     },
   },
-  advanced:
-    !isDev && isCrossOrigin
-      ? { defaultCookieAttributes: { sameSite: "none", secure: true } }
-      : undefined,
+  advanced: !isDev
+    ? {
+        defaultCookieAttributes: useCrossSiteCookies
+          ? { sameSite: "none", secure: true }
+          : { sameSite: "lax", secure: true },
+      }
+    : undefined,
   socialProviders:
     google.clientId && google.clientSecret
       ? {
@@ -1028,6 +1034,7 @@ v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
+v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route("/", createToolsRouter(db, assetService));
@@ -1136,6 +1143,20 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   deploymentDomain: config.rootTenant.domain,
   rootTenantId,
 };
+
+// CL-2593: auto-publish the build-serialized workflow defs to the global tenant
+// on boot, gated by WORKFLOW_AUTOPUBLISH_ON_BOOT (default off). Detached so a
+// slow publish never blocks startup; the bootstrap is fail-safe per def.
+void publishEmbeddedWorkflowDefs({
+  coreDeps: workflowDeployCoreDeps,
+  repoStore,
+  enabled: config.workflowAutopublishOnBoot,
+  buildSha: config.buildSha,
+}).catch((err) => {
+  log.error("workflow autopublish-on-boot failed", {
+    error: err instanceof Error ? err.message : String(err),
+  });
+});
 
 v1.post(
   "/workflows/deploy",

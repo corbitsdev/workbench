@@ -1,28 +1,44 @@
-# @workbench/workflow-presentation-generation
+# @workbench/workflow-gamma-presentation-creator
 
-The presentation-generation workflow: turn call transcripts and notes into
-branded Gamma presentations, gated on human review.
-
-Steps:
-
-1. **template** — pick a Gamma template and set audience, tone, and goal.
-2. **source** — choose where content comes from: a Granola call, an existing
-   artifact, or pasted text.
-3. **generate** — draft the deck content from the resolved source.
-4. **review** — `awaitSignal('review-approval')`, a human gate before the deck
-   is rendered.
-5. **render** — render the approved content into a branded Gamma presentation.
+Turn any artifact, Granola call, or pasted text into a branded Gamma deck,
+refining it round by round until a human approves it.
 
 ## Shape
 
 This is a native `@intx/workflow` package. It exports:
 
-- `kind` — `'presentation-generation'`
+- `kind` — `'gamma-presentation-creator'`
 - `workflow` — a `defineWorkflow(...)` definition
 
-Each step agent declares its tools as serializable `capabilities` (e.g.
-`granola_get_note`, `gamma_generate`), never inline tool factories — the
-definition is pushed as JSON.
+Setup steps list the available artifacts and Granola notes, then an
+`intake` `awaitSignal` gate collects the chosen source (artifact / call / pasted
+text) plus template, deck title, and audience/tone/goal. The intake UI fetches
+the Gamma templates from the hub (`GET /api/v1/gamma-templates`) rather than a
+workflow step — `gamma_list_templates` is a hub ContextToolEntry and cannot run
+inside a workflow deployment. Both readers
+(`artifact_read`, `granola_get_note`) run `nonFatal`; the unused one degrades and
+`generate` uses whichever source resolved.
+
+The body is a bounded `MAX_ROUNDS` (3) refine loop, each round:
+
+1. **generate-N** — draft the deck content from the source (+ the prior draft and
+   feedback on later rounds) via an inline inference step.
+2. **render-N** — render the draft into a Gamma deck (`gamma_create_from_template`;
+   Gamma cannot edit in place, so each round renders a fresh deck).
+3. **preview-N** — `awaitSignal`, a live iframe preview with **Approve** or
+   **Refine with notes**.
+4. **check-N** — a `gate()`: approval routes to `persist-N` and prunes the
+   remaining rounds; refusal feeds the draft + notes into the next round. The
+   final round has no gate — its preview leads straight to persistence.
+
+The approved deck is saved as a `presentation` artifact via `artifact_create`.
+
+Steps declare their tools as serializable `capabilities`, never inline tool
+factories — the definition is pushed as JSON.
+
+> Control-flow note: `gate()` runs on the sidecar `@intx/workflow` runtime (the
+> live execution path). The in-hub linear executor does not project `gate` and is
+> not on the live path; see [../../docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md).
 
 ## Deploy
 

@@ -52,6 +52,7 @@ describe("toLlmToolName (CL-2306)", () => {
       "github_activity",
       "granola_list_notes",
       "linear_list_issues",
+      "vercel_deploy_static_file",
       "last30days_core_extract",
       "last30days_validate",
       "reddit_search",
@@ -156,8 +157,9 @@ describe("providersForToolPackages", () => {
     expect(
       providersForToolPackages([
         { name: "@workbench/tools-granola", version: "^0.1.0" },
+        { name: "@workbench/tools-vercel", version: "^0.1.0" },
       ]),
-    ).toEqual(["granola"]);
+    ).toEqual(["granola", "vercel"]);
   });
 
   it("dedupes packages that share a provider (reddit + scrapecreators)", () => {

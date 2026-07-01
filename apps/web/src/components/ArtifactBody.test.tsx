@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import ArtifactBody from "./ArtifactBody";
 
@@ -136,6 +136,48 @@ describe("ArtifactBody rendering", () => {
     );
   });
 
+  it("renders web artifacts in a sandboxed iframe with a full-screen toggle", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          content:
+            "<!doctype html><html><body><h1>Pitch deck</h1></body></html>",
+          kind: "web",
+        },
+      }),
+    );
+
+    const frame = screen.getByTitle(
+      "Web artifact preview",
+    ) as HTMLIFrameElement;
+    expect(frame.getAttribute("srcdoc")).toContain("Pitch deck");
+    expect(frame.getAttribute("sandbox")).toContain("allow-scripts");
+    // Null-origin isolation plus no popup/form escape hatches (see WebBody).
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-popups");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-forms");
+
+    fireEvent.click(screen.getByRole("button", { name: /open full screen/i }));
+    screen.getByRole("dialog", { name: /web artifact full screen preview/i });
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /open full screen/i }));
+    screen.getByRole("dialog", { name: /web artifact full screen preview/i });
+    fireEvent.click(screen.getByRole("button", { name: /close/i }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("shows an empty state instead of a blank iframe for a contentless web artifact", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: { content: "   ", kind: "web" },
+      }),
+    );
+    expect(screen.queryByTitle("Web artifact preview")).toBeNull();
+    screen.getByText(/no content to preview/i);
+  });
+
   it("renders unrecognized kinds with the document fallback", () => {
     render(
       React.createElement(ArtifactBody, {
@@ -180,7 +222,7 @@ describe("ArtifactBody rendering", () => {
 
   it("caps a prose document body at the 68ch reading measure", () => {
     const { container } = renderKind("blog");
-    const prose = container.querySelector("div.prose");
+    const prose = container.querySelector("div.wb-markdown");
     if (prose === null) throw new Error("expected a prose wrapper");
     expect(prose.className).toContain("max-w-[68ch]");
     expect(prose.className).not.toContain("max-w-none");
@@ -189,7 +231,7 @@ describe("ArtifactBody rendering", () => {
     expect(prose.className).not.toContain("mx-auto");
   });
 
-  it("does not cap a table body — it stays full-width for horizontal scroll", () => {
+  it("renders a GFM table inside the prose surface in a horizontal-scroll container", () => {
     const { container } = render(
       React.createElement(ArtifactBody, {
         artifact: {
@@ -198,9 +240,15 @@ describe("ArtifactBody rendering", () => {
         },
       }),
     );
-    // The table render path has no prose wrapper and no reading-measure cap.
-    expect(container.querySelector("table")).not.toBeNull();
-    expect(container.querySelector(".max-w-\\[68ch\\]")).toBeNull();
+    // One rendering path: the table is parsed by the shared <Markdown> (GFM) and
+    // lives inside the prose surface, each table wrapped for horizontal scroll
+    // rather than overflowing the narrow dock width.
+    const table = container.querySelector("table");
+    if (table === null) throw new Error("expected a rendered <table>");
+    expect(table.closest(".wb-markdown")).not.toBeNull();
+    const scroller = table.closest(".overflow-x-auto");
+    if (scroller === null)
+      throw new Error("expected the table in a horizontal-scroll container");
   });
 
   it("does not render a download link for non-export kinds", () => {

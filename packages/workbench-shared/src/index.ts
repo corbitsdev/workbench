@@ -1,20 +1,16 @@
 import { type } from "arktype";
 
 export * from "./palette";
+export * from "./active-context";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
 // 'pending' = created, analysis not yet started.
 // 'ready' = analysis complete, awaiting the user's generate selection.
 // 'generating' = collateral generation actively running.
-export type SessionStatus =
-  | "pending"
-  | "analyzing"
-  | "ready"
-  | "generating"
-  | "reviewing"
-  | "done"
-  | "failed";
+// The schema is the canonical definition (see SessionStatusSchema below); the
+// type is derived from it so the union and the runtime validator never drift.
+export type SessionStatus = typeof SessionStatusSchema.infer;
 
 // The subset of artifact kinds the UI knows how to render exhaustively.
 // The DB `kind` column is free-form text; this union stays closed for the
@@ -112,79 +108,92 @@ export type ArtifactWithVersions = Artifact & { versions: ArtifactVersion[] };
  */
 export type ArtifactWithSession = Artifact & {
   sessionName: string | null;
-  sessionStatus: SessionStatus;
+  sessionStatus: SessionStatus | null;
   ownerName: string | null;
 };
+
+// The closed set of session lifecycle states, shared by the boundary schemas
+// below. `SessionStatus` is the inferred union; `SessionStatusSchema` is the
+// arktype validator used wherever a status crosses a trust boundary.
+export const SessionStatusSchema = type(
+  "'pending' | 'analyzing' | 'ready' | 'generating' | 'reviewing' | 'done' | 'failed'",
+);
 
 /**
  * One row from `GET /workflow-runs` — a summary of a natively-deployed
  * workflow, used to populate the library rail. `status` is the free-form
  * `workflow_run.status` text, not a {@link SessionStatus}.
  */
-export interface WorkflowSummary {
-  id: string;
-  kind: string;
-  status: string;
-  createdAt: string;
-}
+export const WorkflowSummarySchema = type({
+  id: "string",
+  kind: "string",
+  status: "string",
+  createdAt: "string",
+});
+export type WorkflowSummary = typeof WorkflowSummarySchema.infer;
 
-export interface TranscriptInput {
-  transcript: string;
-  source?: "paste" | "granola";
-}
+export const TranscriptInputSchema = type({
+  transcript: "string",
+  "source?": "'paste' | 'granola'",
+});
+export type TranscriptInput = typeof TranscriptInputSchema.infer;
 
-export interface WorkbenchSession {
-  id: string;
-  transcriptId: string;
-  status: SessionStatus;
-  companyName: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export const WorkbenchSessionSchema = type({
+  id: "string",
+  transcriptId: "string",
+  status: SessionStatusSchema,
+  companyName: "string | null",
+  createdAt: "string",
+  updatedAt: "string",
+});
+export type WorkbenchSession = typeof WorkbenchSessionSchema.infer;
 
-export interface WorkflowState {
-  id: string;
-  kind: string;
-  status: SessionStatus;
-  currentStep: string;
-  companyName: string | null;
-  /**
-   * Generic per-step state. Each workflow's steps carry their own
-   * inputs/outputs here under the step name; the host stays domain-agnostic.
-   */
-  steps: Record<string, unknown>;
-}
+export const WorkflowStateSchema = type({
+  id: "string",
+  kind: "string",
+  status: SessionStatusSchema,
+  currentStep: "string",
+  companyName: "string | null",
+  // Generic per-step state. Each workflow's steps carry their own
+  // inputs/outputs here under the step name; the host stays domain-agnostic.
+  steps: { "[string]": "unknown" },
+});
+export type WorkflowState = typeof WorkflowStateSchema.infer;
 
-export interface AnalyzeRequest {
-  transcript: string;
-}
+export const AnalyzeRequestSchema = type({ transcript: "string" });
+export type AnalyzeRequest = typeof AnalyzeRequestSchema.infer;
 
-export interface AnalyzeResponse {
-  workflowId: string;
-  painPoints: PainPoint[];
-  status: SessionStatus;
-}
+export const AnalyzeResponseSchema = type({
+  workflowId: "string",
+  painPoints: PainPoint.array(),
+  status: SessionStatusSchema,
+});
+export type AnalyzeResponse = typeof AnalyzeResponseSchema.infer;
 
-export interface GenerateRequest {
-  workflowId: string;
-  painPointIds: string[];
-}
+export const GenerateRequestSchema = type({
+  workflowId: "string",
+  painPointIds: "string[]",
+});
+export type GenerateRequest = typeof GenerateRequestSchema.infer;
 
-export interface GenerateResponse {
-  workflowId: string;
-  artifacts: Artifact[];
-  status: SessionStatus;
-}
+export const GenerateResponseSchema = type({
+  workflowId: "string",
+  artifacts: Artifact.array(),
+  status: SessionStatusSchema,
+});
+export type GenerateResponse = typeof GenerateResponseSchema.infer;
 
-export interface ImproveRequest {
-  artifactId: string;
-  feedback: string;
-}
+export const ImproveRequestSchema = type({
+  artifactId: "string",
+  feedback: "string",
+});
+export type ImproveRequest = typeof ImproveRequestSchema.infer;
 
-export interface ImproveResponse {
-  artifact: Artifact;
-  status: SessionStatus;
-}
+export const ImproveResponseSchema = type({
+  artifact: Artifact,
+  status: SessionStatusSchema,
+});
+export type ImproveResponse = typeof ImproveResponseSchema.infer;
 
 // Output-feedback (thumbs up/down). One canonical definition shared by the hub
 // route, the web boundary parser, and the chat component.
@@ -237,6 +246,33 @@ export const ThemeSchema = type(
   "'corbits-dark' | 'corbits-light' | 'tkww' | 'notion'",
 );
 export type Theme = typeof ThemeSchema.infer;
+
+// One Gamma template as returned by `GET /gamma-templates`. Canonical wire
+// shape shared by the hub route (emit + OpenAPI) and the web hook (parse) so
+// the two can never drift. `canManage` is computed per-caller from the grant
+// store; `description` is the human-facing label (the workflow owns generation
+// instructions, not the template).
+export const GammaTemplateSchema = type({
+  id: "string",
+  version: "number",
+  name: "string",
+  gammaId: "string",
+  description: "string",
+  authorId: "string",
+  canManage: "boolean",
+  createdAt: "string",
+});
+export type GammaTemplate = typeof GammaTemplateSchema.infer;
+
+// Request body for create/update. `description` is required and non-empty
+// (the server trims and rejects blanks); it is the one field the workflow does
+// not need but humans do.
+export const GammaTemplateBodySchema = type({
+  name: "string",
+  gammaId: "string",
+  description: "string",
+});
+export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
 
 export const MemberPreferences = type({
   "theme?": ThemeSchema,

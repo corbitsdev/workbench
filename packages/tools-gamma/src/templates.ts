@@ -73,7 +73,7 @@ export const GammaTemplateSchema = type({
   id: "string",
   gammaId: "string",
   name: "string",
-  systemPrompt: "string",
+  description: "string",
 });
 
 export type GammaTemplate = typeof GammaTemplateSchema.infer;
@@ -81,7 +81,7 @@ export type GammaTemplate = typeof GammaTemplateSchema.infer;
 export const GAMMA_LIST_TEMPLATES_DEFINITION: ToolDefinition = {
   name: "gamma_list_templates",
   description:
-    "List tenant-owned Gamma presentation templates. Returns an array of templates with gammaId, name, and systemPrompt. Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template. Incorporate the systemPrompt into the generation prompt to match the template's intended structure.",
+    "List tenant-owned Gamma presentation templates. Returns an array of templates with gammaId, name, and description. Use names when presenting options to the user; use gammaId internally when calling gamma_create_from_template.",
   inputSchema: {
     type: "object",
     properties: {},

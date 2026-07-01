@@ -39,6 +39,7 @@ import {
 } from "../lib/tenant-provisioning";
 import {
   describeLaunchError,
+  launchFailureLogMessage,
   isAgentAlreadyExistsError,
   launchAgentSession,
   resolveInstanceSourcesFromDefinition,
@@ -369,7 +370,10 @@ export async function createMyraThread(
     // agent. (CL-2367)
     if (failure.leakedAgent) {
       log.error(
-        "Myra thread session launch failed AND the sidecar leaked the agent; keeping rows and marking instance error",
+        launchFailureLogMessage(
+          "Myra thread session launch failed AND the sidecar leaked the agent; keeping rows",
+          failure,
+        ),
         {
           instanceId,
           phase: failure.phase,
@@ -387,13 +391,19 @@ export async function createMyraThread(
     }
     // Log the real Error (not a stringified message) at error level so the
     // Sentry sink routes it through captureException with stack + cause.
-    log.error("Myra thread session launch failed; tearing down thread", {
-      instanceId,
-      phase: failure.phase,
-      detail: failure.detail,
-      leakedAgent: failure.leakedAgent,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
+    log.error(
+      launchFailureLogMessage(
+        "Myra thread session launch failed; tearing down thread",
+        failure,
+      ),
+      {
+        instanceId,
+        phase: failure.phase,
+        detail: failure.detail,
+        leakedAgent: failure.leakedAgent,
+        error: err instanceof Error ? err : new Error(String(err)),
+      },
+    );
     // Do not leave an orphan thread that looks healthy. Remove the rows we just
     // created so the member does not get a 201 for an instance that never
     // launched and cannot serve chat.
@@ -594,13 +604,16 @@ export async function relaunchMyraThread(
         return { thread: row, applied: false };
       }
       const failure = describeLaunchError(err);
-      log.error("Myra thread relaunch failed", {
-        instanceId: instance.id,
-        phase: failure.phase,
-        detail: failure.detail,
-        leakedAgent: failure.leakedAgent,
-        error: err instanceof Error ? err : new Error(String(err)),
-      });
+      log.error(
+        launchFailureLogMessage("Myra thread relaunch failed", failure),
+        {
+          instanceId: instance.id,
+          phase: failure.phase,
+          detail: failure.detail,
+          leakedAgent: failure.leakedAgent,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
+      );
       throw new MyraThreadLaunchError(failure, { cause: err });
     }
 

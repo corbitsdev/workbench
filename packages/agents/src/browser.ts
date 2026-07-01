@@ -53,7 +53,7 @@ export {
   type ComposeChatResult,
 } from "./chat-messages";
 export { buildContextBlock } from "./prompt-builder";
-export type { AgentDeployDescriptor } from "./deploy-descriptor";
+export { AgentDeployDescriptor } from "./deploy-descriptor";
 
 import { LOOP_DEPLOY_DESCRIPTOR } from "./loop/definition";
 import { GRANOLA_DEPLOY_DESCRIPTOR } from "./granola/definition";

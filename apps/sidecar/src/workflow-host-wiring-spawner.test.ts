@@ -3,8 +3,9 @@
 // four behaviours from the handle:
 //
 //   1. The control channel surfaces NDJSON lines the child writes
-//      to its stdout. A real child writes a signed `ready` envelope
-//      here; the test stub writes a sentinel NDJSON line.
+//      to its upstream control fd (CL-2585: fd 5, not stdout). A real
+//      child writes a signed `ready` envelope here; the test stub
+//      writes a sentinel NDJSON line.
 //   2. The handle's `exited` future resolves with the child's
 //      terminal exit code so the supervisor can race spawn-time
 //      crashes against `readyPromise`.
@@ -13,6 +14,13 @@
 //      to fire.
 //   4. The child's runtime env is exactly the supervisor-supplied
 //      env -- unrelated `process.env` entries do not leak in.
+//
+// CL-2585: the control channel rides dedicated fds (4 down, 5 up) so
+// the child's stdout/stderr are free for logs. The child fixtures
+// below write upstream control frames to fd 5; a regression test
+// asserts a stray non-JSON line on the child's stdout never reaches
+// the supervisor's control reader (the bug that crashed the channel
+// and produced reason=corrupt).
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import fs from "node:fs/promises";
@@ -45,7 +53,8 @@ describe("defaultSubprocessSpawner (Bun.spawn-backed)", () => {
     //     this test's spawner call, so the child must observe it
     //     as the sentinel string)
     //   - writes one byte sequence to fd 3 (event channel)
-    //   - emits one NDJSON line on stdout
+    //   - emits one NDJSON control frame on fd 5 (upstream control;
+    //     CL-2585 moved this off stdout)
     //   - exits 0
     const childScript = `
 import fs from "node:fs";
@@ -53,8 +62,9 @@ const token = process.env.CHILD_TOKEN ?? "MISSING";
 const leaked = process.env.SHOULD_NOT_LEAK ?? "UNSET";
 const event = new TextEncoder().encode("event-byte");
 const eventStream = fs.createWriteStream("", { fd: 3 });
+const controlUp = fs.createWriteStream("", { fd: 5 });
 eventStream.write(event, () => {
-  process.stdout.write(
+  controlUp.write(
     JSON.stringify({ probe: "ready", token, leaked }) + "\\n",
     () => process.exit(0),
   );
@@ -184,7 +194,8 @@ eventStream.write(event, () => {
     // strings.
     const childScript = `
 import fs from "node:fs";
-process.stdout.write(JSON.stringify({ probe: "ready" }) + "\\n");
+const controlUp = fs.createWriteStream("", { fd: 5 });
+controlUp.write(JSON.stringify({ probe: "ready" }) + "\\n");
 const eventStream = fs.createWriteStream("", { fd: 3 });
 void eventStream;
 await new Promise((r) => setTimeout(r, 5000));
@@ -216,5 +227,74 @@ process.exit(0);
 
     const code = await handle.exited;
     expect(typeof code).toBe("number");
+  });
+
+  test("CL-2585: a stray ANSI log line on the child's stdout never reaches the control reader", async () => {
+    // The regression. Before CL-2585 the upstream control channel WAS
+    // the child's stdout, so a single `@intx/log` INFO line (ANSI-
+    // colored, leading `\\x1B`) interleaved into the NDJSON control
+    // stream and crashed the supervisor's control reader with "control
+    // channel received non-JSON line" -> onChildCrash -> reason=corrupt.
+    //
+    // The child below emits the staging-exact ANSI INFO line on stdout
+    // FIRST, then a healthy control frame on the dedicated upstream
+    // control fd (5). With control isolated on fd 5, the supervisor's
+    // controlReader must yield exactly the healthy frame and never the
+    // log line. On the pre-fix wiring (control on stdout) this test
+    // fails: the reader's first line is the ANSI log line, not JSON.
+    const ansiLog =
+      "\\x1B[32mINF\\x1B[0m \\x1B[2m2026-06-30 04:22:01\\x1B[0m step started";
+    const childScript = `
+import fs from "node:fs";
+// stray log line on stdout BEFORE the control frame
+process.stdout.write("${ansiLog}\\n");
+const controlUp = fs.createWriteStream("", { fd: 5 });
+const eventStream = fs.createWriteStream("", { fd: 3 });
+void eventStream;
+controlUp.write(
+  JSON.stringify({ probe: "ready", marker: "healthy-frame" }) + "\\n",
+  () => process.exit(0),
+);
+`;
+    const scriptPath = await writeChildScript(childScript);
+    const wrapperPath = path.join(
+      tmpRoot,
+      `wrapper-corrupt-${String(Date.now())}.sh`,
+    );
+    await fs.writeFile(
+      wrapperPath,
+      `#!/bin/sh\nexec "${process.execPath}" "${scriptPath}"\n`,
+      "utf-8",
+    );
+    await fs.chmod(wrapperPath, 0o755);
+
+    const handle = defaultSubprocessSpawner({
+      binaryPath: wrapperPath,
+      env: {},
+    });
+
+    const iter = handle.controlReader.read();
+    const first = await iter.next();
+    expect(first.done).toBeFalsy();
+    if (first.value === undefined) {
+      throw new Error("control reader yielded undefined first value");
+    }
+    // The very first line the control reader sees must be the healthy
+    // JSON frame -- not the ANSI log line. A non-JSON line here is the
+    // exact corruption CL-2585 fixes.
+    const parsed: unknown = JSON.parse(first.value);
+    if (
+      typeof parsed !== "object" ||
+      parsed === null ||
+      !("marker" in parsed)
+    ) {
+      throw new Error(
+        `control reader first line was not the healthy frame: ${first.value}`,
+      );
+    }
+    expect(parsed.marker).toBe("healthy-frame");
+
+    const code = await handle.exited;
+    expect(code).toBe(0);
   });
 });

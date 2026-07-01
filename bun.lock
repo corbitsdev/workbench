@@ -567,6 +567,7 @@
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -640,7 +641,6 @@
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
-        "streamdown": "^2.5.0",
       },
       "devDependencies": {
         "@happy-dom/global-registrator": "^20.9.0",
@@ -1107,6 +1107,20 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-vercel": {
+      "name": "@workbench/tools-vercel",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
       "version": "0.1.0",
@@ -1165,6 +1179,7 @@
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "react-markdown": "^10.1.0",
+        "streamdown": "^2.5.0",
         "tailwind-merge": "^3.6.0",
       },
       "devDependencies": {
@@ -1187,6 +1202,9 @@
     },
     "packages/workbench-shared": {
       "name": "@workbench/shared",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
@@ -1260,6 +1278,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
+        "@tanstack/react-query": "5.100.14",
         "@workbench/agents": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
@@ -2316,6 +2335,8 @@
     "@workbench/tools-scrapecreators": ["@workbench/tools-scrapecreators@workspace:packages/tools-scrapecreators"],
 
     "@workbench/tools-skills": ["@workbench/tools-skills@workspace:packages/tools-skills"],
+
+    "@workbench/tools-vercel": ["@workbench/tools-vercel@workspace:packages/tools-vercel"],
 
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
 
@@ -3879,6 +3900,8 @@
 
     "@workbench/web/vite": ["vite@8.1.0", "", { "dependencies": { "lightningcss": "^1.32.0", "picomatch": "^4.0.4", "postcss": "^8.5.15", "rolldown": "~1.1.2", "tinyglobby": "^0.2.17" }, "optionalDependencies": { "fsevents": "~2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.3.0", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-BuJcQK/56NQTWDGn4ABea3q4SSBdNPWwNZKTkkUpcMPnLoquSYH8llRtSUIgoL1KSCpHt5eghLShn50mH36y7Q=="],
 
+    "@workbench/workflow-gamma-presentation-creator/@tanstack/react-query": ["@tanstack/react-query@5.100.14", "", { "dependencies": { "@tanstack/query-core": "5.100.14" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-oOr6aRdSFEwWhzxEkD/9ZcItM3+LjBSkeVmadWKwUssAHTsqd/7bOjWrX4AbvEkoEhgAxzN0Xk6H/aYzXiYBAw=="],
+
     "ajv-formats/ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 
     "archiver/readable-stream": ["readable-stream@3.6.2", "", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
@@ -4110,6 +4133,8 @@
     "@workbench/web/@tanstack/react-query/@tanstack/query-core": ["@tanstack/query-core@5.100.14", "", {}, "sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew=="],
 
     "@workbench/web/@vitejs/plugin-react/@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
+
+    "@workbench/workflow-gamma-presentation-creator/@tanstack/react-query/@tanstack/query-core": ["@tanstack/query-core@5.100.14", "", {}, "sha512-5X41dGpxgeaHISCRW2oYwcSycZeULZzAunaudXT9ov1KOTj9xwt0CH6hbwqP1/z74ZWF7rYFnDpyYH07XFcZew=="],
 
     "ajv-formats/ajv/json-schema-traverse": ["json-schema-traverse@1.0.0", "", {}, "sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug=="],
 

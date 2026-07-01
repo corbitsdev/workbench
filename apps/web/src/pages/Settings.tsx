@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SettingsPage,
   type SettingsFieldValue,
@@ -22,7 +22,8 @@ import {
   TOOL_SUMMARY_STYLE_LABELS,
   TOOL_SUMMARY_PREVIEW_CALLS,
 } from "@workbench/agents/browser";
-import { api, fetchBuildSha } from "../lib/api";
+import { fetchBuildSha } from "../lib/api";
+import { getMe, patchMeProfile } from "../lib/hub-api";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -90,7 +91,6 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
 ];
 
 const INITIAL_VALUES: SettingsValues = {
-  displayName: "",
   emailNotifications: false,
 };
 
@@ -104,8 +104,20 @@ export default function Settings() {
   } = useExperimentalArtifactCards();
   const { style: toolSummaryStyle, setStyle: setToolSummaryStyle } =
     useToolSummaryStyle();
+  const queryClient = useQueryClient();
   const [values, setValues] = useState<SettingsValues>({ ...INITIAL_VALUES });
-  const [savedDisplayName, setSavedDisplayName] = useState<string>("");
+  // `undefined` means the field has not been touched this session, so it shows
+  // the persisted name; a string is the user's in-progress edit.
+  const [editedDisplayName, setEditedDisplayName] = useState<
+    string | undefined
+  >(undefined);
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
+  const savedDisplayName = meQuery.data?.userName ?? "";
+  const displayName = editedDisplayName ?? savedDisplayName;
   const buildShaQuery = useQuery({
     queryKey: ["version", "buildSha"],
     queryFn: fetchBuildSha,
@@ -113,11 +125,11 @@ export default function Settings() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (name: string) => {
-      await api("PATCH", "/me/profile", { displayName: name });
-      return name;
+    mutationFn: (name: string) => patchMeProfile(name),
+    onSuccess: async () => {
+      setEditedDisplayName(undefined);
+      await queryClient.invalidateQueries({ queryKey: ["me"] });
     },
-    onSuccess: (name) => setSavedDisplayName(name),
   });
 
   const handleChange = (key: string, value: SettingsFieldValue) => {
@@ -134,22 +146,23 @@ export default function Settings() {
     if (key === "experimentalArtifactCards" && typeof value === "boolean") {
       setExperimentalArtifactCards(value);
     }
-    if (key === "displayName") {
+    if (key === "displayName" && typeof value === "string") {
+      setEditedDisplayName(value);
       saveMutation.reset();
     }
   };
 
   const displayNameDirty =
-    typeof values.displayName === "string" &&
-    values.displayName !== savedDisplayName;
+    typeof editedDisplayName === "string" &&
+    editedDisplayName.trim() !== "" &&
+    editedDisplayName.trim() !== savedDisplayName;
 
   // Show the 7-char short SHA in the UI; the API contract keeps the full value.
   const fullSha = buildShaQuery.isSuccess ? buildShaQuery.data : null;
   const buildLabel = fullSha ? fullSha.slice(0, 7) : "unknown";
 
   const handleSaveDisplayName = () => {
-    const name =
-      typeof values.displayName === "string" ? values.displayName.trim() : "";
+    const name = displayName.trim();
     if (!name) return;
     saveMutation.mutate(name);
   };
@@ -160,6 +173,7 @@ export default function Settings() {
         sections={SECTIONS}
         values={{
           ...values,
+          displayName,
           theme,
           compactToolActivity,
           toolSummaryStyle,

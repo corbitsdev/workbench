@@ -22,6 +22,7 @@ const MANAGED_KEYS = [
   "GOOGLE_CLIENT_ID",
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_ALLOWED_DOMAINS",
+  "WORKFLOW_AUTOPUBLISH_ON_BOOT",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -71,6 +72,20 @@ describe("loadConfig", () => {
     expect(config.granola.baseUrl).toBe("https://public-api.granola.ai/v1");
   });
 
+  it("defaults workflowAutopublishOnBoot to false and enables it only for true/1", () => {
+    setRequiredEnv();
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "true";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(true);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "1";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(true);
+
+    process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "false";
+    expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+  });
+
   it("trims and splits CORS origins, marking cross-origin true", () => {
     setRequiredEnv();
     process.env["SUPPORTED_CORS_ORIGINS"] = " https://a.com , ,https://b.com ";
@@ -80,6 +95,32 @@ describe("loadConfig", () => {
     expect(config.cors.origins).toEqual(["https://a.com", "https://b.com"]);
     expect(config.cors.isCrossOrigin).toBe(true);
   });
+
+  it("marks auth as served from the web app when BETTER_AUTH_BASE_URL matches a CORS origin", () => {
+    setRequiredEnv();
+    process.env["NODE_ENV"] = "production";
+    process.env["BETTER_AUTH_BASE_URL"] = "https://app.example.com";
+    process.env["SUPPORTED_CORS_ORIGINS"] = "https://app.example.com";
+
+    const config = loadConfig();
+
+    expect(config.auth.servedFromWebApp).toBe(true);
+    expect(config.auth.useCrossSiteCookies).toBe(false);
+  });
+
+  it("uses cross-site auth cookies when web and auth base URLs differ", () => {
+    setRequiredEnv();
+    process.env["NODE_ENV"] = "production";
+    process.env["BETTER_AUTH_BASE_URL"] = "https://hub.example.com";
+    process.env["SUPPORTED_CORS_ORIGINS"] = "https://app.example.com";
+
+    const config = loadConfig();
+
+    expect(config.auth.servedFromWebApp).toBe(false);
+    expect(config.auth.useCrossSiteCookies).toBe(true);
+  });
+
+
 
   it("treats empty CORS origins as same-origin in dev", () => {
     setRequiredEnv();

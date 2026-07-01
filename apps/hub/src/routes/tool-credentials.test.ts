@@ -77,8 +77,22 @@ describe("POST /tools/credentials", () => {
     expect((await post(req(["youtube"]))).status).toBe(403);
   });
 
-  test("returns 422 for an allowed provider with no configured credential", async () => {
-    expect((await post(req(["github"]))).status).toBe(422);
+  test("omits an allowed provider that has no configured credential (no error)", async () => {
+    const res = await post(req(["github"]));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { credentials: Record<string, unknown> };
+    expect(body.credentials).toEqual({});
+  });
+
+  test("degrades per-provider: returns the configured ones and skips the unconfigured", async () => {
+    const res = await post(req(["exa", "github", "firecrawl"]));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { credentials: Record<string, unknown> };
+    expect(body.credentials).toEqual({
+      exa: { apiKey: "secret-exa", baseURL: "https://api.example" },
+      firecrawl: { apiKey: "secret-firecrawl", baseURL: "https://api.example" },
+    });
+    expect("github" in body.credentials).toBe(false);
   });
 
   test("returns 400 on a malformed request body", async () => {

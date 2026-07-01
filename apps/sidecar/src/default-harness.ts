@@ -38,6 +38,11 @@ import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
 import { withActiveContext } from "@workbench/prompts";
 import { createGuardedMailRunner } from "./mail-guard";
+import {
+  APPROVAL_GATED_TOOLS,
+  createApprovalClient,
+  createApprovalGatedRunner,
+} from "./approval-gate";
 import type { ContextStore } from "@intx/types/runtime";
 
 const logger = getLogger(["sidecar", "harness-builder"]);
@@ -362,11 +367,23 @@ export function createDefaultHarnessBuilder({
         askPrincipalRunner as DefinedRunner,
         ...loadedRunners,
       ]);
+      // Enforce human approval for irreversible tools at the composition seam
+      // (the harness-side stand-in for an `ask` grant; see approval-gate.ts).
+      const gatedTools = createApprovalGatedRunner(allTools as DefinedRunner, {
+        gatedTools: APPROVAL_GATED_TOOLS,
+        approve: createApprovalClient({
+          hubHttpUrl,
+          sidecarToken,
+          tenantId,
+          agentId: agentConfig.agentId,
+          principalId,
+        }),
+      });
       const allowedNames = new Set([
         ...agentConfig.tools.map((t) => t.name),
         ...loadedToolNames,
       ]);
-      const tools = filterToolRunner(allTools as DefinedRunner, allowedNames);
+      const tools = filterToolRunner(gatedTools as DefinedRunner, allowedNames);
 
       try {
         const toolsFactory = defineTool({

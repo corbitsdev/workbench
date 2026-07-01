@@ -79,7 +79,8 @@ export function createToolCredentialsRouter(
       },
       responses: {
         200: {
-          description: "Resolved credentials (apiKey values are secrets)",
+          description:
+            "Resolved credentials (apiKey values are secrets). Providers with no configured credential are omitted from the map rather than failing the request, so one unconfigured tool degrades only itself.",
           content: {
             "application/json": { schema: resolver(ToolCredentialsResponse) },
           },
@@ -99,10 +100,6 @@ export function createToolCredentialsRouter(
         },
         404: {
           description: "Unknown agent",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
-        422: {
-          description: "No credential configured for a requested provider",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         500: {
@@ -163,10 +160,20 @@ export function createToolCredentialsRouter(
           );
         }
         if (!resolved) {
-          return c.json(
-            { error: `No credential configured for provider: ${providerName}` },
-            422,
+          // Degrade per-provider: a provider with no configured credential is
+          // omitted from the response rather than failing the whole batch. The
+          // sidecar already skips factories whose credential is absent, so one
+          // unconfigured tool degrades only itself instead of poisoning every
+          // tool the agent has (CL-2603).
+          log.warn(
+            "No credential configured for requested provider; skipping",
+            {
+              tenantId: parsed.tenantId,
+              agentId: parsed.agentId,
+              providerName,
+            },
           );
+          continue;
         }
         const providerRow = await db.query.provider.findFirst({
           where: (p, { eq: eqp }) => eqp(p.id, resolved.providerId),

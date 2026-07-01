@@ -1,4 +1,11 @@
-import { createBrowserRouter, Navigate, Outlet } from "react-router";
+import { useState } from "react";
+import {
+  createBrowserRouter,
+  Navigate,
+  Outlet,
+  useLocation,
+} from "react-router";
+import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
@@ -6,6 +13,7 @@ import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
 import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
+import { ActiveContextProvider } from "./lib/active-context-store";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
 import { ChatsListPage } from "./pages/ChatsListPage";
@@ -18,6 +26,7 @@ import { SkillsNew } from "./pages/SkillsNew";
 import { SkillDetail } from "./pages/SkillDetail";
 import { ToolsLibrary } from "./pages/ToolsLibrary";
 import { ToolDetail } from "./pages/ToolDetail";
+import { SettingsToolDetail } from "./pages/SettingsToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
 
 // Static navigation commands for the command palette, kept beside the route
@@ -77,27 +86,60 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
 
 function ProtectedLayout() {
   const { session } = useAuth();
+  const location = useLocation();
 
   if (session.status === "unauthenticated")
-    return <Navigate to="/login" replace />;
+    return (
+      <Navigate to={{ pathname: "/login", search: location.search }} replace />
+    );
   if (session.status === "loading") return null;
   return <Outlet />;
 }
 
 function AppShell() {
+  // Drawer state only drives the mobile layout; at desktop widths the sidebar
+  // is a static column and ignores `mobileOpen` (see AppSidebar's max-md: rules).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   return (
     <ActiveWorkbenchProvider>
       <ChatLauncherProvider>
         <CommandPaletteProvider>
-          <div className="flex h-screen flex-row bg-page">
-            <AppSidebar />
-            <div className="flex flex-1 flex-col overflow-hidden">
-              <main className="flex-1 overflow-hidden">
-                <Outlet />
-              </main>
-              <PersonalAgentChat />
+          <ActiveContextProvider>
+            <div className="flex h-dvh flex-row overflow-hidden bg-page">
+              <AppSidebar
+                mobileOpen={drawerOpen}
+                onNavigate={() => setDrawerOpen(false)}
+              />
+              {drawerOpen && (
+                <button
+                  type="button"
+                  aria-label="Close menu"
+                  onClick={() => setDrawerOpen(false)}
+                  className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                />
+              )}
+              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setDrawerOpen(true)}
+                    aria-label="Open menu"
+                    className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
+                  >
+                    <Menu size={20} />
+                  </button>
+                  <span className="text-sm font-semibold text-text">
+                    Workbench
+                  </span>
+                </header>
+                <main className="flex-1 overflow-hidden">
+                  <Outlet />
+                </main>
+                <PersonalAgentChat />
+              </div>
             </div>
-          </div>
+          </ActiveContextProvider>
         </CommandPaletteProvider>
       </ChatLauncherProvider>
     </ActiveWorkbenchProvider>
@@ -131,6 +173,7 @@ export const router = createBrowserRouter([
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/settings", element: <Settings /> },
+          { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
           { path: "/skills/:id", element: <SkillDetail /> },

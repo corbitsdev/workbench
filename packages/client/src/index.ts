@@ -5,25 +5,29 @@
 // `@workbench/shared` domain types and contain no presentation logic.
 
 import { type } from "arktype";
-import { Artifact } from "@workbench/shared";
-import type {
-  ArtifactStatus,
-  ArtifactWithSession,
-  WorkflowSummary,
-} from "@workbench/shared";
+import { Artifact, SessionStatusSchema } from "@workbench/shared";
+import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
 
-/** Configuration for a client call. All fields are optional. */
-export interface ClientOptions {
+/**
+ * Serializable subset of {@link ClientOptions}. `fetch` and `init` carry
+ * non-serializable members (a function, an `AbortSignal`) and cannot be
+ * expressed in arktype, so they are intersected as a plain type below.
+ */
+export const ClientOptionsSchema = type({
   /**
    * Origin of the hub, e.g. `https://hub.example.com`. When omitted, requests
    * are made relative to the current origin (same-origin deployment).
    */
-  baseUrl?: string;
+  "baseUrl?": "string",
+});
+
+/** Configuration for a client call. All fields are optional. */
+export type ClientOptions = typeof ClientOptionsSchema.infer & {
   /** Custom fetch implementation (e.g. for tests or non-browser runtimes). */
   fetch?: typeof fetch;
   /** Forwarded to the underlying request (headers, signal, credentials, ...). */
   init?: RequestInit;
-}
+};
 
 const API_PREFIX = "api/v1";
 
@@ -64,9 +68,10 @@ const MembersResponseSchema = type({ members: TenantMemberSchema.array() });
 
 export type TenantMember = typeof TenantMemberSchema.infer;
 
-export interface ListMembersParams {
-  tenantId?: string | null;
-}
+export const ListMembersParamsSchema = type({
+  "tenantId?": "string | null",
+});
+export type ListMembersParams = typeof ListMembersParamsSchema.infer;
 
 /** Fetch user principals for a tenant (`GET /members`). */
 export async function listMembers(
@@ -84,47 +89,78 @@ export async function listMembers(
   return parsed.members;
 }
 
-export interface ListWorkflowsParams {
-  tenantId?: string | null;
-}
+export const ListWorkflowsParamsSchema = type({
+  "tenantId?": "string | null",
+});
+export type ListWorkflowsParams = typeof ListWorkflowsParamsSchema.infer;
 
-export interface ListArtifactsParams {
-  tenantId?: string | null;
-  query?: string;
-  sort?: "newest" | "oldest";
-  kind?: string;
-  status?: ArtifactStatus;
-  ownerPrincipalId?: string;
+export const ListArtifactsParamsSchema = type({
+  "tenantId?": "string | null",
+  "query?": "string",
+  "sort?": "'newest' | 'oldest'",
+  "kind?": "string",
+  "status?": "'draft' | 'approved' | 'rejected'",
+  "ownerPrincipalId?": "string",
   /** Date-only `yyyy-mm-dd` or ISO timestamp; only artifacts created at/after this are returned. */
-  createdAfter?: string;
+  "createdAfter?": "string",
   /** Date-only `yyyy-mm-dd` upper bound (inclusive end-of-day) or ISO timestamp. */
-  createdBefore?: string;
-  cursor?: string;
-  limit?: number;
-}
+  "createdBefore?": "string",
+  "cursor?": "string",
+  "limit?": "number",
+});
+export type ListArtifactsParams = typeof ListArtifactsParamsSchema.infer;
 
-export interface ArtifactsPage {
-  artifacts: ArtifactWithSession[];
-  nextCursor: string | null;
-}
+/**
+ * `ArtifactWithSession` is a derived plain type in `@workbench/shared`; this
+ * composes its exported `Artifact` schema with the session-enrichment fields
+ * so the `GET /artifacts` page can be parsed at the boundary. The conformance
+ * assertion below fails the build if this schema drifts from the shared type.
+ */
+export const ArtifactWithSessionSchema = Artifact.and({
+  sessionName: "string | null",
+  sessionStatus: SessionStatusSchema.or("null"),
+  ownerName: "string | null",
+});
 
-export interface CreateArtifactParams {
-  tenantId?: string | null;
+type AssertExtends<A extends B, B> = A;
+// Compile-time guard: the parsed page rows must remain assignable to the
+// shared `ArtifactWithSession`, so a schema drift fails the build.
+export type ArtifactWithSessionParsed = AssertExtends<
+  typeof ArtifactWithSessionSchema.infer,
+  ArtifactWithSession
+>;
+
+export const ArtifactsPageSchema = type({
+  artifacts: ArtifactWithSessionSchema.array(),
+  nextCursor: "string | null",
+});
+export type ArtifactsPage = typeof ArtifactsPageSchema.infer;
+
+export const CreateArtifactParamsSchema = type({
+  "tenantId?": "string | null",
   /** `url` links an external page (content is the URL); `text` stores a pasted body. */
-  mode: "url" | "text";
-  title: string;
-  content: string;
-  kind?: string;
-  generatedBy?: string;
-}
+  mode: "'url' | 'text'",
+  title: "string",
+  content: "string",
+  "kind?": "string",
+  "generatedBy?": "string",
+});
+export type CreateArtifactParams = typeof CreateArtifactParamsSchema.infer;
 
-export interface UploadArtifactsParams {
-  tenantId?: string | null;
+/**
+ * Serializable subset of {@link UploadArtifactsParams}. `files` is a
+ * `File[]` (non-serializable blobs) and cannot be expressed in arktype, so it
+ * is intersected as a plain type below.
+ */
+export const UploadArtifactsParamsSchema = type({
+  "tenantId?": "string | null",
+  /** Optional attribution label stamped on every created artifact. */
+  "generatedBy?": "string",
+});
+export type UploadArtifactsParams = typeof UploadArtifactsParamsSchema.infer & {
   /** Files to import; one artifact is created per file. */
   files: File[];
-  /** Optional attribution label stamped on every created artifact. */
-  generatedBy?: string;
-}
+};
 
 const WorkflowRunRowSchema = type({
   deploymentId: "string",
@@ -162,51 +198,49 @@ export async function listWorkflows(
   }));
 }
 
-export type SkillItem = {
-  id: string;
-  name: string;
-  displayName: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export interface ListSkillsParams {
-  tenantId?: string | null;
-}
-
-export interface CreateSkillParams {
-  tenantId?: string | null;
-  name: string;
-  description?: string | null;
-  text: string;
-}
-
-export interface UpdateSkillParams {
-  tenantId?: string | null;
-  assetId: string;
-  description?: string | null;
-  text: string;
-}
-
-export interface AttachSkillParams {
-  tenantId?: string | null;
-  agentId: string;
-  assetId: string;
-}
-
-export interface DetachSkillParams {
-  tenantId?: string | null;
-  agentId: string;
-  assetId: string;
-}
-
-const SkillItemSchema = type({
+export const SkillItemSchema = type({
   id: "string",
   name: "string",
   displayName: "string | null",
   createdAt: "string",
   updatedAt: "string",
 });
+export type SkillItem = typeof SkillItemSchema.infer;
+
+export const ListSkillsParamsSchema = type({
+  "tenantId?": "string | null",
+});
+export type ListSkillsParams = typeof ListSkillsParamsSchema.infer;
+
+export const CreateSkillParamsSchema = type({
+  "tenantId?": "string | null",
+  name: "string",
+  "description?": "string | null",
+  text: "string",
+});
+export type CreateSkillParams = typeof CreateSkillParamsSchema.infer;
+
+export const UpdateSkillParamsSchema = type({
+  "tenantId?": "string | null",
+  assetId: "string",
+  "description?": "string | null",
+  text: "string",
+});
+export type UpdateSkillParams = typeof UpdateSkillParamsSchema.infer;
+
+export const AttachSkillParamsSchema = type({
+  "tenantId?": "string | null",
+  agentId: "string",
+  assetId: "string",
+});
+export type AttachSkillParams = typeof AttachSkillParamsSchema.infer;
+
+export const DetachSkillParamsSchema = type({
+  "tenantId?": "string | null",
+  agentId: "string",
+  assetId: "string",
+});
+export type DetachSkillParams = typeof DetachSkillParamsSchema.infer;
 
 const SkillsResponseSchema = type({ skills: SkillItemSchema.array() });
 const SkillResponseSchema = type({ skill: SkillItemSchema });
@@ -316,7 +350,7 @@ export async function detachSkill(
  * Fetch the current user's artifacts across all their jobs, each enriched
  * with the originating job (`GET /artifacts`).
  */
-export function listArtifacts(
+export async function listArtifacts(
   options: ClientOptions = {},
   params: ListArtifactsParams = {},
 ): Promise<ArtifactsPage> {
@@ -333,7 +367,12 @@ export function listArtifacts(
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : "";
-  return request<ArtifactsPage>(`artifacts${search}`, options);
+  const raw = await request<unknown>(`artifacts${search}`, options);
+  const parsed = ArtifactsPageSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /artifacts response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 const CreateArtifactResponseSchema = type({ artifact: Artifact });

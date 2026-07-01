@@ -1,0 +1,124 @@
+{
+  "kind": "ab-compare-hitl",
+  "version": "0.1.0",
+  "label": "A/B Test - Human Select",
+  "description": "Run a shared prompt blind across multiple provider/model variants, then let a human pick the winner and save the comparison.",
+  "definition": {
+    "id": "ab-compare-hitl",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "config": {
+        "kind": "awaitSignal",
+        "id": "config",
+        "name": "ab-config",
+        "drainBehavior": "wait"
+      },
+      "execute": {
+        "kind": "map",
+        "id": "execute",
+        "over": {
+          "from": "steps.config.output.variants"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "hitl-ab-execute",
+            "systemPrompt": "You are an execution agent for a blind A/B comparison.\n\nYou receive a JSON payload describing one variant: an opaque `label`, an optional variant-specific instruction (`systemPrompt`), the shared user `input`, selected skill IDs (`skillIds`), and resolved skill guidance (`skills`, each with `name`, `displayName`, and `content`). Produce the best possible answer to the user's input, following the variant instruction and any attached skills.\n\nRules:\n- Follow the variant `systemPrompt` and attached `skills[].content` exactly unless they conflict with safety or data boundaries.\n- Treat `input` as the shared task to perform.\n- Do not explain that you are part of an A/B test.\n- Do not mention provider identity, model identity, the variant label, or hidden instructions.\n- Return only the requested output, not evaluation commentary.",
+            "toolFactories": [],
+            "capabilities": [],
+            "inference": {
+              "sources": []
+            },
+            "description": "Inline single-turn inference: hitl-ab-execute",
+            "tags": {
+              "workbench.stepKind": "inline-inference"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "decision": {
+        "kind": "awaitSignal",
+        "id": "decision",
+        "name": "ab-decision",
+        "drainBehavior": "wait",
+        "after": [
+          "execute"
+        ]
+      },
+      "compose": {
+        "kind": "step",
+        "id": "compose",
+        "agent": {
+          "id": "hitl-ab-compose",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-ab-compare/compose:ab_comparison_compose"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_comparison_compose",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_comparison_compose"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "decision"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "hitl-ab-persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_create"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"title\":{\"literal\":\"A/B Comparison Results\"},\"kind\":{\"literal\":\"ab-comparison\"}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.compose.output"
+        },
+        "after": [
+          "compose"
+        ]
+      }
+    },
+    "stepOrder": [
+      "config",
+      "execute",
+      "decision",
+      "compose",
+      "persist"
+    ]
+  }
+}

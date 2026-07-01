@@ -92,6 +92,26 @@ describe("seed-credentials buildEntries", () => {
     expect(entries.find((e) => e.providerName === "attio")).toBeUndefined();
   });
 
+  it("includes vercel entry with REST baseURL when VERCEL_API_KEY is set", () => {
+    process.env["VERCEL_API_KEY"] = "vercel_test123";
+
+    const entries = buildEntries();
+
+    const vercel = entries.find((e) => e.providerName === "vercel");
+    expect(vercel).toBeDefined();
+    expect(vercel?.secret).toBe("vercel_test123");
+    expect(vercel?.providerPlugin).toBe("vercel");
+    expect(vercel?.metadata?.["baseURL"]).toBe("https://api.vercel.com");
+  });
+
+  it("omits vercel entry when VERCEL_API_KEY is not set", () => {
+    delete process.env["VERCEL_API_KEY"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "vercel")).toBeUndefined();
+  });
+
   it("includes anthropic provider metadata when ANTHROPIC_API_KEY is set", () => {
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-test123";
 

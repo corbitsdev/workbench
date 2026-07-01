@@ -71,7 +71,7 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
   });
 
-  it("includes the read-only Granola, Linear, and Attio tools (prefixed)", () => {
+  it("includes the read-only Granola, Linear, Attio, and Vercel tools (prefixed)", () => {
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
       "@workbench/tools-granola/granola:granola_list_notes",
     );
@@ -80,6 +80,9 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
       "@workbench/tools-attio/attio:attio_query_records",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-vercel/vercel:vercel_list_projects",
     );
   });
 

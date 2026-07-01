@@ -1,16 +1,20 @@
 import {
+  Button,
   CATALOG_GLYPH_FILLS,
   CATALOG_GLYPH_KINDS,
   CatalogGlyph,
   catalogCardClassName,
   DataTable,
   hashString,
+  LibraryPageHeader,
+  LibrarySearchInput,
   PagePanel,
   toHumanLabel,
   useViewMode,
   ViewToggle,
   type DataTableColumn,
 } from "@workbench/ui";
+import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -138,40 +142,24 @@ export function SkillsLibrary() {
 
   return (
     <PagePanel>
-      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
-          Skills
-        </h1>
-        <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-          {filteredLibrary.length} items
-        </span>
-        <div className="flex-1" />
-        <input
-          type="search"
-          aria-label="Search skills"
+      <LibraryPageHeader title="Skills" count={filteredLibrary.length}>
+        <LibrarySearchInput
+          label="Search skills"
           placeholder="Search skills"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+          onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
-        <button
+        <Button
           type="button"
+          variant="library"
+          size="library"
           onClick={() => navigate("/skills/new")}
-          className="flex items-center gap-[7px] rounded-[9px] border border-border bg-transparent px-[13px] py-[7px] text-[12.5px] font-semibold text-text transition-colors hover:bg-surface"
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="h-3.5 w-3.5 text-orange"
-          >
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <Plus size={14} className="text-orange" />
           Add skill
-        </button>
-      </div>
+        </Button>
+      </LibraryPageHeader>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {skillsQuery.isLoading && (

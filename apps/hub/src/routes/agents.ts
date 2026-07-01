@@ -17,6 +17,7 @@ import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import {
   describeLaunchError,
+  launchFailureLogMessage,
   isAgentAlreadyExistsError,
   launchAgentSession,
   type LaunchErrorDescription,
@@ -509,12 +510,18 @@ export function createAgentProvisioningRouter(
           // Log the real Error object (not a pre-stringified message) so the
           // Sentry sink routes it through captureException with stack + cause,
           // and surface the SessionLaunchError phase + cause detail.
-          log.error("Failed to launch agent session", {
-            instanceId,
-            phase: launchFailure.phase,
-            detail: launchFailure.detail,
-            error: err instanceof Error ? err : new Error(String(err)),
-          });
+          log.error(
+            launchFailureLogMessage(
+              "Failed to launch agent session",
+              launchFailure,
+            ),
+            {
+              instanceId,
+              phase: launchFailure.phase,
+              detail: launchFailure.detail,
+              error: err instanceof Error ? err : new Error(String(err)),
+            },
+          );
         }
       }
 
@@ -787,7 +794,10 @@ export function createAgentProvisioningRouter(
           // already-exists carve-out adopts the live agent. (CL-2367)
           if (failure.leakedAgent) {
             log.error(
-              "Agent instance created but session launch failed AND the sidecar leaked the agent; keeping rows and marking instance error",
+              launchFailureLogMessage(
+                "Agent instance created but session launch failed AND the sidecar leaked the agent; keeping rows",
+                failure,
+              ),
               {
                 instanceId,
                 phase: failure.phase,
@@ -814,7 +824,10 @@ export function createAgentProvisioningRouter(
           // Log the real Error at error level so the Sentry sink reports it via
           // captureException with stack + cause (not a stringified captureMessage).
           log.error(
-            "Agent instance created but session launch failed; tearing down instance",
+            launchFailureLogMessage(
+              "Agent instance created but session launch failed; tearing down instance",
+              failure,
+            ),
             {
               instanceId,
               phase: failure.phase,

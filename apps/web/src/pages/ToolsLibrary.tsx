@@ -4,6 +4,8 @@ import {
   catalogCardClassName,
   DataTable,
   hashString,
+  LibraryPageHeader,
+  LibrarySearchInput,
   PagePanel,
   toHumanLabel,
   useViewMode,
@@ -186,19 +188,12 @@ export function ToolsLibrary() {
 
   return (
     <PagePanel>
-      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-        <h1 className="text-[21px] font-bold tracking-[-0.02em] text-text">
-          Tools
-        </h1>
-        <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-          {filtered.length} items
-        </span>
-        <div className="flex-1" />
+      <LibraryPageHeader title="Tools" count={filtered.length}>
         <select
           aria-label="Filter by provider"
           value={provider}
           onChange={(e) => setProvider(e.target.value)}
-          className="h-[34px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
+          className="h-[34px] rounded-input border border-border bg-transparent px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none"
         >
           <option value={ALL_PROVIDERS}>All providers</option>
           {providerOptions.map((opt) => (
@@ -207,16 +202,14 @@ export function ToolsLibrary() {
             </option>
           ))}
         </select>
-        <input
-          type="search"
-          aria-label="Search tools"
+        <LibrarySearchInput
+          label="Search tools"
           placeholder="Search tools"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="h-[34px] w-[180px] rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border-strong focus:outline-none"
+          onChange={setQuery}
         />
         <ViewToggle mode={viewMode} onChange={setViewMode} />
-      </div>
+      </LibraryPageHeader>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
         {toolsQuery.isLoading && (

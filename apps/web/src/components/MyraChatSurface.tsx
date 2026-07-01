@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minimize2 } from "lucide-react";
@@ -14,7 +14,16 @@ import {
 } from "@workbench/agents/browser";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import type { ToolCall } from "@workbench/chat";
+import {
+  activeContextToRef,
+  projectActiveContext,
+  type ActiveContext,
+  type ActiveContextRef,
+} from "@workbench/shared";
 import type { MyraSession } from "../hooks/use-myra-session";
+import { useActiveContext } from "../lib/active-context-store";
+import { useAttachShortcut } from "../hooks/use-attach-shortcut";
+import { ActiveContextPills } from "./ActiveContextPills";
 
 /**
  * Near-full-screen overlay wrapping the whole chat panel while expanded so the
@@ -126,6 +135,27 @@ export function MyraChatSurface({
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
+  const activeContext = useActiveContext();
+  const [attached, setAttached] = useState<ActiveContext[]>([]);
+
+  const attachCurrent = useCallback((): boolean => {
+    if (!activeContext) return false;
+    setAttached((prev) =>
+      prev.some(
+        (c) => c.kind === activeContext.kind && c.id === activeContext.id,
+      )
+        ? prev
+        : [...prev, activeContext],
+    );
+    return true;
+  }, [activeContext]);
+  useAttachShortcut(attachCurrent);
+
+  const removeAttached = (ref: ActiveContextRef) =>
+    setAttached((prev) =>
+      prev.filter((c) => !(c.kind === ref.kind && c.id === ref.id)),
+    );
+
   const chrome = {
     agent,
     dockState,
@@ -201,11 +231,29 @@ export function MyraChatSurface({
     );
   }
 
+  // Attachments are projected to a compact lead-in and composed inline into the
+  // message. Inline (not a first-class Interchange attachment) because Myra's
+  // DeepSeek/openai-compatible harness does not ingest document attachment
+  // ContentBlocks (CL-2495 spike). Cleared once the send is dispatched.
   const handleSend = (text: string) => {
     onUserSend?.(text);
-    session.send(text);
+    if (attached.length === 0) {
+      session.send(text);
+      return;
+    }
+    const leadIns = attached.map((c) => projectActiveContext(c).leadIn);
+    session.send(`${leadIns.join("\n\n")}\n\n${text}`);
+    setAttached([]);
   };
   const handleRespond = (response: UIResponse) => session.send(response.value);
+
+  const inputAccessory =
+    attached.length > 0 ? (
+      <ActiveContextPills
+        attached={attached.map(activeContextToRef)}
+        onRemove={removeAttached}
+      />
+    ) : null;
 
   return (
     <ChatPanel
@@ -213,6 +261,7 @@ export function MyraChatSurface({
       messages={session.messages}
       onSend={handleSend}
       onRespond={handleRespond}
+      inputAccessory={inputAccessory}
       activity={session.activity}
       onRate={session.onRate}
       getRating={session.getRating}

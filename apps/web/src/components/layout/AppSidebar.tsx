@@ -10,6 +10,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
+import { cn } from "@workbench/ui";
 import { useAuth } from "../AuthProvider";
 import {
   useCreateMyraThread,
@@ -28,7 +29,19 @@ const NAV_ITEMS = [
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 
-export function AppSidebar() {
+interface AppSidebarProps {
+  /** Whether the mobile drawer is open. Ignored at desktop widths, where the
+   * sidebar is always a static column. */
+  mobileOpen?: boolean;
+  /** Called when a navigation action is taken, so the host can close the
+   * mobile drawer. No-op on desktop. */
+  onNavigate?: () => void;
+}
+
+export function AppSidebar({
+  mobileOpen = false,
+  onNavigate,
+}: AppSidebarProps) {
   const { session, signOut } = useAuth();
   const navigate = useNavigate();
   const createThread = useCreateMyraThread();
@@ -53,15 +66,26 @@ export function AppSidebar() {
       onSuccess: (thread) => {
         writeLastActiveThreadId(thread.id);
         navigate(`/chats/${thread.id}`);
+        onNavigate?.();
       },
     });
   };
 
   return (
-    <aside className="flex h-full w-[240px] shrink-0 flex-col border-r border-border bg-surface">
+    <aside
+      className={cn(
+        "flex h-full w-[240px] shrink-0 flex-col border-r border-border bg-surface",
+        // Mobile: take the rail out of flow and slide it in as a drawer. The
+        // desktop layout (a static flex column) is untouched above the md
+        // breakpoint, so the open/closed state only matters on small screens.
+        "max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:shadow-xl max-md:transition-transform max-md:duration-200 max-md:ease-out",
+        mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full",
+      )}
+    >
       <div className="flex items-center gap-2 px-4 py-4">
         <Link
           to="/"
+          onClick={onNavigate}
           className="group grid h-[34px] w-[34px] place-items-center"
           aria-label="Home"
         >
@@ -105,6 +129,7 @@ export function AppSidebar() {
             key={to}
             to={to}
             end={end}
+            onClick={onNavigate}
             className={({ isActive }) => navItemClass(isActive)}
           >
             <Icon size={17} />
@@ -141,6 +166,7 @@ export function AppSidebar() {
             to="/settings"
             title="Settings"
             aria-label="Settings"
+            onClick={onNavigate}
             className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
           >
             <Settings size={17} />

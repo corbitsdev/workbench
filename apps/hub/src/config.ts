@@ -20,10 +20,24 @@ function parseOrigins(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseBooleanEnv(name: string): boolean {
+  const value = process.env[name];
+  return value === "true" || value === "1";
+}
+
+function originOf(url: string): string {
+  return new URL(url.endsWith("/") ? url : `${url}/`).origin;
+}
+
 export function loadConfig() {
   const isDev = process.env["NODE_ENV"] !== "production";
 
   const corsOrigins = parseOrigins(optionalEnv("SUPPORTED_CORS_ORIGINS"));
+  const authBaseUrl = requireEnv("BETTER_AUTH_BASE_URL");
+  const authOrigin = originOf(authBaseUrl);
+  const authServedFromWebApp = corsOrigins.some(
+    (origin) => originOf(origin) === authOrigin,
+  );
 
   if (!isDev && corsOrigins.length === 0) {
     throw new Error(
@@ -51,7 +65,10 @@ export function loadConfig() {
     sidecarToken: requireEnv("SIDECAR_TOKEN"),
     auth: {
       secret: requireEnv("BETTER_AUTH_SECRET"),
-      baseUrl: requireEnv("BETTER_AUTH_BASE_URL"),
+      baseUrl: authBaseUrl,
+      servedFromWebApp: authServedFromWebApp,
+      useCrossSiteCookies:
+        !isDev && corsOrigins.length > 0 && !authServedFromWebApp,
     },
     cors: {
       origins: corsOrigins,
@@ -94,6 +111,10 @@ export function loadConfig() {
     // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
     // Absent in local dev — null is the correct value there.
     buildSha: optionalEnv("RAILWAY_GIT_COMMIT_SHA") ?? null,
+    // When true, the hub publishes its embedded (build-serialized) workflow
+    // definitions to the global tenant on boot (CL-2593). Default false — an
+    // opt-in kill switch; off restores the manual `deploy-workflow` flow.
+    workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
   };
 
   log.info("Configuration loaded", {
@@ -101,7 +122,15 @@ export function loadConfig() {
     port: config.port,
     corsOrigins: config.cors.origins,
     googleAuthEnabled: Boolean(config.google.clientId),
+    authServedFromWebApp: config.auth.servedFromWebApp,
   });
+
+  if (!isDev && config.google.clientId && config.auth.useCrossSiteCookies) {
+    log.warn(
+      "BETTER_AUTH_BASE_URL does not match SUPPORTED_CORS_ORIGINS — OAuth state cookies are cross-site and often fail on mobile Safari. Set BETTER_AUTH_BASE_URL to your public web URL, proxy /api on the web service (HUB_URL), and leave VITE_API_BASE_URL unset at web build time.",
+      { authOrigin, corsOrigins: config.cors.origins },
+    );
+  }
 
   _config = config;
   return config;

@@ -1,13 +1,19 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "react-router";
 import { LoginView } from "../components/auth/LoginView";
+import { authClient, oauthErrorMessage } from "../lib/auth-client";
 import {
   type EmailPasswordCredentials,
   type OAuthProviderId,
 } from "../components/auth/types";
-import { authClient } from "../lib/auth-client";
 
 export function LoginPage() {
-  const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const callbackError = useMemo(
+    () => oauthErrorMessage(searchParams.get("error")),
+    [searchParams],
+  );
+  const [error, setError] = useState<string | null>(callbackError);
   const [loading, setLoading] = useState(false);
 
   const handleOAuth = async (provider: OAuthProviderId) => {

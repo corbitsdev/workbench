@@ -26,6 +26,20 @@ describe("buttonVariants", () => {
   it("selects the large size classes", () => {
     expect(buttonVariants({ size: "lg" })).toContain("text-lg");
   });
+
+  it("exposes a compact neutral library-action variant", () => {
+    const classes = buttonVariants({ variant: "library" });
+    expect(classes).toContain("border-border");
+    expect(classes).toContain("bg-transparent");
+  });
+
+  it("includes press feedback and a keyboard focus ring on every variant", () => {
+    expect(buttonVariants({})).toContain("active:scale-[0.97]");
+    expect(buttonVariants({})).toContain("focus-visible:ring-2");
+    expect(buttonVariants({ variant: "library" })).toContain(
+      "active:scale-[0.97]",
+    );
+  });
 });
 
 describe("Button", () => {

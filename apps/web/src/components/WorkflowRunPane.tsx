@@ -2,9 +2,11 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
+import { toHumanLabel } from "@workbench/ui";
 import { RunConsole } from "./RunConsole";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { loadWorkflowUI } from "../lib/workflow-ui";
+import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   isRecordTerminal,
   runStateFromRecord,
@@ -97,6 +99,38 @@ function WorkflowRunPaneInner({
   const state = useMemo(
     () => (record ? runStateFromRecord(record) : null),
     [record],
+  );
+
+  // Stringifying every step output is only worth doing when the record actually
+  // changes, not on every unrelated re-render (the record polls every 2s while
+  // running). The projector truncates downstream.
+  const workflowSteps = useMemo(
+    () =>
+      record
+        ? Object.entries(record.outputs).map(([name, output]) => ({
+            name,
+            status: name === record.currentStepId ? "current" : "done",
+            output:
+              typeof output === "string" ? output : JSON.stringify(output),
+          }))
+        : [],
+    [record],
+  );
+
+  usePublishActiveContext(
+    record
+      ? {
+          kind: "workflow-run",
+          id: runId,
+          label: toHumanLabel(record.kind),
+          runKind: record.kind,
+          status: record.status,
+          steps: workflowSteps,
+        }
+      : null,
+    record
+      ? `${record.status}:${record.currentStepId ?? ""}:${workflowSteps.length}`
+      : undefined,
   );
 
   const Panel = uiModule?.Panel;

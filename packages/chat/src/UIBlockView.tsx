@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Streamdown } from "streamdown";
-import { cn } from "@workbench/ui";
+import { cn, Markdown } from "@workbench/ui";
 import type { UIBlock, UIResponse } from "./ui-block";
 
 /**
@@ -104,11 +103,7 @@ function MarkdownBlock({
           )}
         </button>
       )}
-      {open && (
-        <div className="chat-md px-3 pb-3 text-sm text-text">
-          <Streamdown mode="static">{block.source}</Streamdown>
-        </div>
-      )}
+      {open && <Markdown className="px-3 pb-3">{block.source}</Markdown>}
     </Surface>
   );
 }
@@ -168,9 +163,9 @@ function DocumentBlock({
       </button>
       {open && (
         <div className="border-t border-border">
-          <div className="chat-md max-h-96 overflow-auto px-4 py-3 text-sm text-text">
-            <Streamdown mode="static">{block.source}</Streamdown>
-          </div>
+          <Markdown className="max-h-96 overflow-auto px-4 py-3">
+            {block.source}
+          </Markdown>
           {actionList.length > 0 && (
             <div className="flex gap-2 border-t border-border px-3 py-2">
               {actionList.map((action) => (

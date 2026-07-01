@@ -41,6 +41,9 @@ const {
   assessPersonalAgentSync,
 } = await import("./grant-reconcile");
 
+const { resetRelaunchBreaker, runDedupedRelaunch, setRelaunchBreakerClock } =
+  await import("./relaunch-breaker");
+
 const CANONICAL_TOOL = "@workbench/tools-granola/granola:granola_list_notes";
 
 function makeGrantRule(resource: string, action: string): GrantRule {
@@ -407,5 +410,51 @@ describe("personalAgentUpdateAvailable", () => {
   it("assessPersonalAgentSync returns a reason when sync is needed", async () => {
     const assessment = await assessPersonalAgentSync({} as never, null);
     expect(assessment).toEqual({ available: true, reason: "no_myra_instance" });
+  });
+});
+
+describe("assessPersonalAgentSync — relaunch cooldown", () => {
+  beforeEach(() => {
+    resetRelaunchBreaker();
+  });
+
+  it("settles available:false during the post-failure cooldown so the client stops re-firing", async () => {
+    // An instance that would otherwise be reported as needing sync (the row is
+    // absent → 'no_myra_instance', available:true). Arm the breaker for it and
+    // the assessment must flip to available:false to close the poll loop.
+    setRelaunchBreakerClock(() => 1_000_000);
+    await runDedupedRelaunch("ins-cooldown", () =>
+      Promise.reject(new Error("launch boom")),
+    ).catch(() => {});
+
+    const db = {
+      query: {
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+    } as unknown as Parameters<typeof assessPersonalAgentSync>[0];
+
+    const assessment = await assessPersonalAgentSync(db, "ins-cooldown");
+    expect(assessment.available).toBe(false);
+    expect(assessment.reason).toBe("recent_launch_failure");
+  });
+
+  it("does not suppress sync once the cooldown has elapsed", async () => {
+    let nowMs = 2_000_000;
+    setRelaunchBreakerClock(() => nowMs);
+    await runDedupedRelaunch("ins-elapsed", () =>
+      Promise.reject(new Error("launch boom")),
+    ).catch(() => {});
+    nowMs += 30_000;
+
+    const db = {
+      query: {
+        agentInstance: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+    } as unknown as Parameters<typeof assessPersonalAgentSync>[0];
+    const assessment = await assessPersonalAgentSync(db, "ins-elapsed");
+    // Cooldown elapsed → assessment falls through to its normal verdict
+    // (instance row absent → needs sync).
+    expect(assessment.available).toBe(true);
+    expect(assessment.reason).toBe("no_myra_instance");
   });
 });

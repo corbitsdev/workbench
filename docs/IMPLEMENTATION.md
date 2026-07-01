@@ -189,7 +189,7 @@ Workflows run on Interchange's native runtime; the hub deploys definitions and o
 
 #### Workflow definition packages
 
-Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with per-step `defineAgent` and `awaitSignal` HITL gates). Shipped kinds: `collateral-generation`, `presentation-generation`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` _type_ from `@intx/workflow`. Adding a kind is a new package + a `deploy-workflow.ts` push.
+Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with per-step `defineAgent` and `awaitSignal` HITL gates). Shipped kinds: `collateral-generation`, `gamma-presentation-creator`, `resource-enrichment`, `seo-enrichment`, `reddit-opportunity-scanner`, `blind-ab-comparison`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` _type_ from `@intx/workflow`. Adding a kind is a new package + a `deploy-workflow.ts` push.
 
 #### Web run console
 

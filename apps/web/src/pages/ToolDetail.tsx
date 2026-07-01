@@ -70,6 +70,7 @@ export function ToolDetail() {
   const params = useMemo(() => paramsFromSchema(schema), [schema]);
   const notFound =
     toolQuery.error instanceof ApiError && toolQuery.error.status === 404;
+  const isGamma = toolQuery.data?.providerName === "gamma";
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
@@ -122,6 +123,20 @@ export function ToolDetail() {
               <p className="mt-2 text-pretty text-[13.5px] leading-relaxed text-text-2">
                 {toolQuery.data.description || "No description provided."}
               </p>
+
+              {isGamma && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      `/settings/tools/${encodeURIComponent(toolQuery.data.name)}`,
+                    )
+                  }
+                  className="mt-4 inline-flex items-center justify-center rounded-lg border border-border bg-surface-2 px-3 py-1.5 text-sm font-medium text-text transition-[background-color] hover:bg-surface"
+                >
+                  Manage templates
+                </button>
+              )}
 
               <h2 className="mt-7 text-[13px] font-semibold uppercase tracking-wide text-text-3">
                 Parameters

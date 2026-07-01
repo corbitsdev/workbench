@@ -17,17 +17,17 @@ import { recoverParkedRunFromLog } from "../src/workflow-resume";
 // the sidecar via `multistepSubstrateEnv` (the child gets a fresh env); an
 // absent DSN leaves the child console-only. The warn-category prefixes match
 // the sidecar process so warning-level workflow-host failures are captured too.
-// WORKBENCH-LOCAL (CL-2503): the child's stdout (fd 1) IS the supervisor
-// control-channel IPC (newline-delimited signed JSON). ANY byte written to
-// stdout corrupts that stream and crashes the channel ("received non-JSON
-// line" / "envelope failed validation"). The @intx/log console sink — and any
-// stray console.* or library banner — writes to stdout, so a single
-// warning-level log mid-run wedged the run. Redirect every console method to
-// stderr (fd 2) BEFORE installing logging, leaving fd 1 exclusively for the
-// control channel; the IPC FrameWriter uses process.stdout.write directly and
-// is unaffected. Railway captures stderr, so logs are preserved. `dev: false`
-// keeps that (now stderr) output as JSON since NODE_ENV is absent from the
-// child's filtered substrate env.
+// WORKBENCH-LOCAL (CL-2503 + CL-2585): historically the child's stdout (fd 1)
+// WAS the supervisor control channel, so any stray byte on stdout (an @intx/log
+// console sink line, a library banner) corrupted the NDJSON stream and crashed
+// the run ("received non-JSON line" / "envelope failed validation"). CL-2585
+// moved the control channel onto dedicated inherited fds (4 down / 5 up — see
+// workflow-host-wiring.ts), so stdin/stdout/stderr are now free for ordinary
+// logs. This console->stderr redirect is therefore no longer REQUIRED for
+// correctness, but is kept as defense-in-depth: it guarantees no stray console.*
+// or banner can reach a control fd even if the fd convention were to regress.
+// Railway captures stderr, so logs are preserved; `dev: false` keeps the output
+// JSON since NODE_ENV is absent from the child's filtered substrate env.
 const logToStderr = (...args: unknown[]): void => {
   process.stderr.write(
     args.map((a) => (typeof a === "string" ? a : String(a))).join(" ") + "\n",

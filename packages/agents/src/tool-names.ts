@@ -80,6 +80,11 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "linear_list_teams",
     "linear_list_users",
   ],
+  "@workbench/tools-vercel/vercel": [
+    "vercel_list_projects",
+    "vercel_list_deployments",
+    "vercel_deploy_static_file",
+  ],
   "@workbench/tools-last30days/core": [
     "last30days_core_extract",
     "last30days_core_report",
@@ -128,6 +133,7 @@ const PACKAGE_PROVIDERS: Record<string, string> = {
   "@workbench/tools-firecrawl": "firecrawl",
   "@workbench/tools-gamma": "gamma",
   "@workbench/tools-linear": "linear",
+  "@workbench/tools-vercel": "vercel",
   "@workbench/tools-github": "github",
   "@workbench/tools-granola": "granola",
   "@workbench/tools-reddit": "scrapecreators",

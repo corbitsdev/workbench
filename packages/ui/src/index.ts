@@ -22,6 +22,7 @@ export {
   type ComparisonViewProps,
 } from "./comparison";
 export { PagePanel } from "./PagePanel";
+export { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
 export {
   CatalogGlyph,
   CATALOG_GLYPH_KINDS,
@@ -51,6 +52,7 @@ export {
   SidebarMenuButton,
 } from "./sidebar";
 export { cn, toHumanLabel } from "./utils";
+export { inputFieldClass } from "./input-field";
 export {
   useTheme,
   isTheme,

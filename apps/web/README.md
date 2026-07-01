@@ -9,4 +9,4 @@ bun run dev   # from repo root, or:
 bun run --filter @workbench/web dev
 ```
 
-Requires `VITE_API_BASE_URL` in `.env`.
+Local dev proxies `/api` to the hub (see `vite.config.ts`); leave `VITE_API_BASE_URL` unset unless you intentionally test cross-origin API calls.

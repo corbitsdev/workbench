@@ -25,6 +25,7 @@ import {
   buildToolGrantRows,
   TOOL_GRANT_RESOURCE_PREFIX,
 } from "../lib/tool-grants";
+import { runDedupedRelaunch } from "./relaunch-breaker";
 
 const log = getLogger(["api", "agents"]);
 
@@ -460,6 +461,9 @@ export async function relaunchInstanceIfNeeded(
     where: eq(agent.id, instance.agentId),
   });
   if (!agentRow?.systemPrompt) return;
+  // Capture the narrowed value: property narrowing is lost inside the deferred
+  // relaunch closure below, which would widen this back to `string | null`.
+  const systemPrompt = agentRow.systemPrompt;
 
   // Guard: do not attempt launch if the agent's model requirements cannot
   // resolve against the tenant catalog. Without this, every POST /v1/me sync for
@@ -474,15 +478,27 @@ export async function relaunchInstanceIfNeeded(
   );
   if (!guardResolution.ok) return;
 
+  // Coalesce concurrent POST /v1/me relaunches onto one launch and back off
+  // after a failing launch, so a wedged launch is not re-attempted every poll
+  // (CL-2407). The breaker re-throws the launch cause; we still translate the
+  // benign "agent already exists" race into a no-op here.
   try {
-    await launchAgentSession(db, sessionService, grantStore, eventCollectors, {
-      agentId: instance.agentId,
-      instanceId: instance.id,
-      instancePrincipalId: instance.principalId,
-      tenantId: instance.tenantId,
-      tenantDomain: tenantRow.domain,
-      systemPrompt: agentRow.systemPrompt,
-      now: new Date(),
+    await runDedupedRelaunch(instance.id, async () => {
+      await launchAgentSession(
+        db,
+        sessionService,
+        grantStore,
+        eventCollectors,
+        {
+          agentId: instance.agentId,
+          instanceId: instance.id,
+          instancePrincipalId: instance.principalId,
+          tenantId: instance.tenantId,
+          tenantDomain: tenantRow.domain,
+          systemPrompt,
+          now: new Date(),
+        },
+      );
     });
   } catch (err) {
     // Agent already running on the sidecar — nothing to do.
@@ -523,6 +539,15 @@ export function describeLaunchError(err: unknown): LaunchErrorDescription {
     return { phase: null, detail: err.message, leakedAgent: false };
   }
   return { phase: null, detail: String(err), leakedAgent: false };
+}
+
+/** One-line message for ops logs (Railway often hides structured fields). */
+export function launchFailureLogMessage(
+  prefix: string,
+  failure: LaunchErrorDescription,
+): string {
+  const phase = failure.phase ?? "unknown";
+  return `${prefix} phase=${phase}: ${failure.detail}`;
 }
 
 /**

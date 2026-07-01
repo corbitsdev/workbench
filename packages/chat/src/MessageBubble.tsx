@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { Streamdown } from "streamdown";
-import { cn } from "@workbench/ui";
+import { cn, Markdown } from "@workbench/ui";
 import { type ChatMessage, type ChatImage } from "./types";
 import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import {
@@ -42,7 +41,7 @@ export interface MessageBubbleProps {
  * agent messages render as plain full-width prose on the panel background (no
  * card), and system messages align left on a neutral surface.
  *
- * Agent and system messages are rendered as Markdown via Streamdown. When an
+ * Agent and system messages are rendered through the shared <Markdown>. When an
  * agent reply embeds a fenced ```ui block (the agent reformatting tool output
  * into generative UI), that block is lifted out and rendered through the
  * UIBlockView registry, with the surrounding prose still rendered as Markdown.
@@ -102,11 +101,7 @@ export function MessageBubble({
     if (extracted !== null) {
       return (
         <div className="flex flex-col gap-2">
-          {extracted.text !== "" && (
-            <div className="chat-md">
-              <Streamdown mode="static">{extracted.text}</Streamdown>
-            </div>
-          )}
+          {extracted.text !== "" && <Markdown>{extracted.text}</Markdown>}
           <UIBlockView
             block={extracted.block}
             {...(onRespond !== undefined ? { onRespond } : {})}
@@ -116,11 +111,9 @@ export function MessageBubble({
       );
     }
     return (
-      <div className="chat-md">
-        <Streamdown mode={isStreaming ? "streaming" : "static"}>
-          {message.content}
-        </Streamdown>
-      </div>
+      <Markdown mode={isStreaming ? "streaming" : "static"}>
+        {message.content}
+      </Markdown>
     );
   }
 

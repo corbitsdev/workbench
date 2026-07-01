@@ -144,6 +144,15 @@ export async function patchMePreferences(
   return hubFetch<MemberPreferences>("PATCH", "v1/me/preferences", patch);
 }
 
+/** Persist the caller's display name; returns the saved value as `userName`. */
+export async function patchMeProfile(
+  displayName: string,
+): Promise<{ userName: string }> {
+  return hubFetch<{ userName: string }>("PATCH", "v1/me/profile", {
+    displayName,
+  });
+}
+
 /** Read-only status; runs postMe when the hub signals an update is available. */
 export async function ensureMeSynced(): Promise<MeResponse> {
   const me = await getMe();

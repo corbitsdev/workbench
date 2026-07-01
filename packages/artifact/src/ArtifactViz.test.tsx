@@ -85,6 +85,14 @@ describe("artifact-visuals", () => {
     });
   });
 
+  it("uses the web visual for single-file HTML artifacts", () => {
+    expect(visualForKind("web")).toMatchObject({
+      label: "Web",
+      viz: "deck",
+      fill: "bg-blue",
+    });
+  });
+
   it("yields an empty time string for an unparseable updatedAt", () => {
     const gallery = toGalleryArtifact({
       ...baseArtifact,

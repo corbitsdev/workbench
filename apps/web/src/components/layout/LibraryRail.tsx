@@ -455,7 +455,7 @@ export function LibraryRail({
   });
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
+    <aside className="flex h-full flex-col overflow-hidden border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))] max-md:hidden">
       {/* Workbench switcher — hidden when user has no workbenches */}
       {workbenches.length > 0 && (
         <div className="border-b border-border px-[18px] pb-[12px] pt-[16px]">

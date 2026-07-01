@@ -51,12 +51,12 @@ afterEach(() => {
   cleanup();
 });
 
-function renderSidebar(path = "/") {
+function renderSidebar(path = "/", props: Record<string, unknown> = {}) {
   render(
     React.createElement(
       MemoryRouter,
       { initialEntries: [path] },
-      React.createElement(AppSidebar),
+      React.createElement(AppSidebar, props),
     ),
   );
 }
@@ -91,6 +91,27 @@ describe("AppSidebar", () => {
     const newChat = screen.getByRole("button", { name: /new chat/i });
     expect((newChat as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText("First chat").textContent).toBe("First chat");
+  });
+
+  it("hides the mobile drawer off-canvas when closed", () => {
+    renderSidebar("/", { mobileOpen: false });
+    const aside = screen.getByRole("complementary");
+    expect(aside.className).toContain("max-md:-translate-x-full");
+    expect(aside.className).not.toContain("max-md:translate-x-0");
+  });
+
+  it("slides the mobile drawer into view when open", () => {
+    renderSidebar("/", { mobileOpen: true });
+    const aside = screen.getByRole("complementary");
+    expect(aside.className).toContain("max-md:translate-x-0");
+    expect(aside.className).not.toContain("max-md:-translate-x-full");
+  });
+
+  it("calls onNavigate when a nav item is selected so the drawer can close", () => {
+    let closed = 0;
+    renderSidebar("/", { onNavigate: () => (closed += 1) });
+    (screen.getByRole("link", { name: /workflows/i }) as HTMLElement).click();
+    expect(closed).toBe(1);
   });
 
   it("omits the environment badge when no environment is configured", () => {

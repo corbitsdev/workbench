@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { type Report, parseReport } from "@workbench/last30days-core";
-import { MarkdownBlock } from "./Markdown";
+import { Markdown } from "@workbench/ui";
 
 // The brief contract is owned by @workbench/last30days-core; the web validates
 // the persisted artifact payload at the boundary via the package's parse helper
@@ -321,9 +321,7 @@ export default function ResearchBody({ brief, body }: ResearchBodyProps) {
         <ReportActions markdown={report} brief={brief} />
       </div>
 
-      <div className="max-w-[68ch]">
-        <MarkdownBlock text={report} />
-      </div>
+      <Markdown className="max-w-[68ch]">{report}</Markdown>
 
       <details className="group border-t border-border pt-4">
         <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-text-2 hover:text-text [&::-webkit-details-marker]:hidden">

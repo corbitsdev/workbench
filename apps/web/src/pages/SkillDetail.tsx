@@ -282,7 +282,7 @@ export function SkillDetail() {
       {detailQuery.data && (
         <div className="flex flex-1 overflow-hidden">
           {files.length > 1 && tree.length > 0 && (
-            <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface py-2">
+            <div className="w-56 shrink-0 overflow-y-auto border-r border-border bg-surface py-2 max-md:w-40">
               {tree.map((node) => (
                 <TreeItem
                   key={node.kind === "file" ? node.path : node.name}
@@ -295,7 +295,7 @@ export function SkillDetail() {
             </div>
           )}
 
-          <div className="flex-1 space-y-5 overflow-y-auto p-5">
+          <div className="min-w-0 flex-1 space-y-5 overflow-y-auto p-5">
             {selectedFile ? (
               <div className="rounded-[10px] border border-border bg-surface">
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">

@@ -39,7 +39,7 @@ On Railway: add a volume to each service via the service's Volumes tab.
 1. Go to [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
 2. Create an OAuth 2.0 Client ID (Web application)
 3. Add your production web URL to "Authorized JavaScript origins"
-4. Add `<HUB_URL>/api/auth/callback/google` to "Authorized redirect URIs"
+4. Add `https://<web domain>/api/auth/callback/google` to "Authorized redirect URIs" (the **web** URL that proxies `/api` to the hub — not the bare hub hostname unless web and hub share one origin)
 5. Copy the Client ID and Client Secret
 
 ---
@@ -53,7 +53,7 @@ Set all of these on the hub service:
 ```
 DATABASE_URL=<postgres connection string>
 BETTER_AUTH_SECRET=<output of: openssl rand -hex 32>
-BETTER_AUTH_BASE_URL=https://<hub domain>
+BETTER_AUTH_BASE_URL=https://<web domain>
 GOOGLE_CLIENT_ID=<google oauth client id>
 GOOGLE_CLIENT_SECRET=<google oauth client secret>
 GOOGLE_ALLOWED_DOMAINS=<comma-separated domains, e.g. yourcompany.com>
@@ -86,7 +86,15 @@ SIDECAR_DATA_DIR=/data
 ### Web
 
 ```
-VITE_API_BASE_URL=https://<hub domain>
+HUB_URL=https://<hub domain>
+```
+
+Build-time (Docker `ARG` / Railway build variable) — leave **unset** or empty so the SPA calls same-origin `/api` (proxied by Caddy to `HUB_URL`). Do **not** set `VITE_API_BASE_URL` to the hub domain in production; that forces cross-site auth cookies and breaks Google sign-in on mobile Safari.
+
+Optional branding:
+
+```
+VITE_APP_ENV=production
 ```
 
 > **Live updates on Safari/Brave when web and hub are cross-site.** Live chat
@@ -98,6 +106,43 @@ VITE_API_BASE_URL=https://<hub domain>
 > serve them as subdomains of one root (e.g. `app.example.com` +
 > `api.example.com`) with the auth cookie scoped to the shared parent. This is
 > only a concern in cross-site deployments; same-site setups need no change.
+
+### Vercel (web) + Railway (hub)
+
+This is the supported split layout. The browser must call **same-origin** `/api` on your Vercel URL; Vercel rewrites proxy those requests to Railway. Do **not** point the built SPA at the hub with `VITE_API_BASE_URL` — that breaks Google sign-in on mobile Safari (`state_mismatch`).
+
+**Vercel** (Project → Settings → Environment Variables):
+
+| Variable            | Value                                                   |
+| ------------------- | ------------------------------------------------------- |
+| `HUB_UPSTREAM_URL`  | `https://<your-hub>.up.railway.app` (no trailing slash) |
+| `VITE_API_BASE_URL` | **Delete** or leave empty for Production/Preview        |
+
+The Vercel **install** step generates root `middleware.ts`, which proxies `/api` and `/sidecar` to `HUB_UPSTREAM_URL` at runtime (rewrites written to `vercel.json` during install are not sufficient on their own).
+
+Set `HUB_UPSTREAM_URL` for **Production and Preview** in Vercel. Without it, `/api/auth/callback/google` returns **404** on the Vercel host.
+
+**405 on `POST /api/auth/sign-in/social`:** Vercel is serving the SPA for `/api` (static hosting rejects POST). Fix is in **root `vercel.json`** (`/api/:path*` → Railway hub). Redeploy after that file is on your branch.
+
+Vercel often has **no separate “Rewrites” screen** in Settings (rules come from `vercel.json`). Some teams see **Settings → Redirects** (rewrites may appear there on older UI). You do **not** need the dashboard if `vercel.json` is correct.
+
+**Project → Settings → General → Root Directory** must be **empty** (repo root). If it is `apps/web`, Vercel ignores root `vercel.json` — either clear Root Directory or copy the same `rewrites` into `apps/web/vercel.json`.
+
+**Railway hub**:
+
+| Variable                 | Value                                     |
+| ------------------------ | ----------------------------------------- |
+| `BETTER_AUTH_BASE_URL`   | `https://<your-vercel-production-domain>` |
+| `SUPPORTED_CORS_ORIGINS` | same as `BETTER_AUTH_BASE_URL`            |
+
+**Google Cloud Console** (OAuth client):
+
+- JavaScript origins: `https://<your-vercel-production-domain>`
+- Redirect URI: `https://<your-vercel-production-domain>/api/auth/callback/google`
+
+Redeploy the hub after env changes, then trigger a **new Vercel production build** (so rewrites are applied and the bundle has no embedded hub URL).
+
+Forks: replace the Railway host in root `vercel.json` `/api` + `/sidecar` rewrites, or rely on `HUB_UPSTREAM_URL` during install (overwrites `vercel.json` rewrites when set).
 
 ---
 
@@ -458,7 +503,10 @@ The agent's credential requirement name (`Myra LLM`) does not match any tenant-o
 The agent instance needs to be relaunched. This happens automatically on the next `/v1/me` call. If it persists, check hub logs for `launchError` — typically a missing or misconfigured credential.
 
 **Google OAuth redirect mismatch**
-The redirect URI in Google Cloud Console must match `BETTER_AUTH_BASE_URL` exactly, including protocol and trailing path. Update it in the Google Cloud Console OAuth client settings.
+The redirect URI in Google Cloud Console must be `https://<web domain>/api/auth/callback/google`, matching `BETTER_AUTH_BASE_URL` (your public web origin, not the internal hub hostname).
+
+**Google sign-in works on desktop but fails on mobile (`state_mismatch`)**
+The web app is calling the hub API cross-site (`VITE_API_BASE_URL` pointed at the hub). Mobile browsers block the OAuth state cookie. Fix: set hub `BETTER_AUTH_BASE_URL` and `SUPPORTED_CORS_ORIGINS` to the **web** URL, set web runtime `HUB_URL` to the hub, rebuild web **without** `VITE_API_BASE_URL`, and update the Google OAuth redirect URI to the web callback URL above.
 
 **Sidecar loses agent state after redeploy**
 The persistent volume at `SIDECAR_DATA_DIR` was not mounted or was wiped. Recreate it and redeploy. Agents will re-register; existing DB rows are preserved. If the hub also lost `HUB_DATA_DIR`, the trust relationship must be re-established — delete and re-create the sidecar token.

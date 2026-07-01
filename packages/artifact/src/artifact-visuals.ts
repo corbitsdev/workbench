@@ -116,6 +116,14 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-cream",
     experimentalSpan: "row-span-4",
   },
+  web: {
+    label: "Web",
+    viz: "deck",
+    fill: "bg-blue",
+    span: "row-span-4",
+    experimentalFill: "bg-blue/85",
+    experimentalSpan: "row-span-4",
+  },
   // Both the workflow's persisted `research` kind and a generic `report` kind
   // share one tile treatment.
   research: REPORT_VISUAL,

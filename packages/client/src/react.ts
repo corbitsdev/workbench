@@ -29,6 +29,10 @@ import {
 
 export type { TenantMember };
 
+// The Use*Params shapes below are internal, already-trusted hook inputs
+// (props-like) — never parsed from an untrusted boundary. Per the repo arktype
+// policy they stay plain; the serialized request shapes they feed live as
+// exported arktype schemas in ./index.
 export interface UseTenantMembersParams {
   tenantId?: string | null;
 }

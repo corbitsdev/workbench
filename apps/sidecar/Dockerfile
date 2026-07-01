@@ -44,6 +44,7 @@ COPY packages/tools-exa/package.json packages/tools-exa/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
+COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
 COPY packages/tools-github/package.json packages/tools-github/

@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
-import { Button, PagePanel, cn } from "@workbench/ui";
+import {
+  Button,
+  LibraryPageHeader,
+  LibrarySearchInput,
+  PagePanel,
+  cn,
+} from "@workbench/ui";
 import { Plus } from "lucide-react";
 import { formatRelativeTime } from "../lib/relative-time";
 import {
@@ -78,7 +84,7 @@ function NewChatButton({
       variant="primary"
       onClick={onClick}
       disabled={pending}
-      className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px] active:scale-[0.97]"
+      className="flex items-center gap-[7px] px-[14px] py-[7px] text-[12.5px]"
     >
       <Plus size={16} />
       {pending ? "Creating…" : "New chat"}
@@ -164,11 +170,7 @@ export function ChatsListPage() {
 
   return (
     <PagePanel>
-      <div className="flex items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7">
-        <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-text">
-          Chats
-        </h1>
-        <div className="flex-1" />
+      <LibraryPageHeader title="Chats" titleSize="sm">
         {hasThreads && (
           <>
             {(newChatError || updateError) && (
@@ -176,18 +178,17 @@ export function ChatsListPage() {
                 {newChatError ?? updateError}
               </span>
             )}
-            <input
-              type="search"
-              aria-label="Search chats"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
+            <LibrarySearchInput
+              label="Search chats"
               placeholder="Search chats"
-              className="h-[32px] w-[180px] rounded-[8px] border border-transparent bg-transparent px-[10px] text-[12.5px] text-text placeholder:text-text-3 focus:border-border focus:bg-surface focus:outline-none"
+              value={query}
+              onChange={setQuery}
+              variant="ghost"
             />
             <NewChatButton onClick={newChat} pending={createThread.isPending} />
           </>
         )}
-      </div>
+      </LibraryPageHeader>
 
       <div className="flex-1 pb-10">
         {isLoading && (
