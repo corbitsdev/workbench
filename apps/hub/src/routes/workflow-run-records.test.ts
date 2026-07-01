@@ -423,6 +423,92 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(ensureCalls[0]?.creatorPrincipalId).toBe("prn-deployer");
   });
 
+  async function parkedAttioRun(a: AppHono): Promise<string> {
+    const start = await post(a, "/workflow-exec/attio-task-agent/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    const parked = runs.get(runId);
+    if (parked)
+      runs.set(runId, {
+        ...parked,
+        status: "awaiting",
+        currentStepId: "selectKinds",
+      });
+    return runId;
+  }
+
+  test("resume rejects an attio kind-selection payload missing a kind with 400 and sends no signal", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "kind-selection",
+      payload: { generate: { "cold-email": true } },
+    });
+
+    expect(r.status).toBe(400);
+    expect(r.json.error).toMatch(/invalid resume payload/);
+    expect(sentSignals).toHaveLength(0);
+  });
+
+  test("resume rejects an attio sync-approval payload with a non-boolean confirm", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "sync-approval",
+      payload: { confirm: "yes" },
+    });
+
+    expect(r.status).toBe(400);
+    expect(sentSignals).toHaveLength(0);
+  });
+
+  test("resume passes through a valid attio kind-selection payload", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+    const generate: Record<string, boolean> = {};
+    for (const kind of [
+      "cold-email",
+      "follow-up-email",
+      "twitter-post",
+      "linkedin-post",
+      "research-brief",
+      "task-explanation",
+      "gamma-presentation",
+      "blog",
+      "single-page-website",
+    ])
+      generate[kind] = kind === "cold-email";
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "kind-selection",
+      payload: { generate },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("kind-selection");
+  });
+
+  test("resume does not validate an unregistered signal on a registered kind", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "task-selection",
+      payload: { anything: "goes" },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+  });
+
   test("resume on an unknown run is 404 and sends no signal", async () => {
     resetCaptures();
     const a = app();
