@@ -8,6 +8,10 @@ import {
   Plus,
   Files,
   Wrench,
+  Search,
+  FileText,
+  FlaskConical,
+  ChevronDown,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
 import { cn } from "@workbench/ui";
@@ -27,6 +31,24 @@ const NAV_ITEMS = [
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
   { to: "/tools", label: "Tools", icon: Wrench, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
+] as const;
+
+const DEMO_LINKS = [
+  {
+    label: "Deal Scout",
+    href: "https://deal-scout-abklabs.vercel.app/",
+    icon: Search,
+  },
+  {
+    label: "Notion Spike",
+    href: "https://app-notion-spike.up.railway.app/",
+    icon: FileText,
+  },
+  {
+    label: "Workbench (staging)",
+    href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
+    icon: FlaskConical,
+  },
 ] as const;
 
 interface AppSidebarProps {
@@ -137,6 +159,31 @@ export function AppSidebar({
           </NavLink>
         ))}
       </nav>
+
+      <details open className="group/demos mt-3 px-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1 px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-3 hover:text-text-2 [&::-webkit-details-marker]:hidden">
+          <ChevronDown
+            size={12}
+            className="shrink-0 -rotate-90 transition-transform duration-150 group-open/demos:rotate-0"
+          />
+          Demos
+        </summary>
+        <div className="flex flex-col gap-0.5">
+          {DEMO_LINKS.map(({ label, href, icon: Icon }) => (
+            <a
+              key={href}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onNavigate}
+              className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-text-2 transition-colors duration-150 hover:bg-page hover:text-text"
+            >
+              <Icon size={17} className="shrink-0" />
+              <span className="flex-1 truncate">{label}</span>
+            </a>
+          ))}
+        </div>
+      </details>
 
       <div className="mt-4 min-h-0 flex-1 overflow-auto px-3">
         <div className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wide text-text-3">
