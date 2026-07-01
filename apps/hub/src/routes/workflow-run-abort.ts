@@ -5,7 +5,7 @@ import { describeRoute, resolver } from "hono-openapi";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { workflowRunRecord } from "../db/schema";
-import { createRunStore, loadRunRecord } from "../workflow-executor/run-store";
+import { loadRunRecord, markRunStopped } from "../workflow-executor/run-store";
 import type { RunState } from "../workflow-executor/executor";
 
 const log = getLogger(["api", "workflow-run-abort"]);
@@ -40,8 +40,7 @@ export interface WorkflowRunAbortDeps {
 // and let the boot-reconciler reclaim the dir. If a per-run cancel is added
 // upstream, call it here (address = deriveDeploymentAddress, like /resume).
 async function markRunAborted(db: HubDb, state: RunState): Promise<void> {
-  const runStore = createRunStore(db);
-  await runStore.save({ ...state, status: "failed", error: ABORTED_ERROR });
+  await markRunStopped(db, state, ABORTED_ERROR);
 }
 
 // DELETE /workflow-exec/records/:runId — abort one run. Operator-gated upstream

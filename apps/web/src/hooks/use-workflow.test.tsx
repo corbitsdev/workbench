@@ -8,6 +8,7 @@ import { createElement } from "react";
 import {
   isRecordTerminal,
   runListIsActive,
+  useArchiveWorkflowRun,
   useResumeWorkflow,
   useStartWorkflow,
   useWorkflowRecord,
@@ -290,6 +291,54 @@ describe("useResumeWorkflow", () => {
       "tn-x",
     ]) as { status: string };
     expect(cached.status).toBe("awaiting");
+  });
+});
+
+describe("useArchiveWorkflowRun", () => {
+  it("POSTs to the archive endpoint and invalidates the run list", async () => {
+    let requested = "";
+    let method = "";
+    globalThis.fetch = ((
+      url: Parameters<typeof fetch>[0],
+      init?: RequestInit,
+    ) => {
+      requested = String(url);
+      method = init?.method ?? "GET";
+      return Promise.resolve(jsonResponse(200, { archived: true }));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    let invalidatedKey: readonly unknown[] | undefined;
+    client.invalidateQueries = ((filters?: {
+      queryKey?: readonly unknown[];
+    }) => {
+      invalidatedKey = filters?.queryKey;
+      return Promise.resolve();
+    }) as typeof client.invalidateQueries;
+
+    const { result } = renderHook(() => useArchiveWorkflowRun("tn-x"), {
+      wrapper: recordWrapper(client),
+    });
+    await result.current.mutateAsync("wfr_1");
+
+    expect(method).toBe("POST");
+    expect(requested).toContain("/workflow-exec/records/wfr_1/archive");
+    expect(requested).toContain("tenantId=tn-x");
+    expect(invalidatedKey).toEqual(["workflow-runs"]);
+  });
+
+  it("rejects when the archive request fails", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(
+        jsonResponse(403, { error: "Forbidden" }),
+      )) as typeof fetch;
+
+    const { result } = renderHook(() => useArchiveWorkflowRun(), {
+      wrapper: wrapper(),
+    });
+    await expect(result.current.mutateAsync("wfr_1")).rejects.toThrow();
   });
 });
 

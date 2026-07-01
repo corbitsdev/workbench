@@ -56,6 +56,15 @@ mock.module("../workflow-executor/run-store", () => ({
     const found = runs.get(runId);
     return found ? structuredClone(found) : null;
   },
+  softDeleteRunRecord: async (_db: unknown, runId: string) => {
+    runs.delete(runId);
+  },
+  markRunStopped: async (_db: unknown, state: RunState, error: string) => {
+    runs.set(
+      state.runId,
+      structuredClone({ ...state, status: "failed", error }),
+    );
+  },
   listRunRecords: async (
     _db: unknown,
     _tenantIds: readonly string[],
@@ -97,6 +106,8 @@ const provisionCalls: {
 }[] = [];
 let sendShouldThrow = false;
 let provisionShouldThrow = false;
+const reclaimCalls: { deploymentId: string; tenantId: string }[] = [];
+let reclaimShouldThrow = false;
 
 function resetCaptures(): void {
   runs.clear();
@@ -104,9 +115,23 @@ function resetCaptures(): void {
   sentSignals.length = 0;
   ensureCalls.length = 0;
   provisionCalls.length = 0;
+  reclaimCalls.length = 0;
   sendShouldThrow = false;
   provisionShouldThrow = false;
+  reclaimShouldThrow = false;
 }
+
+const reclaimDeployment = async (args: {
+  deploymentId: string;
+  tenantId: string;
+  reason: string;
+}) => {
+  if (reclaimShouldThrow) throw new Error("teardown failed");
+  reclaimCalls.push({
+    deploymentId: args.deploymentId,
+    tenantId: args.tenantId,
+  });
+};
 
 const sessionService = {
   sendUserMessage: async (args: {
@@ -210,6 +235,7 @@ function routerWith(opts: {
       deploymentDomain: "wf.localhost",
       ensureDeploymentRoutable,
       provisionRunDeployment,
+      reclaimDeployment,
       resolveContext: async () => ({
         context: opts.context ?? { tenantId: "tn-1", principalId: "prn-1" },
         forbidden: false,
@@ -610,5 +636,127 @@ describe("workflow runs on the sidecar (records router)", () => {
     } finally {
       ancestorChain = ["tn-1"];
     }
+  });
+});
+
+// biome-ignore lint/suspicious/noExplicitAny: test response shape
+async function archive(
+  a: AppHono,
+  runId: string,
+): Promise<{ status: number; error?: string }> {
+  const res = await a.request(`/workflow-exec/records/${runId}/archive`, {
+    method: "POST",
+  });
+  if (res.status === 200) return { status: 200 };
+  const json = (await res.json()) as { error?: string };
+  const out: { status: number; error?: string } = { status: res.status };
+  if (json.error !== undefined) out.error = json.error;
+  return out;
+}
+
+describe("archive workflow run (CL-2629)", () => {
+  test("archiving an ACTIVE run tears its per-run deployment down and drops it from the list", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+
+    const r = await archive(a, runId);
+    expect(r.status).toBe(200);
+    // The run's OWN per-run deployment (ses_run_1) is reclaimed immediately,
+    // in the run's tenant — no waiting for the boot-reconciler.
+    expect(reclaimCalls).toEqual([
+      { deploymentId: "ses_run_1", tenantId: "tn-1" },
+    ]);
+    // Soft-deleted: it no longer appears in the caller's run list.
+    const list = await get(a, "/workflow-exec/records");
+    expect(list.json.map((x: { runId: string }) => x.runId)).not.toContain(
+      runId,
+    );
+  });
+
+  test("archiving an AWAITING (HITL-parked) run tears its deployment down too — awaiting is non-terminal", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    // Park the run at a gate, as the projection bridge would.
+    const parked = runs.get(runId);
+    if (parked)
+      runs.set(runId, {
+        ...parked,
+        status: "awaiting",
+        currentStepId: "select",
+      });
+
+    const r = await archive(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toEqual([
+      { deploymentId: "ses_run_1", tenantId: "tn-1" },
+    ]);
+    const list = await get(a, "/workflow-exec/records");
+    expect(list.json).toHaveLength(0);
+  });
+
+  test("archiving a TERMINAL run soft-deletes only — no teardown (already reclaimed on terminal transition)", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+    const done = runs.get(runId);
+    if (done) runs.set(runId, { ...done, status: "completed" });
+
+    const r = await archive(a, runId);
+    expect(r.status).toBe(200);
+    expect(reclaimCalls).toHaveLength(0);
+    const list = await get(a, "/workflow-exec/records");
+    expect(list.json).toHaveLength(0);
+  });
+
+  test("archiving a run you do not own is forbidden 403 — no teardown, run untouched", async () => {
+    resetCaptures();
+    const owner = app();
+    const start = await post(
+      owner,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    const runId = start.json.runId;
+    const intruder = appAs({ tenantId: "tn-1", principalId: "prn-other" });
+
+    const r = await archive(intruder, runId);
+    expect(r.status).toBe(403);
+    expect(reclaimCalls).toHaveLength(0);
+    const list = await get(owner, "/workflow-exec/records");
+    expect(list.json.map((x: { runId: string }) => x.runId)).toContain(runId);
+  });
+
+  test("archiving an unknown run is 404 and tears nothing down", async () => {
+    resetCaptures();
+    const a = app();
+    const r = await archive(a, "wfr_missing");
+    expect(r.status).toBe(404);
+    expect(reclaimCalls).toHaveLength(0);
+  });
+
+  test("a teardown failure still soft-deletes the run (best-effort teardown)", async () => {
+    resetCaptures();
+    reclaimShouldThrow = true;
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+
+    const r = await archive(a, runId);
+    expect(r.status).toBe(200);
+    const list = await get(a, "/workflow-exec/records");
+    expect(list.json).toHaveLength(0);
   });
 });

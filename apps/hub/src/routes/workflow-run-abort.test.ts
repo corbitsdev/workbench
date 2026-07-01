@@ -20,10 +20,16 @@ const save = mock(async (state: RunState) => {
   saved.push({ runId: state.runId, status: state.status, error: state.error });
 });
 const createRunStore = mock(() => ({ save }));
+const markRunStopped = mock(
+  async (_db: unknown, state: RunState, error: string) => {
+    await save({ ...state, status: "failed", error });
+  },
+);
 
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord,
   createRunStore,
+  markRunStopped,
 }));
 
 const ensureMember = mock(async () => ({

@@ -1104,6 +1104,7 @@ v1.route(
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,
+    reclaimDeployment,
   }),
 );
 

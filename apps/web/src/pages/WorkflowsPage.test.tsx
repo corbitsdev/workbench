@@ -22,6 +22,8 @@ let lastRunsTenantId: string | null | undefined;
 let activeTenantId: string | null = "ten-1";
 
 let lastStartKind: string | null = null;
+let lastArchivedRunId: string | null = null;
+let archiveShouldReject = false;
 mock.module("../hooks/use-workflow", () => ({
   useWorkflowRuns: (tenantId?: string | null) => {
     lastRunsTenantId = tenantId;
@@ -33,6 +35,17 @@ mock.module("../hooks/use-workflow", () => ({
     mutateAsync: (vars: { kind: string }) => {
       lastStartKind = vars.kind;
       return Promise.resolve({ runId: "run-started" });
+    },
+  }),
+  useArchiveWorkflowRun: () => ({
+    isPending: false,
+    isError: false,
+    variables: undefined,
+    mutateAsync: (runId: string) => {
+      lastArchivedRunId = runId;
+      return archiveShouldReject
+        ? Promise.reject(new Error("archive failed"))
+        : Promise.resolve(undefined);
     },
   }),
 }));
@@ -103,6 +116,8 @@ afterEach(() => {
   lastPaneTenantId = undefined;
   lastCatalogProps = null;
   lastStartKind = null;
+  lastArchivedRunId = null;
+  archiveShouldReject = false;
 });
 
 function renderWorkflowsPage(initialPath = "/workflows") {
@@ -239,7 +254,7 @@ describe("WorkflowsPage", () => {
     screen.getByText(/that run is no longer available/i);
   });
 
-  it("drops the URL back to /workflows when the currently-selected run is archived", () => {
+  it("drops the URL back to /workflows after the selected run is archived (two-tap confirm)", async () => {
     runsResult = {
       data: [
         {
@@ -257,11 +272,22 @@ describe("WorkflowsPage", () => {
     expect(router.state.location.pathname).toBe("/workflows/run-1");
 
     expandRail();
+    // First tap only arms the confirm — no archive, no navigation yet.
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
+    expect(lastArchivedRunId).toBeNull();
+    expect(router.state.location.pathname).toBe("/workflows/run-1");
+    // The explicit Confirm control commits.
+    fireEvent.click(
+      screen.getByLabelText(/confirm: stop and remove deck-build run/i),
+    );
+    expect(lastArchivedRunId).toBe("run-1");
+
+    // Navigation happens once the archive mutation resolves.
+    await Promise.resolve();
     expect(router.state.location.pathname).toBe("/workflows");
   });
 
-  it("archives a run (hidden by default) and reveals it via Show archived", () => {
+  it("a single tap arms an explicit Confirm/Cancel; only Confirm archives", () => {
     runsResult = {
       data: [
         {
@@ -269,12 +295,6 @@ describe("WorkflowsPage", () => {
           kind: "deck-build",
           status: "completed",
           createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "completed",
-          createdAt: "2026-01-02T00:00:00Z",
         },
       ],
       isLoading: false,
@@ -284,16 +304,40 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
     expandRail();
 
-    // Archive the deck-build run via its row action.
     fireEvent.click(screen.getByLabelText("Archive deck-build run"));
+    expect(lastArchivedRunId).toBeNull();
+    // Armed: the plain Archive control is replaced by an explicit Confirm + Cancel.
+    expect(screen.queryByLabelText("Archive deck-build run")).toBeNull();
+    screen.getByLabelText("Cancel archiving deck-build run");
 
-    // It is now hidden from the default rail list; the other run stays.
-    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
-    rail().getByText("Last30days", { selector: "span" });
+    fireEvent.click(
+      screen.getByLabelText(/confirm: stop and remove deck-build run/i),
+    );
+    expect(lastArchivedRunId).toBe("run-1");
+  });
 
-    // Reveal archived runs, then the archived run is shown again.
-    fireEvent.click(screen.getByText(/show 1 archived/i));
-    rail().getByText("Deck build", { selector: "span" });
+  it("Cancel disarms the confirm without archiving", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    expandRail();
+
+    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
+    fireEvent.click(screen.getByLabelText("Cancel archiving deck-build run"));
+    expect(lastArchivedRunId).toBeNull();
+    // Back to the resting Archive affordance.
+    screen.getByLabelText("Archive deck-build run");
   });
 
   it("filters the run list by status", () => {

@@ -280,9 +280,6 @@ export const MemberPreferences = type({
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": ToolSummaryStyleSchema,
   "experimentalArtifactCards?": "boolean",
-  // Run ids the member has archived (hidden by default) from the workflow-runs
-  // list. Persisted per-member so the choice follows them across devices.
-  "archivedWorkflowRuns?": "string[]",
   // The Attio workspace-member id/email this account maps to. Saved by the
   // Attio Task Agent workflow's member-selection gate so returning runs default
   // to "you" (and skip the picker) while staying switchable to another member.

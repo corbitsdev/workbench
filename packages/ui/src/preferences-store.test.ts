@@ -64,13 +64,6 @@ describe("hydrateServerPreferences", () => {
     hydrateServerPreferences({ compactToolActivity: "yes" });
     expect(getPreferenceRaw(PREFERENCE_KEYS.compactToolActivity)).toBeNull();
   });
-
-  it("stores the archived-runs list as a JSON array", () => {
-    hydrateServerPreferences({ archivedWorkflowRuns: ["run-1", "run-2"] });
-    expect(getPreferenceRaw(PREFERENCE_KEYS.archivedWorkflowRuns)).toBe(
-      JSON.stringify(["run-1", "run-2"]),
-    );
-  });
 });
 
 describe("per-key subscriptions", () => {
@@ -123,21 +116,6 @@ describe("serverPatchForRawChange", () => {
 
   it("returns null for an unmapped key", () => {
     expect(serverPatchForRawChange("cw-unknown", "x")).toBeNull();
-  });
-
-  it("decodes the archived-runs list to a string array", () => {
-    expect(
-      serverPatchForRawChange(
-        PREFERENCE_KEYS.archivedWorkflowRuns,
-        JSON.stringify(["run-1", "run-2"]),
-      ),
-    ).toEqual({ archivedWorkflowRuns: ["run-1", "run-2"] });
-  });
-
-  it("decodes a malformed archived-runs blob to an empty array", () => {
-    expect(
-      serverPatchForRawChange(PREFERENCE_KEYS.archivedWorkflowRuns, "not-json"),
-    ).toEqual({ archivedWorkflowRuns: [] });
   });
 
   it("maps a per-scope view-mode key to its server key", () => {

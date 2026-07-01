@@ -62,7 +62,6 @@ export {
 } from "./use-theme";
 export { useCompactToolActivity } from "./use-compact-tool-activity";
 export { useExperimentalArtifactCards } from "./use-experimental-artifact-cards";
-export { useArchivedWorkflowRuns } from "./use-archived-workflow-runs";
 export {
   useToolSummaryStyle,
   type ToolSummaryStyle,
