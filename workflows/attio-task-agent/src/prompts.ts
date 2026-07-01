@@ -11,7 +11,10 @@
 // `@workbench/shared` (attio-task-agent.ts); these prompts describe the same
 // shapes in prose for the model. Keep them in sync with that module.
 
-import { attioTaskArtifactKinds } from "@workbench/shared";
+import {
+  attioTaskArtifactKinds,
+  type AttioTaskArtifactKind,
+} from "@workbench/shared";
 
 const ARTIFACT_KIND_LIST = attioTaskArtifactKinds.join(", ");
 
@@ -45,24 +48,62 @@ export function buildAnalyzeSystemPrompt(): string {
   ].join("\n");
 }
 
-export function buildGenerateSystemPrompt(): string {
+// A dedicated, quality-geared instruction block per artifact kind — the analogue
+// of pain-point-collateral's per-format sections. `generate` maps one inference
+// per selected kind, so the model applies the block matching the input's `kind`.
+// Adding a kind is a new entry here plus the registry in @workbench/shared.
+export const ARTIFACT_KIND_GUIDANCE: Record<AttioTaskArtifactKind, string[]> = {
+  "cold-email": [
+    "Write a first-touch cold outreach email to the task's contact.",
+    "Subject + body. Open with a specific, researched reason for reaching out (not a generic hook). One clear ask. 90-130 words. Ready to send — no placeholders or [brackets]. Warm, direct, peer-to-peer; no hype.",
+  ],
+  "follow-up-email": [
+    "Write a follow-up email continuing a prior thread or meeting.",
+    "Reference the specific prior context. Add one new piece of value (an insight, resource, or next step). Short — under 100 words. Ready to send, no placeholders.",
+  ],
+  "twitter-post": [
+    "Write a single Twitter/X post inspired by the insight behind this task.",
+    "ANONYMIZED: no company names, personal names, logos, or identifying details. Under 280 characters. One sharp idea; no hashtag spam.",
+  ],
+  "linkedin-post": [
+    "Write a LinkedIn post inspired by the insight behind this task.",
+    "ANONYMIZED: no company names, personal names, or identifying details — frame it as a universal lesson. 120-200 words, skimmable line breaks, one takeaway, a light prompt for discussion. No emojis-as-bullets.",
+  ],
+  "research-brief": [
+    "Write a research brief on the company/person and the context of this task.",
+    "Skimmable: who they are, why now, relevant signals, and 2-3 angles for engagement. Ground every claim in the gathered context; cite sources inline where available. No speculation presented as fact.",
+  ],
+  "task-explanation": [
+    "Restate this task with full context so a teammate could pick it up cold.",
+    "Cover: what the task is, why it matters, the relevant record/history, and the recommended approach. Concise and concrete.",
+  ],
+  "gamma-presentation": [
+    "Write a deck outline suitable for Gamma generation.",
+    "Titled slides, each with 2-4 tight bullet points. Lead with the narrative arc (problem → insight → proposal → next step). 5-8 slides. Content only — no design directives.",
+  ],
+  blog: [
+    "Write a long-form blog post derived from the task and research.",
+    "Strong headline, a hook, 3-5 sections with subheads, and a closing takeaway. 600-900 words. Authoritative but readable; ground claims in the gathered context.",
+  ],
+  "single-page-website": [
+    "Write the copy and section structure for a single-page landing site.",
+    "Sections: hero (headline + subhead + CTA), problem, solution, proof, and a final CTA. Provide the copy for each section, labeled. Punchy, benefit-led.",
+  ],
+};
+
+// The FULL, dedicated system prompt for one artifact kind. Each kind routes to
+// its own generation step with only its own prompt — no cross-kind context — so
+// the instructions can be specifically geared for that artifact's quality.
+export function buildKindSystemPrompt(kind: AttioTaskArtifactKind): string {
   return [
-    "You are a business-development writer. Given an Attio task, its record context, the prior analysis decision, any human clarifications, and a single target artifact kind (the input's top-level `kind` field), produce exactly ONE artifact of that kind.",
+    "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.",
     "",
-    "Honor these rules by kind:",
-    "- Emails (cold-email, follow-up-email): ready to send, specific to the record; no placeholders.",
-    "- Social posts (twitter-post, linkedin-post): ANONYMIZED — no company names, personal names, or identifying details.",
-    "- research-brief: grounded, cited where possible, skimmable.",
-    "- task-explanation: restate the task with full context and rationale.",
-    "- gamma-presentation: a deck outline (titled slides with bullet content).",
-    "- blog: long-form post.",
-    "- single-page-website: copy + section structure for a landing page.",
+    ...ARTIFACT_KIND_GUIDANCE[kind],
     "",
     "Return ONLY a JSON object (no prose, no code fence):",
     "{",
-    '  "kind": string, "title": string, "content": string',
+    `  "kind": "${kind}", "title": string, "content": string`,
     "}",
-    "kind MUST equal the target kind you were given. Do not invent kinds.",
   ].join("\n");
 }
 

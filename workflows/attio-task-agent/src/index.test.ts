@@ -9,7 +9,16 @@ import {
   STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
+import { attioTaskArtifactKinds } from "@workbench/shared";
 import { description, label, workflow } from "./index";
+
+// The panel always emits a COMPLETE boolean map so no per-kind gate reads a
+// missing key. `on` lists the kinds to enable; the rest are false.
+function kindSelection(on: string[]): { generate: Record<string, boolean> } {
+  const generate: Record<string, boolean> = {};
+  for (const kind of attioTaskArtifactKinds) generate[kind] = on.includes(kind);
+  return { generate };
+}
 
 function makeRecordingInvoker(outputs: Record<string, unknown> = {}): {
   invoker: StepInvoker;
@@ -84,7 +93,7 @@ describe("attio-task-agent native workflow", () => {
         linkedRecords: [{ object: "companies", recordId: "rec_1" }],
       },
       "attio-task-agent-analyze": decision,
-      "attio-task-agent-generate-one": {
+      "attio-task-agent-gen-cold-email": {
         kind: "cold-email",
         title: "Outreach",
         content: "Hi…",
@@ -100,6 +109,7 @@ describe("attio-task-agent native workflow", () => {
     await run.signal("member-selection", { assignee: "me@abklabs.com" });
     await run.signal("task-selection", { taskId: "task_1" });
     await run.signal("clarification", { answers: "" });
+    await run.signal("kind-selection", kindSelection(["cold-email"]));
     await run.signal("review", {
       approvedPieces: [
         { kind: "cold-email", title: "Outreach", content: "Hi…" },
@@ -121,7 +131,9 @@ describe("attio-task-agent native workflow", () => {
     expect(ranIds).toContain("attio-task-agent-list-tasks");
     expect(ranIds).toContain("attio-task-agent-fetch-task");
     expect(ranIds).toContain("attio-task-agent-analyze");
-    expect(ranIds).toContain("attio-task-agent-generate-one");
+    expect(ranIds).toContain("attio-task-agent-gen-cold-email");
+    // A non-selected kind's writer step never runs (its branch is pruned).
+    expect(ranIds).not.toContain("attio-task-agent-gen-blog");
     expect(ranIds).toContain("attio-task-agent-persist");
     expect(ranIds).toContain("attio-task-agent-write-note");
     expect(ranIds).toContain("attio-task-agent-write-complete");
@@ -166,17 +178,28 @@ describe("attio-task-agent native workflow", () => {
     expect(fetch.input).toEqual({ from: "steps.selectTask.output" });
   });
 
-  test("generate maps one inference per selected artifact kind, on the writer model", () => {
-    const generate = mapPrimitive("generate");
-    expect(generate.over).toEqual({
-      from: "steps.analyze.output.selectedArtifactKinds",
+  test("each artifact kind routes through its own gate to its own dedicated-prompt writer step", () => {
+    // A gate per kind, reading that kind's boolean from the selectKinds payload.
+    const gateStep = workflow.steps["gate-linkedin-post"];
+    if (!gateStep || gateStep.kind !== "gate") {
+      throw new Error("expected a gate for linkedin-post");
+    }
+    expect(gateStep.when).toEqual({
+      from: "steps.selectKinds.output.generate.linkedin-post",
     });
-    const inner = generate.step;
-    expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
-    expect(inner.agent.capabilities).toEqual([]);
-    // A per-step model preference is declared as the inner step's inference source.
-    expect(inner.agent.inference.sources.length).toBe(1);
-    expect(inner.agent.inference.sources[0]?.model).not.toBe("");
+    expect(gateStep.then).toBe("gen-linkedin-post");
+    expect(gateStep.else).toBe("skip-linkedin-post");
+
+    // Each writer step is an inline-inference step on the writer model, and its
+    // prompt is dedicated to that kind (no other kind's guidance bleeds in).
+    const gen = stepPrimitive("gen-linkedin-post");
+    expect(gen.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+    expect(gen.agent.inference.sources.length).toBe(1);
+    expect(gen.agent.systemPrompt).toContain("ANONYMIZED");
+    expect(gen.agent.systemPrompt).not.toContain("cold outreach");
+
+    // The skip branch is a no-op sleep leaf (no wasted inference).
+    expect(workflow.steps["skip-linkedin-post"]?.kind).toBe("sleep");
   });
 
   test("suggest is an inline-inference step on the cheaper default model", () => {
@@ -236,7 +259,7 @@ describe("attio-task-agent native workflow", () => {
       "attio-task-agent-list-tasks": { tasks: [] },
       "attio-task-agent-fetch-task": { task: {}, linkedRecords: [] },
       "attio-task-agent-analyze": decision,
-      "attio-task-agent-generate-one": {
+      "attio-task-agent-gen-cold-email": {
         kind: "cold-email",
         title: "T",
         content: "C",
@@ -249,6 +272,7 @@ describe("attio-task-agent native workflow", () => {
     await run.signal("member-selection", { assignee: "x" });
     await run.signal("task-selection", { taskId: "task_1" });
     await run.signal("clarification", { answers: "" });
+    await run.signal("kind-selection", kindSelection(["cold-email"]));
     await run.signal("review", {
       approvedPieces: [{ kind: "cold-email", title: "T", content: "C" }],
     });
@@ -265,6 +289,7 @@ describe("attio-task-agent native workflow", () => {
     expect(awaitSignalPrimitive("selectMember").name).toBe("member-selection");
     expect(awaitSignalPrimitive("selectTask").name).toBe("task-selection");
     expect(awaitSignalPrimitive("clarify").name).toBe("clarification");
+    expect(awaitSignalPrimitive("selectKinds").name).toBe("kind-selection");
     expect(awaitSignalPrimitive("review").name).toBe("review");
     expect(awaitSignalPrimitive("approveSync").name).toBe("sync-approval");
   });

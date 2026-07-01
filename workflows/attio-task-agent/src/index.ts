@@ -1,4 +1,12 @@
-import { awaitSignal, defineWorkflow, gate, map, step } from "@intx/workflow";
+import {
+  awaitSignal,
+  defineWorkflow,
+  gate,
+  map,
+  sleep,
+  step,
+} from "@intx/workflow";
+import type { Primitive } from "@intx/workflow";
 import { defineAgent } from "@intx/agent";
 import {
   LLM_CREDENTIAL_NAME,
@@ -9,9 +17,10 @@ import {
   deterministicToolStep,
   inlineInferenceStep,
 } from "@workbench/agents";
+import { attioTaskArtifactKinds } from "@workbench/shared";
 import {
   buildAnalyzeSystemPrompt,
-  buildGenerateSystemPrompt,
+  buildKindSystemPrompt,
   buildSuggestSystemPrompt,
 } from "./prompts";
 
@@ -96,23 +105,58 @@ const persistStep = deterministicToolStep({
   },
 });
 
-// One inference per selected artifact kind (mapped). trigger.payload carries the
-// kind for this iteration; the shared task/decision/clarification context is
-// merged from the prior steps.
-const generateOneStep = inlineInferenceStep({
-  id: "attio-task-agent-generate-one",
-  systemPrompt: buildGenerateSystemPrompt(),
-  model: LLM_WRITER_MODEL,
-  maxTokens: 16384,
-  input: {
-    merge: [
-      { from: "steps.fetchTask.output" },
-      { from: "steps.analyze.output" },
-      { from: "steps.clarify.output" },
-      { from: "trigger.payload" },
-    ],
+// Per-kind generation: each artifact kind routes to its OWN step with its OWN
+// full, dedicated system prompt (no cross-kind context bleed) — quality geared
+// per type. The `select-kinds` gate's payload is a COMPLETE boolean map over
+// every kind (the panel always sends all keys, so no gate reads a missing key
+// and throws); each kind's gate routes to its writer step or a no-op sleep leaf.
+const KIND_CONTEXT = {
+  merge: [
+    { from: "steps.fetchTask.output" },
+    { from: "steps.analyze.output" },
+    { from: "steps.clarify.output" },
+  ],
+} as const;
+
+function stepKeyForKind(kind: string): {
+  gate: string;
+  gen: string;
+  skip: string;
+} {
+  return { gate: `gate-${kind}`, gen: `gen-${kind}`, skip: `skip-${kind}` };
+}
+
+// The leaves every generation branch terminates in; `review` waits on all of
+// them (the pruned branch of each gate still completes, satisfying `after`).
+export const GENERATION_LEAF_KEYS: string[] = attioTaskArtifactKinds.flatMap(
+  (kind) => {
+    const k = stepKeyForKind(kind);
+    return [k.gen, k.skip];
   },
-});
+);
+
+function generationSteps(): Record<string, Primitive> {
+  const steps: Record<string, Primitive> = {};
+  for (const kind of attioTaskArtifactKinds) {
+    const k = stepKeyForKind(kind);
+    steps[k.gate] = gate({
+      when: { from: `steps.selectKinds.output.generate.${kind}` },
+      then: k.gen,
+      else: k.skip,
+      after: ["selectKinds"],
+    });
+    steps[k.gen] = inlineInferenceStep({
+      id: `attio-task-agent-gen-${kind}`,
+      systemPrompt: buildKindSystemPrompt(kind),
+      model: LLM_WRITER_MODEL,
+      maxTokens: 16384,
+      input: KIND_CONTEXT,
+      after: [k.gate],
+    });
+    steps[k.skip] = sleep({ duration: 1, after: [k.gate] });
+  }
+  return steps;
+}
 
 export const workflow = defineWorkflow({
   id: kind,
@@ -167,19 +211,16 @@ export const workflow = defineWorkflow({
 
     clarify: awaitSignal({ name: "clarification", after: ["analyze"] }),
 
-    // Generate ONE artifact per selected kind via map, each its own inference —
-    // so a long blog/deck can't blow the token ceiling mid-array and lose the
-    // whole batch (the last30days-poison failure). Quality-sensitive, so each
-    // runs on the heavier writer model; analyze and suggest stay on the cheaper
-    // default. Each map item is a kind string; shared task/decision context is
-    // merged from the prior steps.
-    generate: map({
-      over: { from: "steps.analyze.output.selectedArtifactKinds" },
-      step: generateOneStep,
-      after: ["clarify"],
-    }),
+    // Human picks which artifacts to generate. The panel pre-checks the agent's
+    // suggested kinds (analyze.output.selectedArtifactKinds) and emits a COMPLETE
+    // boolean map { generate: { "<kind>": bool, … all kinds } } so every per-kind
+    // gate can read its key without the selector throwing on a missing one.
+    selectKinds: awaitSignal({ name: "kind-selection", after: ["clarify"] }),
 
-    review: awaitSignal({ name: "review", after: ["generate"] }),
+    // One dedicated-prompt writer step per kind (see generationSteps()).
+    ...generationSteps(),
+
+    review: awaitSignal({ name: "review", after: GENERATION_LEAF_KEYS }),
 
     persist: map({
       over: { from: "steps.review.output.approvedPieces" },
