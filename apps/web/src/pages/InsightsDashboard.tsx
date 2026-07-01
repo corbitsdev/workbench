@@ -6,9 +6,9 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
   ActivityOverview,
-  AnalyticsAgentRow,
   AnalyticsSummary,
   UsageByPersonRow,
+  UsageByWorkflowTypeRow,
 } from "../lib/hub-api";
 import {
   DeltaBadge,
@@ -21,13 +21,15 @@ import {
   cacheHitRate,
   computeDelta,
   fillDailySeries,
+  humanizeKey,
   ratePct,
   tokenDataCaveat,
 } from "./insights/metrics";
 
-type Preset = "7d" | "30d" | "90d" | "all";
+type Preset = "24h" | "7d" | "30d" | "90d" | "all";
 
 const PRESETS: { label: string; value: Preset }[] = [
+  { label: "24 hours", value: "24h" },
   { label: "7 days", value: "7d" },
   { label: "30 days", value: "30d" },
   { label: "90 days", value: "90d" },
@@ -40,7 +42,12 @@ function daysAgoISO(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Analytics are bucketed by calendar day, so "24 hours" resolves to a
+// startDate one day back — today plus yesterday inclusive, matching the other
+// presets' N-days-ago convention and avoiding an empty view just after
+// midnight.
 const PRESET_DAYS: Record<Exclude<Preset, "all">, number> = {
+  "24h": 1,
   "7d": 7,
   "30d": 30,
   "90d": 90,
@@ -336,12 +343,12 @@ function InferenceSection({
       <HudCard
         label="Token mix"
         tag={
-          tokenCaveat === null ? (
+          tokens > 0 ? (
             <CardLabel>{formatNumber(tokens)} total</CardLabel>
           ) : undefined
         }
       >
-        {tokenCaveat === null ? (
+        {tokens > 0 ? (
           <TokenMosaic
             label="Token usage breakdown"
             parts={[
@@ -355,9 +362,9 @@ function InferenceSection({
         ) : (
           <div className="flex flex-col items-start gap-2 py-2">
             <span className="text-[12px] text-text-2">
-              Token mix unavailable for this range
+              No token data for this range
             </span>
-            <CaveatNote>{tokenCaveat}</CaveatNote>
+            {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
           </div>
         )}
       </HudCard>
@@ -447,7 +454,9 @@ function CountTable({
           <tbody className="divide-y divide-border">
             {rows.map((row) => (
               <tr key={row.key}>
-                <td className="py-1.5 text-[12px] text-text-2">{row.key}</td>
+                <td className="py-1.5 text-[12px] text-text-2">
+                  {humanizeKey(row.key)}
+                </td>
                 <td className="py-1.5 text-right font-mono text-[12px] tabular-nums text-text">
                   {formatNumber(row.count)}
                 </td>
@@ -464,7 +473,7 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Operational ledger</SectionLabel>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           label="Artifacts"
           value={formatNumber(data.artifacts.total)}
@@ -476,17 +485,12 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
           sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
         />
         <Stat
-          label="Agent instances"
+          label="Agents deployed"
           value={formatNumber(data.agentInstances.total)}
           sub={`${formatNumber(data.agentInstances.active)} active`}
         />
-        <Stat
-          label="Deployments"
-          value={formatNumber(data.workflowRuns.deploymentsIndexed)}
-          sub="indexed"
-        />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         <CountTable
           title="Artifacts by status"
           rows={data.artifacts.byStatus}
@@ -514,13 +518,9 @@ function PersonBreakdown({
 }) {
   if (people.length === 0) return null;
 
-  // Server sorts by total tokens, but those columns collapse to "—" under the
-  // caveat — leaving the table ordered by an invisible key. Re-sort by a
-  // visible metric (turns) so the ordering is always explainable.
-  const orderedPeople =
-    tokenCaveat === null
-      ? people
-      : [...people].sort((a, b) => b.turnCount - a.turnCount);
+  // Server sorts by total tokens; tokens are always shown (a caveat note flags
+  // ranges that predate token recording) so the ordering is always explainable.
+  const orderedPeople = people;
 
   const totals = people.reduce(
     (acc, p) => ({
@@ -531,9 +531,6 @@ function PersonBreakdown({
     }),
     { turnCount: 0, toolCallCount: 0, inputTokens: 0, outputTokens: 0 },
   );
-
-  const tokenCell = (value: number) =>
-    tokenCaveat === null ? formatNumber(value) : "—";
 
   return (
     <div className="flex flex-col gap-3">
@@ -567,7 +564,7 @@ function PersonBreakdown({
                   {formatNumber(row.toolCallCount)}
                 </td>
                 <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {tokenCell(row.inputTokens + row.outputTokens)}
+                  {formatNumber(row.inputTokens + row.outputTokens)}
                 </td>
               </tr>
             ))}
@@ -584,7 +581,7 @@ function PersonBreakdown({
                 {formatNumber(totals.toolCallCount)}
               </td>
               <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
-                {tokenCell(totals.inputTokens + totals.outputTokens)}
+                {formatNumber(totals.inputTokens + totals.outputTokens)}
               </td>
             </tr>
           </tfoot>
@@ -595,28 +592,33 @@ function PersonBreakdown({
   );
 }
 
-function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
-  if (agents.length === 0) return null;
+function WorkflowTypeBreakdown({
+  workflowTypes,
+  tokenCaveat,
+}: {
+  workflowTypes: UsageByWorkflowTypeRow[];
+  tokenCaveat: string | null;
+}) {
+  if (workflowTypes.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-3">
-      <SectionLabel>By agent</SectionLabel>
+      <SectionLabel>Tokens by workflow type</SectionLabel>
+      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="overflow-x-auto rounded-[12px] border border-border">
         <table className="w-full min-w-[480px] text-left text-[13px]">
           <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
             <tr>
-              <th className="px-4 py-2 font-medium">Agent</th>
+              <th className="px-4 py-2 font-medium">Workflow type</th>
               <th className="px-4 py-2 text-right font-medium">Turns</th>
               <th className="px-4 py-2 text-right font-medium">Tool calls</th>
               <th className="px-4 py-2 text-right font-medium">Tokens</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
-            {agents.map((row) => (
-              <tr key={row.agentId}>
-                <td className="px-4 py-2 text-text">
-                  {row.agentName ?? row.agentId}
-                </td>
+            {workflowTypes.map((row) => (
+              <tr key={row.kind}>
+                <td className="px-4 py-2 text-text">{humanizeKey(row.kind)}</td>
                 <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
                   {formatNumber(row.turnCount)}
                 </td>
@@ -635,12 +637,19 @@ function AgentBreakdown({ agents }: { agents: AnalyticsAgentRow[] }) {
   );
 }
 
+const INSTANCE_PAGE_SIZE = 10;
+
 function InstanceBreakdown({
   instances,
 }: {
   instances: ActivityOverview["inference"]["byInstance"];
 }) {
+  const [visibleCount, setVisibleCount] = useState(INSTANCE_PAGE_SIZE);
+
   if (instances.length === 0) return null;
+
+  const visible = instances.slice(0, visibleCount);
+  const remaining = instances.length - visible.length;
 
   return (
     <div className="flex flex-col gap-3">
@@ -657,7 +666,7 @@ function InstanceBreakdown({
             </tr>
           </thead>
           <tbody className="divide-y divide-border bg-bg">
-            {instances.map((row) => (
+            {visible.map((row) => (
               <tr key={row.instanceId}>
                 <td className="px-4 py-2 font-mono text-[12px] text-text-2">
                   {row.instanceId}
@@ -679,6 +688,23 @@ function InstanceBreakdown({
           </tbody>
         </table>
       </div>
+      {remaining > 0 && (
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-text-3">
+            Showing {formatNumber(visible.length)} of{" "}
+            {formatNumber(instances.length)}
+          </span>
+          <button
+            type="button"
+            onClick={() =>
+              setVisibleCount((count) => count + INSTANCE_PAGE_SIZE)
+            }
+            className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
+          >
+            Show {Math.min(remaining, INSTANCE_PAGE_SIZE)} more
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -770,7 +796,10 @@ export function InsightsDashboard() {
                 people={overview.byPerson}
                 tokenCaveat={tokenCaveat}
               />
-              <AgentBreakdown agents={overview.inference.byAgent} />
+              <WorkflowTypeBreakdown
+                workflowTypes={overview.byWorkflowType}
+                tokenCaveat={tokenCaveat}
+              />
               <InstanceBreakdown instances={overview.inference.byInstance} />
             </div>
           </div>

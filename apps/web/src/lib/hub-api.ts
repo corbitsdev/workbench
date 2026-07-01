@@ -560,6 +560,16 @@ export const UsageByPersonRowSchema = type({
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
 
+export const UsageByWorkflowTypeRowSchema = type({
+  kind: "string",
+  turnCount: "number",
+  toolCallCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+});
+
+export type UsageByWorkflowTypeRow = typeof UsageByWorkflowTypeRowSchema.infer;
+
 const ActivityOverviewSchema = type({
   tenantId: "string",
   range: {
@@ -613,6 +623,7 @@ const ActivityOverviewSchema = type({
   models: ActivityCountRowSchema.array(),
   tokensRecordedFrom: "string.date | null",
   byPerson: UsageByPersonRowSchema.array(),
+  byWorkflowType: UsageByWorkflowTypeRowSchema.array(),
   inference: {
     summary: AnalyticsSummarySchema,
     previousSummary: AnalyticsSummarySchema.or("null"),
