@@ -102,7 +102,7 @@ function attioUrl(config: AttioToolsConfig, path: string): URL {
 async function fetchAttioJSON(
   config: AttioToolsConfig,
   url: URL,
-  init: { method: "GET" | "POST"; body?: unknown },
+  init: { method: "GET" | "POST" | "PATCH"; body?: unknown },
   signal: AbortSignal,
 ): Promise<unknown> {
   const fetcher = config.fetcher ?? fetch;
@@ -333,6 +333,78 @@ async function getTask(
   return { task, linkedRecords };
 }
 
+async function updateTask(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const taskId = optionalString(args.taskId);
+  if (taskId === null) {
+    throw new Error("taskId is required");
+  }
+
+  const data: Record<string, unknown> = {};
+  if (typeof args.isCompleted === "boolean") {
+    data.is_completed = args.isCompleted;
+  }
+  const deadlineAt = optionalString(args.deadlineAt);
+  if (deadlineAt !== null) {
+    data.deadline_at = deadlineAt;
+  }
+  if (Object.keys(data).length === 0) {
+    throw new Error(
+      "no task fields to update (pass isCompleted or deadlineAt)",
+    );
+  }
+
+  const url = attioUrl(config, `/v2/tasks/${encodeURIComponent(taskId)}`);
+  return parseDataResponse(
+    await fetchAttioJSON(
+      config,
+      url,
+      { method: "PATCH", body: { data } },
+      signal,
+    ),
+  );
+}
+
+async function createNote(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const parentObject = optionalString(args.parentObject);
+  if (parentObject === null) {
+    throw new Error("parentObject is required");
+  }
+  const parentRecordId = optionalString(args.parentRecordId);
+  if (parentRecordId === null) {
+    throw new Error("parentRecordId is required");
+  }
+  const content = optionalString(args.content);
+  if (content === null) {
+    throw new Error("content is required");
+  }
+  const format = optionalString(args.format) ?? "markdown";
+  if (format !== "markdown" && format !== "plaintext") {
+    throw new Error('format must be "plaintext" or "markdown"');
+  }
+
+  const url = attioUrl(config, "/v2/notes");
+  const body = {
+    data: {
+      parent_object: parentObject,
+      parent_record_id: parentRecordId,
+      title: optionalString(args.title) ?? "",
+      format,
+      content,
+    },
+  };
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "POST", body }, signal),
+  );
+}
+
 const QUERY_RECORDS_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -464,6 +536,53 @@ const GET_TASK_INPUT_SCHEMA = {
   required: ["taskId"],
 };
 
+const UPDATE_TASK_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    taskId: {
+      type: "string",
+      description: "The id of the task to update.",
+    },
+    isCompleted: {
+      type: "boolean",
+      description: "Set the task's completion state (e.g. true to mark done).",
+    },
+    deadlineAt: {
+      type: "string",
+      description: "Set the task deadline (ISO 8601 timestamp).",
+    },
+  },
+  required: ["taskId"],
+};
+
+const CREATE_NOTE_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    parentObject: {
+      type: "string",
+      description:
+        'The object slug the note is attached to, e.g. "companies" or "people".',
+    },
+    parentRecordId: {
+      type: "string",
+      description: "The id of the record the note is attached to.",
+    },
+    content: {
+      type: "string",
+      description: "The note body.",
+    },
+    title: {
+      type: "string",
+      description: "Optional note title (defaults to empty).",
+    },
+    format: {
+      type: "string",
+      description: 'Content format: "markdown" (default) or "plaintext".',
+    },
+  },
+  required: ["parentObject", "parentRecordId", "content"],
+};
+
 const EMPTY_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {},
@@ -517,6 +636,20 @@ export const ATTIO_GET_TASK_DEFINITION: ToolDefinition = {
   inputSchema: GET_TASK_INPUT_SCHEMA,
 };
 
+export const ATTIO_UPDATE_TASK_DEFINITION: ToolDefinition = {
+  name: "attio_update_task",
+  description:
+    "Update an Attio task — set its completion state (`isCompleted`) and/or `deadlineAt`. WRITES to Attio: use only after explicit human approval.",
+  inputSchema: UPDATE_TASK_INPUT_SCHEMA,
+};
+
+export const ATTIO_CREATE_NOTE_DEFINITION: ToolDefinition = {
+  name: "attio_create_note",
+  description:
+    "Create a note on an Attio record (e.g. attach approved outreach copy to a company). WRITES to Attio: use only after explicit human approval.",
+  inputSchema: CREATE_NOTE_INPUT_SCHEMA,
+};
+
 function buildListObjectsHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listObjects(config, signal));
@@ -550,6 +683,16 @@ function buildListTasksHandler(config: AttioToolsConfig) {
 function buildGetTaskHandler(config: AttioToolsConfig) {
   return async (args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await getTask(config, args, signal));
+}
+
+function buildUpdateTaskHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await updateTask(config, args, signal));
+}
+
+function buildCreateNoteHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await createNote(config, args, signal));
 }
 
 export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
@@ -591,6 +734,16 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
       definition: ATTIO_GET_TASK_DEFINITION,
       handler: buildGetTaskHandler(config),
     },
+    {
+      kind: "string",
+      definition: ATTIO_UPDATE_TASK_DEFINITION,
+      handler: buildUpdateTaskHandler(config),
+    },
+    {
+      kind: "string",
+      definition: ATTIO_CREATE_NOTE_DEFINITION,
+      handler: buildCreateNoteHandler(config),
+    },
   ];
 }
 
@@ -610,6 +763,10 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildListTasksHandler(config);
     case ATTIO_GET_TASK_DEFINITION.name:
       return buildGetTaskHandler(config);
+    case ATTIO_UPDATE_TASK_DEFINITION.name:
+      return buildUpdateTaskHandler(config);
+    case ATTIO_CREATE_NOTE_DEFINITION.name:
+      return buildCreateNoteHandler(config);
     default:
       throw new Error(`Unknown attio tool: ${name}`);
   }
@@ -699,5 +856,17 @@ export const ATTIO_HUB_TOOLS = {
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_TASK_DEFINITION),
+  },
+  attio_update_task: {
+    definition: ATTIO_UPDATE_TASK_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_UPDATE_TASK_DEFINITION),
+  },
+  attio_create_note: {
+    definition: ATTIO_CREATE_NOTE_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_CREATE_NOTE_DEFINITION),
   },
 };
