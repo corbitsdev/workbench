@@ -479,6 +479,16 @@ describe("InsightsDashboard", () => {
     expect(screen.queryByText("Deployments")).toBeNull();
   });
 
+  it("lets the operational-ledger tables size to their content rather than stretching", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText("Artifacts by status")).toBeDefined();
+    });
+    const tablesGrid = screen.getByText("Artifacts by status").closest(".grid");
+    expect(tablesGrid?.className).toContain("items-start");
+  });
+
   it("paginates the By-agent-instance table 10 at a time", async () => {
     const original = mockOverview.inference.byInstance;
     mockOverview.inference.byInstance = Array.from({ length: 23 }, (_, i) => ({

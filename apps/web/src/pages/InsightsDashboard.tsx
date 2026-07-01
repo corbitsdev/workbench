@@ -490,7 +490,7 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
           sub={`${formatNumber(data.agentInstances.active)} active`}
         />
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         <CountTable
           title="Artifacts by status"
           rows={data.artifacts.byStatus}
