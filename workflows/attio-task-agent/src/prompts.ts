@@ -71,6 +71,13 @@ export function buildSuggestSystemPrompt(): string {
     "You are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.",
     "",
     "Cover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.",
+    "",
+    "When a follow-up maps to an existing Workbench workflow, recommend running it by name:",
+    '- "Gamma Presentation Creator" — turn the collateral into a deck.',
+    '- "last30days Research" — deeper recent research on the company/person.',
+    '- "Pain Point Collateral Generation" — mine a call transcript for pain points and generate collateral.',
+    "Only suggest a workflow when it genuinely fits the task; do not list them all by default.",
+    "",
     "Keep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
   ].join("\n");
 }

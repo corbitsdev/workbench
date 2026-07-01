@@ -68,6 +68,11 @@ describe("attio-task-agent native workflow", () => {
       proposedTaskUpdate: { markComplete: true, note: "Drafted outreach." },
     };
     const { invoker, ran } = makeRecordingInvoker({
+      "attio-task-agent-list-members": {
+        members: [
+          { id: { workspace_member_id: "wm_1" }, email: "me@abklabs.com" },
+        ],
+      },
       "attio-task-agent-list-tasks": {
         tasks: [{ id: { task_id: "task_1" }, content_plaintext: "Reach out" }],
       },
@@ -87,6 +92,7 @@ describe("attio-task-agent native workflow", () => {
 
     const run = runLocal(workflow, { invokeStep: invoker });
 
+    await run.signal("member-selection", { assignee: "me@abklabs.com" });
     await run.signal("task-selection", { taskId: "task_1" });
     await run.signal("clarification", { answers: "" });
     await run.signal("review", {
@@ -106,6 +112,7 @@ describe("attio-task-agent native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
 
     const ranIds = ran.map((r) => r.id);
+    expect(ranIds).toContain("attio-task-agent-list-members");
     expect(ranIds).toContain("attio-task-agent-list-tasks");
     expect(ranIds).toContain("attio-task-agent-fetch-task");
     expect(ranIds).toContain("attio-task-agent-analyze");
@@ -134,15 +141,33 @@ describe("attio-task-agent native workflow", () => {
     expect(caps).not.toContain("artifact_create");
   });
 
-  test("listTasks and fetchTask are deterministic tool steps", () => {
+  test("listMembers and listTasks are deterministic; listTasks is scoped to the selected member", () => {
+    const members = stepPrimitive("listMembers");
+    expect(members.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "attio_list_workspace_members",
+    );
+
     const list = stepPrimitive("listTasks");
     expect(list.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(list.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_list_tasks");
-    expect(list.input).toEqual({ literal: { isCompleted: false } });
+    expect(list.input).toEqual({ from: "steps.selectMember.output" });
+    expect(JSON.parse(list.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual({
+      assignee: { from: "assignee" },
+      isCompleted: { literal: false },
+    });
 
     const fetch = stepPrimitive("fetchTask");
     expect(fetch.agent.tags?.[STEP_TOOL_TAG]).toContain("attio_get_task");
     expect(fetch.input).toEqual({ from: "steps.selectTask.output" });
+  });
+
+  test("generate runs on the writer model; suggest stays on the cheaper default", () => {
+    const generate = stepPrimitive("generate");
+    // A per-step model preference is declared as the step's inference source.
+    expect(generate.agent.inference.sources.length).toBe(1);
+    expect(generate.agent.inference.sources[0]?.model).not.toBe("");
+    // suggest declares no preferred source → falls back to the deploy default.
+    expect(stepPrimitive("suggest").agent.inference.sources).toEqual([]);
   });
 
   test("generate and suggest are inline-inference steps", () => {
@@ -185,6 +210,7 @@ describe("attio-task-agent native workflow", () => {
   });
 
   test("HITL gates carry the expected signal names", () => {
+    expect(awaitSignalPrimitive("selectMember").name).toBe("member-selection");
     expect(awaitSignalPrimitive("selectTask").name).toBe("task-selection");
     expect(awaitSignalPrimitive("clarify").name).toBe("clarification");
     expect(awaitSignalPrimitive("review").name).toBe("review");

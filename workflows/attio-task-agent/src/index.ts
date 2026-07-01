@@ -4,6 +4,7 @@ import {
   LLM_CREDENTIAL_NAME,
   LLM_DEFAULT_MODEL,
   LLM_PROVIDER,
+  LLM_WRITER_MODEL,
   canonicalizeToolNames,
   deterministicToolStep,
   inlineInferenceStep,
@@ -99,10 +100,30 @@ export const workflow = defineWorkflow({
   id: kind,
   trigger: { type: "manual" },
   steps: {
+    // 0. Resolve whose tasks to work — list workspace members, then pick one.
+    //    The UI defaults to the member saved on the account (MemberPreferences
+    //    .attioMemberId) and auto-submits when present, so returning users skip
+    //    it; it stays switchable to work another member's tasks.
+    listMembers: deterministicToolStep({
+      id: "attio-task-agent-list-members",
+      tool: "attio_list_workspace_members",
+    }),
+
+    selectMember: awaitSignal({
+      name: "member-selection",
+      after: ["listMembers"],
+    }),
+
+    // 1. List the selected member's open tasks.
     listTasks: deterministicToolStep({
       id: "attio-task-agent-list-tasks",
       tool: "attio_list_tasks",
-      input: { literal: { isCompleted: false } },
+      input: { from: "steps.selectMember.output" },
+      argMap: {
+        assignee: { from: "assignee" },
+        isCompleted: { literal: false },
+      },
+      after: ["selectMember"],
     }),
 
     selectTask: awaitSignal({ name: "task-selection", after: ["listTasks"] }),
@@ -128,9 +149,14 @@ export const workflow = defineWorkflow({
 
     clarify: awaitSignal({ name: "clarification", after: ["analyze"] }),
 
+    // Generation is the quality-sensitive step, so it runs on the heavier
+    // writer model with a larger token ceiling. analyze (tool reasoning) and
+    // suggest (a short wrap-up) stay on the cheaper default model.
     generate: inlineInferenceStep({
       id: "attio-task-agent-generate",
       systemPrompt: buildGenerateSystemPrompt(),
+      model: LLM_WRITER_MODEL,
+      maxTokens: 16384,
       input: {
         merge: [
           { from: "steps.fetchTask.output" },

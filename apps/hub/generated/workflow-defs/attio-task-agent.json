@@ -11,6 +11,39 @@
       }
     ],
     "steps": {
+      "listMembers": {
+        "kind": "step",
+        "id": "listMembers",
+        "agent": {
+          "id": "attio-task-agent-list-members",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-attio/attio:attio_list_workspace_members"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_workspace_members",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "selectMember": {
+        "kind": "awaitSignal",
+        "id": "selectMember",
+        "name": "member-selection",
+        "drainBehavior": "wait",
+        "after": [
+          "listMembers"
+        ]
+      },
       "listTasks": {
         "kind": "step",
         "id": "listTasks",
@@ -27,15 +60,17 @@
           "description": "Deterministic tool call: attio_list_tasks",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_list_tasks"
+            "workbench.tool": "attio_list_tasks",
+            "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "literal": {
-            "isCompleted": false
-          }
-        }
+          "from": "steps.selectMember.output"
+        },
+        "after": [
+          "selectMember"
+        ]
       },
       "selectTask": {
         "kind": "awaitSignal",
@@ -141,7 +176,15 @@
           "toolFactories": [],
           "capabilities": [],
           "inference": {
-            "sources": []
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
           },
           "description": "Inline single-turn inference: attio-task-agent-generate",
           "tags": {
@@ -215,7 +258,7 @@
         "id": "suggest",
         "agent": {
           "id": "attio-task-agent-suggest",
-          "systemPrompt": "You are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.\n\nCover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.\nKeep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
+          "systemPrompt": "You are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.\n\nCover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.\n\nWhen a follow-up maps to an existing Workbench workflow, recommend running it by name:\n- \"Gamma Presentation Creator\" — turn the collateral into a deck.\n- \"last30days Research\" — deeper recent research on the company/person.\n- \"Pain Point Collateral Generation\" — mine a call transcript for pain points and generate collateral.\nOnly suggest a workflow when it genuinely fits the task; do not list them all by default.\n\nKeep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -310,6 +353,8 @@
       }
     },
     "stepOrder": [
+      "listMembers",
+      "selectMember",
       "listTasks",
       "selectTask",
       "fetchTask",
