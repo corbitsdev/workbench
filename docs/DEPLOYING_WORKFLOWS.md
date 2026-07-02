@@ -117,6 +117,37 @@ automatically. On success the CLI prints the deployed kind, deployment id, and
 deploy mode (`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for
 the CLI details.
 
+## Auto-publishing on boot
+
+The hub can publish the build-serialized workflow definitions itself on startup,
+so a merge + redeploy makes new defs live without a manual `deploy-workflow`
+push. It is gated by `WORKFLOW_AUTOPUBLISH_ON_BOOT` (default off — the manual
+flow still works). When on, every embedded def under
+`apps/hub/generated/workflow-defs/<kind>.json` is published through the exact
+same core path as the deploy route. The pass is idempotent (a def whose
+published fingerprint already matches is skipped) and fail-safe (a per-def
+failure is logged and skipped — a bad def never blocks startup).
+
+By default every def targets the **global root tenant**. Because a workflow run
+inherits its definition's tenant, a workflow must be published into the tenant it
+should run in. `WORKFLOW_AUTOPUBLISH_MAP` (CL-2641) routes specific kinds to
+specific tenants:
+
+- It is a JSON object mapping a workflow `kind` (or the literal key `"default"`)
+  to an array of tenant **slugs** (slugs, not ids, so one value works across
+  staging and prod), e.g.
+  `{"last30days-research":["abk-labs"],"default":["abklabs"]}`.
+- Per embedded def the target slugs resolve as
+  `map[kind] ?? map["default"] ?? [global root]`. Unset/empty env → every def
+  targets the global root tenant (exact pre-CL-2641 behavior).
+- Each slug is resolved to a tenant id and validated to be the global tenant or a
+  descendant (the same ancestor-chain check the deploy route enforces). An
+  unknown slug, an out-of-hierarchy tenant, or a per-`(kind, tenant)` publish
+  failure is logged and skipped — the other targets still publish.
+- The env is parsed and validated (arktype) at config load. When it **is** set,
+  malformed JSON or a wrong shape fails config load loudly; when unset or blank
+  it is treated as "no map".
+
 ## Deleting and superseding a deployment
 
 Definitions stay package-sourced; deleting manages the **deployment lifecycle**,
