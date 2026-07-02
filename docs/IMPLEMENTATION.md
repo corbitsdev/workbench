@@ -433,6 +433,12 @@ Interchange's session orchestrator only abandons the in-memory event collector o
 
 `registerDisconnectReconciler({ db, router })` (`apps/hub/src/routes/agents.ts`, wired in `apps/hub/src/index.ts` after `createHubSessionOrchestrator`) subscribes to `sidecar.disconnect`. For each disconnected address it waits a grace window (`DEFAULT_DISCONNECT_RECONCILE_GRACE_MS`, 90s — the host's bet on how long a genuine reconnect can take) and then calls `reconcileDisconnectedSession`. That function re-checks `sidecarRouter.getRoutableAddresses()`: if the address is routable again the sidecar reconnected and there is nothing to do; otherwise the agent is gone, so its non-`ended` session is marked `ended` (`status`, `endedAt`, `updatedAt`). Ending the stale session lets the next `relaunchInstanceIfNeeded` treat the instance as a cold start — so Myra auto-relaunches via `/v1/me` and other agents recover on next open, instead of staying wedged behind a phantom session.
 
+#### Wedge-sweep reconciler
+
+The disconnect reconciler only supplies the **end** half, and only when a `sidecar.disconnect` event is actually observed. It has two gaps: nothing proactively **relaunches** the ended session (a non-interactive agent stays down until its next open, and even Myra waits for the next `/v1/me` poll), and a disconnect that is never observed (the hub itself restarted, so it never saw the event) leaves the session `active` forever. The router has no `sidecar.connect` counterpart to `sidecar.disconnect`, so there is no reconnect event to hang the relaunch on.
+
+`registerWedgeSweepReconciler({ db, router, sessionService, grantStore, eventCollectors, intervalMs })` (`apps/hub/src/services/agent-provisioning.ts`, wired in `apps/hub/src/index.ts` after `createSessionService`) closes both gaps with a periodic `reconcileWedgedSessions` pass (default 30s, `WEDGE_SWEEP_INTERVAL_MS`). Each tick selects instances whose session is `active` but whose address is not in `getRoutableAddresses()` and whose session `updatedAt` is older than a stale floor (`DEFAULT_WEDGE_SESSION_STALE_MS`, 90s), then ends the stale session via `reconcileDisconnectedSession` and relaunches via `relaunchInstanceIfNeeded`. The stale floor substitutes for the router-internal `pendingSessionStarts` map, which the hub cannot see: a launch in flight (initial provision or a `/me` relaunch) has a freshly-inserted `active` session, so the floor keeps the sweep from tearing it down mid-registration and evicting the agent it is racing to bring up. It composes with the disconnect reconciler without double-launching — both re-read `getRoutableAddresses()` right before acting, and every relaunch funnels through the process-local dedup/cooldown breaker (`runDedupedRelaunch`), which coalesces a concurrent `/me` relaunch of the same instance. Same single-hub-replica caveat as the disconnect reconciler: the routability read is this hub's local router state. The registration returns an unsubscribe that clears the (unref'd) interval.
+
 ## Environment Configuration
 
 All environment validation lives in `apps/hub/src/config.ts`. Variables are validated at startup via `requireEnv()` — no silent defaults for required values.
@@ -446,6 +452,7 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 | `GLOBAL_TENANT_SLUG`   | Yes      | Slug of the shared global org tenant, seeded at hub boot. Deployment-specific, never hardcoded. |
 | `GLOBAL_TENANT_NAME`   | Yes      | Display name of the global org tenant (e.g. the org's name for this deployment).                |
 | `GLOBAL_TENANT_DOMAIN` | Yes      | Domain of the global org tenant; Myra instance addresses are `instanceId@<domain>`.             |
+| `WEDGE_SWEEP_INTERVAL_MS` | No    | Cadence (ms) of the wedge-sweep reconciler that relaunches active-but-unroutable instances after a sidecar restart. Positive integer; defaults to 30000. |
 
 ## Authentication
 
