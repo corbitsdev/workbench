@@ -1126,6 +1126,7 @@ v1.route(
   "/",
   createWorkflowRunRecordsRouter({
     db,
+    repoStore,
     sidecarRouter,
     sessionService,
     cryptoProvider: createEd25519Crypto(registry.active),
