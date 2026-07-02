@@ -5,16 +5,17 @@ import { describeRoute, resolver } from "hono-openapi";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { workflowRunRecord } from "../db/schema";
-import { loadRunRecord, markRunStopped } from "../workflow-executor/run-store";
-import type { RunState } from "../workflow-executor/executor";
+import {
+  loadRunRecord,
+  markRunStopped,
+  type RunState,
+} from "../workflow-executor/run-store";
 
 const log = getLogger(["api", "workflow-run-abort"]);
 
 // The only run states a run can be aborted FROM. Terminal runs
 // (completed/failed) are left untouched; aborting them is a no-op.
 const ACTIVE_STATUSES = ["running", "awaiting"] as const;
-
-export const ABORTED_ERROR = "aborted by operator";
 
 const AbortResponse = type({ runId: "string", status: "'failed'" });
 const AbortActiveResponse = type({ aborted: "number", ids: "string[]" });
@@ -27,10 +28,11 @@ export interface WorkflowRunAbortDeps {
   db: HubDb;
 }
 
-// Mark a single run terminal (status:'failed', error:'aborted by operator').
-// CL-2248's boot-reconciler reaps the run's sidecar dir on next restart once the
-// record is terminal (this also clears a CL-2261 corrupt-log run). The record
-// mark is the source of truth.
+// Mark a single run terminal (status:'failed'). CL-2248's boot-reconciler reaps
+// the run's sidecar dir on next restart once the record is terminal (this also
+// clears a CL-2261 corrupt-log run). The record mark is the source of truth; the
+// abort reason is not persisted (the log is the source of truth for run detail,
+// CL-2669).
 //
 // Best-effort sidecar cancel: the runtime emits `RunCancelled` (which the
 // projection bridge already folds → 'failed'), but the SidecarRouter exposes no
@@ -40,7 +42,7 @@ export interface WorkflowRunAbortDeps {
 // and let the boot-reconciler reclaim the dir. If a per-run cancel is added
 // upstream, call it here (address = deriveDeploymentAddress, like /resume).
 async function markRunAborted(db: HubDb, state: RunState): Promise<void> {
-  await markRunStopped(db, state, ABORTED_ERROR);
+  await markRunStopped(db, state);
 }
 
 // DELETE /workflow-exec/records/:runId — abort one run. Operator-gated upstream
@@ -108,7 +110,7 @@ export const abortRunRouteDescription = describeRoute({
   tags: ["Workflows"],
   summary: "Abort a workflow run",
   description:
-    "Operator-gated. Marks the run terminal (status:'failed', error:'aborted by operator') so the boot-reconciler reaps its sidecar dir on next restart. An operator can abort ANY run. Best-effort sidecar cancel is omitted — there is no per-run cancel primitive (see code).",
+    "Operator-gated. Marks the run terminal (status:'failed') so the boot-reconciler reaps its sidecar dir on next restart. An operator can abort ANY run. Best-effort sidecar cancel is omitted — there is no per-run cancel primitive (see code).",
   parameters: [
     {
       name: "runId",

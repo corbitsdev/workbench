@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorkflowPanelProps } from "@workbench/ui";
 import * as workflowHooks from "../hooks/use-workflow";
-import type { RunRecord } from "../lib/run-state-adapter";
+import type { LogRunState, RunRecord } from "../lib/run-state-adapter";
 
 function CustomPanel({
   deploymentId,
@@ -54,17 +54,23 @@ let record: RunRecord | null = null;
 let isLoading = false;
 let isError = false;
 let deployments: workflowHooks.WorkflowDeployment[] = [];
+// The log-derived run state drives the stepper; step content comes from the
+// log-served step outputs (CL-2669). Both swapped per test.
+let logStateData: LogRunState | undefined = {
+  runId: "wfr_1",
+  phase: "running",
+  lastSeq: 1,
+  steps: [],
+};
+let stepOutputsData: Record<string, unknown> = {};
 
 const resumeMutateAsync = mock(async () => undefined);
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
-  // These suites drive the pane from the record projection; return the
-  // log-state hook as errored so the pane falls back to runStateFromRecord.
-  // (The log-derived stepper mapping is covered in run-state-adapter.test.ts
-  // and workflow-log-stepper.test.tsx.)
-  useWorkflowRunState: () => ({ data: undefined, isError: true }),
+  useWorkflowRunState: () => ({ data: logStateData, isError: false }),
+  useWorkflowStepOutputs: () => ({ data: stepOutputsData }),
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
@@ -101,8 +107,6 @@ function makeRecord(over: Partial<RunRecord>): RunRecord {
     runId: "wfr_1",
     kind: "with-panel",
     status: "awaiting",
-    currentStepId: "gate",
-    outputs: {},
     ...over,
   };
 }
@@ -114,6 +118,8 @@ describe("WorkflowRunPane", () => {
     isLoading = false;
     isError = false;
     deployments = [];
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    stepOutputsData = {};
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
   });
@@ -162,8 +168,9 @@ describe("WorkflowRunPane", () => {
     expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 
-  it("hands the record outputs map and skill library straight to the Panel", async () => {
-    record = makeRecord({ outputs: { "step-ok": { headline: "hi" } } });
+  it("hands the log-served step outputs and skill library straight to the Panel", async () => {
+    record = makeRecord({});
+    stepOutputsData = { "step-ok": { headline: "hi" } };
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
@@ -209,8 +216,6 @@ describe("WorkflowRunPane", () => {
   it("onSignal is a no-op once the run is terminal", async () => {
     record = makeRecord({
       status: "completed",
-      currentStepId: null,
-      outputs: { persist: {} },
     });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
@@ -224,7 +229,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [
@@ -256,7 +260,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_old",
     });
     deployments = [
@@ -298,7 +301,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [
@@ -351,7 +353,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [

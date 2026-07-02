@@ -6,7 +6,6 @@ import {
   isRecordTerminal,
   logRunStateSchema,
   runStateFromLog,
-  runStateFromRecord,
   type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
@@ -26,9 +25,6 @@ const runRecordSchema = type({
   runId: "string",
   kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
-  currentStepId: "string|null",
-  outputs: type({ "[string]": "unknown" }),
-  "error?": "string",
   "deploymentId?": "string",
 });
 
@@ -197,6 +193,44 @@ export function useWorkflowRunState(
 
 export { runStateFromLog };
 
+// Resolved step outputs for a run, read from its native event log (CL-2669):
+// the hub replays the deployment's workflow-run log once and returns every
+// completed step's resolved output as a stepId -> output map. Keyed by the run's
+// `deploymentId` (the log is per-deployment); gated until it is known. Polls
+// while the run is still active so a newly-completed step's output appears, and
+// stops once the run settles.
+const stepOutputsSchema = type({ outputs: type({ "[string]": "unknown" }) });
+
+export function useWorkflowStepOutputs(
+  deploymentId: string | null | undefined,
+  tenantId?: string | null,
+  active = false,
+) {
+  return useQuery<Record<string, unknown>>({
+    queryKey: ["workflow-step-outputs", deploymentId ?? null, tenantId ?? null],
+    enabled: !!deploymentId,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: active ? 2000 : false,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-runs/${encodeURIComponent(deploymentId as string)}/steps`,
+          tenantId,
+        ),
+      );
+      const parsed = stepOutputsSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow step-outputs response: ${parsed.summary}`,
+        );
+      }
+      return parsed.outputs;
+    },
+  });
+}
+
 export function useStartWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -291,8 +325,6 @@ export function useArchiveWorkflowRun(tenantId?: string | null) {
     },
   });
 }
-
-export { runStateFromRecord };
 
 const workflowCredentialSchema = type({
   id: "string",

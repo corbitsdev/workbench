@@ -17,15 +17,11 @@ function entry(
   return { runId, event: { type, seq: 0, ...rest } };
 }
 
-describe("foldRunEvents", () => {
-  test("parks at a gate: collects completed output refs and the awaiting step", () => {
+describe("foldRunEvents (run-level, CL-2669)", () => {
+  test("parks at a gate: status awaiting, run start time captured", () => {
     const runs = foldRunEvents([
-      entry("r1", "RunStarted"),
+      entry("r1", "RunStarted", { at: "2026-01-01T00:00:01.000Z" }),
       entry("r1", "StepStarted", { stepId: "intake" }),
-      entry("r1", "StepCompleted", {
-        stepId: "intake",
-        output: { ref: "blob:1" },
-      }),
       entry("r1", "SignalAwaited", {
         stepId: "select",
         signalName: "note-selection",
@@ -33,8 +29,8 @@ describe("foldRunEvents", () => {
     ]);
     const r1 = runs.get("r1");
     expect(r1?.status).toBe("awaiting");
-    expect(r1?.currentStepId).toBe("select");
-    expect(r1?.completedRefs).toEqual([{ stepId: "intake", ref: "blob:1" }]);
+    expect(r1?.startedAt).toBe("2026-01-01T00:00:01.000Z");
+    expect(r1?.endedAt).toBeUndefined();
   });
 
   test("SignalReceived clears the gate back to running", () => {
@@ -49,34 +45,35 @@ describe("foldRunEvents", () => {
     expect(runs.get("r1")?.status).toBe("running");
   });
 
-  test("RunCompleted is terminal and clears the active step", () => {
+  test("RunCompleted is terminal and stamps the end time", () => {
     const runs = foldRunEvents([
+      entry("r1", "RunStarted", { at: "2026-01-01T00:00:01.000Z" }),
       entry("r1", "StepStarted", { stepId: "persist" }),
-      entry("r1", "StepCompleted", {
-        stepId: "persist",
-        output: { ref: "blob:9" },
-      }),
-      entry("r1", "RunCompleted"),
+      entry("r1", "RunCompleted", { at: "2026-01-01T00:00:09.000Z" }),
     ]);
     const r1 = runs.get("r1");
     expect(r1?.status).toBe("completed");
-    expect(r1?.currentStepId).toBeNull();
-    expect(r1?.completedRefs).toHaveLength(1);
+    expect(r1?.startedAt).toBe("2026-01-01T00:00:01.000Z");
+    expect(r1?.endedAt).toBe("2026-01-01T00:00:09.000Z");
   });
 
   test("RunFailed surfaces the error message and fails the run", () => {
     const runs = foldRunEvents([
       entry("r1", "StepStarted", { stepId: "analyze" }),
-      entry("r1", "RunFailed", { error: { message: "boom" } }),
+      entry("r1", "RunFailed", {
+        at: "2026-01-01T00:00:05.000Z",
+        error: { message: "boom" },
+      }),
     ]);
     const r1 = runs.get("r1");
     expect(r1?.status).toBe("failed");
     expect(r1?.error).toBe("boom");
-    expect(r1?.currentStepId).toBeNull();
+    expect(r1?.endedAt).toBe("2026-01-01T00:00:05.000Z");
   });
 
-  test("StepFailed fails the run with the step error", () => {
+  test("StepFailed fails the run and attributes the last started step", () => {
     const runs = foldRunEvents([
+      entry("r1", "StepStarted", { stepId: "analyze" }),
       entry("r1", "StepFailed", {
         stepId: "analyze",
         error: { message: "tool 500" },
@@ -84,15 +81,29 @@ describe("foldRunEvents", () => {
     ]);
     expect(runs.get("r1")?.status).toBe("failed");
     expect(runs.get("r1")?.error).toBe('step "analyze" failed: tool 500');
+    expect(runs.get("r1")?.failedSteps).toEqual([
+      { stepId: "analyze", message: "tool 500" },
+    ]);
+  });
+
+  test("StepFailed with no stepId attributes the last started step", () => {
+    const runs = foldRunEvents([
+      entry("r1", "StepStarted", { stepId: "score" }),
+      entry("r1", "StepFailed", { error: { message: "no id" } }),
+    ]);
+    expect(runs.get("r1")?.failedSteps).toEqual([
+      { stepId: "score", message: "no id" },
+    ]);
   });
 
   test("RunCancelled is reported as failed/cancelled", () => {
     const runs = foldRunEvents([
       entry("r1", "RunStarted"),
-      entry("r1", "RunCancelled"),
+      entry("r1", "RunCancelled", { at: "2026-01-01T00:00:03.000Z" }),
     ]);
     expect(runs.get("r1")?.status).toBe("failed");
     expect(runs.get("r1")?.error).toBe("cancelled");
+    expect(runs.get("r1")?.endedAt).toBe("2026-01-01T00:00:03.000Z");
   });
 
   test("interleaved runs on one repo project independently", () => {
@@ -104,19 +115,7 @@ describe("foldRunEvents", () => {
       entry("r1", "SignalAwaited", { stepId: "gate", signalName: "s" }),
     ]);
     expect(runs.get("r1")?.status).toBe("awaiting");
-    expect(runs.get("r1")?.currentStepId).toBe("gate");
     expect(runs.get("r2")?.status).toBe("completed");
-  });
-
-  test("a StepCompleted missing its output ref is skipped, not crashed", () => {
-    const runs = foldRunEvents([
-      entry("r1", "StepStarted", { stepId: "a" }),
-      // malformed: no output.ref
-      entry("r1", "StepCompleted", { stepId: "a" }),
-      entry("r1", "RunCompleted"),
-    ]);
-    expect(runs.get("r1")?.completedRefs).toEqual([]);
-    expect(runs.get("r1")?.status).toBe("completed");
   });
 });
 
@@ -197,8 +196,6 @@ describe("logNewWorkflowRunFailureIfNeeded", () => {
   function failedProjected(error = "something broke"): ProjectedRun {
     return {
       status: "failed",
-      currentStepId: null,
-      completedRefs: [],
       error,
       failedSteps: [],
     };
@@ -251,8 +248,6 @@ describe("buildRunFailureReport", () => {
   ): ProjectedRun {
     return {
       status: "failed",
-      currentStepId: null,
-      completedRefs: [],
       ...(error !== undefined ? { error } : {}),
       failedSteps,
     };

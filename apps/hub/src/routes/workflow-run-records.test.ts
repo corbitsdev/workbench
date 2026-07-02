@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
-import type { RunState } from "../workflow-executor/executor";
+import type { RunState } from "../workflow-executor/run-store";
 
 // Override only getAncestorChain (the routes walk the tenant chain); preserve
 // every other @intx/db export so sibling suites in the same process keep theirs.
@@ -20,11 +20,14 @@ mock.module("@intx/db", () => ({
 // resume needs to address the sidecar.
 const runs = new Map<string, RunState>();
 mock.module("../workflow-executor/run-store", () => ({
-  createRunStore: () => ({
-    save: async (state: RunState) => {
-      runs.set(state.runId, structuredClone(state));
-    },
-  }),
+  setRunStatus: async (
+    _db: unknown,
+    runId: string,
+    status: RunState["status"],
+  ) => {
+    const found = runs.get(runId);
+    if (found) runs.set(runId, structuredClone({ ...found, status }));
+  },
   insertRunRecord: async (
     _db: unknown,
     args: {
@@ -42,9 +45,6 @@ mock.module("../workflow-executor/run-store", () => ({
       tenantId: args.tenantId,
       principalId: args.principalId,
       status: "running",
-      currentStepId: null,
-      input: args.input,
-      outputs: {},
       ...(args.deploymentId !== null
         ? { deploymentId: args.deploymentId }
         : {}),
@@ -59,11 +59,8 @@ mock.module("../workflow-executor/run-store", () => ({
   softDeleteRunRecord: async (_db: unknown, runId: string) => {
     runs.delete(runId);
   },
-  markRunStopped: async (_db: unknown, state: RunState, error: string) => {
-    runs.set(
-      state.runId,
-      structuredClone({ ...state, status: "failed", error }),
-    );
+  markRunStopped: async (_db: unknown, state: RunState) => {
+    runs.set(state.runId, structuredClone({ ...state, status: "failed" }));
   },
   listRunRecords: async (
     _db: unknown,
@@ -88,8 +85,12 @@ mock.module("../workflow-executor/run-store", () => ({
 const realRunStateFromLog = await import(
   "../workflow-executor/run-state-from-log"
 );
-const runStateCalls: { deploymentId: string; runId: string; kind: string }[] =
-  [];
+const runStateCalls: {
+  deploymentId: string;
+  runId: string;
+  kind: string;
+  deploymentDomain: string;
+}[] = [];
 let cannedLogState: unknown = {
   runId: "R",
   phase: "failed",
@@ -107,7 +108,12 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
   ...realRunStateFromLog,
   getWorkflowRunState: async (
     _deps: unknown,
-    args: { deploymentId: string; runId: string; kind: string },
+    args: {
+      deploymentId: string;
+      runId: string;
+      kind: string;
+      deploymentDomain: string;
+    },
   ) => {
     runStateCalls.push(args);
     return cannedLogState;
@@ -330,8 +336,8 @@ describe("workflow runs on the sidecar (records router)", () => {
 
     expect(status).toBe(200);
     expect(json.status).toBe("running");
-    expect(json.currentStepId).toBeNull();
-    expect(json.outputs).toEqual({});
+    expect(json.currentStepId).toBeUndefined();
+    expect(json.outputs).toBeUndefined();
     expect(typeof json.runId).toBe("string");
 
     // Provisioned once, into the DEFINITION's tenant + deploy principal (the
@@ -422,7 +428,6 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
@@ -471,7 +476,6 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
@@ -495,7 +499,6 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "review",
       });
     return runId;
   }
@@ -696,7 +699,12 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     // Addressed by the run's OWN per-run deployment + its kind, pulled from the
     // seeded record — not from any client-supplied field.
     expect(runStateCalls).toEqual([
-      { deploymentId: "ses_run_1", runId, kind: "pain-point-collateral" },
+      {
+        deploymentId: "ses_run_1",
+        runId,
+        kind: "pain-point-collateral",
+        deploymentDomain: "wf.localhost",
+      },
     ]);
   });
 
@@ -752,9 +760,6 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
       tenantId: "tn-1",
       principalId: "prn-1",
       status: "running",
-      currentStepId: null,
-      input: {},
-      outputs: {},
     });
     const read = await get(a, "/workflow-exec/runs/wfr_nodeploy/state");
     expect(read.status).toBe(400);
@@ -813,7 +818,6 @@ describe("archive workflow run (CL-2629)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await archive(a, runId);

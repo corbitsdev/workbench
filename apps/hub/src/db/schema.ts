@@ -141,12 +141,14 @@ export const workflowRun = pgTable("workflow_run", {
   deletedAt: timestamp("deleted_at"),
 });
 
-// CL-2240: thin-executor run state. Execution of a deployed workflow definition
-// is held entirely in this one row — `outputs` is a stepId->output map, gates
-// park the run at `status: 'awaiting'` on `currentStepId`. Reads are a single
-// indexed lookup (no event-log replay), and resume reads this record and
-// continues. Distinct from the `workflow_run` deployment-index table, which the
-// native-deploy path still owns.
+// CL-2669: thin RUN INDEX. A run's authoritative per-step and run state is read
+// on demand from its native git event log (`run-state-from-log.ts`), not
+// mirrored here — this row is a run-level index only: tenancy/ownership, the run
+// kind, the coarse run-level `status`, and run-level timing (`startedAt` /
+// `endedAt`). The former step-level mirror columns (`current_step_id`,
+// `outputs`, `error`) were removed; step data now comes from the log. Distinct
+// from the `workflow_run` deployment-index table, which the native-deploy path
+// still owns.
 export const workflowRunStateStatus = [
   "running",
   "awaiting",
@@ -163,13 +165,12 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
   status: text("status", { enum: workflowRunStateStatus })
     .notNull()
     .default("running"),
-  currentStepId: text("current_step_id"),
   input: jsonb("input").$type<unknown>(),
-  outputs: jsonb("outputs")
-    .$type<Record<string, unknown>>()
-    .notNull()
-    .default({}),
-  error: text("error"),
+  // Run-level wall-clock timing, written by the projection bridge from the
+  // log's RunStarted / terminal events (CL-2669). Not the per-step timing —
+  // that stays in the log.
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

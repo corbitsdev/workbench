@@ -4,7 +4,6 @@ import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 import {
   isRecordTerminal,
   runStateFromLog,
-  runStateFromRecord,
   useResumeWorkflow,
   useWorkflowRecord,
   useWorkflowRunState,
@@ -74,33 +73,20 @@ export function RunConsole({
   // Guard falsy id so no record query fires against an empty runId.
   const safeId = deploymentId || null;
   const { data: record, isLoading } = useWorkflowRecord(safeId, tenantId);
-  const { data: logState, isError: isLogStateError } = useWorkflowRunState(
-    safeId,
-    tenantId,
-  );
+  const { data: logState } = useWorkflowRunState(safeId, tenantId);
   const resume = useResumeWorkflow(deploymentId, tenantId);
 
   // The timeline's source of truth is the log-derived run state (CL-2669): the
-  // authoritative per-step phases the runtime recorded. Old runs with no
-  // deployment log (the endpoint 400s) fall back to the record projection so the
-  // console still renders. Run-level copy (interrupted-by-restart) still reads
-  // the record's `error` field below.
-  const state = useMemo<RunState | null>(() => {
-    if (logState) return runStateFromLog(logState);
-    if (isLogStateError && record) return runStateFromRecord(record);
-    return null;
-  }, [logState, isLogStateError, record]);
+  // authoritative per-step phases the runtime recorded.
+  const state = useMemo<RunState | null>(
+    () => (logState ? runStateFromLog(logState) : null),
+    [logState],
+  );
   const settled = !isLoading;
   const connected =
     record?.status === "running" || record?.status === "awaiting";
 
   const terminal = record !== undefined && isRecordTerminal(record.status);
-  // CL-2248: a hub/sidecar restart marks an in-flight run `failed` with this
-  // exact sentinel. Surface a plain-language interrupted state + restart CTA
-  // instead of the generic failure copy, so the user is not left staring at a
-  // frozen run wondering what broke.
-  const interruptedByRestart =
-    record?.status === "failed" && record.error === "interrupted by restart";
   const steps = useMemo<StepState[]>(
     () => (state ? [...state.steps.values()] : []),
     [state],
@@ -150,30 +136,11 @@ export function RunConsole({
             {connected ? "Waiting for run activity…" : "Connecting…"}
           </p>
         )}
-        {settled &&
-          state &&
-          terminal &&
-          state.phase === "failed" &&
-          interruptedByRestart && (
-            <div className="flex flex-col items-start gap-3">
-              <p className="text-[13px] text-text-3">
-                This run was interrupted by a restart and can't continue. Start
-                a new run to pick up where you left off.
-              </p>
-              <Button variant="primary" size="sm" onClick={onClose}>
-                Start a new run
-              </Button>
-            </div>
-          )}
-        {settled &&
-          state &&
-          terminal &&
-          state.phase === "failed" &&
-          !interruptedByRestart && (
-            <p className="text-[13px] text-text-3">
-              This run failed. Start a new run to try again.
-            </p>
-          )}
+        {settled && state && terminal && state.phase === "failed" && (
+          <p className="text-[13px] text-text-3">
+            This run failed. Start a new run to try again.
+          </p>
+        )}
         {settled && state && steps.length === 0 && !terminal && (
           <p className="text-[13px] text-text-3">No steps have started yet.</p>
         )}

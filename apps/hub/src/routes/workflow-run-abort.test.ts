@@ -1,13 +1,13 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { GrantRule } from "@intx/authz";
-import type { RunState } from "../workflow-executor/executor";
+import type { RunState } from "../workflow-executor/run-store";
 
 // The abort handlers read a run via loadRunRecord and persist the terminal mark
-// through createRunStore().save(). Both live in run-store; mock that boundary so
-// the tests assert the saved state (not the DB), and back the bulk handler's
-// status filter with an in-memory table.
+// through markRunStopped. Both live in run-store; mock that boundary so the tests
+// assert the saved state (not the DB), and back the bulk handler's status filter
+// with an in-memory table.
 
-type Saved = { runId: string; status: string; error: string | undefined };
+type Saved = { runId: string; status: string };
 
 const records = new Map<string, RunState>();
 const saved: Saved[] = [];
@@ -15,20 +15,14 @@ const saved: Saved[] = [];
 const loadRunRecord = mock(
   async (_db: unknown, runId: string) => records.get(runId) ?? null,
 );
-const save = mock(async (state: RunState) => {
-  records.set(state.runId, state);
-  saved.push({ runId: state.runId, status: state.status, error: state.error });
+const markRunStopped = mock(async (_db: unknown, state: RunState) => {
+  const next: RunState = { ...state, status: "failed" };
+  records.set(state.runId, next);
+  saved.push({ runId: state.runId, status: next.status });
 });
-const createRunStore = mock(() => ({ save }));
-const markRunStopped = mock(
-  async (_db: unknown, state: RunState, error: string) => {
-    await save({ ...state, status: "failed", error });
-  },
-);
 
 mock.module("../workflow-executor/run-store", () => ({
   loadRunRecord,
-  createRunStore,
   markRunStopped,
 }));
 
@@ -52,7 +46,6 @@ const {
   abortActiveRunsHandler,
   abortRunRouteDescription,
   abortActiveRunsRouteDescription,
-  ABORTED_ERROR,
 } = await import("./workflow-run-abort");
 const { createWorkflowDeployGrantGuard } = await import("./workflow-deploy");
 const { Hono } = await import("hono");
@@ -68,9 +61,6 @@ function seed(state: Partial<RunState> & { runId: string }): RunState {
     tenantId: "tenant_global",
     principalId: "p1",
     status: "running",
-    currentStepId: null,
-    input: {},
-    outputs: {},
     ...state,
   };
   records.set(full.runId, full);
@@ -96,7 +86,7 @@ beforeEach(() => {
   records.clear();
   saved.length = 0;
   loadRunRecord.mockClear();
-  save.mockClear();
+  markRunStopped.mockClear();
 });
 
 function abortApp(db: ReturnType<typeof makeDb>) {
@@ -123,11 +113,7 @@ describe("abortRunHandler", () => {
     expect(body).toEqual({ runId: "wfr_1", status: "failed" });
 
     expect(saved).toHaveLength(1);
-    expect(saved[0]).toEqual({
-      runId: "wfr_1",
-      status: "failed",
-      error: ABORTED_ERROR,
-    });
+    expect(saved[0]).toEqual({ runId: "wfr_1", status: "failed" });
   });
 
   test("404 for an unknown run, no save", async () => {
@@ -163,7 +149,6 @@ describe("abortActiveRunsHandler", () => {
     expect(saved.map((s) => s.runId).sort()).toEqual(["wfr_run", "wfr_wait"]);
     for (const s of saved) {
       expect(s.status).toBe("failed");
-      expect(s.error).toBe(ABORTED_ERROR);
     }
     // Completed/failed records keep their original status.
     expect(records.get("wfr_done")?.status).toBe("completed");
