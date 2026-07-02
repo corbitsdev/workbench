@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import * as tar from "tar";
 
+import { AGENT_TEMPLATES } from "@workbench/agents";
+
 import {
   buildToolPackages,
   TOOL_PACKAGES,
@@ -45,6 +47,21 @@ async function extractTarball(
 }
 
 describe("build-tool-packages", () => {
+  // Regression: a tool package pinned on any agent template's `toolPackages`
+  // MUST be in TOOL_PACKAGES, or its tarball is never published to the
+  // workspace-builtins registry and every launch of that agent 503s at the
+  // write phase resolving the tool-package closure (CL-2643: tools-fileparser
+  // was pinned on Myra but missing here → full Myra prod outage).
+  test("every template toolPackages pin is in TOOL_PACKAGES", () => {
+    const distributed = new Set(TOOL_PACKAGES.map((p) => p.name));
+    const missing = AGENT_TEMPLATES.flatMap((tmpl) =>
+      (tmpl.toolPackages ?? [])
+        .filter((pin) => !distributed.has(pin.name))
+        .map((pin) => `${tmpl.key}: ${pin.name}`),
+    );
+    expect(missing).toEqual([]);
+  });
+
   test("produces a <basename>-<version>.tgz tarball with an SRI integrity", async () => {
     expect(entry.name).toBe("@workbench/tools-hackernews");
     expect(path.basename(entry.tarballPath)).toBe(
