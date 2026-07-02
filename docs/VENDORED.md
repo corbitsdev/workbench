@@ -77,6 +77,12 @@ There are two kinds of vendoring:
   `apps/sidecar/src/workflow-host-wiring.ts` (a duck-typed seam — see AGENTS.md).
   This supersedes the interim console→stderr redirect that was carried in
   `bin/workflow-child` (now removed).
+- **WORKBENCH-LOCAL change (CL-2651):** interpolation fix in
+  `supervisor/supervisor.ts` — upstream logs a literal `{reason}` (missing the
+  `$`) in both the control-channel and event-channel `onCrash` logs, so the
+  crash cause never prints. Both sites are fixed and marked
+  `// WORKBENCH-LOCAL (CL-2651)`. Still unfixed upstream at pin `13fb9ac`;
+  drop these blocks only when upstream interpolates the reason itself.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.
@@ -113,6 +119,37 @@ Each row is a WORKBENCH-LOCAL divergence kept on top of the upstream copy.
 The non-vendored helper that backs the CL-2535 hook lives at
 `apps/sidecar/src/workflow-resume.ts` (`hostSatisfyAwaitSignal`,
 `recoverParkedRunFromLog`) — it is our own code, not a vendored file.
+
+## Supersession audit — pin `13fb9ac` (CL-2651, 2026-07-01)
+
+Upstream baseline is now interchange `13fb9ac`. Every WORKBENCH-LOCAL block was
+adjudicated against the `2c43b57..13fb9ac` range; none was superseded:
+
+- **CL-2400 vs upstream `14e8dff`** ("Register the sidecar for routing before
+  restoring sessions"): different layer. Upstream fixes the hub's sidecar
+  routing map (empty-address `register` frame on WS socket-open, so provisions
+  route during session restore). Ours orders the sidecar-local
+  `DeploymentAddressRegistry` `Map.set` before `supervisor.spawn`/`deploy` so
+  workflow-run pack pushes never throw "no agent address registered". Kept.
+- **CL-2231 vs upstream agent-repo GC (`f0c95b3`, `67e7b0f`, `080241d`,
+  `88a24a5`)**: complementary. Upstream reclaims objects INSIDE live agent
+  repos (iso-git GC on the write path) and drains agent-repo operation chains
+  before deleting an AGENT directory. Ours removes ORPHANED per-deployment
+  workflow-run/step-state repo DIRECTORIES on workflow undeploy. No sub-piece
+  overlaps; kept in full.
+- **CL-2340 drain barriers vs upstream `88a24a5`/`5e2c202`**: different layer.
+  Upstream drains agent-repo reads/pack-applies in `hub-agent`'s session
+  manager; ours drains workflow-run PACK PUSHES in the sidecar undeploy hook
+  so a late ack cannot resurrect a stale delta cursor. Kept.
+- **Sealed event log (upstream `c7cbd58`/`ca253d4`)**: terminated runs are now
+  compacted to one `events.jsonl`. All local read paths (CL-2535 recovery,
+  CL-2537 watcher, self-discovery) route through the layout-aware
+  `readAllEventsForRun` in the vendored `adapters/repo-store.ts` (re-synced
+  from upstream); sealing is terminal-only, so parked runs are never sealed;
+  the CL-2231 sweep removes whole directories and is layout-agnostic. No fix
+  needed.
+- **CL-2651 `{reason}` interpolation**: still broken upstream at `13fb9ac`
+  (both crash-log sites); re-applied and kept.
 
 ## On every interchange pin bump
 
