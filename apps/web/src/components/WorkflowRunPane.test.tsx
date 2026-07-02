@@ -62,6 +62,7 @@ let logStateData: LogRunState | undefined = {
   lastSeq: 1,
   steps: [],
 };
+let logStateError = false;
 let stepOutputsData: Record<string, unknown> = {};
 
 const resumeMutateAsync = mock(async () => undefined);
@@ -69,7 +70,7 @@ const resumeMutateAsync = mock(async () => undefined);
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
-  useWorkflowRunState: () => ({ data: logStateData, isError: false }),
+  useWorkflowRunState: () => ({ data: logStateData, isError: logStateError }),
   useWorkflowStepOutputs: () => ({ data: stepOutputsData }),
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
@@ -119,6 +120,7 @@ describe("WorkflowRunPane", () => {
     isError = false;
     deployments = [];
     logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
     stepOutputsData = {};
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
@@ -139,6 +141,40 @@ describe("WorkflowRunPane", () => {
     });
     await waitFor(() => screen.getByText("Workflow run"));
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("falls back to a legible run state when the log query errors, instead of hanging on Loading run…", async () => {
+    // Repro of Finding B: a legacy run (no deploymentId) 400s on /state, so the
+    // log query errors and logState is undefined. The pane used to sit on
+    // "Loading run…" forever. It must fall back to the record-derived run-level
+    // state and render the terminal failure copy.
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = undefined;
+    logStateError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Workflow run"));
+    // Legible terminal copy, not a permanent loading placeholder.
+    screen.getByText(/this run failed\. start a new run to try again\./i);
+    expect(screen.queryByText("Loading run…")).toBeNull();
+  });
+
+  it("keeps showing Loading run… while the log is genuinely still loading (no error, deployment present)", () => {
+    // The fallback must NOT fire while the log is merely in flight — only on a
+    // real error / missing deployment. A run with a deploymentId and no error is
+    // still loading and should show the placeholder.
+    record = makeRecord({
+      kind: "no-panel",
+      status: "running",
+      deploymentId: "ses_d",
+    });
+    logStateData = undefined;
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    screen.getByText("Loading run…");
   });
 
   it("shows the loading placeholder while the record query is loading", () => {

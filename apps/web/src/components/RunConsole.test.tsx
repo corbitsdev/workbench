@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, describe, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as workflowHooks from "../hooks/use-workflow";
@@ -68,6 +68,35 @@ describe("RunConsole", () => {
       wrapper,
     });
     screen.getByText(GENERIC);
+  });
+
+  it("renders an interrupted affordance when the index is failed but the log is still in-flight (abort/restart)", () => {
+    // Repro of Finding A: an operator abort / restart-reconcile writes
+    // status=failed to the INDEX only; the log's last event is a StepStarted, so
+    // the fold yields phase=running with a step stuck in-flight. Without the
+    // overlay the pane showed a frozen in-flight stepper and NO failure copy.
+    record = makeRecord({ status: "failed" });
+    logStateData = makeLogState({
+      phase: "running",
+      steps: [
+        {
+          stepId: "draft",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 1,
+        },
+      ],
+    });
+    render(<RunConsole deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    // The interrupted affordance + restart CTA — not a silent frozen stepper.
+    screen.getByText(/interrupted and can't continue/i);
+    screen.getByRole("button", { name: "Start a new run" });
+    // The generic "This run failed" copy is NOT shown for an interruption.
+    expect(screen.queryByText(GENERIC)).toBeNull();
+    // The log still drives per-step detail: the step it died on is rendered.
+    screen.getByText("Draft");
   });
 
   it("renders each log step in the timeline with its phase", () => {

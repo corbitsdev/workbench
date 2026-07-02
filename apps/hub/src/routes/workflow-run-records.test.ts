@@ -104,6 +104,7 @@ let cannedLogState: unknown = {
     },
   ],
 };
+let runStateShouldThrow = false;
 mock.module("../workflow-executor/run-state-from-log", () => ({
   ...realRunStateFromLog,
   getWorkflowRunState: async (
@@ -116,6 +117,7 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
     },
   ) => {
     runStateCalls.push(args);
+    if (runStateShouldThrow) throw new Error("truncated log");
     return cannedLogState;
   },
 }));
@@ -158,6 +160,7 @@ function resetCaptures(): void {
   sendShouldThrow = false;
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
+  runStateShouldThrow = false;
 }
 
 const reclaimDeployment = async (args: {
@@ -723,6 +726,22 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
     expect(read.status).toBe(500);
     expect(read.json.error).toBe("failed to read run state");
+  });
+
+  test("a fold/read failure degrades to an empty pending state (200), never a 500 that bricks the pane", async () => {
+    resetCaptures();
+    runStateShouldThrow = true;
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
+    expect(read.status).toBe(200);
+    expect(read.json.phase).toBe("pending");
+    expect(read.json.steps).toEqual([]);
+    expect(read.json.runId).toBe(start.json.runId);
+    // The read WAS attempted (and threw) — the route did not silently skip it.
+    expect(runStateCalls).toHaveLength(1);
   });
 
   test("cross-user read is forbidden 403 and never reads the log", async () => {
