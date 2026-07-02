@@ -1,9 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type } from "arktype";
+import { eq } from "drizzle-orm";
+import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { AgentRepoStore } from "@intx/hub-sessions";
+import type { WorkflowAutopublishMap } from "../config";
 import {
   type WorkflowDeployCoreDeps,
   NoDeployingPrincipalError,
@@ -29,6 +32,51 @@ export interface WorkflowDefsBootstrapDeps {
   // Override the committed-defs directory (tests point this at fixtures).
   // Defaults to the bundled `apps/hub/generated/workflow-defs`.
   defsDir?: string;
+  // Per-kind → tenant-slug routing (CL-2641). Null/omitted → every def targets
+  // the global root tenant (back-compat with CL-2593).
+  autopublishMap?: WorkflowAutopublishMap | null;
+}
+
+// Resolve the tenant ids a def of `kind` should publish into. With no map,
+// every def targets the root tenant (exact pre-CL-2641 behavior). With a map,
+// the target slugs are `map[kind] ?? map["default"] ?? [rootTenant]`. Each slug
+// is resolved to a tenant id and validated to be the global tenant or a
+// descendant (reusing the deploy route's ancestor-chain check); an unknown or
+// out-of-hierarchy slug is logged and dropped so the other targets still
+// publish. Never throws.
+async function resolveTargetTenantIds(
+  deps: WorkflowDefsBootstrapDeps,
+  kind: string,
+): Promise<string[]> {
+  const map = deps.autopublishMap;
+  if (map === undefined || map === null) return [deps.coreDeps.rootTenantId];
+  const slugs = map[kind] ?? map["default"];
+  if (slugs === undefined) return [deps.coreDeps.rootTenantId];
+
+  const ids: string[] = [];
+  for (const slug of slugs) {
+    const tenant = await deps.coreDeps.db.query.tenant.findFirst({
+      where: eq(intxSchema.tenant.slug, slug),
+      columns: { id: true },
+    });
+    if (!tenant) {
+      log.error("autopublish-map slug resolves to no tenant; skipping target", {
+        kind,
+        slug,
+      });
+      continue;
+    }
+    const ancestors = await getAncestorChain(deps.coreDeps.db, tenant.id);
+    if (!ancestors.includes(deps.coreDeps.rootTenantId)) {
+      log.error(
+        "autopublish-map target is not the global tenant or a descendant; skipping target",
+        { kind, slug },
+      );
+      continue;
+    }
+    ids.push(tenant.id);
+  }
+  return ids;
 }
 
 async function loadEmbeddedDefs(
@@ -65,11 +113,14 @@ async function loadEmbeddedDefs(
   return defs;
 }
 
-// Publish the build-serialized workflow definitions to the global tenant on
-// boot (CL-2593). Idempotent (skips a def whose published fingerprint already
-// matches) and fail-safe (a per-def failure is logged and skipped — never
-// throws, so a bad def can't block hub startup; the last-good published def
-// keeps serving). Descendant workbenches inherit via the tenant ancestor chain.
+// Publish the build-serialized workflow definitions on boot (CL-2593). By
+// default every def goes to the global root tenant; an optional autopublishMap
+// (CL-2641) routes specific kinds to specific tenants by slug so a workflow is
+// published into the tenant it must run in. Idempotent (skips a def whose
+// published fingerprint already matches) and fail-safe (a per-(kind,tenant)
+// failure is logged and skipped — never throws, so a bad def can't block hub
+// startup; the last-good published def keeps serving). Descendant workbenches
+// inherit via the tenant ancestor chain.
 export async function publishEmbeddedWorkflowDefs(
   deps: WorkflowDefsBootstrapDeps,
 ): Promise<void> {
@@ -85,56 +136,62 @@ export async function publishEmbeddedWorkflowDefs(
   let skipped = 0;
   let skippedOnError = 0;
   for (const embedded of defs) {
-    try {
-      const current = await readWorkflowDefinition(
-        deps.repoStore,
-        embedded.kind,
-      ).catch(() => null);
-      // Idempotency relies on deployWorkflow persisting the envelope such that
-      // the read-back fingerprint equals the embedded one (both pass through
-      // workflowDefinitionEnvelopeSchema). If it ever republishes a def on
-      // every boot (published>0 with no "unchanged"), that seam has drifted —
-      // visible in these logs on the staging rollout before prod. (CL-2593.)
-      if (
-        current !== null &&
-        definitionFingerprint(current) ===
-          definitionFingerprint(embedded.definition)
-      ) {
-        unchanged += 1;
-        continue;
-      }
-      await publishWorkflowDefinition(deps.coreDeps, {
-        // Same exactOptional cast the deploy route uses — the envelope schema's
-        // optional `state` widens differently than WorkflowDefinition.
-        definition: embedded.definition as WorkflowDefinition,
-        targetTenantId: deps.coreDeps.rootTenantId,
-        deployMeta: {
-          version: embedded.version,
-          sha: deps.buildSha ?? "unknown",
-          deployedAt: new Date().toISOString(),
-          ...(embedded.label !== undefined ? { label: embedded.label } : {}),
-          ...(embedded.description !== undefined
-            ? { description: embedded.description }
-            : {}),
-        },
-      });
-      published += 1;
-    } catch (err) {
-      // A tenant with no user principal yet (e.g. a fresh global tenant before
-      // the owner is seeded) is an expected race, not an error — skip quietly
-      // so it doesn't page through the error-only Sentry sink.
-      if (err instanceof NoDeployingPrincipalError) {
-        skipped += 1;
-        log.info("no deploying principal yet; skipping def on boot", {
-          kind: embedded.kind,
+    const current = await readWorkflowDefinition(
+      deps.repoStore,
+      embedded.kind,
+    ).catch(() => null);
+    // Idempotency relies on deployWorkflow persisting the envelope such that
+    // the read-back fingerprint equals the embedded one (both pass through
+    // workflowDefinitionEnvelopeSchema). If it ever republishes a def on
+    // every boot (published>0 with no "unchanged"), that seam has drifted —
+    // visible in these logs on the staging rollout before prod. (CL-2593.)
+    const unchangedForKind =
+      current !== null &&
+      definitionFingerprint(current) ===
+        definitionFingerprint(embedded.definition);
+
+    const targets = await resolveTargetTenantIds(deps, embedded.kind);
+    for (const targetTenantId of targets) {
+      try {
+        if (unchangedForKind) {
+          unchanged += 1;
+          continue;
+        }
+        await publishWorkflowDefinition(deps.coreDeps, {
+          // Same exactOptional cast the deploy route uses — the envelope
+          // schema's optional `state` widens differently than WorkflowDefinition.
+          definition: embedded.definition as WorkflowDefinition,
+          targetTenantId,
+          deployMeta: {
+            version: embedded.version,
+            sha: deps.buildSha ?? "unknown",
+            deployedAt: new Date().toISOString(),
+            ...(embedded.label !== undefined ? { label: embedded.label } : {}),
+            ...(embedded.description !== undefined
+              ? { description: embedded.description }
+              : {}),
+          },
         });
-        continue;
+        published += 1;
+      } catch (err) {
+        // A tenant with no user principal yet (e.g. a fresh global tenant
+        // before the owner is seeded) is an expected race, not an error — skip
+        // quietly so it doesn't page through the error-only Sentry sink.
+        if (err instanceof NoDeployingPrincipalError) {
+          skipped += 1;
+          log.info("no deploying principal yet; skipping def on boot", {
+            kind: embedded.kind,
+            tenantId: targetTenantId,
+          });
+          continue;
+        }
+        skippedOnError += 1;
+        log.error("failed to auto-publish workflow def on boot; skipping", {
+          kind: embedded.kind,
+          tenantId: targetTenantId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-      skippedOnError += 1;
-      log.error("failed to auto-publish workflow def on boot; skipping", {
-        kind: embedded.kind,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
   }
   log.info("workflow autopublish-on-boot complete", {

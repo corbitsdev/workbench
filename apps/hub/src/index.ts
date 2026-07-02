@@ -1164,6 +1164,7 @@ void publishEmbeddedWorkflowDefs({
   repoStore,
   enabled: config.workflowAutopublishOnBoot,
   buildSha: config.buildSha,
+  autopublishMap: config.workflowAutopublishMap,
 }).catch((err) => {
   log.error("workflow autopublish-on-boot failed", {
     error: err instanceof Error ? err.message : String(err),
