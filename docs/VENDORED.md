@@ -5,7 +5,7 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host`
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/storage-isogit`
 lists every divergence in one pass. Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
@@ -96,6 +96,39 @@ There are two kinds of vendoring:
   IPC-compatible with the vendored child. A silent divergence there corrupts hub
   run reads with a green build — re-check these two adapters byte-for-byte on
   every bump.
+
+### `packages/storage-isogit` → `@workbench/storage-isogit`
+
+- **Vendors:** `@intx/storage-isogit` — a **100% verbatim copy** of
+  `interchange/packages/storage-isogit` (re-synced byte-identical at pin
+  `13fb9ac`, bringing in `gc.ts`, `repo-disk.ts`, `repo-lock.ts` and the
+  write-path reclaim). It carries **zero WORKBENCH-LOCAL blocks** today; if that
+  ever changes, tag each block and list it here.
+- **Imported by:** `apps/hub` and `apps/sidecar` agent-repo/context stores
+  (`createIsogitStore`, `createAgentRepoStore` paths) — both sides of the
+  pack-exchange wire.
+- **Re-sync rule:** treat as a clean re-copy from upstream on every pin bump.
+  **On-disk-format parity invariant:** the hub reads packs and repos the sidecar
+  writes (and vice versa); `store.ts` / `pack-receive.ts` / `pack-send.ts` must
+  stay format-identical to the upstream the other consumers compile against. A
+  silent format divergence corrupts agent-repo reads with a green build — the
+  same failure class as the workflow-host repo-store adapters above.
+
+### `packages/hub-agent` → `@workbench/hub-agent` (fork, NOT a verbatim vendor)
+
+- **Status:** genuine long-lived fork of `@intx/hub-agent`, predating the vendor
+  discipline. It carries real workbench features upstream lacks (reconnect
+  backoff/jitter and the outbound queue from the CL-2405 sidecar-disconnect work,
+  `sanitizeAddress`/agent-paths exports) but its divergences are **untagged** —
+  the WORKBENCH-LOCAL audit and the drift script are blind to it.
+- **Known upstream fixes not yet adopted** (found in the 13fb9ac bump review,
+  tracked in CL-2662): upstream's `repoOpQueues`/`drainRepoOps` model (serializes
+  all per-agent repo ops and drains before `deleteAgentDir`; ours serializes only
+  mail commits) and the empty-address `register` frame on socket open (provisions
+  route during session restore).
+- **Re-sync rule:** do NOT literally re-copy from upstream — that would drop the
+  reconnect machinery. Diff deliberately, adopt upstream fixes piecewise, and tag
+  any newly-audited divergence with a WORKBENCH-LOCAL token as it is touched.
 
 ---
 
