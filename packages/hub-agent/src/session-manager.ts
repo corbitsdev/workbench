@@ -83,7 +83,7 @@ export type SessionManagerConfig = {
   /**
    * Per-agent crypto factory. Receives the agent's raw key pair and
    * returns a CryptoProvider bound to it. Keeps the package free of
-   * `@intx/crypto-node`.
+   * `@intx/crypto`.
    */
   createAgentCrypto: (keyPair: KeyPair) => CryptoProvider;
   onEvent: SessionEventSink;
@@ -150,7 +150,7 @@ export type SessionManager = {
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => Promise<boolean>,
   ): Promise<void>;
   /**
    * Materialize an asset pack at `<workspaceRoot>/<mountPath>/` for the
@@ -632,7 +632,7 @@ export function createSessionManager(
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => Promise<boolean>,
   ): Promise<void> {
     const args =
       verifyCommit !== undefined

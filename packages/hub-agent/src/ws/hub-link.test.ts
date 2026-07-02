@@ -6,9 +6,25 @@ import {
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { sign as nodeSign } from "node:crypto";
+import { createPrivateKey, sign as nodeSign } from "node:crypto";
+// @intx/crypto's importPrivateKeyBytes is Web Crypto (async) since the
+// crypto-node -> crypto port; the AgentKeyStore signChallenge contract is
+// synchronous, so the test store signs with a node KeyObject built from
+// the same PKCS#8 framing.
+const PKCS8_ED25519_PREFIX = Buffer.from([
+  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
+  0x22, 0x04, 0x20,
+]);
+function importPrivateKeySeedSync(seed: Uint8Array) {
+  return createPrivateKey({
+    key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(seed)]),
+    format: "der",
+    type: "pkcs8",
+  });
+}
+
 import { createInMemoryTransport } from "@intx/mail-memory";
-import { importPrivateKeyBytes, verifySSHSignature } from "@intx/crypto-node";
+import { verifySSHSignature } from "@intx/crypto";
 import { base64Encode, hexEncode } from "@intx/types";
 import type {
   HarnessConfig,
@@ -98,7 +114,7 @@ function createTestKeyStore(): AgentKeyStore & {
     signChallenge(address, payload) {
       const kp = agentKeys.get(address);
       if (kp === undefined) return null;
-      const key = importPrivateKeyBytes(kp.privateKey);
+      const key = importPrivateKeySeedSync(kp.privateKey);
       return new Uint8Array(nodeSign(null, payload, key));
     },
     recordHubKey(address, hexHubPublicKey) {
@@ -570,11 +586,11 @@ describe("sidecar↔hub integration", () => {
     // The agent must be in the session manager's address list so the
     // register frame includes it in the routing table.
     sessions.addresses.push("agent-1@test.interchange");
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register("agent-1@test.interchange", createNodeCrypto(kp));
+    transport.register("agent-1@test.interchange", createEd25519Crypto(kp));
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -620,11 +636,11 @@ describe("sidecar↔hub integration", () => {
   test("sidecar forwards outbound mail to hub", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register("sender@test.interchange", createNodeCrypto(kp));
+    transport.register("sender@test.interchange", createEd25519Crypto(kp));
 
     const startLength = env.outboundMail.length;
     const client = createHubLink({
@@ -664,8 +680,8 @@ describe("sidecar↔hub integration", () => {
   });
 
   test("mail routes between two sidecars via hub", async () => {
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
 
     // Sidecar A
@@ -673,14 +689,14 @@ describe("sidecar↔hub integration", () => {
     const sessionsA = createMockSessionManager();
     sessionsA.addresses.push("alice@test.interchange");
     const kpA = await generateKeyPair();
-    transportA.register("alice@test.interchange", createNodeCrypto(kpA));
+    transportA.register("alice@test.interchange", createEd25519Crypto(kpA));
 
     // Sidecar B
     const transportB = createInMemoryTransport();
     const sessionsB = createMockSessionManager();
     sessionsB.addresses.push("bob@test.interchange");
     const kpB = await generateKeyPair();
-    transportB.register("bob@test.interchange", createNodeCrypto(kpB));
+    transportB.register("bob@test.interchange", createEd25519Crypto(kpB));
 
     const clientA = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -932,7 +948,7 @@ describe("sidecar↔hub integration", () => {
 
   test("reconnect restores hubPublicKey into hubKeys map", async () => {
     const { generateKeyPair, createSSHSignature } = await import(
-      "@intx/crypto-node"
+      "@intx/crypto"
     );
 
     // Agent keypair — used for challenge/response signing.
@@ -1058,22 +1074,22 @@ describe("sidecar↔hub integration", () => {
       // Create a real signature with the hub's private key and verify
       // it round-trips through the restored verifyCommit callback.
       const payload = "tree abc\nauthor t <t@t> 0 +0000\n\ntest\n";
-      const sig = createSSHSignature(
+      const sig = await createSSHSignature(
         payload,
         hubKp.privateKey,
         hubKp.publicKey,
       );
-      expect(capturedVerifyCommit!(payload, sig)).toBe(true);
+      expect(await capturedVerifyCommit!(payload, sig)).toBe(true);
 
       // A signature from a different key must fail, proving the callback
       // is bound to the specific hub key that was restored.
       const wrongKp = await generateKeyPair();
-      const wrongSig = createSSHSignature(
+      const wrongSig = await createSSHSignature(
         payload,
         wrongKp.privateKey,
         wrongKp.publicKey,
       );
-      expect(capturedVerifyCommit!(payload, wrongSig)).toBe(false);
+      expect(await capturedVerifyCommit!(payload, wrongSig)).toBe(false);
     } finally {
       client.close();
       reconnectServer.stop(true);
@@ -1480,11 +1496,11 @@ describe("sidecar↔hub integration", () => {
     const sessions = createMockSessionManager();
     const address = "agent-fallback@test.interchange";
     sessions.addresses.push(address);
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register(address, createNodeCrypto(kp));
+    transport.register(address, createEd25519Crypto(kp));
 
     const consulted: string[] = [];
     const mailInboundRouter = {

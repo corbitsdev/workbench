@@ -23,6 +23,8 @@ import {
 import { AUTHOR } from "./init";
 import type { CommitSigner } from "./signer";
 import { buildSigningArgs } from "./commit-helpers";
+import { withRepoDirLock } from "./repo-lock";
+import { maybeGCUnderLock, type GCPolicy } from "./gc";
 
 const TURNS_FILE = "turns.jsonl";
 const PROMPT_FILE = "prompt.jsonl";
@@ -98,11 +100,49 @@ function parseMetadata(raw: unknown): MetadataData {
   };
 }
 
+/**
+ * Walk the first-parent commit chain from HEAD, newest-first, stopping at
+ * `limit` entries or at the first parent that is not present on disk.
+ *
+ * `git.log` throws `NotFoundError` the moment it reaches a missing commit,
+ * which is the steady state under `tip-only` GC: the collector prunes
+ * ancestry, leaving the tip's older parents absent. The durable conversation
+ * lives in the working-tree files at the tip, not in this history, so the
+ * commit log is a best-effort time-travel surface — degrade to the surviving
+ * slice rather than throwing into a caller (e.g. the agent's `checkpoints`
+ * tool). Any non-absence read error still surfaces.
+ */
+async function tolerantLog(
+  dir: string,
+  limit: number,
+): Promise<Awaited<ReturnType<typeof git.readCommit>>[]> {
+  const out: Awaited<ReturnType<typeof git.readCommit>>[] = [];
+  let oid: string | undefined;
+  try {
+    oid = await git.resolveRef({ fs, dir, ref: "HEAD" });
+  } catch {
+    return out;
+  }
+  while (oid !== undefined && out.length < limit) {
+    let entry: Awaited<ReturnType<typeof git.readCommit>>;
+    try {
+      entry = await git.readCommit({ fs, dir, oid });
+    } catch (err) {
+      if (err instanceof Error && "code" in err && err.code === "NotFoundError")
+        break;
+      throw err;
+    }
+    out.push(entry);
+    oid = entry.commit.parent[0];
+  }
+  return out;
+}
+
 async function readCommitLog(
   dir: string,
   limit: number,
 ): Promise<ContextCommit[]> {
-  const entries = await git.log({ fs, dir, depth: limit });
+  const entries = await tolerantLog(dir, limit);
   return entries.map((e) => {
     const base = {
       hash: e.oid,
@@ -130,16 +170,16 @@ function assertSafeSegment(value: string, label: string): void {
 
 /**
  * Validate a callId for use in a filesystem path and return the sanitized
- * form used as the filename. Rejects path traversal (`..`) outright;
- * `/` and other unsafe characters are replaced with `_`.
+ * form used as the filename. Rejects path traversal (`..`, `/`) outright;
+ * other unsafe characters are replaced with `_`.
  */
 function sanitizeCallId(callId: string): string {
-  if (callId.includes("..")) {
+  if (callId.includes("..") || callId.includes("/")) {
     throw new Error(
       `callId contains unsafe characters: ${JSON.stringify(callId)}`,
     );
   }
-  return callId.replace(/\//g, "_").replace(UNSAFE_FILENAME_CHARS, "_");
+  return callId.replace(UNSAFE_FILENAME_CHARS, "_");
 }
 
 async function pathExists(fullPath: string): Promise<boolean> {
@@ -215,15 +255,24 @@ function parseTurns(text: string): ConversationTurn[] {
 export class IsogitStore implements ContextStore, AuditStore {
   private readonly dir: string;
   private readonly signer: CommitSigner | undefined;
+  private readonly gcPolicy: GCPolicy | undefined;
   private pendingConnectorState: ConnectorThreadState | null = null;
 
-  constructor(dir: string, signer?: CommitSigner) {
+  constructor(dir: string, signer?: CommitSigner, gcPolicy?: GCPolicy) {
     this.dir = dir;
     this.signer = signer;
+    this.gcPolicy = gcPolicy;
   }
 
   private signingArgs() {
     return buildSigningArgs(this.signer);
+  }
+
+  // Reclaim after a write while the per-directory lock is still held, per
+  // the configured policy. A no-op when no policy was supplied.
+  private async maybeGC(): Promise<void> {
+    if (this.gcPolicy === undefined) return;
+    await maybeGCUnderLock(this.dir, this.gcPolicy);
   }
 
   setConnectorState(state: ConnectorThreadState | null): void {
@@ -265,41 +314,45 @@ export class IsogitStore implements ContextStore, AuditStore {
     options: { message: string },
     _signal?: AbortSignal,
   ): Promise<ContextCommit> {
-    const tracked = [
-      TURNS_FILE,
-      PROMPT_FILE,
-      RESPONSE_FILE,
-      MANIFEST_FILE,
-      METADATA_FILE,
-    ];
-    for (const filepath of tracked) {
-      const fullPath = path.join(this.dir, filepath);
-      if (await pathExists(fullPath)) {
-        await git.add({ fs, dir: this.dir, filepath });
+    return withRepoDirLock(this.dir, async () => {
+      const tracked = [
+        TURNS_FILE,
+        PROMPT_FILE,
+        RESPONSE_FILE,
+        MANIFEST_FILE,
+        METADATA_FILE,
+      ];
+      for (const filepath of tracked) {
+        const fullPath = path.join(this.dir, filepath);
+        if (await pathExists(fullPath)) {
+          await git.add({ fs, dir: this.dir, filepath });
+        }
       }
-    }
 
-    const blobsDir = path.join(this.dir, TOOL_OUTPUT_DIR);
-    if (await pathExists(blobsDir)) {
-      const entries = await fs.promises.readdir(blobsDir);
-      for (const entry of entries) {
-        await git.add({
-          fs,
-          dir: this.dir,
-          filepath: `${TOOL_OUTPUT_DIR}/${entry}`,
-        });
+      const blobsDir = path.join(this.dir, TOOL_OUTPUT_DIR);
+      if (await pathExists(blobsDir)) {
+        const entries = await fs.promises.readdir(blobsDir);
+        for (const entry of entries) {
+          await git.add({
+            fs,
+            dir: this.dir,
+            filepath: `${TOOL_OUTPUT_DIR}/${entry}`,
+          });
+        }
       }
-    }
 
-    const oid = await git.commit({
-      fs,
-      dir: this.dir,
-      message: options.message,
-      author: AUTHOR,
-      ...this.signingArgs(),
+      const oid = await git.commit({
+        fs,
+        dir: this.dir,
+        message: options.message,
+        author: AUTHOR,
+        ...this.signingArgs(),
+      });
+
+      const described = await this.describeHead(oid, options.message);
+      await this.maybeGC();
+      return described;
     });
-
-    return this.describeHead(oid, options.message);
   }
 
   private async describeHead(
@@ -449,7 +502,7 @@ export class IsogitStore implements ContextStore, AuditStore {
     _signal?: AbortSignal,
   ): Promise<TransformRecordType[]> {
     if (limit <= 0) return [];
-    const entries = await git.log({ fs, dir: this.dir, depth: limit });
+    const entries = await tolerantLog(this.dir, limit);
     const collected: TransformRecordType[] = [];
     for (const entry of entries) {
       let blob: Uint8Array;
@@ -483,55 +536,57 @@ export class IsogitStore implements ContextStore, AuditStore {
     _signal?: AbortSignal,
   ): Promise<void> {
     if (records.length === 0) return;
+    await withRepoDirLock(this.dir, async () => {
+      // Pre-flight: validate all records and check for duplicates before
+      // writing anything to disk. This avoids orphaned files if a
+      // duplicate is detected partway through the batch.
+      const planned: { record: AuditRecordType; filepath: string }[] = [];
+      for (const record of records) {
+        assertSafeSegment(record.sessionId, "sessionId");
+        const safeCallId = sanitizeCallId(record.callId);
 
-    // Pre-flight: validate all records and check for duplicates before
-    // writing anything to disk. This avoids orphaned files if a
-    // duplicate is detected partway through the batch.
-    const planned: { record: AuditRecordType; filepath: string }[] = [];
-    for (const record of records) {
-      assertSafeSegment(record.sessionId, "sessionId");
-      const safeCallId = sanitizeCallId(record.callId);
-
-      const filepath = path.join(
-        AUDIT_DIR,
-        record.sessionId,
-        `${safeCallId}.json`,
-      );
-      const fullPath = path.join(this.dir, filepath);
-
-      try {
-        await fs.promises.access(fullPath);
-        throw new Error(
-          `Duplicate audit record: ${record.sessionId}/${record.callId}`,
+        const filepath = path.join(
+          AUDIT_DIR,
+          record.sessionId,
+          `${safeCallId}.json`,
         );
-      } catch (e) {
-        if (e instanceof Error && "code" in e && e.code === "ENOENT") {
-          // Expected: file does not exist yet.
-        } else {
-          throw e;
+        const fullPath = path.join(this.dir, filepath);
+
+        try {
+          await fs.promises.access(fullPath);
+          throw new Error(
+            `Duplicate audit record: ${record.sessionId}/${record.callId}`,
+          );
+        } catch (e) {
+          if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+            // Expected: file does not exist yet.
+          } else {
+            throw e;
+          }
         }
+
+        planned.push({ record, filepath });
       }
 
-      planned.push({ record, filepath });
-    }
+      // Write phase: all validation passed, safe to write files.
+      for (const { record, filepath } of planned) {
+        const sessionDir = path.join(this.dir, AUDIT_DIR, record.sessionId);
+        await fs.promises.mkdir(sessionDir, { recursive: true });
+        const fullPath = path.join(this.dir, filepath);
+        await fs.promises.writeFile(fullPath, JSON.stringify(record, null, 2));
+        await git.add({ fs, dir: this.dir, filepath });
+      }
 
-    // Write phase: all validation passed, safe to write files.
-    for (const { record, filepath } of planned) {
-      const sessionDir = path.join(this.dir, AUDIT_DIR, record.sessionId);
-      await fs.promises.mkdir(sessionDir, { recursive: true });
-      const fullPath = path.join(this.dir, filepath);
-      await fs.promises.writeFile(fullPath, JSON.stringify(record, null, 2));
-      await git.add({ fs, dir: this.dir, filepath });
-    }
-
-    const count = records.length;
-    const noun = count === 1 ? "record" : "records";
-    await git.commit({
-      fs,
-      dir: this.dir,
-      message: `Record ${count} tool audit ${noun}`,
-      author: AUTHOR,
-      ...this.signingArgs(),
+      const count = records.length;
+      const noun = count === 1 ? "record" : "records";
+      await git.commit({
+        fs,
+        dir: this.dir,
+        message: `Record ${count} tool audit ${noun}`,
+        author: AUTHOR,
+        ...this.signingArgs(),
+      });
+      await this.maybeGC();
     });
   }
 
@@ -540,56 +595,61 @@ export class IsogitStore implements ContextStore, AuditStore {
     _signal?: AbortSignal,
   ): Promise<void> {
     if (records.length === 0) return;
+    await withRepoDirLock(this.dir, async () => {
+      // Pre-flight: validate all records and check for duplicates before
+      // writing anything to disk. This avoids orphaned files if a
+      // duplicate is detected partway through the batch.
+      const planned: { record: ErrorRecord; filepath: string }[] = [];
+      for (const record of records) {
+        assertSafeSegment(record.sessionId, "sessionId");
 
-    // Pre-flight: validate all records and check for duplicates before
-    // writing anything to disk. This avoids orphaned files if a
-    // duplicate is detected partway through the batch.
-    const planned: { record: ErrorRecord; filepath: string }[] = [];
-    for (const record of records) {
-      assertSafeSegment(record.sessionId, "sessionId");
-
-      const sanitizedCategory = record.category.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const seq = String(record.seq).padStart(8, "0");
-      const filepath = path.join(
-        ERRORS_DIR,
-        record.sessionId,
-        `${seq}-${sanitizedCategory}.json`,
-      );
-      const fullPath = path.join(this.dir, filepath);
-
-      try {
-        await fs.promises.access(fullPath);
-        throw new Error(
-          `Duplicate error record: ${record.sessionId}/${seq}-${sanitizedCategory}`,
+        const sanitizedCategory = record.category.replace(
+          /[^a-zA-Z0-9_-]/g,
+          "_",
         );
-      } catch (e) {
-        if (e instanceof Error && "code" in e && e.code === "ENOENT") {
-          // Expected: file does not exist yet.
-        } else {
-          throw e;
+        const seq = String(record.seq).padStart(8, "0");
+        const filepath = path.join(
+          ERRORS_DIR,
+          record.sessionId,
+          `${seq}-${sanitizedCategory}.json`,
+        );
+        const fullPath = path.join(this.dir, filepath);
+
+        try {
+          await fs.promises.access(fullPath);
+          throw new Error(
+            `Duplicate error record: ${record.sessionId}/${seq}-${sanitizedCategory}`,
+          );
+        } catch (e) {
+          if (e instanceof Error && "code" in e && e.code === "ENOENT") {
+            // Expected: file does not exist yet.
+          } else {
+            throw e;
+          }
         }
+
+        planned.push({ record, filepath });
       }
 
-      planned.push({ record, filepath });
-    }
+      // Write phase: all validation passed, safe to write files.
+      for (const { record, filepath } of planned) {
+        const sessionDir = path.join(this.dir, ERRORS_DIR, record.sessionId);
+        await fs.promises.mkdir(sessionDir, { recursive: true });
+        const fullPath = path.join(this.dir, filepath);
+        await fs.promises.writeFile(fullPath, JSON.stringify(record, null, 2));
+        await git.add({ fs, dir: this.dir, filepath });
+      }
 
-    // Write phase: all validation passed, safe to write files.
-    for (const { record, filepath } of planned) {
-      const sessionDir = path.join(this.dir, ERRORS_DIR, record.sessionId);
-      await fs.promises.mkdir(sessionDir, { recursive: true });
-      const fullPath = path.join(this.dir, filepath);
-      await fs.promises.writeFile(fullPath, JSON.stringify(record, null, 2));
-      await git.add({ fs, dir: this.dir, filepath });
-    }
-
-    const count = records.length;
-    const noun = count === 1 ? "record" : "records";
-    await git.commit({
-      fs,
-      dir: this.dir,
-      message: `Record ${count} error ${noun}`,
-      author: AUTHOR,
-      ...this.signingArgs(),
+      const count = records.length;
+      const noun = count === 1 ? "record" : "records";
+      await git.commit({
+        fs,
+        dir: this.dir,
+        message: `Record ${count} error ${noun}`,
+        author: AUTHOR,
+        ...this.signingArgs(),
+      });
+      await this.maybeGC();
     });
   }
 

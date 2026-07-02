@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import git from "isomorphic-git";
 import { readRawObject } from "./isogit-helpers";
+import { withRepoDirLock } from "./repo-lock";
 
 /**
  * Verifies the signature embedded in a git commit object.
@@ -13,7 +14,10 @@ import { readRawObject } from "./isogit-helpers";
  * Returns true when the signature is valid. Should throw on malformed
  * input and return false on cryptographic failure.
  */
-export type CommitVerifier = (payload: string, signature: string) => boolean;
+export type CommitVerifier = (
+  payload: string,
+  signature: string,
+) => Promise<boolean>;
 
 export type TreeValidatorResult = true | { ok: false; reason: string };
 
@@ -352,7 +356,7 @@ async function writeTreeEntries(
  * source-line references above are the verification anchor for the
  * next reader deciding whether the dance is still needed.
  */
-async function publishPackAtomically(
+export async function publishPackAtomically(
   dir: string,
   pack: Uint8Array,
   transferId: string,
@@ -480,10 +484,11 @@ export async function receivePackObjects(
 
   // Post-publish validation runs inside a try so any rejection path
   // (sha mismatch, CAS non-fast-forward, tree validator) unpublishes
-  // the pack before re-throwing. Without this, repeated rejections
-  // would accumulate orphan `.pack` + `.idx` pairs in objects/pack/
-  // unbounded by anything internal — iso-git does not run periodic
-  // GC, and the hub does not invoke git gc on agent repos.
+  // the pack before re-throwing. This removes a rejected pack
+  // immediately, at the moment of rejection. Write-path GC (`runGC`)
+  // also reclaims unreferenced packs, but only when a later accepted
+  // write crosses its threshold; the immediate unpublish keeps a flood
+  // of rejected packs from accumulating in the window before that.
   try {
     if (!oids.includes(expectedSha)) {
       throw new Error(
@@ -614,54 +619,60 @@ export async function applyPack(
   transferId: string,
   verifyCommit?: CommitVerifier,
 ): Promise<void> {
-  const oids = await publishPackAtomically(dir, pack, transferId);
+  // The deploy apply shares the agent repo's object store with the
+  // reactor's context commits, the mail-audit commits, and GC. Hold the
+  // per-directory lock across the publish, validation, checkout, and ref
+  // write so none of them interleave with this apply.
+  await withRepoDirLock(dir, async () => {
+    const oids = await publishPackAtomically(dir, pack, transferId);
 
-  // Post-publish validation runs inside a try so any rejection path
-  // (sha mismatch, missing signature, signature failure) unpublishes
-  // the pack before re-throwing. Sidecar `applyPack` is the last line
-  // of defence against a compromised hub or transport; without the
-  // unpublish, a flood of rejected-signature packs would accumulate
-  // orphan commits in the local agent repo unbounded by anything
-  // internal to this process.
-  try {
-    if (!oids.includes(expectedSha)) {
-      throw new Error(
-        `sha_mismatch: expected commit ${expectedSha} not found in pack`,
-      );
-    }
-
-    if (verifyCommit !== undefined) {
-      const { commit } = await git.readCommit({
-        fs,
-        dir,
-        oid: expectedSha,
-      });
-      if (commit.gpgsig === undefined) {
+    // Post-publish validation runs inside a try so any rejection path
+    // (sha mismatch, missing signature, signature failure) unpublishes
+    // the pack before re-throwing. Sidecar `applyPack` is the last line
+    // of defence against a compromised hub or transport; the unpublish
+    // removes a rejected pack at the moment of rejection, before the
+    // reactor's write-path GC would next reclaim it, so a flood of
+    // rejected-signature packs cannot accumulate in the meantime.
+    try {
+      if (!oids.includes(expectedSha)) {
         throw new Error(
-          `signature_unsigned: commit ${expectedSha} has no signature`,
+          `sha_mismatch: expected commit ${expectedSha} not found in pack`,
         );
       }
 
-      // Reconstruct the signing payload from the raw object bytes.
-      // readCommit().payload is unreliable for SSH signatures because
-      // isogit's withoutSignature() only handles PGP armor markers.
-      const { object: rawBytes } = await readRawObject(dir, expectedSha);
-      const payload = stripGpgsig(new TextDecoder().decode(rawBytes));
+      if (verifyCommit !== undefined) {
+        const { commit } = await git.readCommit({
+          fs,
+          dir,
+          oid: expectedSha,
+        });
+        if (commit.gpgsig === undefined) {
+          throw new Error(
+            `signature_unsigned: commit ${expectedSha} has no signature`,
+          );
+        }
 
-      if (!verifyCommit(payload, commit.gpgsig)) {
-        throw new Error(
-          `signature_invalid: commit ${expectedSha} signature verification failed`,
-        );
+        // Reconstruct the signing payload from the raw object bytes.
+        // readCommit().payload is unreliable for SSH signatures because
+        // isogit's withoutSignature() only handles PGP armor markers.
+        const { object: rawBytes } = await readRawObject(dir, expectedSha);
+        const payload = stripGpgsig(new TextDecoder().decode(rawBytes));
+
+        if (!(await verifyCommit(payload, commit.gpgsig))) {
+          throw new Error(
+            `signature_invalid: commit ${expectedSha} signature verification failed`,
+          );
+        }
       }
-    }
 
-    // Checkout reads from the now-published pack; ref is written last
-    // so it never references a commit whose working tree is not
-    // materialized.
-    await checkoutTree(dir, expectedSha, ref);
-    await git.writeRef({ fs, dir, ref, value: expectedSha, force: true });
-  } catch (err) {
-    await unpublishPack(dir, transferId);
-    throw err;
-  }
+      // Checkout reads from the now-published pack; ref is written last
+      // so it never references a commit whose working tree is not
+      // materialized.
+      await checkoutTree(dir, expectedSha, ref);
+      await git.writeRef({ fs, dir, ref, value: expectedSha, force: true });
+    } catch (err) {
+      await unpublishPack(dir, transferId);
+      throw err;
+    }
+  });
 }

@@ -11,6 +11,7 @@ import {
   listBranches,
   logHistory,
 } from "./index";
+import { base64Encode } from "@intx/types";
 import { IsogitStore } from "./store";
 import { initAgentRepo } from "./init";
 import type {
@@ -764,7 +765,7 @@ describe("commit signing", () => {
     await initAgentRepo(dir);
 
     const signer = async (payload: string) =>
-      `-----BEGIN SSH SIGNATURE-----\n${Buffer.from(payload).toString("base64").slice(0, 70)}\n-----END SSH SIGNATURE-----`;
+      `-----BEGIN SSH SIGNATURE-----\n${base64Encode(new TextEncoder().encode(payload)).slice(0, 70)}\n-----END SSH SIGNATURE-----`;
 
     const store = new IsogitStore(dir, signer);
     await store.writeTurns([]);
@@ -798,7 +799,7 @@ describe("commit signing", () => {
     await initAgentRepo(dir);
 
     const signer = async (payload: string) =>
-      `-----BEGIN SSH SIGNATURE-----\n${Buffer.from(payload).toString("base64").slice(0, 70)}\n-----END SSH SIGNATURE-----`;
+      `-----BEGIN SSH SIGNATURE-----\n${base64Encode(new TextEncoder().encode(payload)).slice(0, 70)}\n-----END SSH SIGNATURE-----`;
 
     const store = new IsogitStore(dir, signer);
     await store.commitAudit([makeAuditRecord()]);
@@ -815,7 +816,7 @@ describe("commit signing", () => {
     await initAgentRepo(dir);
 
     const signer = async (payload: string) =>
-      `-----BEGIN SSH SIGNATURE-----\n${Buffer.from(payload).toString("base64").slice(0, 70)}\n-----END SSH SIGNATURE-----`;
+      `-----BEGIN SSH SIGNATURE-----\n${base64Encode(new TextEncoder().encode(payload)).slice(0, 70)}\n-----END SSH SIGNATURE-----`;
 
     const store = new IsogitStore(dir, signer);
     await store.commitErrors([makeErrorRecord()]);
@@ -925,11 +926,13 @@ describe("writeBlob / readBlob", () => {
     }
     expect(thrownTraversal?.message).toContain("unsafe characters");
 
-    await store.writeBlob("a/b", new Uint8Array([4]));
-    const read = await store.readBlob("a/b");
-    expect(Array.from(read)).toEqual([4]);
-    const expectedPath = path.join(dir, "tool-output", "a_b");
-    expect(fs.existsSync(expectedPath)).toBe(true);
+    let thrownSlash: Error | undefined;
+    try {
+      await store.writeBlob("a/b", new Uint8Array());
+    } catch (cause) {
+      thrownSlash = cause instanceof Error ? cause : new Error(String(cause));
+    }
+    expect(thrownSlash?.message).toContain("unsafe characters");
   });
 
   test("writeBlob sanitizes other unsafe characters in the filename", async () => {
