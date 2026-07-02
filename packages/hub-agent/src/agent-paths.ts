@@ -6,6 +6,16 @@
 // that need to find an agent's directory must go through this module
 // (or through AgentRepoStore.getAgentDir) rather than computing the
 // path independently.
+//
+// WORKBENCH-LOCAL (CL-2662): upstream @intx/hub-agent also ships a
+// dependency-light `src/paths.ts` barrel (`@intx/hub-agent/paths`,
+// re-exporting readDeployTree + sanitizeAddress) for spawned children
+// that must not evaluate the orchestrator module graph. Nothing in this
+// repo imports that subpath — workbench consumers (e.g. the CL-2231
+// reclaim sweep) import `sanitizeAddress` from the main
+// `@workbench/hub-agent` export (CL-2339) — so the barrel is
+// deliberately not mirrored. Mirror it only when a consumer needs the
+// dependency-light entry.
 
 import path from "node:path";
 

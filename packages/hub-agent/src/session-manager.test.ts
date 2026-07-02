@@ -14,7 +14,7 @@ import type {
 } from "@intx/types/runtime";
 
 import { createAgentKeyStore } from "./agent-key-store";
-import { createAgentRepoStore } from "./agent-repo-store";
+import { createAgentRepoStore, type AgentRepoStore } from "./agent-repo-store";
 import { createSessionManager } from "./session-manager";
 import type {
   BuildHarnessArgs,
@@ -192,8 +192,8 @@ function makeManagerHarness(
   const keyStore = createAgentKeyStore({
     dataDir,
     generateKeyPair: async () => makeKeyPair(11),
-    signEd25519: () => new Uint8Array(64),
-    verifySSHSig: () => true,
+    signEd25519: async () => new Uint8Array(64),
+    verifySSHSig: async () => true,
   });
   const builder = makeRecordingBuilder(opts);
   const transport = createInMemoryTransport();
@@ -466,5 +466,321 @@ describe("SessionManager.onAgentEvent per-agent fan-out", () => {
     // bob continues to receive after alice's disposer runs.
     bobBuild.onEvent(bobTick);
     expect(bobEvents).toEqual([bobTick, bobTick]);
+  });
+});
+
+async function seedAgentsOnDisk(
+  dataDir: string,
+  addresses: string[],
+): Promise<void> {
+  const seed = makeManagerHarness(dataDir);
+  for (const address of addresses) {
+    await seed.manager.provisionAgent(makeConfig(address));
+    await seed.manager.startSession(address);
+  }
+}
+
+function makeRestoredBundle(): HarnessBundle {
+  return {
+    harness: makeHarnessStub(),
+    mailStore: makeMailStoreStub(),
+    updateGrants() {
+      /* no-op: restore tests do not assert on grants */
+    },
+    disposers: [],
+  };
+}
+
+function makeRestoreStores(dataDir: string): {
+  repoStore: ReturnType<typeof createAgentRepoStore>;
+  keyStore: ReturnType<typeof createAgentKeyStore>;
+} {
+  return {
+    repoStore: createAgentRepoStore({ dataDir }),
+    keyStore: createAgentKeyStore({
+      dataDir,
+      generateKeyPair: async () => makeKeyPair(11),
+      signEd25519: async () => new Uint8Array(64),
+      verifySSHSig: async () => true,
+    }),
+  };
+}
+
+describe("SessionManager.restoreSessions bounded parallelism", () => {
+  test("rejects a non-positive restoreConcurrency", async () => {
+    const dataDir = await tempDir();
+    const { repoStore, keyStore } = makeRestoreStores(dataDir);
+    expect(() =>
+      createSessionManager({
+        transport: createInMemoryTransport(),
+        repoStore,
+        keyStore,
+        buildHarness: makeRecordingBuilder({}),
+        createAgentCrypto: (kp) => makeCrypto(kp),
+        onEvent: () => {
+          /* no-op */
+        },
+        onConnectorStateChanged: () => {
+          /* no-op */
+        },
+        restoreConcurrency: 0,
+      }),
+    ).toThrow(/restoreConcurrency must be a positive integer/);
+  });
+
+  test("restores up to restoreConcurrency agents at once, no more", async () => {
+    const dataDir = await tempDir();
+    const addresses = ["a@local", "b@local", "c@local"];
+    await seedAgentsOnDisk(dataDir, addresses);
+
+    // Fresh stores + transport stand in for a restarted process that
+    // restores the seeded agents from disk.
+    const { repoStore, keyStore } = makeRestoreStores(dataDir);
+
+    const buildStarts: string[] = [];
+    let startedCount = 0;
+    let signalBoundReached!: () => void;
+    const boundReached = new Promise<void>((resolve) => {
+      signalBoundReached = resolve;
+    });
+    let releaseBuilds!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseBuilds = resolve;
+    });
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build(args) {
+        buildStarts.push(args.agentAddress);
+        startedCount += 1;
+        if (startedCount === 2) signalBoundReached();
+        await gate;
+        return makeRestoredBundle();
+      },
+    };
+
+    const manager = createSessionManager({
+      transport: createInMemoryTransport(),
+      repoStore,
+      keyStore,
+      buildHarness: builder,
+      createAgentCrypto: (kp) => makeCrypto(kp),
+      onEvent: () => {
+        /* no-op */
+      },
+      onConnectorStateChanged: () => {
+        /* no-op */
+      },
+      restoreConcurrency: 2,
+    });
+
+    const restorePromise = manager.restoreSessions();
+    // Two builds run at once; the third cannot start until a worker
+    // slot frees, which needs the gate to release. A serial restore
+    // would hold at one started build and this await would never settle.
+    await boundReached;
+    expect(buildStarts.length).toBe(2);
+
+    releaseBuilds();
+    const result = await restorePromise;
+    // All three eventually build once slots free up.
+    expect(buildStarts.length).toBe(3);
+    expect(result.failed).toEqual([]);
+    expect(result.restored.map((r) => r.address).sort()).toEqual(
+      [...addresses].sort(),
+    );
+  });
+
+  test("reports a failing agent as failed without blocking the rest", async () => {
+    const dataDir = await tempDir();
+    const addresses = ["healthy1@local", "wedged@local", "healthy2@local"];
+    await seedAgentsOnDisk(dataDir, addresses);
+
+    const { repoStore, keyStore } = makeRestoreStores(dataDir);
+
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build(args) {
+        if (args.agentAddress === "wedged@local") {
+          throw new Error("registry fetch exceeded the timeout");
+        }
+        return makeRestoredBundle();
+      },
+    };
+
+    const manager = createSessionManager({
+      transport: createInMemoryTransport(),
+      repoStore,
+      keyStore,
+      buildHarness: builder,
+      createAgentCrypto: (kp) => makeCrypto(kp),
+      onEvent: () => {
+        /* no-op */
+      },
+      onConnectorStateChanged: () => {
+        /* no-op */
+      },
+    });
+
+    const result = await manager.restoreSessions();
+    expect(result.failed).toEqual(["wedged@local"]);
+    expect(result.restored.map((r) => r.address).sort()).toEqual([
+      "healthy1@local",
+      "healthy2@local",
+    ]);
+  });
+});
+
+function makeStubRepoStore(opts: {
+  dataDir: string;
+  createStatePack: AgentRepoStore["createStatePack"];
+  remove: AgentRepoStore["remove"];
+}): AgentRepoStore {
+  const unused = (name: string) => (): never => {
+    throw new Error(`${name} is not exercised by this test`);
+  };
+  return {
+    getAgentDir: (address) => path.join(opts.dataDir, address),
+    initRepo: unused("initRepo"),
+    applyDeployPack: unused("applyDeployPack"),
+    createStatePack: opts.createStatePack,
+    getDeployRef: unused("getDeployRef"),
+    remove: opts.remove,
+    persistConfig: unused("persistConfig"),
+    persistPairing: unused("persistPairing"),
+    scanConfigs: unused("scanConfigs"),
+  };
+}
+
+function makeManagerWithRepoStore(
+  dataDir: string,
+  repoStore: AgentRepoStore,
+): ReturnType<typeof createSessionManager> {
+  return createSessionManager({
+    transport: createInMemoryTransport(),
+    repoStore,
+    keyStore: createAgentKeyStore({
+      dataDir,
+      generateKeyPair: async () => makeKeyPair(11),
+      signEd25519: async () => new Uint8Array(64),
+      verifySSHSig: async () => true,
+    }),
+    buildHarness: makeRecordingBuilder({}),
+    createAgentCrypto: (kp) => makeCrypto(kp),
+    onEvent: () => {
+      /* no-op */
+    },
+    onConnectorStateChanged: () => {
+      /* no-op */
+    },
+  });
+}
+
+describe("SessionManager repo-operation serialization", () => {
+  test("deleteAgentDir removes the directory only after an in-flight state-pack read completes", async () => {
+    const dataDir = await tempDir();
+    const events: string[] = [];
+
+    let releaseStatePack!: () => void;
+    const statePackGate = new Promise<void>((resolve) => {
+      releaseStatePack = resolve;
+    });
+
+    const repoStore = makeStubRepoStore({
+      dataDir,
+      async createStatePack() {
+        events.push("createStatePack:start");
+        await statePackGate;
+        events.push("createStatePack:end");
+        return {
+          pack: new Uint8Array(),
+          commitSha: "0".repeat(40),
+          ref: "refs/heads/main",
+        };
+      },
+      async remove() {
+        events.push("remove");
+      },
+    });
+
+    const manager = makeManagerWithRepoStore(dataDir, repoStore);
+
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    try {
+      const statePack = manager.createStatePack("agent@local");
+      const deletion = manager.deleteAgentDir("agent@local");
+
+      // Let the state-pack read enter its gate and the deletion reach its
+      // drain await. With the gate still closed, the removal must not run.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      expect(events).toEqual(["createStatePack:start"]);
+
+      releaseStatePack();
+      await Promise.all([statePack, deletion]);
+
+      expect(events).toEqual([
+        "createStatePack:start",
+        "createStatePack:end",
+        "remove",
+      ]);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
+
+    // A pending unhandled rejection surfaces on the next macrotask.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(rejections).toEqual([]);
+  });
+
+  test("a rejecting repo operation propagates to its caller without poisoning the chain", async () => {
+    const dataDir = await tempDir();
+    let calls = 0;
+
+    const repoStore = makeStubRepoStore({
+      dataDir,
+      async createStatePack() {
+        calls += 1;
+        if (calls === 1) {
+          throw new Error("state pack boom");
+        }
+        return {
+          pack: new Uint8Array(),
+          commitSha: "1".repeat(40),
+          ref: "refs/heads/main",
+        };
+      },
+      async remove() {
+        /* unused in this test */
+      },
+    });
+
+    const manager = makeManagerWithRepoStore(dataDir, repoStore);
+
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => rejections.push(reason);
+    process.on("unhandledRejection", onRejection);
+    try {
+      // The failing op's rejection reaches its own caller.
+      await expect(manager.createStatePack("agent@local")).rejects.toThrow(
+        "state pack boom",
+      );
+
+      // The chain is not poisoned: the next op runs and resolves normally.
+      const second = await manager.createStatePack("agent@local");
+      expect(second.commitSha).toBe("1".repeat(40));
+      expect(calls).toBe(2);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+    }
+
+    // The rejection-swallowing tail must not surface as an unhandled
+    // rejection on the next macrotask.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(rejections).toEqual([]);
   });
 });

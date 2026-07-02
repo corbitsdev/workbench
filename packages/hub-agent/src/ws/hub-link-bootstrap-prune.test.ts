@@ -26,25 +26,8 @@ import {
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { createPrivateKey, sign as nodeSign } from "node:crypto";
-// @intx/crypto's importPrivateKeyBytes is Web Crypto (async) since the
-// crypto-node -> crypto port; the AgentKeyStore signChallenge contract is
-// synchronous, so the test store signs with a node KeyObject built from
-// the same PKCS#8 framing.
-const PKCS8_ED25519_PREFIX = Buffer.from([
-  0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04,
-  0x22, 0x04, 0x20,
-]);
-function importPrivateKeySeedSync(seed: Uint8Array) {
-  return createPrivateKey({
-    key: Buffer.concat([PKCS8_ED25519_PREFIX, Buffer.from(seed)]),
-    format: "der",
-    type: "pkcs8",
-  });
-}
-
 import { createInMemoryTransport } from "@intx/mail-memory";
-import { verifySSHSignature } from "@intx/crypto";
+import { signEd25519, verifySSHSignature } from "@intx/crypto";
 import type {
   HarnessConfig,
   InboundMessage,
@@ -78,11 +61,10 @@ function createTestKeyStore(): AgentKeyStore & {
         keyPair,
       }));
     },
-    signChallenge(address, payload) {
+    async signChallenge(address, payload) {
       const kp = agentKeys.get(address);
       if (kp === undefined) return null;
-      const key = importPrivateKeySeedSync(kp.privateKey);
-      return new Uint8Array(nodeSign(null, payload, key));
+      return await signEd25519(kp.privateKey, payload);
     },
     recordHubKey(address, hexHubPublicKey) {
       hubKeys.set(address, hexDecode(hexHubPublicKey));
@@ -313,8 +295,8 @@ function startTestServer(): TestEnv {
 
 const env = startTestServer();
 
-afterAll(() => {
-  env.server.stop(true);
+afterAll(async () => {
+  await env.server.stop(true);
 });
 
 describe("hub-link workflow-run pack bootstrap prune", () => {
