@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import * as intxDbReal from "@intx/db";
 import type { DB } from "@intx/db";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
@@ -45,7 +45,18 @@ import {
   relaunchInstanceIfNeeded,
   reconcileDisconnectedSession,
   registerDisconnectReconciler,
+  reconcileWedgedSessions,
+  registerWedgeSweepReconciler,
 } from "../services/agent-provisioning";
+import { resetRelaunchBreaker } from "../services/relaunch-breaker";
+
+// The relaunch breaker is process-global module state (in-flight dedup +
+// failure cooldowns keyed by instance id). A failing launch in one test arms a
+// cooldown that suppresses a later test's relaunch of the same instance id,
+// so the suite must clear it between tests to stay order-independent.
+beforeEach(() => {
+  resetRelaunchBreaker();
+});
 
 const {
   agentInstance: agentInstanceTable,
@@ -2420,6 +2431,246 @@ describe("registerDisconnectReconciler", () => {
     await new Promise((resolve) => setTimeout(resolve, 25));
 
     expect(calls).toHaveLength(0);
+  });
+});
+
+// ─── reconcileWedgedSessions (periodic sweep) ─────────────────────
+//
+// The sweep supplies the RELAUNCH half missing from the disconnect reconciler:
+// an instance left active-but-unroutable after a sidecar restart is ended and
+// relaunched so its address re-registers. These assert real behavior across the
+// hub↔router seam (getRoutableAddresses) — selection, the routable skip, the
+// right-before-relaunch guard, and end-then-relaunch.
+
+describe("reconcileWedgedSessions", () => {
+  const ADDR = "ins-1@tenant-1.localhost";
+  const TENANT_ROW = { id: "tenant-1", domain: "tenant-1.localhost" };
+  const AGENT_ROW = {
+    id: "agt-1",
+    systemPrompt: "You are Myra.",
+    contextConfig: null,
+    initialState: null,
+    modelConfig: null,
+    capabilities: null,
+    credentialRequirements: null,
+    modelRequirements: null,
+    grantRequirements: null,
+    toolPackages: [],
+  };
+
+  function wedgedInstance(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "ins-1",
+      agentId: "agt-1",
+      tenantId: "tenant-1",
+      address: ADDR,
+      status: "running",
+      sessionId: "ses-1",
+      principalId: "prn-agent-1",
+      ...overrides,
+    };
+  }
+
+  // agentSession status flips to "ended" after the first read, so
+  // reconcileDisconnectedSession (first read: active → ends it) and the
+  // subsequent relaunch (reads: ended → proceeds as a cold start) compose.
+  function flippingSessionFindFirst() {
+    let reads = 0;
+    return mock(() => {
+      reads += 1;
+      return Promise.resolve({
+        id: "ses-1",
+        status: reads === 1 ? "active" : "ended",
+      });
+    });
+  }
+
+  it("ends the stale session then relaunches an active, unroutable instance", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const { update, calls } = makeUpdateCapture();
+    const db = makeMockDb({
+      select: mock(() =>
+        makeSelectChain([{ instanceId: "ins-1", address: ADDR }]),
+      ),
+      update,
+    });
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(wedgedInstance()),
+    );
+    db.query.agentSession.findFirst = flippingSessionFindFirst();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
+
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([]) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+    );
+
+    // The relaunch actually fired (address re-registers via a fresh launch).
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    // The stale session was ended before the relaunch.
+    expect(calls.some((c) => c.status === "ended")).toBe(true);
+  });
+
+  it("skips an instance whose address is already routable (no relaunch)", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const { update, calls } = makeUpdateCapture();
+    const db = makeMockDb({
+      select: mock(() =>
+        makeSelectChain([{ instanceId: "ins-1", address: ADDR }]),
+      ),
+      update,
+    });
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(wedgedInstance()),
+    );
+    db.query.agentSession.findFirst = flippingSessionFindFirst();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
+
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([ADDR]) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+    );
+
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.status === "ended")).toBe(false);
+  });
+
+  it("does not relaunch when the address becomes routable between selection and relaunch", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // Unroutable on the sweep's own read (so the row is not skipped), then
+    // routable on every subsequent read — modeling a reconnect that lands
+    // mid-sweep. reconcileDisconnectedSession and relaunchInstanceIfNeeded both
+    // re-read getRoutableAddresses right before acting and must bail.
+    let reads = 0;
+    const getRoutableAddresses = mock(() => {
+      reads += 1;
+      return reads === 1 ? [] : [ADDR];
+    });
+
+    const { update, calls } = makeUpdateCapture();
+    const db = makeMockDb({
+      select: mock(() =>
+        makeSelectChain([{ instanceId: "ins-1", address: ADDR }]),
+      ),
+      update,
+    });
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve(wedgedInstance()),
+    );
+    db.query.agentSession.findFirst = flippingSessionFindFirst();
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
+
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([], { getRoutableAddresses }) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+    );
+
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.status === "ended")).toBe(false);
+  });
+
+  it("selects only active sessions past the stale floor", async () => {
+    // Search a drizzle SQL condition for a column with the given name. Only
+    // descends through queryChunks/arrays — never into a Column's `.table`
+    // back-reference, which would surface every column in the schema.
+    // biome-ignore lint/suspicious/noExplicitAny: introspecting drizzle SQL chunks
+    function referencesColumn(node: any, columnName: string, seen = new Set()) {
+      if (!node || typeof node !== "object" || seen.has(node)) return false;
+      seen.add(node);
+      if (node.name === columnName && node.columnType) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) =>
+        referencesColumn(child, columnName, seen),
+      );
+    }
+
+    let capturedWhere: unknown;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const chain: any = {
+      from: mock(() => chain),
+      innerJoin: mock(() => chain),
+      where: mock((cond: unknown) => {
+        capturedWhere = cond;
+        return Promise.resolve([]);
+      }),
+    };
+    const db = makeMockDb({ select: mock(() => chain) });
+
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([]) as never,
+      {
+        ...mockSessionService,
+        launchSession: mock(() => Promise.resolve()),
+      } as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+    );
+
+    // Predicate gates on the session being active AND idle past the floor.
+    expect(referencesColumn(capturedWhere, "status")).toBe(true);
+    expect(referencesColumn(capturedWhere, "updated_at")).toBe(true);
+  });
+});
+
+describe("registerWedgeSweepReconciler", () => {
+  it("ticks on the interval and stops after unsubscribe (no leaked interval)", async () => {
+    // getRoutableAddresses is the first thing every tick calls, so its call
+    // count is a faithful tick counter.
+    const getRoutableAddresses = mock(() => [] as string[]);
+    const router = makeSidecarRouter([], { getRoutableAddresses });
+    const db = makeMockDb({ select: mock(() => makeSelectChain([])) });
+
+    const stop = registerWedgeSweepReconciler({
+      db: db as never,
+      router: router as never,
+      sessionService: mockSessionService as never,
+      grantStore: mockGrantStore as never,
+      eventCollectors: mockEventCollectors as never,
+      intervalMs: 15,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    const ticksWhileRunning = getRoutableAddresses.mock.calls.length;
+    expect(ticksWhileRunning).toBeGreaterThan(0);
+
+    stop();
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    // No further ticks after teardown — the interval was cleared, not leaked.
+    expect(getRoutableAddresses.mock.calls.length).toBe(ticksWhileRunning);
   });
 });
 

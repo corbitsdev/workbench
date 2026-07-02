@@ -23,6 +23,7 @@ const MANAGED_KEYS = [
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_ALLOWED_DOMAINS",
   "WORKFLOW_AUTOPUBLISH_ON_BOOT",
+  "WEDGE_SWEEP_INTERVAL_MS",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -84,6 +85,23 @@ describe("loadConfig", () => {
 
     process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "false";
     expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+  });
+
+  it("defaults wedgeSweepIntervalMs to 30000 and honors a positive override", () => {
+    setRequiredEnv();
+    expect(loadConfig().wedgeSweepIntervalMs).toBe(30_000);
+
+    process.env["WEDGE_SWEEP_INTERVAL_MS"] = "5000";
+    expect(loadConfig().wedgeSweepIntervalMs).toBe(5_000);
+  });
+
+  it("rejects a non-positive or non-integer WEDGE_SWEEP_INTERVAL_MS", () => {
+    setRequiredEnv();
+    process.env["WEDGE_SWEEP_INTERVAL_MS"] = "0";
+    expect(() => loadConfig()).toThrow("WEDGE_SWEEP_INTERVAL_MS");
+
+    process.env["WEDGE_SWEEP_INTERVAL_MS"] = "abc";
+    expect(() => loadConfig()).toThrow("WEDGE_SWEEP_INTERVAL_MS");
   });
 
   it("trims and splits CORS origins, marking cross-origin true", () => {
