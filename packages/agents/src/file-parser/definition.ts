@@ -26,7 +26,7 @@ export const FILE_PARSER_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[] =
   ];
 
 export const FILE_PARSER_MODEL_CONFIG = {
-  defaultModel: "claude-sonnet-4-6",
+  defaultModel: "claude-sonnet-5",
 } as const;
 
 export const FILE_PARSER_GRANT_REQUIREMENTS: GrantRequirementType[] = [];
