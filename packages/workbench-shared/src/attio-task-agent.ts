@@ -1,10 +1,14 @@
 import { type } from "arktype";
 
-// Contracts for the Attio Task Agent workflow (CL-2622): list Attio tasks →
-// select one → a bounded agent loop (gather → analyze → clarify|gather|generate)
-// → first-class BD artifacts. Schemas are the canonical definitions; the app and
-// the workflow both consume them. Pure helpers (normalize/resolve/loop-action)
-// live here so they are unit-testable without the runtime.
+// Contracts for the Attio Task Agent workflow (CL-2622, CL-2664): list Attio
+// tasks → select one → a multi-agent pipeline (planner → executor → reviewer →
+// human) that turns the task into a set of drafted BD actions. The PLANNER
+// decides the action plan (the agent selects; the human no longer hand-picks);
+// the EXECUTOR produces each action; the REVIEWER validates them before the
+// human sees them. Destructive write-back stays behind an explicit human gate.
+// Schemas are the canonical definitions; the app and the workflow both consume
+// them. Pure helpers (normalize/resolve) live here so they are unit-testable
+// without the runtime.
 
 // ---------------------------------------------------------------------------
 // Attio task (normalized)
@@ -232,21 +236,6 @@ export type ProposedTaskUpdate = typeof ProposedTaskUpdateSchema.infer;
 // HITL signal payloads (resume-boundary contracts)
 // ---------------------------------------------------------------------------
 
-// The kind-selection gate emits a COMPLETE boolean map over every kind so no
-// per-kind gate downstream reads a missing key. The completeness invariant used
-// to live only in the React panel; this schema pulls it to the resume boundary
-// so a raw payload that omits a kind is rejected before it reaches step outputs.
-// The object shape is built programmatically from the kind tuple — adding a kind
-// tightens this schema automatically.
-const generateMapDefinition = Object.fromEntries(
-  attioTaskArtifactKinds.map((kind) => [kind, "boolean"] as const),
-) as Record<AttioTaskArtifactKind, "boolean">;
-
-export const KindSelectionPayloadSchema = type({
-  generate: generateMapDefinition,
-});
-export type KindSelectionPayload = typeof KindSelectionPayloadSchema.infer;
-
 // The sync-approval gate confirms (or skips) the Attio write-back. `confirm` is
 // required; the record/task locators and note are present only on a confirm.
 export const SyncApprovalPayloadSchema = type({
@@ -258,23 +247,74 @@ export const SyncApprovalPayloadSchema = type({
 });
 export type SyncApprovalPayload = typeof SyncApprovalPayloadSchema.infer;
 
-// Each selected kind is wrapped in an object so the workflow's `generate` map
-// can iterate them and MERGE the shared task/decision context per item — the
-// runtime's `merge` selector requires object operands, so a bare string[] can't
-// be mapped-with-context. `resolveArtifactKinds` still validates the flat keys.
-export const SelectedArtifactKindSchema = type({
-  kind: AttioTaskArtifactKindSchema,
+// The planner's unit of work — a NON-DESTRUCTIVE action the executor performs
+// (produces an output/draft with no external side effect). `type` names the
+// action in an extensible registry (the content kinds today: cold-email,
+// linkedin-post, research-brief, … — additive to slack-message-draft,
+// email-draft, … as their producers are added; a free string so a new type is
+// no schema change). `brief` is the planner's self-contained instruction +
+// context, so the executor and reviewer need nothing beyond the item. Each is an
+// object so the `generate` map can iterate them (the runtime passes each element
+// to the executor as `trigger.payload`).
+//
+// DESTRUCTIVE actions (anything that sends / posts / writes to an external
+// system) never ride here — they are proposed separately (`proposedTaskUpdate`
+// today, the wired Attio write-back) and execute only after explicit human
+// approval. New destructive action types are additive: a registry entry + a
+// deterministic write step behind the approval gate.
+export const PlannedActionSchema = type({
+  type: "string",
+  brief: "string",
 });
-export type SelectedArtifactKind = typeof SelectedArtifactKindSchema.infer;
+export type PlannedAction = typeof PlannedActionSchema.infer;
 
+// The planner's decision: it grounds itself read-only, then emits an ACTION PLAN
+// — the non-destructive actions to perform now (`draftActions`) plus any proposed
+// destructive write-back (`proposedTaskUpdate`), which only executes after human
+// approval. The agent selects the plan; the human no longer hand-picks it.
 export const AttioAnalyzeDecisionSchema = type({
   status: AnalyzeStatusSchema,
   reasoning: "string",
   "questions?": "string[]",
-  "selectedArtifactKinds?": SelectedArtifactKindSchema.array(),
+  "draftActions?": PlannedActionSchema.array(),
   "proposedTaskUpdate?": ProposedTaskUpdateSchema,
 });
 export type AttioAnalyzeDecision = typeof AttioAnalyzeDecisionSchema.infer;
+
+// What the executor produces per draft action. `type` is echoed from the plan
+// (authoritative, not re-derived); `brief` is echoed so the reviewer can judge
+// the output against the exact instruction it was given, with no separate join.
+export const GeneratedArtifactSchema = type({
+  type: "string",
+  title: "string",
+  content: "string",
+  "brief?": "string",
+});
+export type GeneratedArtifact = typeof GeneratedArtifactSchema.infer;
+
+// The executor runs once for the whole plan and returns all produced outputs.
+export const ExecutorOutputSchema = type({
+  outputs: GeneratedArtifactSchema.array(),
+});
+export type ExecutorOutput = typeof ExecutorOutputSchema.infer;
+
+// The reviewer agent's verdict. It receives the produced outputs (each carrying
+// its brief) and validates each was done correctly before the human sees them.
+export const ArtifactReviewVerdictSchema = type("'pass' | 'revise' | 'reject'");
+export type ArtifactReviewVerdict = typeof ArtifactReviewVerdictSchema.infer;
+
+export const ArtifactReviewItemSchema = type({
+  type: "string",
+  verdict: ArtifactReviewVerdictSchema,
+  notes: "string",
+});
+export type ArtifactReviewItem = typeof ArtifactReviewItemSchema.infer;
+
+export const ArtifactReviewSchema = type({
+  overall: "string",
+  items: ArtifactReviewItemSchema.array(),
+});
+export type ArtifactReview = typeof ArtifactReviewSchema.infer;
 
 export type LoopAction = "gather" | "clarify" | "generate";
 
