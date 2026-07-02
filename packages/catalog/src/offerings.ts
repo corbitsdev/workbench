@@ -3,7 +3,6 @@ import type { CatalogOfferingSpec } from "./catalog";
 export const CATALOG_OFFERINGS: CatalogOfferingSpec[] = [
   { model: "claude-fable-5", provider: "opencode-zen" },
   { model: "claude-fable-5", provider: "anthropic-api" },
-  { model: "claude-sonnet-5", provider: "opencode-zen" },
   { model: "claude-sonnet-5", provider: "anthropic-api" },
   { model: "claude-sonnet-4-6", provider: "opencode-zen" },
   { model: "claude-sonnet-4-6", provider: "anthropic-api" },
