@@ -16,6 +16,16 @@ mock.module("../routes/workflow-deploy", () => ({
   NoDeployingPrincipalError: FakeNoPrincipal,
 }));
 
+// Capture structured logs so a "published nowhere" warning can be asserted.
+const warnLogs: { msg: string; meta?: unknown }[] = [];
+mock.module("@intx/log", () => ({
+  getLogger: () => ({
+    info: () => {},
+    warn: (msg: string, meta?: unknown) => warnLogs.push({ msg, meta }),
+    error: () => {},
+  }),
+}));
+
 // Tenant hierarchy fixture: slug → { id, ancestors }. getAncestorChain is
 // mocked to return the recorded chain; findFirst resolves slug → id. Unknown
 // slugs resolve to no tenant.
@@ -29,16 +39,30 @@ const TENANTS: Record<string, { id: string; ancestors: string[] }> = {
   orphan: { id: "ten_orphan", ancestors: ["ten_orphan"] },
 };
 mock.module("@intx/db", () => ({
-  schema: { tenant: { slug: "slug", id: "id" } },
+  schema: { tenant: { slug: "tenant.slug", id: "tenant.id" } },
   getAncestorChain: (_db: unknown, tenantId: string) => {
     const found = Object.values(TENANTS).find((t) => t.id === tenantId);
     return Promise.resolve(found?.ancestors ?? []);
   },
 }));
-// eq is used only to carry the queried slug into the fake findFirst below.
-mock.module("drizzle-orm", () => ({
-  eq: (_col: unknown, value: string) => ({ value }),
+mock.module("../db/schema", () => ({
+  workflowRun: {
+    kind: "wf.kind",
+    tenantId: "wf.tenantId",
+    deletedAt: "wf.deletedAt",
+  },
 }));
+// Column-tagged predicate builders so the fake db.query below can read back the
+// column + value it was asked to filter on.
+mock.module("drizzle-orm", () => ({
+  eq: (col: string, value: string) => ({ op: "eq", col, value }),
+  and: (...conds: unknown[]) => ({ op: "and", conds }),
+  isNull: (col: string) => ({ op: "isNull", col }),
+}));
+
+// Active (non-deleted) deployment index rows, keyed `${kind}:${tenantId}`. A
+// test seeds this to assert per-(kind,tenant) idempotency.
+let activeDeployments: Set<string>;
 mock.module("./workflow-deploy", () => ({
   readWorkflowDefinition: (_repoStore: unknown, kind: string) => {
     const def = publishedDef?.(kind);
@@ -52,14 +76,33 @@ const { publishEmbeddedWorkflowDefs } = await import(
   "./workflow-defs-bootstrap"
 );
 
+interface EqPred {
+  op: "eq";
+  col: string;
+  value: string;
+}
+interface AndPred {
+  op: "and";
+  conds: { op: string; col: string; value?: string }[];
+}
 const coreDeps = {
   rootTenantId: "ten_global",
   db: {
     query: {
       tenant: {
-        findFirst: ({ where }: { where: { value: string } }) => {
+        findFirst: ({ where }: { where: EqPred }) => {
           const t = TENANTS[where.value];
           return Promise.resolve(t ? { id: t.id } : undefined);
+        },
+      },
+      workflowRun: {
+        findFirst: ({ where }: { where: AndPred }) => {
+          const kind = where.conds.find((c) => c.col === "wf.kind")?.value;
+          const tenantId = where.conds.find(
+            (c) => c.col === "wf.tenantId",
+          )?.value;
+          const active = activeDeployments.has(`${kind}:${tenantId}`);
+          return Promise.resolve(active ? { id: "wfr_1" } : undefined);
         },
       },
     },
@@ -76,6 +119,8 @@ beforeEach(async () => {
   publishSpy.mockReset();
   publishSpy.mockResolvedValue({ deploymentId: "ses_x" });
   publishedDef = null;
+  activeDeployments = new Set();
+  warnLogs.length = 0;
   // Clone a real committed def (guaranteed to satisfy the envelope schema) into
   // two fixtures with distinct kinds.
   realDef = JSON.parse(
@@ -125,9 +170,11 @@ describe("publishEmbeddedWorkflowDefs", () => {
     );
   });
 
-  it("skips a def whose published fingerprint already matches (idempotent)", async () => {
-    // k1 is already published with the identical definition → skipped; k2 isn't.
+  it("skips a def whose fingerprint matches AND the tenant already deploys it (idempotent)", async () => {
+    // k1: fingerprint matches and ten_global already has an active deployment →
+    // skipped. k2: fingerprint does not match → published.
     publishedDef = (kind) => (kind === "k1" ? realDef.definition : null);
+    activeDeployments.add("k1:ten_global");
     await publishEmbeddedWorkflowDefs({
       coreDeps,
       repoStore,
@@ -136,6 +183,24 @@ describe("publishEmbeddedWorkflowDefs", () => {
       defsDir: fixtureDir,
     });
     expect(publishSpy).toHaveBeenCalledTimes(1);
+    expect(
+      (publishSpy.mock.calls[0]![1] as { targetTenantId: string })
+        .targetTenantId,
+    ).toBe("ten_global");
+  });
+
+  it("republishes a fingerprint-matching def to a tenant with no active deployment", async () => {
+    // Fingerprint matches for both, but no tenant has an active deployment row →
+    // both must still publish (this is the newly-seeded-tenant case).
+    publishedDef = () => realDef.definition;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+    });
+    expect(publishSpy).toHaveBeenCalledTimes(2);
   });
 
   it("isolates a per-def failure — the other defs still publish, no throw", async () => {
@@ -265,20 +330,83 @@ describe("publishEmbeddedWorkflowDefs", () => {
     expect(targets).toEqual(["ten_abk"]);
   });
 
-  it("keeps per-(kind, tenant) fingerprint idempotency under a map", async () => {
-    // k1 already published with the identical definition → skipped; k2 isn't.
-    publishedDef = (kind) => (kind === "k1" ? realDef.definition : null);
+  it("still publishes to a newly-mapped tenant when the per-kind fingerprint already matches", async () => {
+    // The regression guard: k1's fingerprint matches AND ten_abk already has an
+    // active deployment, but ten_second (newly added to the map) does not. A
+    // per-kind-only idempotency check would skip BOTH and starve ten_second.
+    publishedDef = () => realDef.definition;
+    activeDeployments.add("k1:ten_abk");
     await publishEmbeddedWorkflowDefs({
       coreDeps,
       repoStore,
       enabled: true,
       buildSha: "abc",
       defsDir: fixtureDir,
-      autopublishMap: { k1: ["abk-labs"], k2: ["second-tenant"], default: [] },
+      autopublishMap: { k1: ["abk-labs", "second-tenant"], default: [] },
     });
     const targets = publishSpy.mock.calls.map(
       (c) => (c[1] as { targetTenantId: string }).targetTenantId,
     );
+    // ten_abk skipped (already has it), ten_second published (does not yet).
     expect(targets).toEqual(["ten_second"]);
+  });
+
+  it("de-dups a kind's target list so a repeated slug is not published twice", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["abk-labs", "abk-labs"], default: [] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_abk"]);
+  });
+
+  it("warns and publishes nowhere when a kind's whole target list is unknown slugs", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["nope", "also-nope"], default: [] },
+    });
+    // k1 resolves to zero valid tenants; k2 → default [] → zero. Neither publishes.
+    expect(publishSpy).toHaveBeenCalledTimes(0);
+    const nowhere = warnLogs.filter((l) =>
+      l.msg.includes("resolved to no target tenant"),
+    );
+    expect(
+      nowhere.map((l) => (l.meta as { kind: string }).kind).sort(),
+    ).toEqual(["k1", "k2"]);
+  });
+
+  it("warns for an unmapped kind when default is an empty array (set-but-empty ≠ unset)", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["abk-labs"], default: [] },
+    });
+    // k1 → abk-labs; k2 → default [] → nowhere + warned.
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_abk"]);
+    const nowhere = warnLogs.filter(
+      (l) =>
+        l.msg.includes("resolved to no target tenant") &&
+        (l.meta as { kind: string }).kind === "k2",
+    );
+    expect(nowhere).toHaveLength(1);
   });
 });
