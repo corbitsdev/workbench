@@ -12,6 +12,9 @@ const resumeMutateAsync = mock(async () => undefined);
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading: false }),
+  // These suites drive the console from the record projection; return the
+  // log-state hook as errored so the console falls back to runStateFromRecord.
+  useWorkflowRunState: () => ({ data: undefined, isError: true }),
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,

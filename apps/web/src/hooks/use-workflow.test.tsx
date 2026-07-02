@@ -13,6 +13,7 @@ import {
   useStartWorkflow,
   useWorkflowRecord,
   useWorkflowRuns,
+  useWorkflowRunState,
 } from "./use-workflow";
 
 const originalFetch = globalThis.fetch;
@@ -121,6 +122,72 @@ describe("useWorkflowRecord", () => {
       )) as typeof fetch;
 
     const { result } = renderHook(() => useWorkflowRecord("wfr_1"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe("useWorkflowRunState", () => {
+  const logRunState = {
+    runId: "wfr_1",
+    phase: "running",
+    lastSeq: 3,
+    steps: [
+      {
+        stepId: "intake",
+        phase: "completed",
+        stepType: "human",
+        currentAttempt: 1,
+      },
+      {
+        stepId: "review",
+        phase: "awaiting-signal",
+        stepType: "human",
+        currentAttempt: 1,
+        awaitingSignalName: "approve",
+      },
+    ],
+  };
+
+  it("is disabled when runId is null", () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState(null), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(called).toBe(false);
+  });
+
+  it("reads and parses the log-derived state from the runs/:id/state endpoint", async () => {
+    let requested = "";
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain("/workflow-exec/runs/wfr_1/state");
+    expect(requested).toContain("tenantId=tn-x");
+    expect(result.current.data?.steps[1]?.phase).toBe("awaiting-signal");
+    expect(result.current.data?.steps[1]?.awaitingSignalName).toBe("approve");
+  });
+
+  it("surfaces an error for a malformed log-state shape", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(
+        jsonResponse(200, { runId: "x", phase: "bogus", steps: [] }),
+      )) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1"), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
