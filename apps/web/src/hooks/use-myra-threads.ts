@@ -5,7 +5,6 @@ import {
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
-  relaunchMyraThread,
   renameMyraThread,
   type MyraThread,
   type MyraThreadListItem,
@@ -85,25 +84,6 @@ export function useMyraThreads() {
   });
 }
 
-/**
- * Opt-in "Update Myra" for one old thread (CL-2518). Relaunches that thread's
- * session against the latest Myra def so new tools load, then refetches the
- * list so the thread's `updateAvailable` flag clears.
- */
-export function useRelaunchMyraThread() {
-  const queryClient = useQueryClient();
-  const { activeTenantId } = useActiveWorkbench();
-  return useMutation({
-    mutationFn: (id: string) =>
-      relaunchMyraThread(requireActiveTenant(activeTenantId), id),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: myraThreadsKey(activeTenantId),
-      });
-    },
-  });
-}
-
 export function useCreateMyraThread() {
   const queryClient = useQueryClient();
   const { activeTenantId } = useActiveWorkbench();
@@ -126,7 +106,7 @@ export function useCreateMyraThread() {
         (existing) => {
           if (!existing) return existing;
           if (existing.some((item) => item.id === thread.id)) return existing;
-          return [{ ...thread, updateAvailable: false }, ...existing];
+          return [thread, ...existing];
         },
       );
       void queryClient.invalidateQueries({

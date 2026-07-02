@@ -9,10 +9,6 @@ const createMyraThread = mock<(...args: any[]) => Promise<any>>(() =>
   Promise.resolve({ created: true, thread: {} }),
 );
 // biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
-const relaunchMyraThread = mock<(...args: any[]) => Promise<any>>(() =>
-  Promise.resolve(null),
-);
-// biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
 const renameMyraThread = mock<(...args: any[]) => Promise<any>>(() =>
   Promise.resolve(null),
 );
@@ -50,7 +46,6 @@ class MyraThreadLaunchError extends Error {
 mock.module("../services/myra-threads", () => ({
   listMyraThreads,
   createMyraThread,
-  relaunchMyraThread,
   renameMyraThread,
   deleteMyraThread,
   generateMyraThreadTitle,
@@ -77,7 +72,6 @@ function buildRouter(): Hono {
     {} as any,
     {} as any,
     {} as any,
-    {} as any,
   ) as unknown as Hono;
 }
 
@@ -85,7 +79,6 @@ describe("Myra threads router", () => {
   beforeEach(() => {
     listMyraThreads.mockClear();
     createMyraThread.mockClear();
-    relaunchMyraThread.mockClear();
     renameMyraThread.mockClear();
     deleteMyraThread.mockClear();
     generateMyraThreadTitle.mockClear();
@@ -375,83 +368,5 @@ describe("Myra threads router", () => {
     });
     expect(res.status).toBe(403);
     expect(deleteMyraThread).not.toHaveBeenCalled();
-  });
-
-  it("relaunches a thread and returns 200 with the updated thread", async () => {
-    relaunchMyraThread.mockResolvedValueOnce({
-      thread: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-      applied: true,
-    });
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request(
-      "/tenants/tn-global/me/myra/threads/map-1/relaunch",
-      { method: "POST" },
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      thread: { id: string; label: string };
-      applied: boolean;
-    };
-    expect(body.applied).toBe(true);
-    expect(body.thread.id).toBe("map-1");
-    expect(body.thread.label).toBe("Pricing");
-    expect(relaunchMyraThread).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      expect.objectContaining({
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-      }),
-    );
-  });
-
-  it("returns 404 on relaunch when the thread is not found", async () => {
-    relaunchMyraThread.mockResolvedValueOnce(null);
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request(
-      "/tenants/tn-global/me/myra/threads/map-x/relaunch",
-      { method: "POST" },
-    );
-    expect(res.status).toBe(404);
-  });
-
-  it("returns 503 with phase + detail when the relaunch session fails", async () => {
-    relaunchMyraThread.mockRejectedValueOnce(
-      new MyraThreadLaunchError(
-        "pack",
-        "tool-package @workbench/tools-granola@1.2.3 failed",
-      ),
-    );
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request(
-      "/tenants/tn-global/me/myra/threads/map-1/relaunch",
-      { method: "POST" },
-    );
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as {
-      error: string;
-      phase: string;
-      detail: string;
-    };
-    expect(body.error).toBe("Failed to relaunch Myra chat session");
-    expect(body.phase).toBe("pack");
-    expect(body.detail).toContain("@workbench/tools-granola@1.2.3");
-  });
-
-  it("returns 403 on relaunch when the user is not a member of the tenant", async () => {
-    resolveMyraThreadContext.mockResolvedValueOnce(null);
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request(
-      "/tenants/tn-global/me/myra/threads/map-1/relaunch",
-      { method: "POST" },
-    );
-    expect(res.status).toBe(403);
-    expect(relaunchMyraThread).not.toHaveBeenCalled();
   });
 });

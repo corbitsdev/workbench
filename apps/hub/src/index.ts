@@ -1057,13 +1057,7 @@ v1.route(
 v1.route("/", createMembersRouter(db));
 v1.route(
   "/",
-  createMyraThreadsRouter(
-    db,
-    sessionService,
-    grantStore,
-    eventCollectors,
-    sidecarRouter,
-  ),
+  createMyraThreadsRouter(db, sessionService, grantStore, eventCollectors),
 );
 v1.route("/", createArtifactsRouter(db));
 v1.route("/", createFileParseRouter(db));

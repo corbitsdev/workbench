@@ -13,7 +13,6 @@ import {
   readLastActiveThreadId,
   useCreateMyraThread,
   useMyraThreads,
-  useRelaunchMyraThread,
   writeLastActiveThreadId,
 } from "../hooks/use-myra-threads";
 import type { MyraThreadListItem } from "../lib/hub-api";
@@ -117,33 +116,13 @@ function CenteredState({
 export function ChatsListPage() {
   const { data: threads, isLoading, isError, refetch } = useMyraThreads();
   const createThread = useCreateMyraThread();
-  const relaunch = useRelaunchMyraThread();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [newChatError, setNewChatError] = useState<string | null>(null);
-  const [updateError, setUpdateError] = useState<string | null>(null);
 
   const open = (thread: MyraThreadListItem) => {
     writeLastActiveThreadId(thread.id);
     navigate(`/chats/${thread.id}`);
-  };
-
-  // Opt-in "Update Myra" for one old thread (CL-2518): relaunch it against the
-  // latest def so the newest tools load. The list refetches on success, which
-  // clears this thread's `updateAvailable` and removes the button.
-  const updateMyra = (threadId: string) => {
-    setUpdateError(null);
-    relaunch.mutate(threadId, {
-      onSuccess: (result) => {
-        // applied=false means the live session couldn't be torn down in time;
-        // the thread is unchanged. Surface it so the user can retry (the badge
-        // stays). A successful apply leaves no error and refetches the list.
-        if (!result.applied) {
-          setUpdateError("Could not update Myra. Try again.");
-        }
-      },
-      onError: () => setUpdateError("Could not update Myra. Try again."),
-    });
   };
 
   const newChat = () => {
@@ -173,9 +152,9 @@ export function ChatsListPage() {
       <LibraryPageHeader title="Chats" titleSize="sm">
         {hasThreads && (
           <>
-            {(newChatError || updateError) && (
+            {newChatError && (
               <span className="text-[12px] text-orange-deep">
-                {newChatError ?? updateError}
+                {newChatError}
               </span>
             )}
             <LibrarySearchInput
@@ -278,21 +257,6 @@ export function ChatsListPage() {
                       {formatRelativeTime(thread.createdAt, now)}
                     </span>
                   </button>
-                  {thread.updateAvailable && (
-                    <button
-                      type="button"
-                      onClick={() => updateMyra(thread.id)}
-                      disabled={
-                        relaunch.isPending && relaunch.variables === thread.id
-                      }
-                      title="Update this chat to Myra's latest tools"
-                      className="mr-4 grid h-[34px] shrink-0 place-items-center rounded-[6px] px-[11px] text-[11.5px] font-medium text-text-3 opacity-0 transition-[opacity,color,background-color,transform] duration-150 ease-out hover:bg-surface-2 hover:text-text focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97] group-hover:opacity-100 disabled:cursor-default disabled:opacity-100 sm:mr-7"
-                    >
-                      {relaunch.isPending && relaunch.variables === thread.id
-                        ? "Updating…"
-                        : "Update Myra"}
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
