@@ -10,6 +10,81 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 
+// CL-2670 workflow analytics FACTS. Flat, append-only, REBUILDABLE derived facts
+// for insights (duration / step-type / outcome), projected from a terminal run's
+// native git event log. These are a pure derived cache — never a run-state mirror
+// and never the DAG. The log is always the source of truth; a reproject rebuilds
+// every row from scratch.
+export const workflowRunFactOutcomes = [
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+export const workflowStepFactKinds = [
+  "human",
+  "agent",
+  "deterministic",
+  "inline",
+  "other",
+] as const;
+
+// One row per terminal run. Outcome + wall-clock duration, keyed by runId.
+export const workflowRunFact = pgTable(
+  "workflow_run_fact",
+  {
+    runId: text("run_id").primaryKey(),
+    tenantId: text("tenant_id").notNull(),
+    kind: text("kind").notNull(),
+    outcome: text("outcome", { enum: workflowRunFactOutcomes }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("workflow_run_fact_tenant_kind_idx").on(t.tenantId, t.kind)],
+);
+
+// One row per terminal step of a terminal run, keyed by (runId, stepId, attempt).
+// Re-projecting a run replaces its step facts, so the key is idempotent.
+export const workflowStepFact = pgTable(
+  "workflow_step_fact",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id").notNull(),
+    stepId: text("step_id").notNull(),
+    attempt: integer("attempt").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    kind: text("kind").notNull(),
+    stepKind: text("step_kind", { enum: workflowStepFactKinds }).notNull(),
+    outcome: text("outcome", { enum: workflowRunFactOutcomes }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    // awaitSignal gate wait: SignalAwaited.at → SignalReceived.at. Null for
+    // non-gate steps.
+    gateWaitMs: bigint("gate_wait_ms", { mode: "number" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    unique("workflow_step_fact_run_step_attempt").on(
+      t.runId,
+      t.stepId,
+      t.attempt,
+    ),
+    // Aggregation by (tenant, kind, stepKind) — the insights query's group key.
+    index("workflow_step_fact_tenant_kind_stepkind_idx").on(
+      t.tenantId,
+      t.kind,
+      t.stepKind,
+    ),
+    index("workflow_step_fact_run_idx").on(t.runId),
+  ],
+);
+
 export const analyticsEvent = pgTable(
   "analytics_event",
   {
