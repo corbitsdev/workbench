@@ -1,5 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import {
+  buildWorkbenchAdapterRegistry,
   stripThoughtSignatures,
   withGeminiThoughtSignaturePatch,
 } from "./gemini-thought-signature-patch";
@@ -153,5 +154,48 @@ describe("withGeminiThoughtSignaturePatch", () => {
       .resolve({ ...geminiSource, provider: "openai" })
       .parseResponse(raw);
     expect(seen).toEqual([raw]);
+  });
+});
+
+// The shared constructor is what the workflow-child's substrate factory calls
+// (WORKBENCH-LOCAL CL-2650) — this pins that a child-built registry carries
+// the BD-394 wrap, i.e. the child resolves google-genai exactly as the main
+// sidecar path does.
+describe("buildWorkbenchAdapterRegistry", () => {
+  const geminiSource = {
+    sourceId: "src-gemini",
+    provider: "google-genai",
+    model: "gemini-3.1-flash-lite",
+  };
+
+  const orphanSignatureChunk = JSON.stringify({
+    candidates: [
+      {
+        content: {
+          parts: [{ text: "", thoughtSignature: "EjQKMg..." }],
+          role: "model",
+        },
+        finishReason: "STOP",
+        index: 0,
+      },
+    ],
+    usageMetadata: {
+      promptTokenCount: 1,
+      candidatesTokenCount: 1,
+      totalTokenCount: 2,
+    },
+  });
+
+  it("builds a registry whose google-genai adapter parses an orphan-signature chunk", async () => {
+    const registry = await buildWorkbenchAdapterRegistry([]);
+    const adapter = registry.resolve(geminiSource);
+    expect(() => adapter.parseResponse(orphanSignatureChunk)).not.toThrow();
+  });
+
+  it("still resolves the built-in providers", async () => {
+    const registry = await buildWorkbenchAdapterRegistry([]);
+    expect(registry.has("google-genai")).toBe(true);
+    expect(registry.has("openai")).toBe(true);
+    expect(registry.has("not-a-provider")).toBe(false);
   });
 });

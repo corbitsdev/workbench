@@ -84,12 +84,17 @@ function parseBooleanEnv(name: string): boolean {
   return value === "true" || value === "1";
 }
 
-function parsePositiveIntEnv(name: string, defaultValue: number): number {
+function parsePositiveIntEnv(
+  name: string,
+  defaultValue: number,
+  unitHint?: string,
+): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return defaultValue;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${name} must be a positive integer; got "${raw}"`);
+    const unit = unitHint === undefined ? "" : ` (${unitHint})`;
+    throw new Error(`${name} must be a positive integer${unit}; got "${raw}"`);
   }
   return parsed;
 }
@@ -208,6 +213,7 @@ export function loadConfig() {
     wedgeSweepIntervalMs: parsePositiveIntEnv(
       "WEDGE_SWEEP_INTERVAL_MS",
       DEFAULT_WEDGE_SWEEP_INTERVAL_MS,
+      "milliseconds",
     ),
     // How long (ms) an address must stay continuously unroutable before the
     // wedge sweep ends-and-relaunches it. Must exceed the 90s disconnect grace
@@ -217,6 +223,7 @@ export function loadConfig() {
     wedgeUnroutableGraceMs: parsePositiveIntEnv(
       "WEDGE_UNROUTABLE_GRACE_MS",
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
+      "milliseconds",
     ),
   };
 

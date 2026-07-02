@@ -9,8 +9,10 @@
 
 import path from "node:path";
 
-import { AdapterManifest } from "@intx/inference";
+import type { AdapterManifest } from "@intx/inference";
 import type { GCPolicy, RetentionPolicy } from "@workbench/storage-isogit";
+
+import { parseAdapterManifest } from "./workflow-substrate-factory";
 
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_DELAY_MS = 1_000;
@@ -211,11 +213,13 @@ export function resolveAgentGCPolicy(
 export function readAdapterManifest(): AdapterManifest {
   const raw = process.env["SIDECAR_ADAPTER_MANIFEST"];
   if (raw === undefined || raw.trim() === "") return [];
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    return parseAdapterManifest(raw);
   } catch (cause) {
-    throw new Error("SIDECAR_ADAPTER_MANIFEST is not valid JSON", { cause });
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `SIDECAR_ADAPTER_MANIFEST environment variable is invalid: ${reason}`,
+      { cause },
+    );
   }
-  return AdapterManifest.assert(parsed);
 }

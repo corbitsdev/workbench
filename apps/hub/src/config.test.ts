@@ -145,7 +145,9 @@ describe("loadConfig", () => {
     setRequiredEnv();
     for (const bad of ["0", "-5", "1.5", "abc"]) {
       process.env["WEDGE_SWEEP_INTERVAL_MS"] = bad;
-      expect(() => loadConfig()).toThrow("WEDGE_SWEEP_INTERVAL_MS");
+      expect(() => loadConfig()).toThrow(
+        `WEDGE_SWEEP_INTERVAL_MS must be a positive integer (milliseconds); got "${bad}"`,
+      );
     }
   });
 
@@ -161,7 +163,9 @@ describe("loadConfig", () => {
     setRequiredEnv();
     for (const bad of ["0", "-1", "2.5", "nope"]) {
       process.env["WEDGE_UNROUTABLE_GRACE_MS"] = bad;
-      expect(() => loadConfig()).toThrow("WEDGE_UNROUTABLE_GRACE_MS");
+      expect(() => loadConfig()).toThrow(
+        `WEDGE_UNROUTABLE_GRACE_MS must be a positive integer (milliseconds); got "${bad}"`,
+      );
     }
   });
 

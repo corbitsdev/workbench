@@ -1,4 +1,5 @@
-import type { AdapterRegistry } from "@intx/inference";
+import type { AdapterManifest, AdapterRegistry } from "@intx/inference";
+import { loadAdapterRegistry } from "@intx/inference/providers";
 import type { LastCycleSource } from "@intx/types/runtime";
 
 // TEMPORARY local fix for an upstream Interchange bug — tracked in BD-394 /
@@ -64,6 +65,19 @@ export function stripThoughtSignatures(sseData: string): string {
  * orphan thought signatures before parsing. All other providers resolve
  * through untouched.
  */
+/**
+ * The single construction path for every workbench adapter registry —
+ * the sidecar's boot edge AND the workflow-child (via the substrate
+ * factory) both build through this, so the BD-394 gemini workaround is
+ * applied identically on both sides. Remove alongside the wrap once
+ * fixed upstream.
+ */
+export async function buildWorkbenchAdapterRegistry(
+  manifest: AdapterManifest,
+): Promise<AdapterRegistry> {
+  return withGeminiThoughtSignaturePatch(await loadAdapterRegistry(manifest));
+}
+
 export function withGeminiThoughtSignaturePatch(
   inner: AdapterRegistry,
 ): AdapterRegistry {

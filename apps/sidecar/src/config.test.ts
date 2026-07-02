@@ -1,6 +1,7 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect, afterEach } from "bun:test";
 import path from "node:path";
 import {
+  readAdapterManifest,
   resolveAgentGCPolicy,
   resolveSidecarHeartbeat,
   resolveToolPackageCache,
@@ -150,6 +151,52 @@ describe("resolveAgentGCPolicy", () => {
       resolveAgentGCPolicy({ SIDECAR_AGENT_GC_RETENTION: "forever" }),
     ).toThrow(
       'SIDECAR_AGENT_GC_RETENTION must be "tip-only" or "keep-history"; got "forever"',
+    );
+  });
+});
+
+// Boot-edge deserialization boundary for the operator adapter manifest. The
+// parse itself is shared with the child boundary (`parseAdapterManifest`);
+// these pin the boot-edge contract: the unset/blank default and the env-var
+// error context.
+describe("readAdapterManifest", () => {
+  const KEY = "SIDECAR_ADAPTER_MANIFEST";
+  const saved = process.env[KEY];
+
+  afterEach(() => {
+    if (saved === undefined) {
+      delete process.env[KEY];
+    } else {
+      process.env[KEY] = saved;
+    }
+  });
+
+  it("returns the empty manifest when unset or whitespace-only", () => {
+    delete process.env[KEY];
+    expect(readAdapterManifest()).toEqual([]);
+    process.env[KEY] = "   ";
+    expect(readAdapterManifest()).toEqual([]);
+  });
+
+  it("parses a valid manifest", () => {
+    const manifest = [
+      { provider: "acme", specifier: "@acme/adapter", export: "createAdapter" },
+    ];
+    process.env[KEY] = JSON.stringify(manifest);
+    expect(readAdapterManifest()).toEqual(manifest);
+  });
+
+  it("throws loudly on malformed JSON, naming the env var", () => {
+    process.env[KEY] = "{not json";
+    expect(() => readAdapterManifest()).toThrow(
+      /SIDECAR_ADAPTER_MANIFEST environment variable is invalid:.*not valid JSON/s,
+    );
+  });
+
+  it("throws with the validation summary on a schema-violating entry", () => {
+    process.env[KEY] = JSON.stringify([{ provider: "acme" }]);
+    expect(() => readAdapterManifest()).toThrow(
+      /SIDECAR_ADAPTER_MANIFEST environment variable is invalid:.*specifier/s,
     );
   });
 });

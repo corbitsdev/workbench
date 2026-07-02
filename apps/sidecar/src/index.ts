@@ -12,8 +12,7 @@ import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
 import type { InferenceEvent } from "@intx/types/runtime";
 import { hexEncode } from "@intx/types";
 import { createAgentRepoStore } from "@intx/hub-sessions";
-import { loadAdapterRegistry } from "@intx/inference/providers";
-import { withGeminiThoughtSignaturePatch } from "./gemini-thought-signature-patch";
+import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
 import { createDefaultHarnessBuilder, wsUrlToHttp } from "./default-harness";
 import {
   readAdapterManifest,
@@ -71,7 +70,7 @@ const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 const agentGCPolicy = resolveAgentGCPolicy(process.env);
 
 // Operator-configured custom inference adapters, resolved once at the
-// boot edge. `loadAdapterRegistry` merges the statically-linked
+// boot edge. `buildWorkbenchAdapterRegistry` merges the statically-linked
 // built-ins with any custom adapters the manifest names, importing each
 // custom module eagerly here so a bad specifier fails the sidecar at
 // boot rather than at first inference. The SAME registry is threaded
@@ -84,9 +83,7 @@ const agentGCPolicy = resolveAgentGCPolicy(process.env);
 // adapter strips orphan `thoughtSignature` parts the upstream parser
 // cannot handle — remove the wrap once fixed upstream.
 const adapterManifest = readAdapterManifest();
-const adapters = withGeminiThoughtSignaturePatch(
-  await loadAdapterRegistry(adapterManifest),
-);
+const adapters = await buildWorkbenchAdapterRegistry(adapterManifest);
 
 const hubWsUrl = requireEnv("HUB_WS_URL");
 const sidecarId = requireEnv("SIDECAR_ID");

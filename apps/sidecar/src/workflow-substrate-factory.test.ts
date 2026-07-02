@@ -28,6 +28,7 @@ import {
   createSidecarStepInvoker,
   createStepInferenceSourceResolver,
   createStepToolContextResolver,
+  parseAdapterManifest,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -1288,5 +1289,41 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       RUN_ID,
     );
     await expect(fs.stat(runRoot)).rejects.toThrow();
+  });
+});
+
+// The child-side deserialization boundary for the operator adapter manifest:
+// the supervisor threads the boot edge's validated manifest through
+// `substrateEnv` as JSON, and the child must reject a corrupted wire value
+// loudly before `loadAdapterRegistry` would import() anything off it.
+describe("parseAdapterManifest", () => {
+  test("parses a valid manifest", () => {
+    const manifest = [
+      { provider: "acme", specifier: "@acme/adapter", export: "createAdapter" },
+    ];
+    expect(parseAdapterManifest(JSON.stringify(manifest))).toEqual(manifest);
+  });
+
+  test("parses the empty manifest (the no-custom-adapters default)", () => {
+    expect(parseAdapterManifest("[]")).toEqual([]);
+  });
+
+  test("throws loudly on malformed JSON", () => {
+    expect(() => parseAdapterManifest("{not json")).toThrow(
+      "sidecar workflow-child substrate config: SIDECAR_ADAPTER_MANIFEST is not valid JSON",
+    );
+  });
+
+  test("throws with the validation summary on a schema-violating entry", () => {
+    const invalid = JSON.stringify([{ provider: "acme" }]);
+    expect(() => parseAdapterManifest(invalid)).toThrow(
+      /SIDECAR_ADAPTER_MANIFEST failed validation:.*specifier/s,
+    );
+  });
+
+  test("throws on a non-array root", () => {
+    expect(() => parseAdapterManifest('{"provider":"x"}')).toThrow(
+      "SIDECAR_ADAPTER_MANIFEST failed validation",
+    );
   });
 });

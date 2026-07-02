@@ -62,7 +62,9 @@ import {
   createDependencies,
   type AdapterRegistry,
 } from "@intx/inference";
-import { loadAdapterRegistry } from "@intx/inference/providers";
+// WORKBENCH-LOCAL (CL-2650): the child builds its registry through the shared
+// workbench constructor, not upstream's bare `loadAdapterRegistry`.
+import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
 import { createSSHSignature } from "@intx/crypto";
 import {
   createIsogitStore,
@@ -1476,7 +1478,11 @@ export function createSidecarSubstrateFactory(
     // first resolve. The closure registry the sidecar built at its own
     // boot edge cannot cross the fork; the child rebuilds an equivalent
     // one from the serialized-and-revalidated manifest.
-    const childAdapterRegistry = await loadAdapterRegistry(
+    // WORKBENCH-LOCAL (CL-2650): build through buildWorkbenchAdapterRegistry
+    // so the child gets the same BD-394 gemini thought-signature wrap as the
+    // main sidecar path — a bare loadAdapterRegistry here would silently drop
+    // the workaround for google-genai steps run in the child.
+    const childAdapterRegistry = await buildWorkbenchAdapterRegistry(
       parseAdapterManifest(validated.SIDECAR_ADAPTER_MANIFEST),
     );
 
