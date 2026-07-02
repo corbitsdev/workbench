@@ -69,7 +69,14 @@ describe("parse_file hub tool (CL-2628)", () => {
 
   it("decodes the artifact data URL and returns parsed text keyed to the artifact", async () => {
     const db = makeDb([
-      [{ id: "art_1", title: "report.pdf", content: PDF_DATA_URL }],
+      [
+        {
+          id: "art_1",
+          title: "report.pdf",
+          content: PDF_DATA_URL,
+          source: { origin: "imported", upload: { filename: "report.pdf" } },
+        },
+      ],
     ]);
     const run = handler({ ...BASE, db });
 
@@ -105,14 +112,64 @@ describe("parse_file hub tool (CL-2628)", () => {
     expect(parseCalls).toHaveLength(0);
   });
 
-  it("rejects an artifact whose content is not a base64 data URL", async () => {
+  it("parses a PDF/image file regardless of source — an imported-from-Attio file is not an upload", async () => {
     const db = makeDb([
-      [{ id: "art_2", title: "note", content: "just some text" }],
+      [
+        {
+          id: "art_attio",
+          title: "contract.pdf",
+          content: PDF_DATA_URL,
+          source: { origin: "agent", tool: "attio_download" },
+        },
+      ],
+    ]);
+    const run = handler({ ...BASE, db });
+
+    const out = await run(
+      { artifactId: "art_attio" },
+      new AbortController().signal,
+    );
+
+    expect(out).toBe("PARSED DOCUMENT TEXT");
+    expect(parseCalls).toHaveLength(1);
+    expect((parseCalls[0] as { mimeType: string }).mimeType).toBe(
+      "application/pdf",
+    );
+  });
+
+  it("rejects a text data URL — already-readable text must not spend a parse turn", async () => {
+    const db = makeDb([
+      [
+        {
+          id: "art_txt",
+          title: "note",
+          content: "data:text/markdown;base64,SGVsbG8=",
+          source: { origin: "imported" },
+        },
+      ],
     ]);
     const run = handler({ ...BASE, db });
     await expect(
-      run({ artifactId: "art_2" }, new AbortController().signal),
-    ).rejects.toThrow("not a parseable file");
+      run({ artifactId: "art_txt" }, new AbortController().signal),
+    ).rejects.toThrow("read it directly");
+    expect(parseCalls).toHaveLength(0);
+  });
+
+  it("rejects a plain-text artifact", async () => {
+    const db = makeDb([
+      [
+        {
+          id: "art_note",
+          title: "Granola note",
+          content: "Meeting notes as plain text",
+          source: { origin: "agent", type: "inline" },
+        },
+      ],
+    ]);
+    const run = handler({ ...BASE, db });
+    await expect(
+      run({ artifactId: "art_note" }, new AbortController().signal),
+    ).rejects.toThrow("read it directly");
     expect(parseCalls).toHaveLength(0);
   });
 

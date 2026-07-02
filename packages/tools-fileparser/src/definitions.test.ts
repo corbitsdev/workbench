@@ -21,4 +21,10 @@ describe("parse_file tool definition", () => {
   it("is the only tool the package exports", () => {
     expect(FILEPARSER_TOOL_DEFINITIONS).toEqual([PARSE_FILE_DEFINITION]);
   });
+
+  it("steers the model away from already-text content", () => {
+    const description = PARSE_FILE_DEFINITION.description.toLowerCase();
+    expect(description).toContain("pdf or image");
+    expect(description).toContain("artifact_read");
+  });
 });
