@@ -7,6 +7,19 @@ import type { GrantStore } from "@intx/types/authz";
 
 const TEST_API_KEY = "sk-test-key";
 
+// Response.json() is Promise<unknown> under lib ESNext; assertions cast to the
+// expected body shape — a wrong shape fails the expect() at runtime.
+type ResBody = {
+  error: string;
+  detail: string;
+  launched: boolean;
+  created: boolean;
+  leakedAgent: boolean;
+  phase: string | null;
+  instanceId: string;
+  data: Record<string, string>[];
+};
+
 mock.module("../config", () => ({
   getConfig: () => ({
     rootTenant: {
@@ -250,7 +263,7 @@ describe("GET /agents", () => {
     const app = buildApp(makeMockDb());
     const res = await app.fetch(makeRequest("http://localhost/agents"));
     expect(res.status).toBe(400);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("tenantId");
   });
 
@@ -309,9 +322,9 @@ describe("GET /agents", () => {
       makeRequest("http://localhost/agents?tenantId=tenant-1"),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.data).toHaveLength(1);
-    expect(json.data[0].agentName).toBe("Loop");
+    expect(json.data[0]?.agentName).toBe("Loop");
   });
 
   it("excludes removed instances (endedAt set) from the list query", async () => {
@@ -426,7 +439,7 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
   });
 
@@ -450,7 +463,7 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
     expect(sessionService.launchSession).toHaveBeenCalled();
   });
@@ -483,7 +496,7 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
     expect("launchError" in json).toBe(false);
     // Provision-phase failures must not be retried — one attempt only.
@@ -507,7 +520,7 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(503);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toBe("Failed to launch agent session");
     expect(json.detail).toContain("No resolvable inference sources");
     expect(json.phase).toBeNull();
@@ -541,7 +554,7 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(503);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toBe("Failed to launch agent session");
     expect(json.phase).toBe("pack");
     expect(json.detail).toContain("@workbench/tools-granola@1.2.3");
@@ -937,10 +950,10 @@ describe("GET /agents — personal-agent exclusion", () => {
       makeRequest("http://localhost/agents?tenantId=tenant-1"),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.data).toHaveLength(1);
-    expect(json.data[0].id).toBe("ins-oat");
-    expect(json.data[0].agentName).toBe("Oat");
+    expect(json.data[0]?.id).toBe("ins-oat");
+    expect(json.data[0]?.agentName).toBe("Oat");
   });
 });
 
@@ -1108,7 +1121,7 @@ describe("DELETE /tenants/:tenantId/agents/instances/:instanceId", () => {
       ),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("ephemeral");
+    expect(((await res.json()) as ResBody).error).toContain("ephemeral");
     expect(deletedTables).not.toContain(agentInstanceTable);
   });
 });
@@ -1163,7 +1176,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect((await res.json()).launched).toBe(true);
+    expect(((await res.json()) as ResBody).launched).toBe(true);
     expect(sessionService.launchSession).not.toHaveBeenCalled();
   });
 
@@ -1192,7 +1205,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect((await res.json()).launched).toBe(true);
+    expect(((await res.json()) as ResBody).launched).toBe(true);
     expect(sendGrantsUpdate).toHaveBeenCalledWith(
       INSTANCE.address,
       expect.any(Array),
@@ -1212,7 +1225,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(409);
-    expect((await res.json()).error).toContain("deleted");
+    expect(((await res.json()) as ResBody).error).toContain("deleted");
   });
 
   it("resets a stopped (not deleted) instance to deployed before launching", async () => {
@@ -1257,7 +1270,9 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toContain("Tenant configuration");
+    expect(((await res.json()) as ResBody).error).toContain(
+      "Tenant configuration",
+    );
   });
 
   it("returns 500 when the agent has no system prompt", async () => {
@@ -1280,7 +1295,9 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toContain("Agent configuration");
+    expect(((await res.json()) as ResBody).error).toContain(
+      "Agent configuration",
+    );
   });
 });
 
@@ -1293,8 +1310,8 @@ describe("GET /agents/templates", () => {
       makeRequest("http://localhost/agents/templates"),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
-    const keys = json.data.map((t: { key: string }) => t.key);
+    const json = (await res.json()) as ResBody;
+    const keys = json.data.map((t) => t.key);
     expect(keys).toContain("oat");
     // Personal (myra) and non-deployable (loop) templates are excluded.
     expect(keys).not.toContain("myra");
@@ -1355,7 +1372,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("templateKey");
+    expect(((await res.json()) as ResBody).error).toContain("templateKey");
   });
 
   it("returns 400 for an unknown template key", async () => {
@@ -1367,7 +1384,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain("non-deployable");
+    expect(((await res.json()) as ResBody).error).toContain("non-deployable");
   });
 
   it("returns 400 for a non-deployable template (loop)", async () => {
@@ -1394,7 +1411,9 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toContain("Tenant configuration");
+    expect(((await res.json()) as ResBody).error).toContain(
+      "Tenant configuration",
+    );
   });
 
   it("returns 404 when no agent definition is found in the tenant hierarchy", async () => {
@@ -1408,7 +1427,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(404);
-    expect((await res.json()).error).toContain("not found");
+    expect(((await res.json()) as ResBody).error).toContain("not found");
   });
 
   it("creates the instance, launches the session, and returns 201", async () => {
@@ -1440,7 +1459,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(201);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.created).toBe(true);
     expect(typeof json.instanceId).toBe("string");
     // principal + agentInstance + memberAgentInstance inserted in the transaction.
@@ -1472,7 +1491,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(201);
-    const instanceId = (await res.json()).instanceId as string;
+    const instanceId = ((await res.json()) as ResBody).instanceId;
     const memberGrants = inserted.filter(
       (row) =>
         row.resource === `instance:${instanceId}` &&
@@ -1510,7 +1529,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(503);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toBe("Failed to launch agent session");
     expect(json.detail).toContain("No resolvable inference sources");
     expect(json.phase).toBeNull();
@@ -1572,7 +1591,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
       }),
     );
     expect(res.status).toBe(503);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toBe("Failed to launch agent session");
     expect(json.leakedAgent).toBe(true);
     // No teardown ran — the leaked sidecar agent must keep its hub rows. (The
@@ -1627,7 +1646,7 @@ describe("POST /tenants/:tenantId/agents/instances", () => {
     // 503, so a 201 proves no teardown ran).
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
     expect(res.status).toBe(201);
-    expect((await res.json()).created).toBe(true);
+    expect(((await res.json()) as ResBody).created).toBe(true);
   });
 
   it("walks up the tenant hierarchy to find the definition in a parent tenant", async () => {

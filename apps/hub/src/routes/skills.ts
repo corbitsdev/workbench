@@ -45,6 +45,15 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+// webkitRelativePath is a DOM-only File property; Bun's File type omits it
+// but browser uploads still carry it, so read it structurally.
+function fileRelativePath(file: File): string | undefined {
+  if ("webkitRelativePath" in file) {
+    return readString(file.webkitRelativePath);
+  }
+  return undefined;
+}
+
 function toActor(
   context: { tenantId: string; principalId: string },
   userId: string,
@@ -232,7 +241,7 @@ export function createSkillsRouter(
       for (const [index, value] of files.entries()) {
         if (!(value instanceof File)) continue;
         const relativePath =
-          paths[index] || value.webkitRelativePath || value.name;
+          paths[index] || fileRelativePath(value) || value.name;
         const content = Buffer.from(await value.arrayBuffer());
         if (files.length === 1 && value.name.toLowerCase().endsWith(".zip")) {
           bundleFiles.push(...(await filesFromZip(content)));

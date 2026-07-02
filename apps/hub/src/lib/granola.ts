@@ -47,7 +47,7 @@ async function fetchNotes(apiKey: string, url: URL): Promise<GranolaNote[]> {
     );
   }
 
-  const data: GranolaListResponse = await response.json();
+  const data = (await response.json()) as GranolaListResponse;
   return data.notes || [];
 }
 
