@@ -1,8 +1,5 @@
 import { type, type Type } from "arktype";
-import {
-  KindSelectionPayloadSchema,
-  SyncApprovalPayloadSchema,
-} from "@workbench/shared";
+import { SyncApprovalPayloadSchema } from "@workbench/shared";
 
 // Per-workflow-kind → per-signal-name resume-payload validators. The /resume
 // route is generic across every workflow; the raw resume payload is otherwise
@@ -15,7 +12,6 @@ import {
 // contract worth enforcing at the boundary.
 const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "attio-task-agent": {
-    "kind-selection": KindSelectionPayloadSchema,
     "sync-approval": SyncApprovalPayloadSchema,
   },
 };

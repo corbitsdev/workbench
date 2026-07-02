@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import {
+  ArtifactReviewSchema,
   AttioAnalyzeDecisionSchema,
-  KindSelectionPayloadSchema,
+  ExecutorOutputSchema,
   SyncApprovalPayloadSchema,
   artifactKindRegistry,
   attioTaskArtifactKinds,
@@ -125,13 +126,13 @@ describe("nextLoopAction", () => {
 });
 
 describe("AttioAnalyzeDecisionSchema", () => {
-  it("accepts a ready decision with selected kinds", () => {
+  it("accepts a ready decision with a draft-action plan", () => {
     const out = AttioAnalyzeDecisionSchema({
       status: "ready",
       reasoning: "Have enough context",
-      selectedArtifactKinds: [
-        { kind: "cold-email" },
-        { kind: "research-brief" },
+      draftActions: [
+        { type: "cold-email", brief: "Draft first-touch outreach to Acme." },
+        { type: "research-brief", brief: "Summarize Acme's recent funding." },
       ],
       proposedTaskUpdate: { markComplete: true, note: "Drafted outreach" },
     });
@@ -146,41 +147,65 @@ describe("AttioAnalyzeDecisionSchema", () => {
     expect(out instanceof type.errors).toBe(true);
   });
 
-  it("rejects an unknown artifact kind", () => {
+  it("rejects a draft action missing its brief", () => {
     const out = AttioAnalyzeDecisionSchema({
       status: "ready",
       reasoning: "x",
-      selectedArtifactKinds: [{ kind: "cold-email" }, { kind: "hologram" }],
+      draftActions: [{ type: "cold-email" }],
     });
     expect(out instanceof type.errors).toBe(true);
   });
+
+  it("accepts an arbitrary (non-collateral) action type", () => {
+    // `type` is a free string so a new action (e.g. a slack-message draft) is a
+    // registry addition, not a schema change (CL-2664).
+    const out = AttioAnalyzeDecisionSchema({
+      status: "ready",
+      reasoning: "x",
+      draftActions: [
+        { type: "slack-message", brief: "Draft a heads-up to #bd." },
+      ],
+    });
+    expect(out instanceof type.errors).toBe(false);
+  });
 });
 
-describe("KindSelectionPayloadSchema", () => {
-  it("accepts a complete boolean map over every kind", () => {
-    const generate = Object.fromEntries(
-      attioTaskArtifactKinds.map((kind) => [kind, kind === "cold-email"]),
-    );
-    const out = KindSelectionPayloadSchema({ generate });
+describe("ExecutorOutputSchema", () => {
+  it("accepts the executor's produced outputs", () => {
+    const out = ExecutorOutputSchema({
+      outputs: [{ type: "cold-email", title: "Acme outreach", content: "Hi…" }],
+    });
     expect(out instanceof type.errors).toBe(false);
   });
 
-  it("rejects a map missing a kind", () => {
-    const generate = Object.fromEntries(
-      attioTaskArtifactKinds
-        .filter((kind) => kind !== "blog")
-        .map((kind) => [kind, false]),
+  it("accepts an empty plan result", () => {
+    expect(ExecutorOutputSchema({ outputs: [] }) instanceof type.errors).toBe(
+      false,
     );
-    const out = KindSelectionPayloadSchema({ generate });
-    expect(out instanceof type.errors).toBe(true);
+  });
+});
+
+describe("ArtifactReviewSchema", () => {
+  it("accepts a per-output verdict list", () => {
+    const out = ArtifactReviewSchema({
+      overall: "Both outputs fulfil their briefs.",
+      items: [
+        { type: "cold-email", verdict: "pass", notes: "Send-ready." },
+        {
+          type: "research-brief",
+          verdict: "revise",
+          notes: "Cite the source.",
+        },
+      ],
+    });
+    expect(out instanceof type.errors).toBe(false);
   });
 
-  it("rejects a non-boolean value for a kind", () => {
-    const generate = Object.fromEntries(
-      attioTaskArtifactKinds.map((kind) => [kind, false]),
-    );
-    generate["cold-email"] = "yes" as unknown as boolean;
-    const out = KindSelectionPayloadSchema({ generate });
+  it("rejects an unknown verdict", () => {
+    const out = ArtifactReviewSchema({
+      overall: "x",
+      items: [{ type: "cold-email", verdict: "meh", notes: "" }],
+    });
     expect(out instanceof type.errors).toBe(true);
   });
 });
