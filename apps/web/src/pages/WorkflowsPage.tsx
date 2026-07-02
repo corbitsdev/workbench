@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { toHumanLabel, useArchivedWorkflowRuns } from "@workbench/ui";
+import { toHumanLabel } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { WorkflowsDashboard } from "../components/WorkflowsDashboard";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import {
+  useArchiveWorkflowRun,
   useStartWorkflow,
   useWorkflowRuns,
   type WorkflowRun,
@@ -155,18 +156,23 @@ function StatusFilterControl({
 function RunRow({
   run,
   selected,
-  archived,
+  archiving,
   onSelect,
-  onToggleArchive,
+  onArchive,
 }: {
   run: WorkflowRun;
   selected: boolean;
-  archived: boolean;
+  archiving: boolean;
   onSelect: () => void;
-  onToggleArchive: () => void;
+  onArchive: () => void;
 }) {
+  // Two-tap confirm: archiving is a permanent teardown (stops the run and frees
+  // its resources), so the first click arms and the second commits. Leaving the
+  // row (or blurring the button) disarms it.
+  const [confirming, setConfirming] = useState(false);
   return (
     <div
+      onMouseLeave={() => setConfirming(false)}
       className={`group relative flex w-full items-stretch rounded-[9px] transition-colors hover:bg-row-hover ${
         selected ? "bg-row-hover" : ""
       }`}
@@ -197,15 +203,44 @@ function RunRow({
           </span>
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onToggleArchive}
-        title={archived ? "Unarchive run" : "Archive run"}
-        aria-label={`${archived ? "Unarchive" : "Archive"} ${run.kind} run`}
-        className="shrink-0 px-2.5 text-[11px] text-text-3 opacity-100 transition-opacity hover:text-text focus:opacity-100 hover-hover:opacity-0 hover-hover:focus:opacity-100 hover-hover:group-hover:opacity-100"
-      >
-        {archived ? "Unarchive" : "Archive"}
-      </button>
+      {confirming ? (
+        // Armed state mirrors the app's destructive-confirm pattern (SkillDetail,
+        // SettingsToolDetail): an explicit Confirm + Cancel pair, not a same-button
+        // re-tap. Cancel sits where Archive was, so a reflexive double-click lands
+        // on Cancel, not the irreversible teardown.
+        <div className="flex shrink-0 items-center gap-1 pr-1">
+          <button
+            type="button"
+            disabled={archiving}
+            onClick={() => {
+              setConfirming(false);
+              onArchive();
+            }}
+            aria-label={`Confirm: stop and remove ${run.kind} run — frees its resources, cannot be undone`}
+            className="rounded-[7px] bg-red-500 px-2 py-1 text-[11px] font-medium text-white transition-transform hover:bg-red-600 active:scale-[0.97] disabled:opacity-50 motion-reduce:active:scale-100"
+          >
+            {archiving ? "Stopping…" : "Confirm"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirming(false)}
+            aria-label={`Cancel archiving ${run.kind} run`}
+            className="rounded-[7px] px-2 py-1 text-[11px] text-text-3 transition-transform hover:text-text active:scale-[0.97] motion-reduce:active:scale-100"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirming(true)}
+          title="Archive — stops the run and frees its resources (cannot be undone)"
+          aria-label={`Archive ${run.kind} run`}
+          className="shrink-0 px-2.5 text-[11px] text-text-3 opacity-100 transition-[opacity,transform] hover:text-text focus:opacity-100 active:scale-[0.97] hover-hover:opacity-0 hover-hover:focus:opacity-100 hover-hover:group-hover:opacity-100 motion-reduce:active:scale-100"
+        >
+          Archive
+        </button>
+      )}
     </div>
   );
 }
@@ -228,9 +263,8 @@ export function WorkflowsPage() {
     refetch,
   } = useWorkflowRuns(activeTenantId);
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [showArchived, setShowArchived] = useState(false);
   const [filters, setFilters] = useState<RunFilters>(DEFAULT_RUN_FILTERS);
-  const { archived, isArchived, setArchived } = useArchivedWorkflowRuns();
+  const archiveRun = useArchiveWorkflowRun(activeTenantId);
 
   const [pinned, setPinned] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -322,10 +356,6 @@ export function WorkflowsPage() {
     !isLoading &&
     !isError &&
     !allRuns.some((run) => run.runId === selectedRunId);
-  const archivedCount = useMemo(
-    () => allRuns.reduce((n, r) => (archived.has(r.runId) ? n + 1 : n), 0),
-    [allRuns, archived],
-  );
   const kindOptions = useMemo(() => distinctRunKinds(allRuns), [allRuns]);
   const kindOptionsByLabel = useMemo(
     () =>
@@ -340,16 +370,12 @@ export function WorkflowsPage() {
     filters.sort === DEFAULT_RUN_FILTERS.sort &&
     filters.search.trim() === "";
   const hasActiveFilters = !filtersAreDefault;
-  const visibleRuns = useMemo(() => {
-    const archiveScoped = showArchived
-      ? allRuns
-      : allRuns.filter((run) => !archived.has(run.runId));
-    return applyRunFilters(archiveScoped, filters);
-  }, [allRuns, archived, showArchived, filters]);
+  const visibleRuns = useMemo(
+    () => applyRunFilters(allRuns, filters),
+    [allRuns, filters],
+  );
 
   const showFilters = !isLoading && !isError && allRuns.length > 0;
-  const showAllArchivedNotice =
-    filtersAreDefault && !showArchived && archivedCount > 0;
 
   return (
     <div className="relative flex h-full min-h-0 overflow-hidden">
@@ -528,12 +554,12 @@ export function WorkflowsPage() {
             )}
             {!isLoading && !isError && allRuns.length > 0 && (
               <div className="flex flex-col gap-0.5">
-                {visibleRuns.length === 0 && showAllArchivedNotice && (
-                  <div className="px-2 py-4 text-[13px] text-text-2">
-                    {`All runs are archived. Show ${String(archivedCount)} archived to view them.`}
+                {archiveRun.isError && (
+                  <div className="mx-2 mb-1 rounded-[8px] bg-row-hover px-2.5 py-2 text-[11px] text-red-500">
+                    Couldn't archive that run. Try again.
                   </div>
                 )}
-                {visibleRuns.length === 0 && !showAllArchivedNotice && (
+                {visibleRuns.length === 0 && (
                   <div className="flex flex-col items-start gap-2 px-2 py-4 text-[13px] text-text-2">
                     <span>No runs match the current filters.</span>
                     {hasActiveFilters && (
@@ -552,35 +578,26 @@ export function WorkflowsPage() {
                     key={run.runId}
                     run={run}
                     selected={run.runId === selectedRunId}
-                    archived={archived.has(run.runId)}
+                    archiving={
+                      archiveRun.isPending && archiveRun.variables === run.runId
+                    }
                     onSelect={() => {
                       if (run.runId === selectedRunId) return;
                       navigate(`/workflows/${run.runId}`);
                     }}
-                    onToggleArchive={() => {
-                      const nextArchived = !isArchived(run.runId);
-                      setArchived(run.runId, nextArchived);
-                      if (
-                        nextArchived &&
-                        !showArchived &&
-                        run.runId === selectedRunId
-                      ) {
-                        navigate("/workflows", { replace: true });
-                      }
+                    onArchive={() => {
+                      const wasSelected = run.runId === selectedRunId;
+                      archiveRun
+                        .mutateAsync(run.runId)
+                        .then(() => {
+                          if (wasSelected) {
+                            navigate("/workflows", { replace: true });
+                          }
+                        })
+                        .catch(() => {});
                     }}
                   />
                 ))}
-                {archivedCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowArchived((v) => !v)}
-                    className="w-full px-2.5 py-2 text-left text-[11px] text-text-3 underline hover:text-text"
-                  >
-                    {showArchived
-                      ? "Hide archived runs"
-                      : `Show ${String(archivedCount)} archived`}
-                  </button>
-                )}
               </div>
             )}
           </div>

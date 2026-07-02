@@ -16,6 +16,9 @@ const DEFAULT_BASE_URL = "https://api.attio.com";
 const DEFAULT_LIMIT = 25;
 const DEFAULT_OFFSET = 0;
 const MAX_LIMIT = 100;
+// The notes list endpoint caps `limit` at 50 (unlike records/tasks at 100);
+// requesting more can be rejected. Used by the idempotency preflight.
+const NOTES_MAX_LIMIT = 50;
 
 function attioHeaders(apiKey: string): Record<string, string> {
   return {
@@ -102,7 +105,7 @@ function attioUrl(config: AttioToolsConfig, path: string): URL {
 async function fetchAttioJSON(
   config: AttioToolsConfig,
   url: URL,
-  init: { method: "GET" | "POST"; body?: unknown },
+  init: { method: "GET" | "POST" | "PATCH"; body?: unknown },
   signal: AbortSignal,
 ): Promise<unknown> {
   const fetcher = config.fetcher ?? fetch;
@@ -238,6 +241,254 @@ async function listWorkspaceMembers(
   );
 }
 
+async function listTasks(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const limit = optionalPositiveInteger(args.limit, DEFAULT_LIMIT, MAX_LIMIT);
+  const offset = optionalNonNegativeInteger(args.offset, DEFAULT_OFFSET);
+
+  const url = attioUrl(config, "/v2/tasks");
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  const assignee = optionalString(args.assignee);
+  if (assignee !== null) {
+    url.searchParams.set("assignee", assignee);
+  }
+  if (typeof args.isCompleted === "boolean") {
+    url.searchParams.set("is_completed", String(args.isCompleted));
+  }
+  const linkedObject = optionalString(args.linkedObject);
+  if (linkedObject !== null) {
+    url.searchParams.set("linked_object", linkedObject);
+  }
+  const linkedRecordId = optionalString(args.linkedRecordId);
+  if (linkedRecordId !== null) {
+    url.searchParams.set("linked_record_id", linkedRecordId);
+  }
+  const sort = optionalString(args.sort);
+  if (sort !== null) {
+    url.searchParams.set("sort", sort);
+  }
+
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+}
+
+type LinkedRecordRef = Record<string, unknown> & {
+  target_object?: unknown;
+  target_object_id?: unknown;
+  target_record_id?: unknown;
+};
+
+function linkedRecordRefs(task: unknown): LinkedRecordRef[] {
+  if (!isRecord(task) || !Array.isArray(task.linked_records)) {
+    return [];
+  }
+  return task.linked_records.filter(isRecord) as LinkedRecordRef[];
+}
+
+// Normalize a raw Attio linked-record ref to `{ object, recordId }` — the one
+// shape the rest of the system (canonical AttioLinkedRecordSchema, the workflow
+// UI) reads. Emitting the raw `target_*` keys here is what let the UI parser
+// drift and silently fail (CL-2622 review); the tool is the right place to
+// normalize so there is a single shape end to end.
+function normalizeRef(
+  ref: LinkedRecordRef,
+): { object: string; recordId: string } | null {
+  const object =
+    optionalString(ref.target_object) ?? optionalString(ref.target_object_id);
+  const recordId = optionalString(ref.target_record_id);
+  if (object === null || recordId === null) return null;
+  return { object, recordId };
+}
+
+async function hydrateLinkedRecord(
+  config: AttioToolsConfig,
+  ref: LinkedRecordRef,
+  signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+  const normalized = normalizeRef(ref);
+  if (normalized === null) {
+    return { error: "linked record is missing object or record id" };
+  }
+  try {
+    const record = await getRecord(config, normalized, signal);
+    return { ...normalized, record };
+  } catch (err) {
+    return {
+      ...normalized,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+async function getTask(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const taskId = optionalString(args.taskId);
+  if (taskId === null) {
+    throw new Error("taskId is required");
+  }
+
+  const url = attioUrl(config, `/v2/tasks/${encodeURIComponent(taskId)}`);
+  const task = parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+
+  const refs = linkedRecordRefs(task);
+  if (args.hydrateLinkedRecords === false) {
+    return {
+      task,
+      linkedRecords: refs.map(normalizeRef).filter((r) => r !== null),
+    };
+  }
+
+  const linkedRecords = await Promise.all(
+    refs.map((ref) => hydrateLinkedRecord(config, ref, signal)),
+  );
+  return { task, linkedRecords };
+}
+
+async function updateTask(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const taskId = optionalString(args.taskId);
+  if (taskId === null) {
+    throw new Error("taskId is required");
+  }
+
+  const data: Record<string, unknown> = {};
+  if (typeof args.isCompleted === "boolean") {
+    data.is_completed = args.isCompleted;
+  }
+  const deadlineAt = optionalString(args.deadlineAt);
+  if (deadlineAt !== null) {
+    data.deadline_at = deadlineAt;
+  }
+  if (Object.keys(data).length === 0) {
+    throw new Error(
+      "no task fields to update (pass isCompleted or deadlineAt)",
+    );
+  }
+
+  const url = attioUrl(config, `/v2/tasks/${encodeURIComponent(taskId)}`);
+  return parseDataResponse(
+    await fetchAttioJSON(
+      config,
+      url,
+      { method: "PATCH", body: { data } },
+      signal,
+    ),
+  );
+}
+
+function idempotencyMarker(key: string): string {
+  return `<!-- idem:${key} -->`;
+}
+
+// Attio note create takes a single `content` string, but list responses expose
+// the body under content_plaintext / content_markdown (and sometimes a nested
+// `content`). Scan every string leaf so the marker is found regardless of which
+// field the API populated for the note's format.
+function noteContainsMarker(note: unknown, marker: string): boolean {
+  if (typeof note === "string") {
+    return note.includes(marker);
+  }
+  if (Array.isArray(note)) {
+    return note.some((item) => noteContainsMarker(item, marker));
+  }
+  if (isRecord(note)) {
+    return Object.values(note).some((value) =>
+      noteContainsMarker(value, marker),
+    );
+  }
+  return false;
+}
+
+async function findNoteByMarker(
+  config: AttioToolsConfig,
+  parentObject: string,
+  parentRecordId: string,
+  marker: string,
+  signal: AbortSignal,
+): Promise<unknown | null> {
+  const url = attioUrl(config, "/v2/notes");
+  url.searchParams.set("parent_object", parentObject);
+  url.searchParams.set("parent_record_id", parentRecordId);
+  url.searchParams.set("limit", String(NOTES_MAX_LIMIT));
+  url.searchParams.set("offset", String(DEFAULT_OFFSET));
+
+  const notes = parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "GET" }, signal),
+  );
+  if (!Array.isArray(notes)) {
+    return null;
+  }
+  return notes.find((note) => noteContainsMarker(note, marker)) ?? null;
+}
+
+async function createNote(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const parentObject = optionalString(args.parentObject);
+  if (parentObject === null) {
+    throw new Error("parentObject is required");
+  }
+  const parentRecordId = optionalString(args.parentRecordId);
+  if (parentRecordId === null) {
+    throw new Error("parentRecordId is required");
+  }
+  const content = optionalString(args.content);
+  if (content === null) {
+    throw new Error("content is required");
+  }
+  const format = optionalString(args.format) ?? "markdown";
+  if (format !== "markdown" && format !== "plaintext") {
+    throw new Error('format must be "plaintext" or "markdown"');
+  }
+
+  const idempotencyKey = optionalString(args.idempotencyKey);
+  let noteContent = content;
+  if (idempotencyKey !== null) {
+    const marker = idempotencyMarker(idempotencyKey);
+    const existing = await findNoteByMarker(
+      config,
+      parentObject,
+      parentRecordId,
+      marker,
+      signal,
+    );
+    if (existing !== null) {
+      return { deduped: true, note: existing };
+    }
+    noteContent = `${content}\n\n${marker}`;
+  }
+
+  const url = attioUrl(config, "/v2/notes");
+  const body = {
+    data: {
+      parent_object: parentObject,
+      parent_record_id: parentRecordId,
+      title: optionalString(args.title) ?? "",
+      format,
+      content: noteContent,
+    },
+  };
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "POST", body }, signal),
+  );
+}
+
 const QUERY_RECORDS_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -315,6 +566,112 @@ const GET_RECORD_INPUT_SCHEMA = {
   required: ["object", "recordId"],
 };
 
+const LIST_TASKS_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    assignee: {
+      type: "string",
+      description:
+        'Scope tasks to one assignee — pass a workspace member email (e.g. "sawyer@abklabs.com") or workspace member id. Use this to list only the tasks assigned to a specific person.',
+    },
+    isCompleted: {
+      type: "boolean",
+      description:
+        "Filter by completion state: false for open tasks, true for completed. Omit to return both.",
+    },
+    linkedObject: {
+      type: "string",
+      description:
+        'Only return tasks linked to this object slug (e.g. "companies"). Use with linkedRecordId to scope to one record.',
+    },
+    linkedRecordId: {
+      type: "string",
+      description: "Only return tasks linked to this record id.",
+    },
+    sort: {
+      type: "string",
+      description:
+        'Sort order, e.g. "created_at:desc" (newest first) or "created_at:asc".',
+    },
+    limit: {
+      type: "number",
+      description: "Maximum number of tasks to return (1-100, default 25).",
+    },
+    offset: {
+      type: "number",
+      description: "Number of tasks to skip for pagination (default 0).",
+    },
+  },
+};
+
+const GET_TASK_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    taskId: {
+      type: "string",
+      description: "The id of the task to fetch.",
+    },
+    hydrateLinkedRecords: {
+      type: "boolean",
+      description:
+        "When true (default), fetch each linked record's full data so you get the company/person context in one call. Set false to return only the linked-record references.",
+    },
+  },
+  required: ["taskId"],
+};
+
+const UPDATE_TASK_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    taskId: {
+      type: "string",
+      description: "The id of the task to update.",
+    },
+    isCompleted: {
+      type: "boolean",
+      description: "Set the task's completion state (e.g. true to mark done).",
+    },
+    deadlineAt: {
+      type: "string",
+      description: "Set the task deadline (ISO 8601 timestamp).",
+    },
+  },
+  required: ["taskId"],
+};
+
+const CREATE_NOTE_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    parentObject: {
+      type: "string",
+      description:
+        'The object slug the note is attached to, e.g. "companies" or "people".',
+    },
+    parentRecordId: {
+      type: "string",
+      description: "The id of the record the note is attached to.",
+    },
+    content: {
+      type: "string",
+      description: "The note body.",
+    },
+    title: {
+      type: "string",
+      description: "Optional note title (defaults to empty).",
+    },
+    format: {
+      type: "string",
+      description: 'Content format: "markdown" (default) or "plaintext".',
+    },
+    idempotencyKey: {
+      type: "string",
+      description:
+        "Optional dedupe key. When set, a hidden marker carrying this key is appended to the note body on create; before creating, existing notes on the same record are checked for that marker and, if one is found, the create is skipped and the existing note is returned as `{ deduped: true, note }`. Pass a stable key (e.g. a workflow run id) so re-running after a failed write-back cannot create a duplicate note.",
+    },
+  },
+  required: ["parentObject", "parentRecordId", "content"],
+};
+
 const EMPTY_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {},
@@ -354,6 +711,34 @@ export const ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION: ToolDefinition = {
   inputSchema: EMPTY_INPUT_SCHEMA,
 };
 
+export const ATTIO_LIST_TASKS_DEFINITION: ToolDefinition = {
+  name: "attio_list_tasks",
+  description:
+    'List Attio tasks. To scope to one person\'s tasks (e.g. "my tasks"), pass `assignee` with their workspace member email or id. Filter open work with `isCompleted: false`, or scope to a record with `linkedObject`+`linkedRecordId`. Supports `sort` and pagination. Returns an array of tasks, each with an `id` (containing `task_id`), `content_plaintext`, `deadline_at`, `is_completed`, `assignees`, and `linked_records`. Read-only.',
+  inputSchema: LIST_TASKS_INPUT_SCHEMA,
+};
+
+export const ATTIO_GET_TASK_DEFINITION: ToolDefinition = {
+  name: "attio_get_task",
+  description:
+    "Fetch a single Attio task by id and, by default, hydrate its linked records so you get the full company/person context in one call. Returns `{ task, linkedRecords }` where each linked record includes the fetched `record` (or an `error` if it could not be fetched). Read-only.",
+  inputSchema: GET_TASK_INPUT_SCHEMA,
+};
+
+export const ATTIO_UPDATE_TASK_DEFINITION: ToolDefinition = {
+  name: "attio_update_task",
+  description:
+    "Update an Attio task — set its completion state (`isCompleted`) and/or `deadlineAt`. WRITES to Attio: use only after explicit human approval.",
+  inputSchema: UPDATE_TASK_INPUT_SCHEMA,
+};
+
+export const ATTIO_CREATE_NOTE_DEFINITION: ToolDefinition = {
+  name: "attio_create_note",
+  description:
+    "Create a note on an Attio record (e.g. attach approved outreach copy to a company). WRITES to Attio: use only after explicit human approval. Pass `idempotencyKey` to make the write safe to retry — a matching prior note is returned instead of creating a duplicate.",
+  inputSchema: CREATE_NOTE_INPUT_SCHEMA,
+};
+
 function buildListObjectsHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listObjects(config, signal));
@@ -377,6 +762,26 @@ function buildGetRecordHandler(config: AttioToolsConfig) {
 function buildListWorkspaceMembersHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listWorkspaceMembers(config, signal));
+}
+
+function buildListTasksHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await listTasks(config, args, signal));
+}
+
+function buildGetTaskHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await getTask(config, args, signal));
+}
+
+function buildUpdateTaskHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await updateTask(config, args, signal));
+}
+
+function buildCreateNoteHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await createNote(config, args, signal));
 }
 
 export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
@@ -408,6 +813,26 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
       definition: ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
       handler: buildListWorkspaceMembersHandler(config),
     },
+    {
+      kind: "string",
+      definition: ATTIO_LIST_TASKS_DEFINITION,
+      handler: buildListTasksHandler(config),
+    },
+    {
+      kind: "string",
+      definition: ATTIO_GET_TASK_DEFINITION,
+      handler: buildGetTaskHandler(config),
+    },
+    {
+      kind: "string",
+      definition: ATTIO_UPDATE_TASK_DEFINITION,
+      handler: buildUpdateTaskHandler(config),
+    },
+    {
+      kind: "string",
+      definition: ATTIO_CREATE_NOTE_DEFINITION,
+      handler: buildCreateNoteHandler(config),
+    },
   ];
 }
 
@@ -423,6 +848,14 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildGetRecordHandler(config);
     case ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION.name:
       return buildListWorkspaceMembersHandler(config);
+    case ATTIO_LIST_TASKS_DEFINITION.name:
+      return buildListTasksHandler(config);
+    case ATTIO_GET_TASK_DEFINITION.name:
+      return buildGetTaskHandler(config);
+    case ATTIO_UPDATE_TASK_DEFINITION.name:
+      return buildUpdateTaskHandler(config);
+    case ATTIO_CREATE_NOTE_DEFINITION.name:
+      return buildCreateNoteHandler(config);
     default:
       throw new Error(`Unknown attio tool: ${name}`);
   }
@@ -500,5 +933,29 @@ export const ATTIO_HUB_TOOLS = {
         resolveBaseUrl(config),
         ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
       ),
+  },
+  attio_list_tasks: {
+    definition: ATTIO_LIST_TASKS_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_TASKS_DEFINITION),
+  },
+  attio_get_task: {
+    definition: ATTIO_GET_TASK_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_TASK_DEFINITION),
+  },
+  attio_update_task: {
+    definition: ATTIO_UPDATE_TASK_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_UPDATE_TASK_DEFINITION),
+  },
+  attio_create_note: {
+    definition: ATTIO_CREATE_NOTE_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(resolveBaseUrl(config), ATTIO_CREATE_NOTE_DEFINITION),
   },
 };

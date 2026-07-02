@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { File as FileIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
-import { type ChatMessage, type ChatImage } from "./types";
+import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
+import { formatBytes } from "./attachments";
 import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import {
   extractUIBlockFromText,
@@ -34,6 +36,13 @@ export interface MessageBubbleProps {
     subjectId: string,
     subjectKind: FeedbackSubjectKind,
   ) => 1 | -1 | null | undefined;
+  /**
+   * Resolves an attachment's stored blob to a displayable/downloadable object
+   * URL. The chat package stays transport-free: the host supplies this and owns
+   * the authenticated fetch, caching, and URL lifetime. Attachments render only
+   * when this is provided.
+   */
+  resolveAttachmentUrl?: (blobId: string) => Promise<string>;
 }
 
 /**
@@ -70,12 +79,158 @@ function InlineImage({ image }: { image: ChatImage }) {
   );
 }
 
+function FileChip({
+  attachment,
+  resolveAttachmentUrl,
+}: {
+  attachment: ChatAttachment;
+  resolveAttachmentUrl: (blobId: string) => Promise<string>;
+}) {
+  const [downloading, setDownloading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const onDownload = () => {
+    setDownloading(true);
+    setFailed(false);
+    resolveAttachmentUrl(attachment.blobId)
+      .then((url) => {
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = attachment.name;
+        anchor.click();
+      })
+      // Surface the failure rather than swallowing it — a dead click with no
+      // feedback is worse than an error the user can act on.
+      .catch(() => setFailed(true))
+      .finally(() => setDownloading(false));
+  };
+
+  return (
+    <span className="inline-flex flex-col gap-0.5">
+      <button
+        type="button"
+        onClick={onDownload}
+        disabled={downloading}
+        title={`Download ${attachment.name}`}
+        className="flex items-center gap-2 rounded-lg border border-border bg-surface py-1 pl-1 pr-1.5 text-xs text-text transition-transform hover:bg-row-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange active:scale-[0.97] disabled:opacity-60"
+      >
+        <span className="flex h-8 w-8 items-center justify-center">
+          <FileIcon className="h-5 w-5 text-text-3" />
+        </span>
+        <span className="max-w-[10rem] truncate">{attachment.name}</span>
+        <span className="text-text-3">{formatBytes(attachment.size)}</span>
+      </button>
+      {failed && (
+        <span role="alert" className="text-xs text-red-500">
+          Couldn't download — try again
+        </span>
+      )}
+    </span>
+  );
+}
+
+function ImageAttachment({
+  attachment,
+  resolveAttachmentUrl,
+}: {
+  attachment: ChatAttachment;
+  resolveAttachmentUrl: (blobId: string) => Promise<string>;
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUrl(null);
+    setFailed(false);
+    resolveAttachmentUrl(attachment.blobId)
+      .then((resolved) => {
+        if (!cancelled) setUrl(resolved);
+      })
+      .catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachment.blobId, resolveAttachmentUrl]);
+
+  if (failed) {
+    return (
+      <FileChip
+        attachment={attachment}
+        resolveAttachmentUrl={resolveAttachmentUrl}
+      />
+    );
+  }
+
+  if (url === null) {
+    return (
+      <span
+        aria-label={`Loading ${attachment.name}`}
+        className="block h-16 w-16 animate-pulse rounded-lg bg-surface-2 ring-1 ring-inset ring-border"
+      />
+    );
+  }
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title={`Open ${attachment.name}`}
+      className="block"
+    >
+      <img
+        src={url}
+        alt={attachment.name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-16 w-16 rounded-lg object-cover ring-1 ring-inset ring-border transition-transform hover:scale-[1.02]"
+      />
+    </a>
+  );
+}
+
+function MessageAttachments({
+  attachments,
+  resolveAttachmentUrl,
+}: {
+  attachments: ChatAttachment[];
+  resolveAttachmentUrl: (blobId: string) => Promise<string>;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {attachments.map((attachment) => {
+        const isImage = attachment.type.startsWith("image/");
+        if (isImage) {
+          return (
+            <ImageAttachment
+              key={attachment.blobId}
+              attachment={attachment}
+              resolveAttachmentUrl={resolveAttachmentUrl}
+            />
+          );
+        }
+        return (
+          <FileChip
+            key={attachment.blobId}
+            attachment={attachment}
+            resolveAttachmentUrl={resolveAttachmentUrl}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 export function MessageBubble({
   message,
   onRespond,
   onAction,
   onRate,
   getRating,
+  resolveAttachmentUrl,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -83,12 +238,23 @@ export function MessageBubble({
   const hasReasoning =
     message.role === "agent" && (message.reasoning ?? "").trim() !== "";
   const hasImages = message.images !== undefined && message.images.length > 0;
+  const hasAttachments =
+    resolveAttachmentUrl !== undefined &&
+    message.attachments !== undefined &&
+    message.attachments.length > 0;
   // Trimmed so a turn that commits as only whitespace ("\n\n") is treated as
   // empty rather than rendering a blank bubble.
   const hasBody = message.content.trim() !== "";
 
-  // Nothing to show: no body, not streaming, no reasoning, and no images.
-  if (!hasBody && message.status !== "sending" && !hasReasoning && !hasImages)
+  // Nothing to show: no body, not streaming, no reasoning, no images, no
+  // renderable attachments.
+  if (
+    !hasBody &&
+    message.status !== "sending" &&
+    !hasReasoning &&
+    !hasImages &&
+    !hasAttachments
+  )
     return null;
 
   // Only attempt block extraction on settled agent/system messages — a partial
@@ -152,6 +318,12 @@ export function MessageBubble({
         message.images!.map((image, index) => (
           <InlineImage key={index} image={image} />
         ))}
+      {hasAttachments && (
+        <MessageAttachments
+          attachments={message.attachments!}
+          resolveAttachmentUrl={resolveAttachmentUrl!}
+        />
+      )}
       {message.role === "agent" &&
         message.status !== "sending" &&
         onRate !== undefined && (

@@ -4,6 +4,7 @@ import { logger as honoLogger } from "hono/logger";
 import { describeRoute, openAPIRouteHandler } from "hono-openapi";
 import { upgradeWebSocket, websocket } from "hono/bun";
 import { schema as intxSchema, createGrantStore } from "@intx/db";
+import { createAttachmentCapabilityGuard } from "./attachment-capability-guard";
 import { createApp } from "@intx/hub-api";
 import {
   createAgentRepoStore,
@@ -76,6 +77,7 @@ import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
+  registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
 } from "./services/agent-provisioning";
 import {
@@ -85,6 +87,7 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
+import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
 import { createActivityRouter } from "./routes/activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
@@ -453,6 +456,28 @@ const sessionService = createSessionService({
   },
 });
 
+// The disconnect reconciler above only ENDS a stale session; nothing re-registers
+// the address, because the router has no `sidecar.connect` counterpart to the
+// `sidecar.disconnect` it listens on. A sidecar that fully restarts (every
+// redeploy) reconnects with no agents, so an instance is left active-but-
+// unroutable and mail 502s until fixed by hand. This periodic sweep supplies the
+// missing RELAUNCH half on a cadence, healing the wedge from any cause (missed
+// disconnect event, hub restart). It composes with the disconnect reconciler:
+// both re-read getRoutableAddresses right before acting and every relaunch is
+// funneled through the process-local dedup breaker, so they cannot double-launch.
+//
+// ASSUMES A SINGLE HUB REPLICA — same caveat as registerDisconnectReconciler:
+// the routability read is this hub's local router state. (CL-2639)
+const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
+  db,
+  router: sidecarRouter,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  intervalMs: config.wedgeSweepIntervalMs,
+  graceMs: config.wedgeUnroutableGraceMs,
+});
+
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
 // (terminal teardown), the deploy service (provision-failure rollback), and the
 // reconciler janitor (crash-orphan reclaim). All run state needed for history is
@@ -611,6 +636,14 @@ app.get(
     },
     exclude: ["/openapi.json", /^\/api\/auth\//],
   }),
+);
+
+// Server-side backstop for the per-agent attachment gate: reject a document
+// the instance's adapter can't consume before interchange's mail route stores
+// it. Registered before the hub app so it runs ahead of that route.
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  createAttachmentCapabilityGuard(db),
 );
 
 // Mount hub app
@@ -1030,6 +1063,7 @@ v1.route(
   ),
 );
 v1.route("/", createArtifactsRouter(db));
+v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
 v1.route("/", createFeedbackRouter(db));
@@ -1095,6 +1129,7 @@ v1.route(
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,
+    reclaimDeployment,
   }),
 );
 
@@ -1152,6 +1187,7 @@ void publishEmbeddedWorkflowDefs({
   repoStore,
   enabled: config.workflowAutopublishOnBoot,
   buildSha: config.buildSha,
+  autopublishMap: config.workflowAutopublishMap,
 }).catch((err) => {
   log.error("workflow autopublish-on-boot failed", {
     error: err instanceof Error ? err.message : String(err),
@@ -1303,6 +1339,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      stopWedgeSweepReconciler();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

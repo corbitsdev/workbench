@@ -10,14 +10,18 @@ import {
 import { ChatThread, type ChatThreadProps } from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
 import { ChatInput } from "./ChatInput";
+import type { AttachmentPolicy, PendingAttachment } from "./attachments";
 import type { UIBlock, UIResponse } from "./ui-block";
 import type { FeedbackSubjectKind } from "./feedback-types";
 
 export interface ChatPanelProps {
   agent: ChatAgentIdentity;
   messages: ChatMessage[];
-  /** Committed message text from the input bar. Host handles transport. */
-  onSend: (text: string) => void;
+  /** Committed message text (and any attachments) from the input bar. Host handles transport. */
+  onSend: (
+    text: string,
+    attachments?: PendingAttachment[],
+  ) => void | Promise<void>;
   typing?: boolean;
   /** What the agent is currently doing, shown as a contextual status label. */
   activity?: ChatActivity | null;
@@ -52,6 +56,8 @@ export interface ChatPanelProps {
     subjectId: string,
     subjectKind: FeedbackSubjectKind,
   ) => 1 | -1 | null | undefined;
+  /** Resolves a message attachment's blob to a displayable/downloadable URL. Attachments render only when provided. */
+  resolveAttachmentUrl?: ChatThreadProps["resolveAttachmentUrl"];
   /** Hide individual tool calls from the narrative (e.g. an agent's private memory file ops). */
   hideToolCall?: ChatThreadProps["hideToolCall"];
   /** Host formatter turning a tool call into a friendly narrative summary line. */
@@ -64,6 +70,8 @@ export interface ChatPanelProps {
   notice?: React.ReactNode;
   /** Rendered directly above the input (e.g. attached-context pills). */
   inputAccessory?: React.ReactNode;
+  /** When present with a non-empty accepted set, enables file attachments in the composer. */
+  attachmentPolicy?: AttachmentPolicy;
 }
 
 /**
@@ -89,6 +97,7 @@ export function ChatPanel({
   onAction,
   onRate,
   getRating,
+  resolveAttachmentUrl,
   hideToolCall,
   formatToolSummary,
   compactToolActivity,
@@ -96,6 +105,7 @@ export function ChatPanel({
   className,
   notice,
   inputAccessory,
+  attachmentPolicy,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
 
@@ -164,6 +174,9 @@ export function ChatPanel({
         {...(onAction !== undefined ? { onAction } : {})}
         {...(onRate !== undefined ? { onRate } : {})}
         {...(getRating !== undefined ? { getRating } : {})}
+        {...(resolveAttachmentUrl !== undefined
+          ? { resolveAttachmentUrl }
+          : {})}
         {...(hideToolCall !== undefined ? { hideToolCall } : {})}
         {...(formatToolSummary !== undefined ? { formatToolSummary } : {})}
         {...(compactToolActivity !== undefined ? { compactToolActivity } : {})}
@@ -187,6 +200,7 @@ export function ChatPanel({
         placeholder={`Message ${agent.name}…`}
         busy={busy}
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
+        {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
       />
     </div>
   );

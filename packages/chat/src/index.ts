@@ -4,6 +4,7 @@ export {
   ChatMessageKindSchema,
   ToolCallSchema,
   ChatImageSchema,
+  ChatAttachmentSchema,
   ChatMessageSchema,
   QuickReplySchema,
   type ChatRole,
@@ -11,6 +12,7 @@ export {
   type ChatMessage,
   type ChatMessageKind,
   type ChatImage,
+  type ChatAttachment,
   type ToolCall,
   type QuickReply,
   type ChatDockState,
@@ -44,6 +46,13 @@ export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 export { TypingIndicator, type TypingIndicatorProps } from "./TypingIndicator";
 export { QuickReplyChips, type QuickReplyChipsProps } from "./QuickReplyChips";
 export { ChatInput, type ChatInputProps } from "./ChatInput";
+export {
+  validateFiles,
+  formatBytes,
+  type AttachmentPolicy,
+  type PendingAttachment,
+  type ValidateResult,
+} from "./attachments";
 export { ChatThread, type ChatThreadProps } from "./ChatThread";
 export { ChatPanel, type ChatPanelProps } from "./ChatPanel";
 export { ChatLauncher, type ChatLauncherProps } from "./ChatLauncher";

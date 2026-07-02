@@ -111,6 +111,33 @@ export const ARTIFACT_LINK_PRESENTATION_DEFINITION: ToolDefinition = {
   },
 };
 
+export const ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION: ToolDefinition = {
+  name: "artifact_link_gamma_presentation",
+  description:
+    "Save a Gamma deck as a Workbench artifact of kind gamma_presentation. Pass the Gamma URL as 'url', a 'title', a short 'description' of the deck, and the 'gammaId'. Optionally pass an existing 'artifactId' to create a new version. Returns { artifactId, version, url }.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "The Gamma share URL." },
+      title: { type: "string", description: "Artifact title." },
+      description: {
+        type: "string",
+        description: "A short description of what the deck is.",
+      },
+      gammaId: {
+        type: "string",
+        description: "The Gamma deck id.",
+      },
+      artifactId: {
+        type: "string",
+        description:
+          "If provided, creates a new version of this artifact. If absent, creates a new artifact with kind=gamma_presentation.",
+      },
+    },
+    required: ["url", "title", "description", "gammaId"],
+  },
+};
+
 export const ARTIFACT_FIND_BY_TITLE_DEFINITION: ToolDefinition = {
   name: "artifact_find_by_title",
   description:
@@ -237,6 +264,7 @@ export const ARTIFACT_TOOL_DEFINITIONS: ToolDefinition[] = [
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
+  ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   WRITE_ARTIFACT_DEFINITION,

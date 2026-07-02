@@ -9,6 +9,7 @@ import {
   requiredString,
   resolveConfig,
   stringTool,
+  WORKSPACE_SHARING_OPTIONS,
   type GammaToolsConfig,
   type ResolvedGammaConfig,
 } from "./shared";
@@ -45,6 +46,7 @@ async function createFromTemplate(
     prompt,
     ...(title !== null ? { title } : {}),
     ...(themeId !== null ? { themeId } : {}),
+    sharingOptions: WORKSPACE_SHARING_OPTIONS,
   };
 
   const response = await gammaFetchJSON(

@@ -34,6 +34,7 @@
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
+        "@intx/mime": "workspace:*",
         "@intx/tool-packaging": "workspace:*",
         "@intx/tools-mail": "workspace:*",
         "@intx/tools-posix": "workspace:*",
@@ -57,6 +58,7 @@
         "@workbench/tools-bluesky": "workspace:*",
         "@workbench/tools-dispatch": "workspace:*",
         "@workbench/tools-exa": "workspace:*",
+        "@workbench/tools-fileparser": "workspace:*",
         "@workbench/tools-firecrawl": "workspace:*",
         "@workbench/tools-gamma": "workspace:*",
         "@workbench/tools-github": "workspace:*",
@@ -78,6 +80,7 @@
         "jszip": "^3.10.1",
       },
       "devDependencies": {
+        "@electric-sql/pglite": "^0.5.3",
         "@types/bun": "latest",
         "@types/ssri": "^7.1.5",
         "drizzle-kit": "^0.31.1",
@@ -141,6 +144,7 @@
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-ab-compare": "workspace:*",
         "@workbench/workflow-ab-compare-hitl": "workspace:*",
+        "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
@@ -925,6 +929,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-fileparser": {
+      "name": "@workbench/tools-fileparser",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-firecrawl": {
       "name": "@workbench/tools-firecrawl",
       "version": "0.1.0",
@@ -1272,6 +1289,26 @@
         "react": "*",
       },
     },
+    "workflows/attio-task-agent": {
+      "name": "@workbench/workflow-attio-task-agent",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
     "workflows/gamma-presentation-creator": {
       "name": "@workbench/workflow-gamma-presentation-creator",
       "version": "0.1.0",
@@ -1511,6 +1548,8 @@
     "@dotenvx/primitives": ["@dotenvx/primitives@0.8.0", "", {}, "sha512-VYJy0uhFm9zTJ1TxBaW/pA8bjbOM/OttaNMwZ1RHG4JKyRG7DhSdiqD1ipQoAyoD22olUtxbP78W9xY3Wd11bg=="],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.10.2", "", {}, "sha512-z33Il7l5dKjUgGULTqBsQBQwckHh5AbIuxhdsIxDDiZAzBOrZO6q9ogcWC65kU382AfynTfgNumVcNIjuIua6w=="],
+
+    "@electric-sql/pglite": ["@electric-sql/pglite@0.5.3", "", {}, "sha512-iTTYbA5Uesrl+N7zss0J5LopT7KE4j9aymYo+EZZh+rZbARQCUQOs+n2pay64JRUpc3fCkpfrniTNJnvYzOE+g=="],
 
     "@emnapi/core": ["@emnapi/core@1.11.1", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-RSvbQmHzdKzNsLYa/wHrbc3KN4sYLKAdPZxqiM2HATqv/SBk2/ENSHpvXGaLOMcsAyz0poEGqkmmKYG3OWiJEQ=="],
 
@@ -2312,6 +2351,8 @@
 
     "@workbench/tools-exa": ["@workbench/tools-exa@workspace:packages/tools-exa"],
 
+    "@workbench/tools-fileparser": ["@workbench/tools-fileparser@workspace:packages/tools-fileparser"],
+
     "@workbench/tools-firecrawl": ["@workbench/tools-firecrawl@workspace:packages/tools-firecrawl"],
 
     "@workbench/tools-gamma": ["@workbench/tools-gamma@workspace:packages/tools-gamma"],
@@ -2351,6 +2392,8 @@
     "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
 
     "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
+
+    "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
 

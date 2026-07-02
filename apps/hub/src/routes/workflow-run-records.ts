@@ -10,12 +10,17 @@ import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
 import type { RunState } from "../workflow-executor/executor";
+import { isTerminalRunStatus } from "../workflow-executor/run-status";
 import {
   createRunStore,
   insertRunRecord,
   listRunRecords,
   loadRunRecord,
+  markRunStopped,
+  softDeleteRunRecord,
 } from "../workflow-executor/run-store";
+import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
+import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
@@ -40,6 +45,7 @@ const RunStateResponse = type({
 });
 
 const ErrorResponse = type({ error: "string" });
+const ArchiveResponse = type({ archived: "true" });
 
 function mintRunId(): string {
   return `wfr_${randomBytes(16).toString("hex")}`;
@@ -148,6 +154,9 @@ export function createWorkflowRunRecordsRouter(deps: {
   deploymentDomain: string;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
   provisionRunDeployment: ProvisionRunDeploymentFn;
+  // Tears down a run's single-use per-run deployment (CL-2582), used by the
+  // archive route to free an active run's resources immediately.
+  reclaimDeployment: ReclaimDeploymentFn;
   // Injectable for tests only.
   resolveContext?: typeof getRequestedUserContext;
 }): Hono<{ Variables: { userId: string } }> {
@@ -482,6 +491,20 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: `invalid resume body: ${parsed.summary}` }, 400);
       }
 
+      // Validate the gate payload at the trust boundary for workflows/signals
+      // that register a schema; unregistered ones pass through untouched.
+      const payloadCheck = validateResumePayload(
+        state.kind,
+        parsed.signalName,
+        parsed.payload ?? {},
+      );
+      if (!payloadCheck.ok) {
+        return c.json(
+          { error: `invalid resume payload: ${payloadCheck.error}` },
+          400,
+        );
+      }
+
       if (state.deploymentId === undefined) {
         return c.json({ error: "run has no deployment to signal" }, 400);
       }
@@ -527,6 +550,102 @@ export function createWorkflowRunRecordsRouter(deps: {
       const advanced: RunState = { ...state, status: "running" };
       await runStore.save(advanced);
       return c.json(stateResponse(advanced));
+    },
+  );
+
+  // Archive a run (CL-2629): stop it, free its resources, and drop it from the
+  // list. Owner-scoped (same ownership gate as read/resume). An ACTIVE run
+  // (non-terminal) is marked terminal and its single-use per-run deployment
+  // (CL-2582) is torn down immediately — no waiting for the boot-reconciler.
+  // A terminal run's deployment is already reclaimed on the terminal
+  // transition, so this only soft-deletes the record. Teardown is best-effort:
+  // the record is soft-deleted regardless, so a sidecar hiccup never leaves a
+  // run stuck in the list — and the reconciler janitor's reclaim sweep now
+  // includes soft-deleted terminal rows (workflow-reconciler.ts), so a failed
+  // teardown's deployment is still reaped on the next pass rather than leaked.
+  router.post(
+    "/workflow-exec/records/:runId/archive",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Archive (stop and remove) a workflow run",
+      description:
+        "Owner-scoped. Stops an active run and tears down its per-run deployment, then soft-deletes the record so it leaves the run list. Terminal runs are soft-deleted only. Optional `?tenantId=` selects a workbench the user belongs to.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Run archived",
+          content: {
+            "application/json": { schema: resolver(ArchiveResponse) },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const runId = c.req.param("runId");
+      const state = await loadRunRecord(deps.db, runId);
+      if (!state) return c.json({ error: "run not found" }, 404);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, state);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
+      const active = !isTerminalRunStatus(state.status);
+      if (active) {
+        // Mark terminal first so the record is consistent (and the janitor would
+        // reclaim it) even if the immediate teardown below fails. Shared with the
+        // operator abort path so terminal-marking never drifts between them.
+        await markRunStopped(deps.db, state, "stopped by user");
+        if (state.deploymentId !== undefined) {
+          await deps
+            .reclaimDeployment({
+              deploymentId: state.deploymentId,
+              tenantId: state.tenantId,
+              reason: `run ${runId} archived by user`,
+            })
+            .catch((err) => {
+              log.warn("archive run: per-run deployment teardown failed", {
+                runId,
+                deploymentId: state.deploymentId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+        }
+      }
+
+      await softDeleteRunRecord(deps.db, runId);
+      return c.json({ archived: true });
     },
   );
 

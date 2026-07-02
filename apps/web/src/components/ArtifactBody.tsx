@@ -2,6 +2,7 @@ import { usesSocialPostPreview } from "@workbench/artifact";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
+import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
 import { buildApiUrl } from "../lib/api";
@@ -346,6 +347,9 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       }
       return <PresentationBody url={body} />;
     }
+    // gamma deck — content is JSON.stringify(GammaPresentationContent)
+    case "gamma_presentation":
+      return <GammaPresentationBody content={body} />;
     // research
     case "research": {
       const parsedBrief = parseResearchBrief(brief);

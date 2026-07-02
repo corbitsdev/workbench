@@ -636,3 +636,181 @@ export function registerDisconnectReconciler(deps: {
     }
   });
 }
+
+// Default cadence for the periodic wedge-sweep reconciler (CL-2639).
+export const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
+
+// How long an address must stay *continuously* unroutable across ticks before
+// the sweep ends-and-relaunches it. The disconnect reconciler is disconnect-
+// triggered and passive: it fires only when a `sidecar.disconnect` event is
+// observed and only marks the session ended — nothing re-registers the address.
+// There is no `sidecar.connect` counterpart on the router (verified against
+// @intx/hub-sessions), so a sidecar that fully restarts leaves instances with
+// `agent_session.status = 'active'` but no routable address, and mail 502s until
+// fixed by hand. This periodic sweep supplies the missing relaunch half from any
+// cause (missed disconnect event, hub restart, etc.).
+//
+// The grace is what keeps the sweep from evicting an agent that is merely
+// mid-reconnect (a normal redeploy: the sidecar restarts and re-registers its
+// addresses within seconds, and Interchange's `agent.reconnected` restores the
+// live session). We cannot use session age for this — `agent_session.updatedAt`
+// is never bumped while a session stays `active` (every writer transitions it to
+// `ended`), so it equals `createdAt` for the entire life of a live agent and
+// carries no signal about reconnect progress. Instead the reconciler tracks the
+// first tick at which each address was seen unroutable and only acts once the
+// address has been unroutable for the whole grace window; a reconnect that lands
+// within the window clears the tracker entry and no relaunch happens. The
+// default must exceed both the 90s disconnect grace and typical sidecar
+// reconnect-settle time so a healthy redeploy never trips it.
+export const DEFAULT_UNROUTABLE_GRACE_MS = 120_000;
+
+// Instance statuses for which a wedge (active session, unroutable address) is
+// meaningful and safe to relaunch. `error` is the leaked-agent state — the
+// sidecar may still hold the agent, so relaunching risks re-triggering the leak/
+// eviction — and `stopped` is an explicit teardown; both are excluded.
+export const WEDGE_RELAUNCHABLE_STATUSES = [
+  "running",
+  "deployed",
+  "updating",
+] as const;
+
+/**
+ * One pass of the wedge sweep. Selects instances with an `active` session and a
+ * relaunchable status, then measures *sustained* unroutability against the
+ * caller-owned `unroutableSince` tracker: an address is only ended (via
+ * `reconcileDisconnectedSession`) and relaunched (via `relaunchInstanceIfNeeded`)
+ * once it has been continuously unroutable for `graceMs`. The tracker is passed
+ * in (not module-global) so the interval owner holds the state across ticks and
+ * tests can drive multiple ticks deterministically.
+ *
+ * Per tick, for each candidate:
+ *  - routable now → drop its tracker entry (healed / reconnected), skip.
+ *  - not yet tracked → record `now`, skip (never act on first sighting).
+ *  - tracked but within grace → skip.
+ *  - tracked past grace → end + relaunch, then drop the entry.
+ * Tracker entries for addresses that are no longer candidates (session ended,
+ * instance stopped) are pruned so the map cannot grow unbounded.
+ *
+ * Composes with `registerDisconnectReconciler` without racing or double-
+ * relaunching: routability is re-read here and again inside
+ * `relaunchInstanceIfNeeded` right before launch, and every relaunch is funneled
+ * through the process-local dedup/cooldown breaker, which coalesces a concurrent
+ * `/me` relaunch of the same instance onto one launch. (CL-2639)
+ */
+export async function reconcileWedgedSessions(
+  db: DB["db"],
+  sidecarRouter: SidecarRouter,
+  sessionService: SessionService,
+  grantStore: GrantStore,
+  eventCollectors: EventCollectorRegistry,
+  unroutableSince: Map<string, number>,
+  opts?: { graceMs?: number; now?: number },
+): Promise<void> {
+  const graceMs = opts?.graceMs ?? DEFAULT_UNROUTABLE_GRACE_MS;
+  const now = opts?.now ?? Date.now();
+
+  const routable = new Set(sidecarRouter.getRoutableAddresses());
+
+  const candidates = await db
+    .select({
+      instanceId: agentInstance.id,
+      address: agentInstance.address,
+    })
+    .from(agentInstance)
+    .innerJoin(agentSession, eq(agentInstance.sessionId, agentSession.id))
+    .where(
+      and(
+        eq(agentSession.status, "active"),
+        inArray(agentInstance.status, [...WEDGE_RELAUNCHABLE_STATUSES]),
+      ),
+    );
+
+  const seen = new Set<string>();
+  for (const row of candidates) {
+    seen.add(row.address);
+
+    if (routable.has(row.address)) {
+      unroutableSince.delete(row.address);
+      continue;
+    }
+
+    const firstSeen = unroutableSince.get(row.address);
+    if (firstSeen === undefined) {
+      unroutableSince.set(row.address, now);
+      continue;
+    }
+    if (now - firstSeen < graceMs) continue;
+
+    try {
+      await reconcileDisconnectedSession(db, sidecarRouter, row.address);
+      await relaunchInstanceIfNeeded(
+        db,
+        sessionService,
+        grantStore,
+        eventCollectors,
+        row.instanceId,
+        sidecarRouter,
+      );
+    } catch (err) {
+      log.warn("Failed to reconcile wedged agent session", {
+        instanceId: row.instanceId,
+        address: row.address,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+    unroutableSince.delete(row.address);
+  }
+
+  // Prune tracker entries for addresses that are no longer candidates.
+  for (const address of [...unroutableSince.keys()]) {
+    if (!seen.has(address)) unroutableSince.delete(address);
+  }
+}
+
+/**
+ * Registers the periodic wedge-sweep reconciler on an interval. Owns the
+ * per-address unroutability tracker and a reentrancy flag (a slow tick with many
+ * wedged rows must not overlap the next). Returns an unsubscribe that clears the
+ * timer (mirrors `registerDisconnectReconciler`'s teardown contract). The timer
+ * is `unref`'d so it never keeps the process alive on its own.
+ */
+export function registerWedgeSweepReconciler(deps: {
+  db: DB["db"];
+  router: SidecarRouter;
+  sessionService: SessionService;
+  grantStore: GrantStore;
+  eventCollectors: EventCollectorRegistry;
+  intervalMs?: number;
+  graceMs?: number;
+}): () => void {
+  const { db, router, sessionService, grantStore, eventCollectors } = deps;
+  const intervalMs = deps.intervalMs ?? DEFAULT_WEDGE_SWEEP_INTERVAL_MS;
+  const graceMs = deps.graceMs ?? DEFAULT_UNROUTABLE_GRACE_MS;
+  const unroutableSince = new Map<string, number>();
+  let sweeping = false;
+
+  const timer = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    void reconcileWedgedSessions(
+      db,
+      router,
+      sessionService,
+      grantStore,
+      eventCollectors,
+      unroutableSince,
+      { graceMs },
+    )
+      .catch((err) => {
+        log.warn("Periodic wedge-sweep reconcile tick failed", {
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      })
+      .finally(() => {
+        sweeping = false;
+      });
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => clearInterval(timer);
+}

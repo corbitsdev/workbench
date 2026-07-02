@@ -46,7 +46,7 @@ describe("CredentialPicker", () => {
         isLoading: true,
       }),
     );
-    expect(screen.getByTestId("credential-picker-loading")).toBeDefined();
+    screen.getByTestId("credential-picker-loading");
   });
 
   it("renders empty state when no credentials", async () => {
@@ -59,7 +59,7 @@ describe("CredentialPicker", () => {
         onSelect: () => {},
       }),
     );
-    expect(screen.getByTestId("credential-picker-empty")).toBeDefined();
+    screen.getByTestId("credential-picker-empty");
   });
 
   it("renders credentials with tenant name in display format", async () => {
@@ -72,8 +72,8 @@ describe("CredentialPicker", () => {
         onSelect: () => {},
       }),
     );
-    expect(screen.getByText("Granola API Key — ABK Labs")).toBeDefined();
-    expect(screen.getByText("Linear API Key — Sawyer")).toBeDefined();
+    screen.getByText("Granola API Key — ABK Labs");
+    screen.getByText("Linear API Key — Sawyer");
   });
 
   it("calls onSelect with toggled credential IDs when checkbox clicked", async () => {

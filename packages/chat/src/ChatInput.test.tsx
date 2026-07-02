@@ -1,9 +1,32 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ChatInput } from "./ChatInput";
+import type { AttachmentPolicy } from "./attachments";
+
+// happy-dom may not implement object URLs; the image-preview branch needs them.
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:test";
+  URL.revokeObjectURL = () => {};
+}
+
+const IMG_PDF_POLICY: AttachmentPolicy = {
+  acceptedMimeTypes: ["image/png", "application/pdf"],
+  perAttachmentLimitBytes: 10 * 1024 * 1024,
+  perMessageTotalLimitBytes: 30 * 1024 * 1024,
+};
+
+function makeFile(name: string, mimeType: string, size = 100): File {
+  return new File([new Uint8Array(size)], name, { type: mimeType });
+}
+
+function fileInputOf(container: HTMLElement): HTMLInputElement {
+  const input = container.querySelector('input[type="file"]');
+  if (input === null) throw new Error("no file input rendered");
+  return input as HTMLInputElement;
+}
 
 afterEach(() => {
   cleanup();
@@ -88,5 +111,138 @@ describe("ChatInput", () => {
   it("falls back to the default placeholder", () => {
     render(<ChatInput onSend={() => {}} />);
     expect(screen.getByPlaceholderText("Message Ada…")).toBeDefined();
+  });
+
+  it("hides the attach control when no attachment policy is given", () => {
+    render(<ChatInput onSend={() => {}} />);
+    expect(screen.queryByLabelText("Add files")).toBeNull();
+  });
+
+  it("adds a file chip when an allowed file is picked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    expect(screen.getByLabelText("Add files")).toBeDefined();
+    await user.upload(
+      fileInputOf(container),
+      makeFile("brief.pdf", "application/pdf"),
+    );
+    expect(screen.getByText("brief.pdf")).toBeDefined();
+  });
+
+  it("sends the draft together with the attachment, then clears both", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string, _attachments?: unknown) => {});
+    const { container } = render(
+      <ChatInput onSend={onSend} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("brief.pdf", "application/pdf"),
+    );
+    await user.type(screen.getByLabelText("Message"), "look at this");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onSend.mock.calls[0]?.[0]).toBe("look at this");
+    const attachments = onSend.mock.calls[0]?.[1] as
+      | { name: string }[]
+      | undefined;
+    expect(attachments).toHaveLength(1);
+    expect(attachments?.[0]?.name).toBe("brief.pdf");
+    expect(screen.queryByText("brief.pdf")).toBeNull();
+  });
+
+  it("sends an attachment with no text", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string, _attachments?: unknown) => {});
+    const { container } = render(
+      <ChatInput onSend={onSend} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("brief.pdf", "application/pdf"),
+    );
+    await user.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onSend.mock.calls[0]?.[0]).toBe("");
+    expect(onSend.mock.calls[0]?.[1] as unknown[]).toHaveLength(1);
+  });
+
+  it("surfaces a legible error and adds no chip for a disallowed dropped file", () => {
+    // The picker filters by `accept`; drag-drop can still deliver a disallowed
+    // type, so client validation is the backstop for the drop path.
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    const dropZone = container.firstElementChild as HTMLElement;
+    fireEvent.drop(dropZone, {
+      dataTransfer: { files: [makeFile("clip.mp4", "video/mp4")] },
+    });
+    expect(screen.getByRole("alert").textContent).toContain("clip.mp4");
+    expect(screen.queryByLabelText("Remove clip.mp4")).toBeNull();
+  });
+
+  it("accepts an allowed dropped file as a chip", () => {
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    const dropZone = container.firstElementChild as HTMLElement;
+    fireEvent.drop(dropZone, {
+      dataTransfer: { files: [makeFile("brief.pdf", "application/pdf")] },
+    });
+    expect(screen.getByText("brief.pdf")).toBeDefined();
+  });
+
+  it("removes a pending attachment on its remove button", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("brief.pdf", "application/pdf"),
+    );
+    await user.click(screen.getByLabelText("Remove brief.pdf"));
+    expect(screen.queryByText("brief.pdf")).toBeNull();
+  });
+
+  it("renders an image preview thumbnail for an image attachment", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    await user.upload(
+      fileInputOf(container),
+      makeFile("shot.png", "image/png"),
+    );
+    expect(screen.getByAltText("shot.png")).toBeDefined();
+  });
+
+  it("does not light up the drop zone for a non-file drag", () => {
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    const zone = container.firstElementChild as HTMLElement;
+    fireEvent.dragOver(zone, {
+      dataTransfer: { types: ["text/plain"], files: [] },
+    });
+    expect(zone.className).not.toContain("ring-orange");
+  });
+
+  it("keeps a prior rejection when a valid file is added afterward", () => {
+    const { container } = render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />,
+    );
+    const zone = container.firstElementChild as HTMLElement;
+    fireEvent.drop(zone, {
+      dataTransfer: { files: [makeFile("clip.mp4", "video/mp4")] },
+    });
+    expect(screen.getByRole("alert").textContent).toContain("clip.mp4");
+    fireEvent.drop(zone, {
+      dataTransfer: { files: [makeFile("ok.png", "image/png")] },
+    });
+    expect(screen.getByRole("alert").textContent).toContain("clip.mp4");
+    expect(screen.getByText("ok.png")).toBeDefined();
   });
 });

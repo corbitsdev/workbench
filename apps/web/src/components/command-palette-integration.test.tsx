@@ -109,7 +109,7 @@ describe("command palette query→render integration", () => {
         .map((o) => o.textContent ?? "");
       expect(titles.some((t) => t.includes("Q3 pricing one-pager"))).toBe(true);
     });
-    expect(screen.getByText("Artifacts")).toBeDefined();
+    screen.getByText("Artifacts");
   });
 
   it("navigates to a backend result's route when selected", async () => {

@@ -16,6 +16,7 @@ describe("AGENT_TEMPLATES", () => {
     const keys = AGENT_TEMPLATES.map((t) => t.key).sort();
     expect(keys).toEqual([
       "fannie",
+      "file-parser",
       "freddie",
       "freddy",
       "hammy",

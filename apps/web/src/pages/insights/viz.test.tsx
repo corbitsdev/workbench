@@ -20,7 +20,7 @@ describe("Sparkline", () => {
 
   it("shows an empty state instead of an svg when there is no data", () => {
     render(<Sparkline values={[]} label="turns" />);
-    expect(screen.getByTestId("sparkline-empty")).toBeDefined();
+    screen.getByTestId("sparkline-empty");
     expect(screen.queryByTestId("sparkline")).toBeNull();
   });
 });

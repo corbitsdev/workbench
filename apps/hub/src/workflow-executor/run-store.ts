@@ -70,6 +70,33 @@ export async function insertRunRecord(
   };
 }
 
+// Mark an active run terminal (status:"failed") with a reason. Single source of
+// truth for HOW a run becomes terminal — shared by the operator abort path
+// (workflow-run-abort.ts) and the owner archive path (workflow-run-records.ts)
+// so the terminal-mark shape never drifts between them. Tearing down the run's
+// deployment is a SEPARATE concern the caller owns: abort defers to the
+// boot-reconciler, archive reclaims immediately (CL-2629).
+export async function markRunStopped(
+  db: HubDb,
+  state: RunState,
+  error: string,
+): Promise<void> {
+  await createRunStore(db).save({ ...state, status: "failed", error });
+}
+
+// Soft-delete a run record (CL-2629): sets deletedAt so listRunRecords and
+// loadRunRecord (both `deletedAt IS NULL`) stop returning it. Used by the
+// user-facing archive route to drop a run from the sidebar.
+export async function softDeleteRunRecord(
+  db: HubDb,
+  runId: string,
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ deletedAt: new Date() })
+    .where(eq(workflowRunRecord.id, runId));
+}
+
 export async function loadRunRecord(
   db: HubDb,
   runId: string,

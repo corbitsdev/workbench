@@ -6,11 +6,13 @@ import {
   ARTIFACT_CREATE_DEFINITION,
   ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_LINK_FILE_DEFINITION,
+  ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 } from "@workbench/tools-artifact";
+import { GammaPresentationContentSchema } from "@workbench/shared";
 import { and, desc, eq } from "drizzle-orm";
 import {
   artifact,
@@ -23,6 +25,7 @@ export {
   ARTIFACT_CREATE_DEFINITION,
   ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_LINK_FILE_DEFINITION,
+  ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   ARTIFACT_READ_DEFINITION,
@@ -442,6 +445,110 @@ function validatePresentationUrl(url: string): void {
   }
 }
 
+/**
+ * Persist a URL-backed artifact: a new-version bump when `artifactId` is given
+ * (guarded on the existing row's kind), otherwise a fresh row. Shared by the
+ * presentation and gamma_presentation link handlers.
+ */
+async function upsertLinkedArtifact(
+  context: ArtifactToolContext,
+  opts: {
+    kind: string;
+    title: string;
+    content: string;
+    artifactId: string | undefined;
+  },
+): Promise<{ artifactId: string; version: number }> {
+  const { kind, title, content, artifactId } = opts;
+  const now = new Date();
+
+  if (artifactId !== undefined) {
+    return await context.db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(artifact)
+        .where(
+          and(
+            eq(artifact.id, artifactId),
+            eq(artifact.tenantId, context.tenantId),
+          ),
+        )
+        .for("update")
+        .limit(1);
+
+      if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
+      if (existing.kind !== kind) {
+        throw new Error(`Artifact ${artifactId} is not a ${kind} artifact`);
+      }
+
+      const newVersion = existing.version + 1;
+
+      await tx
+        .update(artifact)
+        .set({ title, content, version: newVersion, updatedAt: now })
+        .where(eq(artifact.id, artifactId));
+
+      await tx.insert(artifactVersion).values({
+        artifactId,
+        version: newVersion,
+        title,
+        content,
+        authorId: context.principalId,
+        createdAt: now,
+      });
+
+      return { artifactId, version: newVersion };
+    });
+  }
+
+  const ownerMemberId = await resolveOwnerMemberPrincipalId(
+    context.db,
+    context,
+  );
+  const source = {
+    origin: "agent",
+    type: "inline",
+    agentId: context.agentId,
+    sessionId: context.sessionId,
+  };
+  assertSessionContext(context);
+
+  const row = await context.db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(artifact)
+      .values({
+        tenantId: context.tenantId,
+        principalId: context.principalId,
+        ownerPrincipalId: ownerMemberId ?? null,
+        sessionId: null,
+        kind,
+        title,
+        content,
+        source,
+        status: "draft",
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+
+    if (!created) throw new Error("Failed to create artifact");
+
+    await tx.insert(artifactVersion).values({
+      artifactId: created.id,
+      version: 1,
+      title,
+      content,
+      authorId: context.principalId,
+      createdAt: now,
+    });
+
+    return created;
+  });
+
+  return { artifactId: row.id, version: 1 };
+}
+
 function createLinkPresentationHandler(
   context: ArtifactToolContext,
 ): AgentTool {
@@ -454,95 +561,44 @@ function createLinkPresentationHandler(
       const title = requiredString(args, "title");
       const artifactId = optionalNonEmptyString(args, "artifactId");
 
-      const now = new Date();
-
-      if (artifactId !== undefined) {
-        return await context.db.transaction(async (tx) => {
-          const [existing] = await tx
-            .select()
-            .from(artifact)
-            .where(
-              and(
-                eq(artifact.id, artifactId),
-                eq(artifact.tenantId, context.tenantId),
-              ),
-            )
-            .for("update")
-            .limit(1);
-
-          if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
-          if (existing.kind !== "presentation") {
-            throw new Error(
-              `Artifact ${artifactId} is not a presentation artifact`,
-            );
-          }
-
-          const newVersion = existing.version + 1;
-
-          await tx
-            .update(artifact)
-            .set({ title, content: url, version: newVersion, updatedAt: now })
-            .where(eq(artifact.id, artifactId));
-
-          await tx.insert(artifactVersion).values({
-            artifactId,
-            version: newVersion,
-            title,
-            content: url,
-            authorId: context.principalId,
-            createdAt: now,
-          });
-
-          return jsonResult({ artifactId, version: newVersion, url });
-        });
-      }
-
-      const ownerMemberId = await resolveOwnerMemberPrincipalId(
-        context.db,
-        context,
-      );
-      const source = {
-        origin: "agent",
-        type: "inline",
-        agentId: context.agentId,
-        sessionId: context.sessionId,
-      };
-      assertSessionContext(context);
-
-      const row = await context.db.transaction(async (tx) => {
-        const [created] = await tx
-          .insert(artifact)
-          .values({
-            tenantId: context.tenantId,
-            principalId: context.principalId,
-            ownerPrincipalId: ownerMemberId ?? null,
-            sessionId: null,
-            kind: "presentation",
-            title,
-            content: url,
-            source,
-            status: "draft",
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .returning();
-
-        if (!created) throw new Error("Failed to create artifact");
-
-        await tx.insert(artifactVersion).values({
-          artifactId: created.id,
-          version: 1,
-          title,
-          content: url,
-          authorId: context.principalId,
-          createdAt: now,
-        });
-
-        return created;
+      const { artifactId: id, version } = await upsertLinkedArtifact(context, {
+        kind: "presentation",
+        title,
+        content: url,
+        artifactId,
       });
 
-      return jsonResult({ artifactId: row.id, version: 1, url });
+      return jsonResult({ artifactId: id, version, url });
+    },
+  };
+}
+
+function createLinkGammaPresentationHandler(
+  context: ArtifactToolContext,
+): AgentTool {
+  return {
+    kind: "string",
+    definition: ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
+    handler: async (args) => {
+      const url = requiredString(args, "url");
+      validatePresentationUrl(url);
+      const title = requiredString(args, "title");
+      const description = requiredString(args, "description");
+      const gammaId = requiredString(args, "gammaId");
+      const artifactId = optionalNonEmptyString(args, "artifactId");
+
+      const content = JSON.stringify(
+        GammaPresentationContentSchema.assert({ url, description, gammaId }),
+      );
+
+      const { artifactId: id, version } = await upsertLinkedArtifact(context, {
+        kind: "gamma_presentation",
+        title,
+        content,
+        artifactId,
+      });
+
+      return jsonResult({ artifactId: id, version, url });
     },
   };
 }
@@ -619,6 +675,7 @@ export function createArtifactTools(context: ArtifactToolContext): AgentTool[] {
     createWriteHandler(context),
     createListHandler(context),
     createLinkPresentationHandler(context),
+    createLinkGammaPresentationHandler(context),
     createFindByTitleHandler(context),
   ];
 }
@@ -635,6 +692,9 @@ export const ARTIFACT_HUB_TOOLS = {
   artifact_list: artifactToolEntry(ARTIFACT_LIST_DEFINITION),
   artifact_link_presentation: artifactToolEntry(
     ARTIFACT_LINK_PRESENTATION_DEFINITION,
+  ),
+  artifact_link_gamma_presentation: artifactToolEntry(
+    ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ),
   artifact_find_by_title: artifactToolEntry(ARTIFACT_FIND_BY_TITLE_DEFINITION),
 };

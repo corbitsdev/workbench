@@ -68,3 +68,12 @@ export const PREMADE_AGENTS: AgentDeployDescriptor[] = [
   FIRECRAWL_DEPLOY_DESCRIPTOR,
   WALTER_DEPLOY_DESCRIPTOR,
 ];
+
+export {
+  attachmentCapabilityForAgent,
+  attachmentPolicyForAgent,
+  acceptedMimeTypes,
+  ATTACHMENT_CAPABILITIES,
+  type AttachmentCapability,
+  type AgentAttachmentPolicy,
+} from "./attachment-capabilities";

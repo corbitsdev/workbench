@@ -19,21 +19,7 @@ export const PREFERENCE_KEYS = {
   compactToolActivity: "cw-compact-tools",
   toolSummaryStyle: "cw-tool-summary-style",
   experimentalArtifactCards: "cw-experimental-artifact-cards",
-  archivedWorkflowRuns: "cw-archived-workflow-runs",
 } as const;
-
-// Parses the JSON-encoded string-array stored under a list-valued preference,
-// degrading a malformed/legacy blob to an empty list rather than throwing.
-export function parseStringList(raw: string | null): string[] {
-  if (!raw) return [];
-  try {
-    const value: unknown = JSON.parse(raw);
-    if (!Array.isArray(value)) return [];
-    return value.filter((item): item is string => typeof item === "string");
-  } catch {
-    return [];
-  }
-}
 
 /**
  * Library pages that support a Grid/Rows layout toggle. Each scope owns one
@@ -144,7 +130,6 @@ export const ServerPreferencesSchema = type({
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": "string",
   "experimentalArtifactCards?": "boolean",
-  "archivedWorkflowRuns?": "string[]",
   "[string]": "unknown",
 });
 
@@ -174,12 +159,6 @@ export function hydrateServerPreferences(prefs: unknown): void {
       String(parsed.experimentalArtifactCards),
     );
   }
-  if (parsed.archivedWorkflowRuns !== undefined) {
-    hydratePreference(
-      PREFERENCE_KEYS.archivedWorkflowRuns,
-      JSON.stringify(parsed.archivedWorkflowRuns),
-    );
-  }
   for (const scope of VIEW_MODE_SCOPES) {
     const value = parsed[viewModeServerKey(scope)];
     if (typeof value === "string") {
@@ -206,8 +185,6 @@ export function serverPatchForRawChange(
   if (key === PREFERENCE_KEYS.experimentalArtifactCards) {
     return { experimentalArtifactCards: value === "true" };
   }
-  if (key === PREFERENCE_KEYS.archivedWorkflowRuns)
-    return { archivedWorkflowRuns: parseStringList(value) };
   for (const scope of VIEW_MODE_SCOPES) {
     if (key === viewModeStorageKey(scope))
       return { [viewModeServerKey(scope)]: value };

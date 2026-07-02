@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createInstanceSession, type InstanceSession } from "@intx/hub-client";
 import {
@@ -30,7 +30,10 @@ import {
   upsertRating,
 } from "../lib/hub-api";
 import type { FeedbackSubjectKind, SavedRating } from "../lib/hub-api";
-import { createHubTransport } from "../lib/instance-transport";
+import {
+  createHubTransport,
+  fetchBlobObjectUrl,
+} from "../lib/instance-transport";
 import {
   classifyLaunchState,
   isLaunchableStatus,
@@ -90,6 +93,7 @@ export function AgentChat({
   const liveTextRef = useRef<LiveTextTracker | null>(null);
   const reasoningRef = useRef<ReasoningTracker | null>(null);
   const imageTrackerRef = useRef<ImageTracker | null>(null);
+  const attachmentUrlsRef = useRef<Map<string, Promise<string>>>(new Map());
   const queryClient = useQueryClient();
 
   const { data: ratingsData } = useQuery({
@@ -268,8 +272,28 @@ export function AgentChat({
       imageTrackerRef.current = null;
       sessionRef.current?.destroy();
       sessionRef.current = null;
+      const urls = attachmentUrlsRef.current;
+      attachmentUrlsRef.current = new Map();
+      for (const pending of urls.values()) {
+        void pending.then(URL.revokeObjectURL).catch(() => {});
+      }
     };
   }, [instanceId, tenantId, launchStatus]);
+
+  const resolveAttachmentUrl = useCallback(
+    (blobId: string): Promise<string> => {
+      const cache = attachmentUrlsRef.current;
+      const existing = cache.get(blobId);
+      if (existing !== undefined) return existing;
+      const pending = fetchBlobObjectUrl(tenantId, blobId).catch((err) => {
+        cache.delete(blobId);
+        throw err;
+      });
+      cache.set(blobId, pending);
+      return pending;
+    },
+    [tenantId],
+  );
 
   function buildMessages(session: InstanceSession): ChatMessage[] {
     const { messages } = composeChatMessages({
@@ -399,6 +423,7 @@ export function AgentChat({
       getRating={(subjectId: string, subjectKind: FeedbackSubjectKind) =>
         ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
+      resolveAttachmentUrl={resolveAttachmentUrl}
       formatToolSummary={friendlyToolSummary}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}

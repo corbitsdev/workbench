@@ -64,6 +64,13 @@ import {
   FANNIE_CAPABILITIES,
   FANNIE_MODEL_CONFIG,
 } from "./fannie/definition";
+import {
+  FILE_PARSER_NAME,
+  FILE_PARSER_SYSTEM_PROMPT,
+  FILE_PARSER_CREDENTIAL_REQUIREMENTS,
+  FILE_PARSER_GRANT_REQUIREMENTS,
+  FILE_PARSER_MODEL_CONFIG,
+} from "./file-parser/definition";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -150,6 +157,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       { name: "@workbench/tools-attio", version: "^0.1.0" },
       { name: "@workbench/tools-granola", version: "^0.1.0" },
       { name: "@workbench/tools-artifact", version: "^0.1.0" },
+      { name: "@workbench/tools-fileparser", version: "^0.1.0" },
       { name: "@workbench/tools-vercel", version: "^0.1.0" },
       { name: "@workbench/tools-agents", version: "^0.1.0" },
       { name: "@workbench/tools-skills", version: "^0.1.0" },
@@ -201,6 +209,18 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...FANNIE_CAPABILITIES.tools] },
     modelConfig: FANNIE_MODEL_CONFIG,
     toolPackages: FABLE_TOOL_PACKAGES,
+  },
+  {
+    key: "file-parser",
+    name: FILE_PARSER_NAME,
+    description:
+      "Model-agnostic document understanding — reads PDFs, documents, and images and returns their content as text. Invoked internally via the parse_file tool; not a chat agent.",
+    systemPrompt: FILE_PARSER_SYSTEM_PROMPT,
+    credentialRequirements: FILE_PARSER_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: FILE_PARSER_GRANT_REQUIREMENTS,
+    capabilities: { tools: [] },
+    modelConfig: FILE_PARSER_MODEL_CONFIG,
+    deployable: false,
   },
   {
     key: "freddy",

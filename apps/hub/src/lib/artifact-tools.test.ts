@@ -5,6 +5,7 @@ import {
   ARTIFACT_FIND_BY_TITLE_DEFINITION,
   ARTIFACT_HUB_TOOLS,
   ARTIFACT_LINK_FILE_DEFINITION,
+  ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
   ARTIFACT_READ_DEFINITION,
@@ -174,6 +175,9 @@ describe("artifact tool registry", () => {
     );
     expect(ARTIFACT_HUB_TOOLS.artifact_link_presentation.definition).toBe(
       ARTIFACT_LINK_PRESENTATION_DEFINITION,
+    );
+    expect(ARTIFACT_HUB_TOOLS.artifact_link_gamma_presentation.definition).toBe(
+      ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
     );
     expect(ARTIFACT_HUB_TOOLS.artifact_find_by_title.definition).toBe(
       ARTIFACT_FIND_BY_TITLE_DEFINITION,
@@ -745,6 +749,112 @@ describe("artifact_link_presentation handler", () => {
         artifactId: "",
       }),
     ).rejects.toThrow(/artifactId must not be empty/);
+  });
+});
+
+describe("artifact_link_gamma_presentation handler", () => {
+  const goodArgs = {
+    url: "https://gamma.app/docs/Building-abc",
+    title: "My Deck",
+    description: "A deck about building on Interchange",
+    gammaId: "abc",
+  };
+
+  it("creates a gamma_presentation artifact with structured JSON content", async () => {
+    const { context, artifactInsertValues, versionInsertValues } =
+      makeContext();
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    const raw = await handler(goodArgs);
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: "art_123",
+      version: 1,
+      url: goodArgs.url,
+    });
+    expect(artifactInsertValues[0]?.kind).toBe("gamma_presentation");
+    expect(JSON.parse(artifactInsertValues[0]?.content as string)).toEqual({
+      url: goodArgs.url,
+      description: goodArgs.description,
+      gammaId: goodArgs.gammaId,
+    });
+    expect(JSON.parse(versionInsertValues[0]?.content as string)).toEqual({
+      url: goodArgs.url,
+      description: goodArgs.description,
+      gammaId: goodArgs.gammaId,
+    });
+  });
+
+  it("bumps the version for an existing gamma_presentation", async () => {
+    const { context, updateSets, calls } = makeQueryContext([
+      [
+        {
+          id: "art_1",
+          kind: "gamma_presentation",
+          title: "Old",
+          status: "draft",
+          version: 1,
+          content: "{}",
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    const raw = await handler({ ...goodArgs, artifactId: "art_1" });
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: "art_1",
+      version: 2,
+      url: goodArgs.url,
+    });
+    expect(updateSets[0]?.version).toBe(2);
+    expect(JSON.parse(updateSets[0]?.content as string)).toEqual({
+      url: goodArgs.url,
+      description: goodArgs.description,
+      gammaId: goodArgs.gammaId,
+    });
+    expect(calls.forUpdateCount).toBe(1);
+  });
+
+  it("rejects a version bump if the artifact is not kind=gamma_presentation", async () => {
+    const { context } = makeQueryContext([
+      [
+        {
+          id: "art_1",
+          kind: "presentation",
+          title: "Legacy",
+          status: "draft",
+          version: 1,
+          content: "https://gamma.app/docs/old",
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    await expect(handler({ ...goodArgs, artifactId: "art_1" })).rejects.toThrow(
+      /not a gamma_presentation artifact/,
+    );
+  });
+
+  it("rejects a non-https url", async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    await expect(
+      handler({ ...goodArgs, url: "http://gamma.app/docs/abc" }),
+    ).rejects.toThrow(/must use HTTPS/);
+  });
+
+  it("requires description and gammaId", async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, "artifact_link_gamma_presentation");
+
+    await expect(
+      handler({ url: goodArgs.url, title: "T", gammaId: "abc" }),
+    ).rejects.toThrow(/description is required/);
+    await expect(
+      handler({ url: goodArgs.url, title: "T", description: "d" }),
+    ).rejects.toThrow(/gammaId is required/);
   });
 });
 

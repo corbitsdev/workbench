@@ -2,6 +2,7 @@ import { type } from "arktype";
 
 export * from "./palette";
 export * from "./active-context";
+export * from "./attio-task-agent";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -28,9 +29,21 @@ export type ArtifactKind =
   | "battlecard"
   | "pain-points"
   | "call-transcript"
-  | "presentation";
+  | "presentation"
+  | "gamma_presentation";
 
 export type ArtifactStatus = "draft" | "approved" | "rejected";
+
+// Structured content stored in a `gamma_presentation` artifact. The DB `content`
+// column holds the JSON serialization of this shape; hub writes it, web parses it
+// to render the deck (iframe with a View-in-Gamma fallback).
+export const GammaPresentationContentSchema = type({
+  url: "string",
+  description: "string",
+  gammaId: "string",
+});
+export type GammaPresentationContent =
+  typeof GammaPresentationContentSchema.infer;
 
 export const PainPoint = type({
   id: "string",
@@ -279,9 +292,10 @@ export const MemberPreferences = type({
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": ToolSummaryStyleSchema,
   "experimentalArtifactCards?": "boolean",
-  // Run ids the member has archived (hidden by default) from the workflow-runs
-  // list. Persisted per-member so the choice follows them across devices.
-  "archivedWorkflowRuns?": "string[]",
+  // The Attio workspace-member id/email this account maps to. Saved by the
+  // Attio Task Agent workflow's member-selection gate so returning runs default
+  // to "you" (and skip the picker) while staying switchable to another member.
+  "attioMemberId?": "string",
   "[string]": "unknown",
 });
 export type MemberPreferences = typeof MemberPreferences.infer;

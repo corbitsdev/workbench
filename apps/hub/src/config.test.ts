@@ -23,6 +23,9 @@ const MANAGED_KEYS = [
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_ALLOWED_DOMAINS",
   "WORKFLOW_AUTOPUBLISH_ON_BOOT",
+  "WORKFLOW_AUTOPUBLISH_MAP",
+  "WEDGE_SWEEP_INTERVAL_MS",
+  "WEDGE_UNROUTABLE_GRACE_MS",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -86,6 +89,79 @@ describe("loadConfig", () => {
     expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
   });
 
+  it("defaults workflowAutopublishMap to null when unset or empty", () => {
+    setRequiredEnv();
+    expect(loadConfig().workflowAutopublishMap).toBeNull();
+
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = "   ";
+    expect(loadConfig().workflowAutopublishMap).toBeNull();
+  });
+
+  it("parses a valid WORKFLOW_AUTOPUBLISH_MAP with kind and default keys", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = JSON.stringify({
+      "last30days-research": ["abk-labs"],
+      default: ["acme"],
+    });
+
+    expect(loadConfig().workflowAutopublishMap).toEqual({
+      "last30days-research": ["abk-labs"],
+      default: ["acme"],
+    });
+  });
+
+  it("throws when WORKFLOW_AUTOPUBLISH_MAP is malformed JSON", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = "{not json";
+
+    expect(() => loadConfig()).toThrow(
+      /WORKFLOW_AUTOPUBLISH_MAP must be valid JSON/,
+    );
+  });
+
+  it("throws when WORKFLOW_AUTOPUBLISH_MAP has the wrong shape", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = JSON.stringify({
+      "last30days-research": "abk-labs",
+    });
+
+    expect(() => loadConfig()).toThrow(
+      /WORKFLOW_AUTOPUBLISH_MAP has an invalid shape/,
+    );
+  });
+
+  it("defaults wedgeSweepIntervalMs to 30000 and honors a positive override", () => {
+    setRequiredEnv();
+    expect(loadConfig().wedgeSweepIntervalMs).toBe(30_000);
+
+    process.env["WEDGE_SWEEP_INTERVAL_MS"] = "5000";
+    expect(loadConfig().wedgeSweepIntervalMs).toBe(5_000);
+  });
+
+  it("rejects a zero, negative, decimal, or non-numeric WEDGE_SWEEP_INTERVAL_MS", () => {
+    setRequiredEnv();
+    for (const bad of ["0", "-5", "1.5", "abc"]) {
+      process.env["WEDGE_SWEEP_INTERVAL_MS"] = bad;
+      expect(() => loadConfig()).toThrow("WEDGE_SWEEP_INTERVAL_MS");
+    }
+  });
+
+  it("defaults wedgeUnroutableGraceMs to 120000 and honors a positive override", () => {
+    setRequiredEnv();
+    expect(loadConfig().wedgeUnroutableGraceMs).toBe(120_000);
+
+    process.env["WEDGE_UNROUTABLE_GRACE_MS"] = "90000";
+    expect(loadConfig().wedgeUnroutableGraceMs).toBe(90_000);
+  });
+
+  it("rejects a zero, negative, decimal, or non-numeric WEDGE_UNROUTABLE_GRACE_MS", () => {
+    setRequiredEnv();
+    for (const bad of ["0", "-1", "2.5", "nope"]) {
+      process.env["WEDGE_UNROUTABLE_GRACE_MS"] = bad;
+      expect(() => loadConfig()).toThrow("WEDGE_UNROUTABLE_GRACE_MS");
+    }
+  });
+
   it("trims and splits CORS origins, marking cross-origin true", () => {
     setRequiredEnv();
     process.env["SUPPORTED_CORS_ORIGINS"] = " https://a.com , ,https://b.com ";
@@ -119,8 +195,6 @@ describe("loadConfig", () => {
     expect(config.auth.servedFromWebApp).toBe(false);
     expect(config.auth.useCrossSiteCookies).toBe(true);
   });
-
-
 
   it("treats empty CORS origins as same-origin in dev", () => {
     setRequiredEnv();

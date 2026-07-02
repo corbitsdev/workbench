@@ -1,0 +1,971 @@
+{
+  "kind": "attio-task-agent",
+  "version": "0.1.0",
+  "label": "Attio Task Agent",
+  "description": "Pick an Attio task; an agent grounds itself in your CRM and internal context, asks only when it must, then drafts the BD artifacts you need — with your approval before anything is written back.",
+  "definition": {
+    "id": "attio-task-agent",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "listMembers": {
+        "kind": "step",
+        "id": "listMembers",
+        "agent": {
+          "id": "attio-task-agent-list-members",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-attio/attio:attio_list_workspace_members"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_workspace_members",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
+      "selectMember": {
+        "kind": "awaitSignal",
+        "id": "selectMember",
+        "name": "member-selection",
+        "drainBehavior": "wait",
+        "after": [
+          "listMembers"
+        ]
+      },
+      "listTasks": {
+        "kind": "step",
+        "id": "listTasks",
+        "agent": {
+          "id": "attio-task-agent-list-tasks",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "attio_list_tasks"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: attio_list_tasks",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "attio_list_tasks",
+            "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.selectMember.output"
+        },
+        "after": [
+          "selectMember"
+        ]
+      },
+      "selectTask": {
+        "kind": "awaitSignal",
+        "id": "selectTask",
+        "name": "task-selection",
+        "drainBehavior": "wait",
+        "after": [
+          "listTasks"
+        ]
+      },
+      "fetchTask": {
+        "kind": "step",
+        "id": "fetchTask",
+        "agent": {
+          "id": "attio-task-agent-fetch-task",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "attio_get_task"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: attio_get_task",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "attio_get_task",
+            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.selectTask.output"
+        },
+        "after": [
+          "selectTask"
+        ]
+      },
+      "analyze": {
+        "kind": "step",
+        "id": "analyze",
+        "agent": {
+          "id": "attio-task-agent-analyze",
+          "systemPrompt": "You are a business-development task agent. You are given one Attio task and its linked record (a company or person).\n\nYour job this turn is to GATHER enough context to complete the task, then DECIDE whether you can proceed.\n\n## Grounding\nUse your read-only tools to ground yourself before deciding. Prefer, in order:\n- The Attio task and its linked record (already provided; fetch more with attio_get_record / attio_query_records / attio_search_records if useful).\n- Internal knowledge: granola_get_note / granola_list_notes for call context, artifact_read / artifact_find_by_title / artifact_list for prior collateral.\n- The web via exa_search for public company/person facts.\nGather aggressively and autonomously — only stop to ask the human when a genuine blocker remains.\n\n## Decide\nReturn ONLY a JSON object matching this shape (no prose, no code fence):\n{\n  \"status\": \"ready\" | \"need_clarification\" | \"need_more_context\",\n  \"reasoning\": string,                       // one or two sentences\n  \"questions\"?: string[],                    // REQUIRED when status is need_clarification\n  \"selectedArtifactKinds\"?: [{ \"kind\": string }],  // objects; choose the relevant subset of: cold-email, follow-up-email, twitter-post, linkedin-post, research-brief, task-explanation, gamma-presentation, blog, single-page-website\n  \"proposedTaskUpdate\"?: { \"markComplete\"?: boolean, \"note\"?: string }\n}\n\n- status=ready: you have enough to generate. Populate selectedArtifactKinds with the kinds that fit THIS task (do not select all of them by default).\n- status=need_clarification: you are blocked on something only the human knows. Put crisp, specific questions in questions[].\n- status=need_more_context: you could not gather enough from tools but no human input is needed; the run will still proceed best-effort.\n- proposedTaskUpdate: if the task should be marked done and/or a note attached to the record once the human approves, propose it here.",
+          "toolFactories": [],
+          "capabilities": [
+            "attio_get_task",
+            "@workbench/tools-attio/attio:attio_get_record",
+            "@workbench/tools-attio/attio:attio_query_records",
+            "@workbench/tools-attio/attio:attio_search_records",
+            "@workbench/tools-attio/attio:attio_list_objects",
+            "@workbench/tools-attio/attio:attio_list_workspace_members",
+            "@workbench/tools-granola/granola:granola_list_notes",
+            "@workbench/tools-granola/granola:granola_get_note",
+            "@workbench/tools-exa/exa:exa_search",
+            "@workbench/tools-artifact/artifact:artifact_read",
+            "@workbench/tools-artifact/artifact:artifact_list",
+            "@workbench/tools-artifact/artifact:artifact_find_by_title"
+          ],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Grounds itself in the Attio task + record and internal context (read-only), then decides whether it can proceed.",
+          "tags": {
+            "credentialName": "opencode-zen"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.selectTask.output"
+            }
+          ]
+        },
+        "after": [
+          "fetchTask"
+        ]
+      },
+      "clarify": {
+        "kind": "awaitSignal",
+        "id": "clarify",
+        "name": "clarification",
+        "drainBehavior": "wait",
+        "after": [
+          "analyze"
+        ]
+      },
+      "selectKinds": {
+        "kind": "awaitSignal",
+        "id": "selectKinds",
+        "name": "kind-selection",
+        "drainBehavior": "wait",
+        "after": [
+          "clarify"
+        ]
+      },
+      "gate-cold-email": {
+        "kind": "gate",
+        "id": "gate-cold-email",
+        "when": {
+          "from": "steps.selectKinds.output.generate.cold-email"
+        },
+        "then": "gen-cold-email",
+        "else": "skip-cold-email",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-cold-email": {
+        "kind": "step",
+        "id": "gen-cold-email",
+        "agent": {
+          "id": "attio-task-agent-gen-cold-email",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a first-touch cold outreach email to the task's contact.\nSubject + body. Open with a specific, researched reason for reaching out (not a generic hook). One clear ask. 90-130 words. Ready to send — no placeholders or [brackets]. Warm, direct, peer-to-peer; no hype.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"cold-email\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-cold-email",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-cold-email"
+        ]
+      },
+      "skip-cold-email": {
+        "kind": "sleep",
+        "id": "skip-cold-email",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-cold-email"
+        ]
+      },
+      "gate-follow-up-email": {
+        "kind": "gate",
+        "id": "gate-follow-up-email",
+        "when": {
+          "from": "steps.selectKinds.output.generate.follow-up-email"
+        },
+        "then": "gen-follow-up-email",
+        "else": "skip-follow-up-email",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-follow-up-email": {
+        "kind": "step",
+        "id": "gen-follow-up-email",
+        "agent": {
+          "id": "attio-task-agent-gen-follow-up-email",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a follow-up email continuing a prior thread or meeting.\nReference the specific prior context. Add one new piece of value (an insight, resource, or next step). Short — under 100 words. Ready to send, no placeholders.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"follow-up-email\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-follow-up-email",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-follow-up-email"
+        ]
+      },
+      "skip-follow-up-email": {
+        "kind": "sleep",
+        "id": "skip-follow-up-email",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-follow-up-email"
+        ]
+      },
+      "gate-twitter-post": {
+        "kind": "gate",
+        "id": "gate-twitter-post",
+        "when": {
+          "from": "steps.selectKinds.output.generate.twitter-post"
+        },
+        "then": "gen-twitter-post",
+        "else": "skip-twitter-post",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-twitter-post": {
+        "kind": "step",
+        "id": "gen-twitter-post",
+        "agent": {
+          "id": "attio-task-agent-gen-twitter-post",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a single Twitter/X post inspired by the insight behind this task.\nANONYMIZED: no company names, personal names, logos, or identifying details. Under 280 characters. One sharp idea; no hashtag spam.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"twitter-post\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-twitter-post",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-twitter-post"
+        ]
+      },
+      "skip-twitter-post": {
+        "kind": "sleep",
+        "id": "skip-twitter-post",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-twitter-post"
+        ]
+      },
+      "gate-linkedin-post": {
+        "kind": "gate",
+        "id": "gate-linkedin-post",
+        "when": {
+          "from": "steps.selectKinds.output.generate.linkedin-post"
+        },
+        "then": "gen-linkedin-post",
+        "else": "skip-linkedin-post",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-linkedin-post": {
+        "kind": "step",
+        "id": "gen-linkedin-post",
+        "agent": {
+          "id": "attio-task-agent-gen-linkedin-post",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a LinkedIn post inspired by the insight behind this task.\nANONYMIZED: no company names, personal names, or identifying details — frame it as a universal lesson. 120-200 words, skimmable line breaks, one takeaway, a light prompt for discussion. No emojis-as-bullets.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"linkedin-post\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-linkedin-post",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-linkedin-post"
+        ]
+      },
+      "skip-linkedin-post": {
+        "kind": "sleep",
+        "id": "skip-linkedin-post",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-linkedin-post"
+        ]
+      },
+      "gate-research-brief": {
+        "kind": "gate",
+        "id": "gate-research-brief",
+        "when": {
+          "from": "steps.selectKinds.output.generate.research-brief"
+        },
+        "then": "gen-research-brief",
+        "else": "skip-research-brief",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-research-brief": {
+        "kind": "step",
+        "id": "gen-research-brief",
+        "agent": {
+          "id": "attio-task-agent-gen-research-brief",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a research brief on the company/person and the context of this task.\nSkimmable: who they are, why now, relevant signals, and 2-3 angles for engagement. Ground every claim in the gathered context; cite sources inline where available. No speculation presented as fact.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"research-brief\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-research-brief",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-research-brief"
+        ]
+      },
+      "skip-research-brief": {
+        "kind": "sleep",
+        "id": "skip-research-brief",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-research-brief"
+        ]
+      },
+      "gate-task-explanation": {
+        "kind": "gate",
+        "id": "gate-task-explanation",
+        "when": {
+          "from": "steps.selectKinds.output.generate.task-explanation"
+        },
+        "then": "gen-task-explanation",
+        "else": "skip-task-explanation",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-task-explanation": {
+        "kind": "step",
+        "id": "gen-task-explanation",
+        "agent": {
+          "id": "attio-task-agent-gen-task-explanation",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nRestate this task with full context so a teammate could pick it up cold.\nCover: what the task is, why it matters, the relevant record/history, and the recommended approach. Concise and concrete.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"task-explanation\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-task-explanation",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-task-explanation"
+        ]
+      },
+      "skip-task-explanation": {
+        "kind": "sleep",
+        "id": "skip-task-explanation",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-task-explanation"
+        ]
+      },
+      "gate-gamma-presentation": {
+        "kind": "gate",
+        "id": "gate-gamma-presentation",
+        "when": {
+          "from": "steps.selectKinds.output.generate.gamma-presentation"
+        },
+        "then": "gen-gamma-presentation",
+        "else": "skip-gamma-presentation",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-gamma-presentation": {
+        "kind": "step",
+        "id": "gen-gamma-presentation",
+        "agent": {
+          "id": "attio-task-agent-gen-gamma-presentation",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a deck outline suitable for Gamma generation.\nTitled slides, each with 2-4 tight bullet points. Lead with the narrative arc (problem → insight → proposal → next step). 5-8 slides. Content only — no design directives.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"gamma-presentation\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-gamma-presentation",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-gamma-presentation"
+        ]
+      },
+      "skip-gamma-presentation": {
+        "kind": "sleep",
+        "id": "skip-gamma-presentation",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-gamma-presentation"
+        ]
+      },
+      "gate-blog": {
+        "kind": "gate",
+        "id": "gate-blog",
+        "when": {
+          "from": "steps.selectKinds.output.generate.blog"
+        },
+        "then": "gen-blog",
+        "else": "skip-blog",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-blog": {
+        "kind": "step",
+        "id": "gen-blog",
+        "agent": {
+          "id": "attio-task-agent-gen-blog",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite a long-form blog post derived from the task and research.\nStrong headline, a hook, 3-5 sections with subheads, and a closing takeaway. 600-900 words. Authoritative but readable; ground claims in the gathered context.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"blog\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-blog",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-blog"
+        ]
+      },
+      "skip-blog": {
+        "kind": "sleep",
+        "id": "skip-blog",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-blog"
+        ]
+      },
+      "gate-single-page-website": {
+        "kind": "gate",
+        "id": "gate-single-page-website",
+        "when": {
+          "from": "steps.selectKinds.output.generate.single-page-website"
+        },
+        "then": "gen-single-page-website",
+        "else": "skip-single-page-website",
+        "after": [
+          "selectKinds"
+        ]
+      },
+      "gen-single-page-website": {
+        "kind": "step",
+        "id": "gen-single-page-website",
+        "agent": {
+          "id": "attio-task-agent-gen-single-page-website",
+          "systemPrompt": "You are a business-development writer. Your input carries an Attio task, its linked record context, the prior analysis decision, and any human clarifications.\n\nWrite the copy and section structure for a single-page landing site.\nSections: hero (headline + subhead + CTA), problem, solution, proof, and a final CTA. Provide the copy for each section, labeled. Punchy, benefit-led.\n\nReturn ONLY a JSON object (no prose, no code fence):\n{\n  \"kind\": \"single-page-website\", \"title\": string, \"content\": string\n}",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 16384
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: attio-task-agent-gen-single-page-website",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            },
+            {
+              "from": "steps.clarify.output"
+            }
+          ]
+        },
+        "after": [
+          "gate-single-page-website"
+        ]
+      },
+      "skip-single-page-website": {
+        "kind": "sleep",
+        "id": "skip-single-page-website",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "gate-single-page-website"
+        ]
+      },
+      "review": {
+        "kind": "awaitSignal",
+        "id": "review",
+        "name": "review",
+        "drainBehavior": "wait",
+        "after": [
+          "gen-cold-email",
+          "skip-cold-email",
+          "gen-follow-up-email",
+          "skip-follow-up-email",
+          "gen-twitter-post",
+          "skip-twitter-post",
+          "gen-linkedin-post",
+          "skip-linkedin-post",
+          "gen-research-brief",
+          "skip-research-brief",
+          "gen-task-explanation",
+          "skip-task-explanation",
+          "gen-gamma-presentation",
+          "skip-gamma-presentation",
+          "gen-blog",
+          "skip-blog",
+          "gen-single-page-website",
+          "skip-single-page-website"
+        ]
+      },
+      "persist": {
+        "kind": "map",
+        "id": "persist",
+        "over": {
+          "from": "steps.review.output.approvedPieces"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "attio-task-agent-persist",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-artifact/artifact:artifact_create"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"kind\"},\"content\":{\"from\":\"content\"}}"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "review"
+        ]
+      },
+      "suggest": {
+        "kind": "step",
+        "id": "suggest",
+        "agent": {
+          "id": "attio-task-agent-suggest",
+          "systemPrompt": "You are a business-development task agent wrapping up. Given the Attio task, its context, and the analysis decision, write a short completion summary for the human.\n\nCover: what you produced, and 2-4 concrete suggested follow-ups (next BD actions) if any.\n\nWhen a follow-up maps to an existing Workbench workflow, recommend running it by name:\n- \"Gamma Presentation Creator\" — turn the collateral into a deck.\n- \"last30days Research\" — deeper recent research on the company/person.\n- \"Pain Point Collateral Generation\" — mine a call transcript for pain points and generate collateral.\nOnly suggest a workflow when it genuinely fits the task; do not list them all by default.\n\nKeep it to a few sentences plus a short bulleted list. Plain text, no code fence.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": []
+          },
+          "description": "Inline single-turn inference: attio-task-agent-suggest",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.fetchTask.output"
+            },
+            {
+              "from": "steps.analyze.output"
+            }
+          ]
+        },
+        "after": [
+          "persist"
+        ]
+      },
+      "approveSync": {
+        "kind": "awaitSignal",
+        "id": "approveSync",
+        "name": "sync-approval",
+        "drainBehavior": "wait",
+        "after": [
+          "suggest"
+        ]
+      },
+      "syncGate": {
+        "kind": "gate",
+        "id": "syncGate",
+        "when": {
+          "from": "steps.approveSync.output.confirm"
+        },
+        "then": "writeNote",
+        "else": "skipWriteBack",
+        "after": [
+          "approveSync"
+        ]
+      },
+      "writeNote": {
+        "kind": "step",
+        "id": "writeNote",
+        "agent": {
+          "id": "attio-task-agent-write-note",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "attio_create_note"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: attio_create_note",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "attio_create_note",
+            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.approveSync.output"
+        },
+        "after": [
+          "syncGate"
+        ]
+      },
+      "writeComplete": {
+        "kind": "step",
+        "id": "writeComplete",
+        "agent": {
+          "id": "attio-task-agent-write-complete",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "attio_update_task"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: attio_update_task",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "attio_update_task",
+            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.approveSync.output"
+        },
+        "after": [
+          "writeNote"
+        ]
+      },
+      "skipWriteBack": {
+        "kind": "sleep",
+        "id": "skipWriteBack",
+        "drainBehavior": "cancel",
+        "duration": 0,
+        "after": [
+          "syncGate"
+        ]
+      }
+    },
+    "stepOrder": [
+      "listMembers",
+      "selectMember",
+      "listTasks",
+      "selectTask",
+      "fetchTask",
+      "analyze",
+      "clarify",
+      "selectKinds",
+      "gate-cold-email",
+      "gen-cold-email",
+      "skip-cold-email",
+      "gate-follow-up-email",
+      "gen-follow-up-email",
+      "skip-follow-up-email",
+      "gate-twitter-post",
+      "gen-twitter-post",
+      "skip-twitter-post",
+      "gate-linkedin-post",
+      "gen-linkedin-post",
+      "skip-linkedin-post",
+      "gate-research-brief",
+      "gen-research-brief",
+      "skip-research-brief",
+      "gate-task-explanation",
+      "gen-task-explanation",
+      "skip-task-explanation",
+      "gate-gamma-presentation",
+      "gen-gamma-presentation",
+      "skip-gamma-presentation",
+      "gate-blog",
+      "gen-blog",
+      "skip-blog",
+      "gate-single-page-website",
+      "gen-single-page-website",
+      "skip-single-page-website",
+      "review",
+      "persist",
+      "suggest",
+      "approveSync",
+      "syncGate",
+      "writeNote",
+      "writeComplete",
+      "skipWriteBack"
+    ]
+  }
+}

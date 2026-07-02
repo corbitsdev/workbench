@@ -31,9 +31,23 @@ const baseOutputs: Record<string, unknown> = {
   "presentation-generate-1": { reply: "SLIDE 1: v1" },
   "presentation-generate-2": { reply: "SLIDE 1: v2" },
   "presentation-generate-3": { reply: "SLIDE 1: v3" },
-  "presentation-render-1": { gammaUrl: "https://gamma.app/docs/1" },
-  "presentation-render-2": { gammaUrl: "https://gamma.app/docs/2" },
-  "presentation-render-3": { gammaUrl: "https://gamma.app/docs/3" },
+  // gamma_create_from_template returns the NEW deck's gammaId (distinct from the
+  // template id carried on intake); it must win the persist merge over intake.
+  "presentation-render-1": {
+    gammaUrl: "https://gamma.app/docs/1",
+    gammaId: "deck_1",
+  },
+  "presentation-render-2": {
+    gammaUrl: "https://gamma.app/docs/2",
+    gammaId: "deck_2",
+  },
+  "presentation-render-3": {
+    gammaUrl: "https://gamma.app/docs/3",
+    gammaId: "deck_3",
+  },
+  "presentation-describe-1": { reply: "A deck about v1" },
+  "presentation-describe-2": { reply: "A deck about v2" },
+  "presentation-describe-3": { reply: "A deck about v3" },
 };
 
 const intake = {
@@ -57,11 +71,14 @@ describe("artifact → gamma deck workflow", () => {
     const ids = ran.map((r) => r.id);
     expect(ids).toContain("presentation-generate-1");
     expect(ids).toContain("presentation-render-1");
+    expect(ids).toContain("presentation-describe-1");
     expect(ids).toContain("presentation-persist-1");
     expect(ids).not.toContain("presentation-generate-2");
     expect(ids).not.toContain("presentation-render-2");
+    expect(ids).not.toContain("presentation-describe-2");
     expect(ids).not.toContain("presentation-persist-2");
     expect(ids).not.toContain("presentation-generate-3");
+    expect(ids).not.toContain("presentation-describe-3");
   });
 
   test("both readers run and each receives its intake id", async () => {
@@ -161,6 +178,24 @@ describe("artifact → gamma deck workflow", () => {
     });
   });
 
+  test("persist receives the rendered deck url, the description, and the gammaId", async () => {
+    const { invoker, ran } = makeRecordingInvoker(baseOutputs);
+    const run = runLocal(workflow, { invokeStep: invoker });
+    await run.signal("intake", intake);
+    await run.signal("preview-1", { approved: true });
+    await run.complete;
+
+    const persist = ran.find((r) => r.id === "presentation-persist-1");
+    // gammaId must be the rendered deck id (render wins the merge), NOT the
+    // intake template id (tmpl_1).
+    expect(persist?.input).toMatchObject({
+      deckTitle: "Q3 Deck",
+      gammaId: "deck_1",
+      gammaUrl: "https://gamma.app/docs/1",
+      reply: "A deck about v1",
+    });
+  });
+
   test("the readers are deterministic, non-fatal, and reshape the intake id", () => {
     for (const [key, tool, arg] of [
       ["fetch-artifact", "artifact_read", "artifactId"],
@@ -202,16 +237,26 @@ describe("artifact → gamma deck workflow", () => {
         prompt: { from: "reply" },
       });
 
+      const describe = workflow.steps[`describe-${r}`];
+      if (describe === undefined || describe.kind !== "step") {
+        throw new Error(`expected a step primitive for describe-${r}`);
+      }
+      expect(describe.agent.tags?.[STEP_KIND_TAG]).toBe(INLINE_INFERENCE_KIND);
+      expect(describe.agent.systemPrompt.length).toBeGreaterThan(0);
+
       const persist = workflow.steps[`persist-${r}`];
       if (persist === undefined || persist.kind !== "step") {
         throw new Error(`expected a step primitive for persist-${r}`);
       }
-      expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain("artifact_create");
+      expect(persist.agent.tags?.[STEP_TOOL_TAG]).toContain(
+        "artifact_link_gamma_presentation",
+      );
       expect(JSON.parse(persist.agent.tags?.[STEP_ARGMAP_TAG] ?? "{}")).toEqual(
         {
           title: { from: "deckTitle" },
-          kind: { literal: "presentation" },
-          content: { from: "reply" },
+          url: { from: "gammaUrl" },
+          description: { from: "reply" },
+          gammaId: { from: "gammaId" },
         },
       );
     }

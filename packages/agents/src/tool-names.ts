@@ -39,11 +39,13 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "artifact_find_by_title",
     "artifact_link_file",
     "artifact_link_presentation",
+    "artifact_link_gamma_presentation",
     "write_artifact",
     "memory_load",
     "memory_save",
   ],
   "@workbench/tools-bluesky/bluesky": ["bluesky_search"],
+  "@workbench/tools-fileparser/fileparser": ["parse_file"],
   "@workbench/tools-dispatch/dispatch": ["dispatch_agent"],
   "@workbench/tools-exa/exa": ["exa_search", "web_search"],
   "@workbench/tools-firecrawl/firecrawl": [

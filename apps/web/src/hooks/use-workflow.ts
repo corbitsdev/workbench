@@ -228,6 +228,27 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
   });
 }
 
+// Archive a run (CL-2629): stops it, tears its per-run deployment down, and
+// soft-deletes the record server-side. On success the run drops out of
+// ["workflow-runs"], so invalidate that list to re-render without it.
+export function useArchiveWorkflowRun(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      await api<{ archived: true }>(
+        "POST",
+        withTenant(
+          `/workflow-exec/records/${encodeURIComponent(runId)}/archive`,
+          tenantId,
+        ),
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workflow-runs"] });
+    },
+  });
+}
+
 export { runStateFromRecord };
 
 const workflowCredentialSchema = type({

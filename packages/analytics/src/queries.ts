@@ -377,7 +377,10 @@ export async function getAnalyticsModelDistribution(
     .groupBy(analyticsRollupDaily.model);
 
   return rows
-    .filter((row): row is typeof row & { model: string } => row.model !== null)
+    .filter(
+      (row): row is typeof row & { model: string } =>
+        row.model !== null && row.turnCount > 0,
+    )
     .map((row) => ({
       model: row.model,
       turnCount: row.turnCount,

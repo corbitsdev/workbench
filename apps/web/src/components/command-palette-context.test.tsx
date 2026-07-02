@@ -89,7 +89,7 @@ describe("CommandPaletteProvider", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
 
     pressCmdK();
-    expect(screen.getByRole("combobox")).toBeDefined();
+    screen.getByRole("combobox");
 
     pressCmdK();
     expect(screen.queryByRole("combobox")).toBeNull();

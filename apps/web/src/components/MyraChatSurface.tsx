@@ -7,10 +7,12 @@ import {
   type ChatAgentIdentity,
   type ChatDockState,
   type UIResponse,
+  type PendingAttachment,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
   summarizeToolCalls,
+  attachmentPolicyForAgent,
 } from "@workbench/agents/browser";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import type { ToolCall } from "@workbench/chat";
@@ -91,6 +93,11 @@ export function ExpandedChatOverlay({
 }
 
 const MYRA: ChatAgentIdentity = { name: "Myra", tagline: "Personal agent" };
+
+// Myra runs on Kimi via the openai-compatible adapter, which reads images but
+// not documents; the gate resolves that to images-only. Undefined (attachments
+// hidden) if the capability ever resolves to none.
+const MYRA_ATTACHMENT_POLICY = attachmentPolicyForAgent(MYRA.name);
 
 // Myra's file tools are private working memory (MEMORY.md, SCRATCHPAD.md).
 // Hide those tool-call lines from the thread so her self-management does not
@@ -235,15 +242,16 @@ export function MyraChatSurface({
   // message. Inline (not a first-class Interchange attachment) because Myra's
   // DeepSeek/openai-compatible harness does not ingest document attachment
   // ContentBlocks (CL-2495 spike). Cleared once the send is dispatched.
-  const handleSend = (text: string) => {
+  const handleSend = (text: string, attachments?: PendingAttachment[]) => {
     onUserSend?.(text);
-    if (attached.length === 0) {
-      session.send(text);
-      return;
-    }
-    const leadIns = attached.map((c) => projectActiveContext(c).leadIn);
-    session.send(`${leadIns.join("\n\n")}\n\n${text}`);
-    setAttached([]);
+    const composed =
+      attached.length === 0
+        ? text
+        : `${attached
+            .map((c) => projectActiveContext(c).leadIn)
+            .join("\n\n")}\n\n${text}`;
+    if (attached.length > 0) setAttached([]);
+    return session.send(composed, attachments);
   };
   const handleRespond = (response: UIResponse) => session.send(response.value);
 
@@ -262,9 +270,15 @@ export function MyraChatSurface({
       onSend={handleSend}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}
+      {...(MYRA_ATTACHMENT_POLICY !== undefined
+        ? { attachmentPolicy: MYRA_ATTACHMENT_POLICY }
+        : {})}
       activity={session.activity}
       onRate={session.onRate}
       getRating={session.getRating}
+      {...(session.resolveAttachmentUrl !== undefined
+        ? { resolveAttachmentUrl: session.resolveAttachmentUrl }
+        : {})}
       hideToolCall={hideMyraSelfManagement}
       formatToolSummary={friendlyToolSummary}
       compactToolActivity={compactToolActivity}

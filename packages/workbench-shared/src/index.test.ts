@@ -3,6 +3,7 @@ import { type } from "arktype";
 import {
   AnalyzeRequestSchema,
   AnalyzeResponseSchema,
+  GammaPresentationContentSchema,
   GenerateRequestSchema,
   GenerateResponseSchema,
   ImproveRequestSchema,
@@ -14,6 +15,28 @@ import {
 } from "./index";
 
 const isErr = (v: unknown): boolean => v instanceof type.errors;
+
+describe("GammaPresentationContentSchema", () => {
+  test("accepts structured deck content and rejects a bare URL string", () => {
+    const ok = GammaPresentationContentSchema({
+      url: "https://gamma.app/docs/Building-abc",
+      description: "A deck about building on Interchange",
+      gammaId: "abc",
+    });
+    expect(isErr(ok)).toBe(false);
+    expect(
+      isErr(GammaPresentationContentSchema("https://gamma.app/docs/abc")),
+    ).toBe(true);
+    expect(
+      isErr(
+        GammaPresentationContentSchema({
+          url: "https://gamma.app/docs/abc",
+          gammaId: "abc",
+        }),
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("WorkflowSummarySchema", () => {
   test("accepts a well-formed summary", () => {

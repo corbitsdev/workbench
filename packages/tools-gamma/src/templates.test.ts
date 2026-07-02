@@ -225,6 +225,43 @@ describe("gamma_create_from_template", () => {
     expect(body["themeId"]).toBe("theme-42");
     expect(body["title"]).toBe("Q3 Deck");
   });
+  it("shares the generated deck with the workspace and via link (sharingOptions)", async () => {
+    const capturedBodies: string[] = [];
+    const fetcher: GammaFetch = async (_input, init) => {
+      capturedBodies.push(init.body as string);
+      if (capturedBodies.length === 1) {
+        return new Response(JSON.stringify({ generationId: "gen_x" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          status: "completed",
+          gammaUrl: "https://gamma.app/docs/x",
+          gammaId: "g_x",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const tools = createTemplateTools({ ...baseConfig, fetcher });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    await tool.handler(
+      { gammaId: "g_t", prompt: "Make a deck" },
+      new AbortController().signal,
+    );
+    const body = JSON.parse(capturedBodies[0] ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(body["sharingOptions"]).toEqual({
+      workspaceAccess: "fullAccess",
+      externalAccess: "view",
+    });
+  });
   it("throws immediately on unknown generation status rather than exhausting poll attempts", async () => {
     const tools = createTemplateTools({
       ...baseConfig,

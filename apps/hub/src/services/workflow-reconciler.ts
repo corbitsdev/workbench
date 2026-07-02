@@ -276,7 +276,10 @@ export function createWorkflowReconciler(deps: {
         and(
           inArray(workflowRunRecord.status, ["completed", "failed"]),
           isNotNull(workflowRunRecord.deploymentId),
-          isNull(workflowRunRecord.deletedAt),
+          // Soft-deleted (archived) terminal runs are INCLUDED: an archive whose
+          // immediate teardown failed still has a live deployment that must be
+          // reclaimed (CL-2629). The per-deploymentId liveness LIKE below gates
+          // exactly what gets torn down, so seeing archived rows is safe.
           gt(workflowRunRecord.updatedAt, cutoff),
         ),
       );

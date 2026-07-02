@@ -142,6 +142,41 @@ describe("gamma_duplicate_presentation", () => {
     expect("title" in withoutTitle).toBe(false);
   });
 
+  it("shares the duplicated deck with the workspace and via link (sharingOptions)", async () => {
+    const capturedBodies: string[] = [];
+    const fetcher: GammaFetch = async (_input, init) => {
+      capturedBodies.push(init.body as string);
+      if (capturedBodies.length === 1) {
+        return new Response(JSON.stringify({ generationId: "gen_s" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          status: "completed",
+          gammaUrl: "https://gamma.app/docs/s",
+          gammaId: "g_s",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const tools = createPresentationTools({ ...baseConfig, fetcher });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_duplicate_presentation",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    await tool.handler({ gammaId: "g_orig" }, new AbortController().signal);
+    const body = JSON.parse(capturedBodies[0] ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(body["sharingOptions"]).toEqual({
+      workspaceAccess: "fullAccess",
+      externalAccess: "view",
+    });
+  });
+
   it("throws when generation fails", async () => {
     const tools = createPresentationTools({
       ...baseConfig,

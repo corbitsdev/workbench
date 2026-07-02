@@ -38,6 +38,30 @@ function stubFetch(body: unknown): void {
   }) as typeof fetch;
 }
 
+function stubDeferredFetch(body: unknown): { resolve: () => void } {
+  let resolveResponse: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    resolveResponse = resolve;
+  });
+  globalThis.fetch = ((url: string, init?: RequestInit) => {
+    calls.push({
+      url: String(url),
+      method: init?.method ?? "GET",
+      body: init?.body ? JSON.parse(init.body as string) : undefined,
+    });
+    return gate.then(
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: () => Promise.resolve(body),
+        }) as unknown as Response,
+    );
+  }) as typeof fetch;
+  return { resolve: resolveResponse };
+}
+
 const thread = {
   id: "map-1",
   instanceId: "inst-1",
@@ -112,6 +136,62 @@ describe("Myra thread mutations (tenant scoping)", () => {
       "/api/v1/tenants/tnt_child/me/myra/threads",
     );
     expect(calls[0]?.body).toEqual({ label: "Pricing" });
+  });
+
+  it("adds a newly created thread to the current cache before caller success handlers run", async () => {
+    stubFetch({ thread, created: true });
+    const { client, Wrapper } = wrapper();
+    client.setQueryData(
+      ["myra-threads", "tnt_child"],
+      [
+        {
+          id: "old-1",
+          instanceId: "inst-old",
+          label: "Old chat",
+          createdAt: "2025-12-31T00:00:00.000Z",
+          updateAvailable: false,
+        },
+      ],
+    );
+    const { result } = renderHook(() => useCreateMyraThread(), {
+      wrapper: Wrapper,
+    });
+
+    let cachedBeforeCallerNavigate: unknown;
+    act(() => {
+      result.current.mutate("Pricing", {
+        onSuccess: () => {
+          cachedBeforeCallerNavigate = client.getQueryData([
+            "myra-threads",
+            "tnt_child",
+          ]);
+        },
+      });
+    });
+
+    await waitFor(() => expect(cachedBeforeCallerNavigate).toBeDefined());
+    expect(cachedBeforeCallerNavigate).toContainEqual({
+      ...thread,
+      updateAvailable: false,
+    });
+  });
+
+  it("shares an in-flight create for duplicate empty-chat requests", async () => {
+    const deferred = stubDeferredFetch({ thread, created: true });
+    const { Wrapper } = wrapper();
+    const { result } = renderHook(() => useCreateMyraThread(), {
+      wrapper: Wrapper,
+    });
+
+    const creates = [
+      result.current.mutateAsync(undefined),
+      result.current.mutateAsync(undefined),
+    ];
+    await waitFor(() => expect(calls).toHaveLength(1));
+    deferred.resolve();
+    const created = await Promise.all(creates);
+
+    expect(created).toEqual([thread, thread]);
   });
 
   it("renames a thread in the active tenant", async () => {

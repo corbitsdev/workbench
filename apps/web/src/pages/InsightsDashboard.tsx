@@ -177,6 +177,11 @@ function TrendCard({
   delta?: ReturnType<typeof computeDelta>;
   note?: string | null;
 }) {
+  const trendNote =
+    values.length < 3
+      ? "Trend line appears once 3+ daily buckets are selected"
+      : note;
+
   return (
     <HudCard label={label}>
       <div className="flex items-baseline gap-2">
@@ -185,13 +190,15 @@ function TrendCard({
         </span>
         {delta && <DeltaBadge delta={delta} />}
       </div>
-      <Sparkline
-        values={values}
-        label={`${label} trend`}
-        width={220}
-        height={36}
-      />
-      {note ? <CaveatNote>{note}</CaveatNote> : null}
+      {values.length >= 3 ? (
+        <Sparkline
+          values={values}
+          label={`${label} trend`}
+          width={220}
+          height={36}
+        />
+      ) : null}
+      {trendNote ? <CaveatNote>{trendNote}</CaveatNote> : null}
     </HudCard>
   );
 }
@@ -301,6 +308,7 @@ function InferenceSection({
   const toolRate = ratePct(successfulTools, summary.toolCallCount);
   const hitRate = cacheHitRate(summary.inputTokens, summary.cacheReadTokens);
   const thinkPct = ratePct(summary.thinkingTokens, tokens);
+  const modelRows = data.models.filter((model) => model.count > 0);
 
   return (
     <div className="flex flex-col gap-4">
@@ -369,18 +377,18 @@ function InferenceSection({
         )}
       </HudCard>
 
-      {data.models.length > 0 && (
+      {modelRows.length > 0 && (
         <HudCard
           label="Models · by turns"
           tag={
-            data.models.length > 8 ? (
-              <CardLabel>{`+${data.models.length - 8} more`}</CardLabel>
+            modelRows.length > 8 ? (
+              <CardLabel>{`+${modelRows.length - 8} more`}</CardLabel>
             ) : undefined
           }
         >
           <MiniBars
             label="Model distribution"
-            rows={data.models
+            rows={modelRows
               .slice(0, 8)
               .map((m) => ({ label: m.key, value: m.count }))}
           />

@@ -40,12 +40,12 @@ describe("useMediaQuery", () => {
   it("returns true when the query matches", () => {
     restore = stubMatchMedia(["(min-width: 1024px)"]);
     render(React.createElement(Probe, { query: "(min-width: 1024px)" }));
-    expect(screen.getByText("match")).toBeDefined();
+    screen.getByText("match");
   });
 
   it("returns false when the query does not match", () => {
     restore = stubMatchMedia([]);
     render(React.createElement(Probe, { query: "(min-width: 1024px)" }));
-    expect(screen.getByText("no-match")).toBeDefined();
+    screen.getByText("no-match");
   });
 });

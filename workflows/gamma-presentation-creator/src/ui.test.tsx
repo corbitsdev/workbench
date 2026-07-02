@@ -100,7 +100,11 @@ function toolEnvelope(callId: string, value: unknown): unknown {
 const noop = () => {};
 
 const sourceLists = {
-  "list-artifacts": toolEnvelope("c2", [{ id: "art_1", title: "Q3 Brief" }]),
+  // artifact_list returns an object wrapper `{ artifacts: [...] }` (matching
+  // the hub createListHandler), not a bare array — mirror the real tool shape.
+  "list-artifacts": toolEnvelope("c2", {
+    artifacts: [{ id: "art_1", title: "Q3 Brief" }],
+  }),
   "list-notes": toolEnvelope("c3", {
     notes: [{ id: "note_1", title: "Acme call" }],
     hasMore: false,
@@ -159,6 +163,44 @@ describe("artifact → gamma deck Panel", () => {
         gammaId: "tmpl_pro",
       }),
     );
+  });
+
+  it("parses the full artifact_list row shape (extra columns tolerated)", async () => {
+    // The real artifact_list handler returns rows carrying
+    // id/title/kind/status/version/updatedAt, not just id/title. The narrow
+    // ArtifactItem schema must tolerate those extra columns — otherwise the
+    // production payload fails to validate and the picker regresses to
+    // "couldn't load", the exact CL-2624 bug. The other fixtures are slim, so
+    // this is the one case that proves the fat real payload parses.
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={makeState({ intake: "awaiting-signal" })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          ...sourceLists,
+          "list-artifacts": toolEnvelope("c2", {
+            artifacts: [
+              {
+                id: "art_full",
+                title: "Fat Row",
+                kind: "presentation",
+                status: "ready",
+                version: 3,
+                updatedAt: "2026-06-30T00:00:00Z",
+              },
+            ],
+          }),
+        }}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    await advanceFromDeckFields("Q3 Deck");
+    screen.getByRole("button", { name: "Fat Row" });
+    expect(screen.queryByText(/couldn't load artifacts/i)).toBeNull();
   });
 
   it("cannot advance past the deck-fields page without a deck title", async () => {
@@ -556,7 +598,7 @@ describe("artifact → gamma deck Panel", () => {
         signalPending={false}
         stepOutputs={{
           ...sourceLists,
-          "list-artifacts": toolEnvelope("c2", []),
+          "list-artifacts": toolEnvelope("c2", { artifacts: [] }),
         }}
         onSignal={noop}
         onClose={noop}
@@ -581,7 +623,7 @@ describe("artifact → gamma deck Panel", () => {
         signalPending={false}
         stepOutputs={{
           ...sourceLists,
-          "list-artifacts": toolEnvelope("c2", many),
+          "list-artifacts": toolEnvelope("c2", { artifacts: many }),
         }}
         onSignal={noop}
         onClose={noop}
@@ -613,7 +655,7 @@ describe("artifact → gamma deck Panel", () => {
         signalPending={false}
         stepOutputs={{
           ...sourceLists,
-          "list-artifacts": toolEnvelope("c2", many),
+          "list-artifacts": toolEnvelope("c2", { artifacts: many }),
         }}
         onSignal={noop}
         onClose={noop}
@@ -641,7 +683,7 @@ describe("artifact → gamma deck Panel", () => {
         signalPending={false}
         stepOutputs={{
           ...sourceLists,
-          "list-artifacts": toolEnvelope("c2", capped),
+          "list-artifacts": toolEnvelope("c2", { artifacts: capped }),
         }}
         onSignal={noop}
         onClose={noop}
@@ -682,7 +724,7 @@ describe("artifact → gamma deck Panel", () => {
         signalPending={false}
         stepOutputs={{
           ...sourceLists,
-          "list-artifacts": toolEnvelope("c2", many),
+          "list-artifacts": toolEnvelope("c2", { artifacts: many }),
         }}
         onSignal={noop}
         onClose={noop}

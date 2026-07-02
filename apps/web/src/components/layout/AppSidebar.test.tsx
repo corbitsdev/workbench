@@ -114,6 +114,34 @@ describe("AppSidebar", () => {
     expect(closed).toBe(1);
   });
 
+  it("renders the Demos section linking out to each external demo", () => {
+    renderSidebar();
+    const cases = [
+      { name: /deal scout/i, href: "https://deal-scout-abklabs.vercel.app/" },
+      {
+        name: /notion spike/i,
+        href: "https://app-notion-spike.up.railway.app/",
+      },
+      {
+        name: /workbench \(staging\)/i,
+        href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
+      },
+    ];
+    for (const { name, href } of cases) {
+      const link = screen.getByRole("link", { name }) as HTMLAnchorElement;
+      expect(link.getAttribute("href")).toBe(href);
+      expect(link.getAttribute("target")).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+  });
+
+  it("calls onNavigate when a demo link is selected so the drawer can close", () => {
+    let closed = 0;
+    renderSidebar("/", { onNavigate: () => (closed += 1) });
+    (screen.getByRole("link", { name: /deal scout/i }) as HTMLElement).click();
+    expect(closed).toBe(1);
+  });
+
   it("omits the environment badge when no environment is configured", () => {
     renderSidebar();
     expect(screen.getByText("Workbench").textContent).toBe("Workbench");

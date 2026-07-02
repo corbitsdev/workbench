@@ -28,6 +28,27 @@ function toEventSourceUrl(path: string): string {
   return new URL(path, base).toString();
 }
 
+// Authenticated binary GET against the hub for a stored mail-attachment blob.
+// The stock transport parses JSON, so it cannot carry octet-stream bytes; this
+// mirrors its URL + credentialed-cookie build and returns an object URL the
+// caller owns (and must revoke). Kept here so the hub-base/cookie convention
+// lives in one place.
+export async function fetchBlobObjectUrl(
+  tenantId: string,
+  blobId: string,
+): Promise<string> {
+  const path = `/api/tenants/${tenantId}/agents/instances/blobs/${blobId}`;
+  const res = await fetch(toUrl(path), {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, "blob_fetch_failed", `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export function createHubTransport(): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {

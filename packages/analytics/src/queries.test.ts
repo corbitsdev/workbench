@@ -2,7 +2,10 @@ import { describe, expect, it, mock } from "bun:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
-import { getTokenDataStartDate } from "./queries";
+import {
+  getAnalyticsModelDistribution,
+  getTokenDataStartDate,
+} from "./queries";
 
 function makeDb(rows: { date: string | null }[]) {
   const captured: { where?: SQL } = {};
@@ -18,6 +21,25 @@ function makeDb(rows: { date: string | null }[]) {
 function renderWhere(predicate: SQL | undefined): string {
   if (predicate === undefined) throw new Error("no where predicate captured");
   return new PgDialect().sqlToQuery(predicate).sql;
+}
+
+function makeModelDb(
+  rows: {
+    model: string | null;
+    turnCount: number;
+    inputTokens: number;
+    outputTokens: number;
+  }[],
+) {
+  const captured: { where?: SQL } = {};
+  const groupBy = mock(async () => rows);
+  const where = mock((predicate: SQL) => {
+    captured.where = predicate;
+    return { groupBy };
+  });
+  const from = mock(() => ({ where }));
+  const select = mock(() => ({ from }));
+  return { db: { select } as never, captured };
 }
 
 describe("getTokenDataStartDate", () => {
@@ -54,5 +76,21 @@ describe("getTokenDataStartDate", () => {
       expect(sql).toContain(`"${col}"`);
     }
     expect(sql).toContain("> 0");
+  });
+});
+
+describe("getAnalyticsModelDistribution", () => {
+  it("omits grouped model totals with zero turns after aggregation", async () => {
+    const { db } = makeModelDb([
+      { model: "deepseek", turnCount: 3, inputTokens: 125, outputTokens: 50 },
+      { model: "zero-turn", turnCount: 0, inputTokens: 40, outputTokens: 20 },
+      { model: null, turnCount: 5, inputTokens: 500, outputTokens: 250 },
+    ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows).toEqual([
+      { model: "deepseek", turnCount: 3, inputTokens: 125, outputTokens: 50 },
+    ]);
   });
 });

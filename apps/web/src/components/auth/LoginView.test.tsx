@@ -11,9 +11,7 @@ const idle: LoginFormState = { loading: false, error: null };
 describe("LoginView", () => {
   it("renders the default Google provider button", () => {
     render(<LoginView state={idle} onOAuth={() => {}} />);
-    expect(
-      screen.getByRole("button", { name: /continue with google/i }),
-    ).toBeDefined();
+    screen.getByRole("button", { name: /continue with google/i });
   });
 
   it("invokes onOAuth with the provider id when clicked", () => {
@@ -35,7 +33,7 @@ describe("LoginView", () => {
         onOAuth={() => {}}
       />,
     );
-    expect(screen.getByText("Nope")).toBeDefined();
+    screen.getByText("Nope");
   });
 
   it("disables the provider button but keeps its label static while loading", () => {
@@ -58,10 +56,8 @@ describe("LoginView", () => {
     );
     // Submit button reflects the in-flight state; the provider button keeps its
     // static label so the two never claim to be redirecting at once.
-    expect(screen.getByRole("button", { name: /signing in/i })).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: /continue with google/i }),
-    ).toBeDefined();
+    screen.getByRole("button", { name: /signing in/i });
+    screen.getByRole("button", { name: /continue with google/i });
   });
 
   it("marks the error region as an assertive live alert", () => {
@@ -90,9 +86,7 @@ describe("LoginView", () => {
 
   it("renders the welcome heading", () => {
     render(<LoginView state={idle} onOAuth={() => {}} />);
-    expect(
-      screen.getByRole("heading", { name: /welcome back/i }),
-    ).toBeDefined();
+    screen.getByRole("heading", { name: /welcome back/i });
   });
 
   it("submits typed credentials when the email/password form is enabled", () => {

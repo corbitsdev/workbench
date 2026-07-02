@@ -140,7 +140,7 @@ describe("ChatThreadPage", () => {
       refetch: () => {},
     };
     renderAt("/chats/t1");
-    expect(screen.getByText(/loading your chats/i)).toBeDefined();
+    screen.getByText(/loading your chats/i);
   });
 
   it("renders the chat surface for a valid thread", () => {
