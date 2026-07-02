@@ -53,6 +53,10 @@ export function ArtifactGallery({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [sort, setSort] = useState<"newest" | "oldest">("newest");
   const [ownerFilter, setOwnerFilter] = useState<string | undefined>(undefined);
+  const [creatorKindFilter, setCreatorKindFilter] = useState<
+    "user" | "agent" | undefined
+  >(undefined);
+  const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedArtifactFilter>(
     {},
   );
@@ -69,6 +73,8 @@ export function ArtifactGallery({
     query: debouncedQuery || undefined,
     sort,
     ownerPrincipalId: ownerFilter,
+    creatorKind: creatorKindFilter,
+    kind: kindFilter,
     createdAfter: advancedFilter.createdAfter,
     createdBefore: advancedFilter.createdBefore,
   });
@@ -114,6 +120,8 @@ export function ArtifactGallery({
     setInputQuery("");
     setDebouncedQuery("");
     setOwnerFilter(undefined);
+    setCreatorKindFilter(undefined);
+    setKindFilter(undefined);
     setAdvancedFilter({});
   }
 
@@ -133,6 +141,10 @@ export function ArtifactGallery({
         ownerPrincipalId={ownerFilter}
         onOwnerFilterChange={setOwnerFilter}
         owners={members}
+        creatorKind={creatorKindFilter}
+        onCreatorKindFilterChange={setCreatorKindFilter}
+        kind={kindFilter}
+        onKindFilterChange={setKindFilter}
         createdAfter={advancedFilter.createdAfter}
         createdBefore={advancedFilter.createdBefore}
         onAdvancedFilterChange={setAdvancedFilter}

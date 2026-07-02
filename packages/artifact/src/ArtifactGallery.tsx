@@ -49,6 +49,16 @@ export interface ArtifactGalleryProps {
   onOwnerFilterChange?: (ownerPrincipalId: string | undefined) => void;
   /** Tenant members for the owner filter. Dropdown shows only when two or more are provided. */
   owners?: { id: string; name: string }[];
+  /** Current creator-kind filter (human vs agent). Undefined means no filter. */
+  creatorKind?: "user" | "agent";
+  /** Called when the user changes the creator-kind filter. */
+  onCreatorKindFilterChange?: (
+    creatorKind: "user" | "agent" | undefined,
+  ) => void;
+  /** Current artifact-kind filter. Undefined means no filter. */
+  kind?: string;
+  /** Called when the user changes the kind filter. Dropdown shows only when two or more distinct kinds are present. */
+  onKindFilterChange?: (kind: string | undefined) => void;
   /** ISO date (yyyy-mm-dd) lower bound on creation; undefined means no bound. */
   createdAfter?: string;
   /** ISO date (yyyy-mm-dd) upper bound on creation; undefined means no bound. */
@@ -121,6 +131,10 @@ export function ArtifactGallery({
   ownerPrincipalId,
   onOwnerFilterChange,
   owners,
+  creatorKind,
+  onCreatorKindFilterChange,
+  kind: kindFilter,
+  onKindFilterChange,
   createdAfter,
   createdBefore,
   onAdvancedFilterChange,
@@ -156,6 +170,21 @@ export function ArtifactGallery({
 
   const tiles = artifacts.map(toGalleryArtifact);
   const isSearching = query.trim().length > 0;
+
+  // Kinds present in the current (possibly already-filtered) result set, plus
+  // the active kind filter itself so a selected-but-now-empty kind stays
+  // choosable — otherwise selecting a kind could make the option (and thus a
+  // path back to "All types") disappear from its own menu.
+  const distinctKinds = [
+    ...new Set([
+      ...artifacts.map((a) => a.kind),
+      ...(kindFilter ? [kindFilter] : []),
+    ]),
+  ].sort();
+  const CREATOR_KIND_LABELS: Record<"user" | "agent", string> = {
+    user: "Human",
+    agent: "Agent",
+  };
 
   return (
     <section className="flex min-h-full flex-col">
@@ -199,6 +228,43 @@ export function ArtifactGallery({
               {owners.map((o) => (
                 <MenuItem key={o.id} onSelect={() => onOwnerFilterChange(o.id)}>
                   {o.name}
+                </MenuItem>
+              ))}
+            </MenuContent>
+          </Menu>
+        )}
+        {onCreatorKindFilterChange && (
+          <Menu>
+            <MenuTrigger className="flex h-[34px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {creatorKind ? CREATOR_KIND_LABELS[creatorKind] : "All creators"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onCreatorKindFilterChange(undefined)}>
+                All creators
+              </MenuItem>
+              <MenuItem onSelect={() => onCreatorKindFilterChange("user")}>
+                {CREATOR_KIND_LABELS.user}
+              </MenuItem>
+              <MenuItem onSelect={() => onCreatorKindFilterChange("agent")}>
+                {CREATOR_KIND_LABELS.agent}
+              </MenuItem>
+            </MenuContent>
+          </Menu>
+        )}
+        {onKindFilterChange && distinctKinds.length > 0 && (
+          <Menu>
+            <MenuTrigger className="flex h-[34px] items-center gap-1.5 rounded-[9px] border border-border bg-transparent px-[11px] text-[12.5px] text-text outline-none focus:border-border-strong data-[state=open]:border-border-strong">
+              {kindFilter ? visualForKind(kindFilter).label : "All types"}
+              <ChevronDown size={14} className="text-text-3" />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuItem onSelect={() => onKindFilterChange(undefined)}>
+                All types
+              </MenuItem>
+              {distinctKinds.map((k) => (
+                <MenuItem key={k} onSelect={() => onKindFilterChange(k)}>
+                  {visualForKind(k).label}
                 </MenuItem>
               ))}
             </MenuContent>

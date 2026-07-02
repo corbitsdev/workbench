@@ -243,6 +243,21 @@ describe("@workbench/client request construction", () => {
       "http://localhost:4000/api/v1/artifacts",
     );
   });
+
+  it("forwards the creatorKind filter on the query string", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
+
+    await listArtifacts(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { creatorKind: "agent" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts?creatorKind=agent",
+    );
+  });
 });
 
 describe("@workbench/client baseUrl resolution", () => {
