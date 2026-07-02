@@ -140,13 +140,20 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
   const steps = new Map<string, StepTiming>();
   let runStartedAt: string | undefined;
   let runEndedAt: string | undefined;
-  // The most recent gate to await — used to attribute a SignalReceived that
-  // carries no stepId (the native event keys by signal, not always by step).
-  let lastAwaitedStep: string | undefined;
+  // The native `SignalReceived` event carries only `signalName` (no `stepId`),
+  // while `SignalAwaited` carries both. Correlate a received signal back to its
+  // awaiting step by name — never by "the most recently awaited gate", which
+  // mis-attributes the wait when two concurrent `awaitSignal` gates (independent
+  // DAG branches run concurrently) are open at once (CL-2670 review). The map
+  // holds the nearest-preceding await for each signal name; consuming it on
+  // receipt lets the same name be re-awaited by a later step.
+  const awaitedBySignalName = new Map<string, string>();
   const at = (body: Record<string, unknown>): string | undefined =>
     typeof body["at"] === "string" ? body["at"] : undefined;
   const stepId = (body: Record<string, unknown>): string | undefined =>
     typeof body["stepId"] === "string" ? body["stepId"] : undefined;
+  const signalName = (body: Record<string, unknown>): string | undefined =>
+    typeof body["signalName"] === "string" ? body["signalName"] : undefined;
   const ensure = (id: string): StepTiming => {
     let t = steps.get(id);
     if (t === undefined) {
@@ -183,18 +190,26 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
       }
       case "SignalAwaited": {
         const id = stepId(body);
+        const name = signalName(body);
         if (id !== undefined) {
           if (ensure(id).awaitedAt === undefined) ensure(id).awaitedAt = ts;
-          lastAwaitedStep = id;
+          if (name !== undefined) awaitedBySignalName.set(name, id);
         }
         break;
       }
       case "SignalReceived": {
-        const id = stepId(body) ?? lastAwaitedStep;
-        if (id === undefined) break;
+        const name = signalName(body);
+        const id =
+          name !== undefined ? awaitedBySignalName.get(name) : undefined;
+        if (id === undefined || name === undefined) break;
+        awaitedBySignalName.delete(name);
         const t = ensure(id);
         if (t.awaitedAt !== undefined && t.gateWaitMs === undefined) {
-          t.gateWaitMs = Date.parse(ts) - Date.parse(t.awaitedAt);
+          const wait = Date.parse(ts) - Date.parse(t.awaitedAt);
+          // Drop a NaN (unparseable timestamp) or negative (clock skew) wait
+          // rather than writing it into the bigint column and skewing the
+          // gate-wait aggregates (CL-2670 review).
+          if (!Number.isNaN(wait) && wait >= 0) t.gateWaitMs = wait;
         }
         break;
       }

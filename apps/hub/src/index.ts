@@ -62,7 +62,10 @@ import {
   wrapRepoStoreWithProjection,
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
-import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
+import {
+  backfillMissingWorkflowFacts,
+  projectWorkflowRunFacts,
+} from "./workflow-executor/workflow-run-facts";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
@@ -327,7 +330,12 @@ const repoStore = wrapRepoStoreWithProjection(
           tenantId: args.tenantId,
         },
       ).catch((err: unknown) => {
-        log.warn("workflow analytics fact projection failed", {
+        // ERROR, not WARN: the WRN level is invisible in Sentry, and a lost
+        // projection here permanently drops the run's facts on the live path
+        // (the projector only re-fires on a non-terminal → terminal transition).
+        // The boot backfill (backfillMissingWorkflowFacts) recovers it on next
+        // restart, but the failure must be Sentry-visible now (CL-2670 review).
+        log.error("workflow analytics fact projection failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
@@ -1195,6 +1203,29 @@ void workflowReconciler
   .then(() => workflowReconciler.reclaimOrphanedDeployments())
   .catch((err) => {
     log.warn("initial workflow reconcile failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+
+// CL-2670: backfill analytics facts for any terminal run missing a fact — a run
+// whose live projection threw (WRN, now ERROR) or that reached terminal while the
+// projector was absent. Idempotent (skips runs that already have a fact) and
+// detached so it never blocks startup.
+void backfillMissingWorkflowFacts({
+  db,
+  repoStore,
+  deploymentDomain: config.rootTenant.domain,
+})
+  .then((result) => {
+    if (result.projected > 0) {
+      log.info("workflow analytics fact backfill projected {projected} runs", {
+        projected: result.projected,
+        skipped: result.skipped,
+      });
+    }
+  })
+  .catch((err) => {
+    log.error("workflow analytics fact backfill failed", {
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });

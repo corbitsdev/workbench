@@ -162,13 +162,22 @@ function num(value: unknown): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// Date-range analytics filter on the RUN's real time (`startedAt`), NEVER the
+// `createdAt` bookkeeping column: `reprojectWorkflowFacts`/backfill re-insert
+// rows with `defaultNow()`, so after any reproject every fact's `createdAt`
+// collapses to the reproject time and a `createdAt`-based range query would
+// return all-or-nothing for historical windows (CL-2670 review).
 function rangeConditions(
   column: Parameters<typeof gte>[0],
   range: WorkflowFactDateRange | undefined,
 ) {
   return [
-    range?.startDate !== undefined ? gte(column, range.startDate) : undefined,
-    range?.endDate !== undefined ? lte(column, range.endDate) : undefined,
+    range?.startDate !== undefined
+      ? gte(column, new Date(range.startDate))
+      : undefined,
+    range?.endDate !== undefined
+      ? lte(column, new Date(range.endDate))
+      : undefined,
   ];
 }
 
@@ -194,7 +203,7 @@ export async function getWorkflowAnalytics(
     .where(
       and(
         eq(workflowRunFact.tenantId, tenantId),
-        ...rangeConditions(workflowRunFact.createdAt, range),
+        ...rangeConditions(workflowRunFact.startedAt, range),
       ),
     )
     .groupBy(workflowRunFact.kind)
@@ -222,7 +231,7 @@ export async function getWorkflowAnalytics(
     .where(
       and(
         eq(workflowStepFact.tenantId, tenantId),
-        ...rangeConditions(workflowStepFact.createdAt, range),
+        ...rangeConditions(workflowStepFact.startedAt, range),
       ),
     )
     .groupBy(workflowStepFact.kind, workflowStepFact.stepKind)

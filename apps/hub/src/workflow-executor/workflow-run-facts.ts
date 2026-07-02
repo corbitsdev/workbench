@@ -1,8 +1,9 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import type { AgentRepoStore, RepoId } from "@intx/hub-sessions";
 import {
   upsertWorkflowRunFacts,
+  workflowRunFact,
   type WorkflowFactOutcome,
   type WorkflowRunFactInput,
   type WorkflowRunFacts,
@@ -19,7 +20,7 @@ import {
   type StepKind,
 } from "./run-state-from-log";
 import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
-import { isTerminalRunStatus } from "./run-status";
+import { isTerminalRunStatus, type RunStatus } from "./run-status";
 
 // CL-2670 workflow analytics FACT projector. Given a TERMINAL run's log-derived
 // RunState, derive the flat run + step facts (duration / step-type / outcome /
@@ -54,7 +55,10 @@ function durationMs(
 ): number | undefined {
   if (startedAt === undefined || endedAt === undefined) return undefined;
   const d = Date.parse(endedAt) - Date.parse(startedAt);
-  return Number.isNaN(d) ? undefined : d;
+  // Drop a NaN (unparseable timestamp) or negative (clock skew) duration rather
+  // than persisting it into the bigint column and skewing aggregates (CL-2670
+  // review). Mirrors the gateWaitMs guard in run-state-from-log.ts.
+  return Number.isNaN(d) || d < 0 ? undefined : d;
 }
 
 // Which step phases are terminal (a stable fact). A step still in-flight or
@@ -66,6 +70,13 @@ const TERMINAL_STEP_PHASES: ReadonlySet<LogStepState["phase"]> = new Set([
 ]);
 
 // Pure: derive the run + step facts from a run's log-derived RunState.
+//
+// Step-duration semantics (CL-2670): a step fact's `durationMs` is the total
+// wall-clock time from the FIRST `StepStarted` to the step's terminal event, so
+// it includes any retry backoff between attempts. `attempt` is the FINAL attempt
+// count — retries never re-emit `StepStarted`, so the fold yields exactly one
+// fact per (runId, stepId). `gateWaitMs` (awaitSignal gates only) is the wait
+// from `SignalAwaited` to the correlated `SignalReceived`.
 export function deriveRunFacts(
   state: LogRunState,
   args: { tenantId: string; kind: string },
@@ -121,6 +132,55 @@ export async function projectWorkflowRunFacts(
   await upsertWorkflowRunFacts(deps.db, facts);
 }
 
+interface RunCoordinateRow {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  deploymentId: string | null;
+  status: RunStatus;
+}
+
+// Project a set of already-selected terminal run rows from their logs. Shared by
+// the full reproject and the boot backfill. Best-effort per run: a run whose log
+// is unreadable is skipped and logged, never fails the whole pass.
+async function projectRunRows(
+  deps: { db: HubDb; repoStore: AgentRepoStore; deploymentDomain: string },
+  rows: RunCoordinateRow[],
+  label: string,
+): Promise<{ projected: number; skipped: number }> {
+  let projected = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    if (!isTerminalRunStatus(row.status) || row.deploymentId === null) {
+      skipped += 1;
+      continue;
+    }
+    const repoId: RepoId = {
+      kind: "workflow-run",
+      id: deriveWorkflowRunRepoId({
+        deploymentId: row.deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      }),
+    };
+    try {
+      await projectWorkflowRunFacts(deps, {
+        repoId,
+        runId: row.runId,
+        kind: row.kind,
+        tenantId: row.tenantId,
+      });
+      projected += 1;
+    } catch (err) {
+      skipped += 1;
+      log.warn(`${label}: failed to project run facts`, {
+        runId: row.runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { projected, skipped };
+}
+
 // Reproject command: rebuild the facts for every TERMINAL run of a tenant (or all
 // tenants) by re-deriving from each run's log — proving the fact store is a pure
 // derived cache. Iterates the thin run index for the run coordinates, derives the
@@ -147,39 +207,46 @@ export async function reprojectWorkflowFacts(
         : inArray(workflowRunRecord.status, ["completed", "failed"]),
     );
 
-  let projected = 0;
-  let skipped = 0;
-  for (const row of rows) {
-    if (!isTerminalRunStatus(row.status)) {
-      skipped += 1;
-      continue;
-    }
-    if (row.deploymentId === null) {
-      skipped += 1;
-      continue;
-    }
-    const repoId: RepoId = {
-      kind: "workflow-run",
-      id: deriveWorkflowRunRepoId({
-        deploymentId: row.deploymentId,
-        deploymentDomain: deps.deploymentDomain,
-      }),
-    };
-    try {
-      await projectWorkflowRunFacts(deps, {
-        repoId,
-        runId: row.runId,
-        kind: row.kind,
-        tenantId: row.tenantId,
-      });
-      projected += 1;
-    } catch (err) {
-      skipped += 1;
-      log.warn("reproject: failed to project run facts", {
-        runId: row.runId,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  }
-  return { projected, skipped };
+  return projectRunRows(deps, rows, "reproject");
+}
+
+// Boot backfill: project any TERMINAL run in the thin index that is MISSING a run
+// fact (CL-2670 review). The live projector only fires on a non-terminal →
+// terminal pack transition, so a throw there — or a run that reached terminal
+// while the projector was absent — permanently loses that run's facts. This
+// idempotent sweep recovers them: it selects only terminal runs whose runId is
+// absent from `workflow_run_fact` (already-projected runs are skipped; the upsert
+// is replace-by-runId, so a stray double-project is harmless anyway). Run on hub
+// boot near the reconciler bootstrap.
+export async function backfillMissingWorkflowFacts(
+  deps: { db: HubDb; repoStore: AgentRepoStore; deploymentDomain: string },
+  args: { tenantId?: string } = {},
+): Promise<{ projected: number; skipped: number }> {
+  const existing = await deps.db
+    .select({ runId: workflowRunFact.runId })
+    .from(workflowRunFact);
+  const haveFactRunIds = existing.map((r) => r.runId);
+
+  const conditions = [
+    inArray(workflowRunRecord.status, ["completed", "failed"]),
+    ...(args.tenantId !== undefined
+      ? [eq(workflowRunRecord.tenantId, args.tenantId)]
+      : []),
+    ...(haveFactRunIds.length > 0
+      ? [notInArray(workflowRunRecord.id, haveFactRunIds)]
+      : []),
+  ];
+
+  const rows = await deps.db
+    .select({
+      runId: workflowRunRecord.id,
+      kind: workflowRunRecord.kind,
+      tenantId: workflowRunRecord.tenantId,
+      deploymentId: workflowRunRecord.deploymentId,
+      status: workflowRunRecord.status,
+    })
+    .from(workflowRunRecord)
+    .where(and(...conditions));
+
+  return projectRunRows(deps, rows, "backfill");
 }

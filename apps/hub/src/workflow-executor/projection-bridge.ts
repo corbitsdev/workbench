@@ -394,6 +394,19 @@ export async function projectWorkflowRunRepo(
         : {}),
     });
 
+    // Project the run's analytics facts on the first non-terminal → terminal
+    // transition (CL-2670), decoupled from reclaim: it fires whether or not the
+    // run owns a deployment. Fire this BEFORE `onTerminalRun` (deployment
+    // reclaim), which rm's the run's owned dirs (CL-2231): fact projection reads
+    // the run's event repo, and though persistence is retained, ordering the read
+    // ahead of any reclaim removes the race entirely (CL-2670 review).
+    if (
+      onRunFacts !== undefined &&
+      becameTerminal(existing.status, projected.status)
+    ) {
+      onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
+    }
+
     // Tear down the run's single-use deployment the moment it reaches a terminal
     // status (per-run deployment, CL-2582). Gated on the first non-terminal →
     // terminal transition so it fires exactly once, and never for `awaiting`
@@ -409,16 +422,6 @@ export async function projectWorkflowRunRepo(
         tenantId: existing.tenantId,
         runId,
       });
-    }
-
-    // Project the run's analytics facts on the SAME non-terminal → terminal
-    // transition (CL-2670), decoupled from reclaim: it fires whether or not the
-    // run owns a deployment.
-    if (
-      onRunFacts !== undefined &&
-      becameTerminal(existing.status, projected.status)
-    ) {
-      onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
     }
 
     const deployMeta: { version?: string; sha?: string } = {};
