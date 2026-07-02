@@ -27,7 +27,8 @@
           "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_workspace_members",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members"
+            "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members",
+            "workbench.argMap": "{}"
           }
         },
         "drainBehavior": "cancel",
@@ -52,15 +53,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "attio_list_tasks"
+            "@workbench/tools-attio/attio:attio_list_tasks"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: attio_list_tasks",
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_list_tasks",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_list_tasks",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_list_tasks",
             "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}"
           }
         },
@@ -89,15 +90,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "attio_get_task"
+            "@workbench/tools-attio/attio:attio_get_task"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: attio_get_task",
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_get_task",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_get_task",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_get_task",
             "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"}}"
           }
         },
@@ -117,7 +118,7 @@
           "systemPrompt": "You are a business-development task agent. You are given one Attio task and its linked record (a company or person).\n\nYour job this turn is to GATHER enough context to complete the task, then DECIDE whether you can proceed.\n\n## Grounding\nUse your read-only tools to ground yourself before deciding. Prefer, in order:\n- The Attio task and its linked record (already provided; fetch more with attio_get_record / attio_query_records / attio_search_records if useful).\n- Internal knowledge: granola_get_note / granola_list_notes for call context, artifact_read / artifact_find_by_title / artifact_list for prior collateral.\n- The web via exa_search for public company/person facts.\nGather aggressively and autonomously — only stop to ask the human when a genuine blocker remains.\n\n## Decide\nReturn ONLY a JSON object matching this shape (no prose, no code fence):\n{\n  \"status\": \"ready\" | \"need_clarification\" | \"need_more_context\",\n  \"reasoning\": string,                       // one or two sentences\n  \"questions\"?: string[],                    // REQUIRED when status is need_clarification\n  \"selectedArtifactKinds\"?: [{ \"kind\": string }],  // objects; choose the relevant subset of: cold-email, follow-up-email, twitter-post, linkedin-post, research-brief, task-explanation, gamma-presentation, blog, single-page-website\n  \"proposedTaskUpdate\"?: { \"markComplete\"?: boolean, \"note\"?: string }\n}\n\n- status=ready: you have enough to generate. Populate selectedArtifactKinds with the kinds that fit THIS task (do not select all of them by default).\n- status=need_clarification: you are blocked on something only the human knows. Put crisp, specific questions in questions[].\n- status=need_more_context: you could not gather enough from tools but no human input is needed; the run will still proceed best-effort.\n- proposedTaskUpdate: if the task should be marked done and/or a note attached to the record once the human approves, propose it here.",
           "toolFactories": [],
           "capabilities": [
-            "attio_get_task",
+            "@workbench/tools-attio/attio:attio_get_task",
             "@workbench/tools-attio/attio:attio_get_record",
             "@workbench/tools-attio/attio:attio_query_records",
             "@workbench/tools-attio/attio:attio_search_records",
@@ -864,15 +865,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "attio_create_note"
+            "@workbench/tools-attio/attio:attio_create_note"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: attio_create_note",
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_create_note",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_create_note",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_create_note",
             "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}"
           }
         },
@@ -892,15 +893,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "attio_update_task"
+            "@workbench/tools-attio/attio:attio_update_task"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: attio_update_task",
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_update_task",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_update_task",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_update_task",
             "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}"
           }
         },
