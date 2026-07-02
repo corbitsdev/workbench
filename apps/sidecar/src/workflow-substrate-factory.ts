@@ -57,7 +57,15 @@ import type {
   DirectorRegistry,
 } from "@intx/agent";
 import { createAgent, createDefaultDirectorRegistry } from "@intx/agent";
-import { createSSHSignature } from "@intx/crypto-node";
+import {
+  AdapterManifest,
+  createDependencies,
+  type AdapterRegistry,
+} from "@intx/inference";
+// WORKBENCH-LOCAL (CL-2650): the child builds its registry through the shared
+// workbench constructor, not upstream's bare `loadAdapterRegistry`.
+import { buildWorkbenchAdapterRegistry } from "./gemini-thought-signature-patch";
+import { createSSHSignature } from "@intx/crypto";
 import {
   createIsogitStore,
   type CommitSigner,
@@ -69,7 +77,7 @@ import {
   type RepoId,
   type RepoStore,
   type WorkflowRunWorkflowProcessPrincipal,
-} from "@intx/hub-sessions";
+} from "@intx/hub-sessions/substrate";
 import {
   adaptHostScheduler,
   createProxyWorkflowRunRepoStore,
@@ -144,6 +152,7 @@ export const SIDECAR_SUBSTRATE_CONFIG_KEYS = [
   // them at its boundary. Adopted in the CL-2335 pin bump.
   "SIDECAR_CACHE_MAX_BYTES",
   "SIDECAR_REGISTRY_MAX_TARBALL_BYTES",
+  "SIDECAR_ADAPTER_MANIFEST",
   // WORKBENCH-LOCAL (CL-2199): the reference sidecar's substrate
   // config carries no TENANT_ID. GTM Workbench threads it so the per-step
   // tool-context resolver can scope hub manifest/credential lookups to the
@@ -175,6 +184,14 @@ const SubstrateConfig = type({
   // numeric positive-finite contract is enforced by `parseByteCap` below.
   SIDECAR_CACHE_MAX_BYTES: "string > 0",
   SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "string > 0",
+  // JSON-encoded custom inference adapter manifest. Required: the boot
+  // edge always serializes it into `substrateEnv` (defaulting to "[]"
+  // when no custom adapters are configured), so a missing key child-side
+  // is a serialization bug and must fail loud here, exactly like the
+  // byte-cap fields. Validated as a non-empty string at this boundary;
+  // its JSON shape is re-validated against `AdapterManifest` in
+  // `parseAdapterManifest` before any module is imported.
+  SIDECAR_ADAPTER_MANIFEST: "string > 0",
   // WORKBENCH-LOCAL (CL-2199): not in upstream's SubstrateConfig — the child
   // requires TENANT_ID to scope hub manifest/credential lookups per step.
   TENANT_ID: "string > 0",
@@ -237,6 +254,47 @@ function parseStepInferenceSources(raw: string): StepInferenceSourceTable {
   if (validated instanceof type.errors) {
     throw new Error(
       `sidecar workflow-child substrate config: STEP_INFERENCE_SOURCES failed validation: ${validated.summary}`,
+    );
+  }
+  return validated;
+}
+
+/**
+ * Parse and validate the JSON-encoded `SIDECAR_ADAPTER_MANIFEST` entry
+ * the supervisor threaded through `substrateEnv` from the boot edge's
+ * `readAdapterManifest`.
+ *
+ * Trust boundary: the child's substrate config is operator-supplied
+ * (the supervisor's `Bun.spawn` env), so this re-validation is
+ * defense-in-depth at the deserialization boundary, NOT a trust
+ * upgrade. The manifest was already trusted operator config on the
+ * parent side; the same channel already carries the sidecar's signing
+ * private key, so it is not a lower-trust surface. Re-asserting the
+ * shape here keeps the typed-config contract honest rather than
+ * importing modules off an unvalidated wire value.
+ *
+ * Host contract for custom adapters: a manifest `specifier` must
+ * resolve from BOTH the sidecar's and this child's module-resolution
+ * roots (the child is a separate `bun` process spawned by the
+ * supervisor), and an adapter module MUST be import-side-effect-free —
+ * it is imported once per process by `loadAdapterRegistry`, and any
+ * top-level side effect would run independently in the parent and in
+ * every child.
+ */
+export function parseAdapterManifest(raw: string): AdapterManifest {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error(
+      "sidecar workflow-child substrate config: SIDECAR_ADAPTER_MANIFEST is not valid JSON",
+      { cause },
+    );
+  }
+  const validated = AdapterManifest(parsed);
+  if (validated instanceof type.errors) {
+    throw new Error(
+      `sidecar workflow-child substrate config: SIDECAR_ADAPTER_MANIFEST failed validation: ${validated.summary}`,
     );
   }
   return validated;
@@ -466,6 +524,17 @@ interface SidecarStepBuildEnvDeps {
    */
   resolveStepToolContext?: (req: StepInvokeRequest) => Promise<StepToolContext>;
   /**
+   * Adapter registry the step agent resolves inference adapters through.
+   * The child builds this eagerly at boot from the validated
+   * `SIDECAR_ADAPTER_MANIFEST` (built-ins merged with operator custom
+   * adapters) and the env builder sets it on `env.deps`, so a step whose
+   * source names a custom provider resolves in the child exactly as it
+   * does on the sidecar main path. Without it the step agent would fall
+   * back to `createAgent`'s built-ins-only default and a custom-provider
+   * source would fail to resolve at run time.
+   */
+  adapters: AdapterRegistry;
+  /**
    * Durable-conversation registry for the warm single-step agent (upstream
    * §3c). When present (a warm-kept single-step deploy), the env builder
    * roots the per-step scratch STABLY under `warm/<stepId>/` and swaps the
@@ -583,6 +652,12 @@ function createSidecarStepBuildEnv(
       audit,
       // `directors`: default-harness uses `createWorkbenchDirectorRegistry()`.
       directors: deps.directors,
+      // Resolve inference adapters through the child's boot-built
+      // registry (built-ins + operator custom adapters), so a
+      // custom-provider step source resolves in the child the same way
+      // it does on the sidecar main path rather than hitting
+      // `createAgent`'s built-ins-only default.
+      deps: createDependencies(deps.adapters),
     };
 
     // Supervisor-backed transport for the step agent's mail tools (OUTBOUND
@@ -817,6 +892,8 @@ export function createSidecarStepInvoker(args: {
   workflowRunRepoId?: RepoId;
   signer: CommitSigner;
   directors: DirectorRegistry;
+  /** Adapter registry the step agent resolves inference adapters through. */
+  adapters: AdapterRegistry;
   evaluateGrants: GrantEvaluator;
   /**
    * Per-step tool-context resolver. Production supplies it so each step
@@ -869,6 +946,7 @@ export function createSidecarStepInvoker(args: {
     dataDir: args.dataDir,
     signer: args.signer,
     directors: args.directors,
+    adapters: args.adapters,
     ...(args.workflowRunRepoId !== undefined
       ? { workflowRunRepoId: args.workflowRunRepoId }
       : {}),
@@ -1393,6 +1471,21 @@ export function createSidecarSubstrateFactory(
       validated.STEP_INFERENCE_SOURCES,
     );
 
+    // Build the child's adapter registry eagerly at boot from the
+    // operator-supplied manifest. `loadAdapterRegistry` imports every
+    // custom module now, so a bad specifier crashes the child loudly at
+    // construction rather than silently degrading to built-ins-only at
+    // first resolve. The closure registry the sidecar built at its own
+    // boot edge cannot cross the fork; the child rebuilds an equivalent
+    // one from the serialized-and-revalidated manifest.
+    // WORKBENCH-LOCAL (CL-2650): build through buildWorkbenchAdapterRegistry
+    // so the child gets the same BD-394 gemini thought-signature wrap as the
+    // main sidecar path — a bare loadAdapterRegistry here would silently drop
+    // the workaround for google-genai steps run in the child.
+    const childAdapterRegistry = await buildWorkbenchAdapterRegistry(
+      parseAdapterManifest(validated.SIDECAR_ADAPTER_MANIFEST),
+    );
+
     // Per-step tool-loader caps the boot edge resolved and threaded through
     // `substrateEnv`; re-validated at the child boundary (upstream CL-2335).
     const cacheMaxBytes = parseByteCap(
@@ -1567,6 +1660,7 @@ export function createSidecarSubstrateFactory(
         workflowRunRepoId,
         signer: conversationSigner,
         directors: createWorkbenchDirectorRegistry(),
+        adapters: childAdapterRegistry,
         evaluateGrants: evaluateGrantsAdapter,
         workflowAuthorize,
         onEvent,

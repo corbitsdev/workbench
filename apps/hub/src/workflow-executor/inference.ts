@@ -37,6 +37,9 @@ export async function runReasoningStep(args: {
         }
       : args.source;
 
+  // No GC policy: the repo lives in a fresh tmpdir, takes one turn, and is
+  // abandoned with the step — a write-path reclaim threshold could never be
+  // reached before the OS discards it.
   const store = await createIsogitStore(contextDir);
 
   const def = defineAgent({

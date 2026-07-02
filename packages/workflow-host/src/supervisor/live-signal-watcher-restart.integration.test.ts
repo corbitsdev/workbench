@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { type } from "arktype";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
 import type { KeyPair } from "@intx/types/runtime";
 import type { AuthorizeFn, Principal, RepoId } from "@intx/hub-sessions";
 import {
@@ -606,7 +606,7 @@ function buildSupervisorBindings(opts: {
 }): WorkflowSupervisorBindings {
   return {
     repoStore: opts.substrate,
-    signAsPrincipal: (kind) => ({
+    signAsPrincipal: async (kind) => ({
       sig: new Uint8Array(64),
       principalKind: kind,
     }),

@@ -7,7 +7,7 @@ import {
   generateKeyPair,
   createSSHSignature,
   verifySSHSignature,
-} from "@intx/crypto-node";
+} from "@intx/crypto";
 import { initRepo } from "./init";
 import type { CommitSigner } from "./signer";
 
@@ -165,9 +165,9 @@ describe("initRepo with signing callback", () => {
     const payload =
       content.substring(0, gpgsigIdx) + "\n" + content.substring(endIdx);
 
-    expect(verifySSHSignature(payload, signature, keyPair.publicKey)).toBe(
-      true,
-    );
+    expect(
+      await verifySSHSignature(payload, signature, keyPair.publicKey),
+    ).toBe(true);
   });
 
   test("points HEAD at main when signing", async () => {

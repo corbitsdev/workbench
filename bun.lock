@@ -27,7 +27,7 @@
         "@better-auth/drizzle-adapter": "^1.6.9",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
@@ -95,7 +95,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/harness": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
@@ -232,8 +232,8 @@
         "@intx/types": "workspace:*",
       },
     },
-    "interchange/packages/crypto-node": {
-      "name": "@intx/crypto-node",
+    "interchange/packages/crypto": {
+      "name": "@intx/crypto",
       "version": "0.1.2",
       "dependencies": {
         "@intx/types": "workspace:*",
@@ -282,7 +282,7 @@
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "hono": "catalog:",
       },
@@ -293,7 +293,7 @@
       "dependencies": {
         "@hono/standard-validator": "^0.2.2",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
@@ -335,7 +335,7 @@
       "version": "0.1.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/log": "workspace:*",
@@ -423,7 +423,7 @@
       "name": "@intx/mail-memory",
       "version": "0.1.2",
       "dependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
@@ -434,7 +434,7 @@
       "name": "@intx/mime",
       "version": "0.1.2",
       "dependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
@@ -450,13 +450,14 @@
       "name": "@intx/storage-isogit",
       "version": "0.1.2",
       "dependencies": {
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
       },
     },
     "interchange/packages/tool-packaging": {
@@ -548,12 +549,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
         "@intx/mime": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
@@ -722,9 +724,11 @@
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
+        "@types/bun": "1.3.9",
         "hono": "catalog:",
+        "typescript": "^5.9.0",
       },
     },
     "packages/last30days-core": {
@@ -796,13 +800,16 @@
       "name": "@workbench/storage-isogit",
       "version": "0.1.2",
       "dependencies": {
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
+        "@types/bun": "1.3.9",
+        "typescript": "^5.9.0",
       },
     },
     "packages/test-utils": {
@@ -905,7 +912,7 @@
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
@@ -1232,12 +1239,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
         "@intx/mime": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
@@ -1437,6 +1445,10 @@
         "typescript": "catalog:",
       },
     },
+  },
+  "overrides": {
+    "@types/bun": "1.3.9",
+    "bun-types": "1.3.9",
   },
   "catalog": {
     "@types/semver": "^7.7.1",
@@ -1681,7 +1693,7 @@
 
     "@intx/authz": ["@intx/authz@workspace:interchange/packages/authz"],
 
-    "@intx/crypto-node": ["@intx/crypto-node@workspace:interchange/packages/crypto-node"],
+    "@intx/crypto": ["@intx/crypto@workspace:interchange/packages/crypto"],
 
     "@intx/db": ["@intx/db@workspace:interchange/packages/db"],
 
@@ -2149,7 +2161,7 @@
 
     "@types/babel__traverse": ["@types/babel__traverse@7.28.0", "", { "dependencies": { "@babel/types": "^7.28.2" } }, "sha512-8PvcXf70gTDZBgt9ptxJ8elBeBjcLOAcOtoO/mPJjtji1+CdGbHgm77om1GrsPxsiE+uXIpNSK64UYaIwQXd4Q=="],
 
-    "@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
+    "@types/bun": ["@types/bun@1.3.9", "", { "dependencies": { "bun-types": "1.3.9" } }, "sha512-KQ571yULOdWJiMH+RIWIOZ7B2RXQGpL1YQrBtLIV3FqDcCu6FsbFUBwhdKUlCKUpS3PJDsHlJ1QKlpxoVR+xtw=="],
 
     "@types/connect": ["@types/connect@3.4.38", "", { "dependencies": { "@types/node": "*" } }, "sha512-K6uROf1LD88uDQqJCktA4yzL1YYAK6NgfsI0v/mTgyPKWsX1CnJ0XPSDhViejru1GcRkLWb8RlzFYJRqGUbaug=="],
 
@@ -2501,7 +2513,7 @@
 
     "buffers": ["buffers@0.1.1", "", {}, "sha512-9q/rDEGSb/Qsvv2qvzIzdluL5k7AaJOTrw23z9reQthrbF7is4CtlT0DXyO1oei2DCp4uojjzQ7igaSHp1kAEQ=="],
 
-    "bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
+    "bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
 
     "bundle-name": ["bundle-name@4.1.0", "", { "dependencies": { "run-applescript": "^7.0.0" } }, "sha512-tjwM5exMg6BGRI+kNmTntNsvdZS1X8BFYS6tnJ2hdH0kVxM6/eVZ2xy+FqStSWvYmtfFMDLIxurorHwDKfDz5Q=="],
 

@@ -5,6 +5,17 @@ import {
   createInternalApprovalsRouter,
 } from "./approvals";
 
+// Response.json() is Promise<unknown> under lib ESNext; assertions cast to the
+// expected body shape — a wrong shape fails the expect() at runtime.
+type ResBody = {
+  id: string;
+  status: string;
+  sessionId: string;
+  message: string;
+  error: string;
+  context: Record<string, unknown>;
+};
+
 const PRINCIPAL = {
   id: "prn-1",
   tenantId: "tenant-1",
@@ -66,7 +77,7 @@ describe("GET /tenants/:tenantId/approvals", () => {
       }),
     );
     expect(res.status).toBe(403);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("Forbidden");
   });
 
@@ -103,10 +114,10 @@ describe("GET /tenants/:tenantId/approvals", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody[];
     expect(Array.isArray(json)).toBe(true);
     expect(json).toHaveLength(1);
-    expect(json[0].id).toBe("apr-1");
+    expect(json[0]?.id).toBe("apr-1");
   });
 });
 
@@ -167,7 +178,7 @@ describe("POST /tenants/:tenantId/approvals/:approvalId/approve", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.id).toBe("apr-1");
     expect(json.status).toBe("approved");
     // The update was called once, confirming the endpoint proceeded past the
@@ -263,7 +274,7 @@ describe("POST /tenants/:tenantId/approvals/:approvalId/reject", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.status).toBe("rejected");
     expect(json.message).toBe("Not allowed");
     expect(setValues[0]).toMatchObject({
@@ -394,7 +405,7 @@ describe("POST /tenants/:tenantId/approvals/:approvalId/reject", () => {
       }),
     );
     expect(res.status).toBe(409);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("Already resolved");
   });
 });
@@ -495,7 +506,7 @@ describe("createInternalApprovalsRouter", () => {
       ),
     );
     expect(res.status).toBe(400);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("Invalid JSON");
   });
 
@@ -512,7 +523,7 @@ describe("createInternalApprovalsRouter", () => {
       ),
     );
     expect(res.status).toBe(400);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("Missing required fields");
   });
 
@@ -560,7 +571,7 @@ describe("createInternalApprovalsRouter", () => {
       ),
     );
     expect(res.status).toBe(201);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.id).toBe("apr-new");
     expect(json.context).toEqual({ foo: "bar" });
     expect(insertValues[0]).toMatchObject({
@@ -633,7 +644,7 @@ describe("createInternalApprovalsRouter", () => {
       ),
     );
     expect(res.status).toBe(400);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.error).toContain("tenantId");
   });
 
@@ -684,7 +695,7 @@ describe("createInternalApprovalsRouter", () => {
       ),
     );
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as ResBody;
     expect(json.id).toBe("apr-1");
     expect(json.sessionId).toBe("sess-1");
   });

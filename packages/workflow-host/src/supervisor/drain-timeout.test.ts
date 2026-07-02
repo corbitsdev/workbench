@@ -59,7 +59,7 @@ function createStubRepoStore(opts: {
       const existing = new Map<string, Uint8Array>();
       const files = await args.merge(existing);
       opts.onWrite?.({ principal, repoId, ref, files });
-      return { commitSha: "deadbeefcafef00d" };
+      return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; only the subset the accumulator invokes is implemented
@@ -77,12 +77,15 @@ function createStubRepoStore(opts: {
 }
 
 function makeSignSpy(): {
-  signAsPrincipal: (kind: string, payload: Uint8Array) => SignedPayload;
+  signAsPrincipal: (
+    kind: string,
+    payload: Uint8Array,
+  ) => Promise<SignedPayload>;
   calls: { kind: string; payload: Uint8Array }[];
 } {
   const calls: { kind: string; payload: Uint8Array }[] = [];
   return {
-    signAsPrincipal: (kind, payload) => {
+    signAsPrincipal: async (kind, payload) => {
       calls.push({ kind, payload });
       const sig = new Uint8Array(64);
       sig.fill(7);

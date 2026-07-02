@@ -16,6 +16,7 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
 type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
 import { createWarmAgentCache } from "@workbench/workflow-host";
@@ -27,6 +28,7 @@ import {
   createSidecarStepInvoker,
   createStepInferenceSourceResolver,
   createStepToolContextResolver,
+  parseAdapterManifest,
 } from "./workflow-substrate-factory";
 import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -184,6 +186,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "test-signature",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => stubAgent,
     });
@@ -228,6 +231,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors,
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (_def, env) => {
         capturedEnv = env;
@@ -259,6 +263,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -285,6 +290,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -339,6 +345,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -382,6 +389,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       agentFactory: async () => {
@@ -471,6 +479,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (def, env) => {
         capturedDef = def as AgentDefinition<BaseEnv>;
@@ -593,6 +602,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       agentFactory: async () => stubAgent,
@@ -712,6 +722,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => stubAgent,
     });
@@ -876,6 +887,7 @@ describe("warm-keep single-step durability", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       warmCache,
       onRunBoundary: async (key: string) => {
@@ -918,6 +930,7 @@ describe("warm-keep single-step durability", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         buildCount += 1;
@@ -982,6 +995,7 @@ describe("supervisor-backed outbound transport wiring", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       outboundMailBridge: bridge,
       mailboxAddress: "ins_ses_warm@example.com",
@@ -1043,6 +1057,7 @@ describe("supervisor-backed outbound transport wiring", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (_def, env) => {
         capturedEnv = env as BaseEnv & { transport?: unknown };
@@ -1108,7 +1123,7 @@ function createOnDiskSubstrate(repoDir: string): RepoStore {
         await fs.mkdir(path.dirname(dest), { recursive: true });
         await fs.writeFile(dest, Buffer.from(bytes));
       }
-      return { commitSha: "on-disk-sha" };
+      return { commitSha: "on-disk-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -1206,6 +1221,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       workflowRunRepoId: repoId,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       // Wiring a real durableConversation is what selects the warm-path env
@@ -1273,5 +1289,41 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       RUN_ID,
     );
     await expect(fs.stat(runRoot)).rejects.toThrow();
+  });
+});
+
+// The child-side deserialization boundary for the operator adapter manifest:
+// the supervisor threads the boot edge's validated manifest through
+// `substrateEnv` as JSON, and the child must reject a corrupted wire value
+// loudly before `loadAdapterRegistry` would import() anything off it.
+describe("parseAdapterManifest", () => {
+  test("parses a valid manifest", () => {
+    const manifest = [
+      { provider: "acme", specifier: "@acme/adapter", export: "createAdapter" },
+    ];
+    expect(parseAdapterManifest(JSON.stringify(manifest))).toEqual(manifest);
+  });
+
+  test("parses the empty manifest (the no-custom-adapters default)", () => {
+    expect(parseAdapterManifest("[]")).toEqual([]);
+  });
+
+  test("throws loudly on malformed JSON", () => {
+    expect(() => parseAdapterManifest("{not json")).toThrow(
+      "sidecar workflow-child substrate config: SIDECAR_ADAPTER_MANIFEST is not valid JSON",
+    );
+  });
+
+  test("throws with the validation summary on a schema-violating entry", () => {
+    const invalid = JSON.stringify([{ provider: "acme" }]);
+    expect(() => parseAdapterManifest(invalid)).toThrow(
+      /SIDECAR_ADAPTER_MANIFEST failed validation:.*specifier/s,
+    );
+  });
+
+  test("throws on a non-array root", () => {
+    expect(() => parseAdapterManifest('{"provider":"x"}')).toThrow(
+      "SIDECAR_ADAPTER_MANIFEST failed validation",
+    );
   });
 });

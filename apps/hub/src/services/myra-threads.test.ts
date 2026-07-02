@@ -13,6 +13,7 @@ let collectorEvents: { type: string }[] = [];
 let agentReply = "Pricing Deep Dive";
 let agentShouldThrow = false;
 let lastIsogitDir: string | null = null;
+let lastIsogitGcPolicy: unknown = null;
 
 function resetTitleMocks() {
   lastCreateEventCollectorConfig = null;
@@ -20,12 +21,14 @@ function resetTitleMocks() {
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
   lastIsogitDir = null;
+  lastIsogitGcPolicy = null;
   ancestorChainResult = ["tn-global"];
 }
 
 mock.module("@workbench/storage-isogit", () => ({
-  createIsogitStore: mock((dir: string) => {
+  createIsogitStore: mock((dir: string, _signer?: unknown, gc?: unknown) => {
     lastIsogitDir = dir;
+    lastIsogitGcPolicy = gc ?? null;
     return Promise.resolve({});
   }),
 }));
@@ -107,7 +110,10 @@ mock.module("@intx/db", () => ({
 
 mock.module("../config", () => ({
   getConfig: () => ({
-    hub: { dataDir: "/tmp/myra-title-test" },
+    hub: {
+      dataDir: "/tmp/myra-title-test",
+      agentGc: { packThreshold: 16, looseThreshold: 512, warnBytes: 1024 },
+    },
     rootTenant: { slug: "global", domain: "global.test" },
   }),
 }));
@@ -890,6 +896,15 @@ describe("generateMyraThreadTitle", () => {
     expect(lastIsogitDir).toBe(
       "/tmp/myra-title-test/myra-title/tn-global/prn-member",
     );
+    // The durable title repo must reclaim on the write path (CL-2663): the
+    // configured hub thresholds reach the store, with keep-history retention
+    // since the audit trail is durable user data.
+    expect(lastIsogitGcPolicy).toEqual({
+      packThreshold: 16,
+      looseThreshold: 512,
+      warnBytes: 1024,
+      retention: "keep-history",
+    });
   });
 
   it("returns null when firstMessage is blank without touching the db", async () => {

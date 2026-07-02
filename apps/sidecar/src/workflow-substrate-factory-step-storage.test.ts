@@ -12,6 +12,7 @@ import path from "node:path";
 
 import type { RepoId } from "@intx/hub-sessions";
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
@@ -217,6 +218,7 @@ describe("createSidecarStepInvoker workspace placement (cold path)", () => {
         workflowRunRepoId: REPO_ID,
         signer: async () => "sig",
         directors: createDefaultDirectorRegistry(),
+        adapters: createBuiltinRegistry(),
         evaluateGrants: allowAll,
         agentFactory: async (_def, env) => {
           workdir = env.workdir;

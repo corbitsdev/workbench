@@ -31,7 +31,7 @@ import { dirname, join as pathJoin } from "node:path";
 
 import { describe, test, expect } from "bun:test";
 import { createInMemoryTransport } from "@intx/mail-memory";
-import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import type { AgentDeployFrame } from "@intx/types/sidecar";
 import type { SubprocessSpawner } from "@workbench/workflow-host";
@@ -121,7 +121,7 @@ describe("deploy-failure registry leak", () => {
         typeof createSidecarDeployRouter
       >[0]["repoStore"],
       signingKeySeed: new Uint8Array(32),
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -193,7 +193,10 @@ describe("deploy-failure registry leak", () => {
           mkdirSync(dirname(full), { recursive: true });
           writeFileSync(full, contents);
         }
-        return Promise.resolve({ commitSha: "stub-sha" });
+        return Promise.resolve({
+          commitSha: "stub-sha",
+          newlyTerminalRuns: [],
+        });
       },
     };
 
@@ -205,7 +208,7 @@ describe("deploy-failure registry leak", () => {
 
       repoStore: repoStoreStub as RepoStore,
       signingKeySeed: new Uint8Array(32),
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         registry.record(deploymentId, agentAddress);
       },
@@ -228,6 +231,7 @@ describe("deploy-failure registry leak", () => {
         SIDECAR_TOKEN: "tok",
         SIDECAR_CACHE_MAX_BYTES: "1000000",
         SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
         PATH: "/usr/bin",
       },
       multistepSubprocessSpawner: failingSpawner,

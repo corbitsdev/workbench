@@ -5,7 +5,8 @@ import path from "node:path";
 
 import { type } from "arktype";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
+import { hexDecode, hexEncode } from "@intx/types";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -36,7 +37,6 @@ import {
   SignedEnvelope,
   generateHmacKey,
   generateChannelId,
-  hexDecode,
   type FrameReader,
   type NdjsonReader,
   type NdjsonWriter,
@@ -302,7 +302,7 @@ function createStubRepoStore(opts: {
         }
         committed.set(key, next);
       }
-      return { commitSha: "deadbeefcafef00d" };
+      return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; only the subset the supervisor invokes is implemented and a missing method throws via the proxy below
@@ -501,7 +501,7 @@ async function buildBindings(opts: {
   });
   return {
     repoStore,
-    signAsPrincipal: (kind, payload) => opts.signSpy(kind, payload),
+    signAsPrincipal: async (kind, payload) => opts.signSpy(kind, payload),
     mailBus: opts.mailBus,
     subprocessSpawner: opts.spawner,
     binaryPath: "/fake/bin/workflow-child",
@@ -666,7 +666,7 @@ describe("createWorkflowSupervisor", () => {
       type: "ready",
       data: {
         childPid: 4321,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
 
@@ -880,7 +880,7 @@ describe("createWorkflowSupervisor", () => {
       type: "ready",
       data: {
         childPid: 9999,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;
@@ -1089,7 +1089,7 @@ describe("createWorkflowSupervisor", () => {
       type: "ready",
       data: {
         childPid: 8888,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;
@@ -1579,7 +1579,7 @@ describe("createWorkflowSupervisor", () => {
       type: "ready",
       data: {
         childPid: 7777,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;
@@ -1736,7 +1736,7 @@ describe("createWorkflowSupervisor", () => {
       type: "ready",
       data: {
         childPid: 6666,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;
@@ -1915,7 +1915,7 @@ describe("assembleCredentialsSnapshot", () => {
       { resource: "alpha-thing", action: "read" },
     ]);
     expect(snapshot.steps[0]?.contentHash).toBe(
-      hashGrants([{ resource: "alpha-thing", action: "read" }]),
+      await hashGrants([{ resource: "alpha-thing", action: "read" }]),
     );
     expect(snapshot.steps[1]?.stepId).toBe("beta");
     expect(snapshot.steps[1]?.grants).toHaveLength(2);
@@ -1936,7 +1936,7 @@ describe("assembleCredentialsSnapshot", () => {
     });
     expect(snapshot.steps).toHaveLength(1);
     expect(snapshot.steps[0]?.grants).toEqual([]);
-    expect(snapshot.steps[0]?.contentHash).toBe(hashGrants([]));
+    expect(snapshot.steps[0]?.contentHash).toBe(await hashGrants([]));
   });
 
   test("a malformed grants file fails loudly rather than silently treating it as empty", async () => {
@@ -1977,7 +1977,7 @@ describe("commitCancelRequested (low-level)", () => {
       origin: "self",
       reason: "tests pass",
       at: "2026-01-01T00:00:00.000Z",
-      signAsPrincipal: (kind, payload) => {
+      signAsPrincipal: async (kind, payload) => {
         expect(kind).toBe("supervisor");
         const sig = new Uint8Array(64);
         // Embed the payload length so we can verify it was signed.
@@ -2029,7 +2029,7 @@ describe("IPC integration smoke", () => {
       type: "ready",
       data: {
         childPid: 1,
-        childPublicKey: Buffer.from(keyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(keyPair.publicKey),
       },
     });
     expect(upstream.flushed()).toHaveLength(1);
@@ -2167,7 +2167,7 @@ describe("supervisor inbox FIFO dispatch loop", () => {
       type: "ready",
       data: {
         childPid: 11111,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;

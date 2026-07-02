@@ -51,17 +51,18 @@
 import { type } from "arktype";
 
 import { getLogger } from "@intx/log";
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
+import { base64Decode, hexEncode } from "@intx/types";
 
 import type {
   Principal,
   RepoId,
   RepoStore as SubstrateRepoStore,
-} from "@intx/hub-sessions";
+} from "@intx/hub-sessions/substrate";
 import {
   readProcessingEntry,
   workflowDefinitionEnvelopeSchema,
-} from "@intx/hub-sessions";
+} from "@intx/hub-sessions/substrate";
 import {
   extractPartByPath,
   parseHeaderSection,
@@ -97,7 +98,6 @@ import { createWorkflowRunBlobSubstrate } from "../adapters/blob-substrate";
 import {
   createControlChannelSender,
   createEventChannelSender,
-  hexEncode,
   receiveControlChannel,
   type ControlChannelSender,
   type ControlPayload,
@@ -310,7 +310,7 @@ export interface RunWorkflowChildBindings {
    * in its own address space, signs every upstream control frame
    * with it, and publishes the public half in the `ready` frame so
    * the supervisor can verify subsequent upstream frames. Production
-   * wires this against `@intx/crypto-node`'s `generateKeyPair`;
+   * wires this against `@intx/crypto`'s `generateKeyPair`;
    * tests inject a deterministic factory so they can assert on the
    * published key. The supervisor's private key is NEVER threaded
    * into the child -- the child holds only its own private half.
@@ -1498,7 +1498,7 @@ async function resolveTriggerPayload(args: {
       `workflow-child trigger.fire: processing entry for messageId ${args.messageId} carries no inlined rawMessage; the supervisor must inline the inbound mail bytes for the child to deliver them as the step input`,
     );
   }
-  const raw = new Uint8Array(Buffer.from(rawMessageBase64, "base64"));
+  const raw = base64Decode(rawMessageBase64);
   return extractConversationText(raw, args.messageId);
 }
 

@@ -7,14 +7,13 @@
 // Any logic that would benefit a future alternative-sidecar
 // implementation lives inside `@intx/workflow-host`, not here.
 
-import { createHash, createPublicKey, sign as nodeSign } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join as pathJoin } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { type } from "arktype";
 
-import { importPrivateKeyBytes } from "@intx/crypto-node";
+import { derivePublicKeyBytes, signEd25519 } from "@intx/crypto";
 import { getLogger } from "@intx/log";
 import type { HubTransport } from "@intx/mail-memory";
 import {
@@ -52,6 +51,7 @@ import {
   type TrivialLaunch,
   type WorkflowSupervisor,
 } from "@workbench/workflow-host";
+import { hexEncode } from "@intx/types";
 import {
   parseInferenceEvent,
   type CryptoProvider,
@@ -740,9 +740,15 @@ function canonicalJsonStringify(value: unknown): string {
  * round-trip the hub for a hash the orchestrator's hand-off task will
  * also derive deterministically from the same canonical form.
  */
-export function computeWireDefinitionHash(definition: unknown): string {
+export async function computeWireDefinitionHash(
+  definition: unknown,
+): Promise<string> {
   const canonical = canonicalJsonStringify(definition);
-  return createHash("sha256").update(canonical, "utf8").digest("hex");
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonical),
+  );
+  return hexEncode(new Uint8Array(digest));
 }
 
 /**
@@ -751,20 +757,10 @@ export function computeWireDefinitionHash(definition: unknown): string {
  * with this key; the multi-step branch surfaces it to the link so the
  * hub records the verifying key for the deployment's signed events.
  */
-function derivePrincipalPublicKeyHex(signingKeySeed: Uint8Array): string {
-  const privateKey = importPrivateKeyBytes(signingKeySeed);
-  const publicKey = createPublicKey(privateKey);
-  // Node exports Ed25519 SPKI in DER; the raw 32-byte point is the
-  // last 32 bytes of the structure (RFC 8410). The export keeps this
-  // module independent of `exportPublicKeyBytes` from `@intx/crypto-node`,
-  // which is not part of the package's public surface.
-  const der = publicKey.export({ type: "spki", format: "der" });
-  if (der.length < 32) {
-    throw new Error(
-      `sidecar deploy router: unexpected SPKI DER length ${String(der.length)} for Ed25519 public key`,
-    );
-  }
-  return der.subarray(der.length - 32).toString("hex");
+async function derivePrincipalPublicKeyHex(
+  signingKeySeed: Uint8Array,
+): Promise<string> {
+  return hexEncode(await derivePublicKeyBytes(signingKeySeed));
 }
 
 // WORKBENCH-LOCAL (CL-2356): narrows warm-keep (a documented T2 duck-typed
@@ -808,7 +804,7 @@ export function createSidecarDeployRouter(deps: {
   /**
    * Per-agent crypto factory. Receives the agent's raw key pair and
    * returns a `CryptoProvider` bound to it (production wires
-   * `@intx/crypto-node`'s `createNodeCrypto`). The multi-step branch
+   * `@intx/crypto`'s `createEd25519Crypto`). The multi-step branch
    * uses this to register the spawned single-step agent's signing key on
    * the host transport before `spawn()`, so the supervisor's outbound
    * mail path (`MailBusBindings.sendOutbound`) signs the agent's replies
@@ -980,9 +976,15 @@ export function createSidecarDeployRouter(deps: {
    */
   consumedRetentionMs?: number;
 }): DeployRouter {
-  const principalPublicKeyHex = derivePrincipalPublicKeyHex(
-    deps.signingKeySeed,
-  );
+  // Validate the signing seed at construction so a malformed key fails
+  // sidecar boot rather than the first multi-step deploy, where the
+  // public key is derived from it (`derivePrincipalPublicKeyHex`). The
+  // seed also signs every workflow-run event via the supervisor.
+  if (deps.signingKeySeed.length !== 32) {
+    throw new Error(
+      `sidecar deploy router: Ed25519 signing seed must be 32 bytes, got ${deps.signingKeySeed.length}`,
+    );
+  }
   const publishInferenceEvent =
     deps.publishWorkflowInferenceEvent ??
     ((
@@ -1092,7 +1094,9 @@ export function createSidecarDeployRouter(deps: {
     let deploymentRegistered = false;
     let agentTransportRegistered = false;
     try {
-      const definitionHash = computeWireDefinitionHash(projection.definition);
+      const definitionHash = await computeWireDefinitionHash(
+        projection.definition,
+      );
 
       // Per-deployment substrate-config keys the workflow-substrate-factory
       // validator requires (`SIDECAR_SUBSTRATE_CONFIG_KEYS` /
@@ -1454,7 +1458,9 @@ export function createSidecarDeployRouter(deps: {
       routersRegistered = true;
 
       claimedSlugSucceeded = true;
-      return { publicKey: principalPublicKeyHex };
+      return {
+        publicKey: await derivePrincipalPublicKeyHex(deps.signingKeySeed),
+      };
     } finally {
       if (!claimedSlugSucceeded) {
         // Unwind in reverse registration order so each step undoes
@@ -1895,10 +1901,9 @@ export function createSidecarWorkflowSupervisor(
   };
   const supervisor = createWorkflowSupervisor({
     repoStore: opts.repoStore,
-    signAsPrincipal: (kind, payload) => {
-      const key = importPrivateKeyBytes(opts.signingKeySeed);
-      const sig = nodeSign(null, payload, key);
-      return { sig: new Uint8Array(sig), principalKind: kind };
+    signAsPrincipal: async (kind, payload) => {
+      const sig = await signEd25519(opts.signingKeySeed, payload);
+      return { sig, principalKind: kind };
     },
     mailBus,
     subprocessSpawner: opts.subprocessSpawner ?? defaultSubprocessSpawner,

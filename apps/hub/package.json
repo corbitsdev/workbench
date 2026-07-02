@@ -19,7 +19,7 @@
     "@better-auth/drizzle-adapter": "^1.6.9",
     "@intx/agent": "workspace:*",
     "@intx/authz": "workspace:*",
-    "@intx/crypto-node": "workspace:*",
+    "@intx/crypto": "workspace:*",
     "@intx/db": "workspace:*",
     "@intx/hub-api": "workspace:*",
     "@intx/hub-common": "workspace:*",

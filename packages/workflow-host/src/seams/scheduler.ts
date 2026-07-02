@@ -38,8 +38,12 @@
 
 import { type } from "arktype";
 
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
-import { subscribeKind } from "@intx/hub-sessions";
+import type {
+  Principal,
+  RepoId,
+  RepoStore,
+} from "@intx/hub-sessions/substrate";
+import { subscribeKind } from "@intx/hub-sessions/substrate";
 
 /**
  * Substrate-shape envelope for the workflow-event blob committed to
@@ -386,7 +390,10 @@ type RawEventRecord = {
 /**
  * Walk the workflow-run repo's `runs/<runId>/events/<seq>.json`
  * subtree at the current ref tip and return every event blob's
- * payload, attributed to its run.
+ * payload, attributed to its run. A terminated run whose events have
+ * been compacted into a combined `events.jsonl` (no `events/` subtree)
+ * is skipped: this walk recovers pending timers, and a terminated run
+ * has none.
  */
 async function enumerateEventBlobs(
   opts: SchedulerOpts,

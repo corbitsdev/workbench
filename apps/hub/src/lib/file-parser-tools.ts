@@ -1,13 +1,13 @@
 import type { AgentTool } from "@intx/agent";
-import type { DB } from "@intx/db";
 import { and, eq } from "drizzle-orm";
 import { PARSE_FILE_DEFINITION } from "@workbench/tools-fileparser";
 import { artifact } from "../db/schema";
 import { parseDocument } from "../services/file-parser";
 import type { ContextToolEntry } from "./tool-registry";
+import type { HubDb } from "../db";
 
 type FileParserToolContext = {
-  db: DB["db"];
+  db: HubDb;
   tenantId: string;
   principalId: string;
   agentId: string;

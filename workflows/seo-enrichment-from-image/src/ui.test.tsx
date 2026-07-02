@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import type { RunState, StepState } from "@intx/workflow";

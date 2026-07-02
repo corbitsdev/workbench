@@ -33,7 +33,8 @@ import path from "node:path";
 
 import { type } from "arktype";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -196,7 +197,7 @@ function createStubRepoStore(baseDir: string): RepoStore {
       return path.join(baseDir, repoId.kind, repoId.id);
     },
     async writeTreePreservingPrefix(_principal, _repoId, _ref, _args) {
-      return { commitSha: "deadbeefcafef00d" };
+      return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; missing methods surface as a precise failure via the proxy
@@ -536,7 +537,7 @@ async function boot(opts: { prefix: string }): Promise<
 
   const bindings: WorkflowSupervisorBindings = {
     repoStore,
-    signAsPrincipal: (): SignedPayload => ({
+    signAsPrincipal: async (): Promise<SignedPayload> => ({
       sig: new Uint8Array(64),
       principalKind: "supervisor",
     }),
@@ -588,7 +589,7 @@ async function boot(opts: { prefix: string }): Promise<
   while (!mailBus.registered().includes(deploymentMailAddress)) {
     await new Promise((r) => setTimeout(r, 1));
   }
-  const childPublicKey = Buffer.from(childIpcKeyPair.publicKey).toString("hex");
+  const childPublicKey = hexEncode(childIpcKeyPair.publicKey);
   return {
     supervisor,
     childSender,

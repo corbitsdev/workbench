@@ -44,6 +44,9 @@ import type {
 const logger = getLogger(["interchange", "hub-agent", "ws"]);
 
 const DEFAULT_PING_INTERVAL_MS = 30_000;
+// WORKBENCH-LOCAL (CL-2405): exponential reconnect backoff with jitter,
+// sustained-failure WARN escalation, and a configurable outbound queue —
+// upstream uses a fixed 3s delay and a fixed 1024-frame queue.
 // Initial/floor reconnect delay. Kept short so a brief hub absence (a
 // Railway redeploy window) reconnects near-instantly rather than idling
 // a fixed multi-second delay.
@@ -243,6 +246,7 @@ export type HubLinkConfig = {
    */
   drainInboundRouter?: DrainInboundRouter;
   pingIntervalMs?: number;
+  // WORKBENCH-LOCAL (CL-2405): backoff/queue tuning options.
   /** Initial/floor reconnect delay; backoff grows from here (default 300ms). */
   reconnectDelayMs?: number;
   /** Upper bound the exponential backoff is clamped to (default 3000ms). */
@@ -311,6 +315,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   let pingTimer: ReturnType<typeof setInterval> | null = null;
   let cancelReconnect: (() => void) | null = null;
   let lastPongAt = 0;
+  // WORKBENCH-LOCAL (CL-2405): backoff state + scheduleReconnectOnce.
   // Backoff state, persisted across reconnect attempts and reset on a
   // successful `open`. `reconnectAttempt` drives the exponential delay;
   // `firstFailureAt` anchors the sustained-failure escalation window;
@@ -580,7 +585,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     logger.info`Undeployed agent ${frame.agentAddress}: ${frame.reason}`;
   }
 
-  function handleChallenge(frame: ChallengeFrame): void {
+  async function handleChallenge(frame: ChallengeFrame): Promise<void> {
     const responses: { address: string; signature: string }[] = [];
 
     for (const { address, nonce } of frame.challenges) {
@@ -590,7 +595,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
       payload.set(nonceBytes);
       payload.set(addressBytes, nonceBytes.length);
 
-      const sig = keyStore.signChallenge(address, payload);
+      const sig = await keyStore.signChallenge(address, payload);
       if (sig === null) {
         logger.warn`No key pair for challenged address ${address}`;
         continue;
@@ -1011,7 +1016,7 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         await handleAgentUndeploy(frame);
         break;
       case "challenge":
-        handleChallenge(frame);
+        await handleChallenge(frame);
         break;
       case "pong":
         lastPongAt = Date.now();
@@ -1073,6 +1078,8 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
     ws = new WebSocket(hubURL);
 
+    // WORKBENCH-LOCAL (CL-2405): open/close/error handlers reset backoff and
+    // demote redeploy-window noise to debug.
     // Whether this particular socket ever reached `open`. Distinguishes a
     // real established-then-dropped disconnect (worth an info log) from a
     // connect attempt that never succeeded (expected during a redeploy
@@ -1104,6 +1111,23 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
       packReceiver.reset();
       packSender.cancelAll("Connection lost");
+
+      // Register the connection for routing before the restore loop runs. The
+      // hub learns of a sidecar only from a register/reconnect frame, and
+      // connections is the map sendAgentDeploy consults to route a new
+      // provision. An empty-address register here populates that map
+      // immediately, so a provision arriving during restore routes instead of
+      // hitting an empty map and failing with "No sidecar available". The
+      // address list must stay empty: carrying addresses through register
+      // writes addressIndex with no challenge and discards disconnect queues,
+      // so restored sessions enter addressIndex through the challenged
+      // reconnect frame below instead.
+      send({
+        type: "register",
+        sidecarId,
+        token,
+        agentAddresses: [],
+      });
 
       void (async () => {
         try {
@@ -1137,12 +1161,24 @@ export function createHubLink(config: HubLinkConfig): HubLink {
               logger.info`Sent reconnect with ${String(restored.length)} agent(s)`;
             }
           } else {
-            send({
-              type: "register",
-              sidecarId,
-              token,
-              agentAddresses: sessions.getAddresses(),
-            });
+            // Reached only when nothing was restored from disk. The
+            // empty register on open already established routability, so
+            // skip a second empty frame. Any address present here belongs
+            // to an agent provisioned during the restore window —
+            // provisions route on that open register — which the hub
+            // already placed in addressIndex when it routed the deploy.
+            // Re-announcing those is consistent with that entry, not an
+            // unchallenged write of a disk-restored address; those take
+            // the reconnect branch above.
+            const addresses = sessions.getAddresses();
+            if (addresses.length > 0) {
+              send({
+                type: "register",
+                sidecarId,
+                token,
+                agentAddresses: addresses,
+              });
+            }
           }
 
           flush();

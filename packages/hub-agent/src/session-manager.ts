@@ -83,7 +83,7 @@ export type SessionManagerConfig = {
   /**
    * Per-agent crypto factory. Receives the agent's raw key pair and
    * returns a CryptoProvider bound to it. Keeps the package free of
-   * `@intx/crypto-node`.
+   * `@intx/crypto`.
    */
   createAgentCrypto: (keyPair: KeyPair) => CryptoProvider;
   onEvent: SessionEventSink;
@@ -95,7 +95,21 @@ export type SessionManagerConfig = {
    * distribution can omit this.
    */
   onDeployApplyError?: DeployApplyErrorSink;
+  /**
+   * Maximum number of agents whose sessions `restoreSessions` restores
+   * concurrently. Restore work is per-agent isolated (per-agent git dir,
+   * per-address repo lock), so agents restore in parallel up to this
+   * bound and a single slow or wedged agent no longer gates the rest.
+   * Defaults to `DEFAULT_RESTORE_CONCURRENCY`.
+   */
+  restoreConcurrency?: number;
 };
+
+/**
+ * Default `restoreConcurrency`: how many agents `restoreSessions`
+ * restores in parallel when the caller does not override it.
+ */
+const DEFAULT_RESTORE_CONCURRENCY = 4;
 
 export type ProvisionResult = {
   publicKey: string;
@@ -150,7 +164,7 @@ export type SessionManager = {
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => Promise<boolean>,
   ): Promise<void>;
   /**
    * Materialize an asset pack at `<workspaceRoot>/<mountPath>/` for the
@@ -203,7 +217,13 @@ export function createSessionManager(
     onEvent,
     onConnectorStateChanged,
     onDeployApplyError,
+    restoreConcurrency = DEFAULT_RESTORE_CONCURRENCY,
   } = config;
+  if (!Number.isInteger(restoreConcurrency) || restoreConcurrency < 1) {
+    throw new Error(
+      `createSessionManager: restoreConcurrency must be a positive integer; got ${String(restoreConcurrency)}`,
+    );
+  }
 
   const sessions = new Map<string, LiveSession>();
   const provisioned = new Map<string, ProvisionedAgent>();
@@ -247,28 +267,66 @@ export function createSessionManager(
   // before the handler reads it.
   const lastCheckpointHashes = new Map<string, string>();
 
-  // Per-agent promise chain to serialize mail commits and avoid concurrent
-  // git operations on the same repository.
-  const mailCommitQueues = new Map<string, Promise<void>>();
+  // Per-agent promise chain that serializes the operations against an agent's
+  // on-disk directory that can be in flight during a live session -- mail-audit
+  // commits, state-pack and deploy-ref reads, and deploy/asset-pack applies all
+  // run one-at-a-time per agent. The chain exists for teardown: drainRepoOps
+  // awaits it before deleting the directory, so an operation that was valid
+  // when it started never runs against a path that has since vanished
+  // underneath it. Serializing additionally avoids corruption for the members
+  // that share the agent's `.git/` object store (mail commits, state-pack and
+  // deploy-ref reads, deploy-pack applies), which isogit, lacking a
+  // cross-process lock, would otherwise let interleave. Asset-pack applies are
+  // on the chain only for the teardown reason -- they materialize into a
+  // workspace subtree, not the agent repo's object store.
+  const repoOpQueues = new Map<string, Promise<void>>();
+
+  function runRepoOp<T>(
+    agentAddress: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const prev = repoOpQueues.get(agentAddress) ?? Promise.resolve();
+    // Run fn once prev settles. prev is either the initial Promise.resolve()
+    // or the rejection-swallowing tail stored below, so it never rejects;
+    // passing fn as both the fulfilled and rejected handler keeps this op
+    // independent of that detail and guarantees fn runs exactly once after the
+    // previous op completes.
+    const result = prev.then(fn, fn);
+    // Store a rejection-swallowing tail so one failed op does not poison the
+    // chain for the next caller. The caller still observes this op's own
+    // result or rejection through `result`.
+    repoOpQueues.set(
+      agentAddress,
+      result.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return result;
+  }
 
   function enqueueMailCommit(
     agentAddress: string,
     fn: () => Promise<void>,
   ): void {
-    const prev = mailCommitQueues.get(agentAddress) ?? Promise.resolve();
-    const next = prev
-      .catch(() => undefined)
-      .then(fn)
-      .catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.error`Mail audit commit failed for ${agentAddress}: ${msg}`;
-      });
-    mailCommitQueues.set(agentAddress, next);
+    void runRepoOp(agentAddress, fn).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error`Mail audit commit failed for ${agentAddress}: ${msg}`;
+    });
   }
 
-  async function drainMailQueue(agentAddress: string): Promise<void> {
-    const inflight = mailCommitQueues.get(agentAddress);
-    mailCommitQueues.delete(agentAddress);
+  // Await the agent's current operation chain so teardown removes the
+  // directory only after in-flight git work finishes. Capturing the tail and
+  // clearing the entry means an op enqueued AFTER this point starts a fresh
+  // chain this drain does not await. That is safe only because every caller
+  // invokes runRepoOp synchronously, before its first await, inside the
+  // serialized frame dispatch -- so by the time a later agent.undeploy frame
+  // reaches deleteAgentDir, every racing op is already on the chain. A handler
+  // that deferred its runRepoOp call past an await would reopen the
+  // delete-under-in-flight-op race.
+  async function drainRepoOps(agentAddress: string): Promise<void> {
+    const inflight = repoOpQueues.get(agentAddress);
+    repoOpQueues.delete(agentAddress);
     if (inflight !== undefined) await inflight;
   }
 
@@ -428,7 +486,7 @@ export function createSessionManager(
       logger.info`Started session for ${agentAddress} (session ${sessionId})`;
     } catch (err) {
       sessions.delete(agentAddress);
-      mailCommitQueues.delete(agentAddress);
+      repoOpQueues.delete(agentAddress);
       try {
         transport.unregister(agentAddress);
       } catch (cleanupErr) {
@@ -476,7 +534,7 @@ export function createSessionManager(
     }
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
-    await drainMailQueue(agentAddress);
+    await drainRepoOps(agentAddress);
     sessions.delete(agentAddress);
     transport.unregister(agentAddress);
     if (disposerErrors.length > 0) {
@@ -501,7 +559,7 @@ export function createSessionManager(
     }
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
-    await drainMailQueue(agentAddress);
+    await drainRepoOps(agentAddress);
     sessions.delete(agentAddress);
     transport.unregister(agentAddress);
     if (disposerErrors.length > 0) {
@@ -547,17 +605,27 @@ export function createSessionManager(
       repoStore.scanConfigs(),
     ]);
 
-    const restored: RestoredAgent[] = [];
-    const failed: string[] = [];
+    // Restore agents with bounded parallelism. Each agent's provision +
+    // startSession is per-agent isolated (per-agent git dir, per-address
+    // repo lock), so running several at once cannot corrupt shared
+    // state, and one slow or wedged agent no longer gates the rest.
+    // Outcomes are written into per-index slots so the returned order is
+    // independent of completion order.
+    type Outcome =
+      | { kind: "restored"; agent: RestoredAgent }
+      | { kind: "failed"; address: string };
+    const outcomes = new Array<Outcome | undefined>(configEntries.length);
 
-    for (const entry of configEntries) {
+    async function restoreOne(index: number): Promise<void> {
+      const entry = configEntries[index];
+      if (entry === undefined) return;
       const keyEntry: AgentKeyEntry | undefined = keysByAddress.get(
         entry.address,
       );
       if (keyEntry === undefined) {
         logger.error`Cannot restore "${entry.address}": agent.json exists but key pair is missing`;
-        failed.push(entry.address);
-        continue;
+        outcomes[index] = { kind: "failed", address: entry.address };
+        return;
       }
 
       const agent: RestoredAgent = {
@@ -569,8 +637,8 @@ export function createSessionManager(
       }
 
       if (sessions.has(entry.address)) {
-        restored.push(agent);
-        continue;
+        outcomes[index] = { kind: "restored", agent };
+        return;
       }
       try {
         await provisionAgent(entry.config);
@@ -578,13 +646,36 @@ export function createSessionManager(
           await repoStore.persistPairing(entry.address, entry.hubPublicKey);
         }
         await startSession(entry.address);
-        restored.push(agent);
+        outcomes[index] = { kind: "restored", agent };
         logger.info`Restored session for ${entry.address}`;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        failed.push(entry.address);
+        outcomes[index] = { kind: "failed", address: entry.address };
         logger.error`Failed to restore session for ${entry.address}: ${msg}`;
       }
+    }
+
+    // Worker pool: each worker pulls the next index until the list
+    // drains. Reading and advancing `cursor` is synchronous (no await
+    // between), so each index is handed to exactly one worker.
+    let cursor = 0;
+    async function worker(): Promise<void> {
+      for (;;) {
+        const index = cursor;
+        cursor += 1;
+        if (index >= configEntries.length) return;
+        await restoreOne(index);
+      }
+    }
+    const workerCount = Math.min(restoreConcurrency, configEntries.length);
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+
+    const restored: RestoredAgent[] = [];
+    const failed: string[] = [];
+    for (const outcome of outcomes) {
+      if (outcome === undefined) continue;
+      if (outcome.kind === "restored") restored.push(outcome.agent);
+      else failed.push(outcome.address);
     }
 
     return { restored, failed };
@@ -632,7 +723,7 @@ export function createSessionManager(
     ref: string,
     commitSha: string,
     transferId: string,
-    verifyCommit?: (payload: string, signature: string) => boolean,
+    verifyCommit?: (payload: string, signature: string) => Promise<boolean>,
   ): Promise<void> {
     const args =
       verifyCommit !== undefined
@@ -645,7 +736,7 @@ export function createSessionManager(
             verifyCommit,
           }
         : { address: agentAddress, pack, ref, commitSha, transferId };
-    await repoStore.applyDeployPack(args);
+    await runRepoOp(agentAddress, () => repoStore.applyDeployPack(args));
   }
 
   async function applyAssetPack(
@@ -659,22 +750,27 @@ export function createSessionManager(
       repoStore.getAgentDir(agentAddress),
       "workspace",
     );
-    await applyAssetPackFn({
-      workspaceRoot,
-      mountPath,
-      pack,
-      ref,
-      commitSha,
-    });
+    await runRepoOp(agentAddress, () =>
+      applyAssetPackFn({
+        workspaceRoot,
+        mountPath,
+        pack,
+        ref,
+        commitSha,
+      }),
+    );
   }
 
   async function createStatePack(
     agentAddress: string,
   ): Promise<{ pack: Uint8Array; commitSha: string; ref: string }> {
-    return repoStore.createStatePack(agentAddress);
+    return runRepoOp(agentAddress, () =>
+      repoStore.createStatePack(agentAddress),
+    );
   }
 
   async function deleteAgentDir(agentAddress: string): Promise<void> {
+    await drainRepoOps(agentAddress);
     await repoStore.remove(agentAddress);
   }
 
@@ -711,7 +807,7 @@ export function createSessionManager(
   }
 
   async function getDeployRef(agentAddress: string): Promise<string | null> {
-    return repoStore.getDeployRef(agentAddress);
+    return runRepoOp(agentAddress, () => repoStore.getDeployRef(agentAddress));
   }
 
   return {

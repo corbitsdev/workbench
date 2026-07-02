@@ -1,5 +1,5 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, it } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { useMediaQuery } from "./use-media-query";

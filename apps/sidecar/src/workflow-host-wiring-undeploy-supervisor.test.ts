@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -134,7 +134,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
     },
     async writeTreePreservingPrefix(_p, _id, _ref, args) {
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
     // The deploy router's grants bridge writes `state/grants.json` to
     // each step's agent-state repo before `spawn()`. Mirror the
@@ -147,7 +147,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
         await fs.mkdir(path.dirname(full), { recursive: true });
         await fs.writeFile(full, contents);
       }
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -263,7 +263,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => {
         /* no-op */
       },
@@ -283,6 +283,7 @@ describe("createSidecarDeployRouter multi-step undeploy shuts the supervisor dow
         SIDECAR_TOKEN: "tok_test",
         SIDECAR_CACHE_MAX_BYTES: "1000000",
         SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+        SIDECAR_ADAPTER_MANIFEST: "[]",
       },
       multistepMailRouter: mailRouter,
       multistepSignalRouter: signalRouter,

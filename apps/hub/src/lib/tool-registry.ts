@@ -1,5 +1,5 @@
 import type { AgentTool } from "@intx/agent";
-import type { DB } from "@intx/db";
+import type { HubDb } from "../db";
 import { createPosixTools } from "@intx/tools-posix";
 import { TOOL_DEFINITIONS as MAIL_TOOL_DEFINITIONS } from "@intx/tools-mail";
 import type { ToolDefinition } from "@intx/types/runtime";
@@ -84,7 +84,7 @@ export type CredentialToolEntry = {
 export type ContextToolEntry = {
   definition: ToolDefinition;
   createTools: (context: {
-    db: DB["db"];
+    db: HubDb;
     tenantId: string;
     principalId: string;
     agentId: string;

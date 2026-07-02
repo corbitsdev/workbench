@@ -44,6 +44,20 @@ function parseWorkflowAutopublishMap(): WorkflowAutopublishMap | null {
 // contract-guaranteed defaults; they mirror DEFAULT_WEDGE_SWEEP_INTERVAL_MS and
 // DEFAULT_UNROUTABLE_GRACE_MS in agent-provisioning (the reconciler's own
 // fallbacks), which must stay in sync.
+// Write-path GC for the hub's agent-state repos (mirrors the upstream
+// reference hub's HUB_AGENT_GC_* knobs). Each accepted state pack strands
+// the prior tip's objects and adds a pack, and each deploy commit strands
+// loose objects; left alone the repo grows without bound. The hub reclaims
+// on the write path once a repo crosses HUB_AGENT_GC_PACK_THRESHOLD packs
+// or HUB_AGENT_GC_LOOSE_THRESHOLD loose objects, and warns once it crosses
+// HUB_AGENT_GC_WARN_BYTES. Retention is fixed to keep-history at the store
+// wiring and not operator-configurable: the hub is the long-term archive of
+// an agent's state graph, and tip-only would prune the commit ancestry the
+// hub's subscriber-seq and history replay derive from git.log.
+const DEFAULT_HUB_AGENT_GC_PACK_THRESHOLD = 64;
+const DEFAULT_HUB_AGENT_GC_LOOSE_THRESHOLD = 2048;
+const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
+
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
@@ -70,14 +84,17 @@ function parseBooleanEnv(name: string): boolean {
   return value === "true" || value === "1";
 }
 
-function parsePositiveIntEnv(name: string, defaultValue: number): number {
+function parsePositiveIntEnv(
+  name: string,
+  defaultValue: number,
+  unitHint?: string,
+): number {
   const raw = process.env[name];
   if (raw === undefined || raw === "") return defaultValue;
   const parsed = Number(raw);
   if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(
-      `${name} must be a positive integer (milliseconds); got "${raw}"`,
-    );
+    const unit = unitHint === undefined ? "" : ` (${unitHint})`;
+    throw new Error(`${name} must be a positive integer${unit}; got "${raw}"`);
   }
   return parsed;
 }
@@ -150,6 +167,20 @@ export function loadConfig() {
     hub: {
       dataDir: requireEnv("HUB_DATA_DIR"),
       signingKeys: requireEnv("HUB_SIGNING_KEYS"),
+      agentGc: {
+        packThreshold: parsePositiveIntEnv(
+          "HUB_AGENT_GC_PACK_THRESHOLD",
+          DEFAULT_HUB_AGENT_GC_PACK_THRESHOLD,
+        ),
+        looseThreshold: parsePositiveIntEnv(
+          "HUB_AGENT_GC_LOOSE_THRESHOLD",
+          DEFAULT_HUB_AGENT_GC_LOOSE_THRESHOLD,
+        ),
+        warnBytes: parsePositiveIntEnv(
+          "HUB_AGENT_GC_WARN_BYTES",
+          DEFAULT_HUB_AGENT_GC_WARN_BYTES,
+        ),
+      },
     },
     // The deployment's root tenant — the default home every user lands in.
     // Name/slug/domain are deployment-specific and never hardcoded; a different
@@ -182,6 +213,7 @@ export function loadConfig() {
     wedgeSweepIntervalMs: parsePositiveIntEnv(
       "WEDGE_SWEEP_INTERVAL_MS",
       DEFAULT_WEDGE_SWEEP_INTERVAL_MS,
+      "milliseconds",
     ),
     // How long (ms) an address must stay continuously unroutable before the
     // wedge sweep ends-and-relaunches it. Must exceed the 90s disconnect grace
@@ -191,6 +223,7 @@ export function loadConfig() {
     wedgeUnroutableGraceMs: parsePositiveIntEnv(
       "WEDGE_UNROUTABLE_GRACE_MS",
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
+      "milliseconds",
     ),
   };
 

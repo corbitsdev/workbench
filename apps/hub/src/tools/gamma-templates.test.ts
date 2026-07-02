@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { DB } from "@intx/db";
+import type { HubDb } from "../db";
 
 // The mocked record carries an extra `systemPrompt` (a legacy config field the
 // projection must NOT leak to the model). Feeding it through proves the tool's
@@ -25,7 +25,7 @@ mock.module("../lib/gamma-templates", () => ({
 import { GAMMA_LIST_TEMPLATES_HUB_TOOL } from "./gamma-templates";
 
 const TOOL_CONTEXT = {
-  db: {} as DB["db"],
+  db: {} as HubDb,
   tenantId: "tn-1",
   principalId: "prn-1",
   agentId: "agt-1",

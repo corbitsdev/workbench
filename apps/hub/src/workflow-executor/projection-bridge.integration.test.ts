@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
 import type { KeyPair } from "@intx/types/runtime";
 import {
   createRepoStore,

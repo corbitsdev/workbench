@@ -25,7 +25,8 @@ import path from "node:path";
 
 import { type } from "arktype";
 
-import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
@@ -212,14 +213,14 @@ describe("supervisor-backed outbound signed send (Phase 4.3)", () => {
     // agent's outbound mail with THIS key.
     const hostTransport = createInMemoryTransport();
     const agentKeyPair = await generateKeyPair();
-    const agentCrypto = createNodeCrypto(agentKeyPair);
+    const agentCrypto = createEd25519Crypto(agentKeyPair);
     hostTransport.register(AGENT_ADDRESS, agentCrypto);
     // Register the recipient so the send delivers locally (no remote
     // leg) and the test can fetch the signed bytes back out of its INBOX.
     const recipientKeyPair = await generateKeyPair();
     hostTransport.register(
       RECIPIENT_ADDRESS,
-      createNodeCrypto(recipientKeyPair),
+      createEd25519Crypto(recipientKeyPair),
     );
 
     const mailBus = wrapHubTransportAsMailBus(hostTransport);
@@ -238,7 +239,7 @@ describe("supervisor-backed outbound signed send (Phase 4.3)", () => {
     let observedEnv: Record<string, string> | undefined;
     const supervisor = createWorkflowSupervisor({
       repoStore: createStubRepoStore(baseDir),
-      signAsPrincipal: () => ({
+      signAsPrincipal: async () => ({
         sig: new Uint8Array(64),
         principalKind: "supervisor",
       }),
@@ -307,7 +308,7 @@ describe("supervisor-backed outbound signed send (Phase 4.3)", () => {
       type: "ready",
       data: {
         childPid: 9100,
-        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeyPair.publicKey),
       },
     });
     await spawnPromise;

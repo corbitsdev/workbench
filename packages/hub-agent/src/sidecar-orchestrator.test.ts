@@ -1,3 +1,5 @@
+// WORKBENCH-LOCAL (CL-2662): workbench-added coverage; upstream @intx/hub-agent
+// has no sidecar-orchestrator test file at the 13fb9ac pin.
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { InferenceEvent } from "@intx/types/runtime";
 

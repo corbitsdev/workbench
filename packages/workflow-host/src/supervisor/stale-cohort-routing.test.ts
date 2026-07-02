@@ -31,7 +31,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -185,7 +186,7 @@ function createStubRepoStore(baseDir: string): RepoStore {
       return path.join(baseDir, repoId.kind, repoId.id);
     },
     async writeTreePreservingPrefix() {
-      return { commitSha: "deadbeefcafef00d" };
+      return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; missing methods surface as a precise failure via the proxy
@@ -402,7 +403,7 @@ async function driveReady(
     type: "ready",
     data: {
       childPid: child.pid,
-      childPublicKey: Buffer.from(ipcKp.publicKey).toString("hex"),
+      childPublicKey: hexEncode(ipcKp.publicKey),
     },
   });
   return sender;
@@ -433,7 +434,7 @@ describe("H-S2 stale-cohort routing pinch-point", () => {
 
     const bindings: WorkflowSupervisorBindings = {
       repoStore: createStubRepoStore(baseDir),
-      signAsPrincipal: (): SignedPayload => ({
+      signAsPrincipal: async (): Promise<SignedPayload> => ({
         sig: new Uint8Array(64),
         principalKind: "supervisor",
       }),

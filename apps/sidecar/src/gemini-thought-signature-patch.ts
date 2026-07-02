@@ -1,5 +1,6 @@
-import { createGoogleGenAIAdapter, registerProvider } from "@intx/inference";
-import type { ProviderAdapter } from "@intx/inference";
+import type { AdapterManifest, AdapterRegistry } from "@intx/inference";
+import { loadAdapterRegistry } from "@intx/inference/providers";
+import type { LastCycleSource } from "@intx/types/runtime";
 
 // TEMPORARY local fix for an upstream Interchange bug — tracked in BD-394 /
 // internal bug linked.
@@ -7,30 +8,32 @@ import type { ProviderAdapter } from "@intx/inference";
 // WHY WE NEED THIS
 // The google-genai adapter's `parseResponse` throws ProtocolMismatchError on
 // any Gemini 3.x response whose signature-bearing part has no preceding
-// thinking block to anchor it (`consumeSignature`, google-genai.ts:1365).
-// gemini-3.1-flash-lite's structured-output responses end with an orphan
-// `thoughtSignature` part (`{ text: "", thoughtSignature }`), so every such
-// call fails even though the model returns a complete, valid JSON payload.
-// greybeard validated this as a genuine adapter defect, not caller misuse.
-// Without this, the Gemini provider (our preferred inference source) is
-// unusable for any structured generate step that uses google-genai.
+// thinking block to anchor it (`consumeSignature`, google-genai.ts). Some
+// Gemini structured-output responses end with an orphan `thoughtSignature`
+// part (`{ text: "", thoughtSignature }`), so every such call fails even
+// though the model returns a complete, valid JSON payload. Without this, the
+// Gemini provider is unusable for any structured generate step that uses
+// google-genai.
 //
 // HOW WE PATCH
-// We do not edit the vendored submodule. Interchange exposes a public provider
-// registry (`registerProvider`) and the real adapter factory
-// (`createGoogleGenAIAdapter`). We register a thin wrapper under the same
-// "google-genai" id that delegates to the real adapter but pre-processes each
-// streamed SSE chunk: it strips the `thoughtSignature` field from every part
-// before the real parser sees it. With no signature present, the orphan-anchor
-// branch is never reached, so the parser never throws and the response text
-// (the JSON we want) flows through unchanged. We don't round-trip thinking
-// signatures for our use cases, so dropping them is lossless.
+// Upstream removed the process-global provider registry
+// (`registerProvider`/`hasProvider`); adapters now resolve through an
+// explicit `AdapterRegistry` built once at the sidecar's boot edge and
+// threaded into every consumer (harness builder, agent env deps). We wrap
+// that registry: `resolve()` delegates to the inner registry, and for
+// "google-genai" sources the returned adapter's `parseResponse` first strips
+// the `thoughtSignature` field from every part of the SSE chunk. With no
+// signature present, the orphan-anchor branch is never reached, so the parser
+// never throws and the response text (the JSON we want) flows through
+// unchanged. We don't round-trip thinking signatures for our use cases, so
+// dropping them is lossless.
 //
 // SCOPE & REMOVAL
-// `registerProvider` mutates a process-wide registry, so this affects all
-// google-genai inference in the process once installed (intended). It is
-// idempotent. Remove this file, its call in index.ts, and the test file once
-// BD-394 is fixed upstream and the vendored Interchange commit is bumped.
+// The wrapped registry is the ONLY registry the sidecar passes into
+// `createDependencies` / the harness builder, so this affects all
+// google-genai inference resolved through it (intended). Remove this file,
+// its use in index.ts, and the test file once BD-394 is fixed upstream and
+// the vendored Interchange commit is bumped.
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -57,17 +60,39 @@ export function stripThoughtSignatures(sseData: string): string {
   return JSON.stringify(parsed);
 }
 
-let installed = false;
+/**
+ * Wrap an adapter registry so every resolved "google-genai" adapter strips
+ * orphan thought signatures before parsing. All other providers resolve
+ * through untouched.
+ */
+/**
+ * The single construction path for every workbench adapter registry —
+ * the sidecar's boot edge AND the workflow-child (via the substrate
+ * factory) both build through this, so the BD-394 gemini workaround is
+ * applied identically on both sides. Remove alongside the wrap once
+ * fixed upstream.
+ */
+export async function buildWorkbenchAdapterRegistry(
+  manifest: AdapterManifest,
+): Promise<AdapterRegistry> {
+  return withGeminiThoughtSignaturePatch(await loadAdapterRegistry(manifest));
+}
 
-export function installGeminiThoughtSignaturePatch(): void {
-  if (installed) return;
-  installed = true;
-  registerProvider("google-genai", (source): ProviderAdapter => {
-    const inner = createGoogleGenAIAdapter(source);
-    return {
-      ...inner,
-      parseResponse: (sseData) =>
-        inner.parseResponse(stripThoughtSignatures(sseData)),
-    };
-  });
+export function withGeminiThoughtSignaturePatch(
+  inner: AdapterRegistry,
+): AdapterRegistry {
+  return {
+    has(provider: string): boolean {
+      return inner.has(provider);
+    },
+    resolve(source: LastCycleSource) {
+      const adapter = inner.resolve(source);
+      if (source.provider !== "google-genai") return adapter;
+      return {
+        ...adapter,
+        parseResponse: (sseData: string) =>
+          adapter.parseResponse(stripThoughtSignatures(sseData)),
+      };
+    },
+  };
 }
