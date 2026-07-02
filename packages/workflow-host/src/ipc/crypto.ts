@@ -6,23 +6,25 @@
 // 32-byte secret and the cost-per-frame of HMAC over per-frame Ed25519
 // is what keeps the event stream affordable at InferenceEvent rates.
 //
-// Both algorithms come from Node's built-in `node:crypto`. The
-// repository's `@intx/crypto-node` package wraps Ed25519 for PGP-shaped
-// signature envelopes, which carry packet framing and ASCII armor we
-// don't want on every IPC frame. The wire format here is the raw
-// 64-byte Ed25519 signature (RFC 8032) and the raw 32-byte HMAC-SHA256
-// tag concatenated with the canonical-JSON payload bytes. Anything
-// fancier would just pay PGP overhead per frame.
+// Ed25519 sign/verify come from `@intx/crypto`, whose raw
+// `signEd25519`/`verifyEd25519` primitives produce and check the bare
+// 64-byte RFC 8032 signature without the PGP packet framing and ASCII
+// armor the package's envelope helpers add — exactly the wire format
+// this channel wants. HMAC-SHA256 uses the Web Crypto `subtle` API; its
+// tag is verified by recomputing the tag with `subtle.sign` and
+// comparing under an explicit constant-time XOR-accumulate rather than
+// `subtle.verify`, because the Web Crypto spec does not guarantee
+// `verify` runs in constant time and this channel keeps ownership of
+// that property. The wire format here is the raw 64-byte Ed25519
+// signature and the raw 32-byte HMAC-SHA256 tag concatenated with the
+// canonical-JSON payload bytes. Anything fancier would just pay PGP
+// overhead per frame.
 
 import {
-  createHmac,
-  randomBytes,
-  sign as nodeSign,
-  timingSafeEqual,
-  verify as nodeVerify,
-} from "node:crypto";
-
-import { importPrivateKeyBytes, importPublicKeyBytes } from "@intx/crypto-node";
+  signEd25519 as ed25519Sign,
+  verifyEd25519 as ed25519Verify,
+} from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 
 const ED25519_SIGNATURE_BYTES = 64;
 const ED25519_KEY_BYTES = 32;
@@ -37,18 +39,18 @@ const CHANNEL_ID_BYTES = 16;
  * key the supervisor uses on the control channel.
  */
 export function generateHmacKey(): Uint8Array {
-  return new Uint8Array(randomBytes(HMAC_KEY_BYTES));
+  return crypto.getRandomValues(new Uint8Array(HMAC_KEY_BYTES));
 }
 
 /**
  * Mint a fresh channelId per the channel-identity contract: 16 bytes
- * from `crypto.randomBytes`, hex-encoded. The supervisor mints one at
+ * from `crypto.getRandomValues`, hex-encoded. The supervisor mints one at
  * every spawn and every recycle, passes it to the child in spawn-time
  * env, and rotates it on the next respawn. The hex encoding keeps the
  * value safe to log and round-trips cleanly through JSON.
  */
 export function generateChannelId(): string {
-  return Buffer.from(randomBytes(CHANNEL_ID_BYTES)).toString("hex");
+  return hexEncode(crypto.getRandomValues(new Uint8Array(CHANNEL_ID_BYTES)));
 }
 
 /**
@@ -56,29 +58,27 @@ export function generateChannelId(): string {
  * Ed25519 private key. Caller is responsible for canonicalization;
  * this primitive does not see the structured envelope.
  *
- * The private-key bytes are the 32-byte Ed25519 seed. Importing the
- * KeyObject lives in `@intx/crypto-node/keys`; this module imports the
- * minimal subset it needs to keep the IPC layer self-contained.
+ * The private-key bytes are the 32-byte Ed25519 seed. The raw signing
+ * primitive lives in `@intx/crypto`; this module wraps it with the
+ * channel's fixed-length validation.
  */
-export function signEd25519(
+export async function signEd25519(
   bytes: Uint8Array,
   privateKeySeed: Uint8Array,
-): Uint8Array {
+): Promise<Uint8Array> {
   if (privateKeySeed.length !== ED25519_KEY_BYTES) {
     throw new Error(
       `IPC Ed25519 private key seed must be ${ED25519_KEY_BYTES} bytes, got ${privateKeySeed.length}`,
     );
   }
-  const key = importPrivateKeyBytes(privateKeySeed);
-  const sig = nodeSign(null, bytes, key);
-  return new Uint8Array(sig);
+  return ed25519Sign(privateKeySeed, bytes);
 }
 
-export function verifyEd25519(
+export async function verifyEd25519(
   bytes: Uint8Array,
   signature: Uint8Array,
   publicKey: Uint8Array,
-): boolean {
+): Promise<boolean> {
   if (signature.length !== ED25519_SIGNATURE_BYTES) {
     throw new Error(
       `IPC Ed25519 signature must be ${ED25519_SIGNATURE_BYTES} bytes, got ${signature.length}`,
@@ -89,8 +89,7 @@ export function verifyEd25519(
       `IPC Ed25519 public key must be ${ED25519_KEY_BYTES} bytes, got ${publicKey.length}`,
     );
   }
-  const key = importPublicKeyBytes(publicKey);
-  return nodeVerify(null, bytes, key, signature);
+  return ed25519Verify(bytes, signature, publicKey);
 }
 
 /**
@@ -98,37 +97,69 @@ export function verifyEd25519(
  * envelope bytes under the shared key. Same primitive on both sides
  * of the event channel.
  */
-export function signHmac(bytes: Uint8Array, key: Uint8Array): Uint8Array {
+export async function signHmac(
+  bytes: Uint8Array,
+  key: Uint8Array,
+): Promise<Uint8Array> {
   if (key.length !== HMAC_KEY_BYTES) {
     throw new Error(
       `IPC HMAC key must be ${HMAC_KEY_BYTES} bytes, got ${key.length}`,
     );
   }
-  const mac = createHmac("sha256", key);
-  mac.update(bytes);
-  return new Uint8Array(mac.digest());
+  const cryptoKey = await crypto.subtle.importKey(
+    "raw",
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- ArrayBuffer-backed at the call site; Web Crypto's BufferSource type rejects Uint8Array<ArrayBufferLike> under TS 5.9 (microsoft/TypeScript#62240)
+    key as Uint8Array<ArrayBuffer>,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const tag = await crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- ArrayBuffer-backed at the call site; Web Crypto's BufferSource type rejects Uint8Array<ArrayBufferLike> under TS 5.9 (microsoft/TypeScript#62240)
+    bytes as Uint8Array<ArrayBuffer>,
+  );
+  return new Uint8Array(tag);
 }
 
 /**
- * Constant-time tag comparison for HMAC verification. A non-constant
- * comparison would leak the position of the first mismatched byte in
- * a timing side channel.
+ * Constant-time byte comparison. A non-constant comparison would leak
+ * the position of the first mismatched byte through a timing side
+ * channel. The XOR accumulate is branch-free over the byte range; the
+ * only early return is on a length mismatch, which is not secret-
+ * dependent.
  */
-export function verifyHmac(
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+  let acc = 0;
+  for (let i = 0; i < a.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- i is bounds-checked by the loop guard and a.length === b.length above
+    acc |= (a[i] as number) ^ (b[i] as number);
+  }
+  return acc === 0;
+}
+
+/**
+ * Verify an HMAC tag by recomputing it and comparing in constant time.
+ * Deliberately avoids `subtle.verify`, whose constant-time behavior the
+ * Web Crypto spec does not guarantee; this channel owns that property
+ * via `constantTimeEqual`.
+ */
+export async function verifyHmac(
   bytes: Uint8Array,
   tag: Uint8Array,
   key: Uint8Array,
-): boolean {
+): Promise<boolean> {
   if (tag.length !== HMAC_TAG_BYTES) {
     throw new Error(
       `IPC HMAC tag must be ${HMAC_TAG_BYTES} bytes, got ${tag.length}`,
     );
   }
-  const expected = signHmac(bytes, key);
-  if (expected.length !== tag.length) {
-    return false;
-  }
-  return timingSafeEqual(expected, tag);
+  const expected = await signHmac(bytes, key);
+  return constantTimeEqual(expected, tag);
 }
 
 export const IPC_CRYPTO = Object.freeze({

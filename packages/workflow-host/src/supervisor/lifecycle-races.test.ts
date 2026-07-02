@@ -18,7 +18,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { generateKeyPair } from "@intx/crypto-node";
+import { generateKeyPair } from "@intx/crypto";
+import { hexEncode } from "@intx/types";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 
 import {
@@ -182,7 +183,7 @@ function createStubRepoStore(baseDir: string): RepoStore {
       return path.join(baseDir, repoId.kind, repoId.id);
     },
     async writeTreePreservingPrefix(_principal, _repoId, _ref, _args) {
-      return { commitSha: "deadbeefcafef00d" };
+      return { commitSha: "deadbeefcafef00d", newlyTerminalRuns: [] };
     },
   };
   // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; missing methods surface a precise failure via the proxy
@@ -334,7 +335,7 @@ async function buildBindings(opts: {
 }): Promise<WorkflowSupervisorBindings> {
   return {
     repoStore: createStubRepoStore(opts.baseDir),
-    signAsPrincipal: (): SignedPayload => ({
+    signAsPrincipal: async (): Promise<SignedPayload> => ({
       sig: new Uint8Array(64),
       principalKind: "supervisor",
     }),
@@ -470,7 +471,7 @@ describe("waitForReady -> pumpUpstreamControl iterator handoff (Gap A)", () => {
       type: "ready",
       data: {
         childPid: first.pid,
-        childPublicKey: Buffer.from(childIpcKeypair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeypair.publicKey),
       },
     });
     await childSender.send({
@@ -511,7 +512,7 @@ describe("waitForReady -> pumpUpstreamControl iterator handoff (Gap A)", () => {
       type: "ready",
       data: {
         childPid: second.pid,
-        childPublicKey: Buffer.from(childIpcKeypair.publicKey).toString("hex"),
+        childPublicKey: hexEncode(childIpcKeypair.publicKey),
       },
     });
 
