@@ -80,11 +80,13 @@ export default function StepSidebar({
             >
               <div
                 className={`rounded-lg p-3 transition-all overflow-hidden ${
-                  step.status === "current"
-                    ? "bg-surface-2 shadow-sm border border-border-strong"
-                    : step.status === "completed"
-                      ? "bg-transparent"
-                      : "bg-transparent opacity-50"
+                  step.status === "failed"
+                    ? "bg-red-soft/20 border border-red"
+                    : step.status === "current"
+                      ? "bg-surface-2 shadow-sm border border-border-strong"
+                      : step.status === "completed"
+                        ? "bg-transparent"
+                        : "bg-transparent opacity-50"
                 }`}
               >
                 <div className="flex items-center gap-2 min-w-0">
@@ -92,20 +94,28 @@ export default function StepSidebar({
                     className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-medium flex-shrink-0 ${
                       step.status === "completed"
                         ? "bg-green text-white"
-                        : step.status === "current"
-                          ? "bg-surface-2 border-2 border-border-strong"
-                          : "bg-surface text-text-3"
+                        : step.status === "failed"
+                          ? "bg-red text-white"
+                          : step.status === "current"
+                            ? "bg-surface-2 border-2 border-border-strong"
+                            : "bg-surface text-text-3"
                     }`}
                   >
-                    {step.status === "completed" ? "✓" : step.number}
+                    {step.status === "completed"
+                      ? "✓"
+                      : step.status === "failed"
+                        ? "!"
+                        : step.number}
                   </div>
                   <AnimatePresence>
                     {!collapsed && (
                       <motion.span
                         className={`text-sm font-medium truncate min-w-0 ${
-                          step.status === "current"
-                            ? "text-text"
-                            : "text-text-2"
+                          step.status === "failed"
+                            ? "text-red"
+                            : step.status === "current"
+                              ? "text-text"
+                              : "text-text-2"
                         }`}
                         title={step.label}
                         initial={{ opacity: 0, width: 0 }}

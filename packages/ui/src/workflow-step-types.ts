@@ -8,7 +8,7 @@
  */
 
 /** Display status of a single step in the stepper / sidebar. */
-export type WorkflowStepStatus = "completed" | "current" | "pending";
+export type WorkflowStepStatus = "completed" | "current" | "pending" | "failed";
 
 /** A single step descriptor for the stepper and sidebar views. */
 export interface WorkflowStep {

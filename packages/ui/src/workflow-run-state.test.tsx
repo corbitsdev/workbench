@@ -129,6 +129,36 @@ describe("workflow-run-state", () => {
     expect(liveStatusLabel(state, NO_LABEL)).toBeNull();
   });
 
+  test("buildStepperSteps marks the active step failed when its runtime phase is failed, instead of leaving it as current", () => {
+    // research's terminal step (brief) failed while ground already completed —
+    // the display step must render as "failed", not fall through to "current"
+    // (CL-2654: a failed step looked identical to a still-running one).
+    const state = stateFrom([
+      ["intake", "completed"],
+      ["ground", "completed"],
+      ["brief", "failed"],
+    ]);
+    const stepper = buildRunStepperSteps(state, STEPS);
+    expect(stepper[1]?.status).toBe("failed");
+  });
+
+  test("a failed step is never skipped over as 'passed' just because a later, independently-running step progressed", () => {
+    // research (index 1) fails while report (index 2) is concurrently
+    // in-flight — a real DAG shape, not hypothetical (AGENTS.md: independent
+    // steps run concurrently). The old `laterProgressed` rule treated ANY
+    // non-completed step as passed once a later step moved, silently
+    // re-labeling the failed step "completed" (CL-2654 follow-up).
+    const state = stateFrom([
+      ["intake", "completed"],
+      ["ground", "completed"],
+      ["brief", "failed"],
+      ["write", "in-flight"],
+    ]);
+    expect(activeDisplayStepIndex(state, STEPS)).toBe(1);
+    const stepper = buildRunStepperSteps(state, STEPS);
+    expect(stepper[1]?.status).toBe("failed");
+  });
+
   test("buildStepperSteps marks every step completed once the run is completed, even if the terminal step output is absent", () => {
     // brief (research terminal) and persist are missing from the synthesized
     // record, but the run reports completed — nothing should linger as "current".

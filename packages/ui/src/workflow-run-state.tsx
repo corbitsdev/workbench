@@ -95,6 +95,12 @@ function hasAnyProgress(state: RunState | null, step: DisplayStep): boolean {
  * `StepCompleted` is missing: a step is treated as passed when it is completed
  * OR any later step has progressed. Returns the last index once every step is
  * complete.
+ *
+ * A step whose own phase is `failed` is NEVER treated as passed, even if a
+ * later, independently-running branch has progressed — independent DAG steps
+ * run concurrently (AGENTS.md), so a later step's progress says nothing about
+ * whether this one failed. Without this, the `laterProgressed` rule below
+ * would silently re-label a failed step "completed" (CL-2654 follow-up).
  */
 export function activeDisplayStepIndex(
   state: RunState | null,
@@ -103,7 +109,9 @@ export function activeDisplayStepIndex(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     if (step === undefined) continue;
-    if (displayStepPhase(state, step.stepIds) === "completed") continue;
+    const phase = displayStepPhase(state, step.stepIds);
+    if (phase === "completed") continue;
+    if (phase === "failed") return i;
     const laterProgressed = steps
       .slice(i + 1)
       .some((later) => hasAnyProgress(state, later));
@@ -129,10 +137,14 @@ export function buildStepperSteps(
     } else if (i > activeIdx) {
       status = "pending";
     } else {
-      status =
-        displayStepPhase(state, step.stepIds) === "completed"
-          ? "completed"
-          : "current";
+      const phase = displayStepPhase(state, step.stepIds);
+      if (phase === "completed") {
+        status = "completed";
+      } else if (phase === "failed") {
+        status = "failed";
+      } else {
+        status = "current";
+      }
     }
     return { number: i + 1, label: step.label, status };
   });
