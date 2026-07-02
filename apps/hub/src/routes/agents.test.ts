@@ -2438,9 +2438,13 @@ describe("registerDisconnectReconciler", () => {
 //
 // The sweep supplies the RELAUNCH half missing from the disconnect reconciler:
 // an instance left active-but-unroutable after a sidecar restart is ended and
-// relaunched so its address re-registers. These assert real behavior across the
-// hub↔router seam (getRoutableAddresses) — selection, the routable skip, the
-// right-before-relaunch guard, and end-then-relaunch.
+// relaunched so its address re-registers. It measures *sustained* unroutability
+// against a caller-owned tracker (never session age, which never moves for a
+// live session), so a normal redeploy reconnect that lands within the grace is
+// never evicted. These assert that dangerous path across the hub↔router seam
+// (getRoutableAddresses): grace gating, tracker clearing on reconnect, selection
+// on relaunchable status (not age), the right-before-relaunch guard, and
+// end-before-relaunch ordering.
 
 describe("reconcileWedgedSessions", () => {
   const ADDR = "ins-1@tenant-1.localhost";
@@ -2485,10 +2489,10 @@ describe("reconcileWedgedSessions", () => {
     });
   }
 
-  it("ends the stale session then relaunches an active, unroutable instance", async () => {
-    sourcesImpl = () =>
-      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
-
+  // A db whose sweep selection returns the single wedged instance and whose
+  // findFirst lookups feed both reconcile-then-relaunch. `update` is captured so
+  // tests can assert the session was ended.
+  function makeWedgedDb() {
     const { update, calls } = makeUpdateCapture();
     const db = makeMockDb({
       select: mock(() =>
@@ -2502,36 +2506,116 @@ describe("reconcileWedgedSessions", () => {
     db.query.agentSession.findFirst = flippingSessionFindFirst();
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    return { db, calls };
+  }
 
+  it("never acts on the first tick an address is unroutable, and only relaunches once the grace has elapsed across ticks", async () => {
+    // THE REGRESSION GUARD: a reconnecting agent is momentarily unroutable.
+    // The sweep must give it the full grace window across ticks before evicting.
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
       launchSession: mock(() => Promise.resolve()),
     };
+    const tracker = new Map<string, number>();
+    const grace = 100;
 
+    const tick = (now: number) =>
+      reconcileWedgedSessions(
+        db as never,
+        makeSidecarRouter([]) as never,
+        sessionService as never,
+        mockGrantStore as never,
+        mockEventCollectors as never,
+        tracker,
+        { graceMs: grace, now },
+      );
+
+    // First sighting: record only, never relaunch.
+    await tick(0);
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(tracker.get(ADDR)).toBe(0);
+
+    // Still within grace: still no relaunch.
+    await tick(grace - 1);
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+
+    // Grace elapsed while continuously unroutable: now it acts.
+    await tick(grace);
+    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
+    expect(calls.some((c) => c.status === "ended")).toBe(true);
+    // Tracker entry consumed after acting.
+    expect(tracker.has(ADDR)).toBe(false);
+  });
+
+  it("clears the tracker and never relaunches when the address reconnects before the grace elapses", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const { db, calls } = makeWedgedDb();
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
+    const tracker = new Map<string, number>();
+    const grace = 100;
+
+    // Tick 1 — unroutable, first sighting recorded.
     await reconcileWedgedSessions(
       db as never,
       makeSidecarRouter([]) as never,
       sessionService as never,
       mockGrantStore as never,
       mockEventCollectors as never,
+      tracker,
+      { graceMs: grace, now: 0 },
     );
+    expect(tracker.get(ADDR)).toBe(0);
 
-    // The relaunch actually fired (address re-registers via a fresh launch).
-    expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
-    // The stale session was ended before the relaunch.
-    expect(calls.some((c) => c.status === "ended")).toBe(true);
+    // Tick 2 — the sidecar reconnected within the grace: entry is cleared.
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([ADDR]) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      tracker,
+      { graceMs: grace, now: grace - 1 },
+    );
+    expect(tracker.has(ADDR)).toBe(false);
+
+    // Tick 3 — unroutable again well past the original window, but it counts as
+    // a fresh first sighting, so still no relaunch.
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([]) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      tracker,
+      { graceMs: grace, now: grace * 5 },
+    );
+    expect(tracker.get(ADDR)).toBe(grace * 5);
+    expect(sessionService.launchSession).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.status === "ended")).toBe(false);
   });
 
-  it("skips an instance whose address is already routable (no relaunch)", async () => {
+  it("ends the session before relaunching once the grace has elapsed", async () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const order: string[] = [];
 
-    const { update, calls } = makeUpdateCapture();
     const db = makeMockDb({
       select: mock(() =>
         makeSelectChain([{ instanceId: "ins-1", address: ADDR }]),
       ),
-      update,
+      update: mock(() => ({
+        set: mock((values: Record<string, unknown>) => {
+          if (values.status === "ended") order.push("end");
+          return { where: mock(() => Promise.resolve()) };
+        }),
+      })),
     });
     db.query.agentInstance.findFirst = mock(() =>
       Promise.resolve(wedgedInstance()),
@@ -2542,8 +2626,38 @@ describe("reconcileWedgedSessions", () => {
 
     const sessionService = {
       ...mockSessionService,
+      launchSession: mock(() => {
+        order.push("launch");
+        return Promise.resolve();
+      }),
+    };
+
+    // Pre-seed the tracker as already unroutable long enough so this single tick
+    // acts.
+    const tracker = new Map<string, number>([[ADDR, 0]]);
+    await reconcileWedgedSessions(
+      db as never,
+      makeSidecarRouter([]) as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      tracker,
+      { graceMs: 100, now: 1_000 },
+    );
+
+    expect(order).toEqual(["end", "launch"]);
+  });
+
+  it("skips an already-routable instance and clears its tracker entry", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+    const { db, calls } = makeWedgedDb();
+    const sessionService = {
+      ...mockSessionService,
       launchSession: mock(() => Promise.resolve()),
     };
+    // Entry present from a prior tick; a routable read must evict it.
+    const tracker = new Map<string, number>([[ADDR, 0]]);
 
     await reconcileWedgedSessions(
       db as never,
@@ -2551,44 +2665,36 @@ describe("reconcileWedgedSessions", () => {
       sessionService as never,
       mockGrantStore as never,
       mockEventCollectors as never,
+      tracker,
+      { graceMs: 100, now: 10_000 },
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
     expect(calls.some((c) => c.status === "ended")).toBe(false);
+    expect(tracker.has(ADDR)).toBe(false);
   });
 
-  it("does not relaunch when the address becomes routable between selection and relaunch", async () => {
+  it("does not relaunch when the address becomes routable right before relaunch", async () => {
     sourcesImpl = () =>
       Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
 
-    // Unroutable on the sweep's own read (so the row is not skipped), then
-    // routable on every subsequent read — modeling a reconnect that lands
-    // mid-sweep. reconcileDisconnectedSession and relaunchInstanceIfNeeded both
-    // re-read getRoutableAddresses right before acting and must bail.
+    // Unroutable on the sweep's own top-of-tick read (so it proceeds to act),
+    // then routable on every subsequent read — modeling a reconnect that lands
+    // between selection and relaunch. reconcileDisconnectedSession and
+    // relaunchInstanceIfNeeded both re-read getRoutableAddresses and must bail.
     let reads = 0;
     const getRoutableAddresses = mock(() => {
       reads += 1;
       return reads === 1 ? [] : [ADDR];
     });
 
-    const { update, calls } = makeUpdateCapture();
-    const db = makeMockDb({
-      select: mock(() =>
-        makeSelectChain([{ instanceId: "ins-1", address: ADDR }]),
-      ),
-      update,
-    });
-    db.query.agentInstance.findFirst = mock(() =>
-      Promise.resolve(wedgedInstance()),
-    );
-    db.query.agentSession.findFirst = flippingSessionFindFirst();
-    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT_ROW));
-    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
-
+    const { db, calls } = makeWedgedDb();
     const sessionService = {
       ...mockSessionService,
       launchSession: mock(() => Promise.resolve()),
     };
+    // Pre-seed past grace so the sweep would otherwise act this tick.
+    const tracker = new Map<string, number>([[ADDR, 0]]);
 
     await reconcileWedgedSessions(
       db as never,
@@ -2596,13 +2702,15 @@ describe("reconcileWedgedSessions", () => {
       sessionService as never,
       mockGrantStore as never,
       mockEventCollectors as never,
+      tracker,
+      { graceMs: 100, now: 1_000 },
     );
 
     expect(sessionService.launchSession).not.toHaveBeenCalled();
     expect(calls.some((c) => c.status === "ended")).toBe(false);
   });
 
-  it("selects only active sessions past the stale floor", async () => {
+  it("selects on session status and relaunchable instance status, not on session age", async () => {
     // Search a drizzle SQL condition for a column with the given name. Only
     // descends through queryChunks/arrays — never into a Column's `.table`
     // back-reference, which would surface every column in the schema.
@@ -2615,6 +2723,18 @@ describe("reconcileWedgedSessions", () => {
       return children.some((child: unknown) =>
         referencesColumn(child, columnName, seen),
       );
+    }
+
+    // Search a drizzle SQL condition for a bound param carrying `value` (either
+    // directly, or as a member of an array param for `inArray`).
+    // biome-ignore lint/suspicious/noExplicitAny: introspecting drizzle SQL chunks
+    function bindsValue(node: any, value: string, seen = new Set()): boolean {
+      if (!node || typeof node !== "object" || seen.has(node)) return false;
+      seen.add(node);
+      if (node.value === value) return true;
+      if (Array.isArray(node.value) && node.value.includes(value)) return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return children.some((child: unknown) => bindsValue(child, value, seen));
     }
 
     let capturedWhere: unknown;
@@ -2638,11 +2758,20 @@ describe("reconcileWedgedSessions", () => {
       } as never,
       mockGrantStore as never,
       mockEventCollectors as never,
+      new Map<string, number>(),
     );
 
-    // Predicate gates on the session being active AND idle past the floor.
+    // Gates on the session being active …
     expect(referencesColumn(capturedWhere, "status")).toBe(true);
-    expect(referencesColumn(capturedWhere, "updated_at")).toBe(true);
+    expect(bindsValue(capturedWhere, "active")).toBe(true);
+    // … and on relaunchable instance statuses (excludes error/stopped) …
+    expect(bindsValue(capturedWhere, "running")).toBe(true);
+    expect(bindsValue(capturedWhere, "deployed")).toBe(true);
+    expect(bindsValue(capturedWhere, "updating")).toBe(true);
+    expect(bindsValue(capturedWhere, "error")).toBe(false);
+    expect(bindsValue(capturedWhere, "stopped")).toBe(false);
+    // … and NOT on session age (the discredited stale-floor predicate is gone).
+    expect(referencesColumn(capturedWhere, "updated_at")).toBe(false);
   });
 });
 
@@ -2671,6 +2800,41 @@ describe("registerWedgeSweepReconciler", () => {
     await new Promise((resolve) => setTimeout(resolve, 55));
     // No further ticks after teardown — the interval was cleared, not leaked.
     expect(getRoutableAddresses.mock.calls.length).toBe(ticksWhileRunning);
+  });
+
+  it("does not overlap ticks: a slow sweep blocks the next interval firing", async () => {
+    // Hold the first sweep open on its DB select; while it is in flight the
+    // interval must not start a second sweep (the reentrancy guard). Only one
+    // getRoutableAddresses call should be observed until the first sweep frees.
+    let releaseSelect: (rows: unknown[]) => void = () => {};
+    const selectGate = new Promise<unknown[]>((resolve) => {
+      releaseSelect = resolve;
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    const chain: any = {
+      from: mock(() => chain),
+      innerJoin: mock(() => chain),
+      where: mock(() => selectGate),
+    };
+    const getRoutableAddresses = mock(() => [] as string[]);
+    const router = makeSidecarRouter([], { getRoutableAddresses });
+    const db = makeMockDb({ select: mock(() => chain) });
+
+    const stop = registerWedgeSweepReconciler({
+      db: db as never,
+      router: router as never,
+      sessionService: mockSessionService as never,
+      grantStore: mockGrantStore as never,
+      eventCollectors: mockEventCollectors as never,
+      intervalMs: 10,
+    });
+
+    // Several intervals elapse while the first sweep is stuck on select.
+    await new Promise((resolve) => setTimeout(resolve, 55));
+    expect(getRoutableAddresses.mock.calls.length).toBe(1);
+
+    releaseSelect([]);
+    stop();
   });
 });
 
