@@ -37,6 +37,15 @@ function parseWorkflowAutopublishMap(): WorkflowAutopublishMap | null {
   }
   return parsed;
 }
+// Keep `config` a dependency-light leaf: importing these constants from
+// `./services/agent-provisioning` would drag that module's heavy graph
+// (tool-registry ↔ file-parser-tools has a mutual cycle) into config and flip
+// module load order, TDZ-crashing unrelated suites. These literals are the
+// contract-guaranteed defaults; they mirror DEFAULT_WEDGE_SWEEP_INTERVAL_MS and
+// DEFAULT_UNROUTABLE_GRACE_MS in agent-provisioning (the reconciler's own
+// fallbacks), which must stay in sync.
+const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
+const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -59,6 +68,18 @@ function parseOrigins(raw: string | undefined): string[] {
 function parseBooleanEnv(name: string): boolean {
   const value = process.env[name];
   return value === "true" || value === "1";
+}
+
+function parsePositiveIntEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(
+      `${name} must be a positive integer (milliseconds); got "${raw}"`,
+    );
+  }
+  return parsed;
 }
 
 function originOf(url: string): string {
@@ -154,6 +175,23 @@ export function loadConfig() {
     // Per-kind → tenant-slug routing for boot-time autopublish (CL-2641). Null
     // when unset → every def targets the global root tenant (back-compat).
     workflowAutopublishMap: parseWorkflowAutopublishMap(),
+    // Cadence (ms) of the periodic wedge-sweep reconciler that relaunches agent
+    // instances left with an active session but no routable sidecar address
+    // after a sidecar restart (CL-2639). Single contract-guaranteed default of
+    // 30s; override with WEDGE_SWEEP_INTERVAL_MS (positive integer milliseconds).
+    wedgeSweepIntervalMs: parsePositiveIntEnv(
+      "WEDGE_SWEEP_INTERVAL_MS",
+      DEFAULT_WEDGE_SWEEP_INTERVAL_MS,
+    ),
+    // How long (ms) an address must stay continuously unroutable before the
+    // wedge sweep ends-and-relaunches it. Must exceed the 90s disconnect grace
+    // and typical sidecar reconnect-settle time so a healthy redeploy reconnect
+    // clears the tracker before we act. Default 120s; override with
+    // WEDGE_UNROUTABLE_GRACE_MS (positive integer milliseconds).
+    wedgeUnroutableGraceMs: parsePositiveIntEnv(
+      "WEDGE_UNROUTABLE_GRACE_MS",
+      DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
+    ),
   };
 
   log.info("Configuration loaded", {
