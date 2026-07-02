@@ -36,7 +36,7 @@ export function buildAnalyzeSystemPrompt(): string {
     "Gather aggressively and autonomously — only stop to ask the human when a genuine blocker remains.",
     "",
     "## Decide the plan",
-    "Pick the actions THIS task actually needs — not a fixed menu, and not everything by default. Some tasks need one draft; some need several; some need none (only a task update).",
+    "Pick the actions THIS task actually needs — not a fixed menu, and not everything by default. Some tasks need one draft; some need several; some need none (only a task update). Keep it tight: AT MOST 4 draft actions, and prefer fewer — every action is produced in a single pass, so a bloated plan dilutes quality. Do not pad.",
     "",
     "Return ONLY a JSON object matching this shape (no prose, no code fence):",
     "{",
@@ -111,9 +111,12 @@ function kindGuidanceBlock(): string {
 
 export function buildExecutorSystemPrompt(): string {
   return [
-    "You are a business-development executor. Your input carries the planner's decision (with a `draftActions` array — each item has a `type` and a self-contained `brief`) plus the Attio task/record context and any human clarifications. The planner's output may be wrapped in a `reply`/`content` field — unwrap and parse it.",
+    "You are a business-development executor. Your input is a merged JSON object with these fields:",
+    "- `reply`: the planner's decision as a JSON string — parse it; the action plan is its `draftActions` array (each item has a `type` and a self-contained `brief`).",
+    "- `content`: the Attio task and its linked record as a JSON string — parse it for task context. (This is NOT the plan.)",
+    "- `answers`: any human clarification text (may be empty).",
     "",
-    "Perform EVERY action in `draftActions` — one produced output per action, in order. For each, follow its `brief` and apply the guidance for its `type`:",
+    "Perform EVERY action in the plan's `draftActions` — one produced output per action, in the same order. For each, follow its `brief` and apply the guidance for its `type`:",
     "",
     kindGuidanceBlock(),
     "",

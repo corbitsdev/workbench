@@ -105,6 +105,12 @@ const persistStep = deterministicToolStep({
   id: "attio-task-agent-persist",
   tool: "artifact_create",
   input: { from: "trigger.payload" },
+  // The artifact `kind` is the planner's action `type`. This is INTENTIONALLY
+  // free-form (CL-2664): the action registry is open, so a new action type
+  // persists as its own artifact kind with no schema change. The artifact table's
+  // kind column is a plain string; unknown types are surfaced (not blocked) — the
+  // Review panel labels an unrecognized type "(new type)" so a hallucinated kind
+  // is visible to the human before they save it, rather than silently rejected.
   argMap: {
     title: { from: "title" },
     kind: { from: "type" },
@@ -145,6 +151,10 @@ const reviewStep = inlineInferenceStep({
   id: "attio-task-agent-review-artifacts",
   systemPrompt: buildReviewSystemPrompt(),
   input: { from: "steps.execute.output" },
+  // Bounded so a long batch can't run the judge unboundedly; a truncated review
+  // degrades gracefully (the UI tolerates a null/partial review) rather than
+  // dead-ending like a truncated executor would.
+  maxTokens: 8192,
   after: ["execute"],
 });
 

@@ -77,7 +77,7 @@ const DISPLAY_STEPS: DisplayStep[] = [
   },
   {
     key: "sync",
-    label: "Sync",
+    label: "Write back",
     stepIds: ["suggest", "approveSync", "writeNote", "writeComplete"],
     activityLabel: "Writing back to Attio",
   },
@@ -273,10 +273,48 @@ export function parseFirstLinkedRecord(
   return { status: "ok", value: parsed.linkedRecords?.[0] ?? null };
 }
 
-function parseSelectedTaskId(raw: unknown): string | null {
-  const parsed = type({ "taskId?": "string" })(peelOutput(raw));
-  if (parsed instanceof type.errors) return null;
-  return parsed.taskId ?? null;
+function parseSelectedTaskId(raw: unknown): Decoded<string | null> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = type({ "taskId?": "string" })(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed.taskId ?? null };
+}
+
+// Zip the reviewer's verdicts onto the produced drafts BY INDEX — the reviewer
+// is contracted to return one item per output in the same order. Joining by
+// `type` would misattribute when a plan has two drafts of the same type (e.g.
+// two cold-emails): `find` would tag both with the first's verdict. `null`
+// review (absent/pending/malformed) yields drafts with no verdict.
+export type ReviewedDraft = {
+  draft: GeneratedArtifact;
+  verdict?: "pass" | "revise" | "reject";
+  notes?: string;
+};
+
+export function mergeReview(
+  drafts: GeneratedArtifact[],
+  review: ParsedReview | null,
+): ReviewedDraft[] {
+  return drafts.map((draft, i) => {
+    const item = review?.items[i];
+    if (item === undefined) return { draft };
+    return { draft, verdict: item.verdict, notes: item.notes };
+  });
+}
+
+// Safe default selection: with a review, pre-check only what the agent PASSED
+// (a `revise`/`reject` must be opted into, not out of). With no review yet,
+// pre-check everything — there is no signal to withhold on.
+export function defaultSelectedIndices(
+  reviewed: ReviewedDraft[],
+  hasReview: boolean,
+): Set<number> {
+  const out = new Set<number>();
+  reviewed.forEach((r, i) => {
+    if (!hasReview || r.verdict === "pass") out.add(i);
+  });
+  return out;
 }
 
 // ── Shared chrome ─────────────────────────────────────────────────────────────
@@ -376,11 +414,13 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
       const decision = parseDecision(stepOutputs.analyze);
       if (decision.status === "pending")
         return <Placeholder label="Analyzing the task…" />;
-      if (decision.status === "malformed")
-        return <ErrorLine label="Couldn't read the analysis." />;
+      // A malformed plan must NOT brick the gate: fall back to a blank decision
+      // so the human still gets a Continue button and the run can proceed
+      // best-effort rather than parking forever on an open gate it can't satisfy.
+      const decisionValue = decision.status === "ok" ? decision.value : {};
       return (
         <Clarify
-          decision={decision.value}
+          decision={decisionValue}
           connected={connected}
           pending={signalPending}
           onSubmit={(answers) => onSignal("clarification", { answers })}
@@ -388,18 +428,23 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
       );
     }
     if (gate === "review") {
-      const artifacts = parseExecutorOutputs(stepOutputs.execute);
-      if (artifacts.status === "pending")
+      const drafts = parseExecutorOutputs(stepOutputs.execute);
+      if (drafts.status === "pending")
         return <Placeholder label="Carrying out the plan…" />;
-      if (artifacts.status === "malformed")
-        return <ErrorLine label="Couldn't read the produced outputs." />;
+      if (drafts.status === "malformed")
+        return <ErrorLine label="Couldn't read the drafts." />;
+      // Distinguish "still reviewing" from "review absent/unreadable" so the
+      // panel doesn't silently drop the agent's verdicts (they land after the
+      // drafts). reviewPending keeps the human informed a verdict is coming.
       const reviewDecoded = parseReview(stepOutputs.reviewArtifacts);
       const review = reviewDecoded.status === "ok" ? reviewDecoded.value : null;
+      const reviewPending = reviewDecoded.status === "pending";
       return (
         <Review
-          key={artifacts.value.map((a) => a.type).join(",")}
-          artifacts={artifacts.value}
+          key={drafts.value.map((a) => a.type).join(",")}
+          drafts={drafts.value}
           review={review}
+          reviewPending={reviewPending}
           connected={connected}
           pending={signalPending}
           onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
@@ -411,8 +456,17 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
       const decision =
         decisionDecoded.status === "ok" ? decisionDecoded.value : {};
       const recordDecoded = parseFirstLinkedRecord(stepOutputs.fetchTask);
+      const taskDecoded = parseSelectedTaskId(stepOutputs.selectTask);
+      // A parse FAILURE on the write-back locators is not the same as "nothing
+      // to sync" — surface it as an error on this destructive gate instead of
+      // the calm no-op copy that would hide a broken read of the task/record.
+      if (
+        recordDecoded.status === "malformed" ||
+        taskDecoded.status === "malformed"
+      )
+        return <ErrorLine label="Couldn't read the task details to sync." />;
       const record = recordDecoded.status === "ok" ? recordDecoded.value : null;
-      const taskId = parseSelectedTaskId(stepOutputs.selectTask);
+      const taskId = taskDecoded.status === "ok" ? taskDecoded.value : null;
       return (
         <ApproveSync
           decision={decision}
@@ -467,7 +521,7 @@ function Done(props: {
           {props.summary}
         </p>
       ) : (
-        <p className="text-text-3 text-sm">Artifacts saved to your library.</p>
+        <p className="text-text-3 text-sm">Drafts saved to your library.</p>
       )}
       <Button variant="secondary" onClick={props.onClose}>
         Close
@@ -612,32 +666,30 @@ function Clarify(props: {
   );
 }
 
-function verdictBadge(verdict: string): { label: string; className: string } {
-  if (verdict === "pass")
-    return { label: "reviewed ✓", className: "text-green" };
+function verdictBadge(verdict: "pass" | "revise" | "reject"): {
+  label: string;
+  className: string;
+} {
+  if (verdict === "pass") return { label: "approved", className: "text-green" };
   if (verdict === "reject") return { label: "rejected", className: "text-red" };
-  return { label: "needs a fix", className: "text-orange" };
+  return { label: "needs changes", className: "text-orange" };
 }
 
 function Review(props: {
-  artifacts: GeneratedArtifact[];
+  drafts: GeneratedArtifact[];
   review: ParsedReview | null;
+  reviewPending: boolean;
   connected: boolean;
   pending: boolean;
   onSubmit: (approved: GeneratedArtifact[]) => void;
 }): ReactNode {
   const known = useMemo(() => new Set<string>(attioTaskArtifactKinds), []);
-  // Default-select everything the reviewer did not reject.
-  const verdictFor = (type: string): string | undefined =>
-    props.review?.items.find((it) => it.type === type)?.verdict;
-  const [selected, setSelected] = useState<Set<number>>(
-    () =>
-      new Set(
-        props.artifacts
-          .map((a, i) => ({ a, i }))
-          .filter(({ a }) => verdictFor(a.type) !== "reject")
-          .map(({ i }) => i),
-      ),
+  const reviewed = useMemo(
+    () => mergeReview(props.drafts, props.review),
+    [props.drafts, props.review],
+  );
+  const [selected, setSelected] = useState<Set<number>>(() =>
+    defaultSelectedIndices(reviewed, props.review !== null),
   );
   const disabled = props.pending || !props.connected;
   const toggle = (i: number) =>
@@ -650,19 +702,20 @@ function Review(props: {
   return (
     <div className="flex flex-col gap-2">
       <h3 className="text-text text-sm font-medium">Review</h3>
-      {props.review?.overall ? (
+      {props.reviewPending ? (
+        <p className="text-text-3 text-sm">
+          The agent is reviewing the drafts…
+        </p>
+      ) : props.review?.overall ? (
         <p className="text-text-2 text-sm">{props.review.overall}</p>
       ) : null}
-      {props.artifacts.length === 0 ? (
+      {props.drafts.length === 0 ? (
         <p className="text-text-3 text-sm">
           The plan produced no drafts — nothing to save here.
         </p>
       ) : null}
-      {props.artifacts.map((a, i) => {
-        const verdict = verdictFor(a.type);
-        const notes = props.review?.items.find(
-          (it) => it.type === a.type,
-        )?.notes;
+      {reviewed.map((r, i) => {
+        const badge = r.verdict ? verdictBadge(r.verdict) : null;
         return (
           <label
             key={i}
@@ -677,32 +730,32 @@ function Review(props: {
                 onChange={() => toggle(i)}
               />
               <span className="min-w-0">
-                <span className="text-text font-medium">{a.title}</span>{" "}
+                <span className="text-text font-medium">{r.draft.title}</span>{" "}
                 <span className="text-text-3 text-xs">
-                  {known.has(a.type) ? a.type : `${a.type} (new type)`}
+                  {known.has(r.draft.type)
+                    ? r.draft.type
+                    : `${r.draft.type} (new type)`}
                 </span>
-                {verdict ? (
-                  <span
-                    className={`ml-1 text-xs ${verdictBadge(verdict).className}`}
-                  >
-                    · {verdictBadge(verdict).label}
+                {badge ? (
+                  <span className={`ml-1 text-xs ${badge.className}`}>
+                    · {badge.label}
                   </span>
                 ) : null}
               </span>
             </span>
-            {notes && verdict !== "pass" ? (
-              <span className="text-text-3 pl-6 text-xs">{notes}</span>
+            {r.notes && r.verdict !== "pass" ? (
+              <span className="text-text-3 pl-6 text-xs">{r.notes}</span>
             ) : null}
           </label>
         );
       })}
       <Button
-        disabled={disabled}
+        disabled={disabled || selected.size === 0}
         onClick={() =>
-          props.onSubmit(props.artifacts.filter((_, i) => selected.has(i)))
+          props.onSubmit(props.drafts.filter((_, i) => selected.has(i)))
         }
       >
-        Save selected
+        Save selected ({selected.size})
       </Button>
       {!props.connected ? <Reconnecting /> : null}
     </div>
@@ -778,7 +831,7 @@ function ApproveSyncForm(props: {
                 })
               }
             >
-              Attach &amp; complete
+              Attach and complete
             </Button>
             <Button
               variant="secondary"

@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { RunState } from "@intx/workflow";
 import {
   activeGate,
+  defaultSelectedIndices,
+  mergeReview,
   parseExecutorOutputs,
   parseReview,
   parseDecision,
@@ -9,6 +11,7 @@ import {
   parseMembers,
   parseTasks,
   peelOutput,
+  type GeneratedArtifact,
 } from "./ui";
 
 // A deterministic tool step's output is a JSON envelope; an inference step's is
@@ -210,6 +213,91 @@ describe("parseReview", () => {
   test("pending when no review yet; malformed for garbage", () => {
     expect(parseReview(undefined)).toEqual({ status: "pending" });
     expect(parseReview(reply({ overall: 1 }))).toEqual({ status: "malformed" });
+  });
+});
+
+describe("parseDecision (planner envelope → structured plan)", () => {
+  test("recovers draftActions from a reply-enveloped, JSON-stringified decision", () => {
+    // The real planner output on a live sidecar: {reply:"<json string>"} — the
+    // parser must unwrap AND parse to reach the plan (regression guard for the
+    // envelope surface the runLocal test mocks away).
+    const d = parseDecision(
+      reply({
+        status: "ready",
+        reasoning: "ok",
+        draftActions: [
+          { type: "cold-email", brief: "Draft outreach." },
+          { type: "cold-email", brief: "Draft a warmer variant." },
+        ],
+      }),
+    );
+    expect(d.status).toBe("ok");
+    if (d.status !== "ok") throw new Error("expected ok");
+    expect(d.value.draftActions?.length).toBe(2);
+  });
+});
+
+describe("mergeReview (verdict join)", () => {
+  const drafts: GeneratedArtifact[] = [
+    { type: "cold-email", title: "A", content: "a" },
+    { type: "cold-email", title: "B", content: "b" }, // SAME type as the first
+    { type: "blog", title: "C", content: "c" },
+  ];
+
+  test("joins verdicts BY INDEX, not by type — duplicate types don't misattribute", () => {
+    const review = {
+      overall: "x",
+      items: [
+        { type: "cold-email", verdict: "pass" as const, notes: "first" },
+        { type: "cold-email", verdict: "reject" as const, notes: "second" },
+        { type: "blog", verdict: "revise" as const, notes: "third" },
+      ],
+    };
+    const merged = mergeReview(drafts, review);
+    // The two same-type drafts get DIFFERENT verdicts (a type-join would give
+    // both the first cold-email's "pass").
+    expect(merged[0]).toMatchObject({ verdict: "pass", notes: "first" });
+    expect(merged[1]).toMatchObject({ verdict: "reject", notes: "second" });
+    expect(merged[2]).toMatchObject({ verdict: "revise", notes: "third" });
+  });
+
+  test("leaves drafts unjudged when the review is absent or shorter", () => {
+    expect(
+      mergeReview(drafts, null).every((r) => r.verdict === undefined),
+    ).toBe(true);
+    const short = {
+      overall: "x",
+      items: [{ type: "cold-email", verdict: "pass" as const, notes: "" }],
+    };
+    const merged = mergeReview(drafts, short);
+    expect(merged[0]?.verdict).toBe("pass");
+    expect(merged[1]?.verdict).toBeUndefined();
+  });
+});
+
+describe("defaultSelectedIndices (safe default)", () => {
+  const drafts: GeneratedArtifact[] = [
+    { type: "cold-email", title: "A", content: "a" },
+    { type: "blog", title: "B", content: "b" },
+    { type: "twitter-post", title: "C", content: "c" },
+  ];
+
+  test("with a review, pre-selects ONLY passed drafts (revise/reject opted-in, not out)", () => {
+    const review = {
+      overall: "x",
+      items: [
+        { type: "cold-email", verdict: "pass" as const, notes: "" },
+        { type: "blog", verdict: "revise" as const, notes: "" },
+        { type: "twitter-post", verdict: "reject" as const, notes: "" },
+      ],
+    };
+    const sel = defaultSelectedIndices(mergeReview(drafts, review), true);
+    expect([...sel]).toEqual([0]);
+  });
+
+  test("with no review yet, pre-selects everything (no signal to withhold)", () => {
+    const sel = defaultSelectedIndices(mergeReview(drafts, null), false);
+    expect(sel.size).toBe(3);
   });
 });
 
