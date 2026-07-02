@@ -1,4 +1,4 @@
-import { eq, and, inArray, like } from "drizzle-orm";
+import { eq, and, inArray, like, lt } from "drizzle-orm";
 import { schema as intxSchema, resolveModelSources } from "@intx/db";
 import type { DB } from "@intx/db";
 import {
@@ -635,4 +635,130 @@ export function registerDisconnectReconciler(deps: {
       }, graceMs);
     }
   });
+}
+
+// Default cadence for the periodic wedge-sweep reconciler (CL-2639).
+export const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
+
+// Only end-and-relaunch an active session that has been idle longer than this.
+// The disconnect reconciler is disconnect-triggered and passive: it fires only
+// when a `sidecar.disconnect` event is observed and only marks the session
+// ended — nothing re-registers the address. There is no `sidecar.connect`
+// counterpart on the router (verified against @intx/hub-sessions), so a sidecar
+// that fully restarts leaves instances with `agent_session.status = 'active'`
+// but no routable address, and mail 502s until fixed by hand. This periodic
+// sweep supplies the missing relaunch half from any cause (missed disconnect
+// event, hub restart, etc.).
+//
+// The stale floor is what keeps the sweep from tearing down a launch that is
+// still in flight. An initial provision or a `/me` relaunch inserts a *fresh*
+// active session and is momentarily unroutable while the sidecar registers the
+// address; Interchange signals this with its internal `pendingSessionStarts`
+// map, which the router does not expose to the hub. We substitute an age floor
+// on the session's `updatedAt`: a genuinely wedged session was launched long
+// ago (it ran, then the sidecar restarted), while a mid-registration launch is
+// seconds old. The floor mirrors the disconnect reconciler's grace window, so
+// past it an unroutable active session is wedged, not mid-launch.
+export const DEFAULT_WEDGE_SESSION_STALE_MS = 90_000;
+
+/**
+ * One pass of the wedge sweep. Selects instances whose session is `active` but
+ * whose address is not routable and whose session has been idle past the stale
+ * floor, then ends the stale session (via `reconcileDisconnectedSession`) and
+ * relaunches it (via `relaunchInstanceIfNeeded`) so Interchange re-provisions
+ * and the address re-registers.
+ *
+ * Composes with `registerDisconnectReconciler` without racing or double-
+ * relaunching: the routable set is re-read here and again inside
+ * `relaunchInstanceIfNeeded` right before launch (so a reconnect that lands
+ * mid-sweep is a no-op), and every relaunch is funneled through the process-
+ * local dedup/cooldown breaker in `relaunchInstanceIfNeeded`, which coalesces a
+ * concurrent `/me` relaunch of the same instance onto one launch. (CL-2639)
+ */
+export async function reconcileWedgedSessions(
+  db: DB["db"],
+  sidecarRouter: SidecarRouter,
+  sessionService: SessionService,
+  grantStore: GrantStore,
+  eventCollectors: EventCollectorRegistry,
+  opts?: { staleMs?: number; now?: Date },
+): Promise<void> {
+  const staleMs = opts?.staleMs ?? DEFAULT_WEDGE_SESSION_STALE_MS;
+  const now = opts?.now ?? new Date();
+  const cutoff = new Date(now.getTime() - staleMs);
+
+  const routable = new Set(sidecarRouter.getRoutableAddresses());
+
+  const wedged = await db
+    .select({
+      instanceId: agentInstance.id,
+      address: agentInstance.address,
+    })
+    .from(agentInstance)
+    .innerJoin(agentSession, eq(agentInstance.sessionId, agentSession.id))
+    .where(
+      and(
+        eq(agentSession.status, "active"),
+        lt(agentSession.updatedAt, cutoff),
+      ),
+    );
+
+  for (const row of wedged) {
+    if (routable.has(row.address)) continue;
+    try {
+      await reconcileDisconnectedSession(db, sidecarRouter, row.address);
+      await relaunchInstanceIfNeeded(
+        db,
+        sessionService,
+        grantStore,
+        eventCollectors,
+        row.instanceId,
+        sidecarRouter,
+      );
+    } catch (err) {
+      log.warn("Failed to reconcile wedged agent session", {
+        instanceId: row.instanceId,
+        address: row.address,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
+}
+
+/**
+ * Registers the periodic wedge-sweep reconciler on an interval. Returns an
+ * unsubscribe function that clears the timer (mirrors
+ * `registerDisconnectReconciler`'s teardown contract). The timer is `unref`'d so
+ * it never keeps the process alive on its own.
+ */
+export function registerWedgeSweepReconciler(deps: {
+  db: DB["db"];
+  router: SidecarRouter;
+  sessionService: SessionService;
+  grantStore: GrantStore;
+  eventCollectors: EventCollectorRegistry;
+  intervalMs?: number;
+  staleMs?: number;
+}): () => void {
+  const { db, router, sessionService, grantStore, eventCollectors } = deps;
+  const intervalMs = deps.intervalMs ?? DEFAULT_WEDGE_SWEEP_INTERVAL_MS;
+  const staleMs = deps.staleMs ?? DEFAULT_WEDGE_SESSION_STALE_MS;
+
+  const timer = setInterval(() => {
+    void reconcileWedgedSessions(
+      db,
+      router,
+      sessionService,
+      grantStore,
+      eventCollectors,
+      { staleMs },
+    ).catch((err) => {
+      log.warn("Periodic wedge-sweep reconcile tick failed", {
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    });
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => clearInterval(timer);
 }
