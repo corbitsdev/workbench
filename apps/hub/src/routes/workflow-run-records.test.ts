@@ -82,6 +82,38 @@ mock.module("../workflow-executor/run-store", () => ({
       })),
 }));
 
+// Preserve LogRunStateSchema (the route validates its output through it) and
+// override only getWorkflowRunState — the log fold itself is covered by the real
+// on-disk integration test; here we prove the route's gating + wiring + shape.
+const realRunStateFromLog = await import(
+  "../workflow-executor/run-state-from-log"
+);
+const runStateCalls: { deploymentId: string; runId: string; kind: string }[] =
+  [];
+let cannedLogState: unknown = {
+  runId: "R",
+  phase: "failed",
+  lastSeq: 3,
+  steps: [
+    {
+      stepId: "s1",
+      phase: "completed",
+      stepType: "agent",
+      currentAttempt: 1,
+    },
+  ],
+};
+mock.module("../workflow-executor/run-state-from-log", () => ({
+  ...realRunStateFromLog,
+  getWorkflowRunState: async (
+    _deps: unknown,
+    args: { deploymentId: string; runId: string; kind: string },
+  ) => {
+    runStateCalls.push(args);
+    return cannedLogState;
+  },
+}));
+
 const { createWorkflowRunRecordsRouter } = await import(
   "./workflow-run-records"
 );
@@ -116,6 +148,7 @@ function resetCaptures(): void {
   ensureCalls.length = 0;
   provisionCalls.length = 0;
   reclaimCalls.length = 0;
+  runStateCalls.length = 0;
   sendShouldThrow = false;
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
@@ -229,6 +262,9 @@ function routerWith(opts: {
     "/",
     createWorkflowRunRecordsRouter({
       db: opts.db ?? makeDb(),
+      repoStore: {} as unknown as Parameters<
+        typeof createWorkflowRunRecordsRouter
+      >[0]["repoStore"],
       sidecarRouter,
       sessionService,
       cryptoProvider: {} as CryptoProvider,
@@ -627,6 +663,102 @@ describe("workflow runs on the sidecar (records router)", () => {
     } finally {
       ancestorChain = ["tn-1"];
     }
+  });
+});
+
+describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669)", () => {
+  test("returns the folded log state for the run's owner, addressed by its deployment + kind", async () => {
+    resetCaptures();
+    cannedLogState = {
+      runId: "R",
+      phase: "failed",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "s1",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+        },
+        { stepId: "s2", phase: "failed", stepType: "human", currentAttempt: 1 },
+      ],
+    };
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+
+    const read = await get(a, `/workflow-exec/runs/${runId}/state`);
+    expect(read.status).toBe(200);
+    expect(read.json.phase).toBe("failed");
+    expect(read.json.steps).toHaveLength(2);
+    // Addressed by the run's OWN per-run deployment + its kind, pulled from the
+    // seeded record — not from any client-supplied field.
+    expect(runStateCalls).toEqual([
+      { deploymentId: "ses_run_1", runId, kind: "pain-point-collateral" },
+    ]);
+  });
+
+  test("500s and does not return an unvalidated body when the fold yields a bad shape", async () => {
+    resetCaptures();
+    cannedLogState = {
+      runId: "R",
+      phase: "not-a-phase",
+      lastSeq: 0,
+      steps: [],
+    };
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
+    expect(read.status).toBe(500);
+    expect(read.json.error).toBe("failed to read run state");
+  });
+
+  test("cross-user read is forbidden 403 and never reads the log", async () => {
+    resetCaptures();
+    const owner = app();
+    const start = await post(
+      owner,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    const intruder = appAs({ tenantId: "tn-1", principalId: "prn-other" });
+    const read = await get(
+      intruder,
+      `/workflow-exec/runs/${start.json.runId}/state`,
+    );
+    expect(read.status).toBe(403);
+    expect(runStateCalls).toHaveLength(0);
+  });
+
+  test("unknown run is 404 and never reads the log", async () => {
+    resetCaptures();
+    const a = app();
+    const read = await get(a, "/workflow-exec/runs/wfr_missing/state");
+    expect(read.status).toBe(404);
+    expect(runStateCalls).toHaveLength(0);
+  });
+
+  test("a run with no deployment is 400 and never reads the log", async () => {
+    resetCaptures();
+    const a = routerWith({ db: makeDb() });
+    // A run record with no deploymentId (legacy / never-provisioned).
+    runs.set("wfr_nodeploy", {
+      runId: "wfr_nodeploy",
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status: "running",
+      currentStepId: null,
+      input: {},
+      outputs: {},
+    });
+    const read = await get(a, "/workflow-exec/runs/wfr_nodeploy/state");
+    expect(read.status).toBe(400);
+    expect(runStateCalls).toHaveLength(0);
   });
 });
 

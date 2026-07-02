@@ -2,8 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api } from "../lib/api";
 import {
+  isLogStateTerminal,
   isRecordTerminal,
+  logRunStateSchema,
+  runStateFromLog,
   runStateFromRecord,
+  type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
 
@@ -153,6 +157,45 @@ export function useWorkflowRecord(
     },
   });
 }
+
+// Log-derived run state (CL-2669 Phase 1b). Reads the run's authoritative
+// per-step state folded from its native git event log, replacing the coarse
+// record projection as the stepper's source of truth. Gated on a present runId;
+// polls every 2s while the run is non-terminal and stops the instant it settles
+// (completed/failed/cancelled) — a parked `awaiting-signal` gate keeps polling,
+// since the log phase (not a separate record status) tells us the run is live.
+// staleTime 0 so a resume's fresh state is never served stale. SSE is a later
+// ticket; this poll is the interim cadence.
+export function useWorkflowRunState(
+  runId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<LogRunState>({
+    queryKey: ["workflow-run-state", runId, tenantId ?? null],
+    enabled: !!runId,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && !isLogStateTerminal(data.phase) ? 2000 : false;
+    },
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(`/workflow-exec/runs/${runId as string}/state`, tenantId),
+      );
+      const parsed = logRunStateSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow run-state response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
+export { runStateFromLog };
 
 export function useStartWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();

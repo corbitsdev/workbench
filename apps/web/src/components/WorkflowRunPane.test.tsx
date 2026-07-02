@@ -60,6 +60,11 @@ const resumeMutateAsync = mock(async () => undefined);
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
+  // These suites drive the pane from the record projection; return the
+  // log-state hook as errored so the pane falls back to runStateFromRecord.
+  // (The log-derived stepper mapping is covered in run-state-adapter.test.ts
+  // and workflow-log-stepper.test.tsx.)
+  useWorkflowRunState: () => ({ data: undefined, isError: true }),
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
