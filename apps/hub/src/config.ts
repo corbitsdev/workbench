@@ -1,7 +1,42 @@
+import { type } from "arktype";
 import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "config"]);
 
+// Boot-time workflow-def auto-publish routing (CL-2641): maps a workflow `kind`
+// (or the literal key "default") to the tenant SLUGS it should be published
+// into. Slugs (not ids) so a single value works across staging and prod. When
+// the env is unset/empty every def falls back to the global root tenant — the
+// exact pre-CL-2641 behavior — so back-compat is preserved.
+export const WorkflowAutopublishMapSchema = type({
+  "[string]": "string[]",
+});
+export type WorkflowAutopublishMap = typeof WorkflowAutopublishMapSchema.infer;
+
+// Optional by contract: unset or blank → null ("no map" → default routing).
+// When set, malformed JSON or a wrong shape fails config load loudly — this is
+// a deploy-config boundary and config.ts owns validation.
+function parseWorkflowAutopublishMap(): WorkflowAutopublishMap | null {
+  const raw = process.env["WORKFLOW_AUTOPUBLISH_MAP"];
+  if (raw === undefined || raw.trim() === "") return null;
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `WORKFLOW_AUTOPUBLISH_MAP must be valid JSON: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+  const parsed = WorkflowAutopublishMapSchema(json);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `WORKFLOW_AUTOPUBLISH_MAP has an invalid shape (expected an object mapping a workflow kind or "default" to an array of tenant slugs): ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
 // Keep `config` a dependency-light leaf: importing these constants from
 // `./services/agent-provisioning` would drag that module's heavy graph
 // (tool-registry ↔ file-parser-tools has a mutual cycle) into config and flip
@@ -137,6 +172,9 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // Per-kind → tenant-slug routing for boot-time autopublish (CL-2641). Null
+    // when unset → every def targets the global root tenant (back-compat).
+    workflowAutopublishMap: parseWorkflowAutopublishMap(),
     // Cadence (ms) of the periodic wedge-sweep reconciler that relaunches agent
     // instances left with an active session but no routable sidecar address
     // after a sidecar restart (CL-2639). Single contract-guaranteed default of
