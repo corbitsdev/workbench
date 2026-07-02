@@ -15,12 +15,13 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text"
   },
   "dependencies": {
+    "@intx/log": "workspace:*",
     "@intx/mime": "workspace:*",
     "@intx/types": "workspace:*",
     "arktype": "catalog:",
     "isomorphic-git": "catalog:"
   },
   "devDependencies": {
-    "@intx/crypto-node": "workspace:*"
+    "@intx/crypto": "workspace:*"
   }
 }

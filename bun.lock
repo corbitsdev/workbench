@@ -27,7 +27,7 @@
         "@better-auth/drizzle-adapter": "^1.6.9",
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-api": "workspace:*",
         "@intx/hub-common": "workspace:*",
@@ -95,7 +95,7 @@
       "dependencies": {
         "@intx/agent": "workspace:*",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/harness": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
@@ -232,8 +232,8 @@
         "@intx/types": "workspace:*",
       },
     },
-    "interchange/packages/crypto-node": {
-      "name": "@intx/crypto-node",
+    "interchange/packages/crypto": {
+      "name": "@intx/crypto",
       "version": "0.1.2",
       "dependencies": {
         "@intx/types": "workspace:*",
@@ -282,7 +282,7 @@
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "hono": "catalog:",
       },
@@ -293,7 +293,7 @@
       "dependencies": {
         "@hono/standard-validator": "^0.2.2",
         "@intx/authz": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
@@ -335,7 +335,7 @@
       "version": "0.1.2",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/log": "workspace:*",
@@ -423,7 +423,7 @@
       "name": "@intx/mail-memory",
       "version": "0.1.2",
       "dependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
@@ -434,7 +434,7 @@
       "name": "@intx/mime",
       "version": "0.1.2",
       "dependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
       },
@@ -450,13 +450,14 @@
       "name": "@intx/storage-isogit",
       "version": "0.1.2",
       "dependencies": {
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
       },
     },
     "interchange/packages/tool-packaging": {
@@ -548,12 +549,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
         "@intx/mime": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
@@ -722,7 +724,7 @@
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "hono": "catalog:",
       },
@@ -796,13 +798,14 @@
       "name": "@workbench/storage-isogit",
       "version": "0.1.2",
       "dependencies": {
+        "@intx/log": "workspace:*",
         "@intx/mime": "workspace:*",
         "@intx/types": "workspace:*",
         "arktype": "catalog:",
         "isomorphic-git": "catalog:",
       },
       "devDependencies": {
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
       },
     },
     "packages/test-utils": {
@@ -905,7 +908,7 @@
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/db": "workspace:*",
         "@intx/hub-common": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
@@ -1232,12 +1235,13 @@
       "version": "0.0.1",
       "dependencies": {
         "@intx/agent": "workspace:*",
-        "@intx/crypto-node": "workspace:*",
+        "@intx/crypto": "workspace:*",
         "@intx/hub-sessions": "workspace:*",
         "@intx/inference": "workspace:*",
         "@intx/log": "workspace:*",
         "@intx/mail-memory": "workspace:*",
         "@intx/mime": "workspace:*",
+        "@intx/storage-isogit": "workspace:*",
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
@@ -1681,7 +1685,7 @@
 
     "@intx/authz": ["@intx/authz@workspace:interchange/packages/authz"],
 
-    "@intx/crypto-node": ["@intx/crypto-node@workspace:interchange/packages/crypto-node"],
+    "@intx/crypto": ["@intx/crypto@workspace:interchange/packages/crypto"],
 
     "@intx/db": ["@intx/db@workspace:interchange/packages/db"],
 
