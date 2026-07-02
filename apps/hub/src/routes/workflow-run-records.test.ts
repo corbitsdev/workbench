@@ -459,25 +459,10 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "selectKinds",
+        currentStepId: "review",
       });
     return runId;
   }
-
-  test("resume rejects an attio kind-selection payload missing a kind with 400 and sends no signal", async () => {
-    resetCaptures();
-    const a = app();
-    const runId = await parkedAttioRun(a);
-
-    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "kind-selection",
-      payload: { generate: { "cold-email": true } },
-    });
-
-    expect(r.status).toBe(400);
-    expect(r.json.error).toMatch(/invalid resume payload/);
-    expect(sentSignals).toHaveLength(0);
-  });
 
   test("resume rejects an attio sync-approval payload with a non-boolean confirm", async () => {
     resetCaptures();
@@ -493,32 +478,38 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentSignals).toHaveLength(0);
   });
 
-  test("resume passes through a valid attio kind-selection payload", async () => {
+  test("resume passes through the agent-decided review payload (no kind-selection validation)", async () => {
+    // CL-2664: the plan is agent-decided; there is no kind-selection gate. The
+    // human review signal carries approved pieces and is not schema-validated.
     resetCaptures();
     const a = app();
     const runId = await parkedAttioRun(a);
-    const generate: Record<string, boolean> = {};
-    for (const kind of [
-      "cold-email",
-      "follow-up-email",
-      "twitter-post",
-      "linkedin-post",
-      "research-brief",
-      "task-explanation",
-      "gamma-presentation",
-      "blog",
-      "single-page-website",
-    ])
-      generate[kind] = kind === "cold-email";
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "kind-selection",
-      payload: { generate },
+      signalName: "review",
+      payload: {
+        approvedPieces: [{ type: "cold-email", title: "T", content: "C" }],
+      },
     });
 
     expect(r.status).toBe(200);
     expect(sentSignals).toHaveLength(1);
-    expect(sentSignals[0]?.signalName).toBe("kind-selection");
+    expect(sentSignals[0]?.signalName).toBe("review");
+  });
+
+  test("resume passes through a valid attio sync-approval confirm payload", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "sync-approval",
+      payload: { confirm: false },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("sync-approval");
   });
 
   test("resume does not validate an unregistered signal on a registered kind", async () => {

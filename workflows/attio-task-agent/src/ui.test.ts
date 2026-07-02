@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import type { RunState } from "@intx/workflow";
 import {
   activeGate,
-  parseGeneratedByKind,
+  parseExecutorOutputs,
+  parseReview,
   parseDecision,
   parseFirstLinkedRecord,
   parseMembers,
@@ -143,62 +144,72 @@ describe("parseDecision", () => {
   });
 });
 
-describe("parseGeneratedByKind", () => {
-  test("aggregates the per-kind gen-<kind> step outputs that produced an artifact", () => {
-    const stepOutputs: Record<string, unknown> = {
-      "gen-cold-email": reply({
-        kind: "cold-email",
-        title: "Outreach",
-        content: "Hi",
-      }),
-      "gen-blog": reply({ kind: "blog", title: "Post", content: "Body" }),
-      // a pruned kind has no output — must not appear
-    };
-    const got = parseGeneratedByKind(stepOutputs);
+describe("parseExecutorOutputs", () => {
+  test("returns the executor's produced outputs from a single { outputs } reply", () => {
+    const raw = reply({
+      outputs: [
+        { type: "cold-email", title: "Outreach", content: "Hi", brief: "b" },
+        { type: "blog", title: "Post", content: "Body" },
+      ],
+    });
+    const got = parseExecutorOutputs(raw);
     expect(got.status).toBe("ok");
     if (got.status !== "ok") throw new Error("expected ok");
-    expect(got.value).toContainEqual({
-      kind: "cold-email",
-      title: "Outreach",
-      content: "Hi",
-    });
-    expect(got.value).toContainEqual({
-      kind: "blog",
-      title: "Post",
-      content: "Body",
-    });
     expect(got.value.length).toBe(2);
+    expect(got.value[0]).toMatchObject({
+      type: "cold-email",
+      title: "Outreach",
+    });
   });
 
-  test("pending when no generation output has landed yet", () => {
-    expect(parseGeneratedByKind({})).toEqual({ status: "pending" });
+  test("pending when the executor step has not landed yet", () => {
+    expect(parseExecutorOutputs(undefined)).toEqual({ status: "pending" });
   });
 
-  test("malformed when generation ran but nothing parsed to an artifact", () => {
-    expect(parseGeneratedByKind({ "gen-blog": reply({ oops: true }) })).toEqual(
-      { status: "malformed" },
+  test("an empty plan result is ok (not malformed) — the plan needed no drafts", () => {
+    expect(parseExecutorOutputs(reply({ outputs: [] }))).toEqual({
+      status: "ok",
+      value: [],
+    });
+  });
+
+  test("malformed when the output is present but not an { outputs } shape", () => {
+    expect(parseExecutorOutputs(reply({ oops: true }))).toEqual({
+      status: "malformed",
+    });
+  });
+
+  test("a fenced executor reply still yields the outputs", () => {
+    const got = parseExecutorOutputs({
+      reply:
+        '```json\n{"outputs":[{"type":"blog","title":"P","content":"B"}]}\n```',
+    });
+    expect(got.status).toBe("ok");
+    if (got.status !== "ok") throw new Error("expected ok");
+    expect(got.value).toEqual([{ type: "blog", title: "P", content: "B" }]);
+  });
+});
+
+describe("parseReview", () => {
+  test("parses the reviewer's per-output verdicts", () => {
+    const raw = reply({
+      overall: "Both send-ready.",
+      items: [
+        { type: "cold-email", verdict: "pass", notes: "Good." },
+        { type: "blog", verdict: "revise", notes: "Tighten the intro." },
+      ],
+    });
+    const got = parseReview(raw);
+    expect(got.status).toBe("ok");
+    if (got.status !== "ok") throw new Error("expected ok");
+    expect(got.value.items.find((i) => i.type === "blog")?.verdict).toBe(
+      "revise",
     );
   });
 
-  test("kind comes from the step key, not the model (writer can't mis-file it)", () => {
-    // The model omits/mislabels kind; the gen-cold-email step key is authoritative.
-    const got = parseGeneratedByKind({
-      "gen-cold-email": reply({ kind: "WRONG", title: "T", content: "C" }),
-    });
-    expect(got).toEqual({
-      status: "ok",
-      value: [{ kind: "cold-email", title: "T", content: "C" }],
-    });
-  });
-
-  test("a fenced writer reply still yields the artifact", () => {
-    const got = parseGeneratedByKind({
-      "gen-blog": { reply: '```json\n{"title":"P","content":"B"}\n```' },
-    });
-    expect(got).toEqual({
-      status: "ok",
-      value: [{ kind: "blog", title: "P", content: "B" }],
-    });
+  test("pending when no review yet; malformed for garbage", () => {
+    expect(parseReview(undefined)).toEqual({ status: "pending" });
+    expect(parseReview(reply({ overall: 1 }))).toEqual({ status: "malformed" });
   });
 });
 

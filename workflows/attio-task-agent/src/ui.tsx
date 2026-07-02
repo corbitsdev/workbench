@@ -13,11 +13,7 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
-import {
-  artifactKindRegistry,
-  attioTaskArtifactKinds,
-  type AttioTaskArtifactKind,
-} from "@workbench/shared";
+import { attioTaskArtifactKinds } from "@workbench/shared";
 
 // ── Gate routing ────────────────────────────────────────────────────────────
 
@@ -27,7 +23,6 @@ export const GATES = [
   { stepId: "selectMember", signal: "member-selection" },
   { stepId: "selectTask", signal: "task-selection" },
   { stepId: "clarify", signal: "clarification" },
-  { stepId: "selectKinds", signal: "kind-selection" },
   { stepId: "review", signal: "review" },
   { stepId: "approveSync", signal: "sync-approval" },
 ] as const;
@@ -44,19 +39,6 @@ export function activeGate(state: RunState | null): GateId | null {
 }
 
 // ── Stepper configuration ─────────────────────────────────────────────────────
-
-// The generation branch fans out into one gate/gen/skip triple per artifact
-// kind. Building the ids from `attioTaskArtifactKinds` (NOT importing
-// GENERATION_LEAF_KEYS from ./index — that would pull @intx/agent into the
-// browser `/ui` chunk) keeps the stepper in step with whatever kinds exist.
-const GENERATION_STEP_IDS = [
-  "selectKinds",
-  ...attioTaskArtifactKinds.flatMap((kind) => [
-    `gate-${kind}`,
-    `gen-${kind}`,
-    `skip-${kind}`,
-  ]),
-];
 
 // Each stepper entry clusters the internal workflow steps it represents, in run
 // order. `buildRunStepperSteps` computes status with the "passed = completed OR
@@ -83,9 +65,9 @@ const DISPLAY_STEPS: DisplayStep[] = [
   },
   {
     key: "generate",
-    label: "Generate",
-    stepIds: GENERATION_STEP_IDS,
-    activityLabel: "Generating artifacts",
+    label: "Act",
+    stepIds: ["execute", "reviewArtifacts"],
+    activityLabel: "Carrying out the plan",
   },
   {
     key: "review",
@@ -223,7 +205,7 @@ const Decision = type({
   "status?": "string",
   "reasoning?": "string",
   "questions?": "string[]",
-  "selectedArtifactKinds?": type({ kind: "string" }).array(),
+  "draftActions?": type({ type: "string", "brief?": "string" }).array(),
   "proposedTaskUpdate?": { "markComplete?": "boolean", "note?": "string" },
 });
 export type ParsedDecision = typeof Decision.infer;
@@ -236,48 +218,44 @@ export function parseDecision(raw: unknown): Decoded<ParsedDecision> {
   return { status: "ok", value: parsed };
 }
 
-// The agent's suggested kinds, narrowed to the ones the workflow can produce —
-// the panel pre-checks these in the kind picker.
-export function suggestedKinds(
-  decision: ParsedDecision,
-): AttioTaskArtifactKind[] {
-  const known = new Set<string>(attioTaskArtifactKinds);
-  return (decision.selectedArtifactKinds ?? [])
-    .map((s) => s.kind)
-    .filter((k): k is AttioTaskArtifactKind => known.has(k));
+// The executor returns one produced output per draft action, in `{ outputs: [...] }`.
+const GeneratedItem = type({
+  type: "string",
+  title: "string",
+  content: "string",
+  "brief?": "string",
+});
+const ExecutorOutput = type({ outputs: GeneratedItem.array() });
+export type GeneratedArtifact = typeof GeneratedItem.infer;
+
+// The executor is one step producing all outputs. `pending` = it has not landed
+// yet; `malformed` = it landed but didn't parse; `ok` returns the produced
+// outputs (an empty array is a valid "the plan needed no drafts" result).
+export function parseExecutorOutputs(
+  raw: unknown,
+): Decoded<GeneratedArtifact[]> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = ExecutorOutput(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed.outputs };
 }
 
-// The writer must return title + content; `kind` is authoritative from the
-// step key (`gen-<kind>`), NOT trusted from the model — so a writer that omits
-// or mislabels `kind` can't drop or mis-file the artifact.
-const GeneratedBody = type({ title: "string", content: "string" });
-export type GeneratedArtifact = {
-  kind: AttioTaskArtifactKind;
-  title: string;
-  content: string;
-};
+// The reviewer's per-output verdicts, keyed by action type for display.
+const ReviewItem = type({
+  type: "string",
+  verdict: "'pass' | 'revise' | 'reject'",
+  notes: "string",
+});
+const ReviewResult = type({ overall: "string", items: ReviewItem.array() });
+export type ParsedReview = typeof ReviewResult.infer;
 
-// Each kind that ran produced its own `gen-<kind>` step output. `pending` means
-// no generation output has landed yet; `malformed` means at least one landed
-// but none parsed to an artifact; `ok` returns the artifacts that resolved (a
-// kind whose branch was pruned simply has no output and contributes nothing).
-export function parseGeneratedByKind(
-  stepOutputs: Record<string, unknown>,
-): Decoded<GeneratedArtifact[]> {
-  const out: GeneratedArtifact[] = [];
-  let anyPresent = false;
-  for (const kind of attioTaskArtifactKinds) {
-    const raw = stepOutputs[`gen-${kind}`];
-    if (raw === undefined || raw === null) continue;
-    anyPresent = true;
-    const parsed = GeneratedBody(peelOutput(raw));
-    if (!(parsed instanceof type.errors)) {
-      out.push({ kind, title: parsed.title, content: parsed.content });
-    }
-  }
-  if (!anyPresent) return { status: "pending" };
-  if (out.length === 0) return { status: "malformed" };
-  return { status: "ok", value: out };
+export function parseReview(raw: unknown): Decoded<ParsedReview> {
+  const peeled = peelDecoded(raw);
+  if (peeled.status === "pending") return { status: "pending" };
+  const parsed = ReviewResult(peeled.value);
+  if (parsed instanceof type.errors) return { status: "malformed" };
+  return { status: "ok", value: parsed };
 }
 
 const LinkedRecordRef = type({ object: "string", recordId: "string" });
@@ -409,30 +387,19 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
         />
       );
     }
-    if (gate === "selectKinds") {
-      const decision = parseDecision(stepOutputs.analyze);
-      const suggested =
-        decision.status === "ok" ? suggestedKinds(decision.value) : [];
-      return (
-        <SelectKinds
-          key={suggested.join(",")}
-          suggested={suggested}
-          connected={connected}
-          pending={signalPending}
-          onSubmit={(generate) => onSignal("kind-selection", { generate })}
-        />
-      );
-    }
     if (gate === "review") {
-      const artifacts = parseGeneratedByKind(stepOutputs);
+      const artifacts = parseExecutorOutputs(stepOutputs.execute);
       if (artifacts.status === "pending")
-        return <Placeholder label="Generating artifacts…" />;
+        return <Placeholder label="Carrying out the plan…" />;
       if (artifacts.status === "malformed")
-        return <ErrorLine label="Couldn't read the generated artifacts." />;
+        return <ErrorLine label="Couldn't read the produced outputs." />;
+      const reviewDecoded = parseReview(stepOutputs.reviewArtifacts);
+      const review = reviewDecoded.status === "ok" ? reviewDecoded.value : null;
       return (
         <Review
-          key={artifacts.value.map((a) => a.kind).join(",")}
+          key={artifacts.value.map((a) => a.type).join(",")}
           artifacts={artifacts.value}
+          review={review}
           connected={connected}
           pending={signalPending}
           onSubmit={(approvedPieces) => onSignal("review", { approvedPieces })}
@@ -645,66 +612,32 @@ function Clarify(props: {
   );
 }
 
-// The kind picker: pre-checks the agent's suggested kinds, and always emits a
-// COMPLETE boolean map over every kind so no per-kind gate reads a missing key.
-function SelectKinds(props: {
-  suggested: AttioTaskArtifactKind[];
-  connected: boolean;
-  pending: boolean;
-  onSubmit: (generate: Record<AttioTaskArtifactKind, boolean>) => void;
-}): ReactNode {
-  const [checked, setChecked] = useState<Set<AttioTaskArtifactKind>>(
-    () => new Set(props.suggested),
-  );
-  const disabled = props.pending || !props.connected;
-  const toggle = (kind: AttioTaskArtifactKind) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(kind)) next.delete(kind);
-      else next.add(kind);
-      return next;
-    });
-  const submit = () => {
-    const generate = {} as Record<AttioTaskArtifactKind, boolean>;
-    for (const kind of attioTaskArtifactKinds)
-      generate[kind] = checked.has(kind);
-    props.onSubmit(generate);
-  };
-  return (
-    <div className="flex flex-col gap-2">
-      <h3 className="text-text text-sm font-medium">Which artifacts?</h3>
-      {attioTaskArtifactKinds.map((kind) => (
-        <label
-          key={kind}
-          className="border-border flex gap-2 rounded-input border p-3 text-sm"
-        >
-          <input
-            type="checkbox"
-            className="accent-orange"
-            checked={checked.has(kind)}
-            disabled={disabled}
-            onChange={() => toggle(kind)}
-          />
-          <span className="text-text">{artifactKindRegistry[kind].label}</span>
-        </label>
-      ))}
-      <Button disabled={disabled || checked.size === 0} onClick={submit}>
-        Generate {checked.size} artifact{checked.size === 1 ? "" : "s"}
-      </Button>
-      {!props.connected ? <Reconnecting /> : null}
-    </div>
-  );
+function verdictBadge(verdict: string): { label: string; className: string } {
+  if (verdict === "pass")
+    return { label: "reviewed ✓", className: "text-green" };
+  if (verdict === "reject") return { label: "rejected", className: "text-red" };
+  return { label: "needs a fix", className: "text-orange" };
 }
 
 function Review(props: {
   artifacts: GeneratedArtifact[];
+  review: ParsedReview | null;
   connected: boolean;
   pending: boolean;
   onSubmit: (approved: GeneratedArtifact[]) => void;
 }): ReactNode {
   const known = useMemo(() => new Set<string>(attioTaskArtifactKinds), []);
+  // Default-select everything the reviewer did not reject.
+  const verdictFor = (type: string): string | undefined =>
+    props.review?.items.find((it) => it.type === type)?.verdict;
   const [selected, setSelected] = useState<Set<number>>(
-    () => new Set(props.artifacts.map((_, i) => i)),
+    () =>
+      new Set(
+        props.artifacts
+          .map((a, i) => ({ a, i }))
+          .filter(({ a }) => verdictFor(a.type) !== "reject")
+          .map(({ i }) => i),
+      ),
   );
   const disabled = props.pending || !props.connected;
   const toggle = (i: number) =>
@@ -716,27 +649,53 @@ function Review(props: {
     });
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-text text-sm font-medium">Review artifacts</h3>
-      {props.artifacts.map((a, i) => (
-        <label
-          key={i}
-          className="border-border flex gap-2 rounded border p-3 text-sm"
-        >
-          <input
-            type="checkbox"
-            className="accent-orange"
-            checked={selected.has(i)}
-            disabled={disabled}
-            onChange={() => toggle(i)}
-          />
-          <span>
-            <span className="text-text font-medium">{a.title}</span>{" "}
-            <span className="text-text-3 text-xs">
-              {known.has(a.kind) ? a.kind : `${a.kind} (unknown kind)`}
+      <h3 className="text-text text-sm font-medium">Review</h3>
+      {props.review?.overall ? (
+        <p className="text-text-2 text-sm">{props.review.overall}</p>
+      ) : null}
+      {props.artifacts.length === 0 ? (
+        <p className="text-text-3 text-sm">
+          The plan produced no drafts — nothing to save here.
+        </p>
+      ) : null}
+      {props.artifacts.map((a, i) => {
+        const verdict = verdictFor(a.type);
+        const notes = props.review?.items.find(
+          (it) => it.type === a.type,
+        )?.notes;
+        return (
+          <label
+            key={i}
+            className="border-border flex flex-col gap-1 rounded border p-3 text-sm"
+          >
+            <span className="flex gap-2">
+              <input
+                type="checkbox"
+                className="accent-orange mt-0.5"
+                checked={selected.has(i)}
+                disabled={disabled}
+                onChange={() => toggle(i)}
+              />
+              <span className="min-w-0">
+                <span className="text-text font-medium">{a.title}</span>{" "}
+                <span className="text-text-3 text-xs">
+                  {known.has(a.type) ? a.type : `${a.type} (new type)`}
+                </span>
+                {verdict ? (
+                  <span
+                    className={`ml-1 text-xs ${verdictBadge(verdict).className}`}
+                  >
+                    · {verdictBadge(verdict).label}
+                  </span>
+                ) : null}
+              </span>
             </span>
-          </span>
-        </label>
-      ))}
+            {notes && verdict !== "pass" ? (
+              <span className="text-text-3 pl-6 text-xs">{notes}</span>
+            ) : null}
+          </label>
+        );
+      })}
       <Button
         disabled={disabled}
         onClick={() =>
