@@ -56,9 +56,7 @@ import type { ArtifactWithSession } from "@workbench/shared";
 
 const baseArtifact: ArtifactWithSession = {
   id: "a-1",
-  sessionId: "wf-1",
   parentId: null,
-  painPointId: "p-1",
   kind: "email",
   title: "Outreach",
   content: "body",

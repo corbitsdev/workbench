@@ -198,9 +198,7 @@ function normalizeSource(raw: Record<string, unknown> | null): ArtifactSource {
 function serializeArtifact(a: ArtifactRow) {
   return {
     id: a.id,
-    sessionId: a.sessionId,
     parentId: a.parentId ?? null,
-    painPointId: a.painPointId ?? null,
     kind: a.kind,
     title: a.title,
     content: a.content,
@@ -537,7 +535,6 @@ export function createArtifactsRouter(
             tenantId: userContext.tenantId,
             principalId: userContext.principalId,
             ownerPrincipalId: userContext.principalId,
-            sessionId: null,
             kind,
             title,
             content,
@@ -738,7 +735,6 @@ export function createArtifactsRouter(
               tenantId: userContext.tenantId,
               principalId: userContext.principalId,
               ownerPrincipalId: userContext.principalId,
-              sessionId: null,
               kind: uploadArtifactKind(mimeType),
               title: file.name,
               content: "",

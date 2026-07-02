@@ -143,7 +143,6 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
             tenantId: context.tenantId,
             principalId: context.principalId,
             ownerPrincipalId: ownerMemberId ?? null,
-            sessionId: null,
             kind,
             title,
             content,
@@ -188,11 +187,11 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
         agentId: context.agentId,
         sessionId: context.sessionId,
       };
-      // No assertSessionContext: artifact_create stores sessionId: null anyway,
-      // so the session is not a data dependency — only a vestigial gate. A
-      // deterministic workflow tool step has no chat session, so requiring one
-      // blocked every workflow-generated artifact. Standalone artifacts are
-      // valid (tenant-scoped, visible in the gallery).
+      // No assertSessionContext: artifact_create does not persist the session as
+      // a data dependency — it is only a vestigial gate. A deterministic workflow
+      // tool step has no chat session, so requiring one blocked every
+      // workflow-generated artifact. Standalone artifacts are valid
+      // (tenant-scoped, visible in the gallery).
       const now = new Date();
       const ownerMemberId = await resolveOwnerMemberPrincipalId(
         context.db,
@@ -206,7 +205,6 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
             tenantId: context.tenantId,
             principalId: context.principalId,
             ownerPrincipalId: ownerMemberId ?? null,
-            sessionId: null,
             kind,
             title,
             content,
@@ -520,7 +518,6 @@ async function upsertLinkedArtifact(
         tenantId: context.tenantId,
         principalId: context.principalId,
         ownerPrincipalId: ownerMemberId ?? null,
-        sessionId: null,
         kind,
         title,
         content,

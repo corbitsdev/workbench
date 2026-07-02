@@ -125,7 +125,6 @@ describe("memory_save", () => {
     const row = insertedArtifacts[0]!;
     expect(row.kind).toBe("memory");
     expect(row.ownerPrincipalId).toBe("mem_owner");
-    expect(row.sessionId).toBeNull();
     expect(row.content).toBe("first brief");
     // The version-history row mirrors the upserted artifact's version.
     expect(insertedVersions[0]?.version).toBe(1);

@@ -92,8 +92,7 @@ export function createWriteArtifactTool(
         }
 
         const result = await context.db.transaction(async (tx) => {
-          // artifact.sessionId is a uuid FK to workflow_run — not suitable for agent sessions.
-          // Deduplicate by (principalId, title, kind) instead, which is stable across sessions.
+          // Deduplicate by (principalId, title, kind), which is stable across sessions.
           const existingRows = await tx
             .select({ id: artifact.id })
             .from(artifact)
@@ -122,7 +121,6 @@ export function createWriteArtifactTool(
               .values({
                 tenantId: context.tenantId,
                 principalId: context.principalId,
-                sessionId: null,
                 kind,
                 title,
                 content: body,

@@ -268,20 +268,6 @@ describe("artifact_link_file handler", () => {
     ).rejects.toThrow(/Failed to create artifact/);
   });
 
-  it("reproduces linking file artifact without workflow session_id (sets null for agent tools; DB column must allow it)", async () => {
-    const { context, artifactInsertValues } = makeContext();
-    const handler = handlerFor(context, "artifact_link_file");
-
-    await handler({
-      title: "Story",
-      kind: "story",
-      path: "/home/user/dragon-story.md",
-    });
-
-    const inserted = artifactInsertValues[0];
-    expect(inserted?.sessionId).toBeNull();
-  });
-
   it("returns useful error if session context missing (instead of opaque DB null violation)", async () => {
     const bad = { ...makeContext().context, sessionId: "" };
     const handler = handlerFor(bad as any, "artifact_link_file");

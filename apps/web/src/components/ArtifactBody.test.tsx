@@ -121,7 +121,6 @@ describe("ArtifactBody rendering", () => {
       React.createElement(ArtifactBody, {
         artifact: {
           id: "art-9",
-          sessionId: "wf-1",
           content: "a,b\n1,2\n",
           kind: "csv-export",
         },
@@ -256,7 +255,6 @@ describe("ArtifactBody rendering", () => {
       React.createElement(ArtifactBody, {
         artifact: {
           id: "art-9",
-          sessionId: "wf-1",
           content: TEST_BODY,
           kind: "one-pager",
         },

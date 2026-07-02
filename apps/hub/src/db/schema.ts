@@ -22,7 +22,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   },
 });
 
-export const severity = ["low", "medium", "high", "critical"] as const;
 export const artifactStatus = ["draft", "approved", "rejected"] as const;
 export const transcriptSource = ["paste", "granola", "artifact"] as const;
 
@@ -114,7 +113,7 @@ export const workflowRun = pgTable("workflow_run", {
   // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId
   // (a `ses_…` string, not a uuid) for runs deployed through the native stack.
   // Null for legacy pipeline-session rows. The uuid `id` stays the PK so the
-  // painPoint/transcript FKs are unaffected.
+  // transcript FK is unaffected.
   deploymentId: text("deployment_id"),
   tenantId: text("tenant_id").notNull(),
   principalId: text("principal_id").notNull(),
@@ -181,21 +180,9 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
 
 export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
 
-export const painPoint = pgTable("pain_point", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: uuid("session_id")
-    .notNull()
-    .references(() => workflowRun.id, { onDelete: "cascade" }),
-  severity: text("severity", { enum: severity }).notNull(),
-  context: text("context").notNull(),
-  quote: text("quote").notNull(),
-  selected: boolean("selected").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
-// migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
+// migrations). Nesting via parent_id.
 export const artifact = pgTable(
   "artifact",
   {
@@ -203,17 +190,11 @@ export const artifact = pgTable(
     tenantId: text("tenant_id"),
     principalId: text("principal_id"),
     ownerPrincipalId: text("owner_principal_id"),
-    sessionId: uuid("session_id").references(() => workflowRun.id, {
-      onDelete: "cascade",
-    }),
     // Null for artifacts created directly by agents via the artifact_* tools
     // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
     // Workflow paths always supply a valid id.
     parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
       onDelete: "cascade",
-    }),
-    painPointId: uuid("pain_point_id").references(() => painPoint.id, {
-      onDelete: "set null",
     }),
     kind: text("kind").notNull(),
     title: text("title").notNull(),

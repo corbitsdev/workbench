@@ -49,9 +49,7 @@ const fakeWorkflow: WorkflowSummary = {
 
 const fakeArtifact: ArtifactWithSession = {
   id: "art-1",
-  sessionId: "sess-1",
   parentId: null,
-  painPointId: null,
   kind: "email",
   title: "Title",
   content: "Body",
