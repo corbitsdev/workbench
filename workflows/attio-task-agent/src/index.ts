@@ -177,6 +177,11 @@ export const workflow = defineWorkflow({
     listMembers: deterministicToolStep({
       id: "attio-task-agent-list-members",
       tool: "attio_list_workspace_members",
+      // First step with no `input` selector: the sidecar supervisor otherwise
+      // hands it the run's (string) trigger payload as tool args, which the
+      // step-tool-harness rejects. attio_list_workspace_members takes no args,
+      // so pin the arguments to {} with an empty argMap (CL-2658).
+      argMap: {},
     }),
 
     selectMember: awaitSignal({
