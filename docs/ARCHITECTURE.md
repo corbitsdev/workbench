@@ -93,7 +93,7 @@ Myra instances are owned per member via the hub-owned `member_agent_instance` ma
 
 Both Myra and Oat use custom directors wrapping `createDefaultDirector` to filter inbound senders before inference.
 
-**Uniform agent lifecycle.** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only auto-relaunched agent (via `POST /v1/me`); other agents recover on the next open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect reconciler that keeps a sidecar restart from wedging an instance.
+**Uniform agent lifecycle.** There is no host-driven per-instance scheduler. Every agent is interactive and recover-on-open: it acts on inbound mail and is relaunched when needed, rather than on a timer. Myra is the only agent auto-relaunched on user activity (via `POST /v1/me`); other agents recover on the next open. A periodic wedge-sweep reconciler additionally relaunches **any** instance left active-but-unroutable after a sidecar restart, so a wedged non-interactive agent no longer waits for an open. Recurring work (e.g. periodic Granola ingestion) is moving to **workflows**, which will own native scheduling. See the Session Liveness and Relaunch section in IMPLEMENTATION.md for the disconnect and wedge-sweep reconcilers that keep a sidecar restart from wedging an instance.
 
 ### Credential and Grant Model
 

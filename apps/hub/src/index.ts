@@ -77,6 +77,7 @@ import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
+  registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
 } from "./services/agent-provisioning";
 import {
@@ -453,6 +454,28 @@ const sessionService = createSessionService({
     httpRegistries: new Map(),
     defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
+});
+
+// The disconnect reconciler above only ENDS a stale session; nothing re-registers
+// the address, because the router has no `sidecar.connect` counterpart to the
+// `sidecar.disconnect` it listens on. A sidecar that fully restarts (every
+// redeploy) reconnects with no agents, so an instance is left active-but-
+// unroutable and mail 502s until fixed by hand. This periodic sweep supplies the
+// missing RELAUNCH half on a cadence, healing the wedge from any cause (missed
+// disconnect event, hub restart). It composes with the disconnect reconciler:
+// both re-read getRoutableAddresses right before acting and every relaunch is
+// funneled through the process-local dedup breaker, so they cannot double-launch.
+//
+// ASSUMES A SINGLE HUB REPLICA — same caveat as registerDisconnectReconciler:
+// the routability read is this hub's local router state. (CL-2639)
+const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
+  db,
+  router: sidecarRouter,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  intervalMs: config.wedgeSweepIntervalMs,
+  graceMs: config.wedgeUnroutableGraceMs,
 });
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
@@ -1315,6 +1338,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      stopWedgeSweepReconciler();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });
