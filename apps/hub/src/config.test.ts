@@ -23,6 +23,7 @@ const MANAGED_KEYS = [
   "GOOGLE_CLIENT_SECRET",
   "GOOGLE_ALLOWED_DOMAINS",
   "WORKFLOW_AUTOPUBLISH_ON_BOOT",
+  "WORKFLOW_AUTOPUBLISH_MAP",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -84,6 +85,47 @@ describe("loadConfig", () => {
 
     process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "false";
     expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+  });
+
+  it("defaults workflowAutopublishMap to null when unset or empty", () => {
+    setRequiredEnv();
+    expect(loadConfig().workflowAutopublishMap).toBeNull();
+
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = "   ";
+    expect(loadConfig().workflowAutopublishMap).toBeNull();
+  });
+
+  it("parses a valid WORKFLOW_AUTOPUBLISH_MAP with kind and default keys", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = JSON.stringify({
+      "last30days-research": ["abk-labs"],
+      default: ["acme"],
+    });
+
+    expect(loadConfig().workflowAutopublishMap).toEqual({
+      "last30days-research": ["abk-labs"],
+      default: ["acme"],
+    });
+  });
+
+  it("throws when WORKFLOW_AUTOPUBLISH_MAP is malformed JSON", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = "{not json";
+
+    expect(() => loadConfig()).toThrow(
+      /WORKFLOW_AUTOPUBLISH_MAP must be valid JSON/,
+    );
+  });
+
+  it("throws when WORKFLOW_AUTOPUBLISH_MAP has the wrong shape", () => {
+    setRequiredEnv();
+    process.env["WORKFLOW_AUTOPUBLISH_MAP"] = JSON.stringify({
+      "last30days-research": "abk-labs",
+    });
+
+    expect(() => loadConfig()).toThrow(
+      /WORKFLOW_AUTOPUBLISH_MAP has an invalid shape/,
+    );
   });
 
   it("trims and splits CORS origins, marking cross-origin true", () => {

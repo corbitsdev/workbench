@@ -15,6 +15,30 @@ mock.module("../routes/workflow-deploy", () => ({
   publishWorkflowDefinition: publishSpy,
   NoDeployingPrincipalError: FakeNoPrincipal,
 }));
+
+// Tenant hierarchy fixture: slug → { id, ancestors }. getAncestorChain is
+// mocked to return the recorded chain; findFirst resolves slug → id. Unknown
+// slugs resolve to no tenant.
+const TENANTS: Record<string, { id: string; ancestors: string[] }> = {
+  "global-slug": { id: "ten_global", ancestors: ["ten_global"] },
+  "abk-labs": { id: "ten_abk", ancestors: ["ten_abk", "ten_global"] },
+  "second-tenant": {
+    id: "ten_second",
+    ancestors: ["ten_second", "ten_global"],
+  },
+  orphan: { id: "ten_orphan", ancestors: ["ten_orphan"] },
+};
+mock.module("@intx/db", () => ({
+  schema: { tenant: { slug: "slug", id: "id" } },
+  getAncestorChain: (_db: unknown, tenantId: string) => {
+    const found = Object.values(TENANTS).find((t) => t.id === tenantId);
+    return Promise.resolve(found?.ancestors ?? []);
+  },
+}));
+// eq is used only to carry the queried slug into the fake findFirst below.
+mock.module("drizzle-orm", () => ({
+  eq: (_col: unknown, value: string) => ({ value }),
+}));
 mock.module("./workflow-deploy", () => ({
   readWorkflowDefinition: (_repoStore: unknown, kind: string) => {
     const def = publishedDef?.(kind);
@@ -30,6 +54,16 @@ const { publishEmbeddedWorkflowDefs } = await import(
 
 const coreDeps = {
   rootTenantId: "ten_global",
+  db: {
+    query: {
+      tenant: {
+        findFirst: ({ where }: { where: { value: string } }) => {
+          const t = TENANTS[where.value];
+          return Promise.resolve(t ? { id: t.id } : undefined);
+        },
+      },
+    },
+  },
 } as unknown as Parameters<typeof publishEmbeddedWorkflowDefs>[0]["coreDeps"];
 const repoStore = {} as unknown as Parameters<
   typeof publishEmbeddedWorkflowDefs
@@ -131,5 +165,120 @@ describe("publishEmbeddedWorkflowDefs", () => {
       defsDir: fixtureDir,
     });
     expect(publishSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("routes a mapped kind to its descendant tenant, resolving the slug to its id", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["abk-labs"], default: ["global-slug"] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    // k1 → abk-labs (ten_abk); k2 → default → global-slug (ten_global).
+    expect(targets.sort()).toEqual(["ten_abk", "ten_global"]);
+  });
+
+  it("falls back to the default map entry for a kind not explicitly mapped", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { default: ["abk-labs"] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_abk", "ten_abk"]);
+  });
+
+  it("falls back to the root tenant when neither the kind nor a default is mapped", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { "other-kind": ["abk-labs"] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_global", "ten_global"]);
+  });
+
+  it("publishes a kind mapped to two tenants into both", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["abk-labs", "second-tenant"], default: [] },
+    });
+    const k1Targets = publishSpy.mock.calls
+      .map((c) => (c[1] as { targetTenantId: string }).targetTenantId)
+      .filter((t) => t === "ten_abk" || t === "ten_second");
+    expect(k1Targets.sort()).toEqual(["ten_abk", "ten_second"]);
+  });
+
+  it("skips an unknown slug but still publishes the resolvable targets", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["does-not-exist", "abk-labs"], default: [] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    // Only the resolvable slug published; the unknown one is skipped.
+    expect(targets).toEqual(["ten_abk"]);
+  });
+
+  it("skips a target whose tenant is not a descendant of the root tenant", async () => {
+    publishedDef = () => null;
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["orphan", "abk-labs"], default: [] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_abk"]);
+  });
+
+  it("keeps per-(kind, tenant) fingerprint idempotency under a map", async () => {
+    // k1 already published with the identical definition → skipped; k2 isn't.
+    publishedDef = (kind) => (kind === "k1" ? realDef.definition : null);
+    await publishEmbeddedWorkflowDefs({
+      coreDeps,
+      repoStore,
+      enabled: true,
+      buildSha: "abc",
+      defsDir: fixtureDir,
+      autopublishMap: { k1: ["abk-labs"], k2: ["second-tenant"], default: [] },
+    });
+    const targets = publishSpy.mock.calls.map(
+      (c) => (c[1] as { targetTenantId: string }).targetTenantId,
+    );
+    expect(targets).toEqual(["ten_second"]);
   });
 });
