@@ -2,13 +2,15 @@ import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "config"]);
 
-// Keep `config` a dependency-light leaf: importing the reconciler's constant
-// from `./services/agent-provisioning` would drag that module's heavy graph
+// Keep `config` a dependency-light leaf: importing these constants from
+// `./services/agent-provisioning` would drag that module's heavy graph
 // (tool-registry ↔ file-parser-tools has a mutual cycle) into config and flip
-// module load order, TDZ-crashing unrelated suites. This literal is the
-// contract-guaranteed default; it mirrors DEFAULT_WEDGE_SWEEP_INTERVAL_MS in
-// agent-provisioning (the reconciler's own fallback), which must stay in sync.
+// module load order, TDZ-crashing unrelated suites. These literals are the
+// contract-guaranteed defaults; they mirror DEFAULT_WEDGE_SWEEP_INTERVAL_MS and
+// DEFAULT_UNROUTABLE_GRACE_MS in agent-provisioning (the reconciler's own
+// fallbacks), which must stay in sync.
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
+const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -142,6 +144,15 @@ export function loadConfig() {
     wedgeSweepIntervalMs: parsePositiveIntEnv(
       "WEDGE_SWEEP_INTERVAL_MS",
       DEFAULT_WEDGE_SWEEP_INTERVAL_MS,
+    ),
+    // How long (ms) an address must stay continuously unroutable before the
+    // wedge sweep ends-and-relaunches it. Must exceed the 90s disconnect grace
+    // and typical sidecar reconnect-settle time so a healthy redeploy reconnect
+    // clears the tracker before we act. Default 120s; override with
+    // WEDGE_UNROUTABLE_GRACE_MS (positive integer milliseconds).
+    wedgeUnroutableGraceMs: parsePositiveIntEnv(
+      "WEDGE_UNROUTABLE_GRACE_MS",
+      DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
     ),
   };
 

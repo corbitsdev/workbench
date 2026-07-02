@@ -468,13 +468,14 @@ const sessionService = createSessionService({
 //
 // ASSUMES A SINGLE HUB REPLICA — same caveat as registerDisconnectReconciler:
 // the routability read is this hub's local router state. (CL-2639)
-registerWedgeSweepReconciler({
+const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
   db,
   router: sidecarRouter,
   sessionService,
   grantStore,
   eventCollectors,
   intervalMs: config.wedgeSweepIntervalMs,
+  graceMs: config.wedgeUnroutableGraceMs,
 });
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
@@ -1337,6 +1338,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      stopWedgeSweepReconciler();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });
