@@ -28,6 +28,7 @@ import type {
 import {
   getWorkflowRunState,
   LogRunStateSchema,
+  type LogRunState,
 } from "../workflow-executor/run-state-from-log";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
@@ -483,15 +484,32 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: "run has no deployment log to read" }, 400);
       }
 
-      const runState = await getWorkflowRunState(
-        { repoStore: deps.repoStore },
-        {
-          deploymentId: record.deploymentId,
-          runId,
-          kind: record.kind,
-          deploymentDomain: deps.deploymentDomain,
-        },
-      );
+      // A fold/read failure (a TransitionError on a truncated log, an empty
+      // repo, a reader failure) must NOT become a 500 that bricks the pane.
+      // Degrade to an empty pending state the FE reconciles against the run-level
+      // index status (an aborted run then renders failed via the overlay; a live
+      // run shows "waiting for activity") rather than hanging or crashing.
+      let runState: LogRunState;
+      try {
+        runState = await getWorkflowRunState(
+          { repoStore: deps.repoStore },
+          {
+            deploymentId: record.deploymentId,
+            runId,
+            kind: record.kind,
+            deploymentDomain: deps.deploymentDomain,
+          },
+        );
+      } catch (err) {
+        log.warn(
+          "workflow log-state read failed; serving empty pending state",
+          {
+            runId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          },
+        );
+        runState = { runId, phase: "pending", lastSeq: 0, steps: [] };
+      }
       const parsed = LogRunStateSchema(runState);
       if (parsed instanceof type.errors) {
         log.error("workflow log-state failed validation", {

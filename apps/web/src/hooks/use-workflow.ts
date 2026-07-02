@@ -5,7 +5,10 @@ import {
   isLogStateTerminal,
   isRecordTerminal,
   logRunStateSchema,
+  reconcileRunState,
   runStateFromLog,
+  runStateFromRecord,
+  runWasInterrupted,
   type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
@@ -191,7 +194,12 @@ export function useWorkflowRunState(
   });
 }
 
-export { runStateFromLog };
+export {
+  runStateFromLog,
+  runStateFromRecord,
+  reconcileRunState,
+  runWasInterrupted,
+};
 
 // Resolved step outputs for a run, read from its native event log (CL-2669):
 // the hub replays the deployment's workflow-run log once and returns every

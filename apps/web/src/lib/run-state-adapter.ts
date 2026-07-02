@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import type { RunState, StepState } from "@intx/workflow";
+import type { RunPhase, RunState, StepState } from "@intx/workflow";
 
 // Thin run INDEX (CL-2669) as returned by the hub /workflow-exec/records
 // endpoints. Run-level identity + coarse `status` only — per-step state and step
@@ -62,6 +62,13 @@ export function isLogStateTerminal(phase: LogRunState["phase"]): boolean {
   return phase === "completed" || phase === "failed" || phase === "cancelled";
 }
 
+// True once a native `RunPhase` can no longer advance on its own. Same terminal
+// set as `isLogStateTerminal`, typed against the `@intx/workflow` `RunPhase` the
+// folded `RunState` carries.
+export function isRunPhaseTerminal(phase: RunPhase): boolean {
+  return phase === "completed" || phase === "failed" || phase === "cancelled";
+}
+
 // Fold the log-derived state onto the @intx/workflow `RunState` the panels and
 // the shared stepper (packages/ui/workflow-run-state.tsx) already consume. Every
 // per-step phase is carried through verbatim — nothing is synthesized — so the
@@ -101,4 +108,58 @@ export function runStateFromLog(log: LogRunState): RunState {
     unconsumedSignals: new Map(),
     consumedMessageIds: new Set(),
   };
+}
+
+// Map the thin index status to a run-level `RunPhase` for the log-unavailable
+// fallback. `awaiting` (parked on a gate) is still live, so it maps to
+// `running` — the run has not settled.
+function recordStatusToPhase(status: RunRecord["status"]): RunPhase {
+  if (status === "completed") return "completed";
+  if (status === "failed") return "failed";
+  return "running";
+}
+
+// Minimal RunState synthesized from the thin run INDEX alone, for when the log
+// is unavailable (a legacy run with no `deploymentId`, a 400, or a read error).
+// It carries no per-step detail — the log is the only source of that — but a
+// legible run-level phase so the pane renders a terminal/failed/empty state
+// instead of hanging forever on "Loading run…".
+export function runStateFromRecord(record: RunRecord): RunState {
+  return {
+    runId: record.runId,
+    phase: recordStatusToPhase(record.status),
+    lastSeq: 0,
+    steps: new Map(),
+    children: new Map(),
+    pendingTimers: new Map(),
+    observedSignalIds: new Set(),
+    unconsumedSignals: new Map(),
+    consumedMessageIds: new Set(),
+  };
+}
+
+// Reconcile the run-level INDEX status with the log-derived per-step state. The
+// index is authoritative for run-level TERMINAL: an operator abort or a
+// restart-reconcile writes `failed` only to the index, never to the log — the
+// log's last event is a `StepStarted`, so the fold yields a non-terminal
+// `running` phase with a step stuck in-flight. Overlay the index's terminal
+// phase so the run renders failed, while the log still drives WHICH step it died
+// on (per-step detail is preserved unchanged). When neither is terminal, or the
+// log already agrees, the log state passes through untouched.
+export function reconcileRunState(record: RunRecord, log: RunState): RunState {
+  if (!isRecordTerminal(record.status)) return log;
+  if (isRunPhaseTerminal(log.phase)) return log;
+  return { ...log, phase: recordStatusToPhase(record.status) };
+}
+
+// A run the index marks terminal-`failed` while its log is still non-terminal
+// was killed externally (operator abort / restart reconcile) — the log never
+// recorded a `RunFailed`. This distinguishes an interruption (surface an
+// "interrupted" affordance) from a genuine step failure, which writes `failed`
+// to the log too.
+export function runWasInterrupted(
+  record: RunRecord,
+  logPhase: RunPhase,
+): boolean {
+  return record.status === "failed" && !isRunPhaseTerminal(logPhase);
 }

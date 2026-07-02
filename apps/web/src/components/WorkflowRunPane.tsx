@@ -9,7 +9,9 @@ import { loadWorkflowUI } from "../lib/workflow-ui";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   isRecordTerminal,
+  reconcileRunState,
   runStateFromLog,
+  runStateFromRecord,
   useResumeWorkflow,
   useWorkflowCredentials,
   useWorkflowDeployments,
@@ -68,7 +70,10 @@ function WorkflowRunPaneInner({
     isLoading,
     isError,
   } = useWorkflowRecord(runId, tenantId);
-  const { data: logState } = useWorkflowRunState(runId, tenantId);
+  const { data: logState, isError: logError } = useWorkflowRunState(
+    runId,
+    tenantId,
+  );
   // Step outputs come from the run's native event log (CL-2669), keyed by the
   // deployment; poll alongside the run while it is still active.
   const logActive = logState ? !isLogStateTerminal(logState.phase) : false;
@@ -106,15 +111,21 @@ function WorkflowRunPaneInner({
     staleTime: 5 * 60_000,
   });
 
-  // The stepper's source of truth is the log-derived run state (CL-2669): the
-  // authoritative per-step phase the runtime computed from its event log, which
-  // makes a failed step render failed and an awaiting gate render as the active
-  // gate by construction. The panels read step *content* from the log-served
-  // step outputs (`stepOutputs`) below — this state drives only phase/routing.
-  const state = useMemo(
-    () => (logState ? runStateFromLog(logState) : null),
-    [logState],
-  );
+  // The stepper's per-step source of truth is the log-derived run state
+  // (CL-2669), reconciled with the run-level index status: an aborted or
+  // restart-interrupted run is `failed` in the index but non-terminal in the log,
+  // so the overlay renders it failed while the log still drives per-step phase.
+  // When the log is unavailable (legacy run with no deploymentId, or a read
+  // error), fall back to the record-derived run-level state so the pane renders a
+  // terminal/failed state instead of hanging on "Loading run…". The panels read
+  // step *content* from the log-served step outputs (`stepOutputs`) below.
+  const state = useMemo(() => {
+    if (!record) return null;
+    if (logState) return reconcileRunState(record, runStateFromLog(logState));
+    if (logError || record.deploymentId === undefined)
+      return runStateFromRecord(record);
+    return null;
+  }, [record, logState, logError]);
 
   // The stepId -> resolved output map the panels decode, read from the log.
   const stepOutputs = useMemo(() => stepOutputsData ?? {}, [stepOutputsData]);
