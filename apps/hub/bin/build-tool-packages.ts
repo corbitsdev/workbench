@@ -69,6 +69,10 @@ export const TOOL_PACKAGES: ToolPackageSpec[] = [
   { name: "@workbench/tools-linear", packageDir: "packages/tools-linear" },
   { name: "@workbench/tools-attio", packageDir: "packages/tools-attio" },
   { name: "@workbench/tools-vercel", packageDir: "packages/tools-vercel" },
+  {
+    name: "@workbench/tools-fileparser",
+    packageDir: "packages/tools-fileparser",
+  },
 ];
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
