@@ -20,11 +20,12 @@ import {
 } from "./agent-tools";
 import { createHarness, createHarnessRuntimeCapabilities } from "@intx/harness";
 import { readDeployTree } from "@workbench/hub-agent";
-import { hasProvider } from "@intx/inference";
+import { createDependencies, type AdapterRegistry } from "@intx/inference";
 import { getLogger } from "@intx/log";
 import {
   createIsogitStore,
   createMailAuditStore,
+  type GCPolicy,
 } from "@workbench/storage-isogit";
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
@@ -99,6 +100,20 @@ type HarnessBuilderOpts = {
   cacheRoot: string;
   cacheMaxBytes: number;
   registryMaxTarballBytes: number;
+  /**
+   * Adapter registry resolved once at the boot edge (built-ins wrapped
+   * with the workbench gemini patch). It backs both the `canBuildSource`
+   * membership check and the per-agent `env.deps` used to resolve
+   * inference adapters at run time, so the in-process single-agent path
+   * resolves the same provider set the boot edge configured.
+   */
+  adapters: AdapterRegistry;
+  /**
+   * Write-path GC policy for the per-agent context repo. Resolved at the
+   * boot edge and handed to `createIsogitStore` so the reactor's commits
+   * reclaim the repo once it crosses the policy's thresholds.
+   */
+  gcPolicy: GCPolicy;
 };
 
 export function createDefaultHarnessBuilder({
@@ -107,10 +122,12 @@ export function createDefaultHarnessBuilder({
   cacheRoot,
   cacheMaxBytes,
   registryMaxTarballBytes,
+  adapters,
+  gcPolicy,
 }: HarnessBuilderOpts): HarnessBuilder {
   return {
     canBuildSource(source: InferenceSource): void {
-      if (!hasProvider(source.provider)) {
+      if (!adapters.has(source.provider)) {
         throw new Error(
           `Source provider "${source.provider}" is not registered`,
         );
@@ -130,7 +147,7 @@ export function createDefaultHarnessBuilder({
     }): Promise<HarnessBundle> {
       const signer = (payload: string) => crypto.signSSH(payload);
 
-      const storage = await createIsogitStore(storeDir, signer);
+      const storage = await createIsogitStore(storeDir, signer, gcPolicy);
       await healContextStore(storage, agentAddress);
       const mailStore = await createMailAuditStore(storeDir, signer);
 
@@ -290,6 +307,10 @@ export function createDefaultHarnessBuilder({
         audit: storage,
         authorize,
         directors: createWorkbenchDirectorRegistry(),
+        // Resolve inference adapters through the boot-edge registry so the
+        // agent uses the same (gemini-patched) provider set `canBuildSource`
+        // admitted, not `createAgent`'s built-ins-only default.
+        deps: createDependencies(adapters),
         transport: agentTransport,
         address: agentAddress,
         onConnectorStateChanged,

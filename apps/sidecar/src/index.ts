@@ -1,20 +1,23 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { sign as nodeSign } from "node:crypto";
 import { setupObservability } from "@workbench/sentry";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import {
-  createNodeCrypto,
+  createEd25519Crypto,
   generateKeyPair,
-  importPrivateKeyBytes,
+  signEd25519,
   verifySSHSignature,
-} from "@intx/crypto-node";
+} from "@intx/crypto";
 import { createSidecarOrchestrator, type HubLink } from "@workbench/hub-agent";
 import type { InferenceEvent } from "@intx/types/runtime";
+import { hexEncode } from "@intx/types";
 import { createAgentRepoStore } from "@intx/hub-sessions";
-import { installGeminiThoughtSignaturePatch } from "./gemini-thought-signature-patch";
+import { loadAdapterRegistry } from "@intx/inference/providers";
+import { withGeminiThoughtSignaturePatch } from "./gemini-thought-signature-patch";
 import { createDefaultHarnessBuilder, wsUrlToHttp } from "./default-harness";
 import {
+  readAdapterManifest,
+  resolveAgentGCPolicy,
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
   resolveToolPackageCache,
@@ -53,13 +56,6 @@ await setupObservability(
   },
 );
 
-// Install the google-genai thoughtSignature workaround before any inference
-// happens. This wraps the registered adapter to strip orphan
-// `thoughtSignature` parts that Gemini 3.x models emit, which the upstream
-// parser cannot handle (BD-394). Remove once the vendored Interchange commit
-// contains the fix.
-installGeminiThoughtSignaturePatch();
-
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (value === undefined) {
@@ -72,6 +68,25 @@ const heartbeat = resolveSidecarHeartbeat(process.env);
 const hubLinkQueue = resolveSidecarHubLinkQueue(process.env);
 const dataDir = requireEnv("SIDECAR_DATA_DIR");
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
+const agentGCPolicy = resolveAgentGCPolicy(process.env);
+
+// Operator-configured custom inference adapters, resolved once at the
+// boot edge. `loadAdapterRegistry` merges the statically-linked
+// built-ins with any custom adapters the manifest names, importing each
+// custom module eagerly here so a bad specifier fails the sidecar at
+// boot rather than at first inference. The SAME registry is threaded
+// into the in-process single-agent harness builder below; the workflow
+// child cannot receive this object across the fork, so the validated
+// manifest is serialized into the child's spawn env (see
+// `multistepSubstrateEnv`) and the child rebuilds an equivalent
+// registry from it. The registry is wrapped with the google-genai
+// thoughtSignature workaround (BD-394) so every resolved google-genai
+// adapter strips orphan `thoughtSignature` parts the upstream parser
+// cannot handle — remove the wrap once fixed upstream.
+const adapterManifest = readAdapterManifest();
+const adapters = withGeminiThoughtSignaturePatch(
+  await loadAdapterRegistry(adapterManifest),
+);
 
 const hubWsUrl = requireEnv("HUB_WS_URL");
 const sidecarId = requireEnv("SIDECAR_ID");
@@ -203,12 +218,8 @@ const workflowInferencePublisher: {
 
 const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_DATA_DIR: dataDir,
-  SIDECAR_SIGNING_PUBLIC_KEY: Buffer.from(sidecarSigningKey.publicKey).toString(
-    "hex",
-  ),
-  SIDECAR_SIGNING_PRIVATE_KEY: Buffer.from(
-    sidecarSigningKey.privateKey,
-  ).toString("hex"),
+  SIDECAR_SIGNING_PUBLIC_KEY: hexEncode(sidecarSigningKey.publicKey),
+  SIDECAR_SIGNING_PRIVATE_KEY: hexEncode(sidecarSigningKey.privateKey),
   HUB_WS_URL: hubWsUrl,
   SIDECAR_ID: sidecarId,
   SIDECAR_TOKEN: sidecarToken,
@@ -217,6 +228,15 @@ const multistepSubstrateEnv: Record<string, string> = {
   SIDECAR_REGISTRY_MAX_TARBALL_BYTES: String(
     toolPackageCache.registryMaxTarballBytes,
   ),
+  // Serialize the parent's ALREADY-VALIDATED manifest (the object
+  // `readAdapterManifest` returned), not the raw env string, so the
+  // child rebuilds the same custom-adapter set. Always present (defaults
+  // to "[]" when no custom adapters are configured); the child treats a
+  // missing key as a serialization bug and fails loud. The child
+  // re-validates the shape before importing any module — defense in
+  // depth at the deserialization boundary, since the child env is
+  // operator-controlled via Bun.spawn.
+  SIDECAR_ADAPTER_MANIFEST: JSON.stringify(adapterManifest),
 };
 // CL-2503: thread the sidecar's Sentry config to the workflow-child via the
 // spawn-time substrate env. The supervisor spawns the child with a FRESH env
@@ -265,14 +285,13 @@ const orchestrator = createSidecarOrchestrator({
     cacheRoot: toolPackageCache.cacheRoot,
     cacheMaxBytes: toolPackageCache.cacheMaxBytes,
     registryMaxTarballBytes: toolPackageCache.registryMaxTarballBytes,
+    adapters,
+    gcPolicy: agentGCPolicy,
   }),
-  createAgentCrypto: createNodeCrypto,
+  createAgentCrypto: createEd25519Crypto,
   cryptoOps: {
     generateKeyPair,
-    signEd25519(privateKey, payload) {
-      const key = importPrivateKeyBytes(privateKey);
-      return new Uint8Array(nodeSign(null, payload, key));
-    },
+    signEd25519,
     verifySSHSig: verifySSHSignature,
   },
   mailInboundRouter: multistepMailRouter,
@@ -286,7 +305,7 @@ const orchestrator = createSidecarOrchestrator({
       transport,
       repoStore: wrappedRepoStore,
       signingKeySeed: sidecarSigningKey.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: ({ deploymentId, agentAddress }) => {
         deploymentAddressRegistry.record(deploymentId, agentAddress);
       },

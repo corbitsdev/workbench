@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import path from "node:path";
 import {
+  resolveAgentGCPolicy,
   resolveSidecarHeartbeat,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
@@ -106,6 +107,49 @@ describe("resolveWorkflowRunPackLimits", () => {
       }),
     ).toThrow(
       'SIDECAR_WORKFLOW_RUN_PACK_MAX_OBJECTS must be a positive integer (got "lots")',
+    );
+  });
+});
+
+describe("resolveAgentGCPolicy", () => {
+  it("uses the upstream sidecar defaults when env is unset", () => {
+    expect(resolveAgentGCPolicy({})).toEqual({
+      packThreshold: 16,
+      looseThreshold: 512,
+      warnBytes: 128 * 1024 * 1024,
+      retention: "tip-only",
+    });
+  });
+
+  it("overrides thresholds and retention from env", () => {
+    expect(
+      resolveAgentGCPolicy({
+        SIDECAR_AGENT_GC_PACK_THRESHOLD: "4",
+        SIDECAR_AGENT_GC_LOOSE_THRESHOLD: "100",
+        SIDECAR_AGENT_GC_WARN_BYTES: "2048",
+        SIDECAR_AGENT_GC_RETENTION: "keep-history",
+      }),
+    ).toEqual({
+      packThreshold: 4,
+      looseThreshold: 100,
+      warnBytes: 2048,
+      retention: "keep-history",
+    });
+  });
+
+  it("rejects a non-positive threshold", () => {
+    expect(() =>
+      resolveAgentGCPolicy({ SIDECAR_AGENT_GC_PACK_THRESHOLD: "0" }),
+    ).toThrow(
+      'SIDECAR_AGENT_GC_PACK_THRESHOLD must be a positive integer (got "0")',
+    );
+  });
+
+  it("rejects an unknown retention value", () => {
+    expect(() =>
+      resolveAgentGCPolicy({ SIDECAR_AGENT_GC_RETENTION: "forever" }),
+    ).toThrow(
+      'SIDECAR_AGENT_GC_RETENTION must be "tip-only" or "keep-history"; got "forever"',
     );
   });
 });

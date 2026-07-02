@@ -4,18 +4,20 @@ import { describe, it, expect, mock } from "bun:test";
 // build() touches isogit and posix tools — all real filesystem/process
 // operations. We mock at the module boundary to keep the tests fast and hermetic.
 
-mock.module("@workbench/storage-isogit", () => ({
-  createIsogitStore: mock(async () => ({
-    type: "isogit",
-    load: mock(async () => ({
-      turns: [],
-      pendingOperations: [],
-      tokenUsage: {},
-      connectorState: null,
-    })),
-    writeTurns: mock(async () => {}),
-    commit: mock(async () => ({})),
+const createIsogitStoreMock = mock(async (..._args: unknown[]) => ({
+  type: "isogit",
+  load: mock(async () => ({
+    turns: [],
+    pendingOperations: [],
+    tokenUsage: {},
+    connectorState: null,
   })),
+  writeTurns: mock(async () => {}),
+  commit: mock(async () => ({})),
+}));
+
+mock.module("@workbench/storage-isogit", () => ({
+  createIsogitStore: createIsogitStoreMock,
   createMailAuditStore: mock(async () => ({
     type: "mail-audit",
   })),
@@ -74,6 +76,7 @@ import {
   wsUrlToHttp,
 } from "./default-harness";
 import { buildPersonalAgentSystemPrompt } from "@workbench/agents";
+import { createBuiltinRegistry } from "@intx/inference/providers";
 import type {
   InferenceSource,
   ToolDefinition,
@@ -88,6 +91,13 @@ const validSource: InferenceSource = {
   apiKey: "test-key",
   model: "gpt-4o",
 };
+
+const TEST_GC_POLICY = {
+  packThreshold: 3,
+  looseThreshold: 7,
+  warnBytes: 1024,
+  retention: "tip-only",
+} as const;
 
 describe("wsUrlToHttp", () => {
   it("returns origin only, stripping the websocket path", () => {
@@ -128,6 +138,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
       expect(() => builder.canBuildSource(validSource)).not.toThrow();
     });
@@ -139,6 +151,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
       const unknownSource: InferenceSource = {
         ...validSource,
@@ -158,6 +172,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
 
       const bundle = await builder.build({
@@ -189,6 +205,14 @@ describe("createDefaultHarnessBuilder", () => {
       expect(bundle.mailStore).toBeDefined();
       expect(Array.isArray(bundle.disposers)).toBe(true);
       expect(bundle.disposers.length).toBeGreaterThan(0);
+
+      // The boot-edge GC policy must reach the per-agent context store --
+      // without it the reactor's write path never reclaims the repo.
+      const lastCall =
+        createIsogitStoreMock.mock.calls[
+          createIsogitStoreMock.mock.calls.length - 1
+        ];
+      expect(lastCall?.[2]).toEqual(TEST_GC_POLICY);
     });
 
     it("passes the source apiKey through to createHarness unchanged (plaintext)", async () => {
@@ -205,6 +229,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
 
       await builder.build({
@@ -259,6 +285,8 @@ describe("createDefaultHarnessBuilder", () => {
           cacheRoot: "/tmp/wb-test-tool-cache",
           cacheMaxBytes: 1024 * 1024,
           registryMaxTarballBytes: 1024 * 1024,
+          adapters: createBuiltinRegistry(),
+          gcPolicy: TEST_GC_POLICY,
         });
 
         await builder.build({
@@ -324,6 +352,8 @@ describe("createDefaultHarnessBuilder", () => {
           cacheRoot: "/tmp/wb-test-tool-cache",
           cacheMaxBytes: 1024 * 1024,
           registryMaxTarballBytes: 1024 * 1024,
+          adapters: createBuiltinRegistry(),
+          gcPolicy: TEST_GC_POLICY,
         });
 
         const build = builder.build({
@@ -385,6 +415,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
 
       const bundle = await builder.build({
@@ -469,6 +501,8 @@ describe("createDefaultHarnessBuilder", () => {
         cacheRoot: "/tmp/wb-test-tool-cache",
         cacheMaxBytes: 1024 * 1024,
         registryMaxTarballBytes: 1024 * 1024,
+        adapters: createBuiltinRegistry(),
+        gcPolicy: TEST_GC_POLICY,
       });
 
       const bundle = await builder.build({

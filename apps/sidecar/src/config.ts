@@ -9,6 +9,9 @@
 
 import path from "node:path";
 
+import { AdapterManifest } from "@intx/inference";
+import type { GCPolicy, RetentionPolicy } from "@workbench/storage-isogit";
+
 const DEFAULT_PING_INTERVAL_MS = 5_000;
 const DEFAULT_RECONNECT_DELAY_MS = 1_000;
 // Backoff ceiling. reconnectDelayMs is the floor; the hub link grows the
@@ -141,4 +144,78 @@ export function resolveWorkflowRunPackLimits(
       DEFAULT_WORKFLOW_RUN_PACK_MAX_OBJECTS,
     ),
   };
+}
+
+// Write-path GC for the sidecar's deployed-agent repos (mirrors the
+// upstream reference sidecar's `readAgentGCPolicy`). The reactor
+// commits loose objects every cycle, so these repos accumulate loose
+// objects far faster than packs; the loose threshold is the dominant
+// trigger here. Retention defaults to tip-only: the sidecar treats the
+// repo as the agent's current state, not a long-term archive, so dropping
+// commit history keeps the repo small for reactor read/commit latency. An
+// operator that needs the history preserved sets
+// SIDECAR_AGENT_GC_RETENTION=keep-history.
+export const DEFAULT_SIDECAR_AGENT_GC_PACK_THRESHOLD = 16;
+export const DEFAULT_SIDECAR_AGENT_GC_LOOSE_THRESHOLD = 512;
+export const DEFAULT_SIDECAR_AGENT_GC_WARN_BYTES = 128 * 1024 * 1024;
+
+function parseRetention(
+  name: string,
+  raw: string | undefined,
+  fallback: RetentionPolicy,
+): RetentionPolicy {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  if (raw === "tip-only" || raw === "keep-history") return raw;
+  throw new Error(
+    `${name} must be "tip-only" or "keep-history"; got ${JSON.stringify(raw)}`,
+  );
+}
+
+export function resolveAgentGCPolicy(
+  env: Record<string, string | undefined>,
+): GCPolicy {
+  return {
+    packThreshold: parsePositiveInt(
+      "SIDECAR_AGENT_GC_PACK_THRESHOLD",
+      env.SIDECAR_AGENT_GC_PACK_THRESHOLD,
+      DEFAULT_SIDECAR_AGENT_GC_PACK_THRESHOLD,
+    ),
+    looseThreshold: parsePositiveInt(
+      "SIDECAR_AGENT_GC_LOOSE_THRESHOLD",
+      env.SIDECAR_AGENT_GC_LOOSE_THRESHOLD,
+      DEFAULT_SIDECAR_AGENT_GC_LOOSE_THRESHOLD,
+    ),
+    warnBytes: parsePositiveInt(
+      "SIDECAR_AGENT_GC_WARN_BYTES",
+      env.SIDECAR_AGENT_GC_WARN_BYTES,
+      DEFAULT_SIDECAR_AGENT_GC_WARN_BYTES,
+    ),
+    retention: parseRetention(
+      "SIDECAR_AGENT_GC_RETENTION",
+      env.SIDECAR_AGENT_GC_RETENTION,
+      "tip-only",
+    ),
+  };
+}
+
+// Operator-configured custom inference adapter manifest (mirrors the
+// upstream reference sidecar's `readAdapterManifest`). The value is
+// TRUSTED operator input read only from this process's environment;
+// `import(specifier)` is arbitrary code execution, so a specifier must
+// never originate from deploy or tenant data — the agent deploy tree
+// carries only a `provider` key, never a specifier.
+//
+// Unset or whitespace-only means "no custom adapters", a valid
+// configuration — the sidecar then resolves only the statically-linked
+// built-ins. A present-but-malformed value fails loud at boot.
+export function readAdapterManifest(): AdapterManifest {
+  const raw = process.env["SIDECAR_ADAPTER_MANIFEST"];
+  if (raw === undefined || raw.trim() === "") return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (cause) {
+    throw new Error("SIDECAR_ADAPTER_MANIFEST is not valid JSON", { cause });
+  }
+  return AdapterManifest.assert(parsed);
 }

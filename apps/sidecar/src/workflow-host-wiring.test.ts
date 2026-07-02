@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -52,7 +52,7 @@ function createMinimalStubRepoStore(): RepoStore {
       // requestCancel; the merge callback runs once with an empty
       // pre-image.
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -271,28 +271,47 @@ describe("createSidecarDeployRouter wires the InferenceEvent subscription to rec
     // back out and snapshot their `type` discriminator.
     const writtenEvents: string[] = [];
     const repoStore: RepoStore = ((): RepoStore => {
+      // Mirror the real store's per-repo serialization (withRepoLock) so
+      // concurrent recordRunEvent writes land in invocation order even
+      // though the per-event signature is async.
+      let writeTail: Promise<void> = Promise.resolve();
       const stub: Partial<RepoStore> = {
         getRepoDir(_repoId: RepoId): string {
           return "/tmp/unused";
         },
-        async writeTreePreservingPrefix(_p, _id, _ref, args) {
-          const files = await args.merge(new Map());
-          for (const value of Object.values(files)) {
-            const text =
-              value instanceof Uint8Array
-                ? new TextDecoder().decode(value)
-                : value;
-            const parsed: unknown = JSON.parse(text);
-            if (
-              typeof parsed === "object" &&
-              parsed !== null &&
-              "type" in parsed &&
-              typeof parsed.type === "string"
-            ) {
-              writtenEvents.push(parsed.type);
+        writeTreePreservingPrefix(_p, _id, _ref, args) {
+          const previous = writeTail;
+          let release: () => void = () => undefined;
+          writeTail = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          return (async () => {
+            await previous;
+            try {
+              const files = await args.merge(new Map());
+              for (const value of Object.values(files)) {
+                const text =
+                  value instanceof Uint8Array
+                    ? new TextDecoder().decode(value)
+                    : value;
+                const parsed: unknown = JSON.parse(text);
+                if (
+                  typeof parsed === "object" &&
+                  parsed !== null &&
+                  "type" in parsed &&
+                  typeof parsed.type === "string"
+                ) {
+                  writtenEvents.push(parsed.type);
+                }
+              }
+              return {
+                commitSha: `c-${String(writtenEvents.length)}`,
+                newlyTerminalRuns: [],
+              };
+            } finally {
+              release();
             }
-          }
-          return { commitSha: `c-${String(writtenEvents.length)}` };
+          })();
         },
       };
 
@@ -356,7 +375,7 @@ describe("createSidecarDeployRouter wires the InferenceEvent subscription to rec
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => {
         /* the in-test repoStore is a stub; the pack-push facade is exercised separately */
       },
@@ -404,9 +423,11 @@ describe("createSidecarDeployRouter wires the InferenceEvent subscription to rec
       data: { messageRunId: "r-1", messageId: "m-1", status: "completed" },
     });
 
-    // recordRunEvent fires are sequenced through Promises; await a
-    // microtask drain before snapshot.
-    await new Promise<void>((r) => setTimeout(r, 0));
+    // recordRunEvent fires are sequenced through Promises and the
+    // per-event signature is async; poll until all four events land.
+    for (let i = 0; i < 200 && writtenEvents.length < 4; i++) {
+      await new Promise<void>((r) => setTimeout(r, 1));
+    }
 
     expect(writtenEvents).toEqual([
       "RunStarted",
@@ -534,7 +555,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
     },
     async writeTreePreservingPrefix(_p, _id, _ref, args) {
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
     // The deploy router's grants bridge writes `state/grants.json` to
     // each step's agent-state repo before `spawn()`. Mirror the
@@ -547,7 +568,7 @@ function createSpawnTestRepoStore(tempBase: string): RepoStore {
         await fs.mkdir(path.dirname(full), { recursive: true });
         await fs.writeFile(full, contents);
       }
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -678,16 +699,20 @@ describe("validateWorkflowProjection", () => {
 });
 
 describe("computeWireDefinitionHash", () => {
-  test("is stable across key-ordering differences", () => {
+  test("is stable across key-ordering differences", async () => {
     const a = { id: "w-1", stepOrder: ["s1"], steps: { s1: { kind: "step" } } };
     const b = { steps: { s1: { kind: "step" } }, stepOrder: ["s1"], id: "w-1" };
-    expect(computeWireDefinitionHash(a)).toBe(computeWireDefinitionHash(b));
+    expect(await computeWireDefinitionHash(a)).toBe(
+      await computeWireDefinitionHash(b),
+    );
   });
 
-  test("differs across different definitions", () => {
+  test("differs across different definitions", async () => {
     const a = { id: "w-1", stepOrder: ["s1"], steps: { s1: {} } };
     const b = { id: "w-2", stepOrder: ["s1"], steps: { s1: {} } };
-    expect(computeWireDefinitionHash(a)).not.toBe(computeWireDefinitionHash(b));
+    expect(await computeWireDefinitionHash(a)).not.toBe(
+      await computeWireDefinitionHash(b),
+    );
   });
 });
 
@@ -736,7 +761,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => {
         /* no-op */
       },
@@ -808,7 +833,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => {
         /* no-op */
       },
@@ -895,7 +920,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -969,7 +994,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -1053,7 +1078,7 @@ describe("createSidecarDeployRouter trivial-frame regression", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: () => undefined,
       unregisterDeployment: () => undefined,
       multistepSubprocessSpawner: () => {
@@ -1135,6 +1160,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       SIDECAR_TOKEN: "tok_test",
       SIDECAR_CACHE_MAX_BYTES: "1000000",
       SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+      SIDECAR_ADAPTER_MANIFEST: "[]",
     };
     const mergedSubstrateEnv: Record<string, string> = {
       ...defaultSubstrateEnv,
@@ -1171,7 +1197,7 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       transport,
       repoStore,
       signingKeySeed: keyPair.privateKey,
-      createAgentCrypto: createNodeCrypto,
+      createAgentCrypto: createEd25519Crypto,
       registerDeployment: opts.registerDeployment ?? (() => undefined),
       unregisterDeployment: () => {
         /* no-op */
@@ -1264,7 +1290,9 @@ describe("createSidecarDeployRouter multi-step branch", () => {
       DEPLOYMENT_ID: "multi-example-com",
       MAILBOX_ADDRESS: "multi@example.com",
     });
-    expect(env.DEFINITION_HASH).toBe(computeWireDefinitionHash(definition));
+    expect(env.DEFINITION_HASH).toBe(
+      await computeWireDefinitionHash(definition),
+    );
     expect(env[STEP_INFERENCE_SOURCES_ENV_KEY]).toBe(JSON.stringify(sources));
     expect(env.IPC_CHANNEL_ID).toMatch(/^[0-9a-f]{32}$/);
 

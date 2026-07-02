@@ -16,6 +16,7 @@ import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 // name — @intx/agent does not re-export ConversationTurn from its barrel.
 type SendTurn = Awaited<ReturnType<Agent["send"]>>["turn"];
 import { createDefaultDirectorRegistry } from "@intx/agent";
+import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { GrantEvaluator } from "@workbench/workflow-host";
 import { createWarmAgentCache } from "@workbench/workflow-host";
@@ -184,6 +185,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "test-signature",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => stubAgent,
     });
@@ -228,6 +230,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors,
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (_def, env) => {
         capturedEnv = env;
@@ -259,6 +262,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -285,6 +289,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -339,6 +344,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         factoryCalled = true;
@@ -382,6 +388,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       agentFactory: async () => {
@@ -471,6 +478,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (def, env) => {
         capturedDef = def as AgentDefinition<BaseEnv>;
@@ -593,6 +601,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       agentFactory: async () => stubAgent,
@@ -712,6 +721,7 @@ describe("createSidecarStepInvoker", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => stubAgent,
     });
@@ -876,6 +886,7 @@ describe("warm-keep single-step durability", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       warmCache,
       onRunBoundary: async (key: string) => {
@@ -918,6 +929,7 @@ describe("warm-keep single-step durability", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async () => {
         buildCount += 1;
@@ -982,6 +994,7 @@ describe("supervisor-backed outbound transport wiring", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       outboundMailBridge: bridge,
       mailboxAddress: "ins_ses_warm@example.com",
@@ -1043,6 +1056,7 @@ describe("supervisor-backed outbound transport wiring", () => {
       dataDir,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       agentFactory: async (_def, env) => {
         capturedEnv = env as BaseEnv & { transport?: unknown };
@@ -1108,7 +1122,7 @@ function createOnDiskSubstrate(repoDir: string): RepoStore {
         await fs.mkdir(path.dirname(dest), { recursive: true });
         await fs.writeFile(dest, Buffer.from(bytes));
       }
-      return { commitSha: "on-disk-sha" };
+      return { commitSha: "on-disk-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -1206,6 +1220,7 @@ describe("live durable-conversation seam on a single-step (warmKeep) deploy", ()
       workflowRunRepoId: repoId,
       signer: async () => "sig",
       directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
       resolveStepToolContext,
       // Wiring a real durableConversation is what selects the warm-path env
