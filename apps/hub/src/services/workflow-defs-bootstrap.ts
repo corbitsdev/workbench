@@ -1,12 +1,13 @@
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type } from "arktype";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { AgentRepoStore } from "@intx/hub-sessions";
 import type { WorkflowAutopublishMap } from "../config";
+import { workflowRun } from "../db/schema";
 import {
   type WorkflowDeployCoreDeps,
   NoDeployingPrincipalError,
@@ -76,7 +77,34 @@ async function resolveTargetTenantIds(
     }
     ids.push(tenant.id);
   }
-  return ids;
+  // De-dup so a slug listed twice (or two slugs resolving to the same tenant)
+  // does not publish + supersede the same (kind, tenant) twice in one boot.
+  return [...new Set(ids)];
+}
+
+// Whether `tenantId` currently has an active (non-deleted) deployment of `kind`.
+// The git-backed workflow repo is keyed by KIND ONLY (readWorkflowDefinition →
+// getRepoDir({ kind: "workflow", id: kind })), so its fingerprint is
+// tenant-independent and cannot answer "does THIS tenant have the def". The
+// per-tenant signal is the deployment-index row (`workflow_run`), which
+// publishWorkflowDefinition writes per (kind, tenant) and supersede soft-deletes
+// per (kind, tenant). Without this a kind already published to tenant A would be
+// skipped for a newly-mapped tenant B on the next boot (matching per-kind
+// fingerprint), and B would never receive the def. (CL-2641.)
+async function tenantHasActiveDeployment(
+  deps: WorkflowDefsBootstrapDeps,
+  kind: string,
+  tenantId: string,
+): Promise<boolean> {
+  const row = await deps.coreDeps.db.query.workflowRun.findFirst({
+    where: and(
+      eq(workflowRun.kind, kind),
+      eq(workflowRun.tenantId, tenantId),
+      isNull(workflowRun.deletedAt),
+    ),
+    columns: { id: true },
+  });
+  return row !== undefined && row !== null;
 }
 
 async function loadEmbeddedDefs(
@@ -116,11 +144,15 @@ async function loadEmbeddedDefs(
 // Publish the build-serialized workflow definitions on boot (CL-2593). By
 // default every def goes to the global root tenant; an optional autopublishMap
 // (CL-2641) routes specific kinds to specific tenants by slug so a workflow is
-// published into the tenant it must run in. Idempotent (skips a def whose
-// published fingerprint already matches) and fail-safe (a per-(kind,tenant)
-// failure is logged and skipped — never throws, so a bad def can't block hub
-// startup; the last-good published def keeps serving). Descendant workbenches
-// inherit via the tenant ancestor chain.
+// published into the tenant it must run in. Idempotent per (kind, tenant) — a
+// pair is skipped only when the per-kind repo fingerprint matches AND that
+// tenant already has an active deployment of the kind, so a newly-mapped tenant
+// still receives a def whose fingerprint is otherwise unchanged. Fail-safe (a
+// per-(kind,tenant) failure is logged and skipped — never throws, so a bad def
+// can't block hub startup; the last-good published def keeps serving). A def
+// that resolves to zero target tenants is warned about loudly (published
+// nowhere is the most dangerous outcome). Descendant workbenches inherit via the
+// tenant ancestor chain.
 export async function publishEmbeddedWorkflowDefs(
   deps: WorkflowDefsBootstrapDeps,
 ): Promise<void> {
@@ -145,15 +177,27 @@ export async function publishEmbeddedWorkflowDefs(
     // workflowDefinitionEnvelopeSchema). If it ever republishes a def on
     // every boot (published>0 with no "unchanged"), that seam has drifted —
     // visible in these logs on the staging rollout before prod. (CL-2593.)
-    const unchangedForKind =
+    const fingerprintMatches =
       current !== null &&
       definitionFingerprint(current) ===
         definitionFingerprint(embedded.definition);
 
     const targets = await resolveTargetTenantIds(deps, embedded.kind);
+    if (targets.length === 0) {
+      log.warn("workflow def resolved to no target tenant; not published", {
+        kind: embedded.kind,
+      });
+      continue;
+    }
     for (const targetTenantId of targets) {
       try {
-        if (unchangedForKind) {
+        // Skip only when the def is unchanged AND this tenant already holds it;
+        // a matching per-kind fingerprint alone is not enough (a newly-mapped
+        // tenant has no deployment row yet and must still receive the def).
+        if (
+          fingerprintMatches &&
+          (await tenantHasActiveDeployment(deps, embedded.kind, targetTenantId))
+        ) {
           unchanged += 1;
           continue;
         }
