@@ -15,6 +15,7 @@ import {
   STEP_KIND_TAG,
 } from "@workbench/agents";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
+import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
 
 // Read a workflow run's authoritative state directly from its native git event
 // log (CL-2669 Phase 1a). Where the projection bridge folds the log into a
@@ -207,9 +208,25 @@ async function resolveStepKinds(
 // classified by execution type from the deployed definition.
 export async function getWorkflowRunState(
   deps: { repoStore: AgentRepoStore },
-  args: { deploymentId: string; runId: string; kind: string },
+  args: {
+    deploymentId: string;
+    runId: string;
+    kind: string;
+    deploymentDomain: string;
+  },
 ): Promise<LogRunState> {
-  const repoId: RepoId = { kind: "workflow-run", id: args.deploymentId };
+  // The sidecar keys the workflow-run repo by the SUBSTRATE-SAFE SLUG of the
+  // deployment's mail address, NOT the raw `ses_<id>` deploymentId — so a read
+  // against the raw id finds an empty repo in production. Derive the slug the
+  // same way the working step-output route does (deriveWorkflowRunRepoId), which
+  // stays in lockstep with the sidecar's `deriveTrivialDeploymentId` (CL-2669).
+  const repoId: RepoId = {
+    kind: "workflow-run",
+    id: deriveWorkflowRunRepoId({
+      deploymentId: args.deploymentId,
+      deploymentDomain: args.deploymentDomain,
+    }),
+  };
   const reader = createWorkflowRunReader(deps.repoStore.repoStore);
   const events = await reader.readRunEvents(repoId, RUN_EVENT_REF, args.runId);
 

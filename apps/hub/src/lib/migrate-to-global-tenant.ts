@@ -64,9 +64,6 @@ export type MigrationSummary = {
  * the old personal instance), and re-keys workflow_run / artifact /
  * artifact_version from the old personal principal to the new global principal.
  *
- * pain_point carries no tenant/principal columns (it hangs off workflow_run via
- * session_id), so it migrates implicitly with its run — nothing to re-key.
- *
  * In dryRun mode no writes happen; the returned counts report what WOULD move.
  * The live path runs inside a single per-user transaction so one failure rolls
  * back cleanly and the batch continues. Note: ensureGlobalMember +

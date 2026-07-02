@@ -13,9 +13,7 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
   it("ArtifactWithVersions is exported from @workbench/artifact types", () => {
     const artifact: ArtifactWithVersions = {
       id: "a-1",
-      sessionId: "wf-1",
       parentId: null,
-      painPointId: null,
       kind: "email",
       title: "Test",
       content: "Body",
@@ -34,9 +32,7 @@ describe("ArtifactWithVersions type export (CL-1552)", () => {
   it("ArtifactWithVersions versions array holds ArtifactVersion shape", () => {
     const artifact: ArtifactWithVersions = {
       id: "a-1",
-      sessionId: "wf-1",
       parentId: null,
-      painPointId: null,
       kind: "email",
       title: "Test",
       content: "Body",

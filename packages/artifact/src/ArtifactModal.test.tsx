@@ -9,9 +9,7 @@ import { LINKEDIN_LINE_BREAK_ANCHOR } from "./linkedin-clipboard";
 
 const artifact: ArtifactWithSession = {
   id: "a-1",
-  sessionId: "wf-1",
   parentId: null,
-  painPointId: "p-1",
   kind: "email",
   title: "Outreach email",
   content: "Hello there",

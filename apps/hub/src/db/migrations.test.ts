@@ -213,6 +213,36 @@ describe("0029 creates output_feedback (CL-1993)", () => {
   });
 });
 
+describe("0036 drops pain_point and artifact provenance columns (CL-2669)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0036_drop_pain_point.sql"),
+    "utf-8",
+  );
+
+  it("drops the pain_point table", () => {
+    expect(sql).toMatch(/DROP TABLE IF EXISTS "pain_point"/i);
+  });
+
+  it("drops artifact.session_id and artifact.pain_point_id", () => {
+    expect(sql).toMatch(
+      /ALTER TABLE "artifact" DROP COLUMN IF EXISTS "session_id"/i,
+    );
+    expect(sql).toMatch(
+      /ALTER TABLE "artifact" DROP COLUMN IF EXISTS "pain_point_id"/i,
+    );
+  });
+
+  it("drops pain_point from the drizzle schema too (no resurrection via the coverage guard)", () => {
+    // The schema is the source of truth the migrations-cover-schema guard above
+    // walks. If pain_point were still exported it would demand a CREATE TABLE,
+    // contradicting this drop — so the table must be gone from schema.ts as well.
+    const schemaTables = Object.values(schema)
+      .filter((value) => isTable(value))
+      .map((table) => getTableName(table as Table));
+    expect(schemaTables).not.toContain("pain_point");
+  });
+});
+
 describe("0031 adds meta to workflow_run (CL-2321)", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0031_workflow_run_meta.sql"),

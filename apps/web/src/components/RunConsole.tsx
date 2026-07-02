@@ -3,8 +3,10 @@ import { Button, toHumanLabel } from "@workbench/ui";
 import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 import {
   isRecordTerminal,
+  reconcileRunState,
   runStateFromLog,
   runStateFromRecord,
+  runWasInterrupted,
   useResumeWorkflow,
   useWorkflowRecord,
   useWorkflowRunState,
@@ -74,33 +76,38 @@ export function RunConsole({
   // Guard falsy id so no record query fires against an empty runId.
   const safeId = deploymentId || null;
   const { data: record, isLoading } = useWorkflowRecord(safeId, tenantId);
-  const { data: logState, isError: isLogStateError } = useWorkflowRunState(
+  const { data: logState, isError: logError } = useWorkflowRunState(
     safeId,
     tenantId,
   );
   const resume = useResumeWorkflow(deploymentId, tenantId);
 
-  // The timeline's source of truth is the log-derived run state (CL-2669): the
-  // authoritative per-step phases the runtime recorded. Old runs with no
-  // deployment log (the endpoint 400s) fall back to the record projection so the
-  // console still renders. Run-level copy (interrupted-by-restart) still reads
-  // the record's `error` field below.
+  // The timeline's per-step source of truth is the log-derived run state
+  // (CL-2669), reconciled with the run-level index status: an aborted or
+  // restart-interrupted run is `failed` in the index but non-terminal in the log
+  // (last event a StepStarted), so the overlay renders it failed while the log
+  // still drives which step it died on. When the log is unavailable (legacy run
+  // with no deploymentId, or a read error), fall back to the record-derived
+  // run-level state so a terminal run renders instead of hanging.
   const state = useMemo<RunState | null>(() => {
-    if (logState) return runStateFromLog(logState);
-    if (isLogStateError && record) return runStateFromRecord(record);
+    if (!record) return null;
+    if (logState) return reconcileRunState(record, runStateFromLog(logState));
+    if (logError || record.deploymentId === undefined)
+      return runStateFromRecord(record);
     return null;
-  }, [logState, isLogStateError, record]);
+  }, [record, logState, logError]);
+
+  // True only when the index says failed but the log is still non-terminal —
+  // the run was killed externally, not a genuine step failure.
+  const interrupted =
+    record !== undefined &&
+    logState !== undefined &&
+    runWasInterrupted(record, logState.phase);
   const settled = !isLoading;
   const connected =
     record?.status === "running" || record?.status === "awaiting";
 
   const terminal = record !== undefined && isRecordTerminal(record.status);
-  // CL-2248: a hub/sidecar restart marks an in-flight run `failed` with this
-  // exact sentinel. Surface a plain-language interrupted state + restart CTA
-  // instead of the generic failure copy, so the user is not left staring at a
-  // frozen run wondering what broke.
-  const interruptedByRestart =
-    record?.status === "failed" && record.error === "interrupted by restart";
   const steps = useMemo<StepState[]>(
     () => (state ? [...state.steps.values()] : []),
     [state],
@@ -154,11 +161,11 @@ export function RunConsole({
           state &&
           terminal &&
           state.phase === "failed" &&
-          interruptedByRestart && (
+          interrupted && (
             <div className="flex flex-col items-start gap-3">
               <p className="text-[13px] text-text-3">
-                This run was interrupted by a restart and can't continue. Start
-                a new run to pick up where you left off.
+                This run was interrupted and can't continue. Start a new run to
+                pick up where you left off.
               </p>
               <Button variant="primary" size="sm" onClick={onClose}>
                 Start a new run
@@ -169,7 +176,7 @@ export function RunConsole({
           state &&
           terminal &&
           state.phase === "failed" &&
-          !interruptedByRestart && (
+          !interrupted && (
             <p className="text-[13px] text-text-3">
               This run failed. Start a new run to try again.
             </p>

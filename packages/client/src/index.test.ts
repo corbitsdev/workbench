@@ -62,9 +62,7 @@ describe("@workbench/client request construction", () => {
   it("POSTs a create-artifact body and returns the parsed artifact", async () => {
     const responseArtifact = {
       id: "art-9",
-      sessionId: null,
       parentId: null,
-      painPointId: null,
       kind: "link",
       title: "Docs",
       content: "https://example.com",
@@ -112,9 +110,7 @@ describe("@workbench/client request construction", () => {
   it("uploads files as multipart/form-data and returns the parsed artifacts", async () => {
     const responseArtifact = {
       id: "art-up",
-      sessionId: null,
       parentId: null,
-      painPointId: null,
       kind: "file",
       title: "notes.txt",
       content: "upl-1",
@@ -370,9 +366,7 @@ describe("@workbench/client response and error handling", () => {
       artifacts: [
         {
           id: "a",
-          sessionId: null,
           parentId: null,
-          painPointId: null,
           kind: "link",
           title: "T",
           content: "C",

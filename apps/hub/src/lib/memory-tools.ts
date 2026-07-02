@@ -138,7 +138,6 @@ function createSaveHandler(context: MemoryToolContext): AgentTool {
             tenantId: context.tenantId,
             principalId: context.principalId,
             ownerPrincipalId,
-            sessionId: null,
             kind: MEMORY_KIND,
             title: MEMORY_TITLE,
             content,

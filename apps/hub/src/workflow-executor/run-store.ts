@@ -1,7 +1,32 @@
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { HubDb } from "../db";
 import { workflowRunRecord, type WorkflowRunRecordRow } from "../db/schema";
-import type { RunState, RunStore } from "./executor";
+
+// The thin run INDEX shape (CL-2669). A run's authoritative per-step and run
+// state is read from its native git event log (`run-state-from-log.ts`); this
+// index row carries only run-level identity, ownership, kind, the coarse
+// run-level `status`, and the deployment the run belongs to. The former
+// step-level mirror (currentStepId / outputs / error) was removed.
+export interface RunState {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  status: "running" | "awaiting" | "completed" | "failed";
+  // The deployment this run belongs to. Read by the records router to address
+  // the sidecar supervisor for trigger/signal delivery.
+  deploymentId?: string;
+}
+
+// The run-level projection the bridge writes on every pack (CL-2669): the coarse
+// status plus run wall-clock timing folded from the log's RunStarted / terminal
+// events. `startedAt` is set once (first RunStarted wins); `endedAt` accompanies
+// a terminal status.
+export interface RunProjection {
+  status: RunState["status"];
+  startedAt?: string;
+  endedAt?: string;
+}
 
 function rowToState(row: WorkflowRunRecordRow): RunState {
   return {
@@ -10,29 +35,7 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     tenantId: row.tenantId,
     principalId: row.principalId,
     status: row.status,
-    currentStepId: row.currentStepId,
-    input: row.input,
-    outputs: row.outputs,
-    ...(row.error !== null ? { error: row.error } : {}),
     ...(row.deploymentId !== null ? { deploymentId: row.deploymentId } : {}),
-  };
-}
-
-// A RunStore backed by the workflow_run_record row. save() upserts the
-// execution columns; the row is created at /start, so save() only updates.
-export function createRunStore(db: HubDb): RunStore {
-  return {
-    async save(state: RunState) {
-      await db
-        .update(workflowRunRecord)
-        .set({
-          status: state.status,
-          currentStepId: state.currentStepId,
-          outputs: state.outputs,
-          error: state.error ?? null,
-        })
-        .where(eq(workflowRunRecord.id, state.runId));
-    },
   };
 }
 
@@ -54,9 +57,7 @@ export async function insertRunRecord(
     tenantId: args.tenantId,
     principalId: args.principalId,
     status: "running",
-    currentStepId: null,
     input: args.input,
-    outputs: {},
   });
   return {
     runId: args.runId,
@@ -64,29 +65,63 @@ export async function insertRunRecord(
     tenantId: args.tenantId,
     principalId: args.principalId,
     status: "running",
-    currentStepId: null,
-    input: args.input,
-    outputs: {},
+    ...(args.deploymentId !== null ? { deploymentId: args.deploymentId } : {}),
   };
 }
 
-// Mark an active run terminal (status:"failed") with a reason. Single source of
-// truth for HOW a run becomes terminal — shared by the operator abort path
+// Set a run's coarse run-level status (CL-2669). The single write primitive the
+// optimistic resume, start-failure, and terminal-mark paths share.
+export async function setRunStatus(
+  db: HubDb,
+  runId: string,
+  status: RunState["status"],
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ status })
+    .where(eq(workflowRunRecord.id, runId));
+}
+
+// Apply the run-level projection folded from the event log (CL-2669). Updates
+// the coarse status, stamps `startedAt` when the log first reports it (never
+// overwriting an existing value), and stamps `endedAt` alongside a terminal
+// status.
+export async function applyRunProjection(
+  db: HubDb,
+  runId: string,
+  projection: RunProjection,
+): Promise<void> {
+  const patch: Partial<typeof workflowRunRecord.$inferInsert> = {
+    status: projection.status,
+  };
+  if (projection.startedAt !== undefined) {
+    patch.startedAt = new Date(projection.startedAt);
+  }
+  if (projection.endedAt !== undefined) {
+    patch.endedAt = new Date(projection.endedAt);
+  }
+  await db
+    .update(workflowRunRecord)
+    .set(patch)
+    .where(eq(workflowRunRecord.id, runId));
+}
+
+// Mark an active run terminal (status:"failed"). Single source of truth for HOW
+// a run becomes terminal — shared by the operator abort path
 // (workflow-run-abort.ts) and the owner archive path (workflow-run-records.ts)
-// so the terminal-mark shape never drifts between them. Tearing down the run's
-// deployment is a SEPARATE concern the caller owns: abort defers to the
-// boot-reconciler, archive reclaims immediately (CL-2629).
+// so the terminal-mark shape never drifts. The failure REASON is no longer
+// persisted (the log is the source of truth for run detail, CL-2669); callers
+// log it. Tearing down the run's deployment is a SEPARATE concern the caller
+// owns.
 export async function markRunStopped(
   db: HubDb,
   state: RunState,
-  error: string,
 ): Promise<void> {
-  await createRunStore(db).save({ ...state, status: "failed", error });
+  await setRunStatus(db, state.runId, "failed");
 }
 
 // Soft-delete a run record (CL-2629): sets deletedAt so listRunRecords and
-// loadRunRecord (both `deletedAt IS NULL`) stop returning it. Used by the
-// user-facing archive route to drop a run from the sidebar.
+// loadRunRecord (both `deletedAt IS NULL`) stop returning it.
 export async function softDeleteRunRecord(
   db: HubDb,
   runId: string,

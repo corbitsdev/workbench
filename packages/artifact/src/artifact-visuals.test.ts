@@ -33,9 +33,7 @@ describe("visualForKind", () => {
 describe("toGalleryArtifact", () => {
   const base: ArtifactWithSession = {
     id: "a-1",
-    sessionId: "wf-1",
     parentId: null,
-    painPointId: "p-1",
     kind: "email",
     title: "Title",
     content: "body",

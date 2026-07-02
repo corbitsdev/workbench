@@ -9,6 +9,7 @@ import { loadWorkflowUI } from "../lib/workflow-ui";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   isRecordTerminal,
+  reconcileRunState,
   runStateFromLog,
   runStateFromRecord,
   useResumeWorkflow,
@@ -16,7 +17,9 @@ import {
   useWorkflowDeployments,
   useWorkflowRecord,
   useWorkflowRunState,
+  useWorkflowStepOutputs,
 } from "../hooks/use-workflow";
+import { isLogStateTerminal } from "../lib/run-state-adapter";
 import { useSkillLibrary } from "../hooks/use-skills";
 
 interface WorkflowRunPaneProps {
@@ -30,8 +33,8 @@ interface WorkflowRunPaneProps {
 
 // Selects the run's own custom Panel when its workflow package ships one, and
 // falls back to the generic RunConsole otherwise. The kind comes from the loaded
-// run record — never from navigation props. The record's `outputs` map is the
-// stepId -> output envelope the panels decode, handed through as `stepOutputs`.
+// run record — never from navigation props. Step outputs are read from the run's
+// native event log (CL-2669) and handed to the panel as `stepOutputs`.
 export function WorkflowRunPane({
   deploymentId,
   tenantId,
@@ -67,9 +70,17 @@ function WorkflowRunPaneInner({
     isLoading,
     isError,
   } = useWorkflowRecord(runId, tenantId);
-  const { data: logState, isError: isLogStateError } = useWorkflowRunState(
+  const { data: logState, isError: logError } = useWorkflowRunState(
     runId,
     tenantId,
+  );
+  // Step outputs come from the run's native event log (CL-2669), keyed by the
+  // deployment; poll alongside the run while it is still active.
+  const logActive = logState ? !isLogStateTerminal(logState.phase) : false;
+  const { data: stepOutputsData } = useWorkflowStepOutputs(
+    record?.deploymentId,
+    tenantId,
+    logActive,
   );
   const resume = useResumeWorkflow(runId, tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
@@ -100,33 +111,44 @@ function WorkflowRunPaneInner({
     staleTime: 5 * 60_000,
   });
 
-  // The stepper's source of truth is the log-derived run state (CL-2669): the
-  // authoritative per-step phase the runtime computed from its event log, which
-  // makes a failed step render failed (not synthesized-current from a lagging
-  // record) and an awaiting gate render as the active gate by construction. Old
-  // runs with no deployment log (the endpoint 400s) fall back to the record
-  // projection so they still render. The panels read step *content* from the
-  // record's `outputs` map below — this state drives only phase/routing.
+  // The stepper's per-step source of truth is the log-derived run state
+  // (CL-2669), reconciled with the run-level index status: an aborted or
+  // restart-interrupted run is `failed` in the index but non-terminal in the log,
+  // so the overlay renders it failed while the log still drives per-step phase.
+  // When the log is unavailable (legacy run with no deploymentId, or a read
+  // error), fall back to the record-derived run-level state so the pane renders a
+  // terminal/failed state instead of hanging on "Loading run…". The panels read
+  // step *content* from the log-served step outputs (`stepOutputs`) below.
   const state = useMemo(() => {
-    if (logState) return runStateFromLog(logState);
-    if (isLogStateError && record) return runStateFromRecord(record);
+    if (!record) return null;
+    if (logState) return reconcileRunState(record, runStateFromLog(logState));
+    if (logError || record.deploymentId === undefined)
+      return runStateFromRecord(record);
     return null;
-  }, [logState, isLogStateError, record]);
+  }, [record, logState, logError]);
 
-  // Stringifying every step output is only worth doing when the record actually
-  // changes, not on every unrelated re-render (the record polls every 2s while
-  // running). The projector truncates downstream.
+  // The stepId -> resolved output map the panels decode, read from the log.
+  const stepOutputs = useMemo(() => stepOutputsData ?? {}, [stepOutputsData]);
+
+  // The run's active step is the log's first in-flight / awaiting step.
+  const activeStepId = useMemo(() => {
+    const active = logState?.steps.find(
+      (s) =>
+        s.phase === "in-flight" ||
+        s.phase === "awaiting-signal" ||
+        s.phase === "awaiting-timer",
+    );
+    return active?.stepId ?? null;
+  }, [logState]);
+
   const workflowSteps = useMemo(
     () =>
-      record
-        ? Object.entries(record.outputs).map(([name, output]) => ({
-            name,
-            status: name === record.currentStepId ? "current" : "done",
-            output:
-              typeof output === "string" ? output : JSON.stringify(output),
-          }))
-        : [],
-    [record],
+      Object.entries(stepOutputs).map(([name, output]) => ({
+        name,
+        status: name === activeStepId ? "current" : "done",
+        output: typeof output === "string" ? output : JSON.stringify(output),
+      })),
+    [stepOutputs, activeStepId],
   );
 
   usePublishActiveContext(
@@ -141,7 +163,7 @@ function WorkflowRunPaneInner({
         }
       : null,
     record
-      ? `${record.status}:${record.currentStepId ?? ""}:${workflowSteps.length}`
+      ? `${record.status}:${activeStepId ?? ""}:${workflowSteps.length}`
       : undefined,
   );
 
@@ -189,9 +211,6 @@ function WorkflowRunPaneInner({
   }
 
   const terminal = isRecordTerminal(record.status);
-
-  // The record's outputs map IS the stepId -> output envelope the panels decode.
-  const stepOutputs = record.outputs;
 
   // onSignal maps directly to the resume endpoint; no-op once terminal or already posting.
   const handleSignal = (signalName: string, payload?: unknown) => {

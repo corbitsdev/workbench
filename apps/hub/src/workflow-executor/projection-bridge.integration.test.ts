@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { eq } from "drizzle-orm";
 import { generateKeyPair } from "@intx/crypto";
 import type { KeyPair } from "@intx/types/runtime";
 import {
@@ -67,10 +68,9 @@ const WORKFLOW_RUN_RECORD_DDL = `
     tenant_id text NOT NULL,
     principal_id text NOT NULL,
     status text NOT NULL DEFAULT 'running',
-    current_step_id text,
     input jsonb,
-    outputs jsonb NOT NULL DEFAULT '{}',
-    error text,
+    started_at timestamp,
+    ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
     updated_at timestamp NOT NULL DEFAULT now(),
     deleted_at timestamp
@@ -145,7 +145,6 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
 
     const row = await loadRunRecord(db, runId);
     expect(row?.status).toBe("awaiting");
-    expect(row?.currentStepId).toBe("gate");
   });
 
   test("re-projection after a restart is idempotent — status stays 'awaiting'", async () => {
@@ -163,7 +162,6 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     await projectWorkflowRunRepo(repoStore, db, REPO_ID);
     const row = await loadRunRecord(db, runId);
     expect(row?.status).toBe("awaiting");
-    expect(row?.currentStepId).toBe("review");
   });
 
   test("a signal received in a later commit flips 'awaiting' back to 'running'", async () => {
@@ -180,7 +178,35 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     await projectWorkflowRunRepo(repoStore, db, REPO_ID);
     const row = await loadRunRecord(db, runId);
     expect(row?.status).toBe("running");
-    expect(row?.currentStepId).toBe("generate");
+  });
+
+  test("run-level timing is stamped from RunStarted and the terminal event", async () => {
+    const runId = "wfr-timing";
+    await seedRun(runId);
+    await commitEvent(runId, 1, {
+      type: "RunStarted",
+      at: "2026-01-01T00:00:01.000Z",
+    });
+    await commitEvent(runId, 2, { type: "StepStarted", stepId: "only" });
+    await commitEvent(runId, 3, {
+      type: "RunCompleted",
+      at: "2026-01-01T00:00:08.000Z",
+    });
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+
+    const rows = await db
+      .select({
+        status: schema.workflowRunRecord.status,
+        startedAt: schema.workflowRunRecord.startedAt,
+        endedAt: schema.workflowRunRecord.endedAt,
+      })
+      .from(schema.workflowRunRecord)
+      .where(eq(schema.workflowRunRecord.id, runId));
+    const row = rows[0];
+    expect(row?.status).toBe("completed");
+    expect(row?.startedAt?.toISOString()).toBe("2026-01-01T00:00:01.000Z");
+    expect(row?.endedAt?.toISOString()).toBe("2026-01-01T00:00:08.000Z");
   });
 
   test("UPDATE-ONLY: an event log for an unseeded run leaves no row behind", async () => {

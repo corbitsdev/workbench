@@ -37,8 +37,6 @@ const runningRecord = {
   runId: "wfr_1",
   kind: "pain-point-collateral",
   status: "running",
-  currentStepId: "analyze",
-  outputs: { intake: { content: "{}" } },
 };
 
 afterEach(() => {
@@ -111,8 +109,8 @@ describe("useWorkflowRecord", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requested).toContain("/workflow-exec/records/wfr_1");
     expect(requested).toContain("tenantId=tn-x");
-    expect(result.current.data?.currentStepId).toBe("analyze");
-    expect(result.current.data?.outputs).toEqual({ intake: { content: "{}" } });
+    expect(result.current.data?.status).toBe("running");
+    expect(result.current.data?.kind).toBe("pain-point-collateral");
   });
 
   it("surfaces an error for a malformed record shape", async () => {
@@ -204,9 +202,7 @@ describe("useStartWorkflow", () => {
     ) => {
       requested = String(url);
       method = init?.method ?? "GET";
-      return Promise.resolve(
-        jsonResponse(200, { ...runningRecord, currentStepId: null }),
-      );
+      return Promise.resolve(jsonResponse(200, { ...runningRecord }));
     }) as typeof fetch;
 
     const { result } = renderHook(() => useStartWorkflow("tn-x"), {
@@ -254,7 +250,6 @@ describe("useResumeWorkflow", () => {
         jsonResponse(200, {
           ...runningRecord,
           status: "awaiting",
-          currentStepId: "review",
         }),
       );
     }) as typeof fetch;
@@ -271,16 +266,14 @@ describe("useResumeWorkflow", () => {
       signalName: "context",
       payload: { context: "hi" },
     });
-    expect(next.currentStepId).toBe("review");
+    expect(next.status).toBe("awaiting");
   });
 
-  it("optimistically flips the cached record from awaiting to running on mutate (keeping currentStepId)", async () => {
+  it("optimistically flips the cached record from awaiting to running on mutate", async () => {
     const awaitingRecord = {
       runId: "wfr_1",
       kind: "pain-point-collateral",
       status: "awaiting" as const,
-      currentStepId: "context",
-      outputs: { intake: { content: "{}" } },
     };
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -296,7 +289,6 @@ describe("useResumeWorkflow", () => {
       return jsonResponse(200, {
         ...awaitingRecord,
         status: "running",
-        currentStepId: "analyze",
       });
     }) as typeof fetch;
 
@@ -318,10 +310,8 @@ describe("useResumeWorkflow", () => {
         "tn-x",
       ]) as {
         status: string;
-        currentStepId: string;
       };
       expect(cached.status).toBe("running");
-      expect(cached.currentStepId).toBe("context");
     });
 
     release();
@@ -333,8 +323,6 @@ describe("useResumeWorkflow", () => {
       runId: "wfr_1",
       kind: "pain-point-collateral",
       status: "awaiting" as const,
-      currentStepId: "context",
-      outputs: { intake: { content: "{}" } },
     };
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

@@ -21,6 +21,7 @@ import { defineAgent } from "@intx/agent";
 import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
 
 import { classifyStepKinds, getWorkflowRunState } from "./run-state-from-log";
+import { deriveWorkflowRunRepoId } from "../routes/workflow-runs";
 
 // Integration coverage for the CL-2669 Phase 1a log-derived read path. Proves a
 // run is fully readable from the native git event log through the #534
@@ -35,7 +36,17 @@ import { classifyStepKinds, getWorkflowRunState } from "./run-state-from-log";
 const RUN_EVENT_REF = "refs/heads/main";
 const HUB_PRINCIPAL: Principal = { kind: "hub" };
 const DEPLOYMENT_ID = "dep-log-it";
-const REPO_ID: RepoId = { kind: "workflow-run", id: DEPLOYMENT_ID };
+const DEPLOYMENT_DOMAIN = "wf.localhost";
+// getWorkflowRunState reads the run repo under the SLUGGED deployment address
+// (deriveWorkflowRunRepoId), matching the sidecar's on-disk layout — so the test
+// commits its blobs under that same id (CL-2669).
+const REPO_ID: RepoId = {
+  kind: "workflow-run",
+  id: deriveWorkflowRunRepoId({
+    deploymentId: DEPLOYMENT_ID,
+    deploymentDomain: DEPLOYMENT_DOMAIN,
+  }),
+};
 
 const allowAll: AuthorizeFn = () => ({ allowed: true });
 const permissiveHandler: KindHandler = {
@@ -213,11 +224,21 @@ describe("getWorkflowRunState — native log fold across layouts", () => {
 
     const fromPerEvent = await getWorkflowRunState(
       { repoStore: agentRepoStore },
-      { deploymentId: DEPLOYMENT_ID, runId: "wfr-perevent", kind: "k" },
+      {
+        deploymentId: DEPLOYMENT_ID,
+        runId: "wfr-perevent",
+        kind: "k",
+        deploymentDomain: DEPLOYMENT_DOMAIN,
+      },
     );
     const fromSealed = await getWorkflowRunState(
       { repoStore: agentRepoStore },
-      { deploymentId: DEPLOYMENT_ID, runId: "wfr-sealed", kind: "k" },
+      {
+        deploymentId: DEPLOYMENT_ID,
+        runId: "wfr-sealed",
+        kind: "k",
+        deploymentDomain: DEPLOYMENT_DOMAIN,
+      },
     );
 
     // Normalize the runId (the only field expected to differ) and compare the
@@ -234,7 +255,12 @@ describe("getWorkflowRunState — native log fold across layouts", () => {
     await commitPerEventLayout("wfr-detail");
     const state = await getWorkflowRunState(
       { repoStore: agentRepoStore },
-      { deploymentId: DEPLOYMENT_ID, runId: "wfr-detail", kind: "k" },
+      {
+        deploymentId: DEPLOYMENT_ID,
+        runId: "wfr-detail",
+        kind: "k",
+        deploymentDomain: DEPLOYMENT_DOMAIN,
+      },
     );
 
     expect(state.phase).toBe("failed");
@@ -265,7 +291,12 @@ describe("getWorkflowRunState — native log fold across layouts", () => {
   test("an unknown run yields an empty, pending RunState", async () => {
     const state = await getWorkflowRunState(
       { repoStore: agentRepoStore },
-      { deploymentId: DEPLOYMENT_ID, runId: "wfr-nope", kind: "k" },
+      {
+        deploymentId: DEPLOYMENT_ID,
+        runId: "wfr-nope",
+        kind: "k",
+        deploymentDomain: DEPLOYMENT_DOMAIN,
+      },
     );
     expect(state.phase).toBe("pending");
     expect(state.lastSeq).toBe(0);

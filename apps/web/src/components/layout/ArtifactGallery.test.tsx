@@ -32,9 +32,7 @@ import { ArtifactGallery, buildArtifactMessage } from "./ArtifactGallery";
 
 const fakeArtifact: ArtifactWithSession = {
   id: "a-1",
-  sessionId: "wf-1",
   parentId: null,
-  painPointId: "p-1",
   kind: "email",
   title: "Sales automation ROI",
   content: "body",
