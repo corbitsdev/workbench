@@ -9,11 +9,13 @@ import { loadWorkflowUI } from "../lib/workflow-ui";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   isRecordTerminal,
+  runStateFromLog,
   runStateFromRecord,
   useResumeWorkflow,
   useWorkflowCredentials,
   useWorkflowDeployments,
   useWorkflowRecord,
+  useWorkflowRunState,
 } from "../hooks/use-workflow";
 import { useSkillLibrary } from "../hooks/use-skills";
 
@@ -65,6 +67,10 @@ function WorkflowRunPaneInner({
     isLoading,
     isError,
   } = useWorkflowRecord(runId, tenantId);
+  const { data: logState, isError: isLogStateError } = useWorkflowRunState(
+    runId,
+    tenantId,
+  );
   const resume = useResumeWorkflow(runId, tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
@@ -94,12 +100,18 @@ function WorkflowRunPaneInner({
     staleTime: 5 * 60_000,
   });
 
-  // The panels read the @intx/workflow RunState shape; synthesize it from the
-  // record so their per-step display logic keeps working untouched.
-  const state = useMemo(
-    () => (record ? runStateFromRecord(record) : null),
-    [record],
-  );
+  // The stepper's source of truth is the log-derived run state (CL-2669): the
+  // authoritative per-step phase the runtime computed from its event log, which
+  // makes a failed step render failed (not synthesized-current from a lagging
+  // record) and an awaiting gate render as the active gate by construction. Old
+  // runs with no deployment log (the endpoint 400s) fall back to the record
+  // projection so they still render. The panels read step *content* from the
+  // record's `outputs` map below — this state drives only phase/routing.
+  const state = useMemo(() => {
+    if (logState) return runStateFromLog(logState);
+    if (isLogStateError && record) return runStateFromRecord(record);
+    return null;
+  }, [logState, isLogStateError, record]);
 
   // Stringifying every step output is only worth doing when the record actually
   // changes, not on every unrelated re-render (the record polls every 2s while

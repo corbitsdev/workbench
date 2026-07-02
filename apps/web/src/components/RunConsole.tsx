@@ -3,9 +3,11 @@ import { Button, toHumanLabel } from "@workbench/ui";
 import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 import {
   isRecordTerminal,
+  runStateFromLog,
   runStateFromRecord,
   useResumeWorkflow,
   useWorkflowRecord,
+  useWorkflowRunState,
 } from "../hooks/use-workflow";
 
 const RUN_PHASE_LABELS: Record<RunPhase, string> = {
@@ -72,12 +74,22 @@ export function RunConsole({
   // Guard falsy id so no record query fires against an empty runId.
   const safeId = deploymentId || null;
   const { data: record, isLoading } = useWorkflowRecord(safeId, tenantId);
+  const { data: logState, isError: isLogStateError } = useWorkflowRunState(
+    safeId,
+    tenantId,
+  );
   const resume = useResumeWorkflow(deploymentId, tenantId);
 
-  const state = useMemo<RunState | null>(
-    () => (record ? runStateFromRecord(record) : null),
-    [record],
-  );
+  // The timeline's source of truth is the log-derived run state (CL-2669): the
+  // authoritative per-step phases the runtime recorded. Old runs with no
+  // deployment log (the endpoint 400s) fall back to the record projection so the
+  // console still renders. Run-level copy (interrupted-by-restart) still reads
+  // the record's `error` field below.
+  const state = useMemo<RunState | null>(() => {
+    if (logState) return runStateFromLog(logState);
+    if (isLogStateError && record) return runStateFromRecord(record);
+    return null;
+  }, [logState, isLogStateError, record]);
   const settled = !isLoading;
   const connected =
     record?.status === "running" || record?.status === "awaiting";
