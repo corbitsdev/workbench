@@ -3,6 +3,7 @@ import type { CatalogModelSpec } from "./catalog";
 const ALL_MODELS: CatalogModelSpec[] = [
   // opencode-zen / anthropic models
   { canonicalName: "claude-fable-5" },
+  { canonicalName: "claude-sonnet-5" },
   { canonicalName: "claude-sonnet-4-6" },
   { canonicalName: "claude-opus-4-8" },
   { canonicalName: "claude-haiku-4-5-20251001" },

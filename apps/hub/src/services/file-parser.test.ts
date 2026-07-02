@@ -13,7 +13,7 @@ let resolution: unknown = {
     {
       id: "off_1",
       provider: "anthropic",
-      model: "claude-sonnet-4-6",
+      model: "claude-sonnet-5",
       baseURL: "https://api.anthropic.com",
       apiKey: "sk-test",
     },
@@ -89,7 +89,7 @@ describe("parseDocument (CL-2628)", () => {
     resolution = {
       ok: true,
       sources: [
-        { id: "off_1", provider: "anthropic", model: "claude-sonnet-4-6" },
+        { id: "off_1", provider: "anthropic", model: "claude-sonnet-5" },
       ],
     };
   });

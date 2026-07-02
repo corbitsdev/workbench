@@ -9,11 +9,11 @@ import { canonicalizeToolNames } from "../tool-names";
 import { PERSONAL_AGENT_BASE_TOOLS } from "../personal-agent/definition";
 
 describe("File Parser agent definition (CL-2628)", () => {
-  it("is bound to the Anthropic adapter (doc-capable) on claude-sonnet-4-6", () => {
+  it("is bound to the Anthropic adapter (doc-capable) on claude-sonnet-5", () => {
     expect(FILE_PARSER_CREDENTIAL_REQUIREMENTS).toEqual([
       { providerName: "anthropic", source: "tenant", name: "anthropic-api" },
     ]);
-    expect(FILE_PARSER_MODEL_CONFIG.defaultModel).toBe("claude-sonnet-4-6");
+    expect(FILE_PARSER_MODEL_CONFIG.defaultModel).toBe("claude-sonnet-5");
   });
 
   it("is registered as a non-deployable org template with no tools", () => {

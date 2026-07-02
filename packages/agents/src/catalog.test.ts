@@ -75,6 +75,7 @@ describe("AGENT_CATALOG coverage", () => {
         "kimi-k2.6",
         "claude-opus-4-8",
         "claude-sonnet-4-6",
+        "claude-sonnet-5",
       ]),
     );
     const openai = AGENT_CATALOG.providers.find(
