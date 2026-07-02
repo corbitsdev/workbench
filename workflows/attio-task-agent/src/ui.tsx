@@ -4,6 +4,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  failedRunErrorMessage,
   HorizontalStepper,
   inputFieldClass,
   LiveStatusSlot,
@@ -469,7 +470,13 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
       );
     }
     if (terminal === "failed" || terminal === "cancelled") {
-      return <Failed status={terminal} onClose={props.onClose} />;
+      return (
+        <Failed
+          status={terminal}
+          errorMessage={failedRunErrorMessage(state)}
+          onClose={props.onClose}
+        />
+      );
     }
     return <Placeholder label="Working…" />;
   }
@@ -504,6 +511,7 @@ function Done(props: {
 
 function Failed(props: {
   status: "failed" | "cancelled";
+  errorMessage: string | null;
   onClose: () => void;
 }): ReactNode {
   return (
@@ -516,6 +524,13 @@ function Failed(props: {
           ? "This run was cancelled."
           : "Something went wrong. Check the run logs or start a new run."}
       </p>
+      {props.status === "failed" && props.errorMessage !== null ? (
+        <div className="border-red/40 bg-red-soft/10 max-h-40 overflow-y-auto rounded-lg border p-2">
+          <p className="text-red font-mono text-xs break-words whitespace-pre-wrap">
+            {props.errorMessage}
+          </p>
+        </div>
+      ) : null}
       <Button variant="secondary" onClick={props.onClose}>
         Close
       </Button>

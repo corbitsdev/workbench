@@ -6,6 +6,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  failedRunErrorMessage,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
@@ -1170,14 +1171,7 @@ export function Panel(props: WorkflowPanelProps) {
   // `failed` also covers `cancelled`, which liveStatusLabel does not suppress.
   const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
 
-  const failedStep = STEP_ORDER.find((id) => {
-    const p = phaseFor(state, id);
-    return p === "failed" || p === "cancelled";
-  });
-  const failError =
-    failedStep !== undefined
-      ? state?.steps.get(failedStep)?.lastError?.message
-      : undefined;
+  const failError = failedRunErrorMessage(state) ?? undefined;
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">

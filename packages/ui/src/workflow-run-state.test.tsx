@@ -6,6 +6,7 @@ import {
   activeDisplayStepIndex,
   buildStepperSteps as buildRunStepperSteps,
   displayStepPhase,
+  failedRunErrorMessage,
   liveStatusLabel,
   LiveStatus,
   LiveStatusSlot,
@@ -172,6 +173,49 @@ describe("workflow-run-state", () => {
     } as unknown as RunState;
     const stepper = buildRunStepperSteps(state, STEPS);
     expect(stepper.every((step) => step.status === "completed")).toBe(true);
+  });
+
+  test("failedRunErrorMessage returns the failed step's lastError message", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { phase: "completed" }],
+        ["ground", { phase: "completed" }],
+        [
+          "brief",
+          {
+            phase: "failed",
+            lastError: { message: "Attio API error: 403 Forbidden" },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(state)).toBe("Attio API error: 403 Forbidden");
+  });
+
+  test("failedRunErrorMessage returns null when the run has not failed or no step carries an error", () => {
+    expect(failedRunErrorMessage(null)).toBeNull();
+    const running = stateFrom([["intake", "in-flight"]]);
+    expect(failedRunErrorMessage(running)).toBeNull();
+    const failedNoMessage = {
+      phase: "failed",
+      steps: new Map([["brief", { phase: "failed" }]]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(failedNoMessage)).toBeNull();
+  });
+
+  test("failedRunErrorMessage returns the first lastError in map order if more than one step somehow carries one", () => {
+    // The adapter invariant is at most one lastError per run; this pins the
+    // documented fallback behavior (first-match-wins) if that invariant ever
+    // breaks, rather than leaving it undefined.
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["a", { phase: "failed", lastError: { message: "first" } }],
+        ["b", { phase: "failed", lastError: { message: "second" } }],
+      ]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(state)).toBe("first");
   });
 
   test("LiveStatus renders the label with an ellipsis", () => {
