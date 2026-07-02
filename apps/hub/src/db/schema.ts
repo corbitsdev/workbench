@@ -183,25 +183,41 @@ export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
 // migrations). Nesting via parent_id.
-export const artifact = pgTable(
-  "artifact",
+export const artifact = pgTable("artifact", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: text("tenant_id"),
+  principalId: text("principal_id"),
+  ownerPrincipalId: text("owner_principal_id"),
+  // Null for artifacts created directly by agents via the artifact_* tools
+  // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
+  // Workflow paths always supply a valid id.
+  parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
+    onDelete: "cascade",
+  }),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  source: jsonb("source").$type<Record<string, unknown>>(),
+  status: text("status", { enum: artifactStatus }).notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// CL-2668: durable agent memory moved out of the artifact table into its own
+// table. No version history — a save is a plain overwrite. One row per
+// (tenant, owner) via a plain unique index (no longer scoped by kind, since
+// this table holds nothing else).
+export const memory = pgTable(
+  "memory",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: text("tenant_id"),
-    principalId: text("principal_id"),
-    ownerPrincipalId: text("owner_principal_id"),
-    // Null for artifacts created directly by agents via the artifact_* tools
-    // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
-    // Workflow paths always supply a valid id.
-    parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
-      onDelete: "cascade",
-    }),
-    kind: text("kind").notNull(),
-    title: text("title").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    ownerPrincipalId: text("owner_principal_id").notNull(),
     content: text("content").notNull(),
-    source: jsonb("source").$type<Record<string, unknown>>(),
-    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
-    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
@@ -209,13 +225,10 @@ export const artifact = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    // CL-2413: durable agent memory is one row per owning member principal. A
-    // partial unique index makes that an invariant — concurrent first-saves
-    // upsert onto the same row instead of forking into duplicate memory rows.
-    // Scoped to kind='memory' so it never constrains other artifact kinds.
-    memoryPerOwnerUniq: uniqueIndex("artifact_memory_per_owner_uniq")
-      .on(t.tenantId, t.ownerPrincipalId)
-      .where(sql`${t.kind} = 'memory'`),
+    memoryTenantOwnerUniq: uniqueIndex("memory_tenant_owner_uniq").on(
+      t.tenantId,
+      t.ownerPrincipalId,
+    ),
   }),
 );
 

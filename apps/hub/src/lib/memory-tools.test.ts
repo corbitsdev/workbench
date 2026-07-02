@@ -27,17 +27,12 @@ function ownerSelects(owner: string | null): Row[][] {
 }
 
 // A drizzle-shaped mock. `dbSelectQueue` feeds db.select(...) terminals (used by
-// resolveOwner and, for load, the memory read). Save is an upsert: the artifact
-// insert resolves to `upsertResult` (the row the partial-unique index upsert
-// returns), and the version-row insert is captured. Captured artifact-insert
-// values let a test assert the row is scoped to the resolved owner.
-function makeDb(opts: {
-  dbSelectQueue: Row[][];
-  upsertResult?: { id: string; version: number };
-}) {
+// resolveOwner and, for load, the memory read). Save is a plain upsert onto the
+// memory table's (tenantId, ownerPrincipalId) unique index; captured insert
+// values let a test assert the row is scoped to the resolved owner and content.
+function makeDb(opts: { dbSelectQueue: Row[][] }) {
   const dbSelectQueue = [...opts.dbSelectQueue];
-  const insertedArtifacts: Row[] = [];
-  const insertedVersions: Row[] = [];
+  const insertedMemories: Row[] = [];
 
   function selectChain(queue: Row[][]) {
     const chain: Record<string, unknown> = {};
@@ -49,32 +44,22 @@ function makeDb(opts: {
     return chain;
   }
 
-  function insertChain(values: Row) {
-    // The version-history insert is awaited directly; the artifact upsert chains
-    // .onConflictDoUpdate(...).returning() and resolves to the upserted row.
-    if ("authorId" in values) {
-      insertedVersions.push(values);
-      return Promise.resolve();
-    }
-    insertedArtifacts.push(values);
-    const result = opts.upsertResult ?? { id: "art_new", version: 1 };
-    return {
-      onConflictDoUpdate: () => ({
-        returning: () => Promise.resolve([result]),
-      }),
-    };
-  }
-
-  const tx = {
-    insert: mock(() => ({ values: mock((v: Row) => insertChain(v)) })),
-  };
-
   const db = {
     select: mock(() => selectChain(dbSelectQueue)),
-    transaction: mock((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    insert: mock((v: Row) => {
+      insertedMemories.push(v);
+      return {
+        values: mock((values: Row) => {
+          insertedMemories[insertedMemories.length - 1] = values;
+          return {
+            onConflictDoUpdate: () => Promise.resolve(),
+          };
+        }),
+      };
+    }),
   };
 
-  return { db, insertedArtifacts, insertedVersions };
+  return { db, insertedMemories };
 }
 
 const SIGNAL = new AbortController().signal;
@@ -111,37 +96,38 @@ describe("MEMORY_HUB_TOOLS registry", () => {
 });
 
 describe("memory_save", () => {
-  it("writes an owner-scoped memory row and records version 1 on first save", async () => {
-    const { db, insertedArtifacts, insertedVersions } = makeDb({
+  it("writes an owner-scoped memory row on first save", async () => {
+    const { db, insertedMemories } = makeDb({
       dbSelectQueue: ownerSelects("mem_owner"),
-      upsertResult: { id: "art_mem", version: 1 },
     });
     const { save } = tools(db);
 
     const result = await save({ content: "first brief" });
-    expect(JSON.parse(result as string)).toEqual({ ok: true, version: 1 });
+    expect(JSON.parse(result as string)).toEqual({ ok: true });
 
-    expect(insertedArtifacts).toHaveLength(1);
-    const row = insertedArtifacts[0]!;
-    expect(row.kind).toBe("memory");
+    expect(insertedMemories).toHaveLength(1);
+    const row = insertedMemories[0]!;
+    expect(row.tenantId).toBe("tnt_1");
     expect(row.ownerPrincipalId).toBe("mem_owner");
     expect(row.content).toBe("first brief");
-    // The version-history row mirrors the upserted artifact's version.
-    expect(insertedVersions[0]?.version).toBe(1);
-    expect(insertedVersions[0]?.artifactId).toBe("art_mem");
   });
 
-  it("returns the bumped version the upsert yields on a subsequent save", async () => {
-    const { db, insertedVersions } = makeDb({
-      dbSelectQueue: ownerSelects("mem_owner"),
-      upsertResult: { id: "art_mem", version: 4 },
+  it("overwrites prior content on a subsequent save rather than versioning it", async () => {
+    const { db, insertedMemories } = makeDb({
+      // Two saves against the same owner; each save resolves the owner once.
+      dbSelectQueue: [
+        ...ownerSelects("mem_owner"),
+        ...ownerSelects("mem_owner"),
+      ],
     });
     const { save } = tools(db);
 
+    await save({ content: "first brief" });
     const result = await save({ content: "updated brief" });
-    expect(JSON.parse(result as string)).toEqual({ ok: true, version: 4 });
-    expect(insertedVersions[0]?.version).toBe(4);
-    expect(insertedVersions[0]?.content).toBe("updated brief");
+
+    expect(JSON.parse(result as string)).toEqual({ ok: true });
+    expect(insertedMemories).toHaveLength(2);
+    expect(insertedMemories[1]?.content).toBe("updated brief");
   });
 
   it("fails closed when the agent has no owning user", async () => {
@@ -157,7 +143,7 @@ describe("memory_save", () => {
   });
 
   it("defers chat scope without writing", async () => {
-    const { db, insertedArtifacts } = makeDb({
+    const { db, insertedMemories } = makeDb({
       dbSelectQueue: ownerSelects("mem_owner"),
     });
     const { save } = tools(db);
@@ -166,16 +152,16 @@ describe("memory_save", () => {
     );
     expect(result.ok).toBe(false);
     expect(result.reason).toContain("not enabled yet");
-    expect(insertedArtifacts).toHaveLength(0);
+    expect(insertedMemories).toHaveLength(0);
   });
 });
 
 describe("memory_load", () => {
-  it("returns the owner's stored memory content", async () => {
+  it("returns the owner's stored memory content, and the overwritten content after a re-save", async () => {
     const { db } = makeDb({
       dbSelectQueue: [
         ...ownerSelects("mem_owner"),
-        [{ id: "art_1", content: "stored brief", version: 2 }],
+        [{ content: "stored brief" }],
       ],
     });
     const { load } = tools(db);

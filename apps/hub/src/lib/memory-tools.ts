@@ -4,18 +4,12 @@ import {
   MEMORY_LOAD_DEFINITION,
   MEMORY_SAVE_DEFINITION,
 } from "@workbench/tools-artifact";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { artifact, artifactVersion } from "../db/schema";
+import { and, eq } from "drizzle-orm";
+import { memory } from "../db/schema";
 import { resolveOwnerMemberPrincipalId } from "./artifact-tools";
 import type { ContextToolEntry } from "./tool-registry";
 
 export { MEMORY_LOAD_DEFINITION, MEMORY_SAVE_DEFINITION };
-
-// The artifact kind and title under which a user's durable memory is stored.
-// One row per owning member principal — the title is a constant, ownership is
-// what scopes it, so a save always targets the caller's own memory.
-const MEMORY_KIND = "memory";
-const MEMORY_TITLE = "Memory";
 
 type MemoryToolContext = {
   db: DB["db"];
@@ -61,16 +55,14 @@ async function loadOwnerMemoryContent(
   ownerPrincipalId: string,
 ): Promise<string> {
   const [row] = await db
-    .select({ content: artifact.content })
-    .from(artifact)
+    .select({ content: memory.content })
+    .from(memory)
     .where(
       and(
-        eq(artifact.tenantId, tenantId),
-        eq(artifact.kind, MEMORY_KIND),
-        eq(artifact.ownerPrincipalId, ownerPrincipalId),
+        eq(memory.tenantId, tenantId),
+        eq(memory.ownerPrincipalId, ownerPrincipalId),
       ),
     )
-    .orderBy(desc(artifact.updatedAt))
     .limit(1);
   return row?.content ?? "";
 }
@@ -127,50 +119,25 @@ function createSaveHandler(context: MemoryToolContext): AgentTool {
 
       const now = new Date();
 
-      // Upsert onto the per-owner partial unique index (artifact_memory_per_owner_uniq,
-      // CL-2413): the first save inserts version 1, every later save bumps the
-      // version on the same row. Atomic, so two concurrent first-saves converge
-      // on one row instead of forking duplicates.
-      const version = await context.db.transaction(async (tx) => {
-        const [row] = await tx
-          .insert(artifact)
-          .values({
-            tenantId: context.tenantId,
-            principalId: context.principalId,
-            ownerPrincipalId,
-            kind: MEMORY_KIND,
-            title: MEMORY_TITLE,
-            content,
-            source: { type: "memory" },
-            status: "draft",
-            version: 1,
-            createdAt: now,
-            updatedAt: now,
-          })
-          .onConflictDoUpdate({
-            target: [artifact.tenantId, artifact.ownerPrincipalId],
-            targetWhere: eq(artifact.kind, MEMORY_KIND),
-            set: {
-              content,
-              version: sql`${artifact.version} + 1`,
-              updatedAt: now,
-            },
-          })
-          .returning({ id: artifact.id, version: artifact.version });
-        if (!row) throw new Error("Failed to save memory");
-
-        await tx.insert(artifactVersion).values({
-          artifactId: row.id,
-          version: row.version,
-          title: MEMORY_TITLE,
+      // Upsert onto the (tenantId, ownerPrincipalId) unique index (CL-2668):
+      // the first save inserts a row, every later save overwrites its content.
+      // Atomic, so two concurrent first-saves converge on one row instead of
+      // forking duplicates.
+      await context.db
+        .insert(memory)
+        .values({
+          tenantId: context.tenantId,
+          ownerPrincipalId,
           content,
-          authorId: context.principalId,
           createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [memory.tenantId, memory.ownerPrincipalId],
+          set: { content, updatedAt: now },
         });
-        return row.version;
-      });
 
-      return jsonResult({ ok: true, version });
+      return jsonResult({ ok: true });
     },
   };
 }
