@@ -29,7 +29,7 @@ import {
 import { parseInferenceEvent } from "@intx/types/runtime";
 import { type } from "arktype";
 import { hexEncode } from "@intx/types";
-import { createNodeCrypto } from "@intx/crypto-node";
+import { createEd25519Crypto } from "@intx/crypto";
 import { getLogger } from "@intx/log";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -285,7 +285,7 @@ const auth = betterAuth({
 
 // ─── Signing key registry ──────────────────────────────────────────
 
-const registry = loadSigningKeyRegistry(hub.signingKeys);
+const registry = await loadSigningKeyRegistry(hub.signingKeys);
 log.info("Loaded signing key registry: active version {version}", {
   version: registry.active.version,
 });
@@ -306,6 +306,9 @@ const repoStore = wrapRepoStoreWithProjection(
   createAgentRepoStore({
     dataDir: hub.dataDir,
     signingKey: registry.active,
+    // Retention is fixed to keep-history: the hub is the long-term archive
+    // of an agent's state graph (see the HUB_AGENT_GC_* notes in config.ts).
+    gc: { ...hub.agentGc, retention: "keep-history" },
   }),
   { db, reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args) },
 );
@@ -1109,7 +1112,7 @@ v1.route(
     repoStore: repoStore.repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createNodeCrypto(registry.active),
+    cryptoProvider: createEd25519Crypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
   }),
@@ -1125,7 +1128,7 @@ v1.route(
     db,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createNodeCrypto(registry.active),
+    cryptoProvider: createEd25519Crypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,

@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { schema as intxSchema } from "@intx/db";
-import type { DB } from "@intx/db";
+import type { HubDb } from "../db";
 import { getLogger } from "@intx/log";
 import { and, eq } from "drizzle-orm";
 import { HUB_BACKED_TOOLS } from "../lib/hub-backed-tools";
@@ -45,7 +45,7 @@ const ErrorResponse = type({ error: "string" });
 // authorizes every call against the agent definition's declared
 // capabilities — a tool the agent was not granted is rejected (403).
 export function createHubToolsRouter(
-  db: DB["db"],
+  db: HubDb,
   sidecarToken: string,
   hubServices?: {
     sessionService: SessionService;
