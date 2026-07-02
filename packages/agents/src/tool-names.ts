@@ -30,6 +30,10 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "attio_search_records",
     "attio_get_record",
     "attio_list_workspace_members",
+    "attio_list_tasks",
+    "attio_get_task",
+    "attio_update_task",
+    "attio_create_note",
   ],
   "@workbench/tools-artifact/artifact": [
     "artifact_create",

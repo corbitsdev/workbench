@@ -86,6 +86,24 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
   });
 
+  // CL-2656: the attio task/note tools are registered in ATTIO_HUB_TOOLS and
+  // exposed to Myra's model, so they must also be granted here — otherwise the
+  // model calls them and authz rejects with "No matching grants".
+  it("includes the attio task/note tools (prefixed)", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-attio/attio:attio_list_tasks",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-attio/attio:attio_get_task",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-attio/attio:attio_update_task",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-attio/attio:attio_create_note",
+    );
+  });
+
   it("no longer carries the mail tools (removed in favor of direct domain tools)", () => {
     for (const tool of PERSONAL_AGENT_BASE_TOOLS) {
       expect(tool.startsWith("mail_")).toBe(false);

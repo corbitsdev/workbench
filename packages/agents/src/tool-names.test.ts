@@ -21,6 +21,21 @@ describe("toLlmToolName (CL-2306)", () => {
     ).toBe("attio__query_records");
   });
 
+  // CL-2656: task/note tools must canonicalize + map to the grant name that
+  // matched nothing in prod ("tool:attio__list_tasks/invoke").
+  it("maps the attio task/note tools to their LLM-safe grant names", () => {
+    expect(
+      canonicalizeToolNames(["attio_list_tasks"]).map(toLlmToolName),
+    ).toEqual(["attio__list_tasks"]);
+    expect(
+      canonicalizeToolNames([
+        "attio_get_task",
+        "attio_update_task",
+        "attio_create_note",
+      ]).map(toLlmToolName),
+    ).toEqual(["attio__get_task", "attio__update_task", "attio__create_note"]);
+  });
+
   it("keeps the tool name when it does not start with the package short prefix", () => {
     expect(toLlmToolName("@workbench/tools-exa/exa:web_search")).toBe(
       "exa__web_search",
