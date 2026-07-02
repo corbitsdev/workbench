@@ -25,7 +25,41 @@ export {
   createAnalyticsRoutes,
   type CreateAnalyticsRoutesDeps,
 } from "./routes";
-export { analyticsEvent, analyticsRollupDaily } from "./schema";
+export {
+  analyticsEvent,
+  analyticsRollupDaily,
+  workflowRunFact,
+  workflowStepFact,
+  workflowRunFactOutcomes,
+  workflowStepFactKinds,
+} from "./schema";
+export {
+  upsertWorkflowRunFacts,
+  getWorkflowAnalytics,
+  getWorkflowRunBreakdown,
+  WorkflowFactOutcomeSchema,
+  WorkflowStepFactKindSchema,
+  WorkflowRunFactInputSchema,
+  WorkflowStepFactInputSchema,
+  WorkflowRunFactsSchema,
+  WorkflowKindAggregateSchema,
+  WorkflowStepKindAggregateSchema,
+  WorkflowAnalyticsSchema,
+  WorkflowRunBreakdownStepSchema,
+  WorkflowRunBreakdownSchema,
+  type WorkflowFactOutcome,
+  type WorkflowStepFactKind,
+  type WorkflowRunFactInput,
+  type WorkflowStepFactInput,
+  type WorkflowRunFacts,
+  type WorkflowFactDateRange,
+  type WorkflowAnalyticsFilter,
+  type WorkflowKindAggregate,
+  type WorkflowStepKindAggregate,
+  type WorkflowAnalytics,
+  type WorkflowRunBreakdownStep,
+  type WorkflowRunBreakdown,
+} from "./workflow-facts";
 export {
   createAnalyticsSubscriber,
   type AnalyticsSubscriber,

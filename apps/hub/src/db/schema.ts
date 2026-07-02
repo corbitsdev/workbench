@@ -415,4 +415,9 @@ export const outputFeedback = pgTable(
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
 
-export { analyticsEvent, analyticsRollupDaily } from "@workbench/analytics";
+export {
+  analyticsEvent,
+  analyticsRollupDaily,
+  workflowRunFact,
+  workflowStepFact,
+} from "@workbench/analytics";

@@ -175,6 +175,17 @@ export type ReclaimRunDeploymentFn = (args: {
   runId: string;
 }) => void;
 
+// Fired once when a run's record transitions non-terminal → terminal (CL-2670),
+// so the caller can project the run's analytics facts from its log. Decoupled
+// from deployment reclaim: fires for every terminal run, deployment or not, and
+// never for `awaiting` (`becameTerminal`). Best-effort — the callback owns its
+// errors and must not block pack receipt.
+export type ProjectRunFactsFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+}) => void;
+
 export interface RunEventEntry {
   runId: string;
   event: { type: string } & Record<string, unknown>;
@@ -363,6 +374,7 @@ export async function projectWorkflowRunRepo(
   db: HubDb,
   repoId: RepoId,
   onTerminalRun?: ReclaimRunDeploymentFn,
+  onRunFacts?: ProjectRunFactsFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -397,6 +409,16 @@ export async function projectWorkflowRunRepo(
         tenantId: existing.tenantId,
         runId,
       });
+    }
+
+    // Project the run's analytics facts on the SAME non-terminal → terminal
+    // transition (CL-2670), decoupled from reclaim: it fires whether or not the
+    // run owns a deployment.
+    if (
+      onRunFacts !== undefined &&
+      becameTerminal(existing.status, projected.status)
+    ) {
+      onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
     }
 
     const deployMeta: { version?: string; sha?: string } = {};
@@ -476,15 +498,32 @@ export function createCoalescingScheduler(
 // next pack).
 export function wrapRepoStoreWithProjection(
   base: AgentRepoStore,
-  deps: { db: HubDb; reclaimDeployment?: ReclaimRunDeploymentFn },
+  deps: {
+    db: HubDb;
+    reclaimDeployment?: ReclaimRunDeploymentFn;
+    // CL-2670: project a terminal run's analytics facts. Given the run + its
+    // workflow-run RepoId (already in scope here), reads the log and upserts the
+    // derived facts. Best-effort, fire-and-forget.
+    projectRunFacts?: (args: {
+      repoStore: AgentRepoStore;
+      repoId: RepoId;
+      runId: string;
+      kind: string;
+      tenantId: string;
+    }) => void;
+  },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
+    const repoId: RepoId = { kind: "workflow-run", id };
     try {
       await projectWorkflowRunRepo(
         base.repoStore,
         deps.db,
-        { kind: "workflow-run", id },
+        repoId,
         deps.reclaimDeployment,
+        deps.projectRunFacts === undefined
+          ? undefined
+          : (a) => deps.projectRunFacts?.({ repoStore: base, repoId, ...a }),
       );
     } catch (err) {
       log.error("workflow projection failed", {

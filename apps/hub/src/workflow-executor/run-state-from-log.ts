@@ -55,6 +55,9 @@ export const LogStepStateSchema = type({
   "awaitingSignalName?": "string",
   "startedAt?": "string",
   "endedAt?": "string",
+  // awaitSignal gate wait in ms: SignalAwaited.at → SignalReceived.at (CL-2670).
+  // Present only for a gate step whose signal was received.
+  "gateWaitMs?": "number",
 });
 export type LogStepState = typeof LogStepStateSchema.infer;
 
@@ -122,6 +125,8 @@ function toNativeEvents(events: readonly WorkflowRunEvent[]): WorkflowEvent[] {
 interface StepTiming {
   startedAt?: string;
   endedAt?: string;
+  awaitedAt?: string;
+  gateWaitMs?: number;
 }
 
 // Derive run + per-step wall-clock timing from each event's `EventBase.at`.
@@ -135,6 +140,9 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
   const steps = new Map<string, StepTiming>();
   let runStartedAt: string | undefined;
   let runEndedAt: string | undefined;
+  // The most recent gate to await — used to attribute a SignalReceived that
+  // carries no stepId (the native event keys by signal, not always by step).
+  let lastAwaitedStep: string | undefined;
   const at = (body: Record<string, unknown>): string | undefined =>
     typeof body["at"] === "string" ? body["at"] : undefined;
   const stepId = (body: Record<string, unknown>): string | undefined =>
@@ -171,6 +179,23 @@ function deriveTiming(events: readonly WorkflowRunEvent[]): {
       case "CancelPropagated": {
         const id = stepId(body);
         if (id !== undefined) ensure(id).endedAt = ts;
+        break;
+      }
+      case "SignalAwaited": {
+        const id = stepId(body);
+        if (id !== undefined) {
+          if (ensure(id).awaitedAt === undefined) ensure(id).awaitedAt = ts;
+          lastAwaitedStep = id;
+        }
+        break;
+      }
+      case "SignalReceived": {
+        const id = stepId(body) ?? lastAwaitedStep;
+        if (id === undefined) break;
+        const t = ensure(id);
+        if (t.awaitedAt !== undefined && t.gateWaitMs === undefined) {
+          t.gateWaitMs = Date.parse(ts) - Date.parse(t.awaitedAt);
+        }
         break;
       }
       default:
@@ -227,6 +252,22 @@ export async function getWorkflowRunState(
       deploymentDomain: args.deploymentDomain,
     }),
   };
+  return getWorkflowRunStateForRepo(deps, {
+    repoId,
+    runId: args.runId,
+    kind: args.kind,
+  });
+}
+
+// The repoId-based core: fold a run's log into RunState given its already-derived
+// workflow-run RepoId. Shared by the deployment-addressed read above and the
+// fact projector (CL-2670), which drives it straight off the repoId the
+// projection bridge already read from — no re-slugging.
+export async function getWorkflowRunStateForRepo(
+  deps: { repoStore: AgentRepoStore },
+  args: { repoId: RepoId; runId: string; kind: string },
+): Promise<LogRunState> {
+  const { repoId } = args;
   const reader = createWorkflowRunReader(deps.repoStore.repoStore);
   const events = await reader.readRunEvents(repoId, RUN_EVENT_REF, args.runId);
 
@@ -251,6 +292,7 @@ export async function getWorkflowRunState(
         : {}),
       ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
       ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
+      ...(t?.gateWaitMs !== undefined ? { gateWaitMs: t.gateWaitMs } : {}),
     });
   }
 

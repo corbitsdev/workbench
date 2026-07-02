@@ -62,6 +62,8 @@ import {
   wrapRepoStoreWithProjection,
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
+import { projectWorkflowRunFacts } from "./workflow-executor/workflow-run-facts";
+import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
   type ReclaimDeploymentFn,
@@ -310,7 +312,28 @@ const repoStore = wrapRepoStoreWithProjection(
     // of an agent's state graph (see the HUB_AGENT_GC_* notes in config.ts).
     gc: { ...hub.agentGc, retention: "keep-history" },
   }),
-  { db, reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args) },
+  {
+    db,
+    reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args),
+    // CL-2670: project a terminal run's analytics facts from its log. Fire-and-
+    // forget; the projector owns its errors and must never block pack receipt.
+    projectRunFacts: (args) => {
+      void projectWorkflowRunFacts(
+        { db, repoStore: args.repoStore },
+        {
+          repoId: args.repoId,
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+        },
+      ).catch((err: unknown) => {
+        log.warn("workflow analytics fact projection failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
+  },
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
 
@@ -1122,6 +1145,11 @@ v1.route(
 // supervisor (definition deployed like an agent) and persist run state to a
 // workflow_run_record row the UI polls; the projection bridge wrapped around
 // repoStore folds the sidecar's run events into that row.
+// Workflow analytics facts (CL-2670): aggregate insights + per-run breakdown,
+// derived from the run event logs by the fact projector. Owner/tenant-gated by
+// userId context, mounted alongside the /workflow-exec routes.
+v1.route("/", createWorkflowAnalyticsRouter(db));
+
 v1.route(
   "/",
   createWorkflowRunRecordsRouter({
