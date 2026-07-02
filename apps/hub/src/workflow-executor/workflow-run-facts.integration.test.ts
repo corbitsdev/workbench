@@ -29,6 +29,7 @@ import {
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import {
+  backfillMissingWorkflowFacts,
   projectWorkflowRunFacts,
   reprojectWorkflowFacts,
 } from "./workflow-run-facts";
@@ -502,5 +503,259 @@ describe("reprojectWorkflowFacts — rebuild is a pure derived cache", () => {
       runId: RUN_ID,
     });
     expect(after).toEqual(before);
+  });
+});
+
+// ─── CL-2670 review fixes ──────────────────────────────────────────────
+
+const DUAL_KIND = "dual-gate";
+const DUAL_DEF_REPO_ID: RepoId = { kind: "workflow", id: DUAL_KIND };
+
+// Two concurrent awaitSignal gates on independent DAG branches (no dependency
+// between them), so both are awaited at once — the case where "attribute a
+// received signal to the most recently awaited gate" mis-assigns the wait.
+const DUAL_DEFINITION = defineWorkflow({
+  id: DUAL_KIND,
+  triggers: [{ type: "manual" }],
+  steps: {
+    gateA: awaitSignal({ name: "approvalA" }),
+    gateB: awaitSignal({ name: "approvalB" }),
+  },
+});
+
+async function commitEvents(
+  runId: string,
+  events: Record<string, unknown>[],
+): Promise<void> {
+  const files: Record<string, string> = {};
+  for (const event of events) {
+    files[`runs/${runId}/events/${String(event["seq"])}.json`] =
+      JSON.stringify(event);
+  }
+  await repoStore.writeTree(HUB_PRINCIPAL, REPO_ID, RUN_EVENT_REF, {
+    files,
+    message: `run log ${runId}`,
+  });
+}
+
+async function deployDualDefinition(): Promise<void> {
+  await repoStore.writeTree(HUB_PRINCIPAL, DUAL_DEF_REPO_ID, RUN_EVENT_REF, {
+    files: { "workflow.json": JSON.stringify(DUAL_DEFINITION) },
+    message: "dual definition",
+  });
+}
+
+describe("concurrent awaitSignal gates — wait attributed by signalName", () => {
+  test("each gate gets its own gate-wait, correlated by signal name not await order", async () => {
+    await deployDualDefinition();
+    // gateA awaited at t2, gateB awaited at t3. approvalA is RECEIVED FIRST (t5)
+    // even though gateB was the most-recently-awaited gate — the buggy
+    // "lastAwaitedStep" path would credit gateB with approvalA's wait and leave
+    // gateA with none. Correct correlation: gateA=t5-t2=3s, gateB=t10-t3=7s.
+    await commitEvents("wfr-dual", [
+      {
+        seq: 1,
+        type: "RunStarted",
+        runId: "wfr-dual",
+        at: t(1),
+        definitionHash: "h",
+        trigger: { type: "manual", payload: {} },
+      },
+      {
+        seq: 2,
+        type: "StepStarted",
+        stepId: "gateA",
+        at: t(2),
+        attempt: 1,
+        input: {},
+      },
+      {
+        seq: 3,
+        type: "SignalAwaited",
+        stepId: "gateA",
+        at: t(2),
+        signalName: "approvalA",
+      },
+      {
+        seq: 4,
+        type: "StepStarted",
+        stepId: "gateB",
+        at: t(3),
+        attempt: 1,
+        input: {},
+      },
+      {
+        seq: 5,
+        type: "SignalAwaited",
+        stepId: "gateB",
+        at: t(3),
+        signalName: "approvalB",
+      },
+      {
+        seq: 6,
+        type: "SignalReceived",
+        at: t(5),
+        signalName: "approvalA",
+        signalId: "sigA",
+        payload: {},
+      },
+      {
+        seq: 7,
+        type: "StepCompleted",
+        stepId: "gateA",
+        at: t(6),
+        attempt: 1,
+        output: {},
+      },
+      {
+        seq: 8,
+        type: "SignalReceived",
+        at: t(10),
+        signalName: "approvalB",
+        signalId: "sigB",
+        payload: {},
+      },
+      {
+        seq: 9,
+        type: "StepCompleted",
+        stepId: "gateB",
+        at: t(11),
+        attempt: 1,
+        output: {},
+      },
+      { seq: 10, type: "RunCompleted", at: t(12) },
+    ]);
+
+    await projectWorkflowRunFacts(
+      { db, repoStore: agentRepoStore },
+      {
+        repoId: REPO_ID,
+        runId: "wfr-dual",
+        kind: DUAL_KIND,
+        tenantId: TENANT_ID,
+      },
+    );
+
+    const breakdown = await getWorkflowRunBreakdown({
+      db,
+      tenantId: TENANT_ID,
+      runId: "wfr-dual",
+    });
+    const byId = new Map((breakdown?.steps ?? []).map((s) => [s.stepId, s]));
+    expect(byId.get("gateA")?.gateWaitMs).toBe(3_000);
+    expect(byId.get("gateB")?.gateWaitMs).toBe(7_000);
+  });
+});
+
+describe("date-range analytics filter survives a reproject", () => {
+  test("filters on the run's real startedAt, not the reproject createdAt", async () => {
+    await commitRunLog(RUN_ID);
+    await db.insert(schema.workflowRunRecord).values({
+      id: RUN_ID,
+      deploymentId: DEPLOYMENT_ID,
+      kind: KIND,
+      tenantId: TENANT_ID,
+      principalId: "prn-facts",
+      status: "failed",
+      input: {},
+    });
+    await projectWorkflowRunFacts(
+      { db, repoStore: agentRepoStore },
+      { repoId: REPO_ID, runId: RUN_ID, kind: KIND, tenantId: TENANT_ID },
+    );
+
+    // Reproject: replaceRunFacts re-inserts every row with createdAt = now(), so
+    // a createdAt-based range filter would key on "now", not the run's 2026-01-01
+    // start time. The startedAt-based filter must still find the run in a window
+    // around its real start.
+    await reprojectWorkflowFacts(
+      { db, repoStore: agentRepoStore, deploymentDomain: DEPLOYMENT_DOMAIN },
+      { tenantId: TENANT_ID },
+    );
+
+    const inWindow = await getWorkflowAnalytics({
+      db,
+      tenantId: TENANT_ID,
+      range: {
+        startDate: "2026-01-01T00:00:00.000Z",
+        endDate: "2026-01-01T00:01:00.000Z",
+      },
+    });
+    expect(inWindow.byKind.find((r) => r.kind === KIND)?.runCount).toBe(1);
+    expect(
+      inWindow.byStepKind.find((r) => r.stepKind === "human")?.stepCount,
+    ).toBe(1);
+
+    const outOfWindow = await getWorkflowAnalytics({
+      db,
+      tenantId: TENANT_ID,
+      range: {
+        startDate: "2025-01-01T00:00:00.000Z",
+        endDate: "2025-12-31T00:00:00.000Z",
+      },
+    });
+    expect(outOfWindow.byKind.find((r) => r.kind === KIND)).toBeUndefined();
+    expect(outOfWindow.byStepKind.length).toBe(0);
+  });
+});
+
+describe("backfillMissingWorkflowFacts — recovers lost facts", () => {
+  test("projects a terminal run that has no fact, and skips runs that already do", async () => {
+    // Run 1: terminal record, log committed, but NO fact (its live projection was
+    // lost). Run 2: terminal record whose fact already exists.
+    await commitRunLog("wfr-missing");
+    await commitEvents("wfr-present", buildEventLog("wfr-present"));
+    await db.insert(schema.workflowRunRecord).values([
+      {
+        id: "wfr-missing",
+        deploymentId: DEPLOYMENT_ID,
+        kind: KIND,
+        tenantId: TENANT_ID,
+        principalId: "prn-facts",
+        status: "failed",
+        input: {},
+      },
+      {
+        id: "wfr-present",
+        deploymentId: DEPLOYMENT_ID,
+        kind: KIND,
+        tenantId: TENANT_ID,
+        principalId: "prn-facts",
+        status: "failed",
+        input: {},
+      },
+    ]);
+    // Pre-project only wfr-present.
+    await projectWorkflowRunFacts(
+      { db, repoStore: agentRepoStore },
+      {
+        repoId: REPO_ID,
+        runId: "wfr-present",
+        kind: KIND,
+        tenantId: TENANT_ID,
+      },
+    );
+    expect(
+      await getWorkflowRunBreakdown({
+        db,
+        tenantId: TENANT_ID,
+        runId: "wfr-missing",
+      }),
+    ).toBeNull();
+
+    const result = await backfillMissingWorkflowFacts(
+      { db, repoStore: agentRepoStore, deploymentDomain: DEPLOYMENT_DOMAIN },
+      { tenantId: TENANT_ID },
+    );
+
+    // Only the missing run is projected; the already-present one is not re-touched.
+    expect(result.projected).toBe(1);
+    const recovered = await getWorkflowRunBreakdown({
+      db,
+      tenantId: TENANT_ID,
+      runId: "wfr-missing",
+    });
+    expect(recovered?.outcome).toBe("failed");
+    expect(recovered?.steps.length).toBe(3);
   });
 });

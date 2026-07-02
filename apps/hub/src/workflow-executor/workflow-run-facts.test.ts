@@ -97,6 +97,25 @@ describe("deriveRunFacts", () => {
     });
   });
 
+  test("a negative wall-clock (clock skew) drops durationMs rather than persisting it", () => {
+    const { run } = deriveRunFacts(
+      state({
+        startedAt: "2026-01-01T00:00:15.000Z",
+        endedAt: "2026-01-01T00:00:01.000Z",
+      }),
+      { tenantId: "tn", kind: "brief" },
+    );
+    expect(run.durationMs).toBeUndefined();
+  });
+
+  test("an unparseable timestamp drops durationMs (NaN guard)", () => {
+    const { run } = deriveRunFacts(
+      state({ startedAt: "not-a-date", endedAt: "2026-01-01T00:00:01.000Z" }),
+      { tenantId: "tn", kind: "brief" },
+    );
+    expect(run.durationMs).toBeUndefined();
+  });
+
   test("unknown step type is recorded as 'other'", () => {
     const { steps } = deriveRunFacts(
       state({
