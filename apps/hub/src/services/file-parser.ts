@@ -139,6 +139,9 @@ export async function parseDocument(
     input.tenantId,
     input.traceId,
   );
+  // No GC policy: each repo receives exactly one parse turn (keyed per
+  // traceId), so per-repo growth is bounded and a write-path reclaim
+  // threshold could never be reached.
   const store = await createIsogitStore(contextDir);
 
   const def_ = defineAgent({

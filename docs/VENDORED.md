@@ -99,20 +99,48 @@ There are two kinds of vendoring:
 
 ### `packages/storage-isogit` → `@workbench/storage-isogit`
 
-- **Vendors:** `@intx/storage-isogit` — a **100% verbatim copy** of
-  `interchange/packages/storage-isogit` (re-synced byte-identical at pin
-  `13fb9ac`, bringing in `gc.ts`, `repo-disk.ts`, `repo-lock.ts` and the
-  write-path reclaim). It carries **zero WORKBENCH-LOCAL blocks** today; if that
-  ever changes, tag each block and list it here.
+- **Vendors:** `@intx/storage-isogit` — a copy of
+  `interchange/packages/storage-isogit` (re-synced at pin `13fb9ac`, bringing
+  in `gc.ts`, `repo-disk.ts`, `repo-lock.ts` and the write-path reclaim). No
+  longer fully verbatim: `store.ts` carries the **WORKBENCH-LOCAL (CL-2663)**
+  read-serialization divergence below; everything else is byte-identical to
+  upstream.
 - **Imported by:** `apps/hub` and `apps/sidecar` agent-repo/context stores
   (`createIsogitStore`, `createAgentRepoStore` paths) — both sides of the
   pack-exchange wire.
-- **Re-sync rule:** treat as a clean re-copy from upstream on every pin bump.
+- **Re-sync rule:** re-copy from upstream on every pin bump, then re-apply the
+  CL-2663 block in `store.ts` (everything else stays a clean copy).
   **On-disk-format parity invariant:** the hub reads packs and repos the sidecar
   writes (and vice versa); `store.ts` / `pack-receive.ts` / `pack-send.ts` must
   stay format-identical to the upstream the other consumers compile against. A
   silent format divergence corrupts agent-repo reads with a green build — the
   same failure class as the workflow-host repo-store adapters above.
+- **`receivePackObjects` lock asymmetry (CL-2663):** unlike `applyPack`, which
+  acquires the repo-dir lock itself, `receivePackObjects` does NOT self-lock —
+  callers must already hold the per-directory lock (`withRepoDirLock`) around
+  it. It currently has no production caller in this repo; if one is added,
+  wrap the call in the lock. Documented here rather than diverging from the
+  verbatim vendor.
+- **Read-vs-GC race — WORKBENCH-LOCAL (CL-2663) divergence in `store.ts`:**
+  upstream runs store reads (`readAt`, `log`, `readManifestHistory` — any
+  git-object walk) without the repo-dir lock while `maybeGCUnderLock` on the
+  write path publishes a consolidated pack and deletes the superseded ones; a
+  read that enumerated the old pack then fails on a still-reachable object
+  (isomorphic-git `InternalError: Could not read packfile ...
+pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
+  The CL-2663 block wraps those three read methods in `withRepoDirLock`, so
+  reads and GC serialize per repo dir. A bounded retry on the narrow pack-miss
+  error was tried first and rejected: the torn-`.idx` failure shapes are
+  unmatchable bare `TypeError`s deep in iso-git, so a narrow retry still
+  loses. Tradeoff: git-object reads queue behind writers/GC on the same dir;
+  working-tree reads (`load`, `readBlob`) stay unlocked. Local-only because
+  we never modify `interchange/`; **drop condition:** upstream
+  `@intx/storage-isogit` coordinating reads with GC (locking, retrying, or
+  epoch-pinning pack access) — then re-copy verbatim. Permanent regression
+  guard: `src/gc-read-race.test.ts` (WORKBENCH-LOCAL (CL-2663) test file;
+  reproduced the failure 5/5 before the fix). On every pin bump, re-apply the
+  CL-2663 block on top of upstream `store.ts` — a literal re-copy compiles
+  green and silently re-introduces the race.
 
 ### `packages/hub-agent` → `@workbench/hub-agent` (fork, NOT a verbatim vendor)
 

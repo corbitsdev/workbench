@@ -379,18 +379,36 @@ export class IsogitStore implements ContextStore, AuditStore {
     await git.branch({ fs, dir: this.dir, ref: name });
   }
 
+  // WORKBENCH-LOCAL (CL-2663) — serialize git-object reads against write-path
+  // GC. `log`, `readAt`, and `readManifestHistory` walk git objects; run
+  // unlocked they race maybeGCUnderLock's pack republish/removal, and a read
+  // landing in the removal window fails on a still-reachable object
+  // (iso-git InternalError "Could not read packfile ...", plus bare
+  // TypeErrors from torn .idx loads). A bounded retry on the pack-miss error
+  // was tried first but is insufficient: the torn-.idx failures surface as
+  // unmatchable bare TypeErrors deep in iso-git, so retrying only the narrow
+  // pack-miss still loses. Tradeoff of the lock: these reads now queue
+  // behind writers and GC on the same repo dir — acceptable, since reclaim
+  // is bounded and reads were already best-effort under churn. Working-tree
+  // reads (`load`, `readBlob`) touch no git objects and stay unlocked.
+  // `withRepoDirLock` is not re-entrant, but it is package-internal (absent
+  // from the barrel) and no locked path in this package calls these methods.
   async log(limit?: number, _signal?: AbortSignal): Promise<ContextCommit[]> {
-    return readCommitLog(this.dir, limit ?? 10);
+    return withRepoDirLock(this.dir, () =>
+      readCommitLog(this.dir, limit ?? 10),
+    );
   }
 
   async readAt(
     hash: string,
     _signal?: AbortSignal,
   ): Promise<ConversationTurn[]> {
-    const blob = await readBlobAtCommit(this.dir, hash, TURNS_FILE);
-    if (blob === null) return [];
-    const text = new TextDecoder().decode(blob);
-    return parseTurns(text);
+    return withRepoDirLock(this.dir, async () => {
+      const blob = await readBlobAtCommit(this.dir, hash, TURNS_FILE);
+      if (blob === null) return [];
+      const text = new TextDecoder().decode(blob);
+      return parseTurns(text);
+    });
   }
 
   async writeBlob(
@@ -502,6 +520,14 @@ export class IsogitStore implements ContextStore, AuditStore {
     _signal?: AbortSignal,
   ): Promise<TransformRecordType[]> {
     if (limit <= 0) return [];
+    // WORKBENCH-LOCAL (CL-2663): locked for the same read-vs-GC race as
+    // `log`/`readAt` above.
+    return withRepoDirLock(this.dir, () => this.collectManifestHistory(limit));
+  }
+
+  private async collectManifestHistory(
+    limit: number,
+  ): Promise<TransformRecordType[]> {
     const entries = await tolerantLog(this.dir, limit);
     const collected: TransformRecordType[] = [];
     for (const entry of entries) {

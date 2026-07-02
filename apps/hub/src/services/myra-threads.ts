@@ -12,7 +12,7 @@ import {
   type AuthorizeFn,
 } from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
-import { createIsogitStore } from "@workbench/storage-isogit";
+import { createIsogitStore, type GCPolicy } from "@workbench/storage-isogit";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -798,6 +798,16 @@ function runSerializedPerPrincipal<T>(
 }
 
 /**
+ * Write-path reclaim policy for the durable per-principal title repos. They
+ * accumulate audit commits for the life of the member, so they use the same
+ * thresholds as the hub agent repos with keep-history retention — the trail
+ * is durable user data, only loose/pack bloat is reclaimed.
+ */
+export function titleStoreGcPolicy(): GCPolicy {
+  return { ...getConfig().hub.agentGc, retention: "keep-history" };
+}
+
+/**
  * Run ONE non-streaming @intx/agent turn for the title, pumping every emitted
  * InferenceEvent into a hand-rolled event-collector so the turn is recorded to
  * analytics under the thread's instance + tenant (rolls up in /insights). The
@@ -824,7 +834,11 @@ async function runTitleTurn(
     opts.tenantId,
     opts.memberPrincipalId,
   );
-  const store = await createIsogitStore(contextDir);
+  const store = await createIsogitStore(
+    contextDir,
+    undefined,
+    titleStoreGcPolicy(),
+  );
 
   // The collector persists this turn to `inference_turn`, whose `session_id` is
   // a NOT NULL FK to `agent_session`. A fabricated id would violate the FK and
