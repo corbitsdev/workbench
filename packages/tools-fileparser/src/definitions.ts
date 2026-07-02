@@ -1,14 +1,15 @@
 import type { ToolDefinition } from "@intx/types/runtime";
 
 // The parse_file tool gives any agent — regardless of whether its own model can
-// read documents — a way to reason over an uploaded PDF, document, or image. The
-// file is uploaded and stored as a Workbench artifact; the agent passes that
-// artifact id here and the hub runs a doc-capable (Anthropic) parse turn, then
-// returns the extracted text.
+// read documents — a way to reason over a PDF or image artifact. The artifact
+// may be a user upload or a file pulled from another source (Attio, Granola,
+// Linear); either way the agent passes its id here and the hub runs a
+// doc-capable (Anthropic) parse turn and returns the extracted text. It is for
+// binary files only — content that is already text must be read directly.
 export const PARSE_FILE_DEFINITION: ToolDefinition = {
   name: "parse_file",
   description:
-    "Read an uploaded document, PDF, or image that was attached as a Workbench artifact and return its content as text. Use this whenever the user references an attached file you cannot read directly. Returns the parsed text. Optionally pass instructions to extract only what you need (e.g. 'list every action item').",
+    "Extract the text from a PDF or image artifact you cannot read directly. Returns the extracted text; optionally pass instructions to pull only what you need (e.g. 'list every action item'). Use it for binary files only, whether uploaded by the user or fetched from another source. Do not use it on content that is already text — notes, transcripts, tool outputs, or artifacts written by an agent; read those directly with artifact_read.",
   inputSchema: {
     type: "object",
     properties: {
