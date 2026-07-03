@@ -42,8 +42,9 @@ const log = getLogger(["api", "workflow-run-records"]);
 const StartBody = type({
   "input?": "unknown",
   // The conversation the run is being started from (CL-2677); omitted for
-  // direct starts with no chat context.
-  "originConversationId?": "string",
+  // direct starts with no chat context. Length-capped: it is stored as
+  // unbounded text and only ever used as an equality filter.
+  "originConversationId?": "string <= 256",
 });
 const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 

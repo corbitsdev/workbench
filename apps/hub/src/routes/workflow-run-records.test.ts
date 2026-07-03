@@ -692,6 +692,27 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(read.json.originConversationId).toBeUndefined();
   });
 
+  test("a schema-invalid start body 400s instead of silently starting with empty input (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const wrongType = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {}, originConversationId: 123 },
+    );
+    expect(wrongType.status).toBe(400);
+
+    const overlong = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {}, originConversationId: "c".repeat(257) },
+    );
+    expect(overlong.status).toBe(400);
+
+    // Neither invalid body may have started a run.
+    expect(runs.size).toBe(0);
+  });
+
   test("GET /records exposes each run's origin and ?originConversationId= filters to that chat's runs (CL-2677)", async () => {
     resetCaptures();
     const a = app();
