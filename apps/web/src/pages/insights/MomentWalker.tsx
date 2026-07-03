@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
-import { AlertCircle, ArrowRight, Info } from "lucide-react";
+import { AlertCircle, ArrowRight, ChevronRight, Info } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
@@ -24,51 +24,68 @@ function fullTimestamp(iso: string): string {
   });
 }
 
-// Honest gaps: the timeline row is a single raw projection (id/kind/timestamp/
-// summary), so per-moment token attribution, tool inputs/outputs and which
-// records a call touched, and whether a grant was ever exercised are simply not
-// recorded yet. We name each absence rather than fabricate a value. These are
-// benign "not recorded yet" notices, not warnings — the tracking tickets
-// (CL-2722/2723/2724) stay in code, never in user copy.
-function GapNote({
+/** The colored moment dot, by entry kind — mirrors the legend hues. */
+function dotClass(entry: TimelineEntry): string {
+  if (entry.kind === "tool_call") return "bg-green";
+  if (entry.kind === "workflow_run") return "bg-blue-deep";
+  if (entry.kind === "artifact" || entry.kind === "artifact_version") {
+    return "bg-accent";
+  }
+  return "bg-blue";
+}
+
+/**
+ * An honest "not recorded yet" chip in the gold gap hue. The tracking ticket
+ * stays in the title attribute (code, not user-facing prose). Carries the
+ * caller's testid so each specific gap (tokens / tool I/O / grant usage) is
+ * assertable.
+ */
+function GapChip({
   testid,
+  title,
   children,
 }: {
   testid: string;
+  title: string;
   children: React.ReactNode;
 }) {
   return (
-    <p
+    <span
       data-testid={testid}
-      className="flex items-start gap-1.5 rounded-[8px] border border-dashed border-border bg-surface-2 px-2.5 py-2 text-[11px] leading-snug text-text-3"
+      title={title}
+      className="inline-flex items-center gap-1 rounded-[5px] border border-dashed border-cream-deep bg-cream/40 px-1.5 py-0.5 font-mono text-[10px] text-gold"
     >
-      <Info className="mt-px h-3 w-3 shrink-0" />
-      <span>{children}</span>
-    </p>
+      <Info className="h-2.5 w-2.5" />
+      {children}
+    </span>
   );
 }
 
-function RefRow({ label, value }: { label: string; value: string }) {
+function DecompRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
+    <>
+      <div className="pt-0.5 font-mono text-[9px] uppercase tracking-[0.08em] text-text-3">
         {label}
-      </span>
-      <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-text-2">
-        {value}
-      </span>
-    </div>
+      </div>
+      <div className="min-w-0 text-[12.5px] text-text-2">{children}</div>
+    </>
   );
 }
 
 /**
- * The expanded decomposition of one moment: everything the record model
- * actually carries (plain headline, when, elapsed since the previous moment,
- * grant effect, a cross-link to the entity's own trace) plus the raw id /
- * source table as a secondary compliance reference — and an explicit "not
- * recorded yet" note for each thing the data does not have.
+ * The expanded decomposition of one moment, in the artifact's Input / Output /
+ * When / Reference / Grant layout. Everything the record model actually carries
+ * renders as a real value; everything it does NOT yet carry (per-moment tokens,
+ * a tool call's inputs/output and which records it touched, whether a grant was
+ * exercised) renders as an explicit honest gap chip — never a fabricated value.
  */
-function MomentDecomposition({
+export function MomentDecomposition({
   entry,
   previous,
 }: {
@@ -89,9 +106,9 @@ function MomentDecomposition({
   return (
     <div
       data-testid="moment-decomposition"
-      className="mt-3 flex flex-col gap-3 rounded-[10px] border border-border bg-surface p-3"
+      className="mt-3 grid gap-y-2.5 rounded-[10px] border border-border bg-surface p-3.5 [grid-template-columns:96px_1fr] gap-x-3.5"
     >
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="col-span-2 flex flex-wrap items-center gap-2">
         <Badge tone={timelineEntryTone(entry)}>{meta.label}</Badge>
         {entry.kind === "grant" && (
           <Badge
@@ -108,62 +125,92 @@ function MomentDecomposition({
         )}
       </div>
 
-      <div>
+      <div className="col-span-2">
         <p className="text-[14px] font-semibold text-text">{headline}</p>
         {detail !== null && detail !== "" && (
           <p className="text-[12px] text-text-3">{detail}</p>
         )}
       </div>
 
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        <RefRow label="Recorded" value={fullTimestamp(entry.timestamp)} />
-        <RefRow
-          label="Since previous"
-          value={elapsed ?? "First moment loaded"}
-        />
-        <RefRow label="Record id" value={entry.id} />
-        <RefRow label="Source" value={entry.sourceTable} />
-      </div>
+      {entry.kind === "tool_call" && (
+        <>
+          <DecompRow label="Input">
+            <GapChip
+              testid="gap-tool-io"
+              title="Tool inputs and which records a call touched are not stored yet (CL-2724)."
+            >
+              inputs not recorded
+            </GapChip>
+          </DecompRow>
+          <DecompRow label="Output">
+            <GapChip
+              testid="gap-tool-io-output"
+              title="Which records this call returned is not stored yet (CL-2724)."
+            >
+              which records? not recorded
+            </GapChip>
+          </DecompRow>
+        </>
+      )}
 
       {entry.summary !== null && entry.summary !== "" && (
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-            Raw record
-          </span>
-          <pre className="overflow-x-auto rounded-[6px] border border-border bg-surface-2 px-2.5 py-1.5 font-mono text-[11px] text-text-2">
+        <DecompRow label="Raw record">
+          <pre className="overflow-x-auto rounded-[7px] border border-border bg-surface-2 px-2.5 py-2 font-mono text-[11.5px] text-text-2">
             {entry.summary}
           </pre>
-        </div>
+        </DecompRow>
+      )}
+
+      <DecompRow label="When">
+        <span className="font-mono text-[11.5px] text-text-2">
+          {fullTimestamp(entry.timestamp)}
+        </span>
+        <span className="ml-2 text-[11px] text-text-3">
+          {elapsed !== null ? `· ${elapsed} after previous` : "· first loaded"}
+        </span>
+      </DecompRow>
+
+      <DecompRow label="Reference">
+        <span className="block break-all font-mono text-[11px] text-text-3">
+          {entry.id}
+        </span>
+        <span className="block break-all font-mono text-[10.5px] text-text-3">
+          {entry.sourceTable}
+        </span>
+      </DecompRow>
+
+      {tokenBearing && (
+        <DecompRow label="Tokens">
+          <GapChip
+            testid="gap-tokens"
+            title="Token usage is recorded per model and per day, not per moment yet (CL-2723)."
+          >
+            not attributed per moment
+          </GapChip>
+        </DecompRow>
+      )}
+
+      {entry.kind === "grant" && (
+        <DecompRow label="Used">
+          <GapChip
+            testid="gap-grant-usage"
+            title="Whether and when this grant was exercised is not persisted yet (CL-2722)."
+          >
+            not recorded yet
+          </GapChip>
+        </DecompRow>
       )}
 
       {link !== null && (
-        <Link
-          to={link.to}
-          className="inline-flex w-fit items-center gap-1 rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          {link.label}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Link>
-      )}
-
-      {tokenBearing && (
-        <GapNote testid="gap-tokens">
-          Token usage isn&rsquo;t attributed to a single moment yet — tokens are
-          recorded per model and per day, not per turn or tool call.
-        </GapNote>
-      )}
-      {entry.kind === "tool_call" && (
-        <GapNote testid="gap-tool-io">
-          This tool call&rsquo;s inputs, output, and which records it touched
-          aren&rsquo;t recorded — only the tool name and whether it errored are
-          captured today.
-        </GapNote>
-      )}
-      {entry.kind === "grant" && (
-        <GapNote testid="gap-grant-usage">
-          This is the permission&rsquo;s current state. Whether it was actually
-          exercised, when, or by which action isn&rsquo;t recorded yet.
-        </GapNote>
+        <div className="col-span-2">
+          <Link
+            to={link.to}
+            className="inline-flex w-fit items-center gap-1 rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-blue-deep outline-none transition-colors hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            {link.label}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
       )}
     </div>
   );
@@ -171,19 +218,19 @@ function MomentDecomposition({
 
 function WalkerSkeleton() {
   return (
-    <div className="flex flex-col gap-1.5" data-testid="moment-walker-loading">
+    <div className="flex flex-col gap-2" data-testid="moment-walker-loading">
       {[0, 1, 2, 3].map((i) => (
-        <Skeleton key={i} className="h-[52px] rounded-[10px]" />
+        <Skeleton key={i} className="h-[58px] rounded-[12px]" />
       ))}
     </div>
   );
 }
 
 /**
- * Moment-walker: a time-ordered walk through a principal's recorded moments
- * (the {@link usePrincipalActivity} timeline union). The selected moment
- * expands inline to its decomposition; Arrow/j/k/Home/End step through it from
- * the keyboard. Selection auto-expands, so stepping IS the decomposition walk.
+ * Moment-walker: a time-ordered walk through recorded moments (the
+ * {@link usePrincipalActivity} timeline union). Each moment is a card; the
+ * selected one expands inline to its decomposition. Arrow/j/k/Home/End step
+ * through it from the keyboard, so stepping IS the decomposition walk.
  */
 export function MomentWalker({
   tenantId,
@@ -210,9 +257,6 @@ export function MomentWalker({
 
   const clampedSelected = Math.min(selected, Math.max(entries.length - 1, 0));
 
-  // Keep the selected moment visible as keyboard step-through moves it. Without
-  // this the selection can walk off-screen with no scroll. Respect the user's
-  // reduced-motion preference (jump instead of smooth-scroll).
   useEffect(() => {
     const list = listRef.current;
     if (list === null) return;
@@ -288,9 +332,15 @@ export function MomentWalker({
 
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[11px] leading-snug text-text-3">
-        Step through with the arrow keys (or j / k). Each moment opens to the
-        detail we have recorded — and flags what isn&rsquo;t.
+      <p className="flex items-center gap-2 text-[11.5px] text-text-3">
+        Step through moments with
+        <span className="rounded-[4px] border border-border-strong px-1 py-px font-mono text-[9.5px]">
+          ↑
+        </span>
+        <span className="rounded-[4px] border border-border-strong px-1 py-px font-mono text-[9.5px]">
+          ↓
+        </span>
+        · each opens to what we recorded — and flags what isn&rsquo;t.
       </p>
 
       {hasPermissionEntry && (
@@ -314,12 +364,11 @@ export function MomentWalker({
         aria-activedescendant={`moment-${clampedSelected}`}
         tabIndex={0}
         onKeyDown={onKeyDown}
-        className="flex flex-col gap-1 rounded-[12px] border border-border bg-bg p-1 outline-none focus-visible:ring-1 focus-visible:ring-accent"
+        className="flex flex-col gap-2 outline-none"
       >
         {entries.map((entry, index) => {
           const isSelected = index === clampedSelected;
-          const { headline } = describeActivityEntry(entry);
-          const Icon = KIND_META[entry.kind].icon;
+          const { headline, detail } = describeActivityEntry(entry);
           return (
             <li
               key={`${entry.sourceTable}:${entry.id}`}
@@ -327,35 +376,53 @@ export function MomentWalker({
               role="option"
               aria-selected={isSelected}
               onClick={() => setSelected(index)}
-              className={`cursor-pointer rounded-[10px] px-3 py-2.5 transition-colors ${
-                isSelected ? "bg-surface-2" : "hover:bg-row-hover"
+              className={`cursor-pointer rounded-[12px] border bg-surface shadow-[var(--shadow)] transition-colors ${
+                isSelected
+                  ? "border-accent"
+                  : "border-border hover:bg-row-hover"
               }`}
             >
-              <div className="flex items-start gap-3">
-                <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[8px] border border-border bg-surface text-text-3">
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
+              <div className="flex items-center gap-3 px-3.5 py-3">
+                <span
+                  className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(entry)}`}
+                  aria-hidden
+                />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-text">
-                    {headline}
+                  <span className="flex items-baseline gap-2">
+                    <span className="truncate text-[13px] font-semibold text-text">
+                      {headline}
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] text-text-3">
+                      {KIND_META[entry.kind].label}
+                    </span>
                   </span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-                    {KIND_META[entry.kind].label}
-                  </span>
+                  {detail !== null && detail !== "" && (
+                    <span className="mt-0.5 block truncate text-[11.5px] text-text-2">
+                      {detail}
+                    </span>
+                  )}
                 </span>
                 <time
                   dateTime={entry.timestamp}
                   title={new Date(entry.timestamp).toLocaleString()}
-                  className="shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-text-3"
+                  className="shrink-0 font-mono text-[10px] tabular-nums text-text-3"
                 >
                   {relativeTime(entry.timestamp, now)}
                 </time>
+                <ChevronRight
+                  className={`h-3.5 w-3.5 shrink-0 text-text-3 transition-transform ${
+                    isSelected ? "rotate-90" : ""
+                  }`}
+                  aria-hidden
+                />
               </div>
               {isSelected && (
-                <MomentDecomposition
-                  entry={entry}
-                  previous={entries[index + 1]}
-                />
+                <div className="border-t border-border bg-surface-2 px-3.5 pb-3.5 pt-3">
+                  <MomentDecomposition
+                    entry={entry}
+                    previous={entries[index + 1]}
+                  />
+                </div>
               )}
             </li>
           );

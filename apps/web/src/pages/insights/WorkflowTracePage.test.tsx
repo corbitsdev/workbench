@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -149,7 +150,9 @@ describe("WorkflowTracePage", () => {
     ]);
     screen.getByText(/Intake/);
     screen.getByText(/Curate/);
-    screen.getByText("Completed");
+    // The completed step's phase label shows inside its row (the stat strip also
+    // has a "Completed" stat, so scope to the step rows).
+    expect(rows.some((r) => /Completed/.test(r.textContent ?? ""))).toBe(true);
     // completed intake ran 2s; only steps with both timestamps show a duration.
     const durations = screen.getAllByTestId("trace-step-duration");
     expect(durations.map((d) => d.textContent)).toContain("2.0s");
@@ -281,6 +284,28 @@ describe("WorkflowTracePage", () => {
     await waitFor(() => {
       screen.getByText("Attempt 3");
     });
+  });
+
+  it("aggregates the run's deterministic (tool) steps on the Tools facet", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByText(/Intake/));
+    fireEvent.click(screen.getByRole("tab", { name: /Tools/ }));
+    const facet = await waitFor(() => screen.getByTestId("facet-tools"));
+    // Only the deterministic "intake" step is a tool step; the agent "curate"
+    // step is not counted.
+    within(facet).getByText("Intake");
+    expect(within(facet).queryByText("Curate")).toBeNull();
+    // The concrete records touched are an honest gap, never invented.
+    within(facet).getByText("which records?");
+  });
+
+  it("shows '—' (not a fabricated 0) in the stat strip when the run can't load", async () => {
+    apiError = new Error("HTTP 403");
+    renderTrace();
+    const strip = await waitFor(() => screen.getByTestId("trace-stat-strip"));
+    await waitFor(() => within(strip).getByText("Steps"));
+    expect(within(strip).getAllByText("—").length).toBeGreaterThanOrEqual(1);
+    expect(within(strip).queryByText("0")).toBeNull();
   });
 
   it("renders the parked signal name for an awaiting-signal step", async () => {

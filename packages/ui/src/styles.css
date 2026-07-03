@@ -42,6 +42,7 @@
   --color-red-soft: var(--red-soft);
   --color-cream: var(--cream);
   --color-cream-deep: var(--cream-deep);
+  --color-gold: var(--gold);
   --color-charcoal: var(--charcoal);
   --color-charcoal-2: var(--charcoal-2);
   --color-charcoal-deep: var(--charcoal-deep);
@@ -103,6 +104,8 @@
   --charcoal: #2b2627;
   --charcoal-2: #5c5555;
   --charcoal-deep: #1f1a1b;
+  /* Attention / not-recorded-yet gap hue (all themes inherit this one value). */
+  --gold: #a8842c;
 
   /* Spacing & layout */
   --gap: 14px;

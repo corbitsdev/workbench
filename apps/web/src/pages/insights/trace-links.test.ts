@@ -6,6 +6,9 @@ import {
   entityLinkForEntry,
   formatElapsedBetween,
   grantEffect,
+  grantOrigin,
+  grantResourceLabel,
+  parseGrant,
 } from "./trace-links";
 
 function entry(
@@ -94,6 +97,52 @@ describe("grantEffect", () => {
     expect(GRANT_EFFECT_LABEL.blocked).toBe("Blocked");
     expect(GRANT_EFFECT_LABEL["needs-approval"]).toBe("Needs approval");
     expect(GRANT_EFFECT_LABEL.unknown).toBe("Effect not recorded");
+  });
+});
+
+describe("grantOrigin / parseGrant", () => {
+  it("reads the origin token that rides second-to-last on a 4-token summary", () => {
+    expect(
+      grantOrigin(
+        entry({ kind: "grant", summary: "tool:x__y invoke creator allow" }),
+      ),
+    ).toBe("creator");
+    expect(
+      grantOrigin(
+        entry({ kind: "grant", summary: "tool:x__y invoke role deny" }),
+      ),
+    ).toBe("role");
+  });
+
+  it("keeps the effect as the trailing token even when origin is present", () => {
+    // The whole point of putting origin second-to-last: the effect parse still
+    // reads the LAST token, so origin never shifts the decision.
+    const e = entry({ kind: "grant", summary: "tool:x__y invoke invoker ask" });
+    expect(grantEffect(e)).toBe("needs-approval");
+    expect(parseGrant(e)).toEqual({
+      resource: "tool:x__y",
+      action: "invoke",
+      origin: "invoker",
+      effect: "needs-approval",
+    });
+  });
+
+  it("has no origin on a legacy 3-token summary", () => {
+    expect(
+      grantOrigin(entry({ kind: "grant", summary: "tool:x__y invoke allow" })),
+    ).toBeNull();
+  });
+
+  it("has no origin for a non-grant entry", () => {
+    expect(
+      grantOrigin(entry({ kind: "tool_call", summary: "a b c d" })),
+    ).toBeNull();
+  });
+
+  it("humanizes a tool grant resource label", () => {
+    expect(grantResourceLabel("tool:attio__list_objects")).toBe(
+      "Attio · List objects",
+    );
   });
 });
 

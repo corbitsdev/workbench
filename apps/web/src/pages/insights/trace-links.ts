@@ -1,4 +1,5 @@
 import type { TimelineEntry } from "@workbench/client";
+import { humanizeToken, parseToolResource } from "./activity-naming";
 
 /** A cross-link to another entity's own trace/detail surface. */
 export interface EntityLink {
@@ -49,19 +50,63 @@ export const GRANT_EFFECT_LABEL: Record<GrantEffect, string> = {
 };
 
 /**
- * A grant summary is `<resource> <action> <effect>` (see the timeline registry:
- * `grant.resource || ' ' || grant.action || ' ' || grant.effect`), so the
- * trailing token is the effect. Mapped to a plain-language effect. Never
- * inferred for a non-grant entry — the effect vocabulary only means anything on
- * a grant row.
+ * The canonical, single-source parse of a grant timeline summary. The summary
+ * is `<resource> <action> <origin> <effect>` (see the timeline registry) —
+ * origin is optional so a legacy `<resource> <action> <effect>` row still
+ * parses. The effect is ALWAYS the trailing token; the resource is ALWAYS the
+ * first. Every grant-facing surface (Grants facet, moment decomposition,
+ * activity headline) reads grants through this one function so they can never
+ * disagree — the bug this replaces was two hand-rolled parses reporting
+ * different effects for the same row when the action token was empty.
+ */
+export interface ParsedGrant {
+  resource: string;
+  action: string;
+  /** Raw origin token (system/role/creator/invoker), or null if not recorded. */
+  origin: string | null;
+  effect: GrantEffect;
+}
+
+function effectFromToken(token: string): GrantEffect {
+  if (token === "allow") return "allowed";
+  if (token === "deny") return "blocked";
+  if (token === "ask") return "needs-approval";
+  return "unknown";
+}
+
+export function parseGrant(entry: TimelineEntry): ParsedGrant {
+  if (entry.kind !== "grant") {
+    return { resource: "", action: "", origin: null, effect: "unknown" };
+  }
+  const parts = (entry.summary ?? "").trim().split(/\s+/).filter(Boolean);
+  const resource = parts[0] ?? "";
+  const action = parts[1] ?? "";
+  const effect = effectFromToken(parts[parts.length - 1] ?? "");
+  // origin sits between action and effect — present only on 4-token rows.
+  const origin = parts.length >= 4 ? (parts[parts.length - 2] ?? null) : null;
+  return { resource, action, origin, effect };
+}
+
+/**
+ * Plain-language, compliance-facing effect for a grant row. Never inferred for
+ * a non-grant entry — the effect vocabulary only means anything on a grant.
  */
 export function grantEffect(entry: TimelineEntry): GrantEffect {
-  if (entry.kind !== "grant") return "unknown";
-  const effect = (entry.summary ?? "").trim().split(/\s+/).pop() ?? "";
-  if (effect === "allow") return "allowed";
-  if (effect === "deny") return "blocked";
-  if (effect === "ask") return "needs-approval";
-  return "unknown";
+  return parseGrant(entry).effect;
+}
+
+/** Raw grant origin token (creator/role/invoker/system), or null. */
+export function grantOrigin(entry: TimelineEntry): string | null {
+  return parseGrant(entry).origin;
+}
+
+/** Humanizes a grant resource id into a plain label (tool-aware). */
+export function grantResourceLabel(resource: string): string {
+  const tool = parseToolResource(resource);
+  if (tool !== null) {
+    return `${humanizeToken(tool.factory)} · ${humanizeToken(tool.name)}`;
+  }
+  return humanizeToken(resource);
 }
 
 /**

@@ -188,7 +188,13 @@ export const timelineSources: readonly TimelineSourceDescriptor[] = [
     },
     tenantScope: { column: "tenant_id" },
     principalScope: { column: "principal_id" },
-    summarySql: "src.resource || ' ' || src.action || ' ' || src.effect",
+    // `<resource> <action> <origin> <effect>` — origin (system/role/creator/
+    // invoker) rides second-to-last so the trailing token stays the effect: the
+    // grant parsers (grantEffect / describeGrant) read the FIRST token as the
+    // resource and the LAST as the effect, and grantOrigin reads the token
+    // before the effect. Never append origin last or the effect parse breaks.
+    summarySql:
+      "src.resource || ' ' || src.action || ' ' || src.origin || ' ' || src.effect",
   },
   {
     kind: "credential",

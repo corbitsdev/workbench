@@ -1,18 +1,29 @@
 import { useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
-import { ArrowLeft } from "lucide-react";
-import { Badge, PagePanel, Skeleton } from "@workbench/ui";
+import { PagePanel } from "@workbench/ui";
 import { type Actor } from "@workbench/client";
 import { useActor } from "../../hooks/use-actor";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import { usePrincipalActivity } from "./ActorTimeline";
 import { MomentWalker } from "./MomentWalker";
-import { RecentActivity } from "./RecentActivity";
-import { KIND_META } from "./timeline-kinds";
-
-function KindBadge({ kind }: { kind: Actor["kind"] }) {
-  return <Badge tone="identity">{kind === "user" ? "User" : "Agent"}</Badge>;
-}
+import {
+  ConnectionsFacet,
+  CostFacet,
+  GrantsFacet,
+  ToolsFacet,
+} from "./principal-facets";
+import {
+  BottomNav,
+  CompactHeader,
+  FacetTabs,
+  StatStrip,
+  TraceRootRail,
+  useFacetKeyboard,
+  type FacetDef,
+  type Stat,
+  type StatusPill,
+  type TraceRoot,
+} from "./tracer-shell";
 
 function isActorState(value: unknown): value is Actor {
   if (typeof value !== "object" || value === null) return false;
@@ -25,24 +36,6 @@ function isActorState(value: unknown): value is Actor {
   );
 }
 
-function ActorName({
-  actor,
-  isLoading,
-}: {
-  actor: Actor | null;
-  isLoading: boolean;
-}) {
-  if (actor) {
-    return (
-      <h1 className="text-[20px] font-semibold text-text">
-        {actor.displayName}
-      </h1>
-    );
-  }
-  if (isLoading) return <Skeleton className="h-6 w-40" />;
-  return <h1 className="text-[20px] font-semibold text-text">Unknown actor</h1>;
-}
-
 function lastActiveLabel(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: "short",
@@ -52,94 +45,37 @@ function lastActiveLabel(iso: string): string {
   });
 }
 
-/** Subtle one-line stat strip — plain-language facts, never big KPI cards. */
-function StatStrip({ items }: { items: { label: string; value: string }[] }) {
-  return (
-    <dl
-      data-testid="trace-stat-strip"
-      className="flex flex-wrap items-center gap-x-5 gap-y-1.5 text-[12px]"
-    >
-      {items.map((item) => (
-        <div key={item.label} className="flex items-center gap-1.5">
-          <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-            {item.label}
-          </dt>
-          <dd className="font-mono tabular-nums text-text-2">{item.value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-type Facet = "overview" | "activity";
-
-const FACETS: { value: Facet; label: string }[] = [
-  { value: "overview", label: "Overview" },
-  { value: "activity", label: "Activity" },
+const FACETS: FacetDef[] = [
+  { id: "timeline", label: "Timeline", hasGap: true },
+  { id: "grants", label: "Grants", hasGap: true },
+  { id: "tools", label: "Tools", hasGap: true },
+  { id: "cost", label: "Cost", hasGap: true },
+  { id: "connections", label: "Connections", hasGap: false },
 ];
 
-function FacetTabs({
-  facet,
-  onFacet,
-}: {
-  facet: Facet;
-  onFacet: (facet: Facet) => void;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label="Trace facets"
-      className="flex items-center gap-1 border-b border-border"
-    >
-      {FACETS.map((f) => {
-        const active = facet === f.value;
-        return (
-          <button
-            key={f.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            onClick={() => onFacet(f.value)}
-            className={`-mb-px min-h-[40px] border-b-2 px-3 py-1.5 text-[13px] font-medium outline-none transition-[colors,transform] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
-              active
-                ? "border-blue text-text"
-                : "border-transparent text-text-3 hover:text-text"
-            }`}
-          >
-            {f.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 /**
- * Principal trace shape (`/insights/users/:id`, id = principal id) — a roster +
- * rollup of what one human or agent principal owns and did. Deep-linkable:
- * identity resolves from the id via {@link useActor}; a passed router-state
- * actor renders instantly (only when its id matches) while the fetch confirms.
- * Facet tabs frame the two views; the Activity facet is the moment-walker over
- * the real timeline union. Every stat is derived from loaded data — nothing
- * not computable client-side is faked.
+ * Principal trace (`/insights/users/:id`, id = principal id), rebuilt to the
+ * approved Tracer artifact: a Trace-root rail + legend, a compact identity
+ * header, an underlined facet tab bar over a subtle stat strip, and a
+ * Back / Next-step bottom nav. The Timeline facet is the moment-walker over the
+ * real activity union; the Grants / Tools / Connections / Cost facets are
+ * projected from that SAME loaded union, with honest "not recorded yet" banners
+ * wherever the record model has no value — nothing is fabricated.
  */
 export function ActorDetailPage() {
   const { id } = useParams();
   const location = useLocation();
-  const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
-  const [facet, setFacet] = useState<Facet>("overview");
+  const { activeTenantId, loading } = useActiveWorkbench();
+  const [facetIndex, setFacetIndex] = useState(0);
+  useFacetKeyboard(facetIndex, FACETS.length, setFacetIndex);
 
   const principalId = id ?? "";
-  // Only trust router-state identity when it is FOR this principal. The state is
-  // caller-supplied (a spoofable navigation payload), so a mismatched id must
-  // be ignored and the identity fetched by id instead.
   const stateActor =
     isActorState(location.state) && location.state.id === principalId
       ? location.state
       : null;
 
   const actorQuery = useActor(activeTenantId ?? "", principalId, stateActor);
-
   const activityQuery = usePrincipalActivity(
     activeTenantId ?? "",
     principalId,
@@ -148,26 +84,20 @@ export function ActorDetailPage() {
     },
   );
   const entries = activityQuery.data?.pages.flatMap((p) => p.entries) ?? [];
-  const lastActive = entries[0]?.timestamp ?? null;
-  const distinctKinds = new Set(entries.map((e) => e.kind));
 
   const actor = actorQuery.data ?? stateActor;
-
-  const backLink = (
-    <Link
-      to="/insights"
-      className="inline-flex min-h-[40px] items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-medium text-text-3 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
-    >
-      <ArrowLeft className="h-3.5 w-3.5" />
-      Insights
-    </Link>
-  );
+  const backLink = "/insights";
 
   if (!loading && !activeTenantId) {
     return (
       <PagePanel scroll flat>
         <div className="px-5 py-5">
-          {backLink}
+          <Link
+            to={backLink}
+            className="text-[12px] font-medium text-text-3 hover:text-text"
+          >
+            ← Insights
+          </Link>
           <div className="mt-4 rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
             Select a workbench to view this actor.
           </div>
@@ -176,96 +106,103 @@ export function ActorDetailPage() {
     );
   }
 
-  const statItems = [
-    {
-      label: "Moments loaded",
-      value: activityQuery.isSuccess ? entries.length.toLocaleString() : "—",
-    },
+  const name = actor?.displayName ?? "Unknown actor";
+  const kindChip = actor?.kind === "agent" ? "agent" : "principal";
+  const root: TraceRoot = {
+    kindChip,
+    name,
+    rawId: principalId,
+    tone: "identity",
+  };
+
+  // No pill when identity is unknown (loading OR failed): never assert a live
+  // "Active" state for a principal we haven't loaded.
+  let status: StatusPill | null = null;
+  if (actor) {
+    status =
+      actor.status === "active"
+        ? { tone: "live", label: "Active" }
+        : { tone: "warn", label: actor.status };
+  }
+
+  // The stat strip is derived from the activity union; until that query has
+  // succeeded, show "—" rather than a fabricated 0 that reads as "no activity".
+  const activityReady = activityQuery.isSuccess;
+  const statValue = (n: number) => (activityReady ? n.toLocaleString() : "—");
+  const count = (kind: string) => entries.filter((e) => e.kind === kind).length;
+  const lastActive = entries[0]?.timestamp ?? null;
+  const stats: Stat[] = [
+    { label: "Moments", value: statValue(entries.length) },
+    { label: "Tool calls", value: statValue(count("tool_call")) },
+    { label: "Grants", value: statValue(count("grant")) },
+    { label: "Runs", value: statValue(count("workflow_run")) },
+    { label: "Artifacts", value: statValue(count("artifact")) },
     {
       label: "Last active",
-      value: lastActive ? lastActiveLabel(lastActive) : "—",
-    },
-    {
-      label: "Kinds seen",
-      value: activityQuery.isSuccess ? String(distinctKinds.size) : "—",
+      value: activityReady && lastActive ? lastActiveLabel(lastActive) : "—",
     },
   ];
 
+  const activeFacet = FACETS[facetIndex]!.id;
+
   return (
     <PagePanel scroll flat>
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-5 py-5 max-md:px-3">
-        <div>{backLink}</div>
+      <div className="mx-auto flex w-full max-w-[1040px] gap-7 px-5 py-5 max-md:flex-col max-md:px-3">
+        <TraceRootRail root={root} />
 
-        <header className="flex flex-col gap-4 rounded-[16px] border border-border bg-surface p-5">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <ActorName actor={actor} isLoading={actorQuery.isLoading} />
-            {actor && <KindBadge kind={actor.kind} />}
-            {actor && actor.status !== "active" && (
-              <Badge tone="neutral" data-testid="actor-status">
-                {actor.status}
-              </Badge>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1 text-[12px]">
-            {actor?.email && <span className="text-text-2">{actor.email}</span>}
-            <span className="flex items-baseline gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
-                Principal ID
-              </span>
-              <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-text-3">
-                {principalId}
-              </span>
-            </span>
-          </div>
+        <main className="min-w-0 flex-1">
+          <CompactHeader root={root} status={status} backTo={backLink} />
 
           {actorQuery.isError && !actor && (
-            <p className="text-[12px] text-text-3">
+            <p className="mt-2 text-[12px] text-text-3">
               This actor&rsquo;s identity couldn&rsquo;t be loaded, but their
               recorded activity is shown below.
             </p>
           )}
 
-          <StatStrip items={statItems} />
-        </header>
+          <div className="mt-3.5">
+            <FacetTabs
+              facets={FACETS}
+              activeId={activeFacet}
+              onSelect={(fid) =>
+                setFacetIndex(FACETS.findIndex((f) => f.id === fid))
+              }
+            />
+            <StatStrip stats={stats} />
+          </div>
 
-        <FacetTabs facet={facet} onFacet={setFacet} />
-
-        {activeTenantId && principalId !== "" && (
-          <section className="flex flex-col gap-3">
-            {facet === "overview" && (
+          <section className="mt-3">
+            {activeTenantId && principalId !== "" ? (
               <>
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
-                  What this {actor?.kind === "agent" ? "agent" : "actor"} owns
-                  and did
-                </h2>
-                {activeWorkbench && (
-                  <RecentActivity
+                {activeFacet === "timeline" && (
+                  <MomentWalker
                     tenantId={activeTenantId}
                     principalId={principalId}
                   />
                 )}
+                {activeFacet === "grants" && <GrantsFacet entries={entries} />}
+                {activeFacet === "tools" && <ToolsFacet entries={entries} />}
+                {activeFacet === "cost" && <CostFacet label={name} />}
+                {activeFacet === "connections" && (
+                  <ConnectionsFacet entries={entries} />
+                )}
               </>
-            )}
-            {facet === "activity" && (
-              <>
-                <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
-                  Moment-by-moment
-                </h2>
-                <MomentWalker
-                  tenantId={activeTenantId}
-                  principalId={principalId}
-                />
-              </>
+            ) : (
+              <div className="rounded-[12px] border border-border bg-surface p-8 text-center text-[13px] text-text-2">
+                No trace to show.
+              </div>
             )}
           </section>
-        )}
 
-        <p className="sr-only">
-          {`Kinds recorded: ${[...distinctKinds]
-            .map((k) => KIND_META[k].label)
-            .join(", ")}`}
-        </p>
+          <BottomNav
+            index={facetIndex}
+            total={FACETS.length}
+            onPrev={() => setFacetIndex(Math.max(0, facetIndex - 1))}
+            onNext={() =>
+              setFacetIndex(Math.min(FACETS.length - 1, facetIndex + 1))
+            }
+          />
+        </main>
       </div>
     </PagePanel>
   );
