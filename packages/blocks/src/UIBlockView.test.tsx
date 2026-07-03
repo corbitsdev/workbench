@@ -147,24 +147,36 @@ describe("UIBlockView", () => {
       steps: [
         { label: "Fetch calls", state: "done" },
         { label: "Draft", state: "running", meta: "step 2 of 5" },
-        { label: "Review", state: "awaiting" },
         { label: "Publish", state: "pending" },
       ],
     };
     render(<UIBlockView block={block} />);
     expect(screen.getByText("Call collateral")).not.toBeNull();
     const items = screen.getAllByRole("listitem");
-    expect(items.length).toBe(4);
+    expect(items.length).toBe(3);
     expect(items[0]?.getAttribute("data-state")).toBe("done");
     expect(items[1]?.getAttribute("data-state")).toBe("running");
-    expect(items[2]?.getAttribute("data-state")).toBe("awaiting");
-    expect(items[3]?.getAttribute("data-state")).toBe("pending");
+    expect(items[2]?.getAttribute("data-state")).toBe("pending");
     expect(screen.getByText("Fetch calls")).not.toBeNull();
     expect(screen.getByText("step 2 of 5")).not.toBeNull();
     expect(screen.getByText("done")).not.toBeNull();
     expect(screen.getByText("running")).not.toBeNull();
-    expect(screen.getByText("awaiting input")).not.toBeNull();
     expect(screen.getByText("pending")).not.toBeNull();
+  });
+
+  it("renders an awaiting step as awaiting input", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Draft", state: "done" },
+        { label: "Approve draft", state: "awaiting" },
+        { label: "Publish", state: "pending" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    expect(items[1]?.getAttribute("data-state")).toBe("awaiting");
+    expect(screen.getByText("awaiting input")).not.toBeNull();
   });
 
   it("renders a failed step with its failure state", () => {

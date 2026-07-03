@@ -24,6 +24,18 @@ export const DocumentActionsSchema = type({
 });
 export type DocumentActions = typeof DocumentActionsSchema.infer;
 
+export const ProgressStepStateSchema = type(
+  "'done' | 'running' | 'awaiting' | 'pending' | 'failed'",
+);
+export type ProgressStepState = typeof ProgressStepStateSchema.infer;
+
+export const ProgressStepSchema = type({
+  state: ProgressStepStateSchema,
+  "label?": "string",
+  "meta?": "string",
+});
+export type ProgressStep = typeof ProgressStepSchema.infer;
+
 export const UIResponseSchema = type({
   blockKind: "'choice'",
   value: "string",
@@ -69,6 +81,7 @@ export type UIBlock =
         description?: string;
       }[];
     }
+  | { kind: "progress"; title?: string; steps: ProgressStep[] }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
 
 export type ExtractedUIBlock = {
@@ -86,6 +99,7 @@ const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "link",
   "error",
   "choice",
+  "progress",
   "canvas",
 ]);
 
@@ -134,6 +148,14 @@ export function isUIBlock(value: unknown): value is UIBlock {
             opt !== null &&
             typeof (opt as Record<string, unknown>).id === "string" &&
             typeof (opt as Record<string, unknown>).label === "string",
+        )
+      );
+    case "progress":
+      return (
+        Array.isArray(block.steps) &&
+        block.steps.length > 0 &&
+        (block.steps as unknown[]).every(
+          (step) => !(ProgressStepSchema(step) instanceof type.errors),
         )
       );
     case "canvas":

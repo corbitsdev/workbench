@@ -1,6 +1,10 @@
 export {
   DocumentActionsSchema,
   UIResponseSchema,
+  ProgressStepSchema,
+  ProgressStepStateSchema,
+  type ProgressStep,
+  type ProgressStepState,
   type UIBlock,
   type UIResponse,
   type DocumentActions,

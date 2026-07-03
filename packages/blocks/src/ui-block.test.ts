@@ -155,13 +155,7 @@ describe("isUIBlock progress variant", () => {
   });
 
   it("accepts every step state", () => {
-    for (const state of [
-      "done",
-      "running",
-      "awaiting",
-      "pending",
-      "failed",
-    ]) {
+    for (const state of ["done", "running", "awaiting", "pending", "failed"]) {
       expect(
         isUIBlock({ kind: "progress", steps: [{ label: "x", state }] }),
       ).toBe(true);

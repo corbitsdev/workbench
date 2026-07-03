@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { cn, Markdown } from "@workbench/ui";
-import type { UIBlock, UIResponse } from "./ui-block";
+import type { ProgressStepState, UIBlock, UIResponse } from "./ui-block";
 
 /**
  * The generative-UI registry: the single switch that turns a typed UIBlock into
@@ -48,6 +48,8 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
           {...(onRespond !== undefined ? { onRespond } : {})}
         />
       );
+    case "progress":
+      return <ProgressBlock block={block} />;
     case "canvas":
       return (
         <div className="space-y-3" data-testid="ui-canvas">
@@ -257,6 +259,125 @@ function ErrorBlock({ block }: { block: Extract<UIBlock, { kind: "error" }> }) {
         </pre>
       )}
     </div>
+  );
+}
+
+/**
+ * The state a step renders with. Encodes the "step is done once completed OR
+ * any later step started" rule from packages/ui workflow-run-state.tsx
+ * (CL-2506): an awaitSignal gate's completion can be missing from the emitted
+ * snapshot, so a stale non-terminal step is shown done once a later step has
+ * progressed. A failed step is NEVER re-labeled — independent DAG branches run
+ * concurrently, so later progress says nothing about the failure (CL-2654).
+ */
+function effectiveStepState(
+  steps: readonly { state: ProgressStepState }[],
+  index: number,
+): ProgressStepState {
+  const step = steps[index];
+  if (step === undefined) return "pending";
+  if (step.state === "done" || step.state === "failed") return step.state;
+  const laterStarted = steps
+    .slice(index + 1)
+    .some((later) => later.state !== "pending");
+  if (laterStarted) return "done";
+  return step.state;
+}
+
+const STEP_STATE_LABEL: Record<ProgressStepState, string> = {
+  done: "done",
+  running: "running",
+  awaiting: "awaiting input",
+  pending: "pending",
+  failed: "failed",
+};
+
+function StepIndicator({
+  state,
+  index,
+}: {
+  state: ProgressStepState;
+  index: number;
+}) {
+  const base =
+    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold";
+  if (state === "done") {
+    return <span className={cn(base, "bg-green text-white")}>✓</span>;
+  }
+  if (state === "failed") {
+    return <span className={cn(base, "bg-red text-white")}>!</span>;
+  }
+  if (state === "running") {
+    return (
+      <span className={cn(base, "border-2 border-border")} aria-hidden>
+        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-border border-t-blue motion-reduce:animate-none" />
+      </span>
+    );
+  }
+  if (state === "awaiting") {
+    return (
+      <span className={cn(base, "border-2 border-orange text-orange")}>
+        {index + 1}
+      </span>
+    );
+  }
+  return (
+    <span className={cn(base, "border-2 border-border text-text-3")}>
+      {index + 1}
+    </span>
+  );
+}
+
+function ProgressBlock({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: "progress" }>;
+}) {
+  return (
+    <Surface className="px-3 py-2.5">
+      {block.title !== undefined && (
+        <div className="pb-2 text-sm font-medium text-text-2">
+          {block.title}
+        </div>
+      )}
+      <ol className="space-y-2">
+        {block.steps.map((step, index) => {
+          const state = effectiveStepState(block.steps, index);
+          return (
+            <li
+              key={index}
+              data-state={state}
+              className={cn(
+                "flex items-center gap-2.5",
+                state === "pending" && "opacity-50",
+              )}
+            >
+              <StepIndicator state={state} index={index} />
+              <span className="min-w-0 flex-1">
+                <span
+                  className={cn(
+                    "block truncate text-sm",
+                    state === "failed" && "text-red",
+                    state === "running" && "font-medium text-text",
+                    state !== "failed" && state !== "running" && "text-text-2",
+                  )}
+                >
+                  {step.label ?? `Step ${index + 1}`}
+                </span>
+                {step.meta !== undefined && (
+                  <span className="block truncate text-xs text-text-3">
+                    {step.meta}
+                  </span>
+                )}
+              </span>
+              <span className="shrink-0 text-xs text-text-3">
+                {STEP_STATE_LABEL[state]}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </Surface>
   );
 }
 
