@@ -250,6 +250,23 @@ describe("MessageBubble", () => {
     });
   });
 
+  it("stays a safe no-op when a choice is clicked without an onRespond prop", () => {
+    const message: ChatMessage = {
+      id: "ui2b",
+      role: "agent",
+      content: [
+        "```ui",
+        '{"kind":"choice","options":[{"id":"a","label":"Yes","value":"yes"}]}',
+        "```",
+      ].join("\n"),
+      createdAt: "2026-06-04T00:08:00Z",
+    };
+    render(<MessageBubble message={message} />);
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    // The block still settles into its answered state; nothing throws.
+    expect(screen.getByText(/You chose: Yes/)).not.toBeNull();
+  });
+
   it("does not extract a ui block while the agent message is still streaming", () => {
     const message: ChatMessage = {
       id: "ui3",

@@ -39,8 +39,9 @@ export {
   parseToolResult,
   extractUIBlockFromText,
   isUIBlock,
-} from "./ui-block";
-export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";
+  UIBlockView,
+  type UIBlockViewProps,
+} from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 export { TypingIndicator, type TypingIndicatorProps } from "./TypingIndicator";

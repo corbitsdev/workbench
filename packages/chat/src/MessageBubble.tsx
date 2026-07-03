@@ -6,10 +6,10 @@ import { formatBytes } from "./attachments";
 import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import {
   extractUIBlockFromText,
+  UIBlockView,
   type UIBlock,
   type UIResponse,
-} from "./ui-block";
-import { UIBlockView } from "./UIBlockView";
+} from "@workbench/blocks";
 import { MessageFeedback } from "./MessageFeedback";
 import type { FeedbackSubjectKind } from "./feedback-types";
 
