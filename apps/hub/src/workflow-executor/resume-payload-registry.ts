@@ -2,7 +2,10 @@ import { type, type Type } from "arktype";
 import {
   AbConfigPayloadSchema,
   AbDecisionPayloadSchema,
+  ClarificationPayloadSchema,
+  MemberSelectionPayloadSchema,
   SyncApprovalPayloadSchema,
+  TaskSelectionPayloadSchema,
 } from "@workbench/shared";
 
 // Per-workflow-kind → per-signal-name resume-payload validators. The /resume
@@ -15,7 +18,15 @@ import {
 // workflows are untouched. Only add an entry when the payload shape is a real
 // contract worth enforcing at the boundary.
 const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
+  // attio-task-agent (CL-2731): the block-driven HITL gates carry structured
+  // payloads. Registering their shapes rejects a hollow/malformed resume at the
+  // boundary — a member pick without an assignee, a task pick without a taskId —
+  // rather than writing it into step outputs and poisoning the downstream tool
+  // step. The panel and the dock choice blocks POST the same shapes.
   "attio-task-agent": {
+    "member-selection": MemberSelectionPayloadSchema,
+    "task-selection": TaskSelectionPayloadSchema,
+    clarification: ClarificationPayloadSchema,
     "sync-approval": SyncApprovalPayloadSchema,
   },
   // ab-compare-hitl (CL-2683): both gates carry a structured payload. The blind

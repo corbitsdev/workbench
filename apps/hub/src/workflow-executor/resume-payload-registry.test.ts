@@ -11,13 +11,88 @@ describe("validateResumePayload", () => {
   });
 
   test("passes through an unregistered signal on a registered kind", () => {
-    // The action plan is agent-decided (CL-2664) — there is no kind-selection
-    // signal to validate; the human review carries approved pieces, unvalidated.
+    // The review gate carries a multi-field draft-approval FORM the dock can't
+    // collect — it is deferred to the run page (CL-2731), so its payload is not
+    // boundary-validated here and passes through.
     expect(
-      validateResumePayload("attio-task-agent", "task-selection", {
-        taskId: "t1",
+      validateResumePayload("attio-task-agent", "review", {
+        approvedPieces: [{ type: "cold-email", title: "x", content: "y" }],
       }),
     ).toEqual({ ok: true });
+  });
+
+  test("accepts a member-selection payload with an assignee", () => {
+    expect(
+      validateResumePayload("attio-task-agent", "member-selection", {
+        assignee: "sawyer@abklabs.com",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a member-selection payload with no assignee", () => {
+    // The dock choice block and the panel both POST `{ assignee }`; a hollow pick
+    // must not reach the listTasks tool step (it would query with no assignee).
+    const result = validateResumePayload(
+      "attio-task-agent",
+      "member-selection",
+      {},
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects a member-selection payload with an empty-string assignee", () => {
+    // An empty string is a hollow pick — it passes a bare `string` type but must
+    // not reach listTasks (which would query with no assignee). The `string > 0`
+    // constraint rejects it at the boundary.
+    const result = validateResumePayload(
+      "attio-task-agent",
+      "member-selection",
+      { assignee: "" },
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts a task-selection payload with a taskId", () => {
+    expect(
+      validateResumePayload("attio-task-agent", "task-selection", {
+        taskId: "task_1",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a task-selection payload with no taskId", () => {
+    const result = validateResumePayload(
+      "attio-task-agent",
+      "task-selection",
+      {},
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects a task-selection payload with an empty-string taskId", () => {
+    const result = validateResumePayload("attio-task-agent", "task-selection", {
+      taskId: "",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts a clarification payload with answers or an empty continue", () => {
+    // `answers` is optional — an empty continue is a valid best-effort proceed.
+    expect(
+      validateResumePayload("attio-task-agent", "clarification", {}),
+    ).toEqual({ ok: true });
+    expect(
+      validateResumePayload("attio-task-agent", "clarification", {
+        answers: "The prospect is a Series B fintech.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a clarification payload with a non-string answers", () => {
+    const result = validateResumePayload("attio-task-agent", "clarification", {
+      answers: 42,
+    });
+    expect(result.ok).toBe(false);
   });
 
   test("accepts a bare attio sync-approval skip payload", () => {

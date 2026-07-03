@@ -1365,6 +1365,7 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
