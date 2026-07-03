@@ -260,7 +260,7 @@ describe("0031 adds meta to workflow_run (CL-2321)", () => {
   });
 });
 
-describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
+describe("0040 adds principal-activity timeline indexes on workbench tables only (CL-2490)", () => {
   const sql = readFileSync(
     join(
       import.meta.dir,
@@ -269,11 +269,8 @@ describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
     "utf-8",
   );
 
-  it("indexes every direct-scoped timeline source on (tenant, principal, ts DESC)", () => {
+  it("indexes every workbench-owned direct-scoped timeline source on (tenant, principal, ts DESC)", () => {
     for (const [table, principalColumn, tsColumn] of [
-      ["inference_turn", "session_id", "started_at"],
-      ["agent_session", "principal_id", "created_at"],
-      ["session_mail", "session_id", "created_at"],
       ["analytics_event", "principal_id", "occurred_at"],
       ["workflow_run_record", "principal_id", "created_at"],
       ["artifact", "principal_id", "created_at"],
@@ -282,8 +279,6 @@ describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
       ["memory", "owner_principal_id", "updated_at"],
       ["approval", "principal_id", "created_at"],
       ["output_feedback", "principal_id", "created_at"],
-      ["grant", "principal_id", "created_at"],
-      ["credential", "principal_id", "created_at"],
     ] as const) {
       expect(sql).toMatch(
         new RegExp(
@@ -299,5 +294,19 @@ describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
       /CREATE INDEX IF NOT EXISTS "[a-z_]+" ON "artifact_version" \("author_id", "created_at" DESC\)/i,
     );
     expect(sql).toMatch(/WHERE event_type = 'tool_call'/i);
+  });
+
+  it("touches NO interchange-owned table — we build on Interchange, never index its tables from workbench migrations", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+    ]) {
+      expect(sql).not.toMatch(new RegExp(`ON "${table}"`, "i"));
+    }
   });
 });
