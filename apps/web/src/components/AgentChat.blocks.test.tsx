@@ -225,4 +225,74 @@ describe("AgentChat — document block actions", () => {
   });
 });
 
+describe("AgentChat — action notice persistence", () => {
+  async function openDocument(view: ReturnType<typeof renderAgentChat>) {
+    const title = await waitFor(() => view.getByText("Launch brief"));
+    fireEvent.click(title);
+  }
+
+  function trackNoticeTimeouts(): { delays: number[]; restore: () => void } {
+    const realSetTimeout = globalThis.setTimeout;
+    const delays: number[] = [];
+    const tracked = ((
+      handler: Parameters<typeof setTimeout>[0],
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      if (delay !== undefined) delays.push(delay);
+      return realSetTimeout(handler, delay, ...args);
+    }) as typeof setTimeout;
+    globalThis.setTimeout = tracked;
+    return {
+      delays,
+      restore: () => {
+        globalThis.setTimeout = realSetTimeout;
+      },
+    };
+  }
+
+  it("keeps a failure notice until dismissed — no auto-dismiss timer", async () => {
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    sessionEvents = [assistantMail("m1", documentFence)];
+    const view = renderAgentChat();
+
+    await openDocument(view);
+    const timeouts = trackNoticeTimeouts();
+    try {
+      fireEvent.click(view.getByText("Copy"));
+      await waitFor(() => {
+        expect(view.getByText("Couldn't copy to clipboard.")).not.toBeNull();
+      });
+      // No 4s auto-dismiss scheduled for a failure notice.
+      expect(timeouts.delays).not.toContain(4000);
+
+      fireEvent.click(view.getByRole("button", { name: "Dismiss" }));
+      expect(view.queryByText("Couldn't copy to clipboard.")).toBeNull();
+    } finally {
+      timeouts.restore();
+    }
+  });
+
+  it("schedules the 4s auto-dismiss for a success notice and shows no dismiss button", async () => {
+    sessionEvents = [assistantMail("m1", documentFence)];
+    const view = renderAgentChat();
+
+    await openDocument(view);
+    const timeouts = trackNoticeTimeouts();
+    try {
+      fireEvent.click(view.getByText("Copy"));
+      await waitFor(() => {
+        expect(view.getByText("Copied to clipboard.")).not.toBeNull();
+      });
+      expect(timeouts.delays).toContain(4000);
+      expect(view.queryByRole("button", { name: "Dismiss" })).toBeNull();
+    } finally {
+      timeouts.restore();
+    }
+  });
+});
+
 import { AgentChat } from "./AgentChat";

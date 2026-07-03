@@ -150,8 +150,11 @@ describe("UIBlockView", () => {
         { label: "Publish", state: "pending" },
       ],
     };
-    render(<UIBlockView block={block} />);
+    const { container } = render(<UIBlockView block={block} />);
     expect(screen.getByText("Call collateral")).not.toBeNull();
+    expect(container.querySelector("ol")?.getAttribute("aria-live")).toBe(
+      "polite",
+    );
     const items = screen.getAllByRole("listitem");
     expect(items.length).toBe(3);
     expect(items[0]?.getAttribute("data-state")).toBe("done");
@@ -220,6 +223,22 @@ describe("UIBlockView", () => {
     render(<UIBlockView block={block} />);
     const items = screen.getAllByRole("listitem");
     expect(items[0]?.getAttribute("data-state")).toBe("failed");
+  });
+
+  it("does not promote an earlier non-terminal step when a later step failed", () => {
+    // CL-2654: a later failure says nothing about whether this step completed
+    // — the gate must stay awaiting, not flip to done.
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Approve draft", state: "awaiting" },
+        { label: "Publish", state: "failed" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]?.getAttribute("data-state")).toBe("awaiting");
+    expect(items[1]?.getAttribute("data-state")).toBe("failed");
   });
 
   it("recursively renders canvas children", () => {

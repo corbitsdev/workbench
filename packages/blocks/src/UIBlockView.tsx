@@ -277,9 +277,13 @@ function effectiveStepState(
   const step = steps[index];
   if (step === undefined) return "pending";
   if (step.state === "done" || step.state === "failed") return step.state;
+  // A later FAILED step is excluded from the promotion predicate (CL-2654):
+  // independent DAG branches run concurrently, so a failure downstream says
+  // nothing about whether this step actually completed — promoting an
+  // awaiting/running step to done on a later failure would rewind the truth.
   const laterStarted = steps
     .slice(index + 1)
-    .some((later) => later.state !== "pending");
+    .some((later) => later.state !== "pending" && later.state !== "failed");
   if (laterStarted) return "done";
   return step.state;
 }
@@ -340,7 +344,7 @@ function ProgressBlock({
           {block.title}
         </div>
       )}
-      <ol className="space-y-2">
+      <ol className="space-y-2" aria-live="polite">
         {block.steps.map((step, index) => {
           const state = effectiveStepState(block.steps, index);
           return (

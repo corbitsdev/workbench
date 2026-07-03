@@ -151,13 +151,34 @@ export function AgentChat({
     },
   });
 
-  // Transient feedback line for document block actions (copy / save-artifact).
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  // Feedback line for document block actions (copy / save-artifact).
+  // Successes auto-dismiss; failures stay until the user dismisses them or a
+  // subsequent action replaces them — an auto-dismissing error can vanish
+  // before the user has read it.
+  const [actionNotice, setActionNotice] = useState<{
+    text: string;
+    variant: "success" | "failure";
+  } | null>(null);
   const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const flashActionNotice = useCallback((text: string) => {
-    setActionNotice(text);
-    if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current);
-    noticeTimerRef.current = setTimeout(() => setActionNotice(null), 4000);
+  const flashActionNotice = useCallback(
+    (text: string, variant: "success" | "failure" = "success") => {
+      setActionNotice({ text, variant });
+      if (noticeTimerRef.current !== null) {
+        clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = null;
+      }
+      if (variant === "success") {
+        noticeTimerRef.current = setTimeout(() => setActionNotice(null), 4000);
+      }
+    },
+    [],
+  );
+  const dismissActionNotice = useCallback(() => {
+    if (noticeTimerRef.current !== null) {
+      clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    setActionNotice(null);
   }, []);
   useEffect(
     () => () => {
@@ -178,7 +199,10 @@ export function AgentChat({
     onSuccess: (artifact) =>
       flashActionNotice(`Saved "${artifact.title}" to artifacts.`),
     onError: () =>
-      flashActionNotice("Couldn't save to artifacts. Please try again."),
+      flashActionNotice(
+        "Couldn't save to artifacts. Please try again.",
+        "failure",
+      ),
   });
 
   const { mutate: launch, status: launchStatus } = useMutation({
@@ -470,7 +494,9 @@ export function AgentChat({
       void navigator.clipboard
         .writeText(block.source)
         .then(() => flashActionNotice("Copied to clipboard."))
-        .catch(() => flashActionNotice("Couldn't copy to clipboard."));
+        .catch(() =>
+          flashActionNotice("Couldn't copy to clipboard.", "failure"),
+        );
       return;
     }
     if (action === "download") {
@@ -490,7 +516,18 @@ export function AgentChat({
       {...(actionNotice !== null
         ? {
             notice: (
-              <span className="text-[13px] text-text-2">{actionNotice}</span>
+              <span className="flex items-center gap-2 text-[13px] text-text-2">
+                <span className="min-w-0 flex-1">{actionNotice.text}</span>
+                {actionNotice.variant === "failure" && (
+                  <button
+                    type="button"
+                    onClick={dismissActionNotice}
+                    className="shrink-0 rounded-md px-2 py-0.5 text-xs text-text-2 underline hover:text-text cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </span>
             ),
           }
         : {})}

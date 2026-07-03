@@ -159,7 +159,11 @@ export function ChatPanel({
       </header>
 
       {notice !== undefined && (
-        <div className="border-b border-border px-4 py-3 text-[13px] text-text-2">
+        <div
+          role="status"
+          aria-live="polite"
+          className="border-b border-border px-4 py-3 text-[13px] text-text-2"
+        >
           {notice}
         </div>
       )}
