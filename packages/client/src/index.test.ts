@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import "./test-setup";
 import {
   createArtifact,
+  getActor,
   listArtifacts,
   listWorkflows,
   uploadArtifacts,
@@ -344,6 +345,55 @@ describe("@workbench/client response and error handling", () => {
     await expect(
       listWorkflows({ baseUrl: "http://localhost:4000", fetch: fetcher }),
     ).rejects.toThrow(/Invalid \/workflow-runs response/);
+  });
+
+  it("resolves a single actor under the tenant api prefix and parses it", async () => {
+    const actor = {
+      id: "prn_u1",
+      kind: "user",
+      displayName: "Myra Ops",
+      email: "myra@example.com",
+      status: "active",
+    };
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(actor)),
+    );
+
+    const result = await getActor(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { tenantId: "tn-1", principalId: "prn_u1" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/tenants/tn-1/actors/prn_u1",
+    );
+    expect(result).toEqual(actor);
+  });
+
+  it("returns null when the actor lookup 404s", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ error: "not found" }, 404)),
+    );
+
+    const result = await getActor(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { tenantId: "tn-1", principalId: "prn_missing" },
+    );
+
+    expect(result).toBeNull();
+  });
+
+  it("throws when the actor response fails schema validation", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ id: "prn_u1" })),
+    );
+
+    await expect(
+      getActor(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { tenantId: "tn-1", principalId: "prn_u1" },
+      ),
+    ).rejects.toThrow(/Invalid \/actors\/:id response/);
   });
 
   it("throws the server-supplied error message on a non-ok response", async () => {

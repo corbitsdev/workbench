@@ -514,6 +514,46 @@ export async function searchActors(
   return parsed.actors;
 }
 
+export const GetActorParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+});
+export type GetActorParams = typeof GetActorParamsSchema.infer;
+
+/**
+ * Resolve a single principal's actor identity
+ * (`GET /api/tenants/:tenantId/actors/:principalId`). Returns `null` when the
+ * principal does not exist in the tenant (hub 404), so the deep-linkable actor
+ * page can distinguish "unknown actor" from a transport error.
+ */
+export async function getActor(
+  options: ClientOptions = {},
+  params: GetActorParams,
+): Promise<Actor | null> {
+  const doFetch = options.fetch ?? fetch;
+  const url = resolveUrl(
+    `tenants/${encodeURIComponent(params.tenantId)}/actors/${encodeURIComponent(params.principalId)}`,
+    options.baseUrl,
+    TENANT_API_PREFIX,
+  );
+  const res = await doFetch(url, {
+    method: "GET",
+    credentials: "include",
+    ...options.init,
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `HTTP ${res.status}`);
+  }
+  const raw = (await res.json()) as unknown;
+  const parsed = ActorSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /actors/:id response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export const ActivityPageSchema = type({
   entries: TimelineEntrySchema.array(),
   nextCursor: "string | null",
