@@ -3,7 +3,7 @@ import { and, eq, gte, lte, sql, type AnyColumn } from "drizzle-orm";
 import type { DB } from "@intx/db";
 import { schema as intxSchema } from "@intx/db";
 
-import { analyticsRollupDaily } from "./schema";
+import { analyticsEvent, analyticsRollupDaily } from "./schema";
 
 export type AnalyticsDateRange = {
   startDate?: string;
@@ -389,6 +389,110 @@ export async function getAnalyticsModelDistribution(
     }))
     .sort((a, b) => b.turnCount - a.turnCount)
     .slice(0, 50);
+}
+
+export type CacheBaselineRow = {
+  agentId: string;
+  agentName: string | null;
+  inferenceCalls: number;
+  cacheMissCalls: number;
+  cacheHitCalls: number;
+  sessionCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Fraction of completed inference calls that read nothing from cache. */
+  cacheMissRate: number;
+  /**
+   * Fraction of prompt-side tokens served from cache
+   * (cacheRead / (cacheRead + input)) — how much of the prompt prefix (system
+   * prompt + tool schemas) prompt caching is absorbing. Near 1 means Myra's
+   * ~50-schema tool prefix is being reused rather than re-billed as input.
+   */
+  cacheAbsorptionRatio: number;
+};
+
+/**
+ * Prompt-caching baseline over the raw per-call `inference_done` facts (the
+ * rollup drops the per-call cache split). Reports, per agent, how often a
+ * completed inference call cold-starts (reads nothing from cache) and how much
+ * of the prompt prefix caching absorbs — the two questions the Myra tool-prefix
+ * baseline needs. `inference_done` carries the terminal usage block for a call,
+ * so counting it avoids double-counting the interim `inference_usage` fact.
+ */
+export async function getCacheBaseline(
+  args: { db: DB["db"] } & AnalyticsSummaryFilter,
+): Promise<CacheBaselineRow[]> {
+  const { db, tenantId, agentId, instanceId, range } = args;
+  const rows = await db
+    .select({
+      agentId: analyticsEvent.agentId,
+      agentName: intxSchema.agent.name,
+      inferenceCalls: sql<number>`count(*)`.mapWith(Number),
+      cacheMissCalls:
+        sql<number>`sum(case when ${analyticsEvent.cacheReadTokens} = 0 then 1 else 0 end)`.mapWith(
+          Number,
+        ),
+      sessionCount:
+        sql<number>`count(distinct ${analyticsEvent.sessionId})`.mapWith(
+          Number,
+        ),
+      inputTokens: sumInteger(analyticsEvent.inputTokens),
+      outputTokens: sumInteger(analyticsEvent.outputTokens),
+      cacheReadTokens: sumInteger(analyticsEvent.cacheReadTokens),
+      cacheWriteTokens: sumInteger(analyticsEvent.cacheWriteTokens),
+    })
+    .from(analyticsEvent)
+    .leftJoin(intxSchema.agent, eq(analyticsEvent.agentId, intxSchema.agent.id))
+    .where(
+      and(
+        eq(analyticsEvent.tenantId, tenantId),
+        eq(analyticsEvent.eventType, "inference_done"),
+        agentId !== undefined ? eq(analyticsEvent.agentId, agentId) : undefined,
+        instanceId !== undefined
+          ? eq(analyticsEvent.instanceId, instanceId)
+          : undefined,
+        range?.startDate !== undefined
+          ? gte(
+              analyticsEvent.occurredAt,
+              new Date(`${range.startDate}T00:00:00.000Z`),
+            )
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(
+              analyticsEvent.occurredAt,
+              new Date(`${range.endDate}T23:59:59.999Z`),
+            )
+          : undefined,
+      ),
+    )
+    .groupBy(analyticsEvent.agentId, intxSchema.agent.name);
+
+  return rows
+    .filter(
+      (row): row is typeof row & { agentId: string } =>
+        row.agentId !== null && row.inferenceCalls > 0,
+    )
+    .map((row) => {
+      const promptTokens = row.cacheReadTokens + row.inputTokens;
+      return {
+        agentId: row.agentId,
+        agentName: row.agentName ?? null,
+        inferenceCalls: row.inferenceCalls,
+        cacheMissCalls: row.cacheMissCalls,
+        cacheHitCalls: row.inferenceCalls - row.cacheMissCalls,
+        sessionCount: row.sessionCount,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        cacheMissRate: row.cacheMissCalls / row.inferenceCalls,
+        cacheAbsorptionRatio:
+          promptTokens === 0 ? 0 : row.cacheReadTokens / promptTokens,
+      };
+    })
+    .sort((a, b) => b.inferenceCalls - a.inferenceCalls);
 }
 
 function sumInteger(column: AnyColumn) {
