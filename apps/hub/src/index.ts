@@ -100,6 +100,7 @@ import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
 import { createPricingRouter } from "./routes/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
+import { createPrincipalRosterRouter } from "./routes/principal-roster";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -630,6 +631,10 @@ hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
   createPrincipalActivityRouter({ db, grantStore }),
+);
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/roster",
+  createPrincipalRosterRouter({ db, grantStore }),
 );
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(

@@ -10,6 +10,7 @@ import {
   ConnectionsFacet,
   CostFacet,
   GrantsFacet,
+  RosterFacet,
   ToolsFacet,
 } from "./principal-facets";
 import {
@@ -47,6 +48,7 @@ function lastActiveLabel(iso: string): string {
 
 const FACETS: FacetDef[] = [
   { id: "timeline", label: "Timeline", hasGap: true },
+  { id: "roster", label: "Agents & workflows", hasGap: false },
   { id: "grants", label: "Grants", hasGap: true },
   { id: "tools", label: "Tools", hasGap: true },
   { id: "cost", label: "Cost", hasGap: true },
@@ -176,6 +178,12 @@ export function ActorDetailPage() {
               <>
                 {activeFacet === "timeline" && (
                   <MomentWalker
+                    tenantId={activeTenantId}
+                    principalId={principalId}
+                  />
+                )}
+                {activeFacet === "roster" && (
+                  <RosterFacet
                     tenantId={activeTenantId}
                     principalId={principalId}
                   />

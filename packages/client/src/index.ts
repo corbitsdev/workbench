@@ -693,3 +693,56 @@ export async function getPrincipalActivity(
   }
   return parsed;
 }
+
+// ─── Principal roster (Agents & workflows facet, CL-2737) ────────────
+
+export const RosterInstanceSchema = type({
+  instanceId: "string",
+  principalId: "string",
+  name: "string",
+  status: "string",
+  sessionCount: "number",
+});
+export type RosterInstance = typeof RosterInstanceSchema.infer;
+
+export const RosterRunSchema = type({
+  runId: "string",
+  kind: "string",
+  status: "string",
+});
+export type RosterRun = typeof RosterRunSchema.infer;
+
+export const PrincipalRosterSchema = type({
+  instances: RosterInstanceSchema.array(),
+  runs: RosterRunSchema.array(),
+});
+export type PrincipalRoster = typeof PrincipalRosterSchema.infer;
+
+export const GetPrincipalRosterParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+});
+export type GetPrincipalRosterParams =
+  typeof GetPrincipalRosterParamsSchema.infer;
+
+/**
+ * Fetch a principal's owned agent instances and workflow runs
+ * (`GET /api/tenants/:tenantId/principals/:principalId/roster`). Powers the
+ * principal trace's "Agents & workflows" facet: each instance/run deep-links to
+ * its own trace surface.
+ */
+export async function getPrincipalRoster(
+  options: ClientOptions = {},
+  params: GetPrincipalRosterParams,
+): Promise<PrincipalRoster> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/roster`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = PrincipalRosterSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /roster response: ${parsed.summary}`);
+  }
+  return parsed;
+}

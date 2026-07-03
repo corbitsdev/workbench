@@ -51,6 +51,7 @@ mock.module("@workbench/client", () => ({
     activityError
       ? Promise.reject(activityError)
       : Promise.resolve({ entries: activityEntries, nextCursor: null }),
+  getPrincipalRoster: () => Promise.resolve({ instances: [], runs: [] }),
 }));
 
 import { ActorDetailPage } from "./ActorDetailPage";
@@ -198,7 +199,9 @@ describe("ActorDetailPage", () => {
     renderAt("prn_u1");
 
     await waitFor(() => screen.getByRole("listbox"));
-    // Next steps from Timeline (01) to Grants (02).
+    // Next steps from Timeline (01) → Agents & workflows (02) → Grants (03).
+    fireEvent.click(screen.getByRole("button", { name: /Next step/ }));
+    await waitFor(() => screen.getByTestId("facet-roster"));
     fireEvent.click(screen.getByRole("button", { name: /Next step/ }));
     await waitFor(() => screen.getByTestId("facet-grants"));
     expect(
@@ -350,6 +353,8 @@ describe("ActorDetailPage", () => {
     renderAt("prn_u1");
 
     await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    await waitFor(() => screen.getByTestId("facet-roster"));
     fireEvent.keyDown(document.body, { key: "ArrowRight" });
     await waitFor(() => screen.getByTestId("facet-grants"));
   });

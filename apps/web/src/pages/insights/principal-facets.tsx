@@ -1,6 +1,7 @@
 import { Info } from "lucide-react";
-import { Badge } from "@workbench/ui";
+import { Badge, Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
+import { usePrincipalRoster } from "../../hooks/use-principal-roster";
 import {
   FacetCard,
   FacetDesc,
@@ -299,6 +300,122 @@ export function ConnectionsFacet({ entries }: { entries: TimelineEntry[] }) {
         <NodeGrid nodes={nodes} />
       )}
     </div>
+  );
+}
+
+/**
+ * The "Agents & workflows" roster (CL-2737): the agent instances this principal
+ * owns and the workflow runs it started, each a clickable card that opens THAT
+ * entity's own trace — an agent instance links to its synthetic principal's
+ * trace (`/insights/users/:principalId`, the same ActorDetailPage surface), a
+ * run links to its execution trace (`/insights/trace/:runId`). This answers
+ * "why is it principal only / why can't I click on an agent or a run" — from a
+ * principal you can now open any owned agent or run and trace it.
+ */
+export function RosterFacet({
+  tenantId,
+  principalId,
+}: {
+  tenantId: string;
+  principalId: string;
+}) {
+  const query = usePrincipalRoster(tenantId, principalId, {
+    enabled: tenantId !== "" && principalId !== "",
+  });
+
+  const instanceNodes: TraceNode[] = (query.data?.instances ?? []).map((i) => ({
+    kind: "agent instance",
+    label: i.name,
+    rawId: i.principalId,
+    meta:
+      i.sessionCount === 1
+        ? `${i.status} · 1 session`
+        : `${i.status} · ${i.sessionCount} sessions`,
+    to: `/insights/users/${encodeURIComponent(i.principalId)}`,
+  }));
+
+  const runNodes: TraceNode[] = (query.data?.runs ?? []).map((r) => ({
+    kind: "workflow run",
+    label: r.kind,
+    rawId: r.runId,
+    meta: r.status,
+    to: `/insights/trace/${encodeURIComponent(r.runId)}`,
+  }));
+
+  return (
+    <div data-testid="facet-roster">
+      <FacetDesc>
+        Every agent this principal owns and every workflow run it started. Open
+        one to trace it.
+      </FacetDesc>
+
+      {query.isLoading && (
+        <div className="flex flex-col gap-2" data-testid="roster-loading">
+          <Skeleton className="h-16 w-full rounded-[10px]" />
+          <Skeleton className="h-16 w-full rounded-[10px]" />
+        </div>
+      )}
+
+      {query.isError && (
+        <FacetCard>
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-[13px] text-text-2">
+              Couldn&rsquo;t load this principal&rsquo;s agents and runs. Please
+              try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void query.refetch();
+              }}
+              className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              Retry
+            </button>
+          </div>
+        </FacetCard>
+      )}
+
+      {query.isSuccess && (
+        <div className="flex flex-col gap-4">
+          <RosterGroup
+            title="Agent instances"
+            nodes={instanceNodes}
+            emptyText="This principal owns no agent instances."
+          />
+          <RosterGroup
+            title="Workflow runs"
+            nodes={runNodes}
+            emptyText="This principal has started no workflow runs."
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RosterGroup({
+  title,
+  nodes,
+  emptyText,
+}: {
+  title: string;
+  nodes: TraceNode[];
+  emptyText: string;
+}) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-text-3">
+        {title}
+      </h3>
+      {nodes.length === 0 ? (
+        <FacetCard>
+          <p className="text-[13px] text-text-2">{emptyText}</p>
+        </FacetCard>
+      ) : (
+        <NodeGrid nodes={nodes} />
+      )}
+    </section>
   );
 }
 
