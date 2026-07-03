@@ -34,15 +34,6 @@ mock.module("../services/principal-roster", () => ({
   }),
 }));
 
-let authorizeEffect: string | null = null;
-mock.module("@intx/authz", () => ({
-  authorize: mock(async () => ({
-    effect: authorizeEffect,
-    matchingGrants: [],
-    resolvedBy: null,
-  })),
-}));
-
 import { createPrincipalRosterRouter } from "./principal-roster";
 
 function buildApp(callerPrincipalId: string) {
@@ -57,7 +48,7 @@ function buildApp(callerPrincipalId: string) {
   );
   hub.route(
     "/api/tenants/:tenantId/principals/:principalId/roster",
-    createPrincipalRosterRouter({ db: {} as never, grantStore: {} as never }),
+    createPrincipalRosterRouter({ db: {} as never }),
   );
   return hub;
 }
@@ -70,7 +61,6 @@ beforeEach(() => {
   serviceCalls = [];
   serviceResult = sampleRoster;
   serviceError = null;
-  authorizeEffect = null;
 });
 
 describe("GET /api/tenants/:tenantId/principals/:principalId/roster", () => {
@@ -86,18 +76,13 @@ describe("GET /api/tenants/:tenantId/principals/:principalId/roster", () => {
     });
   });
 
-  it("denies another principal's roster without an allow grant", async () => {
-    authorizeEffect = null;
+  it("lets any tenant member read another principal's roster (open intra-tenant)", async () => {
     const res = await buildApp("prn-caller").request(url("prn-target"));
-    expect(res.status).toBe(403);
-    expect(serviceCalls).toHaveLength(0);
-  });
-
-  it("allows an operator with an activity read grant to view any principal", async () => {
-    authorizeEffect = "allow";
-    const res = await buildApp("prn-operator").request(url("prn-target"));
     expect(res.status).toBe(200);
-    expect(serviceCalls[0]).toMatchObject({ principalId: "prn-target" });
+    expect(serviceCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-target",
+    });
   });
 
   it("maps unexpected service failures to 500", async () => {

@@ -54,6 +54,12 @@ The Recent Activity feed re-frames raw timeline rows into legible, action-first 
 
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 
+## Tenant-wide activity + intra-tenant authz (CL-2743 / CL-2744)
+
+- **Default surface is the whole tenant.** `GET /api/tenants/:tenantId/activity/timeline` returns the same `@workbench/timeline` union scoped to the tenant across ALL principals (every user, agent instance, and workflow run), keyset-paginated. It uses the `TENANT_WIDE_SCOPE` (`"all"`) sentinel on `TimelineScope.principalIds`, which drops the per-branch principal predicate; each source still carries its mandatory tenant predicate, so cross-tenant rows never resolve. `getTenantActivityPage` is the service; `getTenantActivity` the client fn; `useTenantActivity` the infinite hook. The web `TenantActivityFeed` is the MIDDLE band of Insights (below the charts), with every entity row deep-linking into its own trace.
+- **Activity is open intra-tenant.** The per-principal routes — activity timeline, moment detail (`/:kind/:id/detail`), and roster — no longer default-deny a caller viewing another principal in the same tenant. Any tenant member may read any member's activity/roster/detail within their tenant; tenant membership (enforced by `resolveTenant`) is the only boundary. Cross-tenant stays hard-blocked by tenant scoping (the union's tenant predicate + `resolveTenant`). The former `activity:principal`/`read` grant gate was removed from all three routes. The web 403 "no permission" states (CL-2734) remain as a safety net but no longer fire for same-tenant reads.
+- **Per-user is a drill-down.** `/insights/users/:id` is the tenant view filtered to one principal (the existing principal trace page); the dashboard actor search and the "Usage by person" table link into it.
+
 ## Staging verification (CL-2301)
 
 1. Deploy staging hub + sidecar with analytics migrations applied.

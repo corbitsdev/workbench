@@ -1,12 +1,14 @@
 import { schema as intxSchema } from "@intx/db";
 import {
   buildTimelineUnionQuery,
+  TENANT_WIDE_SCOPE,
   TimelineEntrySchema,
   type TimelineCursor,
   type TimelineEntry,
 } from "@workbench/timeline";
 import { type } from "arktype";
 import { and, eq } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
@@ -78,10 +80,37 @@ export async function getPrincipalActivityPage(args: {
     limit: args.limit,
     ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
   });
+  return executeTimelinePage(args.db, query, args.limit);
+}
 
+// The DEFAULT Insights surface (CL-2743): activity across EVERY principal in
+// the tenant — all users, all agent instances, all workflow runs — in one
+// keyset-paginated feed. The `TENANT_WIDE_SCOPE` sentinel drops the per-branch
+// principal predicate; tenant isolation is preserved by each source's
+// mandatory tenant predicate. Gated by tenant membership at the route
+// (`resolveTenant`), not by principal ownership.
+export async function getTenantActivityPage(args: {
+  db: HubDb;
+  tenantId: string;
+  limit: number;
+  cursor?: TimelineCursor;
+}): Promise<PrincipalActivityPage> {
+  const query = buildTimelineUnionQuery({
+    scope: { tenantId: args.tenantId, principalIds: TENANT_WIDE_SCOPE },
+    limit: args.limit,
+    ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
+  });
+  return executeTimelinePage(args.db, query, args.limit);
+}
+
+async function executeTimelinePage(
+  db: HubDb,
+  query: SQL,
+  limit: number,
+): Promise<PrincipalActivityPage> {
   // postgres-js returns an array-like RowList; PGlite (integration tests)
   // returns `{ rows }` — normalize both.
-  const result: unknown = await args.db.execute(query);
+  const result: unknown = await db.execute(query);
   const rows = Array.isArray(result)
     ? (result as Record<string, unknown>[])
     : (result as { rows: Record<string, unknown>[] }).rows;
@@ -106,7 +135,7 @@ export async function getPrincipalActivityPage(args: {
   const lastEntry = entries[entries.length - 1];
   let nextCursor: TimelineCursor | null = null;
   if (
-    entries.length === args.limit &&
+    entries.length === limit &&
     lastRow !== undefined &&
     lastEntry !== undefined
   ) {

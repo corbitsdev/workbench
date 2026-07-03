@@ -47,6 +47,13 @@ export type TimelineSourceDescriptor = {
   filterSql?: string;
   // Static SQL text expression over the `src` alias projected as `summary`.
   summarySql: string;
+  // Privacy (CL-2743, critique F2): a source whose per-principal `summarySql`
+  // exposes sensitive free text (memory content, credential names) sets this to
+  // the redacted expression used ONLY on the TENANT-WIDE feed — where every
+  // member sees every member's activity. The deliberate per-principal
+  // drill-down keeps the full `summarySql`. When unset the summary is identical
+  // on both scopes.
+  tenantWideSummarySql?: string;
 };
 
 // `principalIds` is a set because human activity spans principals: the user's
@@ -54,7 +61,14 @@ export type TimelineSourceDescriptor = {
 // (sessions, mail, turns, and tool calls attribute to the instance principal,
 // not the user). Callers resolve the set; the generator scopes every branch
 // to it by construction.
+//
+// The sentinel `"all"` is the deliberate tenant-wide scope: it drops the
+// principal predicate so a branch is scoped by tenant alone (every principal's
+// activity in the tenant). It is a distinct sentinel — never an empty array —
+// so an accidentally-empty attribution set can never silently widen into an
+// unscoped tenant read (`assertValidScope` still rejects `[]`).
+export const TENANT_WIDE_SCOPE = "all";
 export type TimelineScope = {
   tenantId: string;
-  principalIds: readonly string[];
+  principalIds: readonly string[] | typeof TENANT_WIDE_SCOPE;
 };

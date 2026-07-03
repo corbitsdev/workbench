@@ -32,7 +32,7 @@ import {
 } from "./insights/viz";
 import { ActorActivitySection } from "./insights/ActorActivity";
 import { CostInsights } from "./insights/CostInsights";
-import { RecentActivity } from "./insights/RecentActivity";
+import { TenantActivityFeed } from "./insights/TenantActivityFeed";
 import {
   cacheHitRate,
   computeDelta,
@@ -1205,22 +1205,26 @@ export function InsightsDashboard() {
             initial={reduceMotion ? false : "hidden"}
             animate="show"
           >
+            {/* IA — CL-2743, top → bottom: charts → activity → granular.
+                TOP: the wow band — data viz that gives insight at a glance.
+                MIDDLE: the tenant-wide activity feed, following the charts
+                directly (the KPI stat wall sits just below it, not between
+                charts and activity).
+                BOTTOM: progressively more granular breakdowns. */}
             <motion.div variants={SECTION_ITEM}>
-              <KpiRow
+              <ChartsSection
                 data={overview}
-                activePeople={overview.byPerson.length}
-                costTotal={priced?.cost.total ?? null}
-                costTokens={costTokens}
-                costUnavailable={costUnavailable}
+                range={dates}
+                kindRows={filteredKindRows}
+                people={filteredPeople}
+                tokenCaveat={tokenCaveat}
               />
             </motion.div>
             <motion.div variants={SECTION_ITEM}>
-              <FiltersBar
-                kinds={workflowKinds}
-                kindFilter={kindFilter}
-                onKindFilter={setKindFilter}
-                actorFilter={actorFilter}
-                onActorFilter={setActorFilter}
+              <TrendsSection
+                data={overview}
+                range={dates}
+                tokenCaveat={tokenCaveat}
               />
             </motion.div>
             {activeTenantId && (
@@ -1233,35 +1237,34 @@ export function InsightsDashboard() {
                 />
               </motion.div>
             )}
-            {/* Actor search + per-principal timeline; independent query lifecycle
-                from the 5-min-stale overview above. CL-2526 (trace pages +
-                recent-activity feed) inserts alongside this section. */}
+            <motion.div variants={SECTION_ITEM}>
+              <FiltersBar
+                kinds={workflowKinds}
+                kindFilter={kindFilter}
+                onKindFilter={setKindFilter}
+                actorFilter={actorFilter}
+                onActorFilter={setActorFilter}
+              />
+            </motion.div>
+            {/* MIDDLE band — the big tenant-wide activity feed. Every row
+                click-throughs into that entity's own trace. Per-principal is a
+                drill-down: the actor search below routes to /insights/users/:id. */}
             {activeTenantId && (
               <motion.div variants={SECTION_ITEM}>
                 <SectionLabel>Activity</SectionLabel>
                 <div className="mt-4 flex flex-col gap-10">
+                  <TenantActivityFeed tenantId={activeTenantId} />
                   <ActorActivitySection tenantId={activeTenantId} />
-                  {/* CL-2526 Recent Activity feed: a reverse-chronological slice
-                      for the current user's principal, each workflow_run row
-                      deep-linking to its trace page. Self-contained; own query
-                      lifecycle. A tenant-wide feed needs a new hub endpoint
-                      (follow-up). */}
-                  {activeWorkbench && (
-                    <RecentActivity
-                      tenantId={activeTenantId}
-                      principalId={activeWorkbench.id}
-                    />
-                  )}
                 </div>
               </motion.div>
             )}
             <motion.div variants={SECTION_ITEM}>
-              <ChartsSection
+              <KpiRow
                 data={overview}
-                range={dates}
-                kindRows={filteredKindRows}
-                people={filteredPeople}
-                tokenCaveat={tokenCaveat}
+                activePeople={overview.byPerson.length}
+                costTotal={priced?.cost.total ?? null}
+                costTokens={costTokens}
+                costUnavailable={costUnavailable}
               />
             </motion.div>
             <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
@@ -1273,13 +1276,6 @@ export function InsightsDashboard() {
             <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
               <SectionLabel>Workflow runs by kind</SectionLabel>
               <SortableWorkflowKindTable rows={filteredKindRows} />
-            </motion.div>
-            <motion.div variants={SECTION_ITEM}>
-              <TrendsSection
-                data={overview}
-                range={dates}
-                tokenCaveat={tokenCaveat}
-              />
             </motion.div>
             <motion.div variants={SECTION_ITEM}>
               <EngagementSection data={overview} />

@@ -1,11 +1,12 @@
 import { sql, type SQL } from "drizzle-orm";
 
 import type { TimelineCursor } from "./cursor";
-import type {
-  PrincipalScope,
-  TenantScope,
-  TimelineScope,
-  TimelineSourceDescriptor,
+import {
+  TENANT_WIDE_SCOPE,
+  type PrincipalScope,
+  type TenantScope,
+  type TimelineScope,
+  type TimelineSourceDescriptor,
 } from "./descriptor";
 import { timelineSources } from "./registry";
 
@@ -62,8 +63,16 @@ export function buildTimelineBranchQuery(
   assertValidScope(args.scope);
   const conditions: SQL[] = [
     scopePredicate(descriptor.tenantScope, [args.scope.tenantId]),
-    scopePredicate(descriptor.principalScope, args.scope.principalIds),
   ];
+  // Tenant-wide scope (`"all"`) drops the principal predicate: the branch is
+  // scoped by tenant alone. Every source already carries a mandatory tenant
+  // predicate, so tenant isolation still holds — a cross-tenant row can never
+  // appear.
+  if (args.scope.principalIds !== TENANT_WIDE_SCOPE) {
+    conditions.push(
+      scopePredicate(descriptor.principalScope, args.scope.principalIds),
+    );
+  }
   if (descriptor.filterSql !== undefined) {
     conditions.push(sql`(${sql.raw(descriptor.filterSql)})`);
   }
@@ -71,7 +80,16 @@ export function buildTimelineBranchQuery(
     conditions.push(keysetPredicate(descriptor, args.cursor));
   }
   const where = sql.join(conditions, sql` and `);
-  return sql`(select cast(src.${sql.identifier(descriptor.idColumn)} as text) as id, ${descriptor.kind} as kind, ${descriptor.table} as source_table, src.${sql.identifier(descriptor.timestamp.column)}::timestamptz as ts, src.${sql.identifier(descriptor.timestamp.column)}::timestamptz::text as ts_text, (${sql.raw(descriptor.summarySql)}) as summary from ${sql.identifier(descriptor.table)} src where ${where} order by ts desc, id asc limit ${args.limit})`;
+  // On the tenant-wide feed, redact sources that carry sensitive free text
+  // (CL-2743 F2): every member sees every member's rows there, so memory
+  // content and credential names collapse to their redacted expression. The
+  // per-principal drill-down keeps the full summary.
+  const summaryExpr =
+    args.scope.principalIds === TENANT_WIDE_SCOPE &&
+    descriptor.tenantWideSummarySql !== undefined
+      ? descriptor.tenantWideSummarySql
+      : descriptor.summarySql;
+  return sql`(select cast(src.${sql.identifier(descriptor.idColumn)} as text) as id, ${descriptor.kind} as kind, ${descriptor.table} as source_table, src.${sql.identifier(descriptor.timestamp.column)}::timestamptz as ts, src.${sql.identifier(descriptor.timestamp.column)}::timestamptz::text as ts_text, (${sql.raw(summaryExpr)}) as summary from ${sql.identifier(descriptor.table)} src where ${where} order by ts desc, id asc limit ${args.limit})`;
 }
 
 // The full page query: one keyset-limited branch per registered source,
@@ -96,6 +114,9 @@ function assertValidLimit(limit: number): void {
 }
 
 function assertValidScope(scope: TimelineScope): void {
+  if (scope.principalIds === TENANT_WIDE_SCOPE) {
+    return;
+  }
   if (scope.principalIds.length === 0) {
     throw new Error("Timeline scope requires at least one principal id");
   }

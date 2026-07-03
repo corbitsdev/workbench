@@ -1,4 +1,3 @@
-import { authorize, type GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono, type Env } from "hono";
@@ -12,9 +11,6 @@ import {
 } from "../services/principal-roster";
 
 const log = getLogger(["hub", "principal-roster"]);
-
-const ACTIVITY_RESOURCE = "activity:principal";
-const ACTIVITY_ACTION = "read";
 
 type PrincipalRosterRouteEnv = Env & {
   Variables: {
@@ -33,12 +29,10 @@ const ErrorResponse = type({
 
 export type CreatePrincipalRosterRouterDeps = {
   db: HubDb;
-  grantStore: GrantStore;
 };
 
 export function createPrincipalRosterRouter({
   db,
-  grantStore,
 }: CreatePrincipalRosterRouterDeps): Hono<PrincipalRosterRouteEnv> {
   const app = new Hono<PrincipalRosterRouteEnv>();
 
@@ -48,7 +42,7 @@ export function createPrincipalRosterRouter({
       tags: ["Activity"],
       summary: "A principal's owned agent instances and workflow runs",
       description:
-        "Lists the concrete entities a principal owns — the agent instances mapped to it via `member_agent_instance`, and the workflow runs it started (`workflow_run_record.principalId`) — each carrying enough identity to deep-link to that entity's own trace. Gated identically to the activity timeline: a principal may read its own roster; reading another's requires an `activity:principal`/`read` grant. Tenant and principal scope always come from the authenticated path.",
+        "Lists the concrete entities a principal owns — the agent instances mapped to it via `member_agent_instance`, and the workflow runs it started (`workflow_run_record.principalId`) — each carrying enough identity to deep-link to that entity's own trace. Open intra-tenant like the activity timeline: any tenant member can read any principal's roster within that tenant. Tenant and principal scope always come from the authenticated path.",
       parameters: [
         {
           name: "tenantId",
@@ -76,43 +70,16 @@ export function createPrincipalRosterRouter({
           description: "Missing principalId",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        403: {
-          description:
-            "Caller is neither the target principal nor granted activity read",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
       },
     }),
     async (c) => {
       const tenant = c.get("tenant");
-      const caller = c.get("principal");
       const targetPrincipalId = c.req.param("principalId");
       if (targetPrincipalId === undefined || targetPrincipalId === "") {
         return c.json(
           { error: { code: "bad_request", message: "Missing principalId" } },
           400,
         );
-      }
-
-      if (caller.id !== targetPrincipalId) {
-        const decision = await authorize(
-          grantStore,
-          caller.id,
-          tenant.id,
-          ACTIVITY_RESOURCE,
-          ACTIVITY_ACTION,
-        );
-        if (decision.effect !== "allow") {
-          return c.json(
-            {
-              error: {
-                code: "forbidden",
-                message: "You do not have permission to view this roster",
-              },
-            },
-            403,
-          );
-        }
       }
 
       try {

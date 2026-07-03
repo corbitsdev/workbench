@@ -4,15 +4,15 @@ import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 
 /**
  * Shared presentational shell for the two tracer surfaces (principal trace and
- * execution trace), rebuilt to match the approved Tracer design artifact:
- * a narrow "Trace root" rail + legend, a compact identity header, an underlined
- * facet tab bar (with a gap dot on facets that expose a "not recorded yet"
- * gap), a subtle inline stat strip, and a Back / Next-step bottom nav.
+ * execution trace): a compact identity header, an underlined facet tab bar
+ * (with a gap dot on facets that expose a "not recorded yet" gap), a subtle
+ * inline stat strip, and a Back / Next-step bottom nav. App-native chrome —
+ * corbits-light surfaces, orange (`accent`) accent, standard card/label
+ * language — matching the Insights dashboard, not a distinct artifact.
  *
  * These are pure presentation — every value they render is derived by the page
  * from real loaded data or is an explicit honest-gap notice. Nothing here
- * fabricates data. Design tokens only (no hardcoded colors/radii); orange
- * (`accent`) is reserved for the primary Next-step action.
+ * fabricates data. Design tokens only (no hardcoded colors/radii).
  */
 
 export type RootTone = "identity" | "run";
@@ -42,66 +42,7 @@ function initialsOf(name: string): string {
 }
 
 function avatarToneClass(tone: RootTone): string {
-  return tone === "run" ? "bg-blue-deep" : "bg-blue";
-}
-
-/** The left rail: a single active "Trace root" card plus a reading legend. */
-export function TraceRootRail({ root }: { root: TraceRoot }) {
-  return (
-    <aside className="flex shrink-0 flex-col gap-4 max-md:flex-row max-md:flex-wrap max-md:items-start md:w-[210px]">
-      <div className="min-w-[180px] flex-1">
-        <p className="mb-2 ml-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-text-3">
-          Trace root
-        </p>
-        <div
-          data-testid="trace-root-card"
-          className="flex items-start gap-2 rounded-[8px] border border-blue bg-blue/10 p-2.5"
-        >
-          <span className="mt-0.5 shrink-0 rounded-[5px] border border-blue bg-surface px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-[0.05em] text-blue-deep">
-            {root.kindChip}
-          </span>
-          <span className="min-w-0">
-            <span className="block text-[12.5px] font-semibold text-text">
-              {root.name}
-            </span>
-            <span className="mt-0.5 block break-all font-mono text-[9.5px] text-text-3">
-              {root.rawId}
-            </span>
-          </span>
-        </div>
-      </div>
-      <TraceLegend />
-    </aside>
-  );
-}
-
-function LegendItem({
-  swatchClass,
-  label,
-}: {
-  swatchClass: string;
-  label: string;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-[10.5px] text-text-2">
-      <span className={`h-2 w-2 shrink-0 rounded-[3px] ${swatchClass}`} />
-      {label}
-    </div>
-  );
-}
-
-function TraceLegend() {
-  return (
-    <div className="flex min-w-[160px] flex-1 flex-col gap-1.5 border-border pt-1 md:mt-auto md:border-t md:pt-3">
-      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-text-3">
-        Reading the trace
-      </p>
-      <LegendItem swatchClass="bg-blue" label="Identity & usage" />
-      <LegendItem swatchClass="bg-green" label="Allowed / ran" />
-      <LegendItem swatchClass="bg-accent" label="Action & generated" />
-      <LegendItem swatchClass="bg-gold" label="Not recorded yet" />
-    </div>
-  );
+  return tone === "run" ? "bg-accent-deep" : "bg-accent";
 }
 
 export interface StatusPill {
@@ -113,7 +54,7 @@ function statusPillClass(tone: StatusPill["tone"]): string {
   if (tone === "live") return "bg-green/15 text-green-deep";
   if (tone === "warn") return "bg-gold/15 text-gold";
   if (tone === "danger") return "bg-red/15 text-red-deep";
-  return "bg-blue/15 text-blue-deep";
+  return "bg-surface-2 text-text-2";
 }
 
 /** Compact identity header: avatar, name, kind + raw id, status pill. */
@@ -156,7 +97,7 @@ export function CompactHeader({
           <p className="flex flex-wrap items-baseline gap-1.5 text-[11.5px] text-text-3">
             <span>{root.kindChip}</span>
             <span aria-hidden>·</span>
-            <span className="font-mono text-[10.5px] text-blue-deep">
+            <span className="font-mono text-[10.5px] text-text-3">
               {root.rawId}
             </span>
           </p>
@@ -204,13 +145,13 @@ export function FacetTabs({
             onClick={() => onSelect(f.id)}
             className={`-mb-px flex min-h-[40px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-[12.5px] font-semibold outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent ${
               active
-                ? "border-blue text-text"
+                ? "border-accent text-text"
                 : "border-transparent text-text-3 hover:text-text"
             }`}
           >
             <span
               className={`font-mono text-[9.5px] ${
-                active ? "text-blue-deep" : "text-text-3"
+                active ? "text-accent" : "text-text-3"
               }`}
             >
               {String(i + 1).padStart(2, "0")}
@@ -338,14 +279,14 @@ export function NodeGrid({ nodes }: { nodes: TraceNode[] }) {
             <span className="mt-1 block text-[12.5px] font-semibold text-text">
               {n.label}
             </span>
-            <span className="mt-0.5 block break-all font-mono text-[9.5px] text-blue-deep">
+            <span className="mt-0.5 block break-all font-mono text-[9.5px] text-text-3">
               {n.rawId}
             </span>
             <span className="mt-1.5 block text-[11px] text-text-2">
               {n.meta}
             </span>
             {n.to !== undefined && (
-              <span className="mt-1.5 flex items-center gap-1 text-[10.5px] font-semibold text-blue-deep">
+              <span className="mt-1.5 flex items-center gap-1 text-[10.5px] font-semibold text-accent">
                 Trace <ArrowRight className="h-3 w-3" />
               </span>
             )}
@@ -359,7 +300,7 @@ export function NodeGrid({ nodes }: { nodes: TraceNode[] }) {
               key={`${n.kind}:${n.rawId}`}
               to={n.to}
               data-testid="connection-node"
-              className={`${cls} outline-none hover:border-blue focus-visible:ring-1 focus-visible:ring-accent`}
+              className={`${cls} outline-none hover:border-accent focus-visible:ring-1 focus-visible:ring-accent`}
             >
               {inner}
             </Link>

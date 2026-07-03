@@ -5,6 +5,7 @@ export {
   type TimelineEntryKind,
 } from "./entry-schema";
 export {
+  TENANT_WIDE_SCOPE,
   AnyColumnScopeSchema,
   ColumnScopeSchema,
   ExistsScopeSchema,

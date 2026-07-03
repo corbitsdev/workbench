@@ -8,6 +8,7 @@ import {
   HttpError,
   getMomentDetail,
   getPrincipalActivity,
+  getTenantActivity,
   isForbiddenError,
   searchActors,
 } from "./index";
@@ -228,6 +229,68 @@ describe("getPrincipalActivity", () => {
         { tenantId: "ten_1", principalId: "prn_1" },
       ),
     ).rejects.toThrow(/Invalid \/activity response/);
+  });
+});
+
+describe("getTenantActivity", () => {
+  const entry = {
+    kind: "workflow_run",
+    id: "run_1",
+    sourceTable: "workflow_run_record",
+    timestamp: "2026-07-01T12:00:00.000Z",
+    summary: "last30days completed",
+  };
+
+  it("builds the tenant-wide timeline URL under /api without a principal in the path", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ entries: [], nextCursor: null })),
+    );
+
+    await getTenantActivity(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten_1" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      `${BASE}/api/tenants/ten_1/activity/timeline`,
+    );
+  });
+
+  it("forwards limit and cursor and parses the merged page", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ entries: [entry], nextCursor: "next-token" }),
+      ),
+    );
+
+    const page = await getTenantActivity(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten_1", limit: 25, cursor: "abc=" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      `${BASE}/api/tenants/ten_1/activity/timeline?limit=25&cursor=abc%3D`,
+    );
+    expect(page.nextCursor).toBe("next-token");
+    expect(page.entries[0]?.kind).toBe("workflow_run");
+  });
+
+  it("rejects a malformed tenant-wide page body", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({
+          entries: [{ ...entry, kind: "mystery" }],
+          nextCursor: null,
+        }),
+      ),
+    );
+
+    await expect(
+      getTenantActivity(
+        { baseUrl: BASE, fetch: fetcher },
+        { tenantId: "ten_1" },
+      ),
+    ).rejects.toThrow(/Invalid \/activity\/timeline response/);
   });
 });
 

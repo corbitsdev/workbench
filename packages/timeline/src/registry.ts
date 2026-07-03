@@ -148,6 +148,10 @@ export const timelineSources: readonly TimelineSourceDescriptor[] = [
     tenantScope: { column: "tenant_id" },
     principalScope: { column: "owner_principal_id" },
     summarySql: "left(src.content, 140)",
+    // Redact memory content on the tenant-wide feed — the row still surfaces as
+    // a "Memory" activity event, without broadcasting the snippet to every
+    // member (CL-2743 F2).
+    tenantWideSummarySql: "null::text",
   },
   {
     kind: "approval",
@@ -209,5 +213,8 @@ export const timelineSources: readonly TimelineSourceDescriptor[] = [
     tenantScope: { column: "tenant_id" },
     principalScope: { column: "principal_id" },
     summarySql: "src.name",
+    // Redact the credential name on the tenant-wide feed — every member sees a
+    // "Credential" activity event without the name itself (CL-2743 F2).
+    tenantWideSummarySql: "null::text",
   },
 ];

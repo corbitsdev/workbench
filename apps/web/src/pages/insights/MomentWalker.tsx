@@ -285,7 +285,7 @@ export function MomentDecomposition({
         <div className="col-span-2">
           <Link
             to={link.to}
-            className="inline-flex w-fit items-center gap-1 rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-blue-deep outline-none transition-colors hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
+            className="inline-flex w-fit items-center gap-1 rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-accent outline-none transition-colors hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
           >
             {link.label}
             <ArrowRight className="h-3.5 w-3.5" />

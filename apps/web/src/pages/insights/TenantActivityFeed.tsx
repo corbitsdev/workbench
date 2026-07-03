@@ -1,24 +1,20 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { ChevronRight } from "lucide-react";
-import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
+import type { TimelineEntry } from "@workbench/client";
+import { useTenantActivity } from "../../hooks/use-tenant-activity";
 import { KIND_META, relativeTime } from "./timeline-kinds";
 import {
   describeActivityEntry,
   groupActivityIntoTurns,
   type ActivityTurn,
 } from "./activity-naming";
+import { entityLinkForEntry } from "./trace-links";
 
-// A short reverse-chronological slice; the deep per-actor timeline (with
-// pagination) lives in the Activity search section. This is the entry point.
-export const RECENT_ACTIVITY_LIMIT = 15;
-
-// A workflow_run timeline entry's `id` IS the run id (the workflow_run_record
-// primary key), so it deep-links straight to that run's trace page.
-export function traceHrefForEntry(entry: TimelineEntry): string | null {
-  if (entry.kind !== "workflow_run") return null;
-  return `/insights/trace/${encodeURIComponent(entry.id)}`;
-}
+// The tenant-wide activity feed (CL-2743): the MIDDLE band of Insights, below
+// the charts. Every principal's activity in the tenant, grouped into
+// time-adjacent turns. Each entity-shaped row deep-links into that entity's own
+// trace ("click anything → trace it"); rows with no dedicated destination yet
+// render as plain, honest references rather than dead links.
 
 function EntryBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const meta = KIND_META[entry.kind];
@@ -49,14 +45,15 @@ function EntryBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
 }
 
 function EntryRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
-  const href = traceHrefForEntry(entry);
+  const link = entityLinkForEntry(entry);
   const shared = "flex items-start gap-3 rounded-[8px] px-3 py-2";
-  if (href !== null) {
+  if (link !== null) {
     return (
       <li>
         <Link
-          to={href}
-          data-testid="recent-activity-entry"
+          to={link.to}
+          aria-label={link.label}
+          data-testid="tenant-activity-entry"
           data-kind={entry.kind}
           className={`${shared} transition-colors hover:bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
         >
@@ -68,7 +65,7 @@ function EntryRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
   }
   return (
     <li
-      data-testid="recent-activity-entry"
+      data-testid="tenant-activity-entry"
       data-kind={entry.kind}
       className={shared}
     >
@@ -77,7 +74,6 @@ function EntryRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
   );
 }
 
-/** "2 grants · 1 tool call" from a turn's per-kind counts. */
 function flowSummary(counts: Record<string, number>): string {
   return Object.entries(counts)
     .map(([kind, n]) => {
@@ -89,12 +85,11 @@ function flowSummary(counts: Record<string, number>): string {
 }
 
 function TurnCard({ turn, now }: { turn: ActivityTurn; now: Date }) {
-  // A single-entry turn needs no grouping header — it reads as one row.
   if (turn.entries.length === 1) {
     return (
       <ul
         className="rounded-[12px] border border-border bg-surface p-1"
-        data-testid="activity-turn"
+        data-testid="tenant-activity-turn"
       >
         <EntryRow entry={turn.entries[0]!} now={now} />
       </ul>
@@ -105,7 +100,7 @@ function TurnCard({ turn, now }: { turn: ActivityTurn; now: Date }) {
   return (
     <div
       className="rounded-[12px] border border-border bg-surface"
-      data-testid="activity-turn"
+      data-testid="tenant-activity-turn"
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <AnchorIcon className="h-3.5 w-3.5 shrink-0 text-text-3" />
@@ -136,39 +131,30 @@ function TurnCard({ turn, now }: { turn: ActivityTurn; now: Date }) {
   );
 }
 
-export function RecentActivity({
-  tenantId,
-  principalId,
-}: {
-  tenantId: string;
-  principalId: string;
-}) {
-  const query = useQuery({
-    queryKey: ["recent-activity", tenantId, principalId],
-    queryFn: ({ signal }) =>
-      getPrincipalActivity(
-        { init: { signal } },
-        { tenantId, principalId, limit: RECENT_ACTIVITY_LIMIT },
-      ),
-    enabled: tenantId !== "" && principalId !== "",
-  });
-
-  const entries = query.data?.entries ?? [];
+export function TenantActivityFeed({ tenantId }: { tenantId: string }) {
+  const query = useTenantActivity(tenantId);
+  const entries = (query.data?.pages ?? []).flatMap((p) => p.entries);
   const turns = groupActivityIntoTurns(entries);
   const now = new Date();
 
   return (
-    <div className="flex flex-col gap-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
-        Recent activity
-      </h2>
+    <div className="flex flex-col gap-3" data-testid="tenant-activity-feed">
+      <div className="flex flex-col gap-0.5">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
+          Activity across your workbench
+        </h2>
+        <p className="text-[12px] text-text-3">
+          Everyone&rsquo;s agents, workflows, and runs — newest first. Click any
+          row to trace it.
+        </p>
+      </div>
 
       {query.isLoading && (
         <div
           className="flex flex-col gap-2"
-          data-testid="recent-activity-loading"
+          data-testid="tenant-activity-loading"
         >
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <div
               key={i}
               className="h-[44px] animate-pulse rounded-[8px] bg-surface-2"
@@ -178,9 +164,12 @@ export function RecentActivity({
       )}
 
       {query.isError && (
-        <div className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4">
+        <div
+          className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4"
+          data-testid="tenant-activity-error"
+        >
           <span className="text-[13px] text-text-2">
-            Couldn&rsquo;t load recent activity. Please try again.
+            Couldn&rsquo;t load activity. Please try again.
           </span>
           <button
             type="button"
@@ -195,23 +184,32 @@ export function RecentActivity({
       )}
 
       {query.isSuccess && entries.length === 0 && (
-        <div className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2">
-          No recent activity recorded yet.
+        <div
+          className="rounded-[12px] border border-border bg-surface p-4 text-[13px] text-text-2"
+          data-testid="tenant-activity-empty"
+        >
+          No activity recorded in this workbench yet.
         </div>
       )}
 
       {turns.length > 0 && (
         <div className="flex flex-col gap-2">
-          <p
-            className="text-[11px] leading-snug text-text-3"
-            data-testid="recent-activity-grouping-note"
-          >
-            Grouped by time proximity — entries close together in time are shown
-            as one flow, not by a recorded session.
-          </p>
           {turns.map((turn) => (
             <TurnCard key={turn.id} turn={turn} now={now} />
           ))}
+          {query.hasNextPage && (
+            <button
+              type="button"
+              data-testid="tenant-activity-load-more"
+              disabled={query.isFetchingNextPage}
+              onClick={() => {
+                void query.fetchNextPage();
+              }}
+              className="mt-1 flex min-h-[36px] items-center justify-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-60"
+            >
+              {query.isFetchingNextPage ? "Loading…" : "Load more"}
+            </button>
+          )}
         </div>
       )}
     </div>

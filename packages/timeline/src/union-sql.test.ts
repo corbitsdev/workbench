@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 
+import { TENANT_WIDE_SCOPE } from "./descriptor";
 import { timelineSources } from "./registry";
 import { buildTimelineUnionQuery } from "./union-sql";
 
@@ -91,6 +92,53 @@ describe("buildTimelineUnionQuery", () => {
         limit: 5,
       }),
     ).toThrow(/principal/i);
+  });
+
+  describe("tenant-wide scope", () => {
+    const wide = {
+      tenantId: "ten_test",
+      principalIds: TENANT_WIDE_SCOPE,
+    } as const;
+
+    test("still binds the tenant param for every branch (tenant isolation holds)", () => {
+      const { params } = render({ scope: wide, limit: 20 });
+      const tenantBinds = params.filter((p) => p === wide.tenantId);
+      expect(tenantBinds.length).toBeGreaterThanOrEqual(timelineSources.length);
+    });
+
+    test("drops the principal predicate: no principal id is bound", () => {
+      const { params } = render({ scope: wide, limit: 20 });
+      // A principal-scoped render binds the id many times; the tenant-wide
+      // render must not bind any principal id at all.
+      expect(params).not.toContain("prn_test");
+      // The per-principal scoped render is strictly longer (extra predicates).
+      const scoped = render({ scope, limit: 20 });
+      expect(render({ scope: wide, limit: 20 }).sql.length).toBeLessThan(
+        scoped.sql.length,
+      );
+    });
+
+    test("does not reject tenant-wide as an empty scope", () => {
+      expect(() =>
+        buildTimelineUnionQuery({ scope: wide, limit: 5 }),
+      ).not.toThrow();
+    });
+
+    test("redacts sensitive summaries (memory content, credential name) on the tenant-wide feed", () => {
+      const { sql } = render({ scope: wide, limit: 20 });
+      // The memory branch must NOT project the content snippet tenant-wide.
+      expect(sql).not.toContain("left(src.content, 140)");
+      // Both redacted sources collapse to a NULL summary literal.
+      const nulls = sql.match(/null::text\) as summary/g) ?? [];
+      expect(nulls.length).toBe(2);
+    });
+
+    test("keeps the full sensitive summaries on the per-principal drill-down", () => {
+      const { sql } = render({ scope, limit: 20 });
+      // The deliberate per-principal view still shows content and the name.
+      expect(sql).toContain("left(src.content, 140)");
+      expect(sql).not.toContain("null::text) as summary");
+    });
   });
 
   test("selects a lossless ts_text column alongside ts in every branch and the outer select", () => {

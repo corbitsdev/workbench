@@ -698,6 +698,42 @@ export async function getPrincipalActivity(
   return parsed;
 }
 
+export const GetTenantActivityParamsSchema = type({
+  tenantId: "string",
+  /** Page size, 1-100 (hub default 50). */
+  "limit?": "number",
+  /** Opaque keyset cursor from a previous page's `nextCursor`. */
+  "cursor?": "string",
+});
+export type GetTenantActivityParams =
+  typeof GetTenantActivityParamsSchema.infer;
+
+/**
+ * Fetch one page of the TENANT-WIDE activity timeline, newest first
+ * (`GET /api/tenants/:tenantId/activity/timeline`). This is the default
+ * Insights feed (CL-2743): activity merged across every principal in the
+ * tenant. Gated by tenant membership only; cross-tenant rows never resolve.
+ */
+export async function getTenantActivity(
+  options: ClientOptions = {},
+  params: GetTenantActivityParams,
+): Promise<ActivityPage> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.cursor !== undefined) qs.set("cursor", params.cursor);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/activity/timeline${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActivityPageSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /activity/timeline response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 // ─── Principal roster (Agents & workflows facet, CL-2737) ────────────
 
 export const RosterInstanceSchema = type({

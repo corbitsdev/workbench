@@ -36,15 +36,6 @@ mock.module("../services/moment-detail", () => ({
   }),
 }));
 
-let authorizeEffect: string | null = null;
-mock.module("@intx/authz", () => ({
-  authorize: mock(async () => ({
-    effect: authorizeEffect,
-    matchingGrants: [],
-    resolvedBy: null,
-  })),
-}));
-
 import { encodeTimelineCursor } from "@workbench/timeline";
 
 import { createPrincipalActivityRouter } from "./principal-activity";
@@ -61,7 +52,7 @@ function buildApp(callerPrincipalId: string) {
   );
   hub.route(
     "/api/tenants/:tenantId/principals/:principalId/activity",
-    createPrincipalActivityRouter({ db: {} as never, grantStore: {} as never }),
+    createPrincipalActivityRouter({ db: {} as never }),
   );
   return hub;
 }
@@ -74,7 +65,6 @@ beforeEach(() => {
   serviceCalls = [];
   serviceResult = { entries: [sampleEntry], nextCursor: null };
   serviceError = null;
-  authorizeEffect = null;
   detailCalls = [];
   detailResult = { kind: "tool_call", id: "evt-1" };
 });
@@ -96,18 +86,13 @@ describe("GET /api/tenants/:tenantId/principals/:principalId/activity", () => {
     });
   });
 
-  it("denies another principal's timeline without an allow grant", async () => {
-    authorizeEffect = null;
+  it("lets any tenant member read another principal's timeline (open intra-tenant)", async () => {
     const res = await buildApp("prn-caller").request(url("prn-target"));
-    expect(res.status).toBe(403);
-    expect(serviceCalls).toHaveLength(0);
-  });
-
-  it("allows an operator with an activity read grant to view any principal", async () => {
-    authorizeEffect = "allow";
-    const res = await buildApp("prn-operator").request(url("prn-target"));
     expect(res.status).toBe(200);
-    expect(serviceCalls[0]).toMatchObject({ principalId: "prn-target" });
+    expect(serviceCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-target",
+    });
   });
 
   it("bounds the limit parameter", async () => {
@@ -190,16 +175,8 @@ describe("GET /api/tenants/:tenantId/principals/:principalId/activity/:kind/:id/
     expect(detailCalls).toHaveLength(0);
   });
 
-  it("gates another principal's moment detail behind the activity grant", async () => {
-    authorizeEffect = null;
-    const denied = await buildApp("prn-caller").request(
-      detailUrl("prn-target", "tool_call", "evt-1"),
-    );
-    expect(denied.status).toBe(403);
-    expect(detailCalls).toHaveLength(0);
-
-    authorizeEffect = "allow";
-    const allowed = await buildApp("prn-operator").request(
+  it("lets any tenant member expand another principal's moment (open intra-tenant)", async () => {
+    const allowed = await buildApp("prn-caller").request(
       detailUrl("prn-target", "tool_call", "evt-1"),
     );
     expect(allowed.status).toBe(200);

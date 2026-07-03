@@ -98,6 +98,7 @@ import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
 import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
+import { createTenantActivityRouter } from "./routes/tenant-activity";
 import { createPricingRouter } from "./routes/pricing";
 import { prewarmPriceCatalog } from "./lib/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
@@ -628,6 +629,10 @@ const hubApp = createApp({
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
+hubApp.route(
+  "/api/tenants/:tenantId/activity",
+  createTenantActivityRouter({ db }),
+);
 hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
 
 // CL-2749: pre-warm the shared models.dev pricing cache on boot so the first
@@ -637,11 +642,11 @@ hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
 void prewarmPriceCatalog();
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
-  createPrincipalActivityRouter({ db, grantStore }),
+  createPrincipalActivityRouter({ db }),
 );
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/roster",
-  createPrincipalRosterRouter({ db, grantStore }),
+  createPrincipalRosterRouter({ db }),
 );
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(

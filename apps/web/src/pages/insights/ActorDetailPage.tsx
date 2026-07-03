@@ -18,7 +18,6 @@ import {
   CompactHeader,
   FacetTabs,
   StatStrip,
-  TraceRootRail,
   useFacetKeyboard,
   type FacetDef,
   type Stat,
@@ -149,9 +148,7 @@ export function ActorDetailPage() {
 
   return (
     <PagePanel scroll flat>
-      <div className="mx-auto flex w-full max-w-[1040px] gap-7 px-5 py-5 max-md:flex-col max-md:px-3">
-        <TraceRootRail root={root} />
-
+      <div className="w-full px-6 py-5 max-md:px-3">
         <main className="min-w-0 flex-1">
           <CompactHeader root={root} status={status} backTo={backLink} />
 

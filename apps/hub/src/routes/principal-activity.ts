@@ -1,4 +1,3 @@
-import { authorize, type GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import {
   decodeTimelineCursor,
@@ -18,8 +17,6 @@ import { getPrincipalActivityPage } from "../services/principal-activity";
 
 const log = getLogger(["hub", "principal-activity"]);
 
-const ACTIVITY_RESOURCE = "activity:principal";
-const ACTIVITY_ACTION = "read";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
@@ -40,7 +37,6 @@ const ErrorResponse = type({
 
 export type CreatePrincipalActivityRouterDeps = {
   db: HubDb;
-  grantStore: GrantStore;
 };
 
 function parseLimit(raw: string | undefined): number | null {
@@ -52,7 +48,6 @@ function parseLimit(raw: string | undefined): number | null {
 
 export function createPrincipalActivityRouter({
   db,
-  grantStore,
 }: CreatePrincipalActivityRouterDeps): Hono<PrincipalActivityRouteEnv> {
   const app = new Hono<PrincipalActivityRouteEnv>();
 
@@ -62,7 +57,7 @@ export function createPrincipalActivityRouter({
       tags: ["Activity"],
       summary: "Paginated per-principal activity timeline",
       description:
-        "Merges every registered activity source (sessions, messages, inference turns, tool calls, workflow runs, artifacts, uploads, memory, approvals, feedback, grants, credentials) into one keyset-paginated timeline for a principal. A principal may read their own timeline; reading another principal's requires an `activity:principal`/`read` grant. The cursor is opaque; the tenant and principal scope always come from the authenticated path, never the cursor.",
+        "Merges every registered activity source (sessions, messages, inference turns, tool calls, workflow runs, artifacts, uploads, memory, approvals, feedback, grants, credentials) into one keyset-paginated timeline for a principal. Any member of the tenant may read any principal's timeline within that tenant (activity is open intra-tenant); tenant membership is the boundary and cross-tenant activity never resolves. The cursor is opaque; the tenant and principal scope always come from the authenticated path, never the cursor.",
       parameters: [
         {
           name: "tenantId",
@@ -105,43 +100,16 @@ export function createPrincipalActivityRouter({
           description: "Invalid limit or cursor",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
-        403: {
-          description:
-            "Caller is neither the target principal nor granted activity read",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
       },
     }),
     async (c) => {
       const tenant = c.get("tenant");
-      const caller = c.get("principal");
       const targetPrincipalId = c.req.param("principalId");
       if (targetPrincipalId === undefined || targetPrincipalId === "") {
         return c.json(
           { error: { code: "bad_request", message: "Missing principalId" } },
           400,
         );
-      }
-
-      if (caller.id !== targetPrincipalId) {
-        const decision = await authorize(
-          grantStore,
-          caller.id,
-          tenant.id,
-          ACTIVITY_RESOURCE,
-          ACTIVITY_ACTION,
-        );
-        if (decision.effect !== "allow") {
-          return c.json(
-            {
-              error: {
-                code: "forbidden",
-                message: "You do not have permission to view this activity",
-              },
-            },
-            403,
-          );
-        }
       }
 
       const limit = parseLimit(c.req.query("limit"));
@@ -213,7 +181,7 @@ export function createPrincipalActivityRouter({
       tags: ["Activity"],
       summary: "Expand one activity moment into its rich detail",
       description:
-        "The paginated timeline is a lean projection (id, kind, summary). This route enriches a single OPENED moment by joining the source's rich columns: tool-call inputs/outputs (from `turn_part`), an inference turn's model, duration, and ordered parts, or a workflow run's recorded duration and outcome (from the analytics fact tables). Same `activity:principal`/`read` authz as the timeline, so cross-principal detail is gated identically. Returns 404 when the moment does not resolve within the caller's attribution scope.",
+        "The paginated timeline is a lean projection (id, kind, summary). This route enriches a single OPENED moment by joining the source's rich columns: tool-call inputs/outputs (from `turn_part`), an inference turn's model, duration, and ordered parts, or a workflow run's recorded duration and outcome (from the analytics fact tables). Open intra-tenant like the timeline: any tenant member can expand any principal's moment within that tenant. Returns 404 when the moment does not resolve within the target principal's attribution scope.",
       parameters: [
         {
           name: "tenantId",
@@ -251,20 +219,14 @@ export function createPrincipalActivityRouter({
             "application/json": { schema: resolver(MomentDetailSchema) },
           },
         },
-        403: {
-          description:
-            "Caller is neither the target principal nor granted activity read",
-          content: { "application/json": { schema: resolver(ErrorResponse) } },
-        },
         404: {
-          description: "No such moment within the caller's scope",
+          description: "No such moment within the target principal's scope",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
       const tenant = c.get("tenant");
-      const caller = c.get("principal");
       const targetPrincipalId = c.req.param("principalId");
       const kind = c.req.param("kind");
       const id = c.req.param("id");
@@ -286,27 +248,6 @@ export function createPrincipalActivityRouter({
           { error: { code: "bad_request", message: "Unknown moment kind" } },
           400,
         );
-      }
-
-      if (caller.id !== targetPrincipalId) {
-        const decision = await authorize(
-          grantStore,
-          caller.id,
-          tenant.id,
-          ACTIVITY_RESOURCE,
-          ACTIVITY_ACTION,
-        );
-        if (decision.effect !== "allow") {
-          return c.json(
-            {
-              error: {
-                code: "forbidden",
-                message: "You do not have permission to view this activity",
-              },
-            },
-            403,
-          );
-        }
       }
 
       try {

@@ -19,7 +19,10 @@ import {
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { getPrincipalActivityPage } from "./principal-activity";
+import {
+  getPrincipalActivityPage,
+  getTenantActivityPage,
+} from "./principal-activity";
 
 // Real-Postgres drift guard for the timeline union (CL-2490). The
 // @workbench/timeline registry references tables and columns by NAME (plain
@@ -495,5 +498,85 @@ describe("instance-principal attribution through member_agent_instance", () => {
 
     const mine = await page({ limit: 20 });
     expect(mine.entries.map((e) => e.id)).not.toContain("ses-synth-foreign");
+  });
+});
+
+describe("getTenantActivityPage — tenant-wide feed (CL-2743)", () => {
+  test("returns activity across EVERY principal in the tenant, and never another tenant's rows", async () => {
+    await seedRunRecord({ id: "run-mine", createdAt: "2026-07-01T08:00:00Z" });
+    // A different principal in the SAME tenant — must appear tenant-wide even
+    // though it never appears in PRINCIPAL's own timeline.
+    await seedRunRecord({
+      id: "run-other-principal",
+      principalId: OTHER_PRINCIPAL,
+      createdAt: "2026-07-01T08:00:02Z",
+    });
+    // A different tenant — must never appear.
+    await seedRunRecord({
+      id: "run-other-tenant",
+      tenantId: OTHER_TENANT,
+      createdAt: "2026-07-01T08:00:01Z",
+    });
+    // Tenant-owned credential (principal_id null) — the per-principal query
+    // drops it, but the tenant-wide feed must include it.
+    await seedCredential({
+      id: "crd-tenant-owned",
+      principalId: null,
+      createdAt: "2026-07-01T08:00:04Z",
+    });
+
+    const wide = await getTenantActivityPage({
+      db,
+      tenantId: TENANT,
+      limit: 20,
+    });
+    const ids = wide.entries.map((e) => e.id).sort();
+    expect(ids).toEqual([
+      "crd-tenant-owned",
+      "run-mine",
+      "run-other-principal",
+    ]);
+    expect(ids).not.toContain("run-other-tenant");
+
+    // Contrast: the per-principal view still only sees PRINCIPAL's own row.
+    const mine = await page({ limit: 20 });
+    expect(mine.entries.map((e) => e.id)).toEqual(["run-mine"]);
+  });
+
+  test("keyset-paginates the tenant-wide feed without dropping or duplicating rows", async () => {
+    await seedRunRecord({ id: "run-a", createdAt: "2026-07-01T05:00:00Z" });
+    await seedRunRecord({
+      id: "run-b",
+      principalId: OTHER_PRINCIPAL,
+      createdAt: "2026-07-01T05:01:00Z",
+    });
+    await seedSession({ id: "ses-c", createdAt: "2026-07-01T05:02:00Z" });
+
+    const full = await getTenantActivityPage({
+      db,
+      tenantId: TENANT,
+      limit: 20,
+    });
+    expect(full.entries).toHaveLength(3);
+
+    const paged: TimelineEntry[] = [];
+    let cursor: TimelineCursor | undefined;
+    let rounds = 0;
+    for (;;) {
+      const result = await getTenantActivityPage({
+        db,
+        tenantId: TENANT,
+        limit: 1,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
+      paged.push(...result.entries);
+      if (result.nextCursor === null) break;
+      cursor = result.nextCursor;
+      rounds += 1;
+      if (rounds > 10) throw new Error("pagination did not terminate");
+    }
+    expect(paged.map((e) => `${e.sourceTable}:${e.id}`)).toEqual(
+      full.entries.map((e) => `${e.sourceTable}:${e.id}`),
+    );
   });
 });

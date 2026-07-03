@@ -22,7 +22,7 @@ import type { TimelineEntry, TimelineEntryKind } from "@workbench/client";
  * non-anthropomorphizing label, an icon, and a badge tone. Kept in one place so
  * every timeline surface renders a kind identically.
  *
- * NOTE: PR #568 (CL-2526 RecentActivity feed) imports this SAME module — do not
+ * NOTE: the tenant/actor activity feeds import this SAME module — do not
  * re-declare KIND_META or {@link relativeTime} there; extend them here instead.
  *
  * Tone policy (mirrors the Badge doc): `identity` for who/what an actor is

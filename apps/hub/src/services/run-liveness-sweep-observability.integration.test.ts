@@ -12,7 +12,7 @@ const infoLogs: { msg: string; meta?: Record<string, unknown> }[] = [];
 mock.module("@intx/log", () => ({
   getLogger: () => ({
     info: (msg: string, meta?: Record<string, unknown>) =>
-      infoLogs.push({ msg, meta }),
+      infoLogs.push(meta === undefined ? { msg } : { msg, meta }),
     warn: () => {},
     error: () => {},
     debug: () => {},
