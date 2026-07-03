@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "start": "bun run dist/index.js",
     "test": "bun test --isolate",
+    "test:workflow-e2e": "bun test --isolate src/services/workflow-regression-gate.integration.test.ts",
     "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text",
     "admin": "bun --env-file=../../.env run bin/admin/index.ts",
     "admin:staging": "bun --env-file=../../.env.staging run bin/admin/index.ts",
