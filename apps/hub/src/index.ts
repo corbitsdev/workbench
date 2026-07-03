@@ -1174,6 +1174,10 @@ v1.route(
     ensureDeploymentRoutable,
     provisionRunDeployment,
     reclaimDeployment,
+    // CL-2707: bounded wait for the sidecar during the deploy window so a
+    // start/resume that lands before the sidecar reconnects gets an honest 503
+    // (auto-retryable) instead of an instant raw 500/503.
+    isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
   }),
 );
 
