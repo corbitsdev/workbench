@@ -389,7 +389,7 @@ export function ActorActivitySection({ tenantId }: { tenantId: string }) {
             </p>
           )}
 
-          {actors.length > 0 && (
+          {searchEnabled && actors.length > 0 && (
             <ul className="flex flex-col rounded-[12px] border border-border bg-surface p-1">
               {actors.map((actor) => (
                 <li key={actor.id}>
