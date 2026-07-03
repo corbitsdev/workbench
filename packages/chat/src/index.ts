@@ -50,6 +50,11 @@ export {
   type DockRunPhase,
   type DockRunStep,
   type DockStepPhase,
+  pendingGateForRun,
+  routeConversationSignal,
+  type GateStepInput,
+  type PendingGate,
+  type SignalRouting,
 } from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";

@@ -6,6 +6,7 @@ import {
   dockRunBlocks,
   DockRunPhaseSchema,
   type DockRunPhase,
+  type UIResponse,
 } from "@workbench/chat";
 import { cn, failedRunError } from "@workbench/ui";
 import {
@@ -13,6 +14,7 @@ import {
   reconcileRunState,
   runStateFromLog,
   useConversationWorkflowRuns,
+  useResumeConversationGate,
   useWorkflowRunState,
   type ConversationWorkflowRun,
 } from "../hooks/use-workflow";
@@ -156,8 +158,25 @@ function WorkflowDockCard({
     isPending,
     isError,
   } = useWorkflowRunState(run.runId, tenantId);
+  const resumeGate = useResumeConversationGate(tenantId);
   // Finished runs collapse to their one-line summary by default.
   const [open, setOpen] = useState(() => !isRecordTerminal(run.status));
+
+  // A gate choice block carries its `awaitSignal` name (CL-2681); selecting it
+  // resumes THIS run with that signal + the option value as payload. The
+  // in-flight mutation is the double-fire guard — the button is disabled while
+  // the resume is pending (below), and the ChoiceBlock itself disables after a
+  // click. A non-gate choice (no signalName) is ignored here.
+  const onRespond = (response: UIResponse) => {
+    if (response.signalName === undefined) return;
+    resumeGate
+      .mutateAsync({
+        runId: run.runId,
+        signalName: response.signalName,
+        payload: { instruction: response.value },
+      })
+      .catch(() => undefined);
+  };
 
   const record: RunRecord = {
     runId: run.runId,
@@ -185,6 +204,9 @@ function WorkflowDockCard({
         steps: (log?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
+          ...(step.awaitingSignalName !== undefined
+            ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
         })),
         ...(sanitizedError !== undefined
           ? { errorMessage: sanitizedError }
@@ -279,7 +301,7 @@ function WorkflowDockCard({
             <p className="text-xs text-text-3">Waiting for the first step…</p>
           )}
           {blocks.map((block, index) => (
-            <UIBlockView key={index} block={block} />
+            <UIBlockView key={index} block={block} onRespond={onRespond} />
           ))}
         </div>
       )}

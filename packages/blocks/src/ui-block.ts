@@ -39,6 +39,10 @@ export type ProgressStep = typeof ProgressStepSchema.infer;
 export const UIResponseSchema = type({
   blockKind: "'choice'",
   value: "string",
+  // When the interactive block is a workflow gate (CL-2681), it carries the
+  // pending gate's `awaitSignal` name. The host resumes the run with this
+  // signal + the response value as payload instead of posting a chat turn.
+  "signalName?": "string",
 });
 /** An interactive block's response, posted back to the agent as the next turn. */
 export type UIResponse = typeof UIResponseSchema.infer;
@@ -74,6 +78,10 @@ export type UIBlock =
   | {
       kind: "choice";
       prompt?: string;
+      // A workflow gate's `awaitSignal` name (CL-2681). When present, selecting
+      // an option resolves the response to a run resume with this signal rather
+      // than a chat turn — the renderer carries it, never hardcodes it.
+      signalName?: string;
       options: {
         id: string;
         label: string;

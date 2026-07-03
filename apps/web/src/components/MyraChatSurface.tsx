@@ -8,6 +8,7 @@ import {
   type ChatDockState,
   type UIResponse,
   type PendingAttachment,
+  type SignalRouting,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
@@ -122,6 +123,15 @@ type MyraChatSurfaceProps = {
   expanded?: boolean;
   onToggleExpand?: () => void;
   onClose?: () => void;
+  /**
+   * HITL signal routing for this conversation's pending workflow gates
+   * (CL-2681). When exactly one gate is pending (`mode: "single"`), free text
+   * typed here is delivered to that gate via `onResumeSignal` instead of a chat
+   * turn; with more than one pending gate (`mode: "multi"`), free text stays a
+   * normal chat turn and a hint tells the user to use a run's card button.
+   */
+  signalRouting?: SignalRouting;
+  onResumeSignal?: (runId: string, signalName: string, text: string) => void;
 };
 
 export function MyraChatSurface({
@@ -133,6 +143,8 @@ export function MyraChatSurface({
   expanded,
   onToggleExpand,
   onClose,
+  signalRouting,
+  onResumeSignal,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity = threadLabel
     ? { ...MYRA, tagline: threadLabel }
@@ -243,6 +255,24 @@ export function MyraChatSurface({
   // DeepSeek/openai-compatible harness does not ingest document attachment
   // ContentBlocks (CL-2495 spike). Cleared once the send is dispatched.
   const handleSend = (text: string, attachments?: PendingAttachment[]) => {
+    // Single pending gate: free text is the gate's answer, not a chat turn
+    // (CL-2681). Routed only when there are no attachments — an attachment is a
+    // conversation act, not a gate payload. With >1 gate pending we do NOT
+    // auto-route (the hint below tells the user to use a card).
+    if (
+      signalRouting?.mode === "single" &&
+      onResumeSignal !== undefined &&
+      (attachments === undefined || attachments.length === 0) &&
+      text.trim().length > 0
+    ) {
+      onUserSend?.(text);
+      onResumeSignal(
+        signalRouting.gate.runId,
+        signalRouting.gate.signalName,
+        text,
+      );
+      return;
+    }
     onUserSend?.(text);
     const composed =
       attached.length === 0
@@ -255,12 +285,30 @@ export function MyraChatSurface({
   };
   const handleRespond = (response: UIResponse) => session.send(response.value);
 
-  const inputAccessory =
+  // With more than one workflow gate pending, free text cannot pick a run for
+  // the user (CL-2681) — tell them to answer from a run's card in the dock.
+  const multiGateHint =
+    signalRouting?.mode === "multi" ? (
+      <p className="text-xs text-text-3" role="note">
+        {signalRouting.gates.length} runs are waiting on you. Use a run's card
+        in the workflow dock to answer the one you mean.
+      </p>
+    ) : null;
+
+  const attachedPills =
     attached.length > 0 ? (
       <ActiveContextPills
         attached={attached.map(activeContextToRef)}
         onRemove={removeAttached}
       />
+    ) : null;
+
+  const inputAccessory =
+    multiGateHint !== null || attachedPills !== null ? (
+      <div className="space-y-1.5">
+        {multiGateHint}
+        {attachedPills}
+      </div>
     ) : null;
 
   return (

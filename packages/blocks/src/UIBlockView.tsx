@@ -411,6 +411,9 @@ function ChoiceBlock({
               onRespond?.({
                 blockKind: "choice",
                 value: option.value ?? option.label,
+                ...(block.signalName !== undefined
+                  ? { signalName: block.signalName }
+                  : {}),
               });
             }}
             className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange"

@@ -15,6 +15,13 @@ export {
 } from "./ui-block";
 export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";
 export {
+  pendingGateForRun,
+  routeConversationSignal,
+  type GateStepInput,
+  type PendingGate,
+  type SignalRouting,
+} from "./conversation-gates";
+export {
   DockRunInputSchema,
   DockRunPhaseSchema,
   DockRunStepSchema,
