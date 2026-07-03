@@ -48,10 +48,28 @@ const byInstanceRows = [
   },
 ];
 
+const cacheBaselineRows = [
+  {
+    agentId: "agt_myra",
+    agentName: "Myra",
+    inferenceCalls: 10,
+    cacheMissCalls: 2,
+    cacheHitCalls: 8,
+    sessionCount: 4,
+    inputTokens: 2000,
+    outputTokens: 500,
+    cacheReadTokens: 8000,
+    cacheWriteTokens: 1200,
+    cacheMissRate: 0.2,
+    cacheAbsorptionRatio: 0.8,
+  },
+];
+
 mock.module("./queries", () => ({
   getAnalyticsSummary: mock(async () => summaryRow),
   getAnalyticsSummaryByAgent: mock(async () => byAgentRows),
   getAnalyticsSummaryByInstance: mock(async () => byInstanceRows),
+  getCacheBaseline: mock(async () => cacheBaselineRows),
 }));
 
 describe("GET /summary (nested under /api/tenants/:tenantId/analytics)", () => {
@@ -158,5 +176,43 @@ describe("GET /summary/by-instance", () => {
     };
     expect(body.tenantId).toBe("tnt_ctx");
     expect(body.instances[0]?.instanceId).toBe("ins_1");
+  });
+});
+
+describe("GET /cache-baseline", () => {
+  it("returns the per-agent prompt-caching baseline for the tenant", async () => {
+    const hub = new Hono<AnalyticsRouteEnv>();
+    hub.use("/api/tenants/:tenantId/*", async (c, next) => {
+      c.set("tenant", { id: "tnt_ctx" });
+      c.set("principal", { id: "pri_1" });
+      await next();
+    });
+
+    const passThrough = async (
+      _c: { req: unknown },
+      next: () => Promise<void>,
+    ) => {
+      await next();
+    };
+
+    hub.route(
+      "/api/tenants/:tenantId/analytics",
+      createAnalyticsRoutes({
+        db: {} as never,
+        requireRead: passThrough as never,
+      }),
+    );
+
+    const res = await hub.request(
+      "http://localhost/api/tenants/tnt_ctx/analytics/cache-baseline",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tenantId: string;
+      agents: { agentId: string; cacheMissRate: number }[];
+    };
+    expect(body.tenantId).toBe("tnt_ctx");
+    expect(body.agents[0]?.agentId).toBe("agt_myra");
+    expect(body.agents[0]?.cacheMissRate).toBe(0.2);
   });
 });

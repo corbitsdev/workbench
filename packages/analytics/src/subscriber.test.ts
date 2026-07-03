@@ -116,6 +116,26 @@ describe("analytics subscriber (mocked db)", () => {
     );
   });
 
+  test("persists the exact token breakdown from a known usage payload", async () => {
+    const inserts: unknown[] = [];
+    const { db } = makeDb({ onInsert: (v) => inserts.push(v) });
+    const subscriber = createAnalyticsSubscriber({ db: db as never });
+
+    await subscriber.onAgentEvent({
+      agentAddress: supervisorInstance.address,
+      event: inferenceDone,
+    });
+
+    const fact = inserts[0] as Record<string, unknown>;
+    expect(fact["inputTokens"]).toBe(100);
+    expect(fact["outputTokens"]).toBe(40);
+    expect(fact["cacheReadTokens"]).toBe(1);
+    expect(fact["cacheWriteTokens"]).toBe(2);
+    expect(fact["thinkingTokens"]).toBe(3);
+    expect(fact["eventType"]).toBe("inference_done");
+    expect(fact["sessionId"]).toBe("ses_supervisor");
+  });
+
   test("supervisor message.run.ended increments turn rollup", async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
