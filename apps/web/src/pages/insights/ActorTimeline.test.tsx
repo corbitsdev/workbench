@@ -22,6 +22,7 @@ type ActivityPage = { entries: TimelineEntry[]; nextCursor: string | null };
 let activityCalls: { principalId: string; cursor?: string }[] = [];
 let activityPages: ActivityPage[] = [];
 let hang = false;
+let errorStatus: number | undefined;
 
 mock.module("@workbench/client", () => ({
   getPrincipalActivity: (
@@ -32,6 +33,11 @@ mock.module("@workbench/client", () => ({
       principalId: params.principalId,
       ...(params.cursor !== undefined ? { cursor: params.cursor } : {}),
     });
+    if (errorStatus !== undefined) {
+      return Promise.reject(
+        Object.assign(new Error("boom"), { status: errorStatus }),
+      );
+    }
     if (hang) return new Promise<ActivityPage>(() => {});
     const page = activityPages[activityCalls.length - 1] ?? {
       entries: [],
@@ -67,6 +73,7 @@ beforeEach(() => {
   activityCalls = [];
   activityPages = [];
   hang = false;
+  errorStatus = undefined;
 });
 afterEach(() => cleanup());
 
@@ -78,6 +85,28 @@ describe("ActorTimeline", () => {
       screen.getByTestId("timeline-loading");
     });
     expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  it("renders a retryable error state with a Retry button on a transient failure", async () => {
+    errorStatus = 503;
+    renderTimeline();
+
+    await waitFor(() => screen.getByTestId("timeline-error"));
+    screen.getByText(/Please try again/);
+    screen.getByRole("button", { name: "Retry" });
+    expect(screen.queryByTestId("timeline-forbidden")).toBeNull();
+  });
+
+  it("renders a permission message with no Retry on a 403", async () => {
+    errorStatus = 403;
+    renderTimeline();
+
+    await waitFor(() => screen.getByTestId("timeline-forbidden"));
+    screen.getByText(
+      /You don.t have permission to view this person.s activity\./,
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByTestId("timeline-error")).toBeNull();
   });
 
   it("renders entries grouped by day with per-kind badges", async () => {

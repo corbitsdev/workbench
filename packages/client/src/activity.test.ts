@@ -4,7 +4,12 @@
 // boundary parsing through the exported arktype schemas, and error paths.
 import { describe, expect, it, mock } from "bun:test";
 import "./test-setup";
-import { getPrincipalActivity, searchActors } from "./index";
+import {
+  HttpError,
+  getPrincipalActivity,
+  isForbiddenError,
+  searchActors,
+} from "./index";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -167,6 +172,43 @@ describe("getPrincipalActivity", () => {
     expect(page.entries).toHaveLength(1);
     expect(page.entries[0]?.kind).toBe("message");
     expect(page.entries[0]?.summary).toBe("hello");
+  });
+
+  it("throws an HttpError carrying the 403 status and hub message on a permission denial", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ error: "forbidden" }, 403)),
+    );
+
+    const err = await getPrincipalActivity(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten_1", principalId: "prn_1" },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(403);
+    expect((err as HttpError).message).toBe("forbidden");
+    expect(isForbiddenError(err)).toBe(true);
+  });
+
+  it("throws an HttpError with the 5xx status that isForbiddenError rejects", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ error: "boom" }, 503)),
+    );
+
+    const err = await getPrincipalActivity(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten_1", principalId: "prn_1" },
+    ).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(HttpError);
+    expect((err as HttpError).status).toBe(503);
+    expect(isForbiddenError(err)).toBe(false);
   });
 
   it("rejects entries with an unknown kind", async () => {

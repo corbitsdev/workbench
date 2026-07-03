@@ -22,10 +22,18 @@ type TimelineEntry = {
 
 let activityEntries: TimelineEntry[] = [];
 let activityError = false;
+let activityErrorStatus: number | undefined;
 
 mock.module("@workbench/client", () => ({
   getPrincipalActivity: () => {
-    if (activityError) return Promise.reject(new Error("boom"));
+    if (activityError) {
+      const err = Object.assign(new Error("boom"), {
+        ...(activityErrorStatus !== undefined
+          ? { status: activityErrorStatus }
+          : {}),
+      });
+      return Promise.reject(err);
+    }
     return Promise.resolve({ entries: activityEntries, nextCursor: null });
   },
 }));
@@ -73,6 +81,7 @@ const ENTRIES: TimelineEntry[] = [
 beforeEach(() => {
   activityEntries = [];
   activityError = false;
+  activityErrorStatus = undefined;
 });
 afterEach(() => cleanup());
 
@@ -196,10 +205,27 @@ describe("MomentWalker", () => {
     await waitFor(() => screen.getByTestId("moment-walker-empty"));
   });
 
-  it("renders an error state when activity cannot be loaded", async () => {
+  it("renders a retryable error state when activity fails transiently", async () => {
     activityError = true;
+    activityErrorStatus = 503;
     renderWalker();
 
     await waitFor(() => screen.getByTestId("moment-walker-error"));
+    screen.getByText(/Please try again/);
+    screen.getByRole("button", { name: "Retry" });
+    expect(screen.queryByTestId("moment-walker-forbidden")).toBeNull();
+  });
+
+  it("renders a permission message with no retry on a 403", async () => {
+    activityError = true;
+    activityErrorStatus = 403;
+    renderWalker();
+
+    await waitFor(() => screen.getByTestId("moment-walker-forbidden"));
+    screen.getByText(
+      /You don.t have permission to view this person.s activity\./,
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.queryByTestId("moment-walker-error")).toBeNull();
   });
 });

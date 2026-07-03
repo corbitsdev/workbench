@@ -34,6 +34,27 @@ export type ClientOptions = typeof ClientOptionsSchema.infer & {
   init?: RequestInit;
 };
 
+/**
+ * Error thrown by {@link request} for any non-2xx hub response. Carries the HTTP
+ * `status` alongside the hub's human message so callers (e.g. the Insights UI)
+ * can branch a permission denial (403) from a transient failure (5xx/network)
+ * without parsing the message string. Subclasses `Error`, so existing catch
+ * sites that only read `.message` are unaffected.
+ */
+export class HttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
+
+/** True when `error` is an {@link HttpError} carrying HTTP 403 (permission denied). */
+export function isForbiddenError(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 403;
+}
+
 const API_PREFIX = "api/v1";
 // Tenant-scoped insight routes (actor search, per-principal activity) mount
 // under `/api/tenants/:tenantId/...` behind Interchange's resolveTenant — not
@@ -75,7 +96,7 @@ async function request<T>(
   const res = await doFetch(url, init);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    throw new HttpError(res.status, body.error ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }

@@ -12,6 +12,7 @@ import {
   grantEffect,
 } from "./trace-links";
 import { usePrincipalActivity } from "./ActorTimeline";
+import { isPermissionDeniedError } from "./activity-error";
 
 function fullTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -295,6 +296,22 @@ export function MomentWalker({
   if (activityQuery.isLoading) return <WalkerSkeleton />;
 
   if (activityQuery.isError) {
+    if (isPermissionDeniedError(activityQuery.error)) {
+      return (
+        <div
+          data-testid="moment-walker-forbidden"
+          className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4"
+        >
+          <span className="flex items-start gap-1.5 text-[13px] text-text-2">
+            <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0 text-text-3" />
+            <span>
+              You don&rsquo;t have permission to view this person&rsquo;s
+              activity.
+            </span>
+          </span>
+        </div>
+      );
+    }
     return (
       <div
         data-testid="moment-walker-error"

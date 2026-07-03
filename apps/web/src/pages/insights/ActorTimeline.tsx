@@ -3,6 +3,7 @@ import { AlertTriangle } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
+import { isPermissionDeniedError } from "./activity-error";
 
 const TIMELINE_PAGE_SIZE = 50;
 
@@ -177,22 +178,35 @@ export function ActorTimeline({
 
       {activityQuery.isLoading && <TimelineSkeleton />}
 
-      {activityQuery.isError && (
-        <div className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4">
-          <span className="text-[13px] text-text-2">
-            Couldn't load this actor's activity. Please try again.
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              void activityQuery.refetch();
-            }}
-            className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
+      {activityQuery.isError &&
+        (isPermissionDeniedError(activityQuery.error) ? (
+          <div
+            data-testid="timeline-forbidden"
+            className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4"
           >
-            Retry
-          </button>
-        </div>
-      )}
+            <span className="text-[13px] text-text-2">
+              You don't have permission to view this person's activity.
+            </span>
+          </div>
+        ) : (
+          <div
+            data-testid="timeline-error"
+            className="flex flex-col items-start gap-2 rounded-[12px] border border-border bg-surface p-4"
+          >
+            <span className="text-[13px] text-text-2">
+              Couldn't load this actor's activity. Please try again.
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                void activityQuery.refetch();
+              }}
+              className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
+            >
+              Retry
+            </button>
+          </div>
+        ))}
 
       {activityQuery.isSuccess && entries.length === 0 && (
         <div className="rounded-[12px] border border-border bg-surface p-8 text-center text-[13px] text-text-2">
