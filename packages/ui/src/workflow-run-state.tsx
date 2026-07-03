@@ -25,6 +25,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { RunState, StepState } from "@intx/workflow";
 import type { WorkflowStep } from "./workflow-step-types";
+import { failedRunError } from "./workflow-run-error";
 
 export type StepPhase = StepState["phase"];
 
@@ -188,24 +189,26 @@ export function liveStatusLabel(
 }
 
 /**
- * The message from whichever step failed the run, or null if the run has not
- * failed or no step carries a `lastError`. `RunState.steps` has no run-level
- * error field — the failing step's own `lastError` (populated by the hub's
- * run-state adapter from the record's `error` field) is the only place the
- * message lives.
+ * The SANITIZED end-user message from whichever step failed the run, or null
+ * if the run has not failed or no step carries a `lastError`. `RunState.steps`
+ * has no run-level error field — the failing step's own `lastError` (populated
+ * by the hub's run-state adapter from the record's `error` field) is the only
+ * place the message lives.
  *
- * Returns the first `lastError` found in map-iteration order. This relies on
+ * The raw error is never returned here: it is classified through
+ * `classifyRunError` (workflow-run-error.ts), so known-safe external shapes
+ * render a plain-language message and everything else degrades to a generic
+ * one (CL-2660). Operator surfaces that need the raw text use
+ * `failedRunError(state).raw` instead.
+ *
+ * Uses the first `lastError` found in map-iteration order. This relies on
  * the adapter's invariant that at most one step carries `lastError` per run
  * (`apps/web/src/lib/run-state-adapter.ts` only ever attaches it to the
  * single active/failed step) — if that invariant ever breaks, this picks an
  * arbitrary one rather than surfacing the ambiguity.
  */
 export function failedRunErrorMessage(state: RunState | null): string | null {
-  if (state?.phase !== "failed") return null;
-  for (const step of state.steps.values()) {
-    if (step.lastError !== undefined) return step.lastError.message;
-  }
-  return null;
+  return failedRunError(state)?.userMessage ?? null;
 }
 
 /** The single live progress line shown under the stepper. */

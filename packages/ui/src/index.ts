@@ -113,3 +113,9 @@ export {
   liveStatusLabel,
   LiveStatusSlot,
 } from "./workflow-run-state";
+export {
+  type RunErrorKind,
+  type ClassifiedRunError,
+  classifyRunError,
+  failedRunError,
+} from "./workflow-run-error";

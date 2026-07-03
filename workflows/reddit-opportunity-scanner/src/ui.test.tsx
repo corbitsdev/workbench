@@ -550,18 +550,19 @@ describe("reddit-opportunity-scanner Panel", () => {
 
   // ── Failure ───────────────────────────────────────────────────────────────────
 
-  it("shows a failure banner with the step error when a step fails", () => {
+  it("shows a failure banner with the sanitized step error when a step fails (CL-2660)", () => {
     const steps = new Map<string, StepState>();
     steps.set("intake", stepState("intake", "completed"));
     steps.set("curate", {
       stepId: "curate",
       phase: "failed",
       currentAttempt: 1,
-      lastError: { message: "Reddit API rate limited" },
+      lastError: { message: "ScrapeCreators API error: 429 rate limited" },
     } as StepState);
     renderPanel({ state: { steps, phase: "failed" } as unknown as RunState });
     screen.getByText("This run failed.");
-    screen.getByText("Reddit API rate limited");
+    screen.getByText(/ScrapeCreators is rate-limiting requests right now/);
+    expect(screen.queryByText(/API error/)).toBeNull();
   });
 
   // ── Guided layout — only the active step rendered ──────────────────────────────

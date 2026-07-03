@@ -16,13 +16,15 @@ describe("classifyRunError", () => {
   test("classifies a 401 as an auth failure", () => {
     const classified = classifyRunError("Attio API error: 401 Invalid token");
     expect(classified.kind).toBe("external-auth");
-    expect(classified.userMessage).toContain("Attio declined the request (401)");
+    expect(classified.userMessage).toContain(
+      "Attio declined the request (401)",
+    );
     expect(classified.userMessage).not.toContain("Invalid token");
   });
 
   test("classifies a provider rate limit with a wait-and-retry message", () => {
     const classified = classifyRunError(
-      "ScrapeCreators API error: 429 Too Many Requests {\"detail\":\"quota\"}",
+      'ScrapeCreators API error: 429 Too Many Requests {"detail":"quota"}',
     );
     expect(classified.kind).toBe("external-rate-limit");
     expect(classified.userMessage).toBe(
@@ -88,9 +90,7 @@ describe("failedRunError", () => {
   const failed = (message: string) =>
     ({
       phase: "failed",
-      steps: new Map([
-        ["brief", { phase: "failed", lastError: { message } }],
-      ]),
+      steps: new Map([["brief", { phase: "failed", lastError: { message } }]]),
     }) as unknown as RunState;
 
   test("returns the classified error for a failed run, preserving the raw message", () => {
