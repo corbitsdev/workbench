@@ -35,6 +35,7 @@ COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
+COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
