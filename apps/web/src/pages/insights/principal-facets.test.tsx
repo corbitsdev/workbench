@@ -2,6 +2,7 @@
 import "../../test-setup";
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import type { TimelineEntry } from "@workbench/client";
 import { GrantsFacet } from "./principal-facets";
@@ -42,9 +43,16 @@ describe("GrantsFacet effect parity with the moment decomposition", () => {
     cleanup();
 
     const moment = render(
-      <MemoryRouter>
-        <MomentDecomposition entry={g} previous={undefined} />
-      </MemoryRouter>,
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <MomentDecomposition
+            entry={g}
+            previous={undefined}
+            tenantId="tenant-1"
+            principalId="prn_1"
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
     within(moment.container).getByText(expected);
     expect(

@@ -1,7 +1,11 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
-import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
+import {
+  getMomentDetail,
+  getPrincipalActivity,
+  type TimelineEntry,
+} from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 import { isPermissionDeniedError } from "./activity-error";
 
@@ -125,6 +129,30 @@ export function usePrincipalActivity(
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: options.enabled ?? true,
+  });
+}
+
+/**
+ * Detail-expansion query for a single opened moment. Kept lean: the timeline
+ * list never fetches this — it fires only when a moment is expanded and its
+ * kind is one the detail layer can enrich. Cached per moment so re-opening is
+ * instant.
+ */
+export function useMomentDetail(
+  tenantId: string,
+  principalId: string,
+  moment: { kind: string; id: string },
+  options: { enabled?: boolean } = {},
+) {
+  return useQuery({
+    queryKey: ["moment-detail", tenantId, principalId, moment.kind, moment.id],
+    queryFn: ({ signal }) =>
+      getMomentDetail(
+        { init: { signal } },
+        { tenantId, principalId, kind: moment.kind, id: moment.id },
+      ),
+    enabled: options.enabled ?? true,
+    staleTime: 5 * 60_000,
   });
 }
 

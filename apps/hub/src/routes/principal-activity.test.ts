@@ -27,6 +27,15 @@ mock.module("../services/principal-activity", () => ({
   }),
 }));
 
+let detailCalls: unknown[] = [];
+let detailResult: unknown = { kind: "tool_call", id: "evt-1" };
+mock.module("../services/moment-detail", () => ({
+  getMomentDetail: mock(async (args: unknown) => {
+    detailCalls.push(args);
+    return detailResult;
+  }),
+}));
+
 let authorizeEffect: string | null = null;
 mock.module("@intx/authz", () => ({
   authorize: mock(async () => ({
@@ -66,6 +75,8 @@ beforeEach(() => {
   serviceResult = { entries: [sampleEntry], nextCursor: null };
   serviceError = null;
   authorizeEffect = null;
+  detailCalls = [];
+  detailResult = { kind: "tool_call", id: "evt-1" };
 });
 
 describe("GET /api/tenants/:tenantId/principals/:principalId/activity", () => {
@@ -138,5 +149,68 @@ describe("GET /api/tenants/:tenantId/principals/:principalId/activity", () => {
     serviceError = new Error("connection refused");
     const res = await buildApp("prn-self").request(url("prn-self"));
     expect(res.status).toBe(500);
+  });
+});
+
+describe("GET /api/tenants/:tenantId/principals/:principalId/activity/:kind/:id/detail", () => {
+  function detailUrl(principalId: string, kind: string, id: string) {
+    return `http://localhost/api/tenants/tnt_test/principals/${principalId}/activity/${kind}/${id}/detail`;
+  }
+
+  it("returns the expanded detail for the caller's own moment", async () => {
+    detailResult = {
+      kind: "tool_call",
+      id: "evt-1",
+      toolCall: {
+        toolName: "search",
+        input: { q: "x" },
+        output: "ok",
+        isError: false,
+      },
+    };
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "tool_call", "evt-1"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { toolCall?: { toolName: string } };
+    expect(body.toolCall?.toolName).toBe("search");
+    expect(detailCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-self",
+      kind: "tool_call",
+      id: "evt-1",
+    });
+  });
+
+  it("rejects an unknown moment kind with 400 before touching the service", async () => {
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "mystery", "evt-1"),
+    );
+    expect(res.status).toBe(400);
+    expect(detailCalls).toHaveLength(0);
+  });
+
+  it("gates another principal's moment detail behind the activity grant", async () => {
+    authorizeEffect = null;
+    const denied = await buildApp("prn-caller").request(
+      detailUrl("prn-target", "tool_call", "evt-1"),
+    );
+    expect(denied.status).toBe(403);
+    expect(detailCalls).toHaveLength(0);
+
+    authorizeEffect = "allow";
+    const allowed = await buildApp("prn-operator").request(
+      detailUrl("prn-target", "tool_call", "evt-1"),
+    );
+    expect(allowed.status).toBe(200);
+    expect(detailCalls[0]).toMatchObject({ principalId: "prn-target" });
+  });
+
+  it("maps a null service result (out-of-scope or missing moment) to 404", async () => {
+    detailResult = null;
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "tool_call", "missing"),
+    );
+    expect(res.status).toBe(404);
   });
 });

@@ -7,11 +7,15 @@
 import { type } from "arktype";
 import { Artifact, SessionStatusSchema } from "@workbench/shared";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
-import { TimelineEntrySchema } from "@workbench/timeline";
-import type { TimelineEntry, TimelineEntryKind } from "@workbench/timeline";
+import { MomentDetailSchema, TimelineEntrySchema } from "@workbench/timeline";
+import type {
+  MomentDetail,
+  TimelineEntry,
+  TimelineEntryKind,
+} from "@workbench/timeline";
 
-export { TimelineEntrySchema };
-export type { TimelineEntry, TimelineEntryKind };
+export { MomentDetailSchema, TimelineEntrySchema };
+export type { MomentDetail, TimelineEntry, TimelineEntryKind };
 
 /**
  * Serializable subset of {@link ClientOptions}. `fetch` and `init` carry
@@ -743,6 +747,35 @@ export async function getPrincipalRoster(
   const parsed = PrincipalRosterSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid /roster response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+export const GetMomentDetailParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+  kind: "string",
+  id: "string",
+});
+export type GetMomentDetailParams = typeof GetMomentDetailParamsSchema.infer;
+
+/**
+ * Expand one opened activity moment into its rich detail
+ * (`GET /api/tenants/:tenantId/principals/:principalId/activity/:kind/:id/detail`).
+ * The paginated timeline stays lean; this fires only when a moment is opened.
+ */
+export async function getMomentDetail(
+  options: ClientOptions = {},
+  params: GetMomentDetailParams,
+): Promise<MomentDetail> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/activity/${encodeURIComponent(params.kind)}/${encodeURIComponent(params.id)}/detail`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = MomentDetailSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid moment detail response: ${parsed.summary}`);
   }
   return parsed;
 }

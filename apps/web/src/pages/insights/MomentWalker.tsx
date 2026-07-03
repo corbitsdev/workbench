@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AlertCircle, ArrowRight, ChevronRight, Info } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
-import type { TimelineEntry } from "@workbench/client";
+import type { MomentDetail, TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 import { describeActivityEntry } from "./activity-naming";
 import {
@@ -11,8 +11,56 @@ import {
   formatElapsedBetween,
   grantEffect,
 } from "./trace-links";
-import { usePrincipalActivity } from "./ActorTimeline";
+import { usePrincipalActivity, useMomentDetail } from "./ActorTimeline";
 import { isPermissionDeniedError } from "./activity-error";
+
+// Kinds the hub detail route enriches (mirrors @workbench/timeline's
+// detailEnrichedKinds). Kept local so the list mock in tests need not stub it,
+// and so apps/web does not take a direct @workbench/timeline dependency.
+const DETAIL_ENRICHED_KINDS = new Set([
+  "tool_call",
+  "inference_turn",
+  "workflow_run",
+]);
+
+function formatValue(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value, null, 2);
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  const seconds = ms / 1000;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60);
+  return `${minutes}m ${rest}s`;
+}
+
+/** A recorded value in a mono code block; used for tool I/O and turn parts. */
+function ValueBlock({ children }: { children: React.ReactNode }) {
+  return (
+    <pre className="overflow-x-auto rounded-[7px] border border-border bg-surface-2 px-2.5 py-2 font-mono text-[11.5px] text-text-2">
+      {children}
+    </pre>
+  );
+}
+
+/** A quiet, single-line honest absence — no loud gold chip. */
+function Absent({
+  children,
+  "data-testid": testid,
+}: {
+  children: React.ReactNode;
+  "data-testid"?: string;
+}) {
+  return (
+    <span data-testid={testid} className="text-[11.5px] italic text-text-3">
+      {children}
+    </span>
+  );
+}
 
 function fullTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
@@ -33,33 +81,6 @@ function dotClass(entry: TimelineEntry): string {
     return "bg-accent";
   }
   return "bg-blue";
-}
-
-/**
- * An honest "not recorded yet" chip in the gold gap hue. The tracking ticket
- * stays in the title attribute (code, not user-facing prose). Carries the
- * caller's testid so each specific gap (tokens / tool I/O / grant usage) is
- * assertable.
- */
-function GapChip({
-  testid,
-  title,
-  children,
-}: {
-  testid: string;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      data-testid={testid}
-      title={title}
-      className="inline-flex items-center gap-1 rounded-[5px] border border-dashed border-cream-deep bg-cream/40 px-1.5 py-0.5 font-mono text-[10px] text-gold"
-    >
-      <Info className="h-2.5 w-2.5" />
-      {children}
-    </span>
-  );
 }
 
 function DecompRow({
@@ -89,20 +110,30 @@ function DecompRow({
 export function MomentDecomposition({
   entry,
   previous,
+  tenantId,
+  principalId,
 }: {
   entry: TimelineEntry;
   /** The chronologically-previous (older) moment, for the elapsed gap. */
   previous: TimelineEntry | undefined;
+  tenantId: string;
+  principalId: string;
 }) {
   const { headline, detail } = describeActivityEntry(entry);
   const meta = KIND_META[entry.kind];
   const link = entityLinkForEntry(entry);
   const elapsed = formatElapsedBetween(previous?.timestamp, entry.timestamp);
   const effect = grantEffect(entry);
-  const tokenBearing =
-    entry.kind === "inference_turn" ||
-    entry.kind === "tool_call" ||
-    entry.kind === "message";
+
+  const detailQuery = useMomentDetail(
+    tenantId,
+    principalId,
+    { kind: entry.kind, id: entry.id },
+    { enabled: DETAIL_ENRICHED_KINDS.has(entry.kind) },
+  );
+  const moment: MomentDetail | undefined = detailQuery.data;
+  const detailLoading =
+    detailQuery.isLoading && detailQuery.fetchStatus !== "idle";
 
   return (
     <div
@@ -124,6 +155,11 @@ export function MomentDecomposition({
             {GRANT_EFFECT_LABEL[effect]}
           </Badge>
         )}
+        {entry.kind === "tool_call" && moment?.toolCall?.isError === true && (
+          <Badge tone="danger" data-testid="moment-tool-errored">
+            Errored
+          </Badge>
+        )}
       </div>
 
       <div className="col-span-2">
@@ -136,21 +172,86 @@ export function MomentDecomposition({
       {entry.kind === "tool_call" && (
         <>
           <DecompRow label="Input">
-            <GapChip
-              testid="gap-tool-io"
-              title="Tool inputs and which records a call touched are not stored yet (CL-2724)."
-            >
-              inputs not recorded
-            </GapChip>
+            {detailLoading && moment === undefined ? (
+              <Absent>Loading…</Absent>
+            ) : moment?.toolCall?.input !== undefined &&
+              moment.toolCall.input !== null ? (
+              <ValueBlock>{formatValue(moment.toolCall.input)}</ValueBlock>
+            ) : (
+              <Absent data-testid="moment-input-empty">
+                No input recorded for this call
+              </Absent>
+            )}
           </DecompRow>
           <DecompRow label="Output">
-            <GapChip
-              testid="gap-tool-io-output"
-              title="Which records this call returned is not stored yet (CL-2724)."
-            >
-              which records? not recorded
-            </GapChip>
+            {detailLoading && moment === undefined ? (
+              <Absent>Loading…</Absent>
+            ) : moment?.toolCall?.output !== undefined &&
+              moment.toolCall.output !== null ? (
+              <ValueBlock>{formatValue(moment.toolCall.output)}</ValueBlock>
+            ) : (
+              <Absent data-testid="moment-output-empty">
+                No output recorded for this call
+              </Absent>
+            )}
           </DecompRow>
+        </>
+      )}
+
+      {entry.kind === "inference_turn" && moment?.turn !== undefined && (
+        <>
+          {moment.turn.model !== null && (
+            <DecompRow label="Model">
+              <span
+                data-testid="moment-turn-model"
+                className="font-mono text-[11.5px] text-text-2"
+              >
+                {moment.turn.model}
+              </span>
+            </DecompRow>
+          )}
+          {moment.turn.durationMs !== null && (
+            <DecompRow label="Duration">
+              <span
+                data-testid="moment-duration"
+                className="font-mono text-[11.5px] text-text-2"
+              >
+                {formatDuration(moment.turn.durationMs)}
+              </span>
+            </DecompRow>
+          )}
+          {moment.turn.parts.length > 0 && (
+            <DecompRow label="Parts">
+              <span
+                data-testid="moment-turn-parts"
+                className="text-[11.5px] text-text-2"
+              >
+                {moment.turn.parts.map((p) => p.type).join(", ")}
+              </span>
+            </DecompRow>
+          )}
+        </>
+      )}
+
+      {entry.kind === "workflow_run" && moment?.run !== undefined && (
+        <>
+          {moment.run.durationMs !== null && (
+            <DecompRow label="Duration">
+              <span
+                data-testid="moment-duration"
+                className="font-mono text-[11.5px] text-text-2"
+              >
+                {formatDuration(moment.run.durationMs)}
+              </span>
+            </DecompRow>
+          )}
+          {moment.run.outcome !== null && (
+            <DecompRow label="Outcome">
+              <span className="font-mono text-[11.5px] text-text-2">
+                {moment.run.outcome}
+              </span>
+            </DecompRow>
+          )}
         </>
       )}
 
@@ -179,28 +280,6 @@ export function MomentDecomposition({
           {entry.sourceTable}
         </span>
       </DecompRow>
-
-      {tokenBearing && (
-        <DecompRow label="Tokens">
-          <GapChip
-            testid="gap-tokens"
-            title="Token usage is recorded per model and per day, not per moment yet (CL-2723)."
-          >
-            not attributed per moment
-          </GapChip>
-        </DecompRow>
-      )}
-
-      {entry.kind === "grant" && (
-        <DecompRow label="Used">
-          <GapChip
-            testid="gap-grant-usage"
-            title="Whether and when this grant was exercised is not persisted yet (CL-2722)."
-          >
-            not recorded yet
-          </GapChip>
-        </DecompRow>
-      )}
 
       {link !== null && (
         <div className="col-span-2">
@@ -438,6 +517,8 @@ export function MomentWalker({
                   <MomentDecomposition
                     entry={entry}
                     previous={entries[index + 1]}
+                    tenantId={tenantId}
+                    principalId={principalId}
                   />
                 </div>
               )}

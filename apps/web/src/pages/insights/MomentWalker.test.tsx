@@ -23,6 +23,10 @@ type TimelineEntry = {
 let activityEntries: TimelineEntry[] = [];
 let activityError = false;
 let activityErrorStatus: number | undefined;
+let detailResult: Record<string, unknown> = {
+  kind: "workflow_run",
+  id: "run_1",
+};
 
 mock.module("@workbench/client", () => ({
   getPrincipalActivity: () => {
@@ -36,6 +40,7 @@ mock.module("@workbench/client", () => ({
     }
     return Promise.resolve({ entries: activityEntries, nextCursor: null });
   },
+  getMomentDetail: () => Promise.resolve(detailResult),
 }));
 
 const { MomentWalker } = await import("./MomentWalker");
@@ -82,6 +87,7 @@ beforeEach(() => {
   activityEntries = [];
   activityError = false;
   activityErrorStatus = undefined;
+  detailResult = { kind: "workflow_run", id: "run_1" };
 });
 afterEach(() => cleanup());
 
@@ -119,29 +125,128 @@ describe("MomentWalker", () => {
     expect(link.getAttribute("href")).toBe("/insights/trace/run_1");
   });
 
-  it("steps to the next (older) moment on ArrowDown and expands it", async () => {
+  it("renders a tool_call moment's REAL recorded input and output from the detail join", async () => {
     activityEntries = ENTRIES;
+    detailResult = {
+      kind: "tool_call",
+      id: "tc_1",
+      toolCall: {
+        toolName: "attio__list_objects",
+        input: { query: "acme corp" },
+        output: "Found 3 records",
+        isError: false,
+      },
+    };
     renderWalker();
 
     await waitFor(() => screen.getByRole("listbox"));
     const listbox = screen.getByRole("listbox");
 
-    // First moment selected initially.
-    expect(
-      screen.getAllByRole("option")[0]!.getAttribute("aria-selected"),
-    ).toBe("true");
-
     fireEvent.keyDown(listbox, { key: "ArrowDown" });
     const options = screen.getAllByRole("option");
     expect(options[1]!.getAttribute("aria-selected")).toBe("true");
-    expect(options[0]!.getAttribute("aria-selected")).toBe("false");
 
-    // The now-selected tool_call moment surfaces its honest tool-I/O gap.
     const panel = screen.getByTestId("moment-decomposition");
-    within(panel).getByTestId("gap-tool-io");
+    // Real input arguments and output content, not a "not recorded" chip.
+    await waitFor(() => within(panel).getByText(/acme corp/));
+    within(panel).getByText(/Found 3 records/);
   });
 
-  it("shows the grant effect and an honest grant-usage gap on a grant moment", async () => {
+  it("marks an errored tool call distinctly from a successful one", async () => {
+    activityEntries = ENTRIES;
+    detailResult = {
+      kind: "tool_call",
+      id: "tc_1",
+      toolCall: {
+        toolName: "attio__list_objects",
+        input: { query: "acme corp" },
+        output: "rate limited",
+        isError: true,
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-tool-errored"));
+    within(panel).getByText("Errored");
+  });
+
+  it("does not mark a successful tool call as errored", async () => {
+    activityEntries = ENTRIES;
+    detailResult = {
+      kind: "tool_call",
+      id: "tc_1",
+      toolCall: {
+        toolName: "attio__list_objects",
+        input: { query: "acme corp" },
+        output: "Found 3 records",
+        isError: false,
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByText(/Found 3 records/));
+    expect(within(panel).queryByTestId("moment-tool-errored")).toBeNull();
+  });
+
+  it("shows an honest, quiet absence when a tool call recorded no I/O", async () => {
+    activityEntries = ENTRIES;
+    detailResult = {
+      kind: "tool_call",
+      id: "tc_1",
+      toolCall: {
+        toolName: null,
+        input: null,
+        output: null,
+        isError: false,
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-input-empty"));
+    within(panel).getByTestId("moment-output-empty");
+  });
+
+  it("surfaces a real derived duration on an inference_turn moment", async () => {
+    activityEntries = [
+      {
+        id: "turn_1",
+        kind: "inference_turn",
+        sourceTable: "inference_turn",
+        timestamp: "2026-07-01T12:00:00.000Z",
+        summary: "deepseek-v4-flash",
+      },
+    ];
+    detailResult = {
+      kind: "inference_turn",
+      id: "turn_1",
+      turn: {
+        model: "deepseek-v4-flash",
+        durationMs: 4200,
+        parts: [{ type: "text", content: "hi" }],
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-duration"));
+    within(panel).getByText("4.2s");
+    within(panel).getByTestId("moment-turn-model");
+  });
+
+  it("shows the grant effect on a grant moment (no loud usage-gap chip)", async () => {
     activityEntries = ENTRIES;
     renderWalker();
 
@@ -151,7 +256,7 @@ describe("MomentWalker", () => {
 
     const panel = screen.getByTestId("moment-decomposition");
     within(panel).getByText("Allowed");
-    within(panel).getByTestId("gap-grant-usage");
+    expect(within(panel).queryByTestId("gap-grant-usage")).toBeNull();
   });
 
   it("keeps the grant headline and effect badge in agreement across effects", async () => {

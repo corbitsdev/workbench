@@ -6,6 +6,7 @@ import { describe, expect, it, mock } from "bun:test";
 import "./test-setup";
 import {
   HttpError,
+  getMomentDetail,
   getPrincipalActivity,
   isForbiddenError,
   searchActors,
@@ -227,5 +228,67 @@ describe("getPrincipalActivity", () => {
         { tenantId: "ten_1", principalId: "prn_1" },
       ),
     ).rejects.toThrow(/Invalid \/activity response/);
+  });
+});
+
+describe("getMomentDetail", () => {
+  it("builds the tenant-scoped detail URL from kind and id", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ kind: "tool_call", id: "evt_1" })),
+    );
+
+    await getMomentDetail(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten/1", principalId: "prn_1", kind: "tool_call", id: "e/1" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      `${BASE}/api/tenants/ten%2F1/principals/prn_1/activity/tool_call/e%2F1/detail`,
+    );
+  });
+
+  it("parses a tool-call detail block with real input and output", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({
+          kind: "tool_call",
+          id: "evt_1",
+          toolCall: {
+            toolName: "search_web",
+            input: { query: "acme" },
+            output: "Found 3 results",
+            isError: false,
+          },
+        }),
+      ),
+    );
+
+    const detail = await getMomentDetail(
+      { baseUrl: BASE, fetch: fetcher },
+      {
+        tenantId: "ten_1",
+        principalId: "prn_1",
+        kind: "tool_call",
+        id: "evt_1",
+      },
+    );
+
+    expect(detail.toolCall?.input).toEqual({ query: "acme" });
+    expect(detail.toolCall?.output).toBe("Found 3 results");
+  });
+
+  it("rejects a malformed detail body", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ kind: "tool_call", toolCall: { isError: "nope" } }),
+      ),
+    );
+
+    await expect(
+      getMomentDetail(
+        { baseUrl: BASE, fetch: fetcher },
+        { tenantId: "ten_1", principalId: "prn_1", kind: "tool_call", id: "e" },
+      ),
+    ).rejects.toThrow(/Invalid moment detail response/);
   });
 });

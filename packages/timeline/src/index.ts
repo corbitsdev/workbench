@@ -32,3 +32,23 @@ export {
   buildTimelineUnionQuery,
   type TimelineQueryArgs,
 } from "./union-sql";
+export {
+  MomentDetailSchema,
+  MomentToolCallDetailSchema,
+  MomentTurnDetailSchema,
+  MomentTurnPartSchema,
+  MomentRunDetailSchema,
+  detailEnrichedKinds,
+  isDetailEnrichedKind,
+  buildToolCallDetailQuery,
+  buildTurnDetailQuery,
+  buildTurnPartsQuery,
+  buildRunDetailQuery,
+  type MomentDetail,
+  type MomentToolCallDetail,
+  type MomentTurnDetail,
+  type MomentTurnPart,
+  type MomentRunDetail,
+  type MomentDetailScope,
+  type DetailEnrichedKind,
+} from "./moment-detail";
