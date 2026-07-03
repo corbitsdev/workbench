@@ -175,7 +175,10 @@ describe("attio-task-agent native workflow", () => {
     expect(members.agent.tags?.[STEP_TOOL_TAG]).toContain(
       "attio_list_workspace_members",
     );
-    // Empty argMap pins the no-arg tool to {} regardless of the trigger (CL-2658).
+    // First step, no `input` selector: on the sidecar path the supervisor hands
+    // the run's string trigger payload to the step as tool args, which the
+    // harness rejects ("requires an object … got string"). An empty argMap pins
+    // the no-arg tool to {} regardless of the trigger. (CL-2658)
     expect(JSON.parse(members.agent.tags?.[STEP_ARGMAP_TAG] ?? "null")).toEqual(
       {},
     );
