@@ -12,6 +12,7 @@ import {
   LiveStatusSlot,
   liveStatusLabel,
   parseComparisonResult,
+  runStartLabel,
   type ComparisonResult,
   type WorkflowCredential,
   type WorkflowPanelProps,
@@ -170,6 +171,7 @@ function emptySlot(): SlotState {
 
 function ConfigScreen({
   phase,
+  startLabel,
   connected,
   signalPending,
   credentials,
@@ -177,6 +179,7 @@ function ConfigScreen({
   onSubmit,
 }: {
   phase: StepPhase | undefined;
+  startLabel: string;
   connected: boolean;
   signalPending: boolean;
   credentials: WorkflowCredential[] | undefined;
@@ -297,7 +300,7 @@ function ConfigScreen({
   };
 
   if (phase !== "awaiting-signal") {
-    return <LoadingState label="Waiting for the run to start…" />;
+    return <LoadingState label={startLabel} />;
   }
 
   return (
@@ -814,10 +817,15 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         ) : current === "config" ? (
           <ConfigScreen
             phase={phaseFor(state, "config")}
+            startLabel={runStartLabel(state)}
             connected={connected}
             signalPending={signalPending}
             credentials={credentials}

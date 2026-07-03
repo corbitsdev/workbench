@@ -978,7 +978,11 @@ export function Panel(props: WorkflowPanelProps) {
     if (failed) {
       return (
         <div className="space-y-4">
-          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
           <Button variant="ghost" size="sm" onClick={onClose}>
             Close
           </Button>

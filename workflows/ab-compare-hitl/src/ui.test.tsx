@@ -53,6 +53,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
   const onClose = mock(() => {});
   const props: WorkflowPanelProps = {
     deploymentId: "dep_1",
+    logRead: true,
     state: makeState({}),
     connected: true,
     stepOutputs: {},
@@ -220,13 +221,39 @@ describe("ab-compare-hitl Panel — persist screen", () => {
   });
 });
 
+describe("ab-compare-hitl Panel — run start", () => {
+  it("shows an honest 'Starting the run' state before the first gate is reached", () => {
+    // Record exists, log has no steps yet, run-level phase pending: the panel
+    // must read as starting, never sit on an indefinite "Waiting…" placeholder.
+    renderPanel({ state: makeState({}, "pending") });
+    screen.getByText("Starting the run…");
+    expect(screen.queryByText("Waiting for the run to start…")).toBeNull();
+  });
+
+  it("shows 'Getting the run ready' once the run is running but no step has activity", () => {
+    renderPanel({ state: makeState({}, "running") });
+    screen.getByText("Getting the run ready…");
+  });
+
+  it("shows the real config gate once the first step is awaiting a signal", () => {
+    renderPanel({ state: makeState({ config: "awaiting-signal" }) });
+    screen.getByText(
+      "Choose how many comparisons you want and pick a provider for each slot.",
+    );
+    expect(screen.queryByText("Starting the run…")).toBeNull();
+  });
+});
+
 describe("ab-compare-hitl Panel — failure state", () => {
-  it("shows a failure message when the run failed", () => {
+  it("reports 'This run didn't start' when the run failed before any step ran (CL-2727)", () => {
+    // The liveness sweep marks a stuck-starting run failed in the index while the
+    // log recorded no step — the panel must render a legible didn't-start state,
+    // not an infinite spinner.
     renderPanel({
       state: { phase: "failed", steps: new Map() } as unknown as RunState,
     });
-    screen.getByText("Run failed");
-    screen.getByText(/No error details are available/);
+    screen.getByText("This run didn't start");
+    screen.getByText(/couldn't be started/);
   });
 
   it("names the failed step and shows the sanitized error, never raw internals (CL-2659)", () => {

@@ -29,6 +29,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
   const props: WorkflowPanelProps = {
     deploymentId: "dep-1",
     state: null,
+    logRead: true,
     connected: true,
     stepOutputs: {},
     signalPending: false,

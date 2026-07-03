@@ -63,6 +63,7 @@ function renderPanel(overrides: Partial<WorkflowPanelProps> = {}) {
   const onClose = mock(() => {});
   const props: WorkflowPanelProps = {
     deploymentId: "dep_1",
+    logRead: true,
     state: makeState({}),
     connected: true,
     stepOutputs: {},
@@ -232,12 +233,12 @@ describe("Panel", () => {
     screen.getByText("document");
   });
 
-  it("shows a failure message when the run failed", () => {
+  it("reports 'This run didn't start' when the run failed before any step ran (CL-2727)", () => {
     renderPanel({
       state: { phase: "failed", steps: new Map() } as unknown as RunState,
     });
-    screen.getByText("Run failed");
-    screen.getByText(/No error details are available/);
+    screen.getByText("This run didn't start");
+    screen.getByText(/couldn't be started/);
   });
 
   it("names the failed step and shows the sanitized error, never raw internals (CL-2659)", () => {

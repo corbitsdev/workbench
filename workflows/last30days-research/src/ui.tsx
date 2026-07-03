@@ -507,7 +507,11 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         ) : current === "intake" ? (
           <IntakeScreen
             phase={phaseFor(state, "intake")}

@@ -5,6 +5,7 @@ import { Panel } from "./ui";
 
 const baseProps = {
   deploymentId: "run-1",
+  logRead: true,
   state: null,
   connected: true,
   stepOutputs: {},
@@ -352,13 +353,38 @@ describe("last30days Panel", () => {
   });
 
   test("falls back to an honest no-details message on a failed run with no step error", () => {
+    // A step ran and failed (so the run DID start) but carries no error — heading
+    // stays "Run failed", message degrades to the honest no-details line. Uses a
+    // step id outside DISPLAY_STEPS so no display label is resolved.
     render(
       <Panel
         {...baseProps}
-        state={{ phase: "failed", steps: new Map() } as unknown as RunState}
+        state={
+          {
+            phase: "failed",
+            steps: new Map([["ghost", { phase: "failed" }]]),
+          } as unknown as RunState
+        }
       />,
     );
     screen.getByText("Run failed");
     screen.getByText(/No error details are available/);
+  });
+
+  test("does NOT claim didn't-start when the log was unavailable on a failed run", () => {
+    // Same empty-step shape, but the log was unavailable (logRead false) so the
+    // run state was synthesized from the index — we don't know whether it
+    // started, so show the generic couldn't-load copy, never "This run didn't
+    // start" (CL-2729).
+    render(
+      <Panel
+        {...baseProps}
+        logRead={false}
+        state={{ phase: "failed", steps: new Map() } as unknown as RunState}
+      />,
+    );
+    screen.getByText("Run failed");
+    screen.getByText(/couldn't load this run's details/);
+    expect(screen.queryByText("This run didn't start")).toBeNull();
   });
 });

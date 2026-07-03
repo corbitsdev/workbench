@@ -256,6 +256,7 @@ function WorkflowRunPaneInner({
           <Panel
             deploymentId={runId}
             state={state}
+            logRead={logState !== undefined}
             connected={
               record.status === "running" || record.status === "awaiting"
             }

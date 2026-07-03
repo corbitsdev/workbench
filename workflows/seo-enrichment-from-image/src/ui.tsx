@@ -11,6 +11,7 @@ import {
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
+  runStartLabel,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
@@ -138,11 +139,13 @@ function SectionCard({
 
 function IntakeSection({
   phase,
+  startLabel,
   connected,
   signalPending,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
+  startLabel: string;
   connected: boolean;
   signalPending: boolean;
   onSubmit: (payload: { imageUrl: string; pageUrl: string }) => void;
@@ -166,7 +169,7 @@ function IntakeSection({
   if (phase !== "awaiting-signal") {
     return (
       <SectionCard title="Intake — product URLs">
-        <p className="text-sm text-text-3">Waiting for the run to start.</p>
+        <p className="text-sm text-text-3">{startLabel}</p>
       </SectionCard>
     );
   }
@@ -465,7 +468,11 @@ export function Panel(props: WorkflowPanelProps) {
 
       {failed && (
         <div className="mx-6 mt-4">
-          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         </div>
       )}
 
@@ -473,6 +480,7 @@ export function Panel(props: WorkflowPanelProps) {
         {activeStep === "intake" && (
           <IntakeSection
             phase={stepPhase(state, "intake")}
+            startLabel={runStartLabel(state)}
             connected={connected}
             signalPending={signalPending}
             onSubmit={handleIntakeSubmit}

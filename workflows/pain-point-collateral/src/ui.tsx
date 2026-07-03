@@ -1113,7 +1113,13 @@ export function Panel(props: WorkflowPanelProps) {
 
       {/* Body — renders ONLY the active display group */}
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
-        {failed && <FailedRunNotice state={state} steps={DISPLAY_STEPS} />}
+        {failed && (
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
+        )}
 
         {/* Group 0 — Transcript: intake → select (note-selection signal) → fetch */}
         {group === "transcript" && (

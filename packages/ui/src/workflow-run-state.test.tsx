@@ -12,6 +12,8 @@ import {
   liveStatusLabel,
   LiveStatus,
   LiveStatusSlot,
+  runNeverStarted,
+  runStartLabel,
   type DisplayStep,
 } from "./workflow-run-state";
 
@@ -275,7 +277,7 @@ describe("workflow-run-state", () => {
         ],
       ]),
     } as unknown as RunState;
-    render(<FailedRunNotice state={state} steps={STEPS} />);
+    render(<FailedRunNotice state={state} steps={STEPS} logRead />);
     screen.getByText("Run failed at Report");
     screen.getByText(/Something went wrong inside this workflow run/);
     expect(screen.queryByText(/ins_/)).toBeNull();
@@ -284,13 +286,109 @@ describe("workflow-run-state", () => {
   });
 
   test("FailedRunNotice falls back to an honest no-details message when no step carries lastError", () => {
+    // A step ran and failed (so the run DID start) but carries no error — heading
+    // stays "Run failed", message degrades to the honest no-details line. Uses a
+    // step id outside STEPS so no display label is resolved.
+    const state = {
+      phase: "failed",
+      steps: new Map([["ghost", { phase: "failed" }]]),
+    } as unknown as RunState;
+    render(<FailedRunNotice state={state} steps={STEPS} logRead />);
+    screen.getByText("Run failed");
+    screen.getByText(/No error details are available/);
+  });
+
+  test("runStartLabel reports an honest run-start phase, never an indefinite wait", () => {
+    // No state yet / queued to start → "Starting the run".
+    expect(runStartLabel(null)).toBe("Starting the run…");
+    expect(
+      runStartLabel({
+        phase: "pending",
+        steps: new Map(),
+      } as unknown as RunState),
+    ).toBe("Starting the run…");
+    // Run-level phase moved to running but no step has activity yet → the runtime
+    // is booting the first step.
+    expect(
+      runStartLabel({
+        phase: "running",
+        steps: new Map(),
+      } as unknown as RunState),
+    ).toBe("Getting the run ready…");
+  });
+
+  test("runNeverStarted is true only for a genuinely-read empty log", () => {
+    expect(runNeverStarted(null, true)).toBe(false);
+    // Read log, empty steps → genuine never-started.
+    expect(
+      runNeverStarted(
+        {
+          phase: "failed",
+          steps: new Map(),
+        } as unknown as RunState,
+        true,
+      ),
+    ).toBe(true);
+    // Same empty shape but the log was UNAVAILABLE (synthesized from the index) —
+    // we don't know whether it started, so this is NOT never-started.
+    expect(
+      runNeverStarted(
+        {
+          phase: "failed",
+          steps: new Map(),
+        } as unknown as RunState,
+        false,
+      ),
+    ).toBe(false);
+    expect(runNeverStarted(stateFrom([["intake", "in-flight"]]), true)).toBe(
+      false,
+    );
+  });
+
+  test("FailedRunNotice reports 'This run didn't start' when a READ log recorded no step", () => {
+    // The CL-2727 liveness sweep marks a stuck-starting run failed in the index
+    // while its READ log recorded no step — surface an honest didn't-start state,
+    // not a generic "Run failed" (or an infinite spinner).
     const state = {
       phase: "failed",
       steps: new Map(),
     } as unknown as RunState;
-    render(<FailedRunNotice state={state} steps={STEPS} />);
+    render(<FailedRunNotice state={state} steps={STEPS} logRead />);
+    screen.getByText("This run didn't start");
+    screen.getByText(/couldn't be started/);
+  });
+
+  test("FailedRunNotice does NOT claim didn't-start when the log was UNAVAILABLE", () => {
+    // A failed run whose log couldn't be read (logError / deployment-less legacy
+    // run) synthesizes the same empty-step shape, but we don't know whether it
+    // started — show the generic "Run failed" + couldn't-load copy, never the
+    // false "This run didn't start" claim (CL-2729).
+    const state = {
+      phase: "failed",
+      steps: new Map(),
+    } as unknown as RunState;
+    render(<FailedRunNotice state={state} steps={STEPS} logRead={false} />);
     screen.getByText("Run failed");
-    screen.getByText(/No error details are available/);
+    screen.getByText(/couldn't load this run's details/);
+    expect(screen.queryByText("This run didn't start")).toBeNull();
+  });
+
+  test("a run that reached a step keeps the generic 'Run failed', not the didn't-start copy", () => {
+    // A step ran (boot) before the failure, so this is NOT a never-started run —
+    // heading stays "Run failed" and the sanitized step reason is shown.
+    const withReason = {
+      phase: "failed",
+      steps: new Map([
+        [
+          "boot",
+          { phase: "failed", lastError: { message: "Attio API error: 403" } },
+        ],
+      ]),
+    } as unknown as RunState;
+    render(<FailedRunNotice state={withReason} steps={STEPS} logRead />);
+    screen.getByText("Run failed");
+    screen.getByText(/Attio declined the request/);
+    expect(screen.queryByText("This run didn't start")).toBeNull();
   });
 
   test("failedDisplayStepLabel returns the failed display step's label", () => {

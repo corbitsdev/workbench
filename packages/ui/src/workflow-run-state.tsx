@@ -228,8 +228,50 @@ export function failedDisplayStepLabel(
   return null;
 }
 
+/**
+ * True only for a genuine never-started run: the run has failed, its step map is
+ * empty, AND that emptiness came from an event log that was actually READ
+ * (`logRead === true`). The CL-2727 liveness sweep marks a stuck-starting run
+ * `failed` in the index while its read log holds no step, so the folded state
+ * carries a terminal phase with a genuinely-empty step map — that is the only
+ * case that earns the honest "This run didn't start" copy.
+ *
+ * An empty step map is NOT sufficient on its own: the log-unavailable fallback
+ * (`runStateFromRecord` — a legacy deployment-less run or a log read error)
+ * synthesizes the same `{phase:"failed", steps:∅}` shape for ANY failed run,
+ * even one that genuinely progressed far before failing. In that case we do not
+ * know whether it started, so `logRead` is false and this returns false — the
+ * caller shows the generic "Run failed" copy instead of falsely claiming it
+ * never started (CL-2729).
+ */
+export function runNeverStarted(
+  state: RunState | null,
+  logRead: boolean,
+): boolean {
+  return state !== null && logRead && state.steps.size === 0;
+}
+
+/**
+ * Honest copy for the pre-interactive window of a run's FIRST step: the run
+ * record exists but the log has not yet recorded any step activity, so the panel
+ * cannot yet show a gate or an activity line. Driven by the folded run-level
+ * phase — `pending` (or no state yet) means the run is queued to start; anything
+ * else means the runtime is booting the first step. Never an indefinite "waiting"
+ * placeholder: every phase maps to a truthful present-progress line.
+ */
+export function runStartLabel(state: RunState | null): string {
+  if (state === null || state.phase === "pending") return "Starting the run…";
+  return "Getting the run ready…";
+}
+
 const NO_ERROR_DETAILS =
   "No error details are available. Start a new run to try again.";
+
+const NEVER_STARTED_DETAILS =
+  "This run couldn't be started. Start a new run to try again.";
+
+const LOG_UNAVAILABLE_DETAILS =
+  "We couldn't load this run's details. Refresh to try again, or start a new run.";
 
 /**
  * The one failed-run notice every workflow panel renders (CL-2659): which
@@ -237,17 +279,43 @@ const NO_ERROR_DETAILS =
  * (CL-2660) — never the raw step error, and never bespoke per-panel error
  * text. Falls back to an honest no-details line when no step carries a
  * `lastError`.
+ *
+ * `logRead` tells the two identical-looking empty-step shapes apart (CL-2729):
+ * `true` when the empty step map came from an event log that was actually read
+ * (the genuine never-started sweep case → "This run didn't start"), `false` when
+ * the log was unavailable and the state was synthesized from the run index (a
+ * legacy deployment-less run or a read error → we don't know whether it started,
+ * so show the generic "Run failed" / couldn't-load copy, never a false
+ * didn't-start claim).
  */
 export function FailedRunNotice({
   state,
   steps,
+  logRead,
 }: {
   state: RunState | null;
   steps: readonly DisplayStep[];
+  logRead: boolean;
 }) {
+  const neverStarted = runNeverStarted(state, logRead);
+  const logUnavailable = !logRead && state !== null && state.steps.size === 0;
   const stepLabel = failedDisplayStepLabel(state, steps);
-  const heading =
-    stepLabel === null ? "Run failed" : `Run failed at ${stepLabel}`;
+  let heading: string;
+  if (neverStarted) {
+    heading = "This run didn't start";
+  } else if (stepLabel === null) {
+    heading = "Run failed";
+  } else {
+    heading = `Run failed at ${stepLabel}`;
+  }
+  let fallbackDetails: string;
+  if (neverStarted) {
+    fallbackDetails = NEVER_STARTED_DETAILS;
+  } else if (logUnavailable) {
+    fallbackDetails = LOG_UNAVAILABLE_DETAILS;
+  } else {
+    fallbackDetails = NO_ERROR_DETAILS;
+  }
   return (
     <div
       role="alert"
@@ -255,7 +323,7 @@ export function FailedRunNotice({
     >
       <p className="text-orange-deep text-sm font-medium">{heading}</p>
       <p className="text-orange-deep mt-1 text-sm">
-        {failedRunErrorMessage(state) ?? NO_ERROR_DETAILS}
+        {failedRunErrorMessage(state) ?? fallbackDetails}
       </p>
     </div>
   );

@@ -102,6 +102,7 @@ describe("Panel — transcript selection (step 1)", () => {
   it("renders the note list when intake is complete and select awaits signal", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "completed", select: "awaiting-signal" })}
         connected
@@ -121,6 +122,7 @@ describe("Panel — transcript selection (step 1)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "completed", select: "awaiting-signal" })}
         connected
@@ -146,6 +148,7 @@ describe("Panel — transcript selection (step 1)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     const props = {
       deploymentId: "dep_1",
+      logRead: true,
       connected: true,
       signalPending: false,
       stepOutputs: { intake: NOTE_LIST },
@@ -177,6 +180,7 @@ describe("Panel — transcript selection (step 1)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "completed" })}
         connected
@@ -196,6 +200,7 @@ describe("Panel — transcript selection (step 1)", () => {
   it("shows a loading placeholder while intake is in-flight", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "in-flight" })}
         connected
@@ -212,6 +217,7 @@ describe("Panel — transcript selection (step 1)", () => {
   it("shows a malformed error when note-list content is invalid JSON", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "completed", select: "awaiting-signal" })}
         connected
@@ -234,6 +240,7 @@ describe("Panel — context input (step 2)", () => {
   it("renders the context textarea when context awaits signal", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -266,6 +273,7 @@ describe("Panel — context input (step 2)", () => {
     // the panel must show the context step, not fall back to transcript.
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ context: "awaiting-signal" })}
         connected
@@ -290,6 +298,7 @@ describe("Panel — context input (step 2)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -325,6 +334,7 @@ describe("Panel — context input (step 2)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -357,6 +367,7 @@ describe("Panel — pain point selection (step 3)", () => {
   it("renders pain points as checkboxes when ppSelection awaits signal", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -385,6 +396,7 @@ describe("Panel — pain point selection (step 3)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -423,6 +435,7 @@ describe("Panel — pain point selection (step 3)", () => {
   it("disables submit when no pain points are selected", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -449,6 +462,7 @@ describe("Panel — pain point selection (step 3)", () => {
   it("shows a placeholder while analyze is in-flight", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -471,6 +485,7 @@ describe("Panel — pain point selection (step 3)", () => {
   it("shows a malformed error when analyze output is not valid JSON", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -503,6 +518,7 @@ describe("Panel — format selection (step 4)", () => {
   it("renders format checkboxes when fmtSelection awaits signal", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -532,6 +548,7 @@ describe("Panel — format selection (step 4)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -586,6 +603,7 @@ describe("Panel — format selection (step 4)", () => {
   it("disables submit when no formats are selected", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -619,6 +637,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   it("renders generated pieces as approve/deny cards when review awaits signal", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -655,6 +674,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -716,6 +736,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -789,6 +810,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     ];
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={reviewState}
         connected
@@ -811,6 +833,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   it("does not render a second summary list once every piece is decided", async () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={reviewState}
         connected
@@ -836,6 +859,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={reviewState}
         connected
@@ -875,6 +899,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     const onSignal = mock((_name: string, _payload?: unknown) => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={reviewState}
         connected
@@ -910,6 +935,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     });
     const { rerender } = render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={reviewState}
         connected
@@ -934,6 +960,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     // signalPending stays false throughout, proving the disable is phase-derived.
     rerender(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={inFlightReview}
         connected
@@ -961,6 +988,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     };
     const { rerender } = render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ ...base, ppSelection: "awaiting-signal" })}
         connected
@@ -981,6 +1009,7 @@ describe("Panel — review generated pieces (step 5)", () => {
     // Cache flips to in-flight; signalPending stays false. The submit must disable.
     rerender(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ ...base, ppSelection: "in-flight" })}
         connected
@@ -1000,6 +1029,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   it("shows a placeholder while generate is running", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -1028,6 +1058,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   it("reads generated pieces wrapped in a JSON markdown fence", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -1065,6 +1096,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   function renderReviewWithReply(reply: string) {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -1148,6 +1180,7 @@ describe("Panel — review generated pieces (step 5)", () => {
   it("shows a malformed error when generated pieces are not valid", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -1184,6 +1217,7 @@ describe("Panel — done (step 6)", () => {
   it("shows artifact titles when persist is complete", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
@@ -1241,6 +1275,7 @@ describe("Panel — error and close", () => {
   it("renders an error banner when a step has failed", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "completed", analyze: "failed" }, "failed")}
         connected
@@ -1269,6 +1304,7 @@ describe("Panel — error and close", () => {
     };
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={state}
         connected
@@ -1290,6 +1326,7 @@ describe("Panel — error and close", () => {
     const onClose = mock(() => {});
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "in-flight" })}
         connected
@@ -1307,6 +1344,7 @@ describe("Panel — error and close", () => {
   it("shows disconnected status when connected is false", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "in-flight" })}
         connected={false}
@@ -1329,6 +1367,7 @@ describe("Panel — stepper reflects run progress", () => {
   it("marks steps as completed up to the active one", () => {
     render(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           intake: "completed",
