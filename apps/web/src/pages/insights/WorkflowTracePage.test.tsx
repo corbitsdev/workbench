@@ -51,12 +51,13 @@ const RECORD = {
 };
 
 let apiError: Error | null = null;
+let logStateResponse: unknown = LOG_STATE;
 
 mock.module("../../lib/api", () => ({
   ApiError: class ApiError extends Error {},
   api: (_method: string, path: string) => {
     if (apiError) return Promise.reject(apiError);
-    if (path.includes("/state")) return Promise.resolve(LOG_STATE);
+    if (path.includes("/state")) return Promise.resolve(logStateResponse);
     if (path.includes("/records/")) return Promise.resolve(RECORD);
     return Promise.reject(new Error(`unexpected path ${path}`));
   },
@@ -99,6 +100,7 @@ function renderTrace(runId = "run-1") {
 
 beforeEach(() => {
   apiError = null;
+  logStateResponse = LOG_STATE;
 });
 
 afterEach(() => {
@@ -197,5 +199,109 @@ describe("WorkflowTracePage", () => {
     await waitFor(() => {
       screen.getByText(/Couldn’t load this run/);
     });
+  });
+
+  it("renders a sibling's decoded output even when another step's inline blob is malformed", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "completed",
+      lastSeq: 4,
+      steps: [
+        {
+          stepId: "good_step",
+          phase: "completed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          outputRef: `inline:${JSON.stringify({ marker: "decoded-ok" })}`,
+        },
+        {
+          stepId: "broken_step",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+          outputRef: "inline:{not json",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("trace-step").length).toBe(2);
+    });
+    // The good sibling still decodes and its output opens.
+    fireEvent.click(screen.getByText("Output"));
+    await waitFor(() => {
+      expect(screen.getByTestId("trace-payload").textContent).toContain(
+        "decoded-ok",
+      );
+    });
+    // The malformed step is not decoded — it honestly shows the out-of-line note
+    // with its raw ref, never a crash or a silent blank.
+    screen.getByText(/Output stored out of line/);
+    screen.getByText(/inline:\{not json/);
+  });
+
+  it("surfaces the out-of-line note for a blob: (non-inline) outputRef", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "completed",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "huge_step",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+          outputRef: "blob:" + "a".repeat(40),
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      screen.getByText(/Output stored out of line/);
+    });
+    // No Output expander for an unresolvable ref.
+    expect(screen.queryByText("Output")).toBeNull();
+  });
+
+  it("renders the retry attempt count for a step past its first attempt", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "flaky_step",
+          phase: "in-flight",
+          stepType: "agent",
+          currentAttempt: 3,
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      screen.getByText("Attempt 3");
+    });
+  });
+
+  it("renders the parked signal name for an awaiting-signal step", async () => {
+    logStateResponse = {
+      runId: "run-1",
+      phase: "running",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "review_step",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "approve-draft",
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      screen.getByText(/Parked on signal/);
+    });
+    screen.getByText("approve-draft");
   });
 });

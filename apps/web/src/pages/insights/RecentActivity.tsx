@@ -1,51 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
-import {
-  CheckCircle2,
-  ChevronRight,
-  CircleDot,
-  Database,
-  FileText,
-  KeyRound,
-  Layers,
-  MessageCircle,
-  MessageSquare,
-  ShieldCheck,
-  Sparkles,
-  Upload,
-  Workflow,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
-import {
-  getPrincipalActivity,
-  type TimelineEntry,
-  type TimelineEntryKind,
-} from "@workbench/client";
-import { formatRelativeTime } from "../../lib/relative-time";
+import { ChevronRight } from "lucide-react";
+import { Badge } from "@workbench/ui";
+import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
+import { KIND_META, relativeTime } from "./timeline-kinds";
 
 // A short reverse-chronological slice; the deep per-actor timeline (with
 // pagination) lives in the Activity search section. This is the entry point.
 export const RECENT_ACTIVITY_LIMIT = 15;
-
-const KIND_META: Record<
-  TimelineEntryKind,
-  { label: string; icon: LucideIcon }
-> = {
-  session: { label: "Session", icon: CircleDot },
-  message: { label: "Message", icon: MessageSquare },
-  inference_turn: { label: "Inference turn", icon: Sparkles },
-  tool_call: { label: "Tool call", icon: Wrench },
-  workflow_run: { label: "Workflow run", icon: Workflow },
-  artifact: { label: "Artifact", icon: FileText },
-  artifact_version: { label: "Artifact version", icon: Layers },
-  upload: { label: "Upload", icon: Upload },
-  memory: { label: "Memory", icon: Database },
-  approval: { label: "Approval", icon: CheckCircle2 },
-  output_feedback: { label: "Feedback", icon: MessageCircle },
-  grant: { label: "Grant", icon: ShieldCheck },
-  credential: { label: "Credential", icon: KeyRound },
-};
 
 // A workflow_run timeline entry's `id` IS the run id (the workflow_run_record
 // primary key), so it deep-links straight to that run's trace page.
@@ -54,16 +16,16 @@ export function traceHrefForEntry(entry: TimelineEntry): string | null {
   return `/insights/trace/${encodeURIComponent(entry.id)}`;
 }
 
-function RowBody({ entry, now }: { entry: TimelineEntry; now: number }) {
+function RowBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const meta = KIND_META[entry.kind];
   const Icon = meta.icon;
   return (
     <>
       <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" />
       <span className="min-w-0 flex-1">
-        <span className="block text-[10px] font-semibold uppercase tracking-[0.1em] text-text-3">
+        <Badge tone={meta.tone} className="mb-1">
           {meta.label}
-        </span>
+        </Badge>
         <span className="block truncate text-[13px] text-text-2">
           {entry.summary ?? "No details recorded"}
         </span>
@@ -73,13 +35,13 @@ function RowBody({ entry, now }: { entry: TimelineEntry; now: number }) {
         title={new Date(entry.timestamp).toLocaleString()}
         className="shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-text-3"
       >
-        {formatRelativeTime(entry.timestamp, now)}
+        {relativeTime(entry.timestamp, now)}
       </time>
     </>
   );
 }
 
-function ActivityRow({ entry, now }: { entry: TimelineEntry; now: number }) {
+function ActivityRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const href = traceHrefForEntry(entry);
   if (href !== null) {
     return (
@@ -125,7 +87,7 @@ export function RecentActivity({
   });
 
   const entries = query.data?.entries ?? [];
-  const now = Date.now();
+  const now = new Date();
 
   return (
     <div className="flex flex-col gap-3">

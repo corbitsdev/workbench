@@ -99,6 +99,40 @@ describe("stepOutputsFromLog", () => {
   it("returns an empty map for a run with no steps", () => {
     expect(stepOutputsFromLog(logState({}))).toEqual({});
   });
+
+  it("lets sibling steps decode when one step's inline blob is malformed JSON", () => {
+    const outputs = stepOutputsFromLog(
+      logState({
+        steps: [
+          {
+            stepId: "good",
+            phase: "completed",
+            stepType: "deterministic",
+            currentAttempt: 1,
+            outputRef: 'inline:{"ok":true}',
+          },
+          {
+            stepId: "broken",
+            phase: "completed",
+            stepType: "agent",
+            currentAttempt: 1,
+            outputRef: "inline:{not json",
+          },
+          {
+            stepId: "also-good",
+            phase: "completed",
+            stepType: "inline",
+            currentAttempt: 1,
+            outputRef: `inline:${JSON.stringify({ n: 2 })}`,
+          },
+        ],
+      }),
+    );
+    // The malformed step is simply omitted (its raw ref renders the honest
+    // note); its siblings still decode. A whole-run catch would drop all three.
+    expect(outputs).toEqual({ good: { ok: true }, "also-good": { n: 2 } });
+    expect("broken" in outputs).toBe(false);
+  });
 });
 
 describe("runStateFromLog", () => {

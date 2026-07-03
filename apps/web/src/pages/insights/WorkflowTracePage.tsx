@@ -1,6 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { AlertTriangle, ChevronLeft, Clipboard } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  Check,
+  ChevronLeft,
+  Clipboard,
+  Clock,
+  Loader2,
+} from "lucide-react";
 import {
   PagePanel,
   classifyRunError,
@@ -30,14 +38,74 @@ const PHASE_LABEL: Record<LogStepState["phase"], string> = {
   cancelled: "Cancelled",
 };
 
-const PHASE_DOT: Record<LogStepState["phase"], string> = {
-  "in-flight": "bg-orange",
-  "awaiting-signal": "bg-orange",
-  "awaiting-timer": "bg-orange",
-  completed: "bg-green-500",
-  failed: "bg-red-500",
-  cancelled: "bg-border-strong",
-};
+// Per-phase status indicator: never color-only. Each phase pairs a semantic
+// token WITH a distinguishing glyph (mirrors packages/ui StepSidebar). The three
+// formerly-collapsed "orange" phases now read apart at a glance: running spins,
+// awaiting-signal shows an attention bell (a genuine action gate — the one place
+// the action/accent token is warranted), awaiting-timer shows a muted clock.
+// Passive states use neutral/semantic tokens, not the orange action token.
+function PhaseIndicator({ phase }: { phase: LogStepState["phase"] }) {
+  const base =
+    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border";
+  if (phase === "in-flight") {
+    return (
+      <span
+        className={`${base} border-blue/40 bg-blue/10 text-blue`}
+        aria-label="In flight"
+      >
+        <Loader2 className="h-3 w-3 animate-spin" />
+      </span>
+    );
+  }
+  if (phase === "awaiting-signal") {
+    return (
+      <span
+        className={`${base} border-accent/40 bg-accent/10 text-accent`}
+        aria-label="Awaiting approval"
+      >
+        <Bell className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (phase === "awaiting-timer") {
+    return (
+      <span
+        className={`${base} border-border bg-surface-2 text-text-3`}
+        aria-label="Waiting"
+      >
+        <Clock className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (phase === "completed") {
+    return (
+      <span
+        className={`${base} border-green/40 bg-green/10 text-green`}
+        aria-label="Completed"
+      >
+        <Check className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (phase === "failed") {
+    return (
+      <span
+        className={`${base} border-red/40 bg-red/10 text-red`}
+        aria-label="Failed"
+      >
+        <AlertTriangle className="h-3 w-3" />
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`${base} border-border bg-surface-2 text-text-3`}
+      aria-label="Cancelled"
+    >
+      <span className="text-[11px] leading-none">×</span>
+    </span>
+  );
+}
 
 const STEP_TYPE_LABEL: Record<LogStepState["stepType"], string> = {
   human: "Human gate",
@@ -66,10 +134,47 @@ export function formatStepDuration(
   return `${minutes}m ${rest}s`;
 }
 
-function copyText(text: string) {
-  if (typeof navigator !== "undefined" && navigator.clipboard) {
-    void navigator.clipboard.writeText(text).catch(() => undefined);
+function copyText(text: string): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    return Promise.resolve(false);
   }
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => false,
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
+  }, []);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void copyText(text).then((ok) => {
+          if (!ok) return;
+          setCopied(true);
+          if (timer.current !== null) clearTimeout(timer.current);
+          timer.current = setTimeout(() => setCopied(false), 1500);
+        });
+      }}
+      className="flex items-center gap-1 rounded-[6px] border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-green" />
+      ) : (
+        <Clipboard className="h-3 w-3" />
+      )}
+      {copied ? "Copied" : "Copy"}
+    </button>
+  );
 }
 
 function PayloadView({ value }: { value: unknown }) {
@@ -96,18 +201,12 @@ function PayloadView({ value }: { value: unknown }) {
         <button
           type="button"
           onClick={() => setRaw((r) => !r)}
+          aria-pressed={raw}
           className="rounded-[6px] border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
           {raw ? "Pretty" : "Raw JSON"}
         </button>
-        <button
-          type="button"
-          onClick={() => copyText(shown)}
-          className="flex items-center gap-1 rounded-[6px] border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
-        >
-          <Clipboard className="h-3 w-3" />
-          Copy
-        </button>
+        <CopyButton text={shown} />
       </div>
       <pre
         data-testid="trace-payload"
@@ -144,9 +243,7 @@ function TraceStepRow({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span
-            className={`h-2.5 w-2.5 shrink-0 rounded-full ${PHASE_DOT[step.phase]}`}
-          />
+          <PhaseIndicator phase={step.phase} />
           <div className="min-w-0">
             <span className="block truncate text-[13px] font-medium text-text">
               {index + 1}. {toHumanLabel(step.stepId)}
@@ -184,6 +281,7 @@ function TraceStepRow({
           <button
             type="button"
             onClick={() => setOperatorOpen((o) => !o)}
+            aria-expanded={operatorOpen}
             className="mt-2 text-[11px] font-medium text-orange-deep underline-offset-2 hover:underline focus-visible:outline-none"
           >
             {operatorOpen ? "Hide operator details" : "Operator details"}
@@ -211,6 +309,7 @@ function TraceStepRow({
           <button
             type="button"
             onClick={() => setOutputOpen((o) => !o)}
+            aria-expanded={outputOpen}
             className="text-[12px] font-medium text-text-2 transition-colors hover:text-text focus-visible:outline-none"
           >
             {outputOpen ? "Hide output" : "Output"}
@@ -257,16 +356,14 @@ export function WorkflowTracePage() {
   const logState = runStateQuery.data;
   const record = recordQuery.data;
 
-  const stepOutputs = useMemo<Record<string, unknown>>(() => {
-    if (logState === undefined) return {};
-    try {
-      return stepOutputsFromLog(logState);
-    } catch {
-      // A malformed inline payload must not blank the whole trace — the raw ref
-      // still renders per step. Degrade to no decoded outputs.
-      return {};
-    }
-  }, [logState]);
+  // `stepOutputsFromLog` decodes each step's inline blob under its own try/catch
+  // (run-state-adapter), so one malformed payload omits only its step — the rest
+  // decode, and the poisoned step falls back to its raw-ref note. No whole-run
+  // catch here: that would blank every sibling's decoded output.
+  const stepOutputs = useMemo<Record<string, unknown>>(
+    () => (logState === undefined ? {} : stepOutputsFromLog(logState)),
+    [logState],
+  );
 
   const runError = useMemo(() => {
     if (record === undefined || logState === undefined) return null;
@@ -337,7 +434,11 @@ export function WorkflowTracePage() {
             )}
 
             {steps.length > 0 && (
-              <ol className="flex flex-col gap-2.5">
+              <ol
+                role="status"
+                aria-live="polite"
+                className="flex flex-col gap-2.5"
+              >
                 {steps.map((step, index) => (
                   <TraceStepRow
                     key={step.stepId}

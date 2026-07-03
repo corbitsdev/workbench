@@ -125,7 +125,17 @@ export function stepOutputsFromLog(log: LogRunState): Record<string, unknown> {
   for (const s of log.steps) {
     if (s.outputRef === undefined) continue;
     if (!s.outputRef.startsWith(INLINE_REF_PREFIX)) continue;
-    outputs[s.stepId] = JSON.parse(s.outputRef.slice(INLINE_REF_PREFIX.length));
+    // Per-step catch: a single malformed inline blob must poison only its own
+    // step. A whole-run catch discards every decoded sibling and mislabels valid
+    // steps as "stored out of line". A step that fails to decode is simply
+    // omitted — its raw `outputRef` still renders the honest note.
+    try {
+      outputs[s.stepId] = JSON.parse(
+        s.outputRef.slice(INLINE_REF_PREFIX.length),
+      );
+    } catch {
+      continue;
+    }
   }
   return outputs;
 }
