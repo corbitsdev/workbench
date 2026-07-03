@@ -17,6 +17,7 @@ import {
   Sparkline,
   TokenMosaic,
 } from "./insights/viz";
+import { ActorActivitySection } from "./insights/ActorActivity";
 import {
   cacheHitRate,
   computeDelta,
@@ -775,6 +776,15 @@ export function InsightsDashboard() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-5 max-md:px-3">
+        {/* Actor search + per-principal timeline; independent query lifecycle
+            from the 5-min-stale overview below. CL-2526 (trace pages +
+            recent-activity feed) inserts alongside this section. */}
+        {activeTenantId && (
+          <div className="mb-10">
+            <ActorActivitySection tenantId={activeTenantId} />
+          </div>
+        )}
+
         {showSummaryLoading && <SkeletonGrid />}
 
         {!loading && !activeTenantId && (

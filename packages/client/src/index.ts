@@ -7,6 +7,11 @@
 import { type } from "arktype";
 import { Artifact, SessionStatusSchema } from "@workbench/shared";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
+import { TimelineEntrySchema } from "@workbench/timeline";
+import type { TimelineEntry, TimelineEntryKind } from "@workbench/timeline";
+
+export { TimelineEntrySchema };
+export type { TimelineEntry, TimelineEntryKind };
 
 /**
  * Serializable subset of {@link ClientOptions}. `fetch` and `init` carry
@@ -30,8 +35,16 @@ export type ClientOptions = typeof ClientOptionsSchema.infer & {
 };
 
 const API_PREFIX = "api/v1";
+// Tenant-scoped insight routes (actor search, per-principal activity) mount
+// under `/api/tenants/:tenantId/...` behind Interchange's resolveTenant — not
+// under the `/api/v1` prefix the rest of the client uses.
+const TENANT_API_PREFIX = "api";
 
-function resolveUrl(path: string, baseUrl?: string): string {
+function resolveUrl(
+  path: string,
+  baseUrl?: string,
+  apiPrefix: string = API_PREFIX,
+): string {
   const cleanPath = path.replace(/^\//, "");
   const origin =
     baseUrl ??
@@ -43,12 +56,16 @@ function resolveUrl(path: string, baseUrl?: string): string {
       "Cannot resolve request URL: no baseUrl provided and no global location available.",
     );
   }
-  return new URL(`/${API_PREFIX}/${cleanPath}`, origin).toString();
+  return new URL(`/${apiPrefix}/${cleanPath}`, origin).toString();
 }
 
-async function request<T>(path: string, options: ClientOptions): Promise<T> {
+async function request<T>(
+  path: string,
+  options: ClientOptions,
+  apiPrefix: string = API_PREFIX,
+): Promise<T> {
   const doFetch = options.fetch ?? fetch;
-  const url = resolveUrl(path, options.baseUrl);
+  const url = resolveUrl(path, options.baseUrl, apiPrefix);
   const init: RequestInit = {
     method: "GET",
     credentials: "include",
@@ -448,4 +465,92 @@ export async function uploadArtifacts(
     );
   }
   return parsed.artifacts;
+}
+
+// ─── Actor search + per-principal activity (Insights) ───────────────
+
+export const ActorSchema = type({
+  id: "string",
+  kind: "'user' | 'agent'",
+  displayName: "string",
+  "email?": "string",
+  /** Lifecycle status (e.g. `active`, `deactivated`); non-active actors remain findable. */
+  status: "string",
+});
+export type Actor = typeof ActorSchema.infer;
+
+export const ActorSearchResponseSchema = type({ actors: ActorSchema.array() });
+export type ActorSearchResponse = typeof ActorSearchResponseSchema.infer;
+
+export const SearchActorsParamsSchema = type({
+  tenantId: "string",
+  /** Free-text query; the hub requires at least 2 characters. */
+  query: "string",
+  "limit?": "number",
+});
+export type SearchActorsParams = typeof SearchActorsParamsSchema.infer;
+
+/**
+ * Search user and agent principals in a tenant
+ * (`GET /api/tenants/:tenantId/actors/search`). Callers must debounce
+ * (>= 300ms) and gate on a 2+ character query.
+ */
+export async function searchActors(
+  options: ClientOptions = {},
+  params: SearchActorsParams,
+): Promise<Actor[]> {
+  const qs = new URLSearchParams({ query: params.query });
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/actors/search?${qs.toString()}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActorSearchResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /actors/search response: ${parsed.summary}`);
+  }
+  return parsed.actors;
+}
+
+export const ActivityPageSchema = type({
+  entries: TimelineEntrySchema.array(),
+  nextCursor: "string | null",
+});
+export type ActivityPage = typeof ActivityPageSchema.infer;
+
+export const GetPrincipalActivityParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+  /** Page size, 1-100 (hub default 50). */
+  "limit?": "number",
+  /** Opaque keyset cursor from a previous page's `nextCursor`. */
+  "cursor?": "string",
+});
+export type GetPrincipalActivityParams =
+  typeof GetPrincipalActivityParamsSchema.infer;
+
+/**
+ * Fetch one page of a principal's activity timeline, newest first
+ * (`GET /api/tenants/:tenantId/principals/:principalId/activity`). Entries are
+ * the kind-discriminated union from `@workbench/timeline`.
+ */
+export async function getPrincipalActivity(
+  options: ClientOptions = {},
+  params: GetPrincipalActivityParams,
+): Promise<ActivityPage> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.cursor !== undefined) qs.set("cursor", params.cursor);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/activity${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActivityPageSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /activity response: ${parsed.summary}`);
+  }
+  return parsed;
 }
