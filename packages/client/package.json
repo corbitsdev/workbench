@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@workbench/shared": "workspace:*",
+    "@workbench/timeline": "workspace:*",
     "arktype": "^2.2.0"
   },
   "devDependencies": {
