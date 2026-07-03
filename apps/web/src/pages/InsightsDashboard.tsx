@@ -29,6 +29,7 @@ import {
   TokenMosaic,
 } from "./insights/viz";
 import { ActorActivitySection } from "./insights/ActorActivity";
+import { CostInsights } from "./insights/CostInsights";
 import { RecentActivity } from "./insights/RecentActivity";
 import {
   cacheHitRate,
@@ -91,7 +92,7 @@ export function resolveRange(preset: Preset, custom: DateRange): DateRange {
   return { startDate: daysAgoISO(PRESET_DAYS[preset]) };
 }
 
-function formatNumber(n: number): string {
+export function formatNumber(n: number): string {
   return n.toLocaleString();
 }
 
@@ -107,7 +108,7 @@ function totalTokens(s: AnalyticsSummary): number {
 
 // Uppercase + tracking is the brand "Caption" style (Red Hat Display, not mono).
 // Space Mono is reserved for true data readouts — numbers, IDs, timestamps.
-function SectionLabel({ children }: { children: React.ReactNode }) {
+export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
       {children}
@@ -115,7 +116,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CardLabel({ children }: { children: React.ReactNode }) {
+export function CardLabel({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
       {children}
@@ -123,7 +124,7 @@ function CardLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function CaveatNote({ children }: { children: React.ReactNode }) {
+export function CaveatNote({ children }: { children: React.ReactNode }) {
   return (
     <p
       className="flex items-start gap-1.5 text-[11px] leading-snug text-text-3"
@@ -135,7 +136,7 @@ function CaveatNote({ children }: { children: React.ReactNode }) {
   );
 }
 
-function HudCard({
+export function HudCard({
   label,
   tag,
   children,
@@ -167,7 +168,7 @@ function statValueClass(accent?: boolean, danger?: boolean): string {
   return "text-text";
 }
 
-function Stat({
+export function Stat({
   label,
   value,
   sub,
@@ -1206,6 +1207,16 @@ export function InsightsDashboard() {
                 tokenCaveat={tokenCaveat}
               />
             </motion.div>
+            {activeTenantId && (
+              <motion.div variants={SECTION_ITEM}>
+                <CostInsights
+                  tenantId={activeTenantId}
+                  dailySeries={overview.dailySeries}
+                  range={dates}
+                  tokenCaveat={tokenCaveat}
+                />
+              </motion.div>
+            )}
             <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
               <SectionLabel>Usage by person</SectionLabel>
               {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}

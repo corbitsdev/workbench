@@ -33,6 +33,16 @@ describe("seriesColor", () => {
     expect(CHART_SERIES[0]!.key).not.toBe("accent");
   });
 
+  it("never paints a data series in the action accent color", () => {
+    for (const slot of CHART_SERIES) {
+      expect(slot.key.startsWith("accent")).toBe(false);
+      expect(slot.stroke).not.toContain("accent");
+      expect(slot.fill).not.toContain("accent");
+      expect(slot.bg).not.toContain("accent");
+      expect(slot.text).not.toContain("accent");
+    }
+  });
+
   it("keeps green- and red-family slots non-adjacent (CVD-safe)", () => {
     const family = (key: string) => key.replace(/-deep$/, "");
     for (let i = 0; i < CHART_SERIES.length - 1; i++) {

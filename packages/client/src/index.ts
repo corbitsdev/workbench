@@ -560,6 +560,77 @@ export async function getActor(
   return parsed;
 }
 
+// ─── Cache-baseline cost rollup (Insights cost view, CL-2687) ────────
+
+/**
+ * Per-agent prompt-caching + token rollup over the raw `inference_done` facts
+ * (hub `getCacheBaseline`, CL-2686). Carries the full cache split — input,
+ * output, cache-read, cache-write — plus the derived miss/absorption ratios the
+ * cost view reads. `agentName` is null for an orphaned/renamed agent.
+ */
+export const CacheBaselineRowSchema = type({
+  agentId: "string",
+  agentName: "string | null",
+  inferenceCalls: "number",
+  cacheMissCalls: "number",
+  cacheHitCalls: "number",
+  sessionCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  cacheMissRate: "number",
+  cacheAbsorptionRatio: "number",
+});
+export type CacheBaselineRow = typeof CacheBaselineRowSchema.infer;
+
+export const CacheBaselineResponseSchema = type({
+  tenantId: "string",
+  agents: CacheBaselineRowSchema.array(),
+});
+export type CacheBaselineResponse = typeof CacheBaselineResponseSchema.infer;
+
+export const GetCacheBaselineParamsSchema = type({
+  tenantId: "string",
+  /** Inclusive `yyyy-mm-dd` lower bound on `occurred_at`. */
+  "startDate?": "string",
+  /** Inclusive `yyyy-mm-dd` upper bound (end-of-day). */
+  "endDate?": "string",
+  /** Scope to a single agent definition. */
+  "agentId?": "string",
+  /** Scope to a single agent instance. */
+  "instanceId?": "string",
+});
+export type GetCacheBaselineParams = typeof GetCacheBaselineParamsSchema.infer;
+
+/**
+ * Fetch the per-agent cache/token baseline
+ * (`GET /api/tenants/:tenantId/analytics/cache-baseline`). Rows are sorted by
+ * inference-call count descending by the hub. Powers the Insights cost view's
+ * per-agent rollup and cache-read/write/output split.
+ */
+export async function getCacheBaseline(
+  options: ClientOptions = {},
+  params: GetCacheBaselineParams,
+): Promise<CacheBaselineRow[]> {
+  const qs = new URLSearchParams();
+  if (params.startDate !== undefined) qs.set("startDate", params.startDate);
+  if (params.endDate !== undefined) qs.set("endDate", params.endDate);
+  if (params.agentId !== undefined) qs.set("agentId", params.agentId);
+  if (params.instanceId !== undefined) qs.set("instanceId", params.instanceId);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/analytics/cache-baseline${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = CacheBaselineResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /cache-baseline response: ${parsed.summary}`);
+  }
+  return parsed.agents;
+}
+
 export const ActivityPageSchema = type({
   entries: TimelineEntrySchema.array(),
   nextCursor: "string | null",

@@ -22,9 +22,10 @@ export interface ChartSeriesColor {
   bg: string;
 }
 
-// CVD-aware order. Blue leads as the neutral primary data/magnitude hue; accent
-// (orange, the ACTION color) is demoted out of the default series so it stays
-// reserved for genuine action affordances. Green- and red-family slots are kept
+// CVD-aware order. Blue leads as the neutral primary data/magnitude hue. The
+// accent (orange) family is excluded from the series rotation entirely — it is
+// the ACTION color and must stay reserved for genuine action affordances, never
+// painted onto a passive data series. Green- and red-family slots are kept
 // non-adjacent — under deuteranopia adjacent green/red collapse into one hue, so
 // they are separated by a blue and never neighbour each other.
 export const CHART_SERIES: readonly ChartSeriesColor[] = [
@@ -34,13 +35,6 @@ export const CHART_SERIES: readonly ChartSeriesColor[] = [
     fill: "fill-blue",
     text: "text-blue",
     bg: "bg-blue",
-  },
-  {
-    key: "accent",
-    stroke: "stroke-accent",
-    fill: "fill-accent",
-    text: "text-accent",
-    bg: "bg-accent",
   },
   {
     key: "green",
@@ -76,13 +70,6 @@ export const CHART_SERIES: readonly ChartSeriesColor[] = [
     fill: "fill-red-deep",
     text: "text-red-deep",
     bg: "bg-red-deep",
-  },
-  {
-    key: "accent-deep",
-    stroke: "stroke-accent-deep",
-    fill: "fill-accent-deep",
-    text: "text-accent-deep",
-    bg: "bg-accent-deep",
   },
 ] as const;
 
