@@ -41,10 +41,7 @@ export function CategoryBarChart({
 }: CategoryBarChartProps) {
   if (data.length === 0) {
     return (
-      <div
-        className="text-[12px] text-text-3"
-        data-testid="category-bar-empty"
-      >
+      <div className="text-[12px] text-text-3" data-testid="category-bar-empty">
         {emptyMessage}
       </div>
     );

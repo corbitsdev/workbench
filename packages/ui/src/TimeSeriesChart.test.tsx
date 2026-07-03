@@ -40,12 +40,12 @@ describe("TimeSeriesChart", () => {
       <TimeSeriesChart series={SERIES} label="one" />,
     );
     expect(screen.queryByTestId("time-series-legend")).toBeNull();
-    rerender(
-      <TimeSeriesChart
-        series={[...SERIES, { ...SERIES[0], key: "tools", name: "Tools" }]}
-        label="two"
-      />,
-    );
+    const second: TimeSeries = {
+      key: "tools",
+      name: "Tools",
+      points: SERIES[0]!.points,
+    };
+    rerender(<TimeSeriesChart series={[...SERIES, second]} label="two" />);
     expect(screen.getAllByTestId("time-series-legend").length).toBe(2);
   });
 

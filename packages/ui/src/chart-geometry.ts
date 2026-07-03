@@ -39,9 +39,7 @@ export function seriesToCoords(
 /** SVG path `d` for a polyline through `coords` (empty string for no points). */
 export function buildLinePath(coords: ChartPoint[]): string {
   if (coords.length === 0) return "";
-  return coords
-    .map((c, i) => `${i === 0 ? "M" : "L"}${c.x} ${c.y}`)
-    .join(" ");
+  return coords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x} ${c.y}`).join(" ");
 }
 
 /**
@@ -50,8 +48,8 @@ export function buildLinePath(coords: ChartPoint[]): string {
  */
 export function buildAreaPath(coords: ChartPoint[], height: number): string {
   if (coords.length === 0) return "";
-  const first = coords[0];
-  const last = coords[coords.length - 1];
+  const first = coords[0]!;
+  const last = coords[coords.length - 1]!;
   return `${buildLinePath(coords)} L${last.x} ${height} L${first.x} ${height} Z`;
 }
 

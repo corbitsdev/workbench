@@ -66,7 +66,8 @@ export function SortableTable<T>({
 
   const total = sorted.length;
   const clampedPage = clampPage(page, total, pageSize);
-  const visible = pageSize > 0 ? pageSlice(sorted, clampedPage, pageSize) : sorted;
+  const visible =
+    pageSize > 0 ? pageSlice(sorted, clampedPage, pageSize) : sorted;
   const pages = pageCount(total, pageSize);
   const showPager = pageSize > 0 && pages > 1;
 

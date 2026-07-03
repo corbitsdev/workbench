@@ -20,8 +20,8 @@ describe("sortRows", () => {
     const asc = sortRows(ROWS, (r) => r.tokens, "asc");
     expect(asc.map((r) => r.tokens)).toEqual([10, 30, 30]);
     const desc = sortRows(ROWS, (r) => r.tokens, "desc");
-    expect(desc[0].tokens).toBe(30);
-    expect(desc[2].tokens).toBe(10);
+    expect(desc[0]!.tokens).toBe(30);
+    expect(desc[2]!.tokens).toBe(10);
   });
 
   it("is stable — equal keys keep input order", () => {

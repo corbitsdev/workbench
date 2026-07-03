@@ -64,13 +64,12 @@ export function TimeSeriesChart({
   }
 
   const globalMax = niceMax(
-    Math.max(
-      0,
-      ...nonEmpty.flatMap((s) => s.points.map((p) => p.value)),
-    ),
+    Math.max(0, ...nonEmpty.flatMap((s) => s.points.map((p) => p.value))),
   );
-  const labels = nonEmpty[0].points.map((p) => p.label);
-  const peak = Math.max(...nonEmpty.flatMap((s) => s.points.map((p) => p.value)));
+  const labels = nonEmpty[0]!.points.map((p) => p.label);
+  const peak = Math.max(
+    ...nonEmpty.flatMap((s) => s.points.map((p) => p.value)),
+  );
   const showLegend = nonEmpty.length >= 2;
 
   return (

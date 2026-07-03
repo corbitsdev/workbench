@@ -10,8 +10,8 @@ import {
 describe("seriesToCoords", () => {
   it("pins value 0 to the bottom and the max to the top on a zero baseline", () => {
     const coords = seriesToCoords([0, 10], 100, 50);
-    expect(coords[0].y).toBe(50);
-    expect(coords[1].y).toBe(0);
+    expect(coords[0]!.y).toBe(50);
+    expect(coords[1]!.y).toBe(0);
   });
 
   it("spaces points evenly across the width", () => {
@@ -20,12 +20,12 @@ describe("seriesToCoords", () => {
   });
 
   it("centers a single point", () => {
-    expect(seriesToCoords([5], 100, 50)[0].x).toBe(50);
+    expect(seriesToCoords([5], 100, 50)[0]!.x).toBe(50);
   });
 
   it("uses an explicit max so multiple series share a scale", () => {
     // With max 20, a value of 10 lands at the vertical midpoint, not the top.
-    expect(seriesToCoords([10], 100, 50, 20)[0].y).toBe(25);
+    expect(seriesToCoords([10], 100, 50, 20)[0]!.y).toBe(25);
   });
 
   it("floors an all-zero series to the baseline instead of dividing by zero", () => {

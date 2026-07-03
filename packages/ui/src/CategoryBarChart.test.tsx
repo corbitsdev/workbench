@@ -17,14 +17,14 @@ describe("CategoryBarChart", () => {
     render(<CategoryBarChart data={DATA} label="Runs by kind" />);
     const bars = screen.getAllByTestId("category-bar");
     expect(bars).toHaveLength(3);
-    expect(bars[0].getAttribute("data-value")).toBe("40");
+    expect(bars[0]!.getAttribute("data-value")).toBe("40");
   });
 
   it("scales the widest bar to full width", () => {
     render(<CategoryBarChart data={DATA} label="Runs by kind" />);
     const fills = screen.getAllByTestId("category-bar-fill");
-    expect(fills[0].style.width).toBe("100%");
-    expect(fills[2].style.width).toBe("25%");
+    expect(fills[0]!.style.width).toBe("100%");
+    expect(fills[2]!.style.width).toBe("25%");
   });
 
   it("caps the number of bars via maxBars", () => {

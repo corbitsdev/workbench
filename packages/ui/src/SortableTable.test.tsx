@@ -80,7 +80,7 @@ describe("SortableTable", () => {
   it("renders row-level deep links inside cells", () => {
     renderTable();
     const link = screen.getAllByRole("link")[0];
-    expect(link.getAttribute("href")).toContain("/insights/users/");
+    expect(link!.getAttribute("href")).toContain("/insights/users/");
   });
 
   it("paginates and clamps the page across a sort that shrinks the view", () => {

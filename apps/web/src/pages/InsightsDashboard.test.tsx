@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -177,15 +178,28 @@ const mockOverview = {
   },
 };
 
+let lastRange: { startDate?: string; endDate?: string } | undefined;
+let overviewReject: Error | null = null;
+
 mock.module("../lib/hub-api", () => ({
-  getActivityOverview: (tenantId: string) => {
+  getActivityOverview: (
+    tenantId: string,
+    opts?: { startDate?: string; endDate?: string },
+  ) => {
     lastTenantId = tenantId;
+    lastRange = opts;
+    if (overviewReject) return Promise.reject(overviewReject);
     return Promise.resolve(mockOverview);
   },
   describeHubApiFailure: (e: unknown) => String(e),
 }));
 
-import { InsightsDashboard } from "./InsightsDashboard";
+import {
+  InsightsDashboard,
+  filterPeople,
+  mergeWorkflowKindRows,
+  resolveRange,
+} from "./InsightsDashboard";
 
 function ActorProbe() {
   const { id } = useParams();
@@ -219,6 +233,8 @@ function renderPage() {
 beforeEach(() => {
   window.happyDOM.setURL("http://localhost/insights");
   lastTenantId = null;
+  lastRange = undefined;
+  overviewReject = null;
   activeContext = {
     workbenches: [],
     loading: false,
@@ -374,88 +390,79 @@ describe("InsightsDashboard", () => {
     await waitFor(() => {
       screen.getByText("Operational ledger");
     });
-    screen.getByText("Artifacts");
-    screen.getByText("Workflow runs");
+    // "Artifacts" / "Workflow runs" now appear both as KPI tiles and in the
+    // operational ledger, so assert presence rather than uniqueness.
+    expect(screen.getAllByText("Artifacts").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Workflow runs").length).toBeGreaterThanOrEqual(
+      1,
+    );
   });
 
-  it("renders tokens by workflow type with humanized kind labels", async () => {
+  it("renders workflow runs by kind, merging run counts with per-kind usage", async () => {
     renderPage();
 
-    await waitFor(() => {
-      screen.getByText("Tokens by workflow type");
-    });
-    // Kinds are humanized from kebab-case to Title Case.
-    const row = screen.getByText("Mvt Landing Page").closest("tr");
+    await screen.findAllByTestId("sortable-table");
+    // person table is first, workflow-by-kind second.
+    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    expect(wfTable.textContent).toContain("Call To Collateral");
+    expect(wfTable.textContent).toContain("Last30days");
+    const row = within(wfTable).getByText("Mvt Landing Page").closest("tr");
     // Tokens = input 120 + output 30 = 150.
     expect(row?.textContent).toContain("150");
-    screen.getByText("Last30days");
     // The removed "By agent" section no longer renders.
     expect(screen.queryByText("By agent")).toBeNull();
   });
 
-  it("flags the tokens-by-workflow-type table with a caveat note across the live/history boundary", async () => {
-    const original = mockOverview.tokensRecordedFrom;
-    mockOverview.tokensRecordedFrom = isoDay(-1);
-    try {
-      renderPage();
-
-      await waitFor(() => {
-        screen.getByText("Tokens by workflow type");
-      });
-      const section = screen
-        .getByText("Tokens by workflow type")
-        .closest("div");
-      const caveat = section?.querySelector('[data-testid="data-caveat"]');
-      expect(caveat?.textContent).toContain("not recorded");
-    } finally {
-      mockOverview.tokensRecordedFrom = original;
-    }
-  });
-
-  it("lets the date-preset row wrap and the breakdown tables scroll within themselves at mobile widths", async () => {
+  it("re-sorts the workflow-by-kind table when a column header is clicked", async () => {
     renderPage();
 
-    await waitFor(() => {
-      screen.getByText("By person");
-    });
+    await screen.findAllByTestId("sortable-table");
+    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    // Default sort is runs desc -> Call To Collateral (8 runs) leads.
+    expect(
+      within(wfTable).getAllByTestId("sortable-row")[0]!.textContent,
+    ).toContain("Call To Collateral");
+    // Sort by kind ascending-then it toggles; click the kind header.
+    const kindHeader = within(wfTable)
+      .getAllByTestId("sortable-header")
+      .find((b) => b.getAttribute("data-col") === "kind")!;
+    fireEvent.click(kindHeader);
+    // desc by kind name -> "Mvt Landing Page" first (M > L > C).
+    expect(
+      within(wfTable).getAllByTestId("sortable-row")[0]!.textContent,
+    ).toContain("Mvt Landing Page");
+  });
 
+  it("keeps the header preset row wrapping and scrolls wide tables within themselves", async () => {
+    renderPage();
+
+    await screen.findAllByTestId("sortable-table");
     // The preset buttons wrap rather than forcing the header past the viewport.
     const presetGroup = screen.getByText("7 days").parentElement;
     expect(presetGroup?.className).toContain("flex-wrap");
-
-    // Each breakdown table is min-width-constrained, so it must live inside an
-    // overflow-x-auto wrapper that scrolls the table — not the page.
-    const personTable = screen.getByText("Person").closest("table");
-    expect(personTable?.className).toContain("min-w-[520px]");
-    expect(personTable?.parentElement?.className).toContain("overflow-x-auto");
+    // The sortable table lives inside an overflow-x-auto wrapper so a wide table
+    // scrolls itself rather than the page.
+    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    expect(personTable.parentElement?.className).toContain("overflow-x-auto");
   });
 
-  it("renders a By-person breakdown marking the caller and a total row", async () => {
+  it("renders a usage-by-person table marking the caller", async () => {
     renderPage();
 
-    await waitFor(() => {
-      screen.getByText("By person");
-    });
-    screen.getByText("Sawyer");
-    screen.getByText("(me)");
-    screen.getByText("Dana");
-    // Total row: turns 8 + 4 = 12. Footer is labeled as attributed-only since
-    // shared-agent usage is excluded from the per-person breakdown.
-    const total = screen.getByText("Attributed total").closest("tr");
-    expect(total?.textContent).toContain("12");
-    // Combined token total shown as a real value (default mock has old
-    // tokensRecordedFrom): inputTokens 1000 + outputTokens 150 = 1,150.
-    expect(total?.textContent).toContain("1,150");
+    await screen.findAllByTestId("sortable-table");
+    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    within(personTable).getByText("Sawyer");
+    within(personTable).getByText("(me)");
+    within(personTable).getByText("Dana");
     screen.getByText("Excludes shared agents");
   });
 
-  it("navigates to the actor detail page when a By-person row is clicked", async () => {
+  it("navigates to the actor detail page when a person row link is clicked", async () => {
     renderPage();
 
-    await waitFor(() => {
-      screen.getByText("Dana");
-    });
-    fireEvent.click(screen.getByText("Dana"));
+    await screen.findAllByTestId("sortable-table");
+    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    fireEvent.click(within(personTable).getByText("Dana"));
 
     await waitFor(() => {
       screen.getByTestId("actor-probe");
@@ -466,69 +473,19 @@ describe("InsightsDashboard", () => {
     expect(screen.getByTestId("probe-name").textContent).toBe("Dana");
   });
 
-  it("orders the By-person table by tokens and lists Turns before Tool calls", async () => {
+  it("orders the usage-by-person table by tokens by default", async () => {
     renderPage();
 
-    await waitFor(() => {
-      screen.getByText("By person");
-    });
-    const personTable = screen.getByText("Person").closest("table");
-    const headers = Array.from(
-      personTable?.querySelectorAll("thead th") ?? [],
-    ).map((th) => th.textContent);
+    await screen.findAllByTestId("sortable-table");
+    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const headers = within(personTable)
+      .getAllByRole("columnheader")
+      .map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
     expect(headers).toEqual(["Person", "Turns", "Tool calls", "Tokens"]);
-    // No caveat in the default mock: rows stay in server token order
-    // (Sawyer 790 tokens before Dana 360).
-    const bodyRows = Array.from(
-      personTable?.querySelectorAll("tbody tr") ?? [],
-    );
+    // Default sort is tokens desc: Sawyer (790) before Dana (360).
+    const bodyRows = within(personTable).getAllByTestId("sortable-row");
     expect(bodyRows[0]?.textContent).toContain("Sawyer");
     expect(bodyRows[1]?.textContent).toContain("Dana");
-  });
-
-  it("keeps the By-person table in server token order even under the token caveat", async () => {
-    const original = mockOverview.tokensRecordedFrom;
-    const originalPeople = mockOverview.byPerson;
-    mockOverview.tokensRecordedFrom = isoDay(-1);
-    // Server order is token-desc: Dana (9000) ahead of Sawyer (10).
-    mockOverview.byPerson = [
-      {
-        principalId: "pri_other",
-        name: "Dana",
-        isSelf: false,
-        turnCount: 1,
-        toolCallCount: 1,
-        inputTokens: 9000,
-        outputTokens: 0,
-      },
-      {
-        principalId: "pri_me",
-        name: "Sawyer",
-        isSelf: true,
-        turnCount: 50,
-        toolCallCount: 3,
-        inputTokens: 10,
-        outputTokens: 0,
-      },
-    ];
-    try {
-      renderPage();
-
-      await waitFor(() => {
-        screen.getByText("By person");
-      });
-      const personTable = screen.getByText("Person").closest("table");
-      const bodyRows = Array.from(
-        personTable?.querySelectorAll("tbody tr") ?? [],
-      );
-      // Tokens stay visible under the caveat, so the server's token ordering
-      // holds: Dana (9,000) ahead of Sawyer (10).
-      expect(bodyRows[0]?.textContent).toContain("Dana");
-      expect(bodyRows[1]?.textContent).toContain("Sawyer");
-    } finally {
-      mockOverview.tokensRecordedFrom = original;
-      mockOverview.byPerson = originalPeople;
-    }
   });
 
   it("shows per-person token totals with a caveat note when the range crosses the live/history boundary", async () => {
@@ -537,10 +494,9 @@ describe("InsightsDashboard", () => {
     try {
       renderPage();
 
-      await waitFor(() => {
-        screen.getByText("By person");
-      });
-      const sawyerRow = screen.getByText("Sawyer").closest("tr");
+      await screen.findAllByTestId("sortable-table");
+      const personTable = screen.getAllByTestId("sortable-table")[0]!;
+      const sawyerRow = within(personTable).getByText("Sawyer").closest("tr");
       // Tokens are shown (input 700 + output 90 = 790), not hidden.
       expect(sawyerRow?.textContent).toContain("790");
       // The range is still flagged with a caveat note.
@@ -672,5 +628,150 @@ describe("InsightsDashboard", () => {
       ).toBeDefined();
     });
     expect(lastTenantId).toBeNull();
+  });
+
+  it("surfaces a plain-language error when the overview query fails", async () => {
+    overviewReject = new Error("overview boom");
+    renderPage();
+    await screen.findByText(/overview boom/);
+  });
+});
+
+describe("InsightsDashboard KPIs, charts, and filters", () => {
+  it("computes KPI tiles from the loaded range", async () => {
+    renderPage();
+    await screen.findByText("This range");
+    // Total activity = turns (12) + tool calls (4) = 16.
+    const kpi = screen.getByText("This range").closest("div")!;
+    expect(within(kpi).getByText("Total activity")).toBeDefined();
+    expect(within(kpi).getByText("16")).toBeDefined();
+    // Active actors = attributed people (2).
+    expect(within(kpi).getByText("Active actors")).toBeDefined();
+  });
+
+  it("renders charts with visually-hidden table fallbacks for a11y", async () => {
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByTestId("time-series-chart")).toBeDefined();
+    });
+    // Time-series a11y fallback table lists every daily bucket.
+    screen.getByTestId("time-series-table");
+    // Category-bar charts (runs-by-kind, top actors) each ship a table fallback.
+    expect(
+      screen.getAllByTestId("category-bar-table").length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  it("requeries with a custom date range once a start date is entered", async () => {
+    renderPage();
+    await screen.findByText("This range");
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    fireEvent.change(screen.getByTestId("custom-start"), {
+      target: { value: "2026-05-01" },
+    });
+    await waitFor(() => {
+      expect(lastRange?.startDate).toBe("2026-05-01");
+    });
+  });
+
+  it("filters the usage-by-person table by actor kind", async () => {
+    renderPage();
+    await screen.findAllByTestId("sortable-table");
+    fireEvent.change(screen.getByTestId("actor-filter"), {
+      target: { value: "others" },
+    });
+    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const rows = within(personTable).getAllByTestId("sortable-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain("Dana");
+    expect(rows[0]!.textContent).not.toContain("Sawyer");
+  });
+
+  it("filters the workflow-by-kind table by kind", async () => {
+    renderPage();
+    await screen.findAllByTestId("sortable-table");
+    fireEvent.change(screen.getByTestId("kind-filter"), {
+      target: { value: "last30days" },
+    });
+    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    const rows = within(wfTable).getAllByTestId("sortable-row");
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.textContent).toContain("Last30days");
+  });
+});
+
+describe("dashboard data helpers", () => {
+  it("resolves preset and custom ranges", () => {
+    expect(resolveRange("all", {})).toEqual({});
+    // custom with no start date falls back to all-time
+    expect(resolveRange("custom", {})).toEqual({});
+    expect(resolveRange("custom", { startDate: "2026-05-01" })).toEqual({
+      startDate: "2026-05-01",
+    });
+    expect(
+      resolveRange("custom", {
+        startDate: "2026-05-01",
+        endDate: "2026-05-10",
+      }),
+    ).toEqual({ startDate: "2026-05-01", endDate: "2026-05-10" });
+    expect(resolveRange("7d", {}).startDate).toBeDefined();
+  });
+
+  it("merges run counts with per-kind usage, zero-filling gaps", () => {
+    const rows = mergeWorkflowKindRows(
+      [
+        { key: "deck", count: 5 },
+        { key: "brief", count: 2 },
+      ],
+      [
+        {
+          kind: "deck",
+          turnCount: 50,
+          toolCallCount: 15,
+          inputTokens: 250,
+          outputTokens: 150,
+        },
+        {
+          kind: "orphan",
+          turnCount: 3,
+          toolCallCount: 1,
+          inputTokens: 10,
+          outputTokens: 5,
+        },
+      ],
+    );
+    const deck = rows.find((r) => r.kind === "deck")!;
+    expect(deck.runs).toBe(5);
+    expect(deck.turnCount).toBe(50);
+    // brief has runs but no usage -> usage zero-filled
+    expect(rows.find((r) => r.kind === "brief")!.turnCount).toBe(0);
+    // orphan has usage but no runs -> runs zero-filled, still present
+    expect(rows.find((r) => r.kind === "orphan")!.runs).toBe(0);
+  });
+
+  it("filters people by actor kind", () => {
+    const people = [
+      {
+        principalId: "a",
+        name: "A",
+        isSelf: true,
+        turnCount: 1,
+        toolCallCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+      {
+        principalId: "b",
+        name: "B",
+        isSelf: false,
+        turnCount: 1,
+        toolCallCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      },
+    ];
+    expect(filterPeople(people, "me")).toHaveLength(1);
+    expect(filterPeople(people, "others")[0]!.principalId).toBe("b");
+    expect(filterPeople(people, "all")).toHaveLength(2);
   });
 });

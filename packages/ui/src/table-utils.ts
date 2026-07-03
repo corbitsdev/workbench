@@ -43,7 +43,11 @@ export function pageCount(total: number, pageSize: number): number {
 }
 
 /** Clamps a requested page index into `[0, pageCount - 1]`. */
-export function clampPage(page: number, total: number, pageSize: number): number {
+export function clampPage(
+  page: number,
+  total: number,
+  pageSize: number,
+): number {
   const max = pageCount(total, pageSize) - 1;
   if (page < 0) return 0;
   return Math.min(page, max);

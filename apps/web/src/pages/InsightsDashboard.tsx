@@ -1,5 +1,13 @@
-import { PagePanel } from "@workbench/ui";
-import { useState } from "react";
+import {
+  CategoryBarChart,
+  PagePanel,
+  SortableTable,
+  TimeSeriesChart,
+  type CategoryDatum,
+  type SortableColumn,
+  type TimeSeries,
+} from "@workbench/ui";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { AlertTriangle, BarChart2 } from "lucide-react";
@@ -30,7 +38,7 @@ import {
   tokenDataCaveat,
 } from "./insights/metrics";
 
-type Preset = "24h" | "7d" | "30d" | "90d" | "all";
+type Preset = "24h" | "7d" | "30d" | "90d" | "all" | "custom";
 
 const PRESETS: { label: string; value: Preset }[] = [
   { label: "24 hours", value: "24h" },
@@ -38,7 +46,13 @@ const PRESETS: { label: string; value: Preset }[] = [
   { label: "30 days", value: "30d" },
   { label: "90 days", value: "90d" },
   { label: "All time", value: "all" },
+  { label: "Custom", value: "custom" },
 ];
+
+type DateRange = { startDate?: string; endDate?: string };
+
+/** Actor-kind filter for the person-scoped views. */
+type ActorFilter = "all" | "me" | "others";
 
 function daysAgoISO(days: number): string {
   const d = new Date();
@@ -50,18 +64,29 @@ function daysAgoISO(days: number): string {
 // startDate one day back — today plus yesterday inclusive, matching the other
 // presets' N-days-ago convention and avoiding an empty view just after
 // midnight.
-const PRESET_DAYS: Record<Exclude<Preset, "all">, number> = {
+const PRESET_DAYS: Record<Exclude<Preset, "all" | "custom">, number> = {
   "24h": 1,
   "7d": 7,
   "30d": 30,
   "90d": 90,
 };
 
-function presetToDates(preset: Preset): {
-  startDate?: string;
-  endDate?: string;
-} {
+/**
+ * Resolves the selected preset (plus the custom-range inputs when the "custom"
+ * preset is active) to the `{ startDate, endDate }` the overview query is keyed
+ * on. A custom range only takes effect once a start date is entered; an empty
+ * custom start falls back to an all-time range so the page never queries a
+ * nonsensical window. Exported for the query-range tests.
+ */
+export function resolveRange(preset: Preset, custom: DateRange): DateRange {
   if (preset === "all") return {};
+  if (preset === "custom") {
+    if (custom.startDate === undefined || custom.startDate === "") return {};
+    return {
+      startDate: custom.startDate,
+      ...(custom.endDate ? { endDate: custom.endDate } : {}),
+    };
+  }
   return { startDate: daysAgoISO(PRESET_DAYS[preset]) };
 }
 
@@ -441,7 +466,10 @@ function SkeletonCard() {
 
 function SkeletonGrid() {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div
+      className="grid grid-cols-2 gap-3 sm:grid-cols-4"
+      data-testid="insights-skeleton"
+    >
       <SkeletonCard />
       <SkeletonCard />
       <SkeletonCard />
@@ -521,145 +549,6 @@ function OperationalLedger({ data }: { data: ActivityOverview }) {
   );
 }
 
-function PersonBreakdown({
-  people,
-  tokenCaveat,
-}: {
-  people: UsageByPersonRow[];
-  tokenCaveat: string | null;
-}) {
-  if (people.length === 0) return null;
-
-  // Server sorts by total tokens; tokens are always shown (a caveat note flags
-  // ranges that predate token recording) so the ordering is always explainable.
-  const orderedPeople = people;
-
-  const totals = people.reduce(
-    (acc, p) => ({
-      turnCount: acc.turnCount + p.turnCount,
-      toolCallCount: acc.toolCallCount + p.toolCallCount,
-      inputTokens: acc.inputTokens + p.inputTokens,
-      outputTokens: acc.outputTokens + p.outputTokens,
-    }),
-    { turnCount: 0, toolCallCount: 0, inputTokens: 0, outputTokens: 0 },
-  );
-
-  return (
-    <div className="flex flex-col gap-3">
-      <SectionLabel>By person</SectionLabel>
-      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
-      <div className="overflow-x-auto rounded-[12px] border border-border">
-        <table className="w-full min-w-[520px] text-left text-[13px]">
-          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
-            <tr>
-              <th className="px-4 py-2 font-medium">Person</th>
-              <th className="px-4 py-2 text-right font-medium">Turns</th>
-              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
-              <th className="px-4 py-2 text-right font-medium">Tokens</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border bg-bg">
-            {orderedPeople.map((row) => (
-              <tr key={row.principalId}>
-                <td className="px-4 py-2 text-text">
-                  <Link
-                    to={actorHref(row.principalId)}
-                    state={{
-                      id: row.principalId,
-                      kind: "user",
-                      displayName: row.name ?? "Unknown member",
-                      status: "active",
-                    }}
-                    className="rounded-[4px] outline-none hover:text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent"
-                  >
-                    {row.name ?? "Unknown member"}
-                  </Link>
-                  {row.isSelf && (
-                    <span className="ml-1.5 text-[11px] font-semibold text-accent">
-                      (me)
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.turnCount)}
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.toolCallCount)}
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.inputTokens + row.outputTokens)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot className="border-t border-border bg-surface">
-            <tr>
-              <td className="px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-3">
-                Attributed total
-              </td>
-              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
-                {formatNumber(totals.turnCount)}
-              </td>
-              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
-                {formatNumber(totals.toolCallCount)}
-              </td>
-              <td className="px-4 py-2 text-right font-mono tabular-nums text-text">
-                {formatNumber(totals.inputTokens + totals.outputTokens)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-      <p className="text-[11px] text-text-3">Excludes shared agents</p>
-    </div>
-  );
-}
-
-function WorkflowTypeBreakdown({
-  workflowTypes,
-  tokenCaveat,
-}: {
-  workflowTypes: UsageByWorkflowTypeRow[];
-  tokenCaveat: string | null;
-}) {
-  if (workflowTypes.length === 0) return null;
-
-  return (
-    <div className="flex flex-col gap-3">
-      <SectionLabel>Tokens by workflow type</SectionLabel>
-      {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
-      <div className="overflow-x-auto rounded-[12px] border border-border">
-        <table className="w-full min-w-[480px] text-left text-[13px]">
-          <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
-            <tr>
-              <th className="px-4 py-2 font-medium">Workflow type</th>
-              <th className="px-4 py-2 text-right font-medium">Turns</th>
-              <th className="px-4 py-2 text-right font-medium">Tool calls</th>
-              <th className="px-4 py-2 text-right font-medium">Tokens</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border bg-bg">
-            {workflowTypes.map((row) => (
-              <tr key={row.kind}>
-                <td className="px-4 py-2 text-text">{humanizeKey(row.kind)}</td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.turnCount)}
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.toolCallCount)}
-                </td>
-                <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.inputTokens + row.outputTokens)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 const INSTANCE_PAGE_SIZE = 10;
 
 function InstanceBreakdown({
@@ -732,14 +621,391 @@ function InstanceBreakdown({
   );
 }
 
+export type WorkflowKindRow = {
+  kind: string;
+  runs: number;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+};
+
+/**
+ * Merges the per-kind run counts (`workflowRuns.byKind`) with the per-kind
+ * inference usage (`byWorkflowType`) into one row per kind. Run counts and
+ * usage come from two different joins, so a kind can appear in one and not the
+ * other; the merge keeps every kind seen in either, zero-filling the missing
+ * side. Exported for tests.
+ */
+export function mergeWorkflowKindRows(
+  byKind: { key: string; count: number }[],
+  byType: UsageByWorkflowTypeRow[],
+): WorkflowKindRow[] {
+  const usage = new Map(byType.map((row) => [row.kind, row]));
+  const runs = new Map(byKind.map((row) => [row.key, row.count]));
+  const kinds = new Set<string>([...runs.keys(), ...usage.keys()]);
+  return [...kinds].map((kind) => {
+    const u = usage.get(kind);
+    return {
+      kind,
+      runs: runs.get(kind) ?? 0,
+      turnCount: u?.turnCount ?? 0,
+      toolCallCount: u?.toolCallCount ?? 0,
+      inputTokens: u?.inputTokens ?? 0,
+      outputTokens: u?.outputTokens ?? 0,
+    };
+  });
+}
+
+export function filterPeople(
+  people: UsageByPersonRow[],
+  filter: ActorFilter,
+): UsageByPersonRow[] {
+  if (filter === "me") return people.filter((p) => p.isSelf);
+  if (filter === "others") return people.filter((p) => !p.isSelf);
+  return people;
+}
+
+function KpiRow({
+  data,
+  activePeople,
+}: {
+  data: ActivityOverview;
+  activePeople: number;
+}) {
+  const summary = data.inference.summary;
+  const prev = data.inference.previousSummary;
+  const activity = summary.turnCount + summary.toolCallCount;
+  const prevActivity = prev ? prev.turnCount + prev.toolCallCount : null;
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionLabel>This range</SectionLabel>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label="Total activity"
+          value={formatNumber(activity)}
+          sub="turns + tool calls"
+          delta={computeDelta(activity, prevActivity)}
+          accent
+        />
+        <Stat
+          label="Active actors"
+          value={formatNumber(activePeople)}
+          sub="people with usage"
+        />
+        <Stat
+          label="Workflow runs"
+          value={formatNumber(data.workflowRuns.executionRecords)}
+          sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
+        />
+        <Stat
+          label="Artifacts"
+          value={formatNumber(data.artifacts.total)}
+          sub={`${formatNumber(data.artifacts.createdInRange)} in range`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function selectClass(): string {
+  return "min-h-[32px] rounded-[8px] border border-border bg-surface px-2.5 py-1 text-[12px] font-medium text-text-2 outline-none focus-visible:ring-1 focus-visible:ring-accent";
+}
+
+function FiltersBar({
+  kinds,
+  kindFilter,
+  onKindFilter,
+  actorFilter,
+  onActorFilter,
+}: {
+  kinds: string[];
+  kindFilter: string;
+  onKindFilter: (value: string) => void;
+  actorFilter: ActorFilter;
+  onActorFilter: (value: ActorFilter) => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2"
+      data-testid="filters-bar"
+    >
+      <label className="flex items-center gap-1.5 text-[11px] text-text-3">
+        Kind
+        <select
+          data-testid="kind-filter"
+          value={kindFilter}
+          onChange={(e) => onKindFilter(e.target.value)}
+          className={selectClass()}
+        >
+          <option value="all">All kinds</option>
+          {kinds.map((kind) => (
+            <option key={kind} value={kind}>
+              {humanizeKey(kind)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1.5 text-[11px] text-text-3">
+        Actor
+        <select
+          data-testid="actor-filter"
+          value={actorFilter}
+          onChange={(e) => onActorFilter(e.target.value as ActorFilter)}
+          className={selectClass()}
+        >
+          <option value="all">Everyone</option>
+          <option value="me">Just me</option>
+          <option value="others">Others</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function ChartsSection({
+  data,
+  range,
+  kindRows,
+  people,
+  tokenCaveat,
+}: {
+  data: ActivityOverview;
+  range: DateRange;
+  kindRows: WorkflowKindRow[];
+  people: UsageByPersonRow[];
+  tokenCaveat: string | null;
+}) {
+  const rawSeries = data.dailySeries;
+  const filled =
+    range.startDate !== undefined && rawSeries.length > 0
+      ? fillDailySeries(
+          rawSeries,
+          range.startDate,
+          range.endDate ?? new Date().toISOString().slice(0, 10),
+        )
+      : rawSeries;
+
+  const activitySeries: TimeSeries[] = [
+    {
+      key: "turns",
+      name: "Turns",
+      points: filled.map((d) => ({ label: d.date, value: d.turnCount })),
+    },
+    {
+      key: "tools",
+      name: "Tool calls",
+      points: filled.map((d) => ({ label: d.date, value: d.toolCallCount })),
+    },
+  ];
+
+  const kindBars: CategoryDatum[] = kindRows
+    .filter((row) => row.runs > 0)
+    .sort((a, b) => b.runs - a.runs)
+    .map((row) => ({ label: humanizeKey(row.kind), value: row.runs }));
+
+  const actorBars: CategoryDatum[] = filterPeople(people, "all")
+    .map((p) => ({
+      label: p.name ?? "Unknown member",
+      value: p.turnCount,
+    }))
+    .filter((row) => row.value > 0)
+    .sort((a, b) => b.value - a.value);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <SectionLabel>Charts</SectionLabel>
+      <HudCard label="Activity over time">
+        <TimeSeriesChart
+          series={activitySeries}
+          label="Turns and tool calls per day"
+          variant="area"
+        />
+      </HudCard>
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <HudCard label="Workflow runs by kind">
+          <CategoryBarChart
+            data={kindBars}
+            label="Workflow runs by kind"
+            colorByCategory
+            formatValue={formatNumber}
+          />
+        </HudCard>
+        <HudCard
+          label="Top actors · by turns"
+          tag={
+            tokenCaveat !== null ? (
+              <CardLabel>tokens partial</CardLabel>
+            ) : undefined
+          }
+        >
+          <CategoryBarChart
+            data={actorBars}
+            label="Top actors by turns"
+            maxBars={8}
+            formatValue={formatNumber}
+          />
+        </HudCard>
+      </div>
+    </div>
+  );
+}
+
+function SortablePersonTable({ people }: { people: UsageByPersonRow[] }) {
+  const columns: SortableColumn<UsageByPersonRow>[] = [
+    {
+      key: "name",
+      header: "Person",
+      sortValue: (r) => (r.name ?? "Unknown member").toLowerCase(),
+      render: (row) => (
+        <span>
+          <Link
+            to={actorHref(row.principalId)}
+            state={{
+              id: row.principalId,
+              kind: "user",
+              displayName: row.name ?? "Unknown member",
+              status: "active",
+            }}
+            className="rounded-[4px] outline-none hover:text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            {row.name ?? "Unknown member"}
+          </Link>
+          {row.isSelf && (
+            <span className="ml-1.5 text-[11px] font-semibold text-accent">
+              (me)
+            </span>
+          )}
+        </span>
+      ),
+    },
+    {
+      key: "turnCount",
+      header: "Turns",
+      align: "right",
+      sortValue: (r) => r.turnCount,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.turnCount)}
+        </span>
+      ),
+    },
+    {
+      key: "toolCallCount",
+      header: "Tool calls",
+      align: "right",
+      sortValue: (r) => r.toolCallCount,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.toolCallCount)}
+        </span>
+      ),
+    },
+    {
+      key: "tokens",
+      header: "Tokens",
+      align: "right",
+      sortValue: (r) => r.inputTokens + r.outputTokens,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.inputTokens + r.outputTokens)}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <SortableTable
+      columns={columns}
+      rows={people}
+      getRowKey={(r) => r.principalId}
+      caption="Usage by person"
+      initialSort={{ key: "tokens", dir: "desc" }}
+      pageSize={10}
+      emptyMessage="No attributed usage for this range"
+    />
+  );
+}
+
+function SortableWorkflowKindTable({ rows }: { rows: WorkflowKindRow[] }) {
+  const columns: SortableColumn<WorkflowKindRow>[] = [
+    {
+      key: "kind",
+      header: "Workflow kind",
+      sortValue: (r) => r.kind,
+      render: (r) => humanizeKey(r.kind),
+    },
+    {
+      key: "runs",
+      header: "Runs",
+      align: "right",
+      sortValue: (r) => r.runs,
+      render: (r) => (
+        <span className="font-mono tabular-nums">{formatNumber(r.runs)}</span>
+      ),
+    },
+    {
+      key: "turnCount",
+      header: "Turns",
+      align: "right",
+      sortValue: (r) => r.turnCount,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.turnCount)}
+        </span>
+      ),
+    },
+    {
+      key: "toolCallCount",
+      header: "Tool calls",
+      align: "right",
+      sortValue: (r) => r.toolCallCount,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.toolCallCount)}
+        </span>
+      ),
+    },
+    {
+      key: "tokens",
+      header: "Tokens",
+      align: "right",
+      sortValue: (r) => r.inputTokens + r.outputTokens,
+      render: (r) => (
+        <span className="font-mono tabular-nums">
+          {formatNumber(r.inputTokens + r.outputTokens)}
+        </span>
+      ),
+    },
+  ];
+  return (
+    <SortableTable
+      columns={columns}
+      rows={rows}
+      getRowKey={(r) => r.kind}
+      caption="Workflow runs by kind"
+      initialSort={{ key: "runs", dir: "desc" }}
+      pageSize={10}
+      emptyMessage="No workflow runs for this range"
+    />
+  );
+}
+
 export function InsightsDashboard() {
   const [preset, setPreset] = useState<Preset>("30d");
+  const [customRange, setCustomRange] = useState<DateRange>({});
+  const [kindFilter, setKindFilter] = useState<string>("all");
+  const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
 
-  const dates = presetToDates(preset);
+  const dates = resolveRange(preset, customRange);
 
   const overviewQuery = useQuery({
-    queryKey: ["activity-overview", activeTenantId, preset],
+    queryKey: [
+      "activity-overview",
+      activeTenantId,
+      dates.startDate ?? null,
+      dates.endDate ?? null,
+    ],
     queryFn: () => getActivityOverview(activeTenantId!, dates),
     enabled: !!activeTenantId,
     staleTime: 5 * 60_000,
@@ -752,6 +1018,31 @@ export function InsightsDashboard() {
   const tokenCaveat = overview
     ? tokenDataCaveat(dates, overview.tokensRecordedFrom)
     : null;
+
+  const kindRows = useMemo(
+    () =>
+      overview
+        ? mergeWorkflowKindRows(
+            overview.workflowRuns.byKind,
+            overview.byWorkflowType,
+          )
+        : [],
+    [overview],
+  );
+  const workflowKinds = useMemo(
+    () =>
+      [...new Set(kindRows.map((r) => r.kind))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [kindRows],
+  );
+  const filteredKindRows =
+    kindFilter === "all"
+      ? kindRows
+      : kindRows.filter((r) => r.kind === kindFilter);
+  const filteredPeople = overview
+    ? filterPeople(overview.byPerson, actorFilter)
+    : [];
 
   return (
     <PagePanel scroll={false} flat>
@@ -786,6 +1077,34 @@ export function InsightsDashboard() {
               </button>
             ))}
           </div>
+          {preset === "custom" && (
+            <div
+              className="flex items-center gap-1.5"
+              data-testid="custom-range"
+            >
+              <input
+                type="date"
+                aria-label="Start date"
+                data-testid="custom-start"
+                value={customRange.startDate ?? ""}
+                onChange={(e) =>
+                  setCustomRange((r) => ({ ...r, startDate: e.target.value }))
+                }
+                className={selectClass()}
+              />
+              <span className="text-[12px] text-text-3">to</span>
+              <input
+                type="date"
+                aria-label="End date"
+                data-testid="custom-end"
+                value={customRange.endDate ?? ""}
+                onChange={(e) =>
+                  setCustomRange((r) => ({ ...r, endDate: e.target.value }))
+                }
+                className={selectClass()}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -828,6 +1147,31 @@ export function InsightsDashboard() {
 
         {overview && (
           <div className="flex flex-col gap-10">
+            <KpiRow data={overview} activePeople={overview.byPerson.length} />
+            <FiltersBar
+              kinds={workflowKinds}
+              kindFilter={kindFilter}
+              onKindFilter={setKindFilter}
+              actorFilter={actorFilter}
+              onActorFilter={setActorFilter}
+            />
+            <ChartsSection
+              data={overview}
+              range={dates}
+              kindRows={filteredKindRows}
+              people={filteredPeople}
+              tokenCaveat={tokenCaveat}
+            />
+            <div className="flex flex-col gap-3">
+              <SectionLabel>Usage by person</SectionLabel>
+              {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
+              <SortablePersonTable people={filteredPeople} />
+              <p className="text-[11px] text-text-3">Excludes shared agents</p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <SectionLabel>Workflow runs by kind</SectionLabel>
+              <SortableWorkflowKindTable rows={filteredKindRows} />
+            </div>
             <TrendsSection
               data={overview}
               range={dates}
@@ -836,17 +1180,7 @@ export function InsightsDashboard() {
             <EngagementSection data={overview} />
             <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
             <OperationalLedger data={overview} />
-            <div className="flex flex-col gap-4">
-              <PersonBreakdown
-                people={overview.byPerson}
-                tokenCaveat={tokenCaveat}
-              />
-              <WorkflowTypeBreakdown
-                workflowTypes={overview.byWorkflowType}
-                tokenCaveat={tokenCaveat}
-              />
-              <InstanceBreakdown instances={overview.inference.byInstance} />
-            </div>
+            <InstanceBreakdown instances={overview.inference.byInstance} />
           </div>
         )}
       </div>

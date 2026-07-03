@@ -83,10 +83,7 @@ export {
 export { useViewMode, type ViewMode } from "./use-view-mode";
 export { ViewToggle } from "./ViewToggle";
 export { DataTable, type DataTableColumn } from "./DataTable";
-export {
-  SortableTable,
-  type SortableColumn,
-} from "./SortableTable";
+export { SortableTable, type SortableColumn } from "./SortableTable";
 export {
   sortRows,
   pageSlice,
@@ -112,10 +109,7 @@ export {
   type TimeSeries,
   type TimeSeriesPoint,
 } from "./TimeSeriesChart";
-export {
-  CategoryBarChart,
-  type CategoryDatum,
-} from "./CategoryBarChart";
+export { CategoryBarChart, type CategoryDatum } from "./CategoryBarChart";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
 export { default as HorizontalStepper } from "./HorizontalStepper";
 export {

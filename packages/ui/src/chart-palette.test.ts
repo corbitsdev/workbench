@@ -4,19 +4,19 @@ import { CHART_SERIES, seriesColor } from "./chart-palette";
 
 describe("seriesColor", () => {
   it("returns the fixed slot for an index", () => {
-    expect(seriesColor(0).key).toBe(CHART_SERIES[0].key);
-    expect(seriesColor(1).key).toBe(CHART_SERIES[1].key);
+    expect(seriesColor(0).key).toBe(CHART_SERIES[0]!.key);
+    expect(seriesColor(1).key).toBe(CHART_SERIES[1]!.key);
   });
 
   it("clamps past the last slot instead of cycling", () => {
     const last = CHART_SERIES[CHART_SERIES.length - 1];
-    expect(seriesColor(CHART_SERIES.length + 5).key).toBe(last.key);
+    expect(seriesColor(CHART_SERIES.length + 5).key).toBe(last!.key);
     // must NOT wrap back to slot 0
-    expect(seriesColor(CHART_SERIES.length).key).not.toBe(CHART_SERIES[0].key);
+    expect(seriesColor(CHART_SERIES.length).key).not.toBe(CHART_SERIES[0]!.key);
   });
 
   it("resolves a negative index to the first slot", () => {
-    expect(seriesColor(-3).key).toBe(CHART_SERIES[0].key);
+    expect(seriesColor(-3).key).toBe(CHART_SERIES[0]!.key);
   });
 
   it("exposes tokenized class names, never raw hex", () => {

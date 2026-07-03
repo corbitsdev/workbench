@@ -23,14 +23,62 @@ export interface ChartSeriesColor {
 }
 
 export const CHART_SERIES: readonly ChartSeriesColor[] = [
-  { key: "accent", stroke: "stroke-accent", fill: "fill-accent", text: "text-accent", bg: "bg-accent" },
-  { key: "blue", stroke: "stroke-blue", fill: "fill-blue", text: "text-blue", bg: "bg-blue" },
-  { key: "green", stroke: "stroke-green", fill: "fill-green", text: "text-green", bg: "bg-green" },
-  { key: "red", stroke: "stroke-red", fill: "fill-red", text: "text-red", bg: "bg-red" },
-  { key: "accent-deep", stroke: "stroke-accent-deep", fill: "fill-accent-deep", text: "text-accent-deep", bg: "bg-accent-deep" },
-  { key: "blue-deep", stroke: "stroke-blue-deep", fill: "fill-blue-deep", text: "text-blue-deep", bg: "bg-blue-deep" },
-  { key: "green-deep", stroke: "stroke-green-deep", fill: "fill-green-deep", text: "text-green-deep", bg: "bg-green-deep" },
-  { key: "red-deep", stroke: "stroke-red-deep", fill: "fill-red-deep", text: "text-red-deep", bg: "bg-red-deep" },
+  {
+    key: "accent",
+    stroke: "stroke-accent",
+    fill: "fill-accent",
+    text: "text-accent",
+    bg: "bg-accent",
+  },
+  {
+    key: "blue",
+    stroke: "stroke-blue",
+    fill: "fill-blue",
+    text: "text-blue",
+    bg: "bg-blue",
+  },
+  {
+    key: "green",
+    stroke: "stroke-green",
+    fill: "fill-green",
+    text: "text-green",
+    bg: "bg-green",
+  },
+  {
+    key: "red",
+    stroke: "stroke-red",
+    fill: "fill-red",
+    text: "text-red",
+    bg: "bg-red",
+  },
+  {
+    key: "accent-deep",
+    stroke: "stroke-accent-deep",
+    fill: "fill-accent-deep",
+    text: "text-accent-deep",
+    bg: "bg-accent-deep",
+  },
+  {
+    key: "blue-deep",
+    stroke: "stroke-blue-deep",
+    fill: "fill-blue-deep",
+    text: "text-blue-deep",
+    bg: "bg-blue-deep",
+  },
+  {
+    key: "green-deep",
+    stroke: "stroke-green-deep",
+    fill: "fill-green-deep",
+    text: "text-green-deep",
+    bg: "bg-green-deep",
+  },
+  {
+    key: "red-deep",
+    stroke: "stroke-red-deep",
+    fill: "fill-red-deep",
+    text: "text-red-deep",
+    bg: "bg-red-deep",
+  },
 ] as const;
 
 /**
@@ -38,6 +86,6 @@ export const CHART_SERIES: readonly ChartSeriesColor[] = [
  * index resolves to the first slot.
  */
 export function seriesColor(index: number): ChartSeriesColor {
-  if (index < 0) return CHART_SERIES[0];
-  return CHART_SERIES[Math.min(index, CHART_SERIES.length - 1)];
+  const clamped = index < 0 ? 0 : Math.min(index, CHART_SERIES.length - 1);
+  return CHART_SERIES[clamped]!;
 }
