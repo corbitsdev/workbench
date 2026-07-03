@@ -42,6 +42,8 @@ let client: PGlite;
 let db: HubDb;
 
 const SEEDED_TABLES = [
+  "member_agent_instance",
+  "agent_instance",
   "agent_session",
   "session_mail",
   "inference_turn",
@@ -234,6 +236,24 @@ describe("descriptor drift guard — registry strings vs the real schema", () =>
   );
 });
 
+async function seedOwnedInstance(args: {
+  instanceId: string;
+  syntheticPrincipalId: string;
+  memberPrincipalId: string;
+  tenantId?: string;
+}): Promise<void> {
+  await client.query(
+    `insert into agent_instance (id, agent_id, tenant_id, principal_id, address, status)
+     values ($1, 'agt-x', $2, $3, $1 || '@wb.local', 'running')`,
+    [args.instanceId, args.tenantId ?? TENANT, args.syntheticPrincipalId],
+  );
+  await client.query(
+    `insert into member_agent_instance (id, tenant_id, member_principal_id, template_key, agent_id, instance_id)
+     values ('link-' || $1, $2, $3, 'myra', 'agt-x', $1)`,
+    [args.instanceId, args.tenantId ?? TENANT, args.memberPrincipalId],
+  );
+}
+
 describe("getPrincipalActivityPage — union over real tables", () => {
   test("merges entries across sources in (ts desc, source_table, id) order and validates them", async () => {
     await seedSession({ id: "ses-1", createdAt: "2026-07-01T10:00:00Z" });
@@ -416,5 +436,69 @@ describe("getPrincipalActivityPage — union over real tables", () => {
     await expect(page({ limit: 5, cursor: "not-a-cursor" })).rejects.toThrow(
       /invalid timeline cursor/i,
     );
+  });
+});
+
+describe("instance-principal attribution through member_agent_instance", () => {
+  test("a user's timeline includes activity recorded under their owned instance's synthetic principal", async () => {
+    const SYNTH = "prn-synth-myra";
+    await seedOwnedInstance({
+      instanceId: "ins-myra-u",
+      syntheticPrincipalId: SYNTH,
+      memberPrincipalId: PRINCIPAL,
+    });
+    await seedSession({
+      id: "ses-synth",
+      principalId: SYNTH,
+      createdAt: "2026-07-01T11:00:00Z",
+    });
+    await seedMail({
+      id: "mail-synth",
+      sessionId: "ses-synth",
+      createdAt: "2026-07-01T11:01:00Z",
+    });
+    await seedTurn({
+      id: "turn-synth",
+      sessionId: "ses-synth",
+      startedAt: "2026-07-01T11:02:00Z",
+    });
+    await seedToolCall({
+      id: "evt-synth",
+      principalId: SYNTH,
+      occurredAt: "2026-07-01T11:03:00Z",
+    });
+
+    const mine = await page({ limit: 20 });
+    const mineIds = mine.entries.map((e) => e.id);
+    expect(mineIds).toContain("ses-synth");
+    expect(mineIds).toContain("mail-synth");
+    expect(mineIds).toContain("turn-synth");
+    expect(mineIds).toContain("evt-synth");
+
+    const theirs = await getPrincipalActivityPage({
+      db,
+      tenantId: TENANT,
+      principalId: OTHER_PRINCIPAL,
+      limit: 20,
+    });
+    expect(theirs.entries).toHaveLength(0);
+  });
+
+  test("an instance link in another tenant does not pull its synthetic principal into this tenant's timeline", async () => {
+    const SYNTH = "prn-synth-foreign";
+    await seedOwnedInstance({
+      instanceId: "ins-foreign",
+      syntheticPrincipalId: SYNTH,
+      memberPrincipalId: PRINCIPAL,
+      tenantId: OTHER_TENANT,
+    });
+    await seedSession({
+      id: "ses-synth-foreign",
+      principalId: SYNTH,
+      createdAt: "2026-07-01T11:10:00Z",
+    });
+
+    const mine = await page({ limit: 20 });
+    expect(mine.entries.map((e) => e.id)).not.toContain("ses-synth-foreign");
   });
 });
