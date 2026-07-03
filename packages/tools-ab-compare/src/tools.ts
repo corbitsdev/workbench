@@ -99,9 +99,19 @@ function readDecisionObject(
   output: Record<string, unknown>,
   decidedBy: "agent" | "human",
 ): Decision {
+  const ranking = coerceRanking(output.ranking);
+  // A top-level `rationale` (the dock choice+prompt-box path, CL-2683) attaches
+  // to the winner when the rank-1 row carries none, so a dock decision composes
+  // the same artifact the run-page panel produces (which nests the rationale on
+  // the winner row directly).
+  const topRationale = readString(output.rationale);
+  const winner = ranking.find((row) => row.rank === 1);
+  if (topRationale !== undefined && winner !== undefined) {
+    if (winner.rationale === undefined) winner.rationale = topRationale;
+  }
   const decision: Decision = {
     decidedBy,
-    ranking: coerceRanking(output.ranking),
+    ranking,
   };
   const summary = readString(output.summary);
   if (summary !== undefined) decision.summary = summary;

@@ -297,6 +297,79 @@ describe("WorkflowDock", () => {
     expect(resume.body).toMatchObject({ signalName: "approve-draft" });
   });
 
+  it("renders the migrated ab-compare-hitl decision as a winner choice and resumes with the structured ranking payload (CL-2683)", async () => {
+    const inline = (value: unknown) => `inline:${JSON.stringify(value)}`;
+    records = [listRow("run_ab", "awaiting", "ab-compare-hitl")];
+    statesByRunId["run_ab"] = {
+      runId: "run_ab",
+      phase: "running",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "config",
+          phase: "completed",
+          stepType: "human",
+          currentAttempt: 1,
+          outputRef: inline({
+            variants: [
+              { label: "Variant 1", model: "gpt-4o" },
+              { label: "Variant 2", model: "claude-3.5" },
+            ],
+            input: "Write a tagline.",
+          }),
+        },
+        {
+          stepId: "execute",
+          phase: "completed",
+          stepType: "inline",
+          currentAttempt: 1,
+          outputRef: inline([
+            { reply: "Close deals faster." },
+            { reply: "Your team's shared brain." },
+          ]),
+        },
+        {
+          stepId: "decision",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "ab-decision",
+        },
+      ],
+    };
+    renderDock();
+
+    // Blind per-variant output cards render via the shared UIBlockView — no
+    // ab-compare-hitl custom panel on this path — and the pre-decision surface
+    // reveals NO provider/model identity (CL-2683 blind pick).
+    const winnerButton = await waitFor(() =>
+      screen.getByRole("button", { name: "Variant 2 wins" }),
+    );
+    expect(screen.getByText("Variant 1")).toBeTruthy();
+    expect(screen.getByText("Variant 2")).toBeTruthy();
+    expect(screen.queryByText(/gpt-4o/)).toBeNull();
+    expect(screen.queryByText(/claude-3\.5/)).toBeNull();
+
+    // Pick Variant 2.
+    fireEvent.click(winnerButton);
+
+    await waitFor(() => {
+      const resume = apiCalls.find((c) => c.path.includes("/resume"));
+      expect(resume).toBeDefined();
+    });
+    const resume = apiCalls.find((c) => c.path.includes("/resume"))!;
+    expect(resume.path).toContain("/workflow-exec/records/run_ab/resume");
+    // Not an { instruction } free-text wrapper — a real ranked decision the
+    // compose step reads directly, with the picked variant ranked first.
+    const body = resume.body as {
+      signalName: string;
+      payload: { ranking: { rank: number; label: string }[] };
+    };
+    expect(body.signalName).toBe("ab-decision");
+    expect(body.payload.ranking[0]).toEqual({ rank: 1, label: "Variant 2" });
+    expect("instruction" in body.payload).toBe(false);
+  });
+
   it("shows no gate button when the awaiting step's signalName is unrecoverable", async () => {
     records = [listRow("run_gate", "awaiting", "pain-point-collateral")];
     statesByRunId["run_gate"] = logState("run_gate", "running", [

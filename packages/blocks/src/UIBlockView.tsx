@@ -319,8 +319,11 @@ function StepIndicator({
     );
   }
   if (state === "awaiting") {
+    // Passive status, not a CTA: awaiting steps use the neutral Summit Blue
+    // status token, never the orange ACTION token (CL-2683). The choice BUTTON
+    // stays orange — that is the actionable affordance.
     return (
-      <span className={cn(base, "border-2 border-orange text-orange")}>
+      <span className={cn(base, "border-2 border-blue text-blue")}>
         {index + 1}
       </span>
     );
@@ -393,13 +396,35 @@ function ChoiceBlock({
   onRespond?: (response: UIResponse) => void;
 }) {
   const [answered, setAnswered] = useState<string | null>(null);
+  const [promptText, setPromptText] = useState("");
   if (answered !== null) {
     return <p className="text-xs italic text-text-3">You chose: {answered}</p>;
+  }
+  // Fold the prompt-box free text into the option's structured payload under the
+  // block's `payloadKey` (CL-2683), so a choice carries a rationale the panel
+  // equivalent collects. Only merges into an object payload with a non-empty note.
+  function resolvePayload(payload: unknown): unknown {
+    const note = promptText.trim();
+    if (block.promptBox === undefined || note.length === 0) return payload;
+    if (typeof payload !== "object" || payload === null) return payload;
+    return {
+      ...(payload as Record<string, unknown>),
+      [block.promptBox.payloadKey]: note,
+    };
   }
   return (
     <div className="space-y-2">
       {block.prompt !== undefined && (
         <p className="text-sm text-text-2">{block.prompt}</p>
+      )}
+      {block.promptBox !== undefined && (
+        <textarea
+          value={promptText}
+          onChange={(event) => setPromptText(event.target.value)}
+          placeholder={block.promptBox.placeholder}
+          rows={2}
+          className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+        />
       )}
       <div className="flex flex-wrap gap-2">
         {block.options.map((option) => (
@@ -408,12 +433,14 @@ function ChoiceBlock({
             type="button"
             onClick={() => {
               setAnswered(option.label);
+              const payload = resolvePayload(option.payload);
               onRespond?.({
                 blockKind: "choice",
                 value: option.value ?? option.label,
                 ...(block.signalName !== undefined
                   ? { signalName: block.signalName }
                   : {}),
+                ...(payload !== undefined ? { payload } : {}),
               });
             }}
             className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange"

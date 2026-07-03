@@ -34,4 +34,52 @@ describe("validateResumePayload", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  test("rejects a free-text-only ab-compare-hitl decision (no ranking)", () => {
+    // A blind winner-pick cannot be free text — it must carry a ranking.
+    const result = validateResumePayload("ab-compare-hitl", "ab-decision", {
+      instruction: "Variant 1 reads better to me.",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects an ab-compare-hitl decision with an empty ranking", () => {
+    const result = validateResumePayload("ab-compare-hitl", "ab-decision", {
+      ranking: [],
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts a structured ab-compare-hitl decision with a ranked winner", () => {
+    expect(
+      validateResumePayload("ab-compare-hitl", "ab-decision", {
+        ranking: [{ rank: 1, label: "Variant 2", rationale: "Punchier." }],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects an empty ab-compare-hitl config payload", () => {
+    // The generic "Continue" affordance would POST `{ instruction: "" }`; the
+    // config gate needs fully-specified variants + input.
+    const result = validateResumePayload("ab-compare-hitl", "ab-config", {
+      instruction: "",
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  test("accepts an ab-compare-hitl config payload with variants and input", () => {
+    expect(
+      validateResumePayload("ab-compare-hitl", "ab-config", {
+        variants: [
+          {
+            label: "Variant 1",
+            providerName: "openai",
+            model: "gpt-4o",
+            input: "Write a tagline.",
+          },
+        ],
+        input: "Write a tagline.",
+      }),
+    ).toEqual({ ok: true });
+  });
 });

@@ -96,6 +96,44 @@ describe("composeComparisonResult", () => {
     expect(result.variants[1]?.content).toBe("Variant two body.");
   });
 
+  test("folds a top-level human rationale onto the rank-1 winner (dock parity)", () => {
+    // The dock choice+prompt-box path (CL-2683) delivers the rationale as a
+    // top-level field alongside a ranking that carries none; compose attaches it
+    // to the winner so the artifact matches the run-page panel's nested shape.
+    const steps = {
+      ...stepsWithAgentJudge(),
+      decision: {
+        output: {
+          ranking: [
+            { rank: 1, label: "Variant 2" },
+            { rank: 2, label: "Variant 1" },
+          ],
+          rationale: "Punchier and more memorable.",
+        },
+      },
+    };
+    const result = composeComparisonResult(steps);
+    expect(result.decidedBy).toBe("human");
+    const winner = result.ranking.find((r) => r.rank === 1);
+    expect(winner?.rationale).toBe("Punchier and more memorable.");
+    // Non-winner rows are untouched.
+    expect(result.ranking.find((r) => r.rank === 2)?.rationale).toBeUndefined();
+  });
+
+  test("a per-row winner rationale wins over the top-level fallback", () => {
+    const steps = {
+      ...stepsWithAgentJudge(),
+      decision: {
+        output: {
+          ranking: [{ rank: 1, label: "Variant 2", rationale: "Row note." }],
+          rationale: "Top-level note.",
+        },
+      },
+    };
+    const result = composeComparisonResult(steps);
+    expect(result.ranking[0]?.rationale).toBe("Row note.");
+  });
+
   test("degrades to an empty ranking on a non-JSON judge reply", () => {
     const steps = {
       ...stepsWithAgentJudge(),

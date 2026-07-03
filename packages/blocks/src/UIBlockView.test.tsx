@@ -87,6 +87,107 @@ describe("UIBlockView", () => {
     });
   });
 
+  it("forwards an option's structured payload verbatim in the response (CL-2683)", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const payload = { ranking: [{ rank: 1, label: "Variant 2" }] };
+    const block: UIBlock = {
+      kind: "choice",
+      prompt: "Pick the winning variant.",
+      signalName: "ab-decision",
+      options: [
+        {
+          id: "Variant 2",
+          label: "Variant 2 wins",
+          value: "Variant 2",
+          payload,
+        },
+      ],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Variant 2 wins" }));
+    expect(received).toEqual({
+      blockKind: "choice",
+      value: "Variant 2",
+      signalName: "ab-decision",
+      payload,
+    });
+  });
+
+  it("folds the prompt-box free text into the selected option's payload (CL-2683)", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const block: UIBlock = {
+      kind: "choice",
+      prompt: "Pick the winning variant.",
+      signalName: "ab-decision",
+      promptBox: { placeholder: "Why did it win?", payloadKey: "rationale" },
+      options: [
+        {
+          id: "Variant 2",
+          label: "Variant 2 wins",
+          value: "Variant 2",
+          payload: { ranking: [{ rank: 1, label: "Variant 2" }] },
+        },
+      ],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.change(screen.getByPlaceholderText("Why did it win?"), {
+      target: { value: "Punchier." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Variant 2 wins" }));
+    expect(received?.payload).toEqual({
+      ranking: [{ rank: 1, label: "Variant 2" }],
+      rationale: "Punchier.",
+    });
+  });
+
+  it("leaves the payload unchanged when the prompt-box is left blank", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const payload = { ranking: [{ rank: 1, label: "Variant 2" }] };
+    const block: UIBlock = {
+      kind: "choice",
+      signalName: "ab-decision",
+      promptBox: { placeholder: "Why did it win?", payloadKey: "rationale" },
+      options: [{ id: "Variant 2", label: "Variant 2 wins", payload }],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Variant 2 wins" }));
+    expect(received?.payload).toEqual(payload);
+  });
+
+  it("marks an awaiting step with a non-action (blue) status token, not orange", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [{ state: "awaiting", label: "Decide" }],
+    };
+    const { container } = render(<UIBlockView block={block} />);
+    const indicator = container.querySelector('[data-state="awaiting"] span');
+    expect(indicator?.className).toContain("border-blue");
+    expect(indicator?.className).not.toContain("border-orange");
+  });
+
+  it("omits payload from the response when the option has none", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const block: UIBlock = {
+      kind: "choice",
+      options: [{ id: "a", label: "Yes" }],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(received?.payload).toBeUndefined();
+  });
+
   it("omits signalName from the response for a non-gate choice", () => {
     let received: UIResponse | undefined;
     const onRespond = (response: UIResponse) => {

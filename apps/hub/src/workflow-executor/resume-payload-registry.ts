@@ -1,5 +1,9 @@
 import { type, type Type } from "arktype";
-import { SyncApprovalPayloadSchema } from "@workbench/shared";
+import {
+  AbConfigPayloadSchema,
+  AbDecisionPayloadSchema,
+  SyncApprovalPayloadSchema,
+} from "@workbench/shared";
 
 // Per-workflow-kind → per-signal-name resume-payload validators. The /resume
 // route is generic across every workflow; the raw resume payload is otherwise
@@ -13,6 +17,14 @@ import { SyncApprovalPayloadSchema } from "@workbench/shared";
 const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   "attio-task-agent": {
     "sync-approval": SyncApprovalPayloadSchema,
+  },
+  // ab-compare-hitl (CL-2683): both gates carry a structured payload. The blind
+  // winner-pick REQUIRES a non-empty ranking — a free-text `{ instruction }` is
+  // rejected here rather than composing a winner-less artifact — and the config
+  // gate REQUIRES fully-specified variants + input.
+  "ab-compare-hitl": {
+    "ab-decision": AbDecisionPayloadSchema,
+    "ab-config": AbConfigPayloadSchema,
   },
 };
 

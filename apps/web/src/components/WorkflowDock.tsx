@@ -3,11 +3,12 @@ import { Link } from "react-router";
 import { ChevronsLeft, ChevronsRight } from "lucide-react";
 import {
   UIBlockView,
-  dockRunBlocks,
   DockRunPhaseSchema,
   type DockRunPhase,
   type UIResponse,
 } from "@workbench/chat";
+import { buildDockBlocks } from "../lib/dock-block-builders";
+import { stepOutputsFromLog } from "../lib/run-state-adapter";
 import { cn, failedRunError } from "@workbench/ui";
 import {
   isRecordTerminal,
@@ -178,7 +179,13 @@ function WorkflowDockCard({
       .mutateAsync({
         runId: run.runId,
         signalName: response.signalName,
-        payload: { instruction: response.value },
+        // A choice that carries a structured payload (CL-2683, e.g. a ranked
+        // decision) resumes with it verbatim; a plain choice or free text posts
+        // the string value wrapped as an instruction.
+        payload:
+          response.payload !== undefined
+            ? response.payload
+            : { instruction: response.value },
       })
       .catch((err: unknown) =>
         setResumeError(
@@ -209,7 +216,7 @@ function WorkflowDockCard({
 
   const blocks = useMemo(
     () =>
-      dockRunBlocks({
+      buildDockBlocks(run.kind, {
         runId: run.runId,
         phase,
         steps: (log?.steps ?? []).map((step) => ({
@@ -219,6 +226,7 @@ function WorkflowDockCard({
             ? { awaitingSignalName: step.awaitingSignalName }
             : {}),
         })),
+        stepOutputs: log !== undefined ? stepOutputsFromLog(log) : {},
         ...(sanitizedError !== undefined
           ? { errorMessage: sanitizedError }
           : {}),
@@ -232,7 +240,7 @@ function WorkflowDockCard({
             }
           : {}),
       }),
-    [run.runId, phase, log, sanitizedError],
+    [run.runId, run.kind, phase, log, sanitizedError],
   );
 
   const meta = STATUS_META[run.status];

@@ -43,6 +43,11 @@ export const UIResponseSchema = type({
   // pending gate's `awaitSignal` name. The host resumes the run with this
   // signal + the response value as payload instead of posting a chat turn.
   "signalName?": "string",
+  // A structured resume payload the selected option carries (CL-2683). When
+  // present the host delivers it verbatim as the gate's signal payload instead
+  // of wrapping the string `value` as free text — this lets a choice express a
+  // typed decision (e.g. a ranking) the workflow's compose step reads directly.
+  "payload?": "unknown",
 });
 /** An interactive block's response, posted back to the agent as the next turn. */
 export type UIResponse = typeof UIResponseSchema.infer;
@@ -82,11 +87,21 @@ export type UIBlock =
       // an option resolves the response to a run resume with this signal rather
       // than a chat turn — the renderer carries it, never hardcodes it.
       signalName?: string;
+      // An optional free-text field rendered alongside the options (CL-2683). Its
+      // typed value is folded into the selected option's structured `payload`
+      // under `payloadKey` when non-empty, so a choice can carry a rationale (or
+      // any per-decision note) the panel equivalent collects. Only meaningful for
+      // options that carry an object `payload`.
+      promptBox?: { placeholder?: string; payloadKey: string };
       options: {
         id: string;
         label: string;
         value?: string;
         description?: string;
+        // A structured resume payload delivered verbatim as the gate's signal
+        // payload when this option is selected (CL-2683). Absent for a plain
+        // choice, which posts the string `value` wrapped as free text.
+        payload?: unknown;
       }[];
     }
   | { kind: "progress"; title?: string; steps: ProgressStep[] }
