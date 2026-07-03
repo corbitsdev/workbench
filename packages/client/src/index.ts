@@ -499,7 +499,8 @@ export async function searchActors(
   options: ClientOptions = {},
   params: SearchActorsParams,
 ): Promise<Actor[]> {
-  const qs = new URLSearchParams({ query: params.query });
+  // The hub route reads `q`, not `query` (apps/hub/src/routes/actor-search.ts).
+  const qs = new URLSearchParams({ q: params.query });
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const raw = await request<unknown>(
     `tenants/${encodeURIComponent(params.tenantId)}/actors/search?${qs.toString()}`,

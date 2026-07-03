@@ -38,7 +38,7 @@ describe("searchActors", () => {
     );
 
     expect(spy.mock.calls[0]?.[0]).toBe(
-      `${BASE}/api/tenants/ten_1/actors/search?query=my`,
+      `${BASE}/api/tenants/ten_1/actors/search?q=my`,
     );
   });
 
@@ -53,7 +53,7 @@ describe("searchActors", () => {
     );
 
     expect(spy.mock.calls[0]?.[0]).toBe(
-      `${BASE}/api/tenants/ten%2F1/actors/search?query=a+b&limit=5`,
+      `${BASE}/api/tenants/ten%2F1/actors/search?q=a+b&limit=5`,
     );
   });
 
