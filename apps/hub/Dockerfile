@@ -17,6 +17,7 @@ COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
+COPY packages/blocks/package.json packages/blocks/
 COPY packages/chat/package.json packages/chat/
 COPY packages/catalog/package.json packages/catalog/
 COPY packages/client/package.json packages/client/
@@ -80,6 +81,7 @@ COPY packages/catalog/ packages/catalog/
 COPY packages/event-collector/ packages/event-collector/
 COPY packages/hub-agent/ packages/hub-agent/
 COPY packages/storage-isogit/ packages/storage-isogit/
+COPY packages/blocks/ packages/blocks/
 COPY packages/chat/ packages/chat/
 COPY packages/last30days-core/ packages/last30days-core/
 COPY packages/prompts/ packages/prompts/

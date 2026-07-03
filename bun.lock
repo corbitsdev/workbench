@@ -663,6 +663,7 @@
     "packages/chat": {
       "name": "@workbench/chat",
       "dependencies": {
+        "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",

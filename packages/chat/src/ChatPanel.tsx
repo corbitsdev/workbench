@@ -11,7 +11,7 @@ import { ChatThread, type ChatThreadProps } from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
 import { ChatInput } from "./ChatInput";
 import type { AttachmentPolicy, PendingAttachment } from "./attachments";
-import type { UIBlock, UIResponse } from "./ui-block";
+import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 
 export interface ChatPanelProps {

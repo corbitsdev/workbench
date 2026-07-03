@@ -4,7 +4,7 @@ import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 import { TypingIndicator } from "./TypingIndicator";
-import type { UIBlock, UIResponse } from "./ui-block";
+import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";

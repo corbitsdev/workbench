@@ -19,6 +19,7 @@
     "test:coverage": "bun test --preload ./src/test-setup.ts --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "@workbench/blocks": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:"
