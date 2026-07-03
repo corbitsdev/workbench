@@ -317,4 +317,48 @@ describe("last30days Panel", () => {
       synthesisCard?.parentElement?.closest(".rounded-panel") ?? null,
     ).toBeNull();
   });
+
+  test("names the failed step and shows the sanitized error, never raw internals (CL-2659)", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={
+          {
+            phase: "failed",
+            steps: new Map([
+              ["intake", { phase: "completed" }],
+              ["ground", { phase: "completed" }],
+              ["brief", { phase: "completed" }],
+              [
+                "write",
+                {
+                  phase: "failed",
+                  lastError: {
+                    message:
+                      "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/write.ts:42:7",
+                  },
+                },
+              ],
+            ]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    screen.getByText("Run failed at Report");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
+  });
+
+  test("falls back to an honest no-details message on a failed run with no step error", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={{ phase: "failed", steps: new Map() } as unknown as RunState}
+      />,
+    );
+    screen.getByText("Run failed");
+    screen.getByText(/No error details are available/);
+  });
 });

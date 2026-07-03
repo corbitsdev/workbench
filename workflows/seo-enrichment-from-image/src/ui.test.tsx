@@ -236,7 +236,28 @@ describe("Panel", () => {
     renderPanel({
       state: { phase: "failed", steps: new Map() } as unknown as RunState,
     });
-    screen.getByText(/This run failed/);
+    screen.getByText("Run failed");
+    screen.getByText(/No error details are available/);
+  });
+
+  it("names the failed step and shows the sanitized error, never raw internals (CL-2659)", () => {
+    const steps = new Map<string, StepState>();
+    steps.set("intake", { stepId: "intake", phase: "completed" } as StepState);
+    steps.set("enrich", {
+      stepId: "enrich",
+      phase: "failed",
+      currentAttempt: 1,
+      lastError: {
+        message:
+          "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/enrich.ts:42:7",
+      },
+    } as StepState);
+    renderPanel({ state: { phase: "failed", steps } as unknown as RunState });
+    screen.getByText("Run failed at Enrich");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
   });
 
   it("shows a malformed-output error when enrich output fails validation (completed step)", () => {

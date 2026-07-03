@@ -6,6 +6,8 @@ import {
   activeDisplayStepIndex,
   buildStepperSteps as buildRunStepperSteps,
   displayStepPhase,
+  FailedRunNotice,
+  failedDisplayStepLabel,
   failedRunErrorMessage,
   liveStatusLabel,
   LiveStatus,
@@ -249,6 +251,53 @@ describe("workflow-run-state", () => {
       ]),
     } as unknown as RunState;
     expect(failedRunErrorMessage(state)).toContain("First is rate-limiting");
+  });
+
+  test("FailedRunNotice names the failed step and renders the sanitized message, never the raw error", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { phase: "completed" }],
+        [
+          "write",
+          {
+            phase: "failed",
+            lastError: {
+              message:
+                "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/write.ts:42:7",
+            },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    render(<FailedRunNotice state={state} steps={STEPS} />);
+    screen.getByText("Run failed at Report");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
+  });
+
+  test("FailedRunNotice falls back to an honest no-details message when no step carries lastError", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map(),
+    } as unknown as RunState;
+    render(<FailedRunNotice state={state} steps={STEPS} />);
+    screen.getByText("Run failed");
+    screen.getByText(/No error details are available/);
+  });
+
+  test("failedDisplayStepLabel returns the failed display step's label", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { phase: "completed" }],
+        ["write", { phase: "failed" }],
+      ]),
+    } as unknown as RunState;
+    expect(failedDisplayStepLabel(state, STEPS)).toBe("Report");
+    expect(failedDisplayStepLabel(null, STEPS)).toBeNull();
   });
 
   test("LiveStatus renders the label with an ellipsis", () => {

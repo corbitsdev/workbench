@@ -912,6 +912,45 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    screen.getByText("Generation failed");
+    screen.getByText("Run failed at Draft");
+    screen.getByText(/No error details are available/);
+  });
+
+  it("shows the sanitized step error, never raw internals (CL-2659)", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { stepId: "intake", phase: "completed", currentAttempt: 1 }],
+        [
+          "generate-1",
+          {
+            stepId: "generate-1",
+            phase: "failed",
+            currentAttempt: 1,
+            lastError: {
+              message:
+                "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/generate.ts:42:7",
+            },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    renderPanel(
+      <Panel
+        deploymentId="dep_1"
+        state={state}
+        connected
+        signalPending={false}
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    screen.getByText("Run failed at Draft");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
   });
 });
