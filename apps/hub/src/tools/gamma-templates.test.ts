@@ -22,7 +22,7 @@ mock.module("../lib/gamma-templates", () => ({
   listLatestGammaTemplates: mock(() => Promise.resolve(templates)),
 }));
 
-import { GAMMA_LIST_TEMPLATES_HUB_TOOL } from "./gamma-templates";
+import { GAMMA_TEMPLATES_HUB_TOOLS } from "./gamma-templates";
 
 const TOOL_CONTEXT = {
   db: {} as HubDb,
@@ -32,9 +32,19 @@ const TOOL_CONTEXT = {
   sessionId: "ses-1",
 };
 
-describe("GAMMA_LIST_TEMPLATES_HUB_TOOL", () => {
+describe("GAMMA_TEMPLATES_HUB_TOOLS", () => {
+  it("registers the tool under its bare name", () => {
+    expect(
+      GAMMA_TEMPLATES_HUB_TOOLS["gamma_list_templates"]?.definition.name,
+    ).toBe("gamma_list_templates");
+  });
+
   it("emits gammaId, name, and description (not systemPrompt)", async () => {
-    const tools = GAMMA_LIST_TEMPLATES_HUB_TOOL.createTools(TOOL_CONTEXT);
+    const entry = GAMMA_TEMPLATES_HUB_TOOLS["gamma_list_templates"];
+    if (!entry) {
+      throw new Error("expected a gamma_list_templates entry");
+    }
+    const tools = entry.createTools(TOOL_CONTEXT);
     const tool = tools[0];
     if (!tool || tool.kind !== "string") {
       throw new Error("expected one string-kind tool");
