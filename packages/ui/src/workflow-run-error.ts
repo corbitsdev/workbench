@@ -29,7 +29,12 @@ export interface ClassifiedRunError {
   raw: string;
 }
 
-const PROVIDER_API_ERROR = /^([A-Z][\w.-]*(?:\s[\w.-]+)*?) API error: (\d{3})/;
+const PROVIDER_API_ERROR =
+  /^([A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+){0,2}) API error: (\d{3})/;
+
+const ANY_API_ERROR = /\bAPI error: (\d{3})/;
+
+const GENERIC_PROVIDER_LABEL = "An external service";
 
 const NETWORK_PATTERNS = [
   /\bfetch failed\b/i,
@@ -38,7 +43,7 @@ const NETWORK_PATTERNS = [
   /\bETIMEDOUT\b/,
   /\bEAI_AGAIN\b/,
   /\bsocket\b.*\b(closed|hang ?up|reset)\b/i,
-  /\btimed? ?out\b/i,
+  /\b(request|fetch|connect(?:ion)?|socket)\b.*\btimed out\b/i,
   /\bnetwork (error|request failed)\b/i,
 ];
 
@@ -53,10 +58,14 @@ function classifyProviderError(
   status: number,
   raw: string,
 ): ClassifiedRunError {
+  const credentialRef =
+    provider === GENERIC_PROVIDER_LABEL
+      ? "credential's"
+      : `${provider} credential's`;
   if (status === 401 || status === 403) {
     return {
       kind: "external-auth",
-      userMessage: `${provider} declined the request (${status}). Check the connected ${provider} credential's access and try again.`,
+      userMessage: `${provider} declined the request (${status}). Check the connected ${credentialRef} access and try again.`,
       raw,
     };
   }
@@ -87,6 +96,14 @@ export function classifyRunError(raw: string): ClassifiedRunError {
     return classifyProviderError(
       providerMatch[1],
       Number(providerMatch[2]),
+      raw,
+    );
+  }
+  const anyApiErrorMatch = ANY_API_ERROR.exec(raw);
+  if (anyApiErrorMatch?.[1] !== undefined) {
+    return classifyProviderError(
+      GENERIC_PROVIDER_LABEL,
+      Number(anyApiErrorMatch[1]),
       raw,
     );
   }
