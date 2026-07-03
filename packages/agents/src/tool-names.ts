@@ -70,9 +70,11 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   "@workbench/tools-gamma/gamma": [
     "gamma_create_from_template",
     "gamma_duplicate_presentation",
-    "gamma_list_templates",
     "gamma_list_themes",
   ],
+  // Hub-backed (reads tenant templates from the hub DB, no Gamma credential);
+  // shipped in the same @workbench/tools-gamma tarball as its own factory.
+  "@workbench/tools-gamma/gamma-templates": ["gamma_list_templates"],
   "@workbench/tools-github/github": ["github_activity"],
   "@workbench/tools-granola/granola": [
     "granola_list_notes",

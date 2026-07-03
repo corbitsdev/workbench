@@ -4,8 +4,10 @@ import { GAMMA_LIST_TEMPLATES_DEFINITION } from "@workbench/tools-gamma";
 import type { ContextToolEntry } from "../lib/tool-registry";
 import { listLatestGammaTemplates } from "../lib/gamma-templates";
 
-// This ContextToolEntry is how the AGENT lists Gamma templates (during a chat
-// or workflow step). The human-facing surfaces list them over HTTP instead: the
+// Hub-side execution for the hub-backed `gamma_list_templates` tool (the
+// `gammaTemplates` factory in @workbench/tools-gamma), dispatched over
+// `POST /api/internal/hub-tools/run` for both live agent sessions and
+// workflow steps. The human-facing surfaces list templates over HTTP: the
 // workflow intake UI and the settings page both call `GET /gamma-templates`
 // (see routes/gamma-templates.ts), which additionally walks the ancestor chain
 // and computes per-caller `canManage`. This tool lists only the active tenant's
@@ -34,7 +36,9 @@ function createGammaListTemplatesTool(context: {
   };
 }
 
-export const GAMMA_LIST_TEMPLATES_HUB_TOOL: ContextToolEntry = {
-  definition: GAMMA_LIST_TEMPLATES_DEFINITION,
-  createTools: (context) => [createGammaListTemplatesTool(context)],
+export const GAMMA_TEMPLATES_HUB_TOOLS: Record<string, ContextToolEntry> = {
+  gamma_list_templates: {
+    definition: GAMMA_LIST_TEMPLATES_DEFINITION,
+    createTools: (context) => [createGammaListTemplatesTool(context)],
+  },
 };

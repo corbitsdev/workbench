@@ -55,7 +55,7 @@ describe("GAMMA_LIST_TEMPLATES_DEFINITION", () => {
 });
 
 describe("createTemplateTools", () => {
-  it("does not include gamma_list_templates — it is a hub ContextToolEntry", () => {
+  it("does not include gamma_list_templates — it is a hub-backed factory", () => {
     const tools = createTemplateTools(baseConfig);
     const names = tools.map((t) => t.definition.name);
     expect(names).not.toContain("gamma_list_templates");

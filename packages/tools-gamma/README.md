@@ -33,6 +33,6 @@ Templates are managed over the hub REST API:
 - `PUT` / `DELETE /api/v1/gamma-templates/:id` — gated on a `manage` grant (`authorize(...)`), so anyone in the tenant can use a template but only its owner (or a delegate/admin) can edit or delete it.
 - `POST /api/v1/gamma-templates/:id/delegates` — grant `manage` to another principal (owner-only).
 
-Two consumers list templates: the **agent** uses the `gamma_list_templates` ContextToolEntry (reads the tenant DB in-process); the **web** (the `/settings/tools/:id` manager and the workflow intake UI) uses `GET /api/v1/gamma-templates`. The workflow does **not** list templates via a deterministic step — `gamma_list_templates` is a hub ContextToolEntry and cannot run inside a workflow deployment.
+Two consumers list templates: the **agent** uses the hub-backed `gamma_list_templates` tool (the `gammaTemplates` factory in `src/interchange-tools.ts`, executed hub-side via `HUB_BACKED_TOOLS` over `POST /api/internal/hub-tools/run`), which is reachable from both live sessions and workflow steps (CL-2597); the **web** (the `/settings/tools/:id` manager and the workflow intake UI) uses `GET /api/v1/gamma-templates`.
 
 The Gamma **MCP** tool `get_gammas` (`type: template`) can enumerate the user's own Gamma templates, but requires OAuth 2.0 / Dynamic Client Registration rather than the REST `X-API-KEY`; that auto-sourcing path is not implemented.
