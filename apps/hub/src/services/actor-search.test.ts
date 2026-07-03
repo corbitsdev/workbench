@@ -86,15 +86,16 @@ describe("searchActors", () => {
   });
 
   it("bounds the result count and binds the limit into the SQL", async () => {
-    const many = Array.from({ length: ACTOR_SEARCH_MAX_RESULTS }, (_, i) => [
-      `prn-u${i}`,
-      "active",
-      `Acme ${i}`,
-      `u${i}@acme.com`,
-      1,
-    ]);
+    const manyUsers = Array.from(
+      { length: ACTOR_SEARCH_MAX_RESULTS },
+      (_, i) => [`prn-u${i}`, "active", `Acme ${i}`, `u${i}@acme.com`, 1],
+    );
+    const manyAgents = Array.from(
+      { length: ACTOR_SEARCH_MAX_RESULTS },
+      (_, i) => [`prn-a${i}`, "active", `Agent ${i}`, 1],
+    );
     const { db, calls } = makeRecordingDb((query) =>
-      query.includes('"user"') ? many : many,
+      query.includes('"user"') ? manyUsers : manyAgents,
     );
     const result = await searchActors(db, { tenantId: "tn-1", query: "acme" });
     expect(result.actors.length).toBe(ACTOR_SEARCH_MAX_RESULTS);

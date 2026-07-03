@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { type } from "arktype";
 import { schema as intxSchema } from "@intx/db";
 import type { HubDb } from "../db";
@@ -82,6 +82,15 @@ function clampLimit(limit: number | undefined): number {
  * name / email. Enforces {@link ACTOR_SEARCH_MIN_QUERY_LENGTH} before touching
  * the db and caps results at {@link ACTOR_SEARCH_MAX_RESULTS} so an
  * `ILIKE '%x%'` can never become an unbounded enumeration.
+ *
+ * Suspended/deactivated principals and ended agent instances are searchable
+ * BY DESIGN: this feeds the activity-timeline actor picker, where historical
+ * actors must remain findable; `status` is returned so callers can render or
+ * filter them. The agent join matches INSTANCE principals only
+ * (`principal.refId = agentInstance.id`) — also by design: activity rows
+ * attribute to an instance's synthetic principal, never to a definition-level
+ * principal (`refId = agent.id`), so widening the join would only surface
+ * actors that can have no timeline.
  */
 export async function searchActors(
   db: HubDb,
@@ -112,7 +121,7 @@ export async function searchActors(
     .from(principal)
     .innerJoin(user, eq(principal.refId, user.id))
     .where(tenantScopedActorFilter(params.tenantId, "user", userMatch))
-    .orderBy(desc(rankColumn(user.name, query, prefix)), desc(user.name))
+    .orderBy(desc(rankColumn(user.name, query, prefix)), asc(user.name))
     .limit(limit);
 
   const agentRows = await db
@@ -132,7 +141,7 @@ export async function searchActors(
         ilike(agent.name, like),
       ),
     )
-    .orderBy(desc(rankColumn(agent.name, query, prefix)), desc(agent.name))
+    .orderBy(desc(rankColumn(agent.name, query, prefix)), asc(agent.name))
     .limit(limit);
 
   const merged = [
