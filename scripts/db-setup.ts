@@ -243,37 +243,17 @@ async function runCustomMigrations(
       .map((s) => s.trim())
       .filter(Boolean);
 
-    // A file whose first line is `-- migrate:no-transaction` runs each
-    // statement standalone — required for CREATE INDEX CONCURRENTLY, which
-    // Postgres refuses inside a transaction. Such files lose atomic rollback:
-    // every statement must be independently idempotent AND self-repairing
-    // (e.g. DROP INDEX CONCURRENTLY IF EXISTS before each CREATE, clearing an
-    // INVALID leftover from an interrupted build), because a mid-file failure
-    // leaves earlier statements applied and the file unrecorded — it re-runs
-    // in full on the next setup.
-    const noTransaction = /^--\s*migrate:no-transaction/.test(raw);
-
-    if (noTransaction) {
+    // Apply the whole file in one transaction so a partial failure rolls back
+    // cleanly and the file is not recorded as applied.
+    await client.begin(async (tx) => {
       for (const stmt of statements) {
-        await client.unsafe(stmt);
+        await tx.unsafe(stmt);
       }
-      await client`
-        INSERT INTO ${client(MIGRATIONS_LEDGER_TABLE)} (filename)
+      await tx`
+        INSERT INTO ${tx(MIGRATIONS_LEDGER_TABLE)} (filename)
         VALUES (${file})
       `;
-    } else {
-      // Apply the whole file in one transaction so a partial failure rolls
-      // back cleanly and the file is not recorded as applied.
-      await client.begin(async (tx) => {
-        for (const stmt of statements) {
-          await tx.unsafe(stmt);
-        }
-        await tx`
-          INSERT INTO ${tx(MIGRATIONS_LEDGER_TABLE)} (filename)
-          VALUES (${file})
-        `;
-      });
-    }
+    });
 
     console.log(`    (applied) ${file}`);
   }
