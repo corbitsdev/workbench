@@ -73,6 +73,10 @@ export const TOOL_PACKAGES: ToolPackageSpec[] = [
     name: "@workbench/tools-fileparser",
     packageDir: "packages/tools-fileparser",
   },
+  {
+    name: "@workbench/tools-workflows",
+    packageDir: "packages/tools-workflows",
+  },
 ];
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");

@@ -1346,6 +1346,12 @@ app.route(
     sidecarRouter,
     repoStore: repoStore.repoStore,
     buildToolDefinitions,
+    // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
+    // start/resume wiring.
+    cryptoProvider: createEd25519Crypto(registry.active),
+    deploymentDomain: config.rootTenant.domain,
+    provisionRunDeployment,
+    ensureDeploymentRoutable,
   }),
 );
 app.route(

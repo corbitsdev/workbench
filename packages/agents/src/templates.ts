@@ -161,6 +161,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       { name: "@workbench/tools-vercel", version: "^0.1.0" },
       { name: "@workbench/tools-agents", version: "^0.1.0" },
       { name: "@workbench/tools-skills", version: "^0.1.0" },
+      { name: "@workbench/tools-workflows", version: "^0.1.0" },
     ],
   },
   {

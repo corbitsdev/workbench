@@ -63,6 +63,7 @@
     "@workbench/tools-reddit": "workspace:*",
     "@workbench/tools-scrapecreators": "workspace:*",
     "@workbench/tools-skills": "workspace:*",
+    "@workbench/tools-workflows": "workspace:*",
     "@workbench/tools-x": "workspace:*",
     "@workbench/tools-youtube": "workspace:*",
     "arktype": "catalog:",

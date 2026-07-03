@@ -25,8 +25,8 @@ describe("workflow tools grant wiring (CL-2678)", () => {
   test("Myra's template pins @workbench/tools-workflows", () => {
     const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
     if (!myra) throw new Error("myra template missing");
-    expect(
-      (myra.toolPackages ?? []).map((p) => p.name),
-    ).toContain("@workbench/tools-workflows");
+    expect((myra.toolPackages ?? []).map((p) => p.name)).toContain(
+      "@workbench/tools-workflows",
+    );
   });
 });
