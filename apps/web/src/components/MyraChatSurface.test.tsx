@@ -17,11 +17,17 @@ mock.module("@workbench/chat", () => ({
     notice?: React.ReactNode;
     inputDisabled?: boolean;
     inputAccessory?: React.ReactNode;
+    composerFullWidth?: boolean;
     agent: { tagline?: string };
   }) =>
     React.createElement(
       "div",
       null,
+      React.createElement(
+        "div",
+        { "data-testid": "composer-full-width" },
+        String(props.composerFullWidth === true),
+      ),
       React.createElement(
         "div",
         { "data-testid": "tagline" },
@@ -150,6 +156,41 @@ describe("MyraChatSurface", () => {
       send: sendSpy,
     });
   }
+
+  it("runs the composer full width when docked and not expanded", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(() => {}),
+        dockState: "docked",
+        expanded: false,
+      }),
+    );
+    expect(screen.getByTestId("composer-full-width").textContent).toBe("true");
+  });
+
+  it("centers the composer when a docked panel is expanded to near-fullscreen", () => {
+    // Regression (Emil): a docked panel that is Expanded goes near-fullscreen,
+    // so composerFullWidth must fall back to false even though dockState stays
+    // "docked".
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(() => {}),
+        dockState: "docked",
+        expanded: true,
+      }),
+    );
+    expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
+  });
+
+  it("centers the composer on the floating and full-page surfaces", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(() => {}),
+        dockState: "floating",
+      }),
+    );
+    expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
+  });
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {
     const sendSpy = mock((_t: string) => {});

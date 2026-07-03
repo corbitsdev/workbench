@@ -24,7 +24,7 @@ mock.module("framer-motion", () => ({
 }));
 
 import { DockedChat } from "./DockedChat";
-import { DockedChatBar, DOCKED_BAR_HEIGHT } from "./DockedChatBar";
+import { DockedChatBar } from "./DockedChatBar";
 import { FloatingChat } from "./FloatingChat";
 import { TypingIndicator } from "./TypingIndicator";
 import { QuickReplyChips } from "./QuickReplyChips";
@@ -68,7 +68,7 @@ describe("DockedChat", () => {
 });
 
 describe("DockedChatBar", () => {
-  it("renders children inside a labeled complementary region at the fixed height", () => {
+  it("renders children inside a labeled complementary region", () => {
     render(
       <DockedChatBar>
         <div>bar content</div>
@@ -77,7 +77,6 @@ describe("DockedChatBar", () => {
     const region = screen.getByRole("complementary", { name: "Chat" });
     expect(region).toBeDefined();
     expect(screen.getByText("bar content")).toBeDefined();
-    expect(DOCKED_BAR_HEIGHT).toBe(340);
   });
 });
 

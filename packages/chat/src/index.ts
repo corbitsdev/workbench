@@ -80,6 +80,8 @@ export {
   DockedChatBar,
   type DockedChatBarProps,
   DOCKED_BAR_HEIGHT,
+  DOCKED_BAR_BOTTOM,
+  DOCKED_BAR_TOTAL_HEIGHT,
 } from "./DockedChatBar";
 export { UrlImageCard, type UrlImageCardProps } from "./UrlImageCard";
 export { MessageFeedback, type MessageFeedbackProps } from "./MessageFeedback";

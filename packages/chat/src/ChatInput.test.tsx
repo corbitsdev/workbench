@@ -246,3 +246,19 @@ describe("ChatInput", () => {
     expect(screen.getByText("ok.png")).toBeDefined();
   });
 });
+
+describe("ChatInput composer width", () => {
+  it("centers the input row within a capped max width by default", () => {
+    render(<ChatInput onSend={() => {}} />);
+    const row = screen.getByLabelText("Message").parentElement;
+    expect(row?.className).toContain("mx-auto");
+    expect(row?.className).toContain("max-w-[60vw]");
+  });
+
+  it("runs the input row full width (left-aligned) when fullWidth is set", () => {
+    render(<ChatInput onSend={() => {}} fullWidth />);
+    const row = screen.getByLabelText("Message").parentElement;
+    expect(row?.className).not.toContain("mx-auto");
+    expect(row?.className).not.toContain("max-w-[60vw]");
+  });
+});

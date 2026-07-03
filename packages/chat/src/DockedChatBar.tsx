@@ -7,11 +7,26 @@ export interface DockedChatBarProps {
   className?: string;
 }
 
-/** Height of the docked bar in pixels. Also used by the layout spacer. */
-export const DOCKED_BAR_HEIGHT = 340;
+/**
+ * Fluid height of the docked bar: a floor tall enough to breathe, scaling with
+ * the viewport, capped so it never dominates a tall screen. Replaces the old
+ * fixed 340px that squeezed the message thread to ~150px. The outer `min(...)`
+ * caps the whole expression against available height so on a short viewport
+ * (landscape tablet, docked devtools) the dock degrades instead of eating the
+ * screen; on normal/tall screens the inner clamp (360–760px) governs.
+ */
+export const DOCKED_BAR_HEIGHT =
+  "min(clamp(360px, 58vh, 760px), calc(100vh - 200px))";
 
 /** Bottom offset from the viewport edge. */
-const DOCKED_BAR_BOTTOM = 18;
+export const DOCKED_BAR_BOTTOM = "18px";
+
+/**
+ * Total vertical space the fixed dock occupies, for the content-push spacer.
+ * Derived from the dock height + bottom offset so there is ONE source of truth —
+ * the spacer can never drift from the panel height.
+ */
+export const DOCKED_BAR_TOTAL_HEIGHT = `calc(${DOCKED_BAR_HEIGHT} + ${DOCKED_BAR_BOTTOM})`;
 
 /**
  * A center-bottom docked overlay for the chat panel. Fixed-position, spans the

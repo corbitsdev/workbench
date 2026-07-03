@@ -3,7 +3,7 @@ import { useLocation } from "react-router";
 import {
   ChatLauncher,
   DockedChatBar,
-  DOCKED_BAR_HEIGHT,
+  DOCKED_BAR_TOTAL_HEIGHT,
   FloatingChat,
   type ChatDockState,
 } from "@workbench/chat";
@@ -127,21 +127,20 @@ export function PersonalAgentChat() {
   // launcher there so there is exactly one Myra surface on screen.
   if (onChatRoute) return null;
 
-  const switcherBar = (
-    <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface px-3 py-1.5">
-      <ThreadSwitcher
-        threads={threads ?? []}
-        activeThreadId={activeThread?.id ?? null}
-        onSelect={selectThread}
-        onNew={newThread}
-        creating={createThread.isPending}
-      />
-    </div>
+  // The thread switcher rides in the panel's single header bar (left side), next
+  // to the dock/expand/close controls — no separate switcher row.
+  const switcher = (
+    <ThreadSwitcher
+      threads={threads ?? []}
+      activeThreadId={activeThread?.id ?? null}
+      onSelect={selectThread}
+      onNew={newThread}
+      creating={createThread.isPending}
+    />
   );
 
   const panel = (
     <div className="flex h-full flex-col">
-      {switcherBar}
       {/* conversationId == Myra thread id; workflow producers stamp the same id
           as originConversationId, so the strip shows only THIS thread's runs.
           Hidden entirely until the thread has an active run. */}
@@ -153,6 +152,7 @@ export function PersonalAgentChat() {
       <div className="min-h-0 flex-1">
         <MyraChatSurface
           session={session}
+          headerLeft={switcher}
           onUserSend={maybeTitleFromFirstMessage}
           dockState={dockState}
           onToggleDock={toggleDock}
@@ -183,7 +183,7 @@ export function PersonalAgentChat() {
                 above the fixed overlay rather than being hidden behind it. */}
             <div
               aria-hidden
-              style={{ height: DOCKED_BAR_HEIGHT + 18 }}
+              style={{ height: DOCKED_BAR_TOTAL_HEIGHT }}
               className="shrink-0"
             />
             <DockedChatBar>{panel}</DockedChatBar>

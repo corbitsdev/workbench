@@ -117,6 +117,12 @@ type MyraChatSurfaceProps = {
   session: MyraSession;
   /** Optional thread label shown as the agent tagline (multi-thread chat). */
   threadLabel?: string;
+  /**
+   * Content for the left of the panel's single header bar (e.g. the thread
+   * switcher), collapsing what used to be a separate switcher row into the one
+   * ChatPanel header.
+   */
+  headerLeft?: ReactNode;
   /** Notified with the text whenever the user sends a message (for auto-title). */
   onUserSend?: (text: string) => void;
   /** Run-addressed workflow-event bubbles interleaved into the thread (CL-2682). */
@@ -156,6 +162,7 @@ type MyraChatSurfaceProps = {
 export function MyraChatSurface({
   session,
   threadLabel,
+  headerLeft,
   onUserSend,
   inserts,
   dockState,
@@ -205,6 +212,11 @@ export function MyraChatSurface({
     expanded,
     onToggleExpand,
     onClose,
+    // Docked context aligns the composer to the message column; the wide
+    // full-page/expanded surfaces keep the centered prompt. A docked panel that
+    // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
+    composerFullWidth: dockState === "docked" && expanded !== true,
+    ...(headerLeft !== undefined ? { headerLeft } : {}),
   };
 
   const { state } = session;

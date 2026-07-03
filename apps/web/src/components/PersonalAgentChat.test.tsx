@@ -48,16 +48,19 @@ mock.module("@workbench/chat", () => ({
     React.createElement("div", { "data-testid": "docked" }, children),
   FloatingChat: ({ children }: { children: React.ReactNode }) =>
     React.createElement("div", { "data-testid": "floating" }, children),
-  DOCKED_BAR_HEIGHT: 340,
+  DOCKED_BAR_TOTAL_HEIGHT: "calc(clamp(360px, 58vh, 760px) + 18px)",
 }));
 mock.module("./MyraChatSurface", () => ({
   MyraChatSurface: (props: {
     onUserSend?: (t: string) => void;
     onToggleExpand?: () => void;
+    headerLeft?: React.ReactNode;
   }) =>
     React.createElement(
       "div",
       { "data-testid": "surface" },
+      // The switcher now rides in the panel header via headerLeft.
+      props.headerLeft,
       React.createElement(
         "button",
         { onClick: () => props.onUserSend?.("typed in dock") },

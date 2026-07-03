@@ -231,6 +231,55 @@ describe("ChatPanel", () => {
   });
 });
 
+describe("ChatPanel single merged header", () => {
+  it("renders headerLeft and the dock/close controls in one bar, replacing the default identity", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        dockState="docked"
+        onToggleDock={() => {}}
+        onClose={() => {}}
+        headerLeft={<div>Thread switcher</div>}
+      />,
+    );
+    // The provided left slot and the right-side controls share the same header.
+    expect(screen.getByText("Thread switcher")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Float chat" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Close chat" })).toBeDefined();
+    // The default agent identity is not stacked as a second header.
+    expect(screen.queryByText("Personal agent")).toBeNull();
+  });
+
+  it("still shows the default agent identity when no headerLeft is provided", () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    expect(screen.getByText("Ada")).toBeDefined();
+    expect(screen.getByText("Personal agent")).toBeDefined();
+  });
+});
+
+describe("ChatPanel composer width", () => {
+  it("drops the centered max-width on the composer row when composerFullWidth is set", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        composerFullWidth
+      />,
+    );
+    const row = screen.getByLabelText("Message").parentElement;
+    expect(row?.className).not.toContain("max-w-[60vw]");
+  });
+
+  it("keeps the centered max-width on the composer row by default", () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    const row = screen.getByLabelText("Message").parentElement;
+    expect(row?.className).toContain("max-w-[60vw]");
+  });
+});
+
 describe("ChatPanel empty state", () => {
   it("shows default empty state when there are no messages", () => {
     render(<ChatPanel agent={agent} messages={[]} onSend={() => {}} />);

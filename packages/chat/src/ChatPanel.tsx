@@ -74,6 +74,19 @@ export interface ChatPanelProps {
   summarizeToolCalls?: ChatThreadProps["summarizeToolCalls"];
   className?: string;
   notice?: React.ReactNode;
+  /**
+   * Content for the left of the single header bar (e.g. a thread switcher). When
+   * provided it replaces the default agent name/tagline block so the host can
+   * collapse a separate switcher bar into this one header.
+   */
+  headerLeft?: React.ReactNode;
+  /**
+   * Run the composer edge-to-edge (left-aligned to the message column) instead
+   * of the default centered, capped width. Set in the docked context so the
+   * input's left edge aligns with the messages; left off for the wide full-page
+   * and expanded surfaces where a centered prompt reads better.
+   */
+  composerFullWidth?: boolean;
   /** Rendered directly above the input (e.g. attached-context pills). */
   inputAccessory?: React.ReactNode;
   /** When present with a non-empty accepted set, enables file attachments in the composer. */
@@ -111,6 +124,8 @@ export function ChatPanel({
   summarizeToolCalls,
   className,
   notice,
+  headerLeft,
+  composerFullWidth,
   inputAccessory,
   attachmentPolicy,
 }: ChatPanelProps) {
@@ -124,14 +139,22 @@ export function ChatPanel({
         className,
       )}
     >
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="flex flex-col">
-          <span className="text-sm font-medium text-text">{agent.name}</span>
-          {agent.tagline !== undefined && (
-            <span className="text-xs text-text-3">{agent.tagline}</span>
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-4 py-2">
+        <div className="min-w-0 flex-1">
+          {headerLeft !== undefined ? (
+            headerLeft
+          ) : (
+            <div className="flex flex-col">
+              <span className="text-sm font-medium text-text">
+                {agent.name}
+              </span>
+              {agent.tagline !== undefined && (
+                <span className="text-xs text-text-3">{agent.tagline}</span>
+              )}
+            </div>
           )}
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           {onToggleExpand !== undefined && dockState !== "docked" && (
             <button
               type="button"
@@ -169,7 +192,7 @@ export function ChatPanel({
         <div
           role="status"
           aria-live="polite"
-          className="border-b border-border px-4 py-3 text-[13px] text-text-2"
+          className="shrink-0 border-b border-border px-4 py-3 text-[13px] text-text-2"
         >
           {notice}
         </div>
@@ -211,6 +234,7 @@ export function ChatPanel({
         onSend={onSend}
         placeholder={`Message ${agent.name}…`}
         busy={busy}
+        {...(composerFullWidth === true ? { fullWidth: true } : {})}
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
         {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
       />
