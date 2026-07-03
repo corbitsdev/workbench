@@ -401,6 +401,60 @@ describe("useStartWorkflow", () => {
       result.current.mutateAsync({ kind: "pain-point-collateral", input: {} }),
     ).rejects.toThrow(/run-record response/);
   });
+
+  it("auto-retries a deploy-window 503, fires onRedeploying, then resolves (CL-2707)", async () => {
+    let calls = 0;
+    // Retry-After: 0 keeps the backoff at 0ms so the retry loop runs fast.
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { code: "deploy_in_progress", message: "updating" },
+            }),
+            {
+              status: 503,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": "0",
+              },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(200, { ...runningRecord }));
+    }) as typeof fetch;
+
+    let redeployNotices = 0;
+    const { result } = renderHook(() => useStartWorkflow("tn-x"), {
+      wrapper: wrapper(),
+    });
+    const record = await result.current.mutateAsync({
+      kind: "pain-point-collateral",
+      input: {},
+      onRedeploying: () => (redeployNotices += 1),
+    });
+    expect(record.runId).toBe("wfr_1");
+    expect(calls).toBe(2);
+    expect(redeployNotices).toBe(1);
+  });
+
+  it("does not retry a normal failure and surfaces its message", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(500, { error: "no capacity" }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useStartWorkflow("tn-x"), {
+      wrapper: wrapper(),
+    });
+    await expect(
+      result.current.mutateAsync({ kind: "pain-point-collateral", input: {} }),
+    ).rejects.toThrow("no capacity");
+    expect(calls).toBe(1);
+  });
 });
 
 function recordWrapper(client: QueryClient) {

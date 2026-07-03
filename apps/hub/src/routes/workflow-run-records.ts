@@ -63,6 +63,19 @@ const RunStateResponse = type({
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
 
+// The deploy-window 503 body (CL-2707). Unlike every other failure — which
+// returns the flat { error: string } shape — this one nests a machine-readable
+// `code` and a human `message` so the FE can auto-retry and show an honest
+// "finishing an update" state. Exported so the OpenAPI 503 responses reference
+// the real body contract, not a bare description.
+export const DeployInProgressResponse = type({
+  error: {
+    code: "'deploy_in_progress'",
+    message: "string",
+  },
+});
+export type DeployInProgress = typeof DeployInProgressResponse.infer;
+
 function stateResponse(state: {
   runId: string;
   kind: string;
@@ -96,16 +109,10 @@ function stateResponse(state: {
 // { error: string } shape the existing surface returns.
 function runExecErrorResponse(c: Context, result: RunExecFailure): Response {
   if (result.status === 503) {
-    c.header("Retry-After", String(result.retryAfterSeconds ?? 5));
-    return c.json(
-      {
-        error: {
-          code: result.code ?? "deploy_in_progress",
-          message: result.error,
-        },
-      },
-      503,
-    );
+    // A 503 only ever originates from the deploy-window failure, which always
+    // sets both fields — no fallback needed.
+    c.header("Retry-After", String(result.retryAfterSeconds));
+    return c.json({ error: { code: result.code, message: result.error } }, 503);
   }
   return c.json({ error: result.error }, result.status);
 }
@@ -192,6 +199,11 @@ export function createWorkflowRunRecordsRouter(deps: {
         503: {
           description:
             "Deploy in progress — the sidecar has not reconnected within the bounded wait; retry after the Retry-After hint (CL-2707)",
+          content: {
+            "application/json": {
+              schema: resolver(DeployInProgressResponse),
+            },
+          },
         },
       },
     }),
@@ -527,6 +539,11 @@ export function createWorkflowRunRecordsRouter(deps: {
         503: {
           description:
             "Deploy in progress — the sidecar has not reconnected within the bounded wait; retry after the Retry-After hint (CL-2707)",
+          content: {
+            "application/json": {
+              schema: resolver(DeployInProgressResponse),
+            },
+          },
         },
       },
     }),

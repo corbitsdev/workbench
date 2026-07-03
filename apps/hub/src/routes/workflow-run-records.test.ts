@@ -1076,7 +1076,7 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
       body: JSON.stringify({ signalName: "note-selection", payload: {} }),
     });
     expect(res.status).toBe(503);
-    expect(res.headers.get("retry-after")).toBe("5");
+    expect(res.headers.get("retry-after")).toBe("10");
     const json = (await res.json()) as {
       error: { code: string; message: string };
     };
@@ -1123,7 +1123,7 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
       body: JSON.stringify({ input: {} }),
     });
     expect(res.status).toBe(503);
-    expect(res.headers.get("retry-after")).toBe("5");
+    expect(res.headers.get("retry-after")).toBe("10");
     const json = (await res.json()) as { error: { code: string } };
     expect(json.error.code).toBe("deploy_in_progress");
     // The run never came into being — no provision, no trigger, no row.

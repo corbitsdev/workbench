@@ -50,9 +50,15 @@ export type SidecarReadinessDeps = {
   sidecarPollIntervalMs?: number;
 };
 
-const SIDECAR_WAIT_TIMEOUT_MS = 45_000;
+// Bounded server-side hold: kept well under a typical proxy read timeout so the
+// request returns cleanly instead of being killed mid-wait. The FE auto-retry
+// (CL-2707) covers the rest of the ~70s reconnect window across attempts.
+const SIDECAR_WAIT_TIMEOUT_MS = 20_000;
 const SIDECAR_POLL_INTERVAL_MS = 2_000;
-const DEPLOY_IN_PROGRESS_RETRY_SECONDS = 5;
+// Retry-After hint returned with the deploy-window 503. Larger than one poll
+// interval so a client retry lands after the sidecar has had a real chance to
+// reconnect, not while this same request is still holding.
+const DEPLOY_IN_PROGRESS_RETRY_SECONDS = 10;
 
 // Bounded wait for a sidecar connection. Returns immediately (no delay, one
 // probe) when a sidecar is already connected — the common case adds no latency.

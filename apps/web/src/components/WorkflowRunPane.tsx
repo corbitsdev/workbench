@@ -82,6 +82,9 @@ function WorkflowRunPaneInner({
   const { data: deployments } = useWorkflowDeployments(tenantId);
   const signalInFlightRef = useRef(false);
   const [signalPending, setSignalPending] = useState(false);
+  // True while a resume is auto-retrying through the deploy window (CL-2707), so
+  // the pane shows an honest transient banner instead of flashing an error.
+  const [redeploying, setRedeploying] = useState(false);
 
   const kind = record?.kind ?? null;
   const recordDeploymentId = record?.deploymentId ?? null;
@@ -211,12 +214,18 @@ function WorkflowRunPaneInner({
     if (terminal || signalInFlightRef.current) return;
     signalInFlightRef.current = true;
     setSignalPending(true);
+    setRedeploying(false);
     resume
-      .mutateAsync({ signalName, payload })
+      .mutateAsync({
+        signalName,
+        payload,
+        onRedeploying: () => setRedeploying(true),
+      })
       .catch(() => undefined)
       .finally(() => {
         signalInFlightRef.current = false;
         setSignalPending(false);
+        setRedeploying(false);
       });
   };
 
@@ -239,6 +248,11 @@ function WorkflowRunPaneInner({
         }
       >
         <div className="relative h-full">
+          {redeploying && (
+            <div className="absolute inset-x-0 top-0 z-20 border-b border-border bg-surface px-3 py-2 text-center text-[13px] text-text-2">
+              Finishing an update — retrying…
+            </div>
+          )}
           <Panel
             deploymentId={runId}
             state={state}

@@ -23,17 +23,36 @@ let deploymentsResult: { data: unknown[]; isPending: boolean } = {
   isPending: false,
 };
 let startShouldReject = false;
-let lastStartVars: { kind: string; input: unknown } | null = null;
+// When set, mutateAsync fires onRedeploying (simulating a deploy-window retry)
+// and stays pending until `resolveStart` is called, so the transient state is
+// observable.
+let startShouldRedeploy = false;
+let resolveStart: (() => void) | undefined;
+let lastStartVars: {
+  kind: string;
+  input: unknown;
+  onRedeploying?: () => void;
+} | null = null;
 
 mock.module("../hooks/use-workflow", () => ({
   useWorkflowDeployments: () => deploymentsResult,
   useStartWorkflow: () => ({
     isPending: false,
     variables: undefined,
-    mutateAsync: (vars: { kind: string; input: unknown }) => {
+    mutateAsync: (vars: {
+      kind: string;
+      input: unknown;
+      onRedeploying?: () => void;
+    }) => {
       lastStartVars = vars;
       if (startShouldReject) {
         return Promise.reject(new Error("no capacity"));
+      }
+      if (startShouldRedeploy) {
+        vars.onRedeploying?.();
+        return new Promise<{ runId: string }>((resolve) => {
+          resolveStart = () => resolve({ runId: `started-${vars.kind}` });
+        });
       }
       return Promise.resolve({ runId: `started-${vars.kind}` });
     },
@@ -79,6 +98,8 @@ describe("WorkflowCatalog", () => {
     onWorkflowStarted = mock(() => undefined);
     deploymentsResult = { data: defaultDeployments, isPending: false };
     startShouldReject = false;
+    startShouldRedeploy = false;
+    resolveStart = undefined;
     lastStartVars = null;
   });
 
@@ -178,10 +199,11 @@ describe("WorkflowCatalog", () => {
         "started-gamma-presentation-creator",
       ),
     );
-    expect(lastStartVars).toEqual({
+    expect(lastStartVars).toMatchObject({
       kind: "gamma-presentation-creator",
       input: {},
     });
+    expect(typeof lastStartVars?.onRedeploying).toBe("function");
   });
 
   it("surfaces a start failure as a legible error", async () => {
@@ -202,6 +224,37 @@ describe("WorkflowCatalog", () => {
 
     await waitFor(() => screen.getByText("no capacity"));
     expect(onWorkflowStarted).not.toHaveBeenCalled();
+  });
+
+  it("shows a transient redeploying state during a deploy-window retry, then clears on success", async () => {
+    startShouldRedeploy = true;
+    render(
+      <WorkflowCatalog
+        tenantId="ten-1"
+        runKinds={[]}
+        onWorkflowStarted={onWorkflowStarted}
+      />,
+      { wrapper },
+    );
+
+    const card = screen
+      .getByText("Gamma presentation creator")
+      .closest("div[data-kind]");
+    fireEvent.click(within(card as HTMLElement).getByRole("button"));
+
+    await waitFor(() => screen.getByText("Finishing an update — retrying…"));
+    // No error flash while retrying.
+    expect(screen.queryByText("no capacity")).toBeNull();
+
+    resolveStart?.();
+    await waitFor(() =>
+      expect(onWorkflowStarted).toHaveBeenCalledWith(
+        "started-gamma-presentation-creator",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Finishing an update — retrying…")).toBeNull(),
+    );
   });
 
   it("shows loading and empty states", () => {

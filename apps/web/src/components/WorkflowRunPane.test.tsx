@@ -68,7 +68,13 @@ let stepOutputsData: Record<string, unknown> = {};
 // record's ses_ deploymentId (which 404s under per-run deployments, CL-2704).
 let stepOutputsRequestedId: string | null | undefined;
 
-const resumeMutateAsync = mock(async () => undefined);
+const resumeMutateAsync = mock(
+  async (_vars?: {
+    signalName?: string;
+    payload?: unknown;
+    onRedeploying?: () => void;
+  }): Promise<undefined> => undefined,
+);
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
@@ -239,10 +245,10 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("fire-signal"));
     screen.getByText("fire-signal").click();
     await waitFor(() => expect(resumeMutateAsync).toHaveBeenCalledTimes(1));
-    expect(resumeMutateAsync).toHaveBeenCalledWith({
-      signalName: "approve",
-      payload: { ok: true },
-    });
+    const call = resumeMutateAsync.mock.calls[0]?.[0];
+    expect(call?.signalName).toBe("approve");
+    expect(call?.payload).toEqual({ ok: true });
+    expect(typeof call?.onRedeploying).toBe("function");
   });
 
   it("passes signalPending to the Panel and raises it while the resume is in flight", async () => {
@@ -264,6 +270,31 @@ describe("WorkflowRunPane", () => {
 
     resolveResume?.();
     await waitFor(() => screen.getByText("signal-pending:false"));
+  });
+
+  it("shows a transient redeploying banner while a resume auto-retries the deploy window", async () => {
+    record = makeRecord({ status: "awaiting" });
+    let resolveResume: (() => void) | undefined;
+    resumeMutateAsync.mockImplementation(
+      (vars?: { onRedeploying?: () => void }) => {
+        vars?.onRedeploying?.();
+        return new Promise<undefined>((resolve) => {
+          resolveResume = () => resolve(undefined);
+        });
+      },
+    );
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("fire-signal"));
+    screen.getByText("fire-signal").click();
+
+    await waitFor(() => screen.getByText("Finishing an update — retrying…"));
+
+    resolveResume?.();
+    await waitFor(() =>
+      expect(screen.queryByText("Finishing an update — retrying…")).toBeNull(),
+    );
   });
 
   it("onSignal is a no-op once the run is terminal", async () => {
