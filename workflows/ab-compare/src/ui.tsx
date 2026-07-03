@@ -8,6 +8,7 @@ import {
   ComparisonView,
   type ComparisonResult,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
@@ -774,11 +775,7 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <div className="rounded-panel border border-orange bg-orange-soft p-4">
-            <p className="text-sm text-orange-deep">
-              This run failed. Review the run log and try again.
-            </p>
-          </div>
+          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
         ) : current === "config" ? (
           <ConfigScreen
             phase={phaseFor(state, "config")}

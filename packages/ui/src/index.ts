@@ -109,7 +109,15 @@ export {
   activeDisplayStepIndex,
   activeDisplayStep,
   buildStepperSteps as buildRunStepperSteps,
+  failedDisplayStepLabel,
   failedRunErrorMessage,
+  FailedRunNotice,
   liveStatusLabel,
   LiveStatusSlot,
 } from "./workflow-run-state";
+export {
+  type RunErrorKind,
+  type ClassifiedRunError,
+  classifyRunError,
+  failedRunError,
+} from "./workflow-run-error";

@@ -6,6 +6,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   Markdown,
@@ -506,12 +507,7 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <Card>
-            <p className="text-sm font-medium text-text">Run failed</p>
-            <p className="mt-1 text-sm text-text-3">
-              Start a new run to try again.
-            </p>
-          </Card>
+          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
         ) : current === "intake" ? (
           <IntakeScreen
             phase={phaseFor(state, "intake")}

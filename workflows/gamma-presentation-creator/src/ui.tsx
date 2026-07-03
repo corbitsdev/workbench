@@ -6,6 +6,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   inputFieldClass,
   LiveStatusSlot,
@@ -976,18 +977,12 @@ export function Panel(props: WorkflowPanelProps) {
   function body(): ReactNode {
     if (failed) {
       return (
-        <Card>
-          <p className="text-sm font-medium text-text">Generation failed</p>
-          <p className="mt-1 text-sm text-text-3">
-            The deck could not be generated. Close this run and start a new one
-            to try again.
-          </p>
-          <div className="mt-4">
-            <Button variant="ghost" size="sm" onClick={onClose}>
-              Close
-            </Button>
-          </div>
-        </Card>
+        <div className="space-y-4">
+          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </div>
       );
     }
     if (done !== undefined) {

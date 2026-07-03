@@ -127,4 +127,48 @@ describe("RunConsole", () => {
     // The awaiting-signal step surfaces its Approve gate action.
     screen.getByRole("button", { name: "Approve" });
   });
+
+  it("sanitizes a failed step's error — internal identifiers never render (CL-2660)", () => {
+    record = makeRecord({ status: "failed" });
+    logStateData = makeLogState({
+      phase: "failed",
+      steps: [
+        {
+          stepId: "sync",
+          phase: "failed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          lastError: {
+            message: "no agent address registered for ins_ses_01aabbcc",
+          },
+        },
+      ],
+    });
+    render(<RunConsole deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    expect(screen.queryByText(/ins_ses_/)).toBeNull();
+    screen.getByText(/something went wrong inside this workflow run/i);
+  });
+
+  it("renders a plain-language message for a known external API failure (CL-2660)", () => {
+    record = makeRecord({ status: "failed" });
+    logStateData = makeLogState({
+      phase: "failed",
+      steps: [
+        {
+          stepId: "sync",
+          phase: "failed",
+          stepType: "deterministic",
+          currentAttempt: 1,
+          lastError: { message: "Attio API error: 429 too many requests" },
+        },
+      ],
+    });
+    render(<RunConsole deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    expect(screen.queryByText(/API error/)).toBeNull();
+    screen.getByText(/Attio is rate-limiting requests right now/i);
+  });
 });

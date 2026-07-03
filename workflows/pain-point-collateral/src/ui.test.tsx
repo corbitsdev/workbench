@@ -1251,7 +1251,39 @@ describe("Panel — error and close", () => {
       />,
     );
 
-    screen.getByText("This run failed.");
+    screen.getByText("Run failed at Pain Points");
+    screen.getByText(/No error details are available/);
+  });
+
+  it("shows the sanitized step error, never raw internals (CL-2659)", () => {
+    const state = makeState(
+      { intake: "completed", analyze: "failed" },
+      "failed",
+    );
+    const failedStep = state.steps.get("analyze") as unknown as {
+      lastError?: { message: string };
+    };
+    failedStep.lastError = {
+      message:
+        "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/analyze.ts:42:7",
+    };
+    render(
+      <Panel
+        deploymentId="dep_1"
+        state={state}
+        connected
+        signalPending={false}
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    screen.getByText("Run failed at Pain Points");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
   });
 
   it("invokes onClose when the header close button is clicked", async () => {

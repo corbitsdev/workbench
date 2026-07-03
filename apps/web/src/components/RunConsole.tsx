@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Button, toHumanLabel } from "@workbench/ui";
+import { Button, classifyRunError, toHumanLabel } from "@workbench/ui";
 import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 import {
   isRecordTerminal,
@@ -244,7 +244,7 @@ function RunStepRow({
 
       {step.lastError && (
         <p className="mt-2 text-[12px] text-red-500">
-          {step.lastError.message}
+          {classifyRunError(step.lastError.message).userMessage}
         </p>
       )}
 

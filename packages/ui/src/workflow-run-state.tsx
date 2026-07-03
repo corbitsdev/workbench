@@ -25,6 +25,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import type { RunState, StepState } from "@intx/workflow";
 import type { WorkflowStep } from "./workflow-step-types";
+import { failedRunError } from "./workflow-run-error";
 
 export type StepPhase = StepState["phase"];
 
@@ -188,24 +189,76 @@ export function liveStatusLabel(
 }
 
 /**
- * The message from whichever step failed the run, or null if the run has not
- * failed or no step carries a `lastError`. `RunState.steps` has no run-level
- * error field — the failing step's own `lastError` (populated by the hub's
- * run-state adapter from the record's `error` field) is the only place the
- * message lives.
+ * The SANITIZED end-user message from whichever step failed the run, or null
+ * if the run has not failed or no step carries a `lastError`. `RunState.steps`
+ * has no run-level error field — the failing step's own `lastError` (populated
+ * by the hub's run-state adapter from the record's `error` field) is the only
+ * place the message lives.
  *
- * Returns the first `lastError` found in map-iteration order. This relies on
+ * The raw error is never returned here: it is classified through
+ * `classifyRunError` (workflow-run-error.ts), so known-safe external shapes
+ * render a plain-language message and everything else degrades to a generic
+ * one (CL-2660). Operator surfaces that need the raw text use
+ * `failedRunError(state).raw` instead.
+ *
+ * Uses the first `lastError` found in map-iteration order. This relies on
  * the adapter's invariant that at most one step carries `lastError` per run
  * (`apps/web/src/lib/run-state-adapter.ts` only ever attaches it to the
  * single active/failed step) — if that invariant ever breaks, this picks an
  * arbitrary one rather than surfacing the ambiguity.
  */
 export function failedRunErrorMessage(state: RunState | null): string | null {
-  if (state?.phase !== "failed") return null;
-  for (const step of state.steps.values()) {
-    if (step.lastError !== undefined) return step.lastError.message;
+  return failedRunError(state)?.userMessage ?? null;
+}
+
+/**
+ * Label of the first display step whose aggregate phase is `failed`, or null.
+ * Deliberately does NOT require `state.phase === "failed"`: a panel that flags
+ * failure from a single failed step before the run's own phase flips (e.g.
+ * pain-point-collateral's hasFailed) still gets the step name.
+ */
+export function failedDisplayStepLabel(
+  state: RunState | null,
+  steps: readonly DisplayStep[],
+): string | null {
+  if (state === null) return null;
+  for (const step of steps) {
+    if (displayStepPhase(state, step.stepIds) === "failed") return step.label;
   }
   return null;
+}
+
+const NO_ERROR_DETAILS =
+  "No error details are available. Start a new run to try again.";
+
+/**
+ * The one failed-run notice every workflow panel renders (CL-2659): which
+ * display step failed plus the SANITIZED error from the shared classifier
+ * (CL-2660) — never the raw step error, and never bespoke per-panel error
+ * text. Falls back to an honest no-details line when no step carries a
+ * `lastError`.
+ */
+export function FailedRunNotice({
+  state,
+  steps,
+}: {
+  state: RunState | null;
+  steps: readonly DisplayStep[];
+}) {
+  const stepLabel = failedDisplayStepLabel(state, steps);
+  const heading =
+    stepLabel === null ? "Run failed" : `Run failed at ${stepLabel}`;
+  return (
+    <div
+      role="alert"
+      className="border-orange bg-orange-soft rounded-panel border p-4"
+    >
+      <p className="text-orange-deep text-sm font-medium">{heading}</p>
+      <p className="text-orange-deep mt-1 text-sm">
+        {failedRunErrorMessage(state) ?? NO_ERROR_DETAILS}
+      </p>
+    </div>
+  );
 }
 
 /** The single live progress line shown under the stepper. */
