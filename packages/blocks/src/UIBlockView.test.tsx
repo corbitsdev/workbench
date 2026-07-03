@@ -140,6 +140,76 @@ describe("UIBlockView", () => {
     expect(onAction).toHaveBeenCalledWith("save-artifact", block);
   });
 
+  it("renders each progress step state distinctly", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      title: "Call collateral",
+      steps: [
+        { label: "Fetch calls", state: "done" },
+        { label: "Draft", state: "running", meta: "step 2 of 5" },
+        { label: "Review", state: "awaiting" },
+        { label: "Publish", state: "pending" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText("Call collateral")).not.toBeNull();
+    const items = screen.getAllByRole("listitem");
+    expect(items.length).toBe(4);
+    expect(items[0]?.getAttribute("data-state")).toBe("done");
+    expect(items[1]?.getAttribute("data-state")).toBe("running");
+    expect(items[2]?.getAttribute("data-state")).toBe("awaiting");
+    expect(items[3]?.getAttribute("data-state")).toBe("pending");
+    expect(screen.getByText("Fetch calls")).not.toBeNull();
+    expect(screen.getByText("step 2 of 5")).not.toBeNull();
+    expect(screen.getByText("done")).not.toBeNull();
+    expect(screen.getByText("running")).not.toBeNull();
+    expect(screen.getByText("awaiting input")).not.toBeNull();
+    expect(screen.getByText("pending")).not.toBeNull();
+  });
+
+  it("renders a failed step with its failure state", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Fetch", state: "done" },
+        { label: "Draft", state: "failed" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    expect(items[1]?.getAttribute("data-state")).toBe("failed");
+    expect(screen.getByText("failed")).not.toBeNull();
+  });
+
+  it("treats a stale non-terminal step as done once a later step has started", () => {
+    // Mirrors workflow-run-state.tsx: an awaitSignal gate's completion can be
+    // absent from the emitted state, so a later step's progress marks it passed.
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Approve draft", state: "awaiting" },
+        { label: "Publish", state: "running" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]?.getAttribute("data-state")).toBe("done");
+    expect(items[1]?.getAttribute("data-state")).toBe("running");
+  });
+
+  it("never re-labels a failed step done when a later branch has progressed", () => {
+    const block: UIBlock = {
+      kind: "progress",
+      steps: [
+        { label: "Fetch", state: "failed" },
+        { label: "Draft", state: "running" },
+      ],
+    };
+    render(<UIBlockView block={block} />);
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]?.getAttribute("data-state")).toBe("failed");
+  });
+
   it("recursively renders canvas children", () => {
     const block: UIBlock = {
       kind: "canvas",

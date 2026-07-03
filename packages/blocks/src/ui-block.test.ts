@@ -140,6 +140,67 @@ describe("isUIBlock", () => {
   });
 });
 
+describe("isUIBlock progress variant", () => {
+  it("accepts a well-formed progress block", () => {
+    expect(
+      isUIBlock({
+        kind: "progress",
+        steps: [
+          { label: "Fetch calls", state: "done" },
+          { label: "Draft", state: "running", meta: "2 of 5" },
+          { label: "Review", state: "pending" },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts every step state", () => {
+    for (const state of [
+      "done",
+      "running",
+      "awaiting",
+      "pending",
+      "failed",
+    ]) {
+      expect(
+        isUIBlock({ kind: "progress", steps: [{ label: "x", state }] }),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects a progress block with no steps", () => {
+    expect(isUIBlock({ kind: "progress", steps: [] })).toBe(false);
+    expect(isUIBlock({ kind: "progress" })).toBe(false);
+    expect(isUIBlock({ kind: "progress", steps: "x" })).toBe(false);
+  });
+
+  it("rejects a step with an unknown state or wrong field types", () => {
+    expect(
+      isUIBlock({
+        kind: "progress",
+        steps: [{ label: "x", state: "paused" }],
+      }),
+    ).toBe(false);
+    expect(
+      isUIBlock({ kind: "progress", steps: [{ label: 5, state: "done" }] }),
+    ).toBe(false);
+    expect(
+      isUIBlock({
+        kind: "progress",
+        steps: [{ label: "x", state: "done", meta: 5 }],
+      }),
+    ).toBe(false);
+    expect(isUIBlock({ kind: "progress", steps: [null] })).toBe(false);
+  });
+
+  it("degrades a malformed progress tool result to text without throwing", () => {
+    const raw = '{"kind":"progress","steps":[{"label":"x","state":"nope"}]}';
+    const result = parseToolResult(raw);
+    expect(result.kind).toBe("text");
+    if (result.kind === "text") expect(result.text).toBe(raw);
+  });
+});
+
 describe("parseToolResult array path", () => {
   it("degrades a JSON array that is not a UIBlock to a text block", () => {
     const raw = "[1, 2, 3]";
