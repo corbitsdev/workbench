@@ -1239,12 +1239,16 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
 // CL-2593: auto-publish the build-serialized workflow defs to the global tenant
 // on boot, gated by WORKFLOW_AUTOPUBLISH_ON_BOOT (default off). Detached so a
 // slow publish never blocks startup; the bootstrap is fail-safe per def.
+// CL-2699: gated on the first sidecar WS connection — a boot-time publish
+// otherwise races the sidecar's reconnect backoff and fails "No sidecar
+// available" on every kind that needs a definition-level launch.
 void publishEmbeddedWorkflowDefs({
   coreDeps: workflowDeployCoreDeps,
   repoStore,
   enabled: config.workflowAutopublishOnBoot,
   buildSha: config.buildSha,
   autopublishMap: config.workflowAutopublishMap,
+  isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
 }).catch((err) => {
   log.error("workflow autopublish-on-boot failed", {
     error: err instanceof Error ? err.message : String(err),
