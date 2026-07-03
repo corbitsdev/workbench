@@ -16,6 +16,9 @@ export interface RunState {
   // The deployment this run belongs to. Read by the records router to address
   // the sidecar supervisor for trigger/signal delivery.
   deploymentId?: string;
+  // The conversation the run was started from (CL-2677); absent for
+  // direct-started runs with no chat context.
+  originConversationId?: string;
 }
 
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
@@ -36,6 +39,9 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     principalId: row.principalId,
     status: row.status,
     ...(row.deploymentId !== null ? { deploymentId: row.deploymentId } : {}),
+    ...(row.originConversationId !== null
+      ? { originConversationId: row.originConversationId }
+      : {}),
   };
 }
 
@@ -48,6 +54,7 @@ export async function insertRunRecord(
     tenantId: string;
     principalId: string;
     input: unknown;
+    originConversationId: string | null;
   },
 ): Promise<RunState> {
   await db.insert(workflowRunRecord).values({
@@ -58,6 +65,7 @@ export async function insertRunRecord(
     principalId: args.principalId,
     status: "running",
     input: args.input,
+    originConversationId: args.originConversationId,
   });
   return {
     runId: args.runId,
@@ -66,6 +74,9 @@ export async function insertRunRecord(
     principalId: args.principalId,
     status: "running",
     ...(args.deploymentId !== null ? { deploymentId: args.deploymentId } : {}),
+    ...(args.originConversationId !== null
+      ? { originConversationId: args.originConversationId }
+      : {}),
   };
 }
 
@@ -150,19 +161,34 @@ export async function listRunRecords(
   tenantIds: readonly string[],
   principalId: string,
   kind?: string,
-): Promise<{ runId: string; kind: string; status: string; createdAt: Date }[]> {
+  filters?: { originConversationId?: string },
+): Promise<
+  {
+    runId: string;
+    kind: string;
+    status: string;
+    createdAt: Date;
+    originConversationId: string | null;
+  }[]
+> {
   const conditions = [
     inArray(workflowRunRecord.tenantId, [...tenantIds]),
     eq(workflowRunRecord.principalId, principalId),
     isNull(workflowRunRecord.deletedAt),
   ];
   if (kind !== undefined) conditions.push(eq(workflowRunRecord.kind, kind));
+  if (filters?.originConversationId !== undefined) {
+    conditions.push(
+      eq(workflowRunRecord.originConversationId, filters.originConversationId),
+    );
+  }
   const rows = await db
     .select({
       runId: workflowRunRecord.id,
       kind: workflowRunRecord.kind,
       status: workflowRunRecord.status,
       createdAt: workflowRunRecord.createdAt,
+      originConversationId: workflowRunRecord.originConversationId,
     })
     .from(workflowRunRecord)
     .where(and(...conditions))

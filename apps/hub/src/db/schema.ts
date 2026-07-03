@@ -165,6 +165,9 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
     .notNull()
     .default("running"),
   input: jsonb("input").$type<unknown>(),
+  // The conversation the run was started from (CL-2677); null for
+  // direct-started runs with no chat context.
+  originConversationId: text("origin_conversation_id"),
   // Run-level wall-clock timing, written by the projection bridge from the
   // log's RunStarted / terminal events (CL-2669). Not the per-step timing —
   // that stays in the log.
