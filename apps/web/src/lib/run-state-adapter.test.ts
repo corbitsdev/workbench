@@ -4,6 +4,7 @@ import {
   isLogStateTerminal,
   isRecordTerminal,
   runStateFromLog,
+  stepOutputsFromLog,
   type LogRunState,
 } from "./run-state-adapter";
 
@@ -34,6 +35,69 @@ describe("isLogStateTerminal", () => {
     expect(isLogStateTerminal("running")).toBe(false);
     expect(isLogStateTerminal("pending")).toBe(false);
     expect(isLogStateTerminal("cancelling")).toBe(false);
+  });
+});
+
+describe("stepOutputsFromLog", () => {
+  it("decodes each step's inline: outputRef into the stepId -> output map", () => {
+    const outputs = stepOutputsFromLog(
+      logState({
+        steps: [
+          {
+            stepId: "analyze",
+            phase: "completed",
+            stepType: "inline",
+            currentAttempt: 1,
+            outputRef: `inline:${JSON.stringify({ reply: "hello" })}`,
+          },
+          {
+            stepId: "curate",
+            phase: "completed",
+            stepType: "agent",
+            currentAttempt: 1,
+            outputRef: `inline:${JSON.stringify([{ callId: "c1" }])}`,
+          },
+        ],
+      }),
+    );
+    expect(outputs).toEqual({
+      analyze: { reply: "hello" },
+      curate: [{ callId: "c1" }],
+    });
+  });
+
+  it("omits steps with no outputRef and blob: refs it cannot resolve client-side", () => {
+    const outputs = stepOutputsFromLog(
+      logState({
+        steps: [
+          {
+            stepId: "intake",
+            phase: "awaiting-signal",
+            stepType: "human",
+            currentAttempt: 1,
+          },
+          {
+            stepId: "huge",
+            phase: "completed",
+            stepType: "agent",
+            currentAttempt: 1,
+            outputRef: "blob:" + "a".repeat(64),
+          },
+          {
+            stepId: "small",
+            phase: "completed",
+            stepType: "deterministic",
+            currentAttempt: 1,
+            outputRef: 'inline:{"ok":true}',
+          },
+        ],
+      }),
+    );
+    expect(outputs).toEqual({ small: { ok: true } });
+  });
+
+  it("returns an empty map for a run with no steps", () => {
+    expect(stepOutputsFromLog(logState({}))).toEqual({});
   });
 });
 
