@@ -36,6 +36,43 @@ export interface WorkflowDefsBootstrapDeps {
   // Per-kind → tenant-slug routing (CL-2641). Null/omitted → every def targets
   // the global root tenant (back-compat with CL-2593).
   autopublishMap?: WorkflowAutopublishMap | null;
+  // CL-2699: sidecar readiness probe (sidecarRouter.getConnectedSidecars). A hub
+  // restart always severs the sidecar WS and the sidecar reconnects with backoff,
+  // so a publish fired straight at boot races the reconnect and fails with "No
+  // sidecar available". When provided, the publish loop first waits (bounded)
+  // for a connected sidecar. Omitted → publish immediately (old behavior).
+  isSidecarConnected?: () => boolean;
+  sidecarWaitTimeoutMs?: number;
+  sidecarPollIntervalMs?: number;
+}
+
+const SIDECAR_WAIT_TIMEOUT_MS = 120_000;
+const SIDECAR_POLL_INTERVAL_MS = 2_000;
+
+// Bounded wait for the first sidecar connection; returns when the probe reports
+// one or the timeout elapses. The caller proceeds either way — per-def publish
+// failures already log and skip, so an absent sidecar can never wedge boot.
+async function waitForSidecar(deps: WorkflowDefsBootstrapDeps): Promise<void> {
+  const probe = deps.isSidecarConnected;
+  if (probe === undefined || probe()) return;
+
+  const timeoutMs = deps.sidecarWaitTimeoutMs ?? SIDECAR_WAIT_TIMEOUT_MS;
+  const intervalMs = deps.sidecarPollIntervalMs ?? SIDECAR_POLL_INTERVAL_MS;
+  const deadline = Date.now() + timeoutMs;
+  log.info("waiting for a sidecar connection before autopublish", {
+    timeoutMs,
+  });
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (probe()) {
+      log.info("sidecar connected; starting autopublish");
+      return;
+    }
+  }
+  log.warn(
+    "no sidecar connected within the autopublish wait; publishing anyway",
+    { timeoutMs },
+  );
 }
 
 // Resolve the tenant ids a def of `kind` should publish into. With no map,
@@ -160,6 +197,7 @@ export async function publishEmbeddedWorkflowDefs(
     log.info("workflow autopublish-on-boot disabled; skipping");
     return;
   }
+  await waitForSidecar(deps);
   const defs = await loadEmbeddedDefs(
     deps.defsDir ?? embeddedWorkflowDefsDir(),
   );
