@@ -260,21 +260,25 @@ describe("0031 adds meta to workflow_run (CL-2321)", () => {
   });
 });
 
-describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
-  const sql = readFileSync(
+describe("0040/0041 add principal-activity timeline indexes (CL-2490)", () => {
+  const coldSql = readFileSync(
     join(
       import.meta.dir,
       "../../migrations/0040_principal_activity_indexes.sql",
     ),
     "utf-8",
   );
+  const hotSql = readFileSync(
+    join(
+      import.meta.dir,
+      "../../migrations/0041_principal_activity_hot_indexes.sql",
+    ),
+    "utf-8",
+  );
 
-  it("indexes every direct-scoped timeline source on (tenant, principal, ts DESC)", () => {
+  it("0040 indexes every low-write timeline source on (tenant, principal, ts DESC)", () => {
     for (const [table, principalColumn, tsColumn] of [
-      ["inference_turn", "session_id", "started_at"],
       ["agent_session", "principal_id", "created_at"],
-      ["session_mail", "session_id", "created_at"],
-      ["analytics_event", "principal_id", "occurred_at"],
       ["workflow_run_record", "principal_id", "created_at"],
       ["artifact", "principal_id", "created_at"],
       ["artifact", "owner_principal_id", "created_at"],
@@ -285,7 +289,7 @@ describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
       ["grant", "principal_id", "created_at"],
       ["credential", "principal_id", "created_at"],
     ] as const) {
-      expect(sql).toMatch(
+      expect(coldSql).toMatch(
         new RegExp(
           `CREATE INDEX IF NOT EXISTS "[a-z_]+" ON "${table}" \\("tenant_id", "${principalColumn}", "${tsColumn}" DESC\\)`,
           "i",
@@ -294,10 +298,37 @@ describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
     }
   });
 
-  it("scopes artifact_version by author and keeps the tool_call index partial", () => {
-    expect(sql).toMatch(
+  it("0040 scopes artifact_version by author", () => {
+    expect(coldSql).toMatch(
       /CREATE INDEX IF NOT EXISTS "[a-z_]+" ON "artifact_version" \("author_id", "created_at" DESC\)/i,
     );
-    expect(sql).toMatch(/WHERE event_type = 'tool_call'/i);
+  });
+
+  it("0040 keeps the write-hot tables out of the transactional migration", () => {
+    for (const table of ["inference_turn", "session_mail", "analytics_event"]) {
+      expect(coldSql).not.toMatch(new RegExp(`ON "${table}"`, "i"));
+    }
+  });
+
+  it("0041 carries the no-transaction marker and builds hot-table indexes CONCURRENTLY", () => {
+    expect(hotSql).toMatch(/^--\s*migrate:no-transaction/);
+    for (const [table, principalColumn, tsColumn] of [
+      ["inference_turn", "session_id", "started_at"],
+      ["session_mail", "session_id", "created_at"],
+      ["analytics_event", "principal_id", "occurred_at"],
+    ] as const) {
+      expect(hotSql).toMatch(
+        new RegExp(
+          `CREATE INDEX CONCURRENTLY IF NOT EXISTS "[a-z_]+" ON "${table}" \\("tenant_id", "${principalColumn}", "${tsColumn}" DESC\\)`,
+          "i",
+        ),
+      );
+    }
+    // Every CREATE is preceded by a DROP guard clearing an INVALID leftover
+    // from an interrupted CONCURRENTLY build.
+    const drops = hotSql.match(/DROP INDEX CONCURRENTLY IF EXISTS/gi) ?? [];
+    const creates = hotSql.match(/CREATE INDEX CONCURRENTLY/gi) ?? [];
+    expect(drops.length).toBe(creates.length);
+    expect(hotSql).toMatch(/WHERE event_type = 'tool_call'/i);
   });
 });
