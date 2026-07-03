@@ -395,6 +395,26 @@ describe("reddit-opportunity-scanner Panel", () => {
     screen.getByText("Frustrated with current APM tools");
   });
 
+  it("renders opportunities from outputs decoded off the run-keyed /state inline refs (CL-2704)", () => {
+    // Under per-run deployments the host derives stepOutputs by JSON-parsing the
+    // log fold's `inline:` outputRefs — pin that this round-trip yields exactly
+    // the map shape the panel decodes.
+    const curateRef = `inline:${JSON.stringify(CURATE_STEP_OUTPUT)}`;
+    renderPanel({
+      state: makeState({
+        ...REVIEW_DONE,
+        collect: "completed",
+        curate: "completed",
+        selection: "awaiting-signal",
+      }),
+      stepOutputs: {
+        curate: JSON.parse(curateRef.slice("inline:".length)) as unknown,
+      },
+    });
+    screen.getByText("Anyone using X for tracing?");
+    screen.getByText("Frustrated with current APM tools");
+  });
+
   // ── Selection screen ──────────────────────────────────────────────────────────
 
   it("fires opportunity-selection with selected opportunity objects", () => {

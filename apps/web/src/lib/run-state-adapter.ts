@@ -110,6 +110,26 @@ export function runStateFromLog(log: LogRunState): RunState {
   };
 }
 
+// Resolved step outputs, decoded straight from the run-keyed log fold (CL-2704).
+// The substrate stores any output whose JSON is <= 1 MiB as an `inline:` ref —
+// `"inline:" + JSON.stringify(output)` — so the /state response already carries
+// the content and the client decodes it without a second request. This replaces
+// the legacy deployment-keyed /workflow-runs/:deploymentId/steps read, which
+// 404s under per-run deployments (CL-2582). `blob:` refs (> 1 MiB outputs) are
+// not client-resolvable and are omitted — a bridge limitation superseded by
+// CL-2684/CL-2665.
+const INLINE_REF_PREFIX = "inline:";
+
+export function stepOutputsFromLog(log: LogRunState): Record<string, unknown> {
+  const outputs: Record<string, unknown> = {};
+  for (const s of log.steps) {
+    if (s.outputRef === undefined) continue;
+    if (!s.outputRef.startsWith(INLINE_REF_PREFIX)) continue;
+    outputs[s.stepId] = JSON.parse(s.outputRef.slice(INLINE_REF_PREFIX.length));
+  }
+  return outputs;
+}
+
 // Map the thin index status to a run-level `RunPhase` for the log-unavailable
 // fallback. `awaiting` (parked on a gate) is still live, so it maps to
 // `running` — the run has not settled.

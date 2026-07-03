@@ -64,6 +64,9 @@ let logStateData: LogRunState | undefined = {
 };
 let logStateError = false;
 let stepOutputsData: Record<string, unknown> = {};
+// The id the pane keys the step-output hook by — must be the RUN id, never the
+// record's ses_ deploymentId (which 404s under per-run deployments, CL-2704).
+let stepOutputsRequestedId: string | null | undefined;
 
 const resumeMutateAsync = mock(async () => undefined);
 
@@ -71,7 +74,10 @@ mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
   useWorkflowRunState: () => ({ data: logStateData, isError: logStateError }),
-  useWorkflowStepOutputs: () => ({ data: stepOutputsData }),
+  useWorkflowStepOutputs: (runId: string | null | undefined) => {
+    stepOutputsRequestedId = runId;
+    return { data: stepOutputsData };
+  },
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
@@ -122,6 +128,7 @@ describe("WorkflowRunPane", () => {
     logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
     logStateError = false;
     stepOutputsData = {};
+    stepOutputsRequestedId = undefined;
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
   });
@@ -212,6 +219,16 @@ describe("WorkflowRunPane", () => {
     });
     await waitFor(() => screen.getByText('out-step-ok:{"headline":"hi"}'));
     screen.getByText("skills:Hammy Humanizer");
+  });
+
+  it("keys step outputs by the RUN id, never the record's per-run ses_ deploymentId (CL-2704)", async () => {
+    record = makeRecord({ deploymentId: "ses_perrun1" });
+    stepOutputsData = { analyze: { reply: "hi" } };
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText('out-analyze:{"reply":"hi"}'));
+    expect(stepOutputsRequestedId).toBe("wfr_1");
   });
 
   it("onSignal resumes when the run is awaiting", async () => {

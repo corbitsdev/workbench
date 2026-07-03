@@ -14,6 +14,7 @@ import {
   useWorkflowRecord,
   useWorkflowRuns,
   useWorkflowRunState,
+  useWorkflowStepOutputs,
 } from "./use-workflow";
 
 const originalFetch = globalThis.fetch;
@@ -189,6 +190,101 @@ describe("useWorkflowRunState", () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe("useWorkflowStepOutputs", () => {
+  // Per-run deployments (CL-2582) key each run to its own ses_ deployment; the
+  // legacy /workflow-runs/:deploymentId/steps lookup 404s for them (CL-2704).
+  // Outputs must resolve from the run-keyed log-derived /state fold instead.
+  const stateWithOutputs = {
+    runId: "wfr_run1",
+    phase: "running",
+    lastSeq: 5,
+    steps: [
+      {
+        stepId: "analyze",
+        phase: "completed",
+        stepType: "inline",
+        currentAttempt: 1,
+        outputRef: `inline:${JSON.stringify({ reply: "analysis" })}`,
+      },
+      {
+        stepId: "huge",
+        phase: "completed",
+        stepType: "agent",
+        currentAttempt: 1,
+        outputRef: "blob:" + "b".repeat(64),
+      },
+      {
+        stepId: "review",
+        phase: "awaiting-signal",
+        stepType: "human",
+        currentAttempt: 1,
+        awaitingSignalName: "approve",
+      },
+    ],
+  };
+
+  it("resolves outputs run-keyed from /state and never calls the legacy deployment-keyed endpoint", async () => {
+    const requested: string[] = [];
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested.push(String(url));
+      return Promise.resolve(jsonResponse(200, stateWithOutputs));
+    }) as typeof fetch;
+
+    const { result } = renderHook(
+      () => useWorkflowStepOutputs("wfr_run1", "tn-x"),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() =>
+      expect(result.current.data).toEqual({ analyze: { reply: "analysis" } }),
+    );
+    expect(
+      requested.some((u) => u.includes("/workflow-exec/runs/wfr_run1/state")),
+    ).toBe(true);
+    // The deployment-keyed legacy path must be gone entirely (CL-2704).
+    expect(requested.some((u) => u.includes("/workflow-runs/"))).toBe(false);
+  });
+
+  it("shares the run-state cache entry instead of issuing a second request", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(200, stateWithOutputs));
+    }) as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const { result } = renderHook(
+      () => ({
+        state: useWorkflowRunState("wfr_run1", "tn-x"),
+        outputs: useWorkflowStepOutputs("wfr_run1", "tn-x"),
+      }),
+      { wrapper: recordWrapper(client) },
+    );
+    await waitFor(() =>
+      expect(result.current.outputs.data).toEqual({
+        analyze: { reply: "analysis" },
+      }),
+    );
+    expect(result.current.state.data?.runId).toBe("wfr_run1");
+    expect(calls).toBe(1);
+  });
+
+  it("is disabled when runId is null", () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, stateWithOutputs));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowStepOutputs(null), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(called).toBe(false);
   });
 });
 
