@@ -106,6 +106,28 @@ mock.module("../components/layout/UnifiedCatalogModal", () => ({
   },
 }));
 
+// Stub the catalog surface: capture its props so tests can assert the page
+// wires tenant, run kinds, and navigation into it.
+let lastCatalogSurfaceProps: {
+  tenantId: string | null;
+  runKinds: readonly string[];
+  onWorkflowStarted: (runId: string) => void;
+} | null = null;
+mock.module("../components/WorkflowCatalog", () => ({
+  WorkflowCatalog: (props: {
+    tenantId: string | null;
+    runKinds: readonly string[];
+    onWorkflowStarted: (runId: string) => void;
+  }) => {
+    lastCatalogSurfaceProps = props;
+    return React.createElement(
+      "div",
+      { "data-testid": "workflow-catalog-surface" },
+      "catalog surface",
+    );
+  },
+}));
+
 const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
@@ -115,6 +137,7 @@ afterEach(() => {
   lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
   lastCatalogProps = null;
+  lastCatalogSurfaceProps = null;
   lastStartKind = null;
   lastArchivedRunId = null;
   archiveShouldReject = false;
@@ -175,6 +198,40 @@ describe("WorkflowsPage", () => {
     };
     renderWorkflowsPage();
     screen.getByText(/no workflow runs yet/i);
+  });
+
+  it("renders the catalog surface on the empty-state dashboard", () => {
+    runsResult = {
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    renderWorkflowsPage();
+    screen.getByTestId("workflow-catalog-surface");
+    expect(lastCatalogSurfaceProps?.tenantId).toBe("ten-1");
+    expect(lastCatalogSurfaceProps?.runKinds).toEqual([]);
+  });
+
+  it("renders the catalog surface on the dashboard and navigates to a started run", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-1",
+          kind: "deck-build",
+          status: "completed",
+          createdAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { router } = renderWorkflowsPage();
+    screen.getByTestId("workflow-catalog-surface");
+    expect(lastCatalogSurfaceProps?.runKinds).toEqual(["deck-build"]);
+    lastCatalogSurfaceProps?.onWorkflowStarted("run-new");
+    expect(router.state.location.pathname).toBe("/workflows/run-new");
   });
 
   it("scopes the run list and run pane to the active workbench tenant", () => {
@@ -609,7 +666,7 @@ describe("WorkflowsPage", () => {
     };
     renderWorkflowsPage();
     screen.getByText(/no workflows yet/i);
-    screen.getByText(/start your first workflow/i);
+    screen.getByText(/start a workflow from the catalog/i);
     // Exactly one visible New-run CTA (the welcome button); the collapsed rail's
     // New-run is aria-hidden, so the landing has no competing/duplicate button.
     screen.getByRole("button", { name: /new run/i });
