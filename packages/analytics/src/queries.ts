@@ -420,6 +420,13 @@ export type CacheBaselineRow = {
  * of the prompt prefix caching absorbs — the two questions the Myra tool-prefix
  * baseline needs. `inference_done` carries the terminal usage block for a call,
  * so counting it avoids double-counting the interim `inference_usage` fact.
+ *
+ * Two reader caveats: `cacheMissRate` counts every session's first call as a
+ * miss (a cold-start `cacheRead` of 0 is unavoidable), so a tenant with many
+ * short sessions shows an inflated rate that reflects session shape, not a
+ * caching failure. `agentName` is null for an orphaned/renamed agent (the row
+ * is kept, not dropped). See the schema note in schema.ts on the raw-fact
+ * index this reader will eventually want.
  */
 export async function getCacheBaseline(
   args: { db: DB["db"] } & AnalyticsSummaryFilter,
