@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 
 let searchResult: {
   id: string;
@@ -41,7 +42,9 @@ describe("clear-input staleness", () => {
     });
     render(
       <QueryClientProvider client={client}>
-        <ActorActivitySection tenantId="tenant-1" />
+        <MemoryRouter>
+          <ActorActivitySection tenantId="tenant-1" />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     const box = screen.getByRole("searchbox");

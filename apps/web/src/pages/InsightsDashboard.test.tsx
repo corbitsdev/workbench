@@ -9,6 +9,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from "react-router";
 import type { ActivityOverview } from "../lib/hub-api";
 
 let activeContext: {
@@ -180,13 +187,31 @@ mock.module("../lib/hub-api", () => ({
 
 import { InsightsDashboard } from "./InsightsDashboard";
 
+function ActorProbe() {
+  const { id } = useParams();
+  const location = useLocation();
+  return (
+    <div data-testid="actor-probe">
+      <span data-testid="probe-id">{id}</span>
+      <span data-testid="probe-name">
+        {(location.state as { displayName?: string } | null)?.displayName ?? ""}
+      </span>
+    </div>
+  );
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
-      <InsightsDashboard />
+      <MemoryRouter initialEntries={["/insights"]}>
+        <Routes>
+          <Route path="/insights" element={<InsightsDashboard />} />
+          <Route path="/insights/users/:id" element={<ActorProbe />} />
+        </Routes>
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -422,6 +447,23 @@ describe("InsightsDashboard", () => {
     // tokensRecordedFrom): inputTokens 1000 + outputTokens 150 = 1,150.
     expect(total?.textContent).toContain("1,150");
     screen.getByText("Excludes shared agents");
+  });
+
+  it("navigates to the actor detail page when a By-person row is clicked", async () => {
+    renderPage();
+
+    await waitFor(() => {
+      screen.getByText("Dana");
+    });
+    fireEvent.click(screen.getByText("Dana"));
+
+    await waitFor(() => {
+      screen.getByTestId("actor-probe");
+    });
+    expect(screen.getByTestId("probe-id").textContent).toBe("pri_other");
+    // The clicked row seeds the detail page with the actor via router state so
+    // identity renders instantly before the id-based fetch resolves.
+    expect(screen.getByTestId("probe-name").textContent).toBe("Dana");
   });
 
   it("orders the By-person table by tokens and lists Turns before Tool calls", async () => {

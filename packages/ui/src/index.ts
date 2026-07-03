@@ -1,4 +1,6 @@
 export { Button, buttonVariants } from "./Button";
+export { Badge, badgeVariants, type BadgeTone } from "./Badge";
+export { Skeleton } from "./Skeleton";
 export {
   Menu,
   MenuTrigger,

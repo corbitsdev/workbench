@@ -95,6 +95,7 @@ import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
+import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
@@ -631,6 +632,10 @@ hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(
   "/api/tenants/:tenantId/actors/search",
   createActorSearchRouter({ db }),
+);
+hubApp.route(
+  "/api/tenants/:tenantId/actors/:principalId",
+  createActorDetailRouter({ db }),
 );
 
 // ─── Parent Hono ────────────────────────────────────────────────────
