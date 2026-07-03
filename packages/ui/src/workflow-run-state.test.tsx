@@ -175,7 +175,7 @@ describe("workflow-run-state", () => {
     expect(stepper.every((step) => step.status === "completed")).toBe(true);
   });
 
-  test("failedRunErrorMessage returns the failed step's lastError message", () => {
+  test("failedRunErrorMessage returns a sanitized user message, never the raw error", () => {
     const state = {
       phase: "failed",
       steps: new Map([
@@ -190,7 +190,28 @@ describe("workflow-run-state", () => {
         ],
       ]),
     } as unknown as RunState;
-    expect(failedRunErrorMessage(state)).toBe("Attio API error: 403 Forbidden");
+    expect(failedRunErrorMessage(state)).toBe(
+      "Attio declined the request (403). Check the connected Attio credential's access and try again.",
+    );
+  });
+
+  test("failedRunErrorMessage never leaks an internal error message", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        [
+          "brief",
+          {
+            phase: "failed",
+            lastError: {
+              message: "no agent address registered for ins_ses_01aabbcc",
+            },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(state)).not.toContain("ins_");
+    expect(failedRunErrorMessage(state)).toContain("Try running it again");
   });
 
   test("failedRunErrorMessage returns null when the run has not failed or no step carries an error", () => {
@@ -211,11 +232,23 @@ describe("workflow-run-state", () => {
     const state = {
       phase: "failed",
       steps: new Map([
-        ["a", { phase: "failed", lastError: { message: "first" } }],
-        ["b", { phase: "failed", lastError: { message: "second" } }],
+        [
+          "a",
+          {
+            phase: "failed",
+            lastError: { message: "First API error: 429 first" },
+          },
+        ],
+        [
+          "b",
+          {
+            phase: "failed",
+            lastError: { message: "Second API error: 429 second" },
+          },
+        ],
       ]),
     } as unknown as RunState;
-    expect(failedRunErrorMessage(state)).toBe("first");
+    expect(failedRunErrorMessage(state)).toContain("First is rate-limiting");
   });
 
   test("LiveStatus renders the label with an ellipsis", () => {
