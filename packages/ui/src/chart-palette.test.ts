@@ -27,4 +27,19 @@ describe("seriesColor", () => {
       expect(slot.text.startsWith("text-")).toBe(true);
     }
   });
+
+  it("leads with blue as the primary data hue, not the action accent", () => {
+    expect(CHART_SERIES[0]!.key).toBe("blue");
+    expect(CHART_SERIES[0]!.key).not.toBe("accent");
+  });
+
+  it("keeps green- and red-family slots non-adjacent (CVD-safe)", () => {
+    const family = (key: string) => key.replace(/-deep$/, "");
+    for (let i = 0; i < CHART_SERIES.length - 1; i++) {
+      const a = family(CHART_SERIES[i]!.key);
+      const b = family(CHART_SERIES[i + 1]!.key);
+      const pair = new Set([a, b]);
+      expect(pair.has("green") && pair.has("red")).toBe(false);
+    }
+  });
 });

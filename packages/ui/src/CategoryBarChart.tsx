@@ -15,7 +15,7 @@ interface CategoryBarChartProps {
   label: string;
   /**
    * When true each bar takes the next categorical palette slot (identity
-   * encoding — e.g. per-kind). When false all bars share the accent tone
+   * encoding — e.g. per-kind). When false all bars share the primary blue tone
    * (magnitude-only — e.g. top actors ranked by one measure). Defaults false.
    */
   colorByCategory?: boolean;
@@ -27,9 +27,10 @@ interface CategoryBarChartProps {
 /**
  * Tokenized horizontal bar chart for categorical magnitude (per-kind breakdown,
  * top-actors). Bars are sorted descending by the caller. Color is semantic, not
- * decorative: magnitude-only bars share the accent tone, identity bars step the
- * fixed palette. A visually-hidden table mirrors every row so the ranking is
- * legible without color.
+ * decorative: magnitude-only bars share the primary blue tone, identity bars
+ * step the fixed palette. A visually-hidden table mirrors every row so the
+ * ranking is legible without color, and the visible label/value marks are
+ * aria-hidden so assistive tech hears each datum once (via the table).
  */
 export function CategoryBarChart({
   data,
@@ -60,7 +61,7 @@ export function CategoryBarChart({
       <div className="flex flex-col gap-2">
         {rows.map((row, i) => {
           const pct = max <= 0 ? 0 : (row.value / max) * 100;
-          const bg = colorByCategory ? seriesColor(i).bg : "bg-accent";
+          const bg = colorByCategory ? seriesColor(i).bg : "bg-blue";
           return (
             <div
               key={row.label}
@@ -69,7 +70,10 @@ export function CategoryBarChart({
               data-label={row.label}
               data-value={row.value}
             >
-              <span className="w-40 shrink-0 truncate text-[12px] text-text-2">
+              <span
+                className="w-40 shrink-0 truncate text-[12px] text-text-2"
+                aria-hidden={row.labelNode ? undefined : true}
+              >
                 {row.labelNode ?? row.label}
               </span>
               <span
@@ -82,7 +86,10 @@ export function CategoryBarChart({
                   data-testid="category-bar-fill"
                 />
               </span>
-              <span className="w-14 shrink-0 text-right font-mono text-[11px] tabular-nums text-text">
+              <span
+                className="w-14 shrink-0 text-right font-mono text-[11px] tabular-nums text-text"
+                aria-hidden
+              >
                 {formatValue(row.value)}
               </span>
             </div>

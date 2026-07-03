@@ -8,6 +8,13 @@ import {
   type SortDir,
 } from "./table-utils";
 
+type AriaSort = "ascending" | "descending" | undefined;
+
+function ariaSortFor(active: boolean, dir: SortDir): AriaSort {
+  if (!active) return undefined;
+  return dir === "asc" ? "ascending" : "descending";
+}
+
 export interface SortableColumn<T> {
   /** Stable column id, the React key, and the sort key. */
   key: string;
@@ -107,12 +114,8 @@ export function SortableTable<T>({
           <thead className="border-b border-border bg-surface text-[10px] font-semibold uppercase tracking-[0.12em] text-text-3">
             <tr>
               {columns.map((col) => {
-                const active = col.key === sortKey && col.sortValue;
-                const ariaSort = active
-                  ? sortDir === "asc"
-                    ? "ascending"
-                    : "descending"
-                  : undefined;
+                const active = col.key === sortKey && !!col.sortValue;
+                const ariaSort = ariaSortFor(active, sortDir);
                 const alignCls = col.align === "right" ? "text-right" : "";
                 return (
                   <th
@@ -171,7 +174,7 @@ export function SortableTable<T>({
               data-testid="pager-prev"
               disabled={clampedPage <= 0}
               onClick={() => setPage(clampedPage - 1)}
-              className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Prev
             </button>
@@ -180,7 +183,7 @@ export function SortableTable<T>({
               data-testid="pager-next"
               disabled={clampedPage >= pages - 1}
               onClick={() => setPage(clampedPage + 1)}
-              className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-40"
             >
               Next
             </button>

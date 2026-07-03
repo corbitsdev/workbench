@@ -698,6 +698,21 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain("Last30days");
   });
+
+  it("flags failed turns with the semantic danger token, not the action accent", async () => {
+    const priorFailed = mockOverview.inference.summary.failedTurnCount;
+    mockOverview.inference.summary.failedTurnCount = 2;
+    try {
+      renderPage();
+      const label = await screen.findByText("Total turns");
+      const tile = label.closest("div")!;
+      const value = within(tile).getByText("12");
+      expect(value.className).toContain("text-red");
+      expect(value.className).not.toContain("text-accent");
+    } finally {
+      mockOverview.inference.summary.failedTurnCount = priorFailed;
+    }
+  });
 });
 
 describe("dashboard data helpers", () => {

@@ -38,6 +38,21 @@ describe("CategoryBarChart", () => {
     expect(table.querySelectorAll("tbody tr")).toHaveLength(3);
   });
 
+  it("paints magnitude-only bars with the primary blue, not the action accent", () => {
+    render(<CategoryBarChart data={DATA} label="Runs by kind" />);
+    const fills = screen.getAllByTestId("category-bar-fill");
+    expect(fills[0]!.className).toContain("bg-blue");
+    expect(fills[0]!.className).not.toContain("bg-accent");
+  });
+
+  it("steps the categorical palette when colorByCategory is set", () => {
+    render(<CategoryBarChart data={DATA} label="x" colorByCategory />);
+    const fills = screen.getAllByTestId("category-bar-fill");
+    // Slot 0 is blue, slot 1 accent under the CVD-aware order.
+    expect(fills[0]!.className).toContain("bg-blue");
+    expect(fills[1]!.className).toContain("bg-accent");
+  });
+
   it("shows an empty state with no data", () => {
     render(<CategoryBarChart data={[]} label="x" />);
     screen.getByTestId("category-bar-empty");

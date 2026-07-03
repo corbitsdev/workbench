@@ -9,6 +9,7 @@ import {
 } from "@workbench/ui";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Link } from "react-router";
 import { AlertTriangle, BarChart2 } from "lucide-react";
 import { actorHref } from "./insights/ActorActivity";
@@ -160,25 +161,40 @@ function HudCard({
   );
 }
 
+function statValueClass(accent?: boolean, danger?: boolean): string {
+  if (danger) return "text-red";
+  if (accent) return "text-accent";
+  return "text-text";
+}
+
 function Stat({
   label,
   value,
   sub,
   delta,
   accent,
+  danger,
+  emphasis,
 }: {
   label: string;
   value: string;
   sub?: string;
   delta?: ReturnType<typeof computeDelta>;
+  /** Orange action tone — reserve for genuine action/positive emphasis. */
   accent?: boolean;
+  /** Semantic danger (red) — for failure counts, never the action accent. */
+  danger?: boolean;
+  /** Headline tile: larger value + padding so the KPI row anchors the page. */
+  emphasis?: boolean;
 }) {
   return (
-    <div className="flex flex-col gap-1.5 rounded-[12px] border border-border bg-surface p-4">
+    <div
+      className={`flex flex-col gap-1.5 rounded-[12px] border ${emphasis ? "border-accent/25 bg-surface-2 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]" : "border-border bg-surface p-4"}`}
+    >
       <CardLabel>{label}</CardLabel>
       <div className="flex items-baseline gap-2">
         <span
-          className={`text-[26px] font-black leading-none tabular-nums ${accent ? "text-accent" : "text-text"}`}
+          className={`font-black leading-none tabular-nums ${emphasis ? "text-[34px]" : "text-[26px]"} ${statValueClass(accent, danger)}`}
         >
           {value}
         </span>
@@ -349,7 +365,7 @@ function InferenceSection({
           value={formatNumber(summary.turnCount)}
           delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
           sub={`${turnRate.toFixed(1)}% success`}
-          accent={summary.failedTurnCount > 0}
+          danger={summary.failedTurnCount > 0}
         />
         <Stat
           label="Tool calls"
@@ -363,7 +379,7 @@ function InferenceSection({
               ? `${toolRate.toFixed(1)}% success`
               : "success rate unavailable"
           }
-          accent={tokenCaveat === null && summary.toolErrorCount > 0}
+          danger={tokenCaveat === null && summary.toolErrorCount > 0}
         />
         <Stat
           label="Cache hit rate"
@@ -611,7 +627,7 @@ function InstanceBreakdown({
             onClick={() =>
               setVisibleCount((count) => count + INSTANCE_PAGE_SIZE)
             }
-            className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
+            className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
           >
             Show {Math.min(remaining, INSTANCE_PAGE_SIZE)} more
           </button>
@@ -678,7 +694,7 @@ function KpiRow({
   const activity = summary.turnCount + summary.toolCallCount;
   const prevActivity = prev ? prev.turnCount + prev.toolCallCount : null;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 rounded-[16px] border border-border bg-gradient-to-b from-surface-2 to-surface p-4 max-md:p-3">
       <SectionLabel>This range</SectionLabel>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
@@ -687,21 +703,25 @@ function KpiRow({
           sub="turns + tool calls"
           delta={computeDelta(activity, prevActivity)}
           accent
+          emphasis
         />
         <Stat
           label="Active actors"
           value={formatNumber(activePeople)}
           sub="people with usage"
+          emphasis
         />
         <Stat
           label="Workflow runs"
           value={formatNumber(data.workflowRuns.executionRecords)}
           sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
+          emphasis
         />
         <Stat
           label="Artifacts"
           value={formatNumber(data.artifacts.total)}
           sub={`${formatNumber(data.artifacts.createdInRange)} in range`}
+          emphasis
         />
       </div>
     </div>
@@ -709,7 +729,7 @@ function KpiRow({
 }
 
 function selectClass(): string {
-  return "min-h-[32px] rounded-[8px] border border-border bg-surface px-2.5 py-1 text-[12px] font-medium text-text-2 outline-none focus-visible:ring-1 focus-visible:ring-accent";
+  return "min-h-[40px] rounded-[8px] border border-border bg-surface px-2.5 py-1 text-[12px] font-medium text-text-2 outline-none focus-visible:ring-1 focus-visible:ring-accent";
 }
 
 function FiltersBar({
@@ -990,12 +1010,25 @@ function SortableWorkflowKindTable({ rows }: { rows: WorkflowKindRow[] }) {
   );
 }
 
+// Light staggered fade for the dashboard sections as they mount after the
+// loading skeleton, instead of a hard cut. Subtle (short durations + small
+// offset); reduced-motion collapses it to an instant show (see below).
+const SECTIONS_CONTAINER: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.05, delayChildren: 0.03 } },
+};
+const SECTION_ITEM: Variants = {
+  hidden: { opacity: 0, y: 8 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.22, ease: "easeOut" } },
+};
+
 export function InsightsDashboard() {
   const [preset, setPreset] = useState<Preset>("30d");
   const [customRange, setCustomRange] = useState<DateRange>({});
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
+  const reduceMotion = useReducedMotion();
 
   const dates = resolveRange(preset, customRange);
 
@@ -1067,7 +1100,7 @@ export function InsightsDashboard() {
                 key={p.value}
                 type="button"
                 onClick={() => setPreset(p.value)}
-                className={`flex min-h-[32px] items-center rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-[color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
+                className={`flex min-h-[40px] items-center rounded-[8px] px-3 py-1.5 text-[12px] font-medium transition-[color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
                   preset === p.value
                     ? "bg-accent/10 text-accent"
                     : "text-text-3 hover:bg-row-hover hover:text-text"
@@ -1146,42 +1179,63 @@ export function InsightsDashboard() {
         )}
 
         {overview && (
-          <div className="flex flex-col gap-10">
-            <KpiRow data={overview} activePeople={overview.byPerson.length} />
-            <FiltersBar
-              kinds={workflowKinds}
-              kindFilter={kindFilter}
-              onKindFilter={setKindFilter}
-              actorFilter={actorFilter}
-              onActorFilter={setActorFilter}
-            />
-            <ChartsSection
-              data={overview}
-              range={dates}
-              kindRows={filteredKindRows}
-              people={filteredPeople}
-              tokenCaveat={tokenCaveat}
-            />
-            <div className="flex flex-col gap-3">
+          <motion.div
+            className="flex flex-col gap-10"
+            variants={SECTIONS_CONTAINER}
+            initial={reduceMotion ? false : "hidden"}
+            animate="show"
+          >
+            <motion.div variants={SECTION_ITEM}>
+              <KpiRow data={overview} activePeople={overview.byPerson.length} />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <FiltersBar
+                kinds={workflowKinds}
+                kindFilter={kindFilter}
+                onKindFilter={setKindFilter}
+                actorFilter={actorFilter}
+                onActorFilter={setActorFilter}
+              />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <ChartsSection
+                data={overview}
+                range={dates}
+                kindRows={filteredKindRows}
+                people={filteredPeople}
+                tokenCaveat={tokenCaveat}
+              />
+            </motion.div>
+            <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
               <SectionLabel>Usage by person</SectionLabel>
               {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
               <SortablePersonTable people={filteredPeople} />
               <p className="text-[11px] text-text-3">Excludes shared agents</p>
-            </div>
-            <div className="flex flex-col gap-3">
+            </motion.div>
+            <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
               <SectionLabel>Workflow runs by kind</SectionLabel>
               <SortableWorkflowKindTable rows={filteredKindRows} />
-            </div>
-            <TrendsSection
-              data={overview}
-              range={dates}
-              tokenCaveat={tokenCaveat}
-            />
-            <EngagementSection data={overview} />
-            <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
-            <OperationalLedger data={overview} />
-            <InstanceBreakdown instances={overview.inference.byInstance} />
-          </div>
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <TrendsSection
+                data={overview}
+                range={dates}
+                tokenCaveat={tokenCaveat}
+              />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <EngagementSection data={overview} />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <InferenceSection data={overview} tokenCaveat={tokenCaveat} />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <OperationalLedger data={overview} />
+            </motion.div>
+            <motion.div variants={SECTION_ITEM}>
+              <InstanceBreakdown instances={overview.inference.byInstance} />
+            </motion.div>
+          </motion.div>
         )}
       </div>
     </PagePanel>

@@ -49,10 +49,10 @@ describe("TimeSeriesChart", () => {
     expect(screen.getAllByTestId("time-series-legend").length).toBe(2);
   });
 
-  it("renders an empty state when every value is zero", () => {
+  it("renders a flat-at-zero line (not the empty state) when a series has all-zero points", () => {
     render(
       <TimeSeriesChart
-        label="empty"
+        label="all zero"
         series={[
           {
             key: "z",
@@ -65,7 +65,31 @@ describe("TimeSeriesChart", () => {
         ]}
       />,
     );
+    // Real data (points present) → draw the chart, not the no-data message.
+    expect(screen.queryByTestId("time-series-empty")).toBeNull();
+    const chart = screen.getByTestId("time-series-chart");
+    expect(chart.querySelectorAll("path").length).toBeGreaterThan(0);
+    // The table fallback still lists both zero buckets.
+    expect(
+      screen.getByTestId("time-series-table").querySelectorAll("tbody tr"),
+    ).toHaveLength(2);
+  });
+
+  it("shows the no-data empty state only for a genuinely empty series", () => {
+    render(
+      <TimeSeriesChart
+        label="empty"
+        series={[{ key: "e", name: "E", points: [] }]}
+      />,
+    );
     screen.getByTestId("time-series-empty");
     expect(screen.queryByTestId("time-series-chart")).toBeNull();
+  });
+
+  it("renders a y-axis max label (nice max) and a zero baseline label", () => {
+    render(<TimeSeriesChart series={SERIES} label="Turns per day" />);
+    // Peak is 8, niceMax rounds up to 10.
+    expect(screen.getByTestId("axis-max").textContent).toBe("10");
+    expect(screen.getByTestId("axis-zero").textContent).toBe("0");
   });
 });

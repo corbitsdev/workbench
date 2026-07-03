@@ -53,9 +53,11 @@ export function TimeSeriesChart({
 }: TimeSeriesChartProps) {
   const tableId = useId();
   const nonEmpty = series.filter((s) => s.points.length > 0);
-  const hasData = nonEmpty.some((s) => s.points.some((p) => p.value !== 0));
 
-  if (nonEmpty.length === 0 || !hasData) {
+  // "No data" is reserved for a genuinely empty series. A series that has points
+  // which are all zero is real data — it renders as a flat line on the zero
+  // baseline (with the axis scale) so the reader sees "no activity", not a gap.
+  if (nonEmpty.length === 0) {
     return (
       <div className="text-[12px] text-text-3" data-testid="time-series-empty">
         {emptyMessage}
@@ -74,53 +76,78 @@ export function TimeSeriesChart({
 
   return (
     <figure className="flex flex-col gap-2" data-testid="time-series-chart">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        width="100%"
-        height={height}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={`${label}. Peak ${formatValue(peak)} across ${labels.length} buckets.`}
-        aria-describedby={tableId}
-        data-series-count={nonEmpty.length}
-      >
-        <line
-          x1={0}
-          y1={height - 0.5}
-          x2={width}
-          y2={height - 0.5}
-          className="stroke-border"
-          strokeWidth={1}
-        />
-        {nonEmpty.map((s, i) => {
-          const color = seriesColor(i);
-          const coords = seriesToCoords(
-            s.points.map((p) => p.value),
-            width,
-            height,
-            globalMax,
-          );
-          return (
-            <g key={s.key} data-testid="time-series-line" data-series={s.key}>
-              {variant === "area" && (
+      <div className="relative">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          width="100%"
+          height={height}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`${label}. Peak ${formatValue(peak)} across ${labels.length} buckets.`}
+          aria-describedby={tableId}
+          data-series-count={nonEmpty.length}
+        >
+          <line
+            x1={0}
+            y1={0.5}
+            x2={width}
+            y2={0.5}
+            className="stroke-border"
+            strokeWidth={1}
+            opacity={0.5}
+          />
+          <line
+            x1={0}
+            y1={height - 0.5}
+            x2={width}
+            y2={height - 0.5}
+            className="stroke-border"
+            strokeWidth={1}
+          />
+          {nonEmpty.map((s, i) => {
+            const color = seriesColor(i);
+            const coords = seriesToCoords(
+              s.points.map((p) => p.value),
+              width,
+              height,
+              globalMax,
+            );
+            return (
+              <g key={s.key} data-testid="time-series-line" data-series={s.key}>
+                {variant === "area" && (
+                  <path
+                    d={buildAreaPath(coords, height)}
+                    className={color.fill}
+                    opacity={0.14}
+                  />
+                )}
                 <path
-                  d={buildAreaPath(coords, height)}
-                  className={color.fill}
-                  opacity={0.14}
+                  d={buildLinePath(coords)}
+                  fill="none"
+                  className={color.stroke}
+                  strokeWidth={2}
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
                 />
-              )}
-              <path
-                d={buildLinePath(coords)}
-                fill="none"
-                className={color.stroke}
-                strokeWidth={2}
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </g>
-          );
-        })}
-      </svg>
+              </g>
+            );
+          })}
+        </svg>
+        <span
+          className="pointer-events-none absolute left-1 top-0 font-mono text-[10px] tabular-nums text-text-3"
+          data-testid="axis-max"
+          aria-hidden
+        >
+          {formatValue(globalMax)}
+        </span>
+        <span
+          className="pointer-events-none absolute bottom-0 left-1 font-mono text-[10px] tabular-nums text-text-3"
+          data-testid="axis-zero"
+          aria-hidden
+        >
+          0
+        </span>
+      </div>
 
       {showLegend && (
         <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -128,12 +155,10 @@ export function TimeSeriesChart({
             <span
               key={s.key}
               data-testid="time-series-legend"
+              aria-hidden
               className="flex items-center gap-1.5 text-[11px] text-text-2"
             >
-              <span
-                aria-hidden
-                className={`h-2 w-2 rounded-[1px] ${seriesColor(i).bg}`}
-              />
+              <span className={`h-2 w-2 rounded-[1px] ${seriesColor(i).bg}`} />
               {s.name}
             </span>
           ))}
