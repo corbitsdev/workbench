@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 import { ChevronRight } from "lucide-react";
-import { Badge } from "@workbench/ui";
 import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
 import { KIND_META, relativeTime } from "./timeline-kinds";
+import {
+  describeActivityEntry,
+  groupActivityIntoTurns,
+  type ActivityTurn,
+} from "./activity-naming";
 
 // A short reverse-chronological slice; the deep per-actor timeline (with
 // pagination) lives in the Activity search section. This is the entry point.
@@ -16,19 +20,22 @@ export function traceHrefForEntry(entry: TimelineEntry): string | null {
   return `/insights/trace/${encodeURIComponent(entry.id)}`;
 }
 
-function RowBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
+function EntryBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const meta = KIND_META[entry.kind];
   const Icon = meta.icon;
+  const { headline, detail } = describeActivityEntry(entry);
   return (
     <>
       <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" />
       <span className="min-w-0 flex-1">
-        <Badge tone={meta.tone} className="mb-1">
-          {meta.label}
-        </Badge>
-        <span className="block truncate text-[13px] text-text-2">
-          {entry.summary ?? "No details recorded"}
+        <span className="block truncate text-[13px] font-medium text-text">
+          {headline}
         </span>
+        {detail !== null && detail !== "" && (
+          <span className="block truncate text-[12px] text-text-3">
+            {detail}
+          </span>
+        )}
       </span>
       <time
         dateTime={entry.timestamp}
@@ -41,8 +48,9 @@ function RowBody({ entry, now }: { entry: TimelineEntry; now: Date }) {
   );
 }
 
-function ActivityRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
+function EntryRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
   const href = traceHrefForEntry(entry);
+  const shared = "flex items-start gap-3 rounded-[8px] px-3 py-2";
   if (href !== null) {
     return (
       <li>
@@ -50,9 +58,9 @@ function ActivityRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
           to={href}
           data-testid="recent-activity-entry"
           data-kind={entry.kind}
-          className="flex items-start gap-3 rounded-[8px] px-3 py-2 transition-colors hover:bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className={`${shared} transition-colors hover:bg-row-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent`}
         >
-          <RowBody entry={entry} now={now} />
+          <EntryBody entry={entry} now={now} />
           <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" />
         </Link>
       </li>
@@ -62,10 +70,69 @@ function ActivityRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
     <li
       data-testid="recent-activity-entry"
       data-kind={entry.kind}
-      className="flex items-start gap-3 rounded-[8px] px-3 py-2"
+      className={shared}
     >
-      <RowBody entry={entry} now={now} />
+      <EntryBody entry={entry} now={now} />
     </li>
+  );
+}
+
+/** "2 grants · 1 tool call" from a turn's per-kind counts. */
+function flowSummary(counts: Record<string, number>): string {
+  return Object.entries(counts)
+    .map(([kind, n]) => {
+      const label =
+        KIND_META[kind as TimelineEntry["kind"]].label.toLowerCase();
+      return n === 1 ? `1 ${label}` : `${n} ${label}s`;
+    })
+    .join(" · ");
+}
+
+function TurnCard({ turn, now }: { turn: ActivityTurn; now: Date }) {
+  // A single-entry turn needs no grouping header — it reads as one row.
+  if (turn.entries.length === 1) {
+    return (
+      <ul
+        className="rounded-[12px] border border-border bg-surface p-1"
+        data-testid="activity-turn"
+      >
+        <EntryRow entry={turn.entries[0]!} now={now} />
+      </ul>
+    );
+  }
+  const anchor = turn.entries[0]!;
+  const AnchorIcon = KIND_META[anchor.kind].icon;
+  return (
+    <div
+      className="rounded-[12px] border border-border bg-surface"
+      data-testid="activity-turn"
+    >
+      <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+        <AnchorIcon className="h-3.5 w-3.5 shrink-0 text-text-3" />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-text">
+          {turn.headline}
+        </span>
+        <span className="shrink-0 text-[11px] text-text-3">
+          {flowSummary(turn.counts)}
+        </span>
+        <time
+          dateTime={turn.endedAt}
+          title={new Date(turn.endedAt).toLocaleString()}
+          className="shrink-0 font-mono text-[11px] tabular-nums text-text-3"
+        >
+          {relativeTime(turn.endedAt, now)}
+        </time>
+      </div>
+      <ul className="flex flex-col gap-px p-1">
+        {turn.entries.map((entry) => (
+          <EntryRow
+            key={`${entry.sourceTable}:${entry.id}`}
+            entry={entry}
+            now={now}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -87,6 +154,7 @@ export function RecentActivity({
   });
 
   const entries = query.data?.entries ?? [];
+  const turns = groupActivityIntoTurns(entries);
   const now = new Date();
 
   return (
@@ -132,16 +200,19 @@ export function RecentActivity({
         </div>
       )}
 
-      {entries.length > 0 && (
-        <ul className="flex flex-col rounded-[12px] border border-border bg-surface p-1">
-          {entries.map((entry) => (
-            <ActivityRow
-              key={`${entry.sourceTable}:${entry.id}`}
-              entry={entry}
-              now={now}
-            />
+      {turns.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p
+            className="text-[11px] leading-snug text-text-3"
+            data-testid="recent-activity-grouping-note"
+          >
+            Grouped by time proximity — entries close together in time are shown
+            as one flow, not by a recorded session.
+          </p>
+          {turns.map((turn) => (
+            <TurnCard key={turn.id} turn={turn} now={now} />
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

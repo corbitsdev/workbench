@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { BadgeTone } from "@workbench/ui";
-import type { TimelineEntryKind } from "@workbench/client";
+import type { TimelineEntry, TimelineEntryKind } from "@workbench/client";
 
 /**
  * Shared presentation metadata for the 13 timeline entry kinds: a neutral,
@@ -26,11 +26,12 @@ import type { TimelineEntryKind } from "@workbench/client";
  * re-declare KIND_META or {@link relativeTime} there; extend them here instead.
  *
  * Tone policy (mirrors the Badge doc): `identity` for who/what an actor is
- * (session/message), `accent` (the single orange action tone) only where an
- * action was initiated (workflow_run/upload), `positive` for produced/accepted
- * state (artifact/approval), `danger` for permission-sensitive rows whose
- * timeline is explicitly NOT an audit history (grant/credential), `neutral`
- * otherwise.
+ * (session/message), `positive` for produced/accepted state
+ * (artifact/approval), `neutral` for quiet metadata rows (including historical
+ * event kinds like workflow_run/upload and permission-sensitive rows —
+ * grant/credential — which are not themselves failures). `accent` (the single
+ * orange action tone) is never used on a static timeline badge. A grant's tone
+ * is refined per-row from its effect by {@link timelineEntryTone}.
  */
 export const KIND_META: Record<
   TimelineEntryKind,
@@ -40,14 +41,14 @@ export const KIND_META: Record<
   message: { label: "Message", icon: MessageSquare, tone: "identity" },
   inference_turn: { label: "Inference turn", icon: Sparkles, tone: "neutral" },
   tool_call: { label: "Tool call", icon: Wrench, tone: "neutral" },
-  workflow_run: { label: "Workflow run", icon: Workflow, tone: "accent" },
+  workflow_run: { label: "Workflow run", icon: Workflow, tone: "neutral" },
   artifact: { label: "Artifact", icon: FileText, tone: "positive" },
   artifact_version: {
     label: "Artifact version",
     icon: Layers,
     tone: "positive",
   },
-  upload: { label: "Upload", icon: Upload, tone: "accent" },
+  upload: { label: "Upload", icon: Upload, tone: "neutral" },
   memory: { label: "Memory", icon: Database, tone: "neutral" },
   approval: { label: "Approval", icon: CheckCircle2, tone: "positive" },
   output_feedback: {
@@ -55,9 +56,26 @@ export const KIND_META: Record<
     icon: MessageCircle,
     tone: "neutral",
   },
-  grant: { label: "Grant", icon: ShieldCheck, tone: "danger" },
-  credential: { label: "Credential", icon: KeyRound, tone: "danger" },
+  grant: { label: "Grant", icon: ShieldCheck, tone: "neutral" },
+  credential: { label: "Credential", icon: KeyRound, tone: "neutral" },
 };
+
+/**
+ * Badge tone for a timeline row. Most kinds use their static {@link KIND_META}
+ * tone; a grant is refined from its outcome so an ALLOWED grant reads as a
+ * benign positive, not an alarming red. The effect is the trailing token of the
+ * grant summary (`<resource> <action> <effect>`); only an explicit `deny` is
+ * danger, an `allow` is positive, anything else (e.g. `ask`) stays neutral.
+ */
+export function timelineEntryTone(entry: TimelineEntry): BadgeTone {
+  if (entry.kind === "grant") {
+    const effect = (entry.summary ?? "").trim().split(/\s+/).pop() ?? "";
+    if (effect === "deny") return "danger";
+    if (effect === "allow") return "positive";
+    return "neutral";
+  }
+  return KIND_META[entry.kind].tone;
+}
 
 /** Compact "just now / 5m ago / 3h ago / 2d ago" relative label. */
 export function relativeTime(iso: string, now: Date): string {

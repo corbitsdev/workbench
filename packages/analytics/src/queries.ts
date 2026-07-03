@@ -77,6 +77,9 @@ export type AnalyticsModelRow = {
   turnCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
 };
 
 export async function getAnalyticsSummary(
@@ -355,6 +358,9 @@ export async function getAnalyticsModelDistribution(
       turnCount: sumInteger(analyticsRollupDaily.turnCount),
       inputTokens: sumInteger(analyticsRollupDaily.inputTokens),
       outputTokens: sumInteger(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInteger(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInteger(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInteger(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
     .where(
@@ -386,6 +392,9 @@ export async function getAnalyticsModelDistribution(
       turnCount: row.turnCount,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      thinkingTokens: row.thinkingTokens,
     }))
     .sort((a, b) => b.turnCount - a.turnCount)
     .slice(0, 50);

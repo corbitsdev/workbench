@@ -28,6 +28,7 @@ COPY packages/catalog/package.json packages/catalog/
 COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/analytics/package.json packages/analytics/
+COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
 COPY packages/storage-isogit/package.json packages/storage-isogit/

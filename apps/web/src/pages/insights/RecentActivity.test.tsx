@@ -131,6 +131,57 @@ describe("RecentActivity", () => {
     expect(links.length).toBe(1);
   });
 
+  it("names a grant as the action it allowed, not a bare GRANT", async () => {
+    activityEntries = [
+      {
+        kind: "grant",
+        id: "g1",
+        sourceTable: "grant",
+        timestamp: "2026-07-01T10:00:00.000Z",
+        summary: "tool:workflows__workflow_start invoke allow",
+      },
+    ];
+    renderFeed();
+    await waitFor(() => {
+      screen.getByText("Allowed: Workflow start");
+    });
+    // The raw resource string is not surfaced as the headline.
+    expect(screen.queryByText(/invoke allow/)).toBeNull();
+  });
+
+  it("groups a time-adjacent burst into one turn with a flow summary", async () => {
+    activityEntries = [
+      {
+        kind: "workflow_run",
+        id: "run-1",
+        sourceTable: "workflow_run_record",
+        timestamp: "2026-07-01T10:00:10.000Z",
+        summary: "reddit_scanner run",
+      },
+      {
+        kind: "grant",
+        id: "g1",
+        sourceTable: "grant",
+        timestamp: "2026-07-01T10:00:05.000Z",
+        summary: "tool:workflows__workflow_start invoke allow",
+      },
+      {
+        kind: "grant",
+        id: "g2",
+        sourceTable: "grant",
+        timestamp: "2026-07-01T10:00:00.000Z",
+        summary: "tool:exa__search invoke allow",
+      },
+    ];
+    renderFeed();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("activity-turn").length).toBe(1);
+    });
+    // Turn headline anchors on the workflow run, and the flow summary counts grants.
+    screen.getByText("1 workflow run · 2 grants");
+    expect(screen.getAllByTestId("recent-activity-entry").length).toBe(3);
+  });
+
   it("shows an empty state when there is no activity", async () => {
     activityEntries = [];
     renderFeed();

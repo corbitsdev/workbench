@@ -156,6 +156,21 @@ export function loadConfig() {
     granola: {
       baseUrl: "https://public-api.granola.ai/v1",
     },
+    // models.dev open pricing database (CL-2714). Fetched + cached hub-side and
+    // exposed via /api/tenants/:tenantId/pricing so the browser never hits
+    // models.dev directly (CSP). URLs are contract-guaranteed defaults;
+    // overridable for tests/mirrors. TTL defaults to 6 hours — prices change
+    // rarely and the shared hub should not refetch a 3MB payload per request.
+    pricing: {
+      apiUrl:
+        optionalEnv("MODELS_DEV_API_URL") ?? "https://models.dev/api.json",
+      logosBaseUrl:
+        optionalEnv("MODELS_DEV_LOGOS_URL") ?? "https://models.dev/logos",
+      ttlMs: parsePositiveIntEnv("MODELS_DEV_TTL_MS", 6 * 60 * 60 * 1000),
+      // Abort a hung models.dev fetch so it cannot wedge every pricing request
+      // behind a never-resolving in-flight promise.
+      fetchTimeoutMs: parsePositiveIntEnv("MODELS_DEV_TIMEOUT_MS", 10_000),
+    },
     // Error reporting. Optional: when SENTRY_DSN is unset, Sentry and its log
     // sink are a no-op (see setupObservability). Read directly by initSentry at
     // startup; mirrored here for visibility. Default environment is 'production'.

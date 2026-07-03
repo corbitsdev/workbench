@@ -14,6 +14,9 @@ type PersonRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  thinkingTokens?: number;
 };
 
 function makePersonDb(rows: PersonRow[], capture: { groupByCols?: unknown[] }) {
@@ -96,6 +99,9 @@ describe("getUsageByPerson", () => {
           toolCallCount: 2,
           inputTokens: 100,
           outputTokens: 40,
+          cacheReadTokens: 900,
+          cacheWriteTokens: 60,
+          thinkingTokens: 15,
         },
         {
           principalId: "pri_other",
@@ -122,6 +128,10 @@ describe("getUsageByPerson", () => {
     const me = result.find((r) => r.principalId === "pri_me");
     expect(me?.isSelf).toBe(true);
     expect(me?.toolCallCount).toBe(2);
+    // Every token class flows through separately for per-actor cost (CL-2714).
+    expect(me?.cacheReadTokens).toBe(900);
+    expect(me?.cacheWriteTokens).toBe(60);
+    expect(me?.thinkingTokens).toBe(15);
     expect(result.find((r) => r.principalId === "pri_other")?.isSelf).toBe(
       false,
     );

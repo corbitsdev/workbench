@@ -97,6 +97,7 @@ import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
 import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
+import { createPricingRouter } from "./routes/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -624,6 +625,7 @@ const hubApp = createApp({
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
+hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
   createPrincipalActivityRouter({ db, grantStore }),

@@ -12,8 +12,10 @@ import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Link } from "react-router";
 import { AlertTriangle, BarChart2 } from "lucide-react";
+import { priceUsageRows } from "@workbench/pricing";
 import { actorHref } from "./insights/ActorActivity";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
+import { useModelPricing } from "../hooks/use-model-pricing";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
   ActivityOverview,
@@ -94,6 +96,10 @@ export function resolveRange(preset: Preset, custom: DateRange): DateRange {
 
 export function formatNumber(n: number): string {
   return n.toLocaleString();
+}
+
+export function formatDollars(n: number): string {
+  return `$${n.toFixed(2)}`;
 }
 
 function totalTokens(s: AnalyticsSummary): number {
@@ -463,7 +469,6 @@ function EngagementSection({ data }: { data: ActivityOverview }) {
           label="Active agents"
           value={formatNumber(data.agentActivity.active)}
           sub="with activity"
-          accent
         />
         <Stat
           label="Idle agents"
@@ -686,9 +691,17 @@ export function filterPeople(
 function KpiRow({
   data,
   activePeople,
+  costTotal,
+  costTokens,
+  costUnavailable,
 }: {
   data: ActivityOverview;
   activePeople: number;
+  /** Total dollar cost from the resolved rate catalog, or null while unresolved. */
+  costTotal: number | null;
+  costTokens: number;
+  /** True once pricing has been checked and no rate could be resolved for any usage. */
+  costUnavailable: boolean;
 }) {
   const summary = data.inference.summary;
   const prev = data.inference.previousSummary;
@@ -697,13 +710,22 @@ function KpiRow({
   return (
     <div className="flex flex-col gap-4 rounded-[16px] border border-border bg-gradient-to-b from-surface-2 to-surface p-4 max-md:p-3">
       <SectionLabel>This range</SectionLabel>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <Stat
+          label="Cost"
+          value={costTotal !== null ? formatDollars(costTotal) : "—"}
+          sub={
+            costUnavailable
+              ? "pricing unavailable"
+              : `${formatNumber(costTokens)} tokens`
+          }
+          emphasis
+        />
         <Stat
           label="Total activity"
           value={formatNumber(activity)}
           sub="turns + tool calls"
           delta={computeDelta(activity, prevActivity)}
-          accent
           emphasis
         />
         <Stat
@@ -1030,6 +1052,7 @@ export function InsightsDashboard() {
   const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
   const reduceMotion = useReducedMotion();
+  const pricingQuery = useModelPricing(activeTenantId ?? "");
 
   const dates = resolveRange(preset, customRange);
 
@@ -1077,6 +1100,24 @@ export function InsightsDashboard() {
   const filteredPeople = overview
     ? filterPeople(overview.byPerson, actorFilter)
     : [];
+
+  const catalog = pricingQuery.data ?? null;
+  const priced =
+    overview && catalog ? priceUsageRows(overview.byModel, catalog) : null;
+  const costTokens = overview
+    ? overview.byModel.reduce(
+        (sum, row) =>
+          sum +
+          row.inputTokens +
+          row.outputTokens +
+          row.cacheReadTokens +
+          row.cacheWriteTokens,
+        0,
+      )
+    : 0;
+  const costUnavailable =
+    pricingQuery.isError ||
+    (pricingQuery.isSuccess && Object.keys(catalog?.models ?? {}).length === 0);
 
   return (
     <PagePanel scroll={false} flat>
@@ -1142,29 +1183,7 @@ export function InsightsDashboard() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5 max-md:px-3">
-        {/* Actor search + per-principal timeline; independent query lifecycle
-            from the 5-min-stale overview below. CL-2526 (trace pages +
-            recent-activity feed) inserts alongside this section. */}
-        {activeTenantId && (
-          <div className="mb-10">
-            <ActorActivitySection tenantId={activeTenantId} />
-          </div>
-        )}
-
-        {/* CL-2526 Recent Activity feed: a reverse-chronological slice for the
-            current user's principal, each workflow_run row deep-linking to its
-            trace page. Self-contained; own query lifecycle. A tenant-wide feed
-            needs a new hub endpoint (follow-up). */}
-        {activeTenantId && activeWorkbench && (
-          <div className="mb-10">
-            <RecentActivity
-              tenantId={activeTenantId}
-              principalId={activeWorkbench.id}
-            />
-          </div>
-        )}
-
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 max-md:px-3">
         {showSummaryLoading && <SkeletonGrid />}
 
         {!loading && !activeTenantId && (
@@ -1187,7 +1206,13 @@ export function InsightsDashboard() {
             animate="show"
           >
             <motion.div variants={SECTION_ITEM}>
-              <KpiRow data={overview} activePeople={overview.byPerson.length} />
+              <KpiRow
+                data={overview}
+                activePeople={overview.byPerson.length}
+                costTotal={priced?.cost.total ?? null}
+                costTokens={costTokens}
+                costUnavailable={costUnavailable}
+              />
             </motion.div>
             <motion.div variants={SECTION_ITEM}>
               <FiltersBar
@@ -1198,6 +1223,38 @@ export function InsightsDashboard() {
                 onActorFilter={setActorFilter}
               />
             </motion.div>
+            {activeTenantId && (
+              <motion.div variants={SECTION_ITEM}>
+                <CostInsights
+                  tenantId={activeTenantId}
+                  overview={overview}
+                  range={dates}
+                  tokenCaveat={tokenCaveat}
+                />
+              </motion.div>
+            )}
+            {/* Actor search + per-principal timeline; independent query lifecycle
+                from the 5-min-stale overview above. CL-2526 (trace pages +
+                recent-activity feed) inserts alongside this section. */}
+            {activeTenantId && (
+              <motion.div variants={SECTION_ITEM}>
+                <SectionLabel>Activity</SectionLabel>
+                <div className="mt-4 flex flex-col gap-10">
+                  <ActorActivitySection tenantId={activeTenantId} />
+                  {/* CL-2526 Recent Activity feed: a reverse-chronological slice
+                      for the current user's principal, each workflow_run row
+                      deep-linking to its trace page. Self-contained; own query
+                      lifecycle. A tenant-wide feed needs a new hub endpoint
+                      (follow-up). */}
+                  {activeWorkbench && (
+                    <RecentActivity
+                      tenantId={activeTenantId}
+                      principalId={activeWorkbench.id}
+                    />
+                  )}
+                </div>
+              </motion.div>
+            )}
             <motion.div variants={SECTION_ITEM}>
               <ChartsSection
                 data={overview}
@@ -1207,16 +1264,6 @@ export function InsightsDashboard() {
                 tokenCaveat={tokenCaveat}
               />
             </motion.div>
-            {activeTenantId && (
-              <motion.div variants={SECTION_ITEM}>
-                <CostInsights
-                  tenantId={activeTenantId}
-                  dailySeries={overview.dailySeries}
-                  range={dates}
-                  tokenCaveat={tokenCaveat}
-                />
-              </motion.div>
-            )}
             <motion.div className="flex flex-col gap-3" variants={SECTION_ITEM}>
               <SectionLabel>Usage by person</SectionLabel>
               {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}

@@ -30,6 +30,9 @@ function makeModelDb(
     turnCount: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    thinkingTokens?: number;
   }[],
 ) {
   const captured: { where?: SQL } = {};
@@ -211,8 +214,32 @@ describe("getAnalyticsModelDistribution", () => {
 
     const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
 
-    expect(rows).toEqual([
-      { model: "deepseek", turnCount: 3, inputTokens: 125, outputTokens: 50 },
+    expect(rows.map((r) => r.model)).toEqual(["deepseek"]);
+  });
+
+  it("carries every token class separately for per-model cost (CL-2714)", async () => {
+    const { db } = makeModelDb([
+      {
+        model: "claude-opus-4-5",
+        turnCount: 2,
+        inputTokens: 100,
+        outputTokens: 40,
+        cacheReadTokens: 500,
+        cacheWriteTokens: 30,
+        thinkingTokens: 12,
+      },
     ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows[0]).toEqual({
+      model: "claude-opus-4-5",
+      turnCount: 2,
+      inputTokens: 100,
+      outputTokens: 40,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 30,
+      thinkingTokens: 12,
+    });
   });
 });

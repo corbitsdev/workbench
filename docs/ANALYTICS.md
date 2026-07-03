@@ -39,6 +39,19 @@ Inference events flow: **sidecar harness / workflow child → hub `sidecarRouter
 
 The Insights UI presets are `24 hours`, `7 days`, `30 days`, `90 days`, and `All time`; `24 hours` resolves to a `startDate` one day back (analytics are daily-bucketed). Token metrics (token mix, per-person tokens, per-workflow-type tokens) are always shown when real tokens exist for the range; a range that starts before token recording began (`tokensRecordedFrom`) is flagged with an inline caveat note rather than hiding the numbers.
 
+## Cost & token classes (CL-2714)
+
+- **Token classes are always kept separate** — fresh input, cache read, cache write, and output are billed at different rates and are never summed into an ambiguous "prompt tokens" figure. `activity/overview` carries every class separately on `dailySeries`, `inference.*`, `byPerson`, and `byModel` (per-model usage with all classes, added in CL-2714 alongside the legacy `models` turn-count distribution).
+- **Dollar cost** is computed from [models.dev](https://models.dev) open pricing. The hub fetches `MODELS_DEV_API_URL` (default `https://models.dev/api.json`), ArkType-parses it at the boundary (`@workbench/pricing` → `ModelsDevPayloadSchema`), and flattens it into a `modelId → per-class rate` catalog cached **in-process** with a TTL (`MODELS_DEV_TTL_MS`, default 6h — the hub has no redis). Rates are dollars per million tokens.
+  - `GET /api/tenants/:tenantId/pricing` returns the cached `PriceCatalog`; the browser consumes it via TanStack Query (long `staleTime`) and never hits models.dev directly (CSP).
+  - `GET /api/tenants/:tenantId/pricing/logos/:provider` proxies the provider SVG logo same-origin.
+  - Cost = Σ over classes of `tokens_class × rate_class`, priced per model. A telemetry model with **no models.dev match shows tokens only and is marked "no rate"** — no dollar figure is fabricated (`resolveModelRate` → null, `computeCost` → null).
+- Per-model dollars are exact (model is known). Per-day and per-actor rows have no per-model attribution, so those surfaces show **token classes** with dollars kept at the model/aggregate level rather than inventing a blended per-row rate.
+
+## Activity feed (CL-2714)
+
+The Recent Activity feed re-frames raw timeline rows into legible, action-first headlines and groups a time-adjacent burst into one **turn** (a connected flow: the session, the grants it exercised, the tools it ran, the result). A `grant` row (`<resource> <action> <effect>`, e.g. `tool:workflows__workflow_start invoke allow`) is named by the ACTION it allowed ("Allowed: Workflow start") rather than a bare "GRANT". Naming + grouping are pure functions in `apps/web/src/pages/insights/activity-naming.ts` (no session id exists on timeline rows, so time-adjacency is the grouping signal).
+
 Requires an active principal on the tenant (Interchange `resolveTenant` on `/api/tenants/:tenantId/*`). Org members do not carry role grants; analytics is membership-gated like other product reads.
 
 ## Staging verification (CL-2301)

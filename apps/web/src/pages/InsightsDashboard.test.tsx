@@ -37,6 +37,21 @@ mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => activeContext,
 }));
 
+mock.module("../hooks/use-model-pricing", () => ({
+  useModelPricing: () => ({
+    data: {
+      source: "models.dev",
+      generatedAt: "2026-01-01",
+      models: {},
+      qualified: {},
+      ambiguous: [],
+    },
+    isLoading: false,
+    isSuccess: true,
+    isError: false,
+  }),
+}));
+
 let lastTenantId: string | null = null;
 
 // Use recent dates so the default 30-day preset's gap-fill always includes
@@ -97,6 +112,26 @@ const mockOverview = {
     { key: "deepseek-v4-flash", count: 9 },
     { key: "kimi", count: 3 },
   ],
+  byModel: [
+    {
+      model: "deepseek-v4-flash",
+      turnCount: 9,
+      inputTokens: 700,
+      outputTokens: 150,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    },
+    {
+      model: "kimi",
+      turnCount: 3,
+      inputTokens: 300,
+      outputTokens: 50,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    },
+  ],
   tokensRecordedFrom: "2000-01-01",
   byPerson: [
     {
@@ -107,6 +142,9 @@ const mockOverview = {
       toolCallCount: 3,
       inputTokens: 700,
       outputTokens: 90,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
     },
     {
       principalId: "pri_other",
@@ -116,6 +154,9 @@ const mockOverview = {
       toolCallCount: 1,
       inputTokens: 300,
       outputTokens: 60,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
     },
   ],
   byWorkflowType: [
@@ -375,7 +416,8 @@ describe("InsightsDashboard", () => {
       expect(screen.getByTestId("mini-bar").getAttribute("data-label")).toBe(
         "kimi",
       );
-      expect(screen.queryByText("deepseek-v4-flash")).toBeNull();
+      const modelsCard = screen.getByText("Models · by turns").closest("div")!;
+      expect(within(modelsCard).queryByText("deepseek-v4-flash")).toBeNull();
     } finally {
       mockOverview.models = [
         { key: "deepseek-v4-flash", count: 9 },
@@ -403,7 +445,7 @@ describe("InsightsDashboard", () => {
 
     await screen.findAllByTestId("sortable-table");
     // person table is first, workflow-by-kind second.
-    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    const wfTable = screen.getAllByTestId("sortable-table")[3]!;
     expect(wfTable.textContent).toContain("Call To Collateral");
     expect(wfTable.textContent).toContain("Last30days");
     const row = within(wfTable).getByText("Mvt Landing Page").closest("tr");
@@ -417,7 +459,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await screen.findAllByTestId("sortable-table");
-    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    const wfTable = screen.getAllByTestId("sortable-table")[3]!;
     // Default sort is runs desc -> Call To Collateral (8 runs) leads.
     expect(
       within(wfTable).getAllByTestId("sortable-row")[0]!.textContent,
@@ -442,7 +484,7 @@ describe("InsightsDashboard", () => {
     expect(presetGroup?.className).toContain("flex-wrap");
     // The sortable table lives inside an overflow-x-auto wrapper so a wide table
     // scrolls itself rather than the page.
-    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const personTable = screen.getAllByTestId("sortable-table")[2]!;
     expect(personTable.parentElement?.className).toContain("overflow-x-auto");
   });
 
@@ -450,7 +492,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await screen.findAllByTestId("sortable-table");
-    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const personTable = screen.getAllByTestId("sortable-table")[2]!;
     within(personTable).getByText("Sawyer");
     within(personTable).getByText("(me)");
     within(personTable).getByText("Dana");
@@ -461,7 +503,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await screen.findAllByTestId("sortable-table");
-    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const personTable = screen.getAllByTestId("sortable-table")[2]!;
     fireEvent.click(within(personTable).getByText("Dana"));
 
     await waitFor(() => {
@@ -477,7 +519,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await screen.findAllByTestId("sortable-table");
-    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const personTable = screen.getAllByTestId("sortable-table")[2]!;
     const headers = within(personTable)
       .getAllByRole("columnheader")
       .map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
@@ -495,7 +537,7 @@ describe("InsightsDashboard", () => {
       renderPage();
 
       await screen.findAllByTestId("sortable-table");
-      const personTable = screen.getAllByTestId("sortable-table")[0]!;
+      const personTable = screen.getAllByTestId("sortable-table")[2]!;
       const sawyerRow = within(personTable).getByText("Sawyer").closest("tr");
       // Tokens are shown (input 700 + output 90 = 790), not hidden.
       expect(sawyerRow?.textContent).toContain("790");
@@ -652,10 +694,14 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
   it("renders charts with visually-hidden table fallbacks for a11y", async () => {
     renderPage();
     await waitFor(() => {
-      expect(screen.getByTestId("time-series-chart")).toBeDefined();
+      expect(
+        screen.getAllByTestId("time-series-chart").length,
+      ).toBeGreaterThanOrEqual(1);
     });
     // Time-series a11y fallback table lists every daily bucket.
-    screen.getByTestId("time-series-table");
+    expect(
+      screen.getAllByTestId("time-series-table").length,
+    ).toBeGreaterThanOrEqual(1);
     // Category-bar charts (runs-by-kind, top actors) each ship a table fallback.
     expect(
       screen.getAllByTestId("category-bar-table").length,
@@ -680,7 +726,7 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     fireEvent.change(screen.getByTestId("actor-filter"), {
       target: { value: "others" },
     });
-    const personTable = screen.getAllByTestId("sortable-table")[0]!;
+    const personTable = screen.getAllByTestId("sortable-table")[2]!;
     const rows = within(personTable).getAllByTestId("sortable-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain("Dana");
@@ -693,7 +739,7 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     fireEvent.change(screen.getByTestId("kind-filter"), {
       target: { value: "last30days" },
     });
-    const wfTable = screen.getAllByTestId("sortable-table")[1]!;
+    const wfTable = screen.getAllByTestId("sortable-table")[3]!;
     const rows = within(wfTable).getAllByTestId("sortable-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.textContent).toContain("Last30days");
@@ -774,6 +820,9 @@ describe("dashboard data helpers", () => {
         toolCallCount: 0,
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
       },
       {
         principalId: "b",
@@ -783,6 +832,9 @@ describe("dashboard data helpers", () => {
         toolCallCount: 0,
         inputTokens: 0,
         outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
       },
     ];
     expect(filterPeople(people, "me")).toHaveLength(1);

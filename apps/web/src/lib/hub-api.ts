@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { PriceCatalogSchema, type PriceCatalog } from "@workbench/pricing";
 import {
   FeedbackListResponse,
   type FeedbackSubjectKind,
@@ -527,9 +528,25 @@ export const UsageByPersonRowSchema = type({
   toolCallCount: "number",
   inputTokens: "number",
   outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
 });
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
+
+/** Per-model usage with every token class separated, for cost-by-model (CL-2714). */
+export const UsageByModelRowSchema = type({
+  model: "string",
+  turnCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+});
+
+export type UsageByModelRow = typeof UsageByModelRowSchema.infer;
 
 export const UsageByWorkflowTypeRowSchema = type({
   kind: "string",
@@ -592,6 +609,7 @@ const ActivityOverviewSchema = type({
     thinkingTokens: "number",
   }).array(),
   models: ActivityCountRowSchema.array(),
+  byModel: UsageByModelRowSchema.array(),
   tokensRecordedFrom: "string.date | null",
   byPerson: UsageByPersonRowSchema.array(),
   byWorkflowType: UsageByWorkflowTypeRowSchema.array(),
@@ -617,6 +635,32 @@ const ActivityOverviewSchema = type({
 });
 
 export type ActivityOverview = typeof ActivityOverviewSchema.infer;
+
+/**
+ * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
+ * never hits models.dev directly (CSP); the hub proxies + caches it. Parsed at
+ * the boundary through the shared `PriceCatalogSchema`.
+ */
+export async function getModelPricing(tenantId: string): Promise<PriceCatalog> {
+  const path = `tenants/${encodeURIComponent(tenantId)}/pricing`;
+  const raw = await hubFetch<unknown>("GET", path);
+  const result = PriceCatalogSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid pricing catalog response: ${result.summary}`);
+  }
+  return result;
+}
+
+/**
+ * Same-origin hub URL for a provider logo SVG (proxied from models.dev). Safe as
+ * an `<img src>` — it stays within CSP because it targets the hub, not
+ * models.dev. Falls back to the current origin when no API base is configured,
+ * so it always returns a usable same-origin URL.
+ */
+export function providerLogoUrl(tenantId: string, provider: string): string {
+  const base = apiBase || window.location.origin;
+  return `${base}/api/tenants/${encodeURIComponent(tenantId)}/pricing/logos/${encodeURIComponent(provider)}`;
+}
 
 export async function getActivityOverview(
   tenantId: string,

@@ -1,3 +1,4 @@
+import { CHART_SERIES } from "@workbench/ui";
 import {
   buildMosaic,
   buildSparkline,
@@ -5,17 +6,11 @@ import {
   type DeltaResult,
 } from "./metrics";
 
-// Theme-adaptive categorical ramp: accent family + neutral text layers. Every
-// token is overridden per theme, so the mosaic stays coherent on the green
-// (tkww) and monochrome (notion) themes — unlike fixed blue/green, which are
-// defined only on :root and would clash there.
-const MOSAIC_TONES = [
-  "fill-accent",
-  "fill-accent-deep",
-  "fill-accent-soft",
-  "fill-text-3",
-  "fill-text-2",
-] as const;
+// Categorical ramp for passive data (token/turn/model counts): the CVD-safe
+// blue/green/red series palette. The accent (orange) family is deliberately
+// excluded — orange is the reserved ACTION affordance and must never paint a
+// passive data series (CL-2687).
+const MOSAIC_TONES = CHART_SERIES;
 
 export function Sparkline({
   values,
@@ -42,7 +37,7 @@ export function Sparkline({
       viewBox={`0 0 ${width} ${height}`}
       width={width}
       height={height}
-      className="text-accent"
+      className="text-blue"
       role="img"
       aria-label={label}
       data-testid="sparkline"
@@ -92,7 +87,7 @@ export function Heatmap({
             data-date={day.date}
             data-value={day.value}
             title={`${day.date}: ${day.value}`}
-            className={`h-3 w-3 rounded-[2px] border border-border ${empty ? "bg-surface-2" : "bg-accent"}`}
+            className={`h-3 w-3 rounded-[2px] border border-border ${empty ? "bg-surface-2" : "bg-blue"}`}
             style={empty ? undefined : { opacity: 0.4 + intensity * 0.6 }}
           />
         );
@@ -133,7 +128,7 @@ export function TokenMosaic({
             className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.08em] text-text-3"
           >
             <span
-              className={`h-2 w-2 rounded-[1px] ${toneToBg(MOSAIC_TONES[i % MOSAIC_TONES.length])}`}
+              className={`h-2 w-2 rounded-[1px] ${MOSAIC_TONES[i % MOSAIC_TONES.length]!.bg}`}
             />
             {seg.label} {formatCompact(seg.value)}
           </span>
@@ -155,7 +150,7 @@ function renderMosaicRects(
         y={0}
         width={seg.pct}
         height={10}
-        className={MOSAIC_TONES[i % MOSAIC_TONES.length]}
+        className={MOSAIC_TONES[i % MOSAIC_TONES.length]!.fill}
         data-testid="mosaic-rect"
         data-label={seg.label}
       />
@@ -163,10 +158,6 @@ function renderMosaicRects(
     x += seg.pct;
     return rect;
   });
-}
-
-function toneToBg(fillClass: string): string {
-  return fillClass.replace("fill-", "bg-");
 }
 
 export function DeltaBadge({ delta }: { delta: DeltaResult }) {
@@ -187,7 +178,8 @@ export function DeltaBadge({ delta }: { delta: DeltaResult }) {
   }
   const up = delta.direction === "up";
   const arrow = up ? "▲" : "▼";
-  const tone = up ? "text-accent-deep" : "text-text-2";
+  // Direction-meaningful semantic pair — never the reserved orange action tone.
+  const tone = up ? "text-green" : "text-red";
   const text =
     delta.pct !== null
       ? `${Math.abs(delta.pct).toFixed(0)}%`
@@ -236,7 +228,7 @@ export function MiniBars({
               aria-hidden
             >
               <span
-                className="absolute inset-y-0 left-0 rounded-[2px] bg-accent"
+                className="absolute inset-y-0 left-0 rounded-[2px] bg-blue"
                 style={{ width: `${pct}%` }}
                 data-testid="mini-bar-fill"
               />

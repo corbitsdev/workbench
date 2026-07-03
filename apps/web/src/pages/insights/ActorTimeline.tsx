@@ -2,7 +2,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
-import { KIND_META, relativeTime } from "./timeline-kinds";
+import { KIND_META, relativeTime, timelineEntryTone } from "./timeline-kinds";
 
 const TIMELINE_PAGE_SIZE = 50;
 
@@ -54,7 +54,7 @@ function TimelineRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
         <Icon className="h-3.5 w-3.5" />
       </span>
       <span className="min-w-0 flex-1">
-        <Badge tone={meta.tone} className="mb-1">
+        <Badge tone={timelineEntryTone(entry)} className="mb-1">
           {meta.label}
         </Badge>
         <span className="block truncate text-[13px] text-text-2">

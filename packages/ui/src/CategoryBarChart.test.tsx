@@ -48,9 +48,11 @@ describe("CategoryBarChart", () => {
   it("steps the categorical palette when colorByCategory is set", () => {
     render(<CategoryBarChart data={DATA} label="x" colorByCategory />);
     const fills = screen.getAllByTestId("category-bar-fill");
-    // Slot 0 is blue, slot 1 accent under the CVD-aware order.
+    // Slot 0 is blue, slot 1 green under the CVD-aware order. The action accent
+    // (orange) is excluded from the series rotation entirely (CL-2687).
     expect(fills[0]!.className).toContain("bg-blue");
-    expect(fills[1]!.className).toContain("bg-accent");
+    expect(fills[1]!.className).toContain("bg-green");
+    expect(fills[1]!.className).not.toContain("bg-accent");
   });
 
   it("shows an empty state with no data", () => {

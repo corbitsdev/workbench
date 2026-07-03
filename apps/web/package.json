@@ -19,6 +19,7 @@
     "@workbench/chat": "workspace:*",
     "@workbench/client": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
+    "@workbench/pricing": "workspace:*",
     "@workbench/settings": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/test-utils": "workspace:*",

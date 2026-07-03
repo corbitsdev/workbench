@@ -41,6 +41,7 @@
     "@workbench/event-collector": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
     "@workbench/openapi-arktype": "workspace:*",
+    "@workbench/pricing": "workspace:*",
     "@workbench/sentry": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/storage-isogit": "workspace:*",

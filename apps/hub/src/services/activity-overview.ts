@@ -12,6 +12,7 @@ import {
   getTokenDataStartDate,
   type AnalyticsDailyPoint,
   type AnalyticsDateRange,
+  type AnalyticsModelRow,
   type AnalyticsSummary,
 } from "@workbench/analytics";
 import {
@@ -48,6 +49,9 @@ export type UsageByPersonRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
 };
 
 export type ActivityCountRow = { key: string; count: number };
@@ -98,6 +102,13 @@ export type ActivityOverview = {
   };
   dailySeries: AnalyticsDailyPoint[];
   models: ActivityCountRow[];
+  /**
+   * Per-model usage with every token class separated (CL-2714). Drives the
+   * cost-by-model view: dollar cost is computed FE-side per class from
+   * models.dev rates, with tokens shown as the secondary detail. `models`
+   * (turn counts) is kept for the legacy distribution bars.
+   */
+  byModel: AnalyticsModelRow[];
   /**
    * Earliest date real token counts exist (null when none). Token and tool-error
    * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
@@ -298,6 +309,9 @@ export async function getUsageByPerson(args: {
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
       inputTokens: sumInt(analyticsRollupDaily.inputTokens),
       outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
     .leftJoin(
@@ -340,6 +354,9 @@ export async function getUsageByPerson(args: {
       toolCallCount: row.toolCallCount,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      thinkingTokens: row.thinkingTokens,
     }))
     .sort(
       (a, b) =>
@@ -621,6 +638,7 @@ export async function getActivityOverview(args: {
       key: row.model,
       count: row.turnCount,
     })),
+    byModel: modelRows,
     tokensRecordedFrom,
     byPerson,
     byWorkflowType,
