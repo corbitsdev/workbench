@@ -37,6 +37,7 @@ mock.module("../workflow-executor/run-store", () => ({
       tenantId: string;
       principalId: string;
       input: unknown;
+      originConversationId: string | null;
     },
   ) => {
     const state: RunState = {
@@ -47,6 +48,9 @@ mock.module("../workflow-executor/run-store", () => ({
       status: "running",
       ...(args.deploymentId !== null
         ? { deploymentId: args.deploymentId }
+        : {}),
+      ...(args.originConversationId !== null
+        ? { originConversationId: args.originConversationId }
         : {}),
     };
     runs.set(state.runId, structuredClone(state));
@@ -67,15 +71,22 @@ mock.module("../workflow-executor/run-store", () => ({
     _tenantIds: readonly string[],
     principalId: string,
     kind?: string,
+    filters?: { originConversationId?: string },
   ) =>
     [...runs.values()]
       .filter((r) => r.principalId === principalId)
       .filter((r) => kind === undefined || r.kind === kind)
+      .filter(
+        (r) =>
+          filters?.originConversationId === undefined ||
+          r.originConversationId === filters.originConversationId,
+      )
       .map((r) => ({
         runId: r.runId,
         kind: r.kind,
         status: r.status,
         createdAt: new Date(),
+        originConversationId: r.originConversationId ?? null,
       })),
 }));
 
@@ -649,6 +660,67 @@ describe("workflow runs on the sidecar (records router)", () => {
     );
     expect(r.status).toBe(403);
     expect(sentSignals).toHaveLength(0);
+  });
+
+  test("start threads originConversationId from the body into the record, and read exposes it (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: { topic: "Acme" },
+      originConversationId: "conv-42",
+    });
+    expect(start.status).toBe(200);
+    expect(start.json.originConversationId).toBe("conv-42");
+    // The stored record carries it — not just the echo.
+    expect(runs.get(start.json.runId)?.originConversationId).toBe("conv-42");
+
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.json.originConversationId).toBe("conv-42");
+  });
+
+  test("a direct start with no chat context stores no origin and the read omits it (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    expect(start.status).toBe(200);
+    expect(start.json.originConversationId).toBeUndefined();
+    expect(runs.get(start.json.runId)?.originConversationId).toBeUndefined();
+
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.json.originConversationId).toBeUndefined();
+  });
+
+  test("GET /records exposes each run's origin and ?originConversationId= filters to that chat's runs (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const inChat = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+      originConversationId: "conv-42",
+    });
+    const direct = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+
+    const all = await get(a, "/workflow-exec/records");
+    expect(all.json).toHaveLength(2);
+    const byId = new Map(
+      all.json.map((r: { runId: string; originConversationId: unknown }) => [
+        r.runId,
+        r.originConversationId,
+      ]),
+    );
+    expect(byId.get(inChat.json.runId)).toBe("conv-42");
+    expect(byId.get(direct.json.runId)).toBeNull();
+
+    const filtered = await get(
+      a,
+      "/workflow-exec/records?originConversationId=conv-42",
+    );
+    expect(filtered.json.map((r: { runId: string }) => r.runId)).toEqual([
+      inChat.json.runId,
+    ]);
   });
 
   test("a run in a tenant outside the callers chain reads as 404", async () => {
