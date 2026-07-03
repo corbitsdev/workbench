@@ -260,11 +260,11 @@ describe("0031 adds meta to workflow_run (CL-2321)", () => {
   });
 });
 
-describe("0039 adds principal-activity timeline indexes (CL-2490)", () => {
+describe("0040 adds principal-activity timeline indexes (CL-2490)", () => {
   const sql = readFileSync(
     join(
       import.meta.dir,
-      "../../migrations/0039_principal_activity_indexes.sql",
+      "../../migrations/0040_principal_activity_indexes.sql",
     ),
     "utf-8",
   );
