@@ -230,6 +230,33 @@ export function useWorkflowRecord(
 // since the log phase (not a separate record status) tells us the run is live.
 // staleTime 0 so a resume's fresh state is never served stale. SSE is a later
 // ticket; this poll is the interim cadence.
+// Shared query key + fetcher for a run's log-derived state, so the per-card
+// `useWorkflowRunState` and the conversation-wide gate scan (`useQueries` in
+// use-conversation-gates.ts) hit the SAME cache entry — one poll, not two.
+export function workflowRunStateQueryKey(
+  runId: string,
+  tenantId?: string | null,
+): readonly [string, string, string | null] {
+  return ["workflow-run-state", runId, tenantId ?? null];
+}
+
+export async function fetchWorkflowRunState(
+  runId: string,
+  tenantId?: string | null,
+): Promise<LogRunState> {
+  const raw = await api<unknown>(
+    "GET",
+    withTenant(`/workflow-exec/runs/${runId}/state`, tenantId),
+  );
+  const parsed = logRunStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Unexpected workflow run-state response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
 export function useWorkflowRunState(
   runId: string | null,
   tenantId?: string | null,
@@ -243,19 +270,7 @@ export function useWorkflowRunState(
       const data = query.state.data;
       return data && !isLogStateTerminal(data.phase) ? 2000 : false;
     },
-    queryFn: async () => {
-      const raw = await api<unknown>(
-        "GET",
-        withTenant(`/workflow-exec/runs/${runId as string}/state`, tenantId),
-      );
-      const parsed = logRunStateSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(
-          `Unexpected workflow run-state response: ${parsed.summary}`,
-        );
-      }
-      return parsed;
-    },
+    queryFn: () => fetchWorkflowRunState(runId as string, tenantId),
   });
 }
 
@@ -378,6 +393,53 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
     },
     onSuccess: (record) => {
       queryClient.setQueryData(queryKey, record);
+    },
+  });
+}
+
+// Resume a conversation's pending gate by runId (CL-2681). Unlike
+// `useResumeWorkflow`, which binds a single runId at hook-call, this is a
+// generic resume whose target run is chosen at submit time — the runId a free
+// text reply routes to (single-gate) or a dock card button names (multi-gate)
+// is only known at runtime. On success it invalidates both the run's index
+// record and its log-state so the dock advances off the gate immediately.
+//
+// This mutation does NOT swallow failures — its promise rejects with the
+// sanitized ApiError so callers can surface the reason (e.g. a stale-gate 409)
+// and recover the user's text. Its `isPending` is only an effective double-fire
+// guard when the caller gates on it: both the dock card (`onRespond`) and the
+// chat surface (`resumeInFlight`) skip a second submit while a resume is in
+// flight, so at most one resume fires per gate.
+export function useResumeConversationGate(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      runId,
+      signalName,
+      payload,
+    }: {
+      runId: string;
+      signalName: string;
+      payload?: unknown;
+    }) => {
+      const raw = await api<unknown>(
+        "POST",
+        withTenant(
+          `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
+          tenantId,
+        ),
+        { signalName, payload },
+      );
+      return parseRunRecord(raw);
+    },
+    onSuccess: (record) => {
+      queryClient.setQueryData(
+        ["workflow-record", record.runId, tenantId ?? null],
+        record,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: workflowRunStateQueryKey(record.runId, tenantId),
+      });
     },
   });
 }

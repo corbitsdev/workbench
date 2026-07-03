@@ -2,7 +2,11 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type {
+  RepoStore,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
@@ -10,6 +14,7 @@ import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
 } from "../routes/workflow-runs";
+import { getAwaitingSignalNames } from "./run-awaiting-signals";
 import { validateResumePayload } from "./resume-payload-registry";
 import {
   insertRunRecord,
@@ -28,7 +33,7 @@ const log = getLogger(["workflow-exec", "run-exec"]);
 
 export type RunExecFailure = {
   ok: false;
-  status: 400 | 403 | 404 | 500 | 503;
+  status: 400 | 403 | 404 | 409 | 500 | 503;
   error: string;
   // Set on the deploy-window 503 (CL-2707): a machine-readable code and the
   // Retry-After hint the FE uses to auto-retry rather than flash a raw error.
@@ -266,10 +271,66 @@ export async function startWorkflowRun(
 
 export type ResumeWorkflowRunDeps = {
   db: HubDb;
+  // Reads the run's event log to determine the live gate the run is parked on
+  // (CL-2681). The inner repo store — the hub's own store, sidecar-independent.
+  repoStore: RepoStore;
   sidecarRouter: SidecarRouter;
   deploymentDomain: string;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
 } & SidecarReadinessDeps;
+
+// A resume against a run that is not currently parked on the signal being
+// delivered (CL-2681). Returned as a 409 conflict — NOT a 503 (which means
+// "sidecar reconnecting", a different case that must still be honored for a
+// legitimately-awaiting run). No signal is fired and no status is flipped.
+function staleResumeConflict(openSignals: ReadonlySet<string>): RunExecFailure {
+  return {
+    ok: false,
+    status: 409,
+    error:
+      openSignals.size === 0
+        ? "run is not awaiting a signal"
+        : "the run is not awaiting this signal",
+  };
+}
+
+// Guard the resume against the AUTHORITATIVE live gate read from the run's event
+// log (CL-2681): permit it only when an open `awaitSignal` gate whose name
+// matches is actually parked. Without this, a resume from a stale client poll
+// (run already completed/failed, or already resumed to running) would fire the
+// signal and optimistically flip the run back to "running", resurrecting a
+// terminal/running run. If the log is unreadable, fall back to the coarse index
+// status: only an 'awaiting' row permits the resume (the run IS parked but its
+// signal name can't be verified); any other status is an authoritative
+// "not awaiting" and is refused.
+async function assertResumableGate(
+  deps: { repoStore: RepoStore; deploymentDomain: string },
+  state: RunState,
+  deploymentId: string,
+  signalName: string,
+): Promise<RunExecFailure | null> {
+  let openSignals: Set<string>;
+  try {
+    openSignals = await getAwaitingSignalNames(
+      { repoStore: deps.repoStore },
+      {
+        deploymentId,
+        runId: state.runId,
+        deploymentDomain: deps.deploymentDomain,
+      },
+    );
+  } catch (err) {
+    log.warn("resume gate-check: run log unreadable; using index status", {
+      runId: state.runId,
+      status: state.status,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (state.status === "awaiting") return null;
+    return staleResumeConflict(new Set());
+  }
+  if (openSignals.has(signalName)) return null;
+  return staleResumeConflict(openSignals);
+}
 
 /**
  * Deliver a gate signal to a parked run's sidecar supervisor and optimistically
@@ -313,6 +374,17 @@ export async function resumeWorkflowRun(
   if (state.deploymentId === undefined) {
     return { ok: false, status: 400, error: "run has no deployment to signal" };
   }
+
+  // Reject a resume against a run not currently parked on this signal (CL-2681)
+  // BEFORE the deploy-window wait, so a stale-poll resume conflicts immediately
+  // and never fires a signal at — or resurrects — a terminal/running run.
+  const gateConflict = await assertResumableGate(
+    deps,
+    state,
+    state.deploymentId,
+    opts.signalName,
+  );
+  if (gateConflict) return gateConflict;
 
   // The run owns its single-use deployment (`state.deploymentId`) — a per-run
   // deployment writes NO `workflow_run` registry row, so we must NOT look it

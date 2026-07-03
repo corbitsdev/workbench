@@ -4,6 +4,8 @@ import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { useMyraSession } from "../hooks/use-myra-session";
+import { useConversationGates } from "../hooks/use-conversation-gates";
+import { useResumeConversationGate } from "../hooks/use-workflow";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
@@ -46,6 +48,16 @@ export function ChatThreadPage() {
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).
   const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(active);
+
+  // HITL signal routing (CL-2681): derive whether free text in the prompt box
+  // should reach a pending workflow gate, and the resume mutation that delivers
+  // it. Owned here so both the chat surface (free-text routing) and the dock
+  // (card buttons) work off the same conversation-scoped derivation.
+  const signalRouting = useConversationGates(
+    active?.id ?? null,
+    activeTenantId,
+  );
+  const resumeGate = useResumeConversationGate(activeTenantId);
 
   const threadTurns = useMemo(
     () =>
@@ -134,6 +146,17 @@ export function ChatThreadPage() {
             session={session}
             threadLabel={active?.label}
             onUserSend={maybeTitleFromFirstMessage}
+            signalRouting={signalRouting}
+            resumeInFlight={resumeGate.isPending}
+            onResumeSignal={(runId, signalName, text) =>
+              resumeGate
+                .mutateAsync({
+                  runId,
+                  signalName,
+                  payload: { instruction: text },
+                })
+                .then(() => undefined)
+            }
           />
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,

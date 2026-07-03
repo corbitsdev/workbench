@@ -6,6 +6,7 @@ import {
   dockRunBlocks,
   DockRunPhaseSchema,
   type DockRunPhase,
+  type UIResponse,
 } from "@workbench/chat";
 import { cn, failedRunError } from "@workbench/ui";
 import {
@@ -13,6 +14,7 @@ import {
   reconcileRunState,
   runStateFromLog,
   useConversationWorkflowRuns,
+  useResumeConversationGate,
   useWorkflowRunState,
   type ConversationWorkflowRun,
 } from "../hooks/use-workflow";
@@ -156,8 +158,36 @@ function WorkflowDockCard({
     isPending,
     isError,
   } = useWorkflowRunState(run.runId, tenantId);
+  const resumeGate = useResumeConversationGate(tenantId);
   // Finished runs collapse to their one-line summary by default.
   const [open, setOpen] = useState(() => !isRecordTerminal(run.status));
+  // Sanitized reason for a failed resume (CL-2681) — surfaced on the card rather
+  // than silently swallowed, so a stale-gate 409 tells the user what happened.
+  const [resumeError, setResumeError] = useState<string | null>(null);
+
+  // A gate choice block carries its `awaitSignal` name (CL-2681); selecting it
+  // resumes THIS run with that signal + the option value as payload. The
+  // in-flight mutation is the double-fire guard — the ChoiceBlock disables after
+  // a click and a second click while pending is ignored. A non-gate choice (no
+  // signalName) is ignored here.
+  const onRespond = (response: UIResponse) => {
+    if (response.signalName === undefined) return;
+    if (resumeGate.isPending) return;
+    setResumeError(null);
+    resumeGate
+      .mutateAsync({
+        runId: run.runId,
+        signalName: response.signalName,
+        payload: { instruction: response.value },
+      })
+      .catch((err: unknown) =>
+        setResumeError(
+          err instanceof Error && err.message.trim().length > 0
+            ? err.message
+            : "Couldn't send your response to the workflow. Please try again.",
+        ),
+      );
+  };
 
   const record: RunRecord = {
     runId: run.runId,
@@ -185,6 +215,9 @@ function WorkflowDockCard({
         steps: (log?.steps ?? []).map((step) => ({
           stepId: step.stepId,
           phase: step.phase,
+          ...(step.awaitingSignalName !== undefined
+            ? { awaitingSignalName: step.awaitingSignalName }
+            : {}),
         })),
         ...(sanitizedError !== undefined
           ? { errorMessage: sanitizedError }
@@ -279,8 +312,13 @@ function WorkflowDockCard({
             <p className="text-xs text-text-3">Waiting for the first step…</p>
           )}
           {blocks.map((block, index) => (
-            <UIBlockView key={index} block={block} />
+            <UIBlockView key={index} block={block} onRespond={onRespond} />
           ))}
+          {resumeError !== null && (
+            <p className="text-xs text-red" role="alert">
+              {resumeError}
+            </p>
+          )}
         </div>
       )}
     </div>

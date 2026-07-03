@@ -133,6 +133,17 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
   },
 }));
 
+// The live-gate the resume guard reads (CL-2681). `null` simulates an unreadable
+// log (the guard falls back to the coarse index status); an array is the set of
+// open awaitSignal names the run is currently parked on.
+let cannedAwaitingSignals: string[] | null = null;
+mock.module("../workflow-executor/run-awaiting-signals", () => ({
+  getAwaitingSignalNames: async (): Promise<Set<string>> => {
+    if (cannedAwaitingSignals === null) throw new Error("log unreadable");
+    return new Set(cannedAwaitingSignals);
+  },
+}));
+
 const { createWorkflowRunRecordsRouter } = await import(
   "./workflow-run-records"
 );
@@ -183,6 +194,7 @@ function resetCaptures(): void {
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
   runStateShouldThrow = false;
+  cannedAwaitingSignals = null;
   sidecarProbeCalls = 0;
   sidecarConnectsAtProbe = 1;
 }
@@ -779,6 +791,94 @@ describe("workflow runs on the sidecar (records router)", () => {
     } finally {
       ancestorChain = ["tn-1"];
     }
+  });
+});
+
+describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => {
+  // Seed a run at a given coarse status without going through /start (which
+  // always seeds 'running'); the guard must consult the live gate, not trust an
+  // optimistic caller.
+  function seedRun(status: RunState["status"]): string {
+    const runId = "wfr_guard";
+    runs.set(runId, {
+      runId,
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status,
+      deploymentId: "ses_run_1",
+      originConversationId: "conv-1",
+    });
+    return runId;
+  }
+
+  test("resume against a run whose log shows no open gate is 409 — no signal, no status flip", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = []; // readable log, but nothing is awaiting
+    const a = app();
+    const runId = seedRun("running");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+
+    expect(r.status).toBe(409);
+    expect(sentSignals).toHaveLength(0);
+    expect(ensureCalls).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("running"); // not resurrected
+  });
+
+  test.each(["completed", "failed", "running"] as const)(
+    "resume against a %s run (log unreadable, coarse status not awaiting) is 409 and fires no signal",
+    async (status) => {
+      resetCaptures();
+      cannedAwaitingSignals = null; // unreadable → falls back to index status
+      const a = app();
+      const runId = seedRun(status);
+
+      const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+        signalName: "note-selection",
+        payload: {},
+      });
+
+      expect(r.status).toBe(409);
+      expect(sentSignals).toHaveLength(0);
+      expect(runs.get(runId)?.status).toBe(status); // status unchanged
+    },
+  );
+
+  test("resume with a signalName that does not match the open gate is 409", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = ["review"]; // the run is parked on 'review'
+    const a = app();
+    const runId = seedRun("awaiting");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection", // wrong gate
+      payload: {},
+    });
+
+    expect(r.status).toBe(409);
+    expect(sentSignals).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("awaiting"); // not flipped
+  });
+
+  test("resume whose signalName matches the open gate is delivered and flips to running", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = ["review"];
+    const a = app();
+    const runId = seedRun("awaiting");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "review",
+      payload: { ok: true },
+    });
+
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe("running");
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("review");
   });
 });
 

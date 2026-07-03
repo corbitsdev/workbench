@@ -1,6 +1,10 @@
 import type { AgentTool } from "@intx/agent";
 import { getAncestorChain } from "@intx/db";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type {
+  RepoStore,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
   WORKFLOW_LIST_RUNS_DEFINITION,
@@ -25,6 +29,7 @@ export type WorkflowRunToolsContext = {
   principalId: string;
   sessionService?: SessionService;
   sidecarRouter?: SidecarRouter;
+  repoStore?: RepoStore;
   cryptoProvider?: CryptoProvider;
   deploymentDomain?: string;
   provisionRunDeployment?: ProvisionRunDeploymentFn;
@@ -73,6 +78,7 @@ async function resolveCaller(
 function requireWorkflowDeps(context: WorkflowRunToolsContext): {
   sessionService: SessionService;
   sidecarRouter: SidecarRouter;
+  repoStore: RepoStore;
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
   provisionRunDeployment: ProvisionRunDeploymentFn;
@@ -81,6 +87,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
   const {
     sessionService,
     sidecarRouter,
+    repoStore,
     cryptoProvider,
     deploymentDomain,
     provisionRunDeployment,
@@ -89,6 +96,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
   if (
     !sessionService ||
     !sidecarRouter ||
+    !repoStore ||
     !cryptoProvider ||
     deploymentDomain === undefined ||
     !provisionRunDeployment ||
@@ -101,6 +109,7 @@ function requireWorkflowDeps(context: WorkflowRunToolsContext): {
   return {
     sessionService,
     sidecarRouter,
+    repoStore,
     cryptoProvider,
     deploymentDomain,
     provisionRunDeployment,
@@ -215,6 +224,7 @@ export function createWorkflowRunTools(
         const result = await resumeWorkflowRun(
           {
             db: context.db,
+            repoStore: deps.repoStore,
             sidecarRouter: deps.sidecarRouter,
             deploymentDomain: deps.deploymentDomain,
             ensureDeploymentRoutable: deps.ensureDeploymentRoutable,

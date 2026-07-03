@@ -7,6 +7,7 @@
  * and a link block on completion pointing at the run's full page.
  */
 import { type } from "arktype";
+import { pendingGateForRun } from "./conversation-gates";
 import type { ProgressStep, ProgressStepState, UIBlock } from "./ui-block";
 
 export const DockStepPhaseSchema = type(
@@ -22,6 +23,9 @@ export type DockRunPhase = typeof DockRunPhaseSchema.infer;
 export const DockRunStepSchema = type({
   stepId: "string",
   phase: DockStepPhaseSchema,
+  // The gate's `awaitSignal` name, recovered from the run's log state (CL-2681).
+  // Present only on a step parked on a gate; drives the resume affordance.
+  "awaitingSignalName?": "string",
 });
 export type DockRunStep = typeof DockRunStepSchema.infer;
 
@@ -65,6 +69,23 @@ export function dockRunBlocks(run: DockRunInput): UIBlock[] {
       label: humanizeStepId(step.stepId),
     }));
     blocks.push({ kind: "progress", steps });
+  }
+  // A run parked on a resolvable gate gets an explicit resume affordance: a
+  // choice block carrying the gate's signalName (CL-2681). Selecting it POSTs a
+  // resume with that signal — the same contract free text uses, and the button
+  // is how a human disambiguates when more than one run in the conversation is
+  // waiting. Omitted when the gate's signalName is unrecoverable (no target).
+  const gate = pendingGateForRun({
+    runId: run.runId,
+    steps: run.steps,
+  });
+  if (gate !== null) {
+    blocks.push({
+      kind: "choice",
+      prompt: "This run is waiting for your input.",
+      signalName: gate.signalName,
+      options: [{ id: "continue", label: "Continue", value: "" }],
+    });
   }
   if (run.phase === "failed" && run.errorMessage !== undefined) {
     blocks.push({ kind: "error", message: run.errorMessage });

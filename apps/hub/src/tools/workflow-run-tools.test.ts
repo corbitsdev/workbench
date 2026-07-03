@@ -82,6 +82,13 @@ mock.module("../workflow-executor/run-store", () => ({
   softDeleteRunRecord: async () => undefined,
 }));
 
+// The resume guard (CL-2681) reads the live gate from the run's log; here the
+// run under test is parked on "approve", so report that as the open gate. The
+// guard itself is exercised in the records-router suite.
+mock.module("../workflow-executor/run-awaiting-signals", () => ({
+  getAwaitingSignalNames: async () => new Set(["approve"]),
+}));
+
 const { WORKFLOWS_HUB_TOOLS } = await import("./workflow-run-tools");
 
 // The Myra instance calling the tool: instance principal prn-instance, owned by
@@ -136,6 +143,9 @@ function makeContext(overrides?: {
     sidecarRouter: {
       sendSignalDeliver: overrides?.sendSignalDeliver ?? (() => undefined),
     } as never,
+    // Present so requireWorkflowDeps passes; the resume gate-check reads the
+    // live gate through the mocked getAwaitingSignalNames above, not this stub.
+    repoStore: {} as never,
     cryptoProvider: {} as never,
     deploymentDomain: "test.dev",
     provisionRunDeployment: async () => ({ deploymentId: "dep-run-1" }),

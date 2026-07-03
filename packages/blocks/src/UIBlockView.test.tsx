@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 
 import { UIBlockView } from "./UIBlockView";
-import type { UIBlock } from "./ui-block";
+import type { UIBlock, UIResponse } from "./ui-block";
 
 afterEach(() => {
   cleanup();
@@ -68,6 +68,38 @@ describe("UIBlockView", () => {
       blockKind: "choice",
       value: "Pricing call",
     });
+  });
+
+  it("carries the gate signalName in the response when the choice is a gate", () => {
+    const onRespond = mock(() => undefined);
+    const block: UIBlock = {
+      kind: "choice",
+      prompt: "This run is waiting for your input.",
+      signalName: "review-draft",
+      options: [{ id: "continue", label: "Continue", value: "" }],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(onRespond).toHaveBeenCalledWith({
+      blockKind: "choice",
+      value: "",
+      signalName: "review-draft",
+    });
+  });
+
+  it("omits signalName from the response for a non-gate choice", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const block: UIBlock = {
+      kind: "choice",
+      options: [{ id: "a", label: "Yes" }],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(received).toEqual({ blockKind: "choice", value: "Yes" });
+    expect(received?.signalName).toBeUndefined();
   });
 
   it("renders an error block message", () => {

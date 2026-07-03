@@ -96,6 +96,18 @@ mock.module("../components/ErrorBoundary", () => ({
     React.createElement(React.Fragment, null, children),
 }));
 
+// HITL gate routing (CL-2681) has its own tests (use-conversation-gates.test.tsx,
+// MyraChatSurface.test.tsx); stub here so the page test needs no QueryClient.
+mock.module("../hooks/use-conversation-gates", () => ({
+  useConversationGates: () => ({ mode: "none" }),
+}));
+
+mock.module("../hooks/use-workflow", () => ({
+  useResumeConversationGate: () => ({
+    mutateAsync: () => Promise.resolve(),
+  }),
+}));
+
 const { ChatThreadPage } = require("./ChatThreadPage");
 
 function renderAt(path: string) {

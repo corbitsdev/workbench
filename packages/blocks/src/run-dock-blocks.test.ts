@@ -90,6 +90,34 @@ describe("dockRunBlocks", () => {
     expect(link.description).toBe("Outputs and artifacts");
   });
 
+  it("emits a gate choice block carrying the recovered signalName", () => {
+    const blocks = dockRunBlocks(
+      baseRun({
+        steps: [
+          { stepId: "draft", phase: "completed" },
+          {
+            stepId: "review-gate",
+            phase: "awaiting-signal",
+            awaitingSignalName: "review-draft",
+          },
+        ],
+      }),
+    );
+    const choice = blocks.find((b) => b.kind === "choice");
+    if (choice?.kind !== "choice") throw new Error("expected choice block");
+    expect(choice.signalName).toBe("review-draft");
+    expect(choice.options).toHaveLength(1);
+  });
+
+  it("emits no gate block when the awaiting step has no recoverable signalName", () => {
+    const blocks = dockRunBlocks(
+      baseRun({
+        steps: [{ stepId: "review-gate", phase: "awaiting-signal" }],
+      }),
+    );
+    expect(blocks.some((b) => b.kind === "choice")).toBe(false);
+  });
+
   it("emits no link block before the run completes", () => {
     const blocks = dockRunBlocks(
       baseRun({
