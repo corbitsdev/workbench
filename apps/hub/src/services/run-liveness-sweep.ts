@@ -109,6 +109,7 @@ export function createRunLivenessSweep(deps: {
         .select({
           id: workflowRunRecord.id,
           deploymentId: workflowRunRecord.deploymentId,
+          tenantId: workflowRunRecord.tenantId,
           startedAt: workflowRunRecord.startedAt,
           updatedAt: workflowRunRecord.updatedAt,
         })
@@ -141,6 +142,12 @@ export function createRunLivenessSweep(deps: {
       const runsWithSteps = new Set(stepRows.map((r) => r.runId));
 
       let failed = 0;
+      // CL-2751: observability counters for the per-interval summary. Pure
+      // bookkeeping — they do NOT influence any fail decision.
+      let considered = 0;
+      let failedGoneSupervisor = 0;
+      let failedPastHardDeadline = 0;
+      let sparedByRecheck = 0;
       const now = Date.now();
       for (const run of candidates) {
         const supervisorAddress =
@@ -170,6 +177,15 @@ export function createRunLivenessSweep(deps: {
         // regardless of whether it had begun (a supervisor that died mid-step is
         // exactly the orphan this sweep exists to catch).
 
+        // CL-2751: this candidate has passed the routable/deadline gates and is
+        // a fail candidate. The reason is fixed by which branch let it through:
+        // a routable-but-silent run past the hard deadline, or a gone
+        // supervisor.
+        considered += 1;
+        const reason = supervisorRoutable
+          ? "past-start-hard-deadline"
+          : "gone-supervisor";
+
         try {
           // Re-check progress immediately before the CAS — but ONLY for a run
           // that had NO progress at scan time. A first pack may have landed
@@ -177,11 +193,38 @@ export function createRunLivenessSweep(deps: {
           // live now, not wedged, so skip the fail. A run that already had
           // progress at scan is a genuine orphan (GONE mid-step) and must NOT be
           // spared here, so the recheck is gated on `!madeProgress`.
-          if (!madeProgress && (await runMadeProgress(run.id))) continue;
+          if (!madeProgress && (await runMadeProgress(run.id))) {
+            sparedByRecheck += 1;
+            log.info("run liveness sweep: spared stale run", {
+              runId: run.id,
+              tenantId: run.tenantId,
+              reason,
+              idleMs,
+              spared: true,
+              casFlipped: false,
+            });
+            continue;
+          }
           // CAS: fails ONLY if still `running` at write time — never an
           // awaiting/completed/failed run it raced against.
-          if (await failRunIfStillRunning(deps.db, run.id, new Date()))
+          const casFlipped = await failRunIfStillRunning(
+            deps.db,
+            run.id,
+            new Date(),
+          );
+          if (casFlipped) {
             failed += 1;
+            if (supervisorRoutable) failedPastHardDeadline += 1;
+            else failedGoneSupervisor += 1;
+          }
+          log.info("run liveness sweep: failed stale run", {
+            runId: run.id,
+            tenantId: run.tenantId,
+            reason,
+            idleMs,
+            spared: false,
+            casFlipped,
+          });
         } catch (err) {
           log.warn("run liveness sweep: CAS fail write errored", {
             runId: run.id,
@@ -190,12 +233,17 @@ export function createRunLivenessSweep(deps: {
         }
       }
 
-      if (failed > 0) {
-        log.info("run liveness sweep marked stalled runs failed", {
-          scanned: candidates.length,
-          failed,
-        });
-      }
+      // CL-2751: per-interval summary — always emitted when there were
+      // candidates, so counts can be watched over the first 24-48h even on a
+      // pass that failed nothing (all spared / all no-ops).
+      log.info("run liveness sweep pass summary", {
+        scanned: candidates.length,
+        considered,
+        failed,
+        failedGoneSupervisor,
+        failedPastHardDeadline,
+        sparedByRecheck,
+      });
       return { scanned: candidates.length, failed };
     } finally {
       sweeping = false;
