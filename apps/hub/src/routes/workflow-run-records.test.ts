@@ -160,6 +160,17 @@ let provisionShouldThrow = false;
 const reclaimCalls: { deploymentId: string; tenantId: string }[] = [];
 let reclaimShouldThrow = false;
 
+// CL-2707 deploy-window probe. The probe reports "connected" once the call
+// count reaches `sidecarConnectsAtProbe` (1 = connected on the first check =
+// the fast path with no wait; a large number = a bounded wait that eventually
+// succeeds; Infinity = never connects, forcing the timeout 503).
+let sidecarProbeCalls = 0;
+let sidecarConnectsAtProbe = 1;
+const isSidecarConnected = (): boolean => {
+  sidecarProbeCalls += 1;
+  return sidecarProbeCalls >= sidecarConnectsAtProbe;
+};
+
 function resetCaptures(): void {
   runs.clear();
   sentMessages.length = 0;
@@ -172,6 +183,8 @@ function resetCaptures(): void {
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
   runStateShouldThrow = false;
+  sidecarProbeCalls = 0;
+  sidecarConnectsAtProbe = 1;
 }
 
 const reclaimDeployment = async (args: {
@@ -292,6 +305,10 @@ function routerWith(opts: {
       ensureDeploymentRoutable,
       provisionRunDeployment,
       reclaimDeployment,
+      isSidecarConnected,
+      // Tiny bounds keep the deploy-window wait sub-second in tests.
+      sidecarWaitTimeoutMs: 200,
+      sidecarPollIntervalMs: 5,
       resolveContext: async () => ({
         context: opts.context ?? { tenantId: "tn-1", principalId: "prn-1" },
         forbidden: false,
@@ -997,5 +1014,121 @@ describe("archive workflow run (CL-2629)", () => {
     expect(r.status).toBe(200);
     const list = await get(a, "/workflow-exec/records");
     expect(list.json).toHaveLength(0);
+  });
+});
+
+// Seed a parked (awaiting) run without exercising the deploy-window probe, then
+// reset the probe counter so the resume-side assertions start from zero.
+async function seedParkedRun(a: AppHono): Promise<string> {
+  const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+    input: {},
+  });
+  const runId = start.json.runId;
+  const parked = runs.get(runId);
+  if (parked) runs.set(runId, { ...parked, status: "awaiting" });
+  sidecarProbeCalls = 0;
+  return runId;
+}
+
+describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
+  test("resume takes the fast path (one probe, no wait, signal delivered) when the sidecar is already connected", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    // sidecarConnectsAtProbe stays 1: connected on the first probe.
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    // Exactly one probe and never entered the poll loop.
+    expect(sidecarProbeCalls).toBe(1);
+  });
+
+  test("resume waits then succeeds when the sidecar connects after a few polls", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    sidecarConnectsAtProbe = 3; // false, false, then connected
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe("running");
+    // It waited (multiple probes) before delivering the gate signal.
+    expect(sidecarProbeCalls).toBeGreaterThanOrEqual(3);
+    expect(sentSignals).toHaveLength(1);
+    expect(ensureCalls).toHaveLength(1);
+  });
+
+  test("resume times out to a sanitized 503 with Retry-After (never a raw 500) and delivers no signal", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    sidecarConnectsAtProbe = Number.POSITIVE_INFINITY; // never connects
+
+    const res = await a.request(`/workflow-exec/records/${runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ signalName: "note-selection", payload: {} }),
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+    const json = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(json.error.code).toBe("deploy_in_progress");
+    expect(typeof json.error.message).toBe("string");
+    // The raw signal-failure 500 must never leak here.
+    expect(res.status).not.toBe(500);
+    // Nothing was attempted against the sidecar.
+    expect(ensureCalls).toHaveLength(0);
+    expect(sentSignals).toHaveLength(0);
+  });
+
+  test("start takes the fast path and provisions when the sidecar is already connected", async () => {
+    resetCaptures();
+    const a = app();
+    const r = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    expect(r.status).toBe(200);
+    expect(provisionCalls).toHaveLength(1);
+    expect(sidecarProbeCalls).toBe(1);
+  });
+
+  test("start waits then provisions when the sidecar connects after a few polls", async () => {
+    resetCaptures();
+    sidecarConnectsAtProbe = 3;
+    const a = app();
+    const r = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    expect(r.status).toBe(200);
+    expect(sidecarProbeCalls).toBeGreaterThanOrEqual(3);
+    expect(provisionCalls).toHaveLength(1);
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  test("start times out to a sanitized 503 with Retry-After and provisions nothing", async () => {
+    resetCaptures();
+    sidecarConnectsAtProbe = Number.POSITIVE_INFINITY;
+    const a = app();
+    const res = await a.request("/workflow-exec/pain-point-collateral/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ input: {} }),
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("deploy_in_progress");
+    // The run never came into being — no provision, no trigger, no row.
+    expect(provisionCalls).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+    expect(runs.size).toBe(0);
   });
 });
