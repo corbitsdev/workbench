@@ -12,9 +12,8 @@ interface ArtifactBodyArtifact {
   kind: string;
   source?: unknown;
   // Used by the interactive `selection` renderer (to PATCH the pick back) and
-  // the `csv-export` download link; optional because most kinds don't need them.
+  // the `csv-export` download link; optional because most kinds don't need it.
   id?: string;
-  sessionId?: string | null;
 }
 
 interface ArtifactBodyProps {

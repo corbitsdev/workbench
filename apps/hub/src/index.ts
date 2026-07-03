@@ -29,7 +29,7 @@ import {
 import { parseInferenceEvent } from "@intx/types/runtime";
 import { type } from "arktype";
 import { hexEncode } from "@intx/types";
-import { createNodeCrypto } from "@intx/crypto-node";
+import { createEd25519Crypto } from "@intx/crypto";
 import { getLogger } from "@intx/log";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -62,6 +62,11 @@ import {
   wrapRepoStoreWithProjection,
   type ReclaimRunDeploymentFn,
 } from "./workflow-executor/projection-bridge";
+import {
+  backfillMissingWorkflowFacts,
+  projectWorkflowRunFacts,
+} from "./workflow-executor/workflow-run-facts";
+import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
   type ReclaimDeploymentFn,
@@ -285,7 +290,7 @@ const auth = betterAuth({
 
 // ─── Signing key registry ──────────────────────────────────────────
 
-const registry = loadSigningKeyRegistry(hub.signingKeys);
+const registry = await loadSigningKeyRegistry(hub.signingKeys);
 log.info("Loaded signing key registry: active version {version}", {
   version: registry.active.version,
 });
@@ -306,8 +311,37 @@ const repoStore = wrapRepoStoreWithProjection(
   createAgentRepoStore({
     dataDir: hub.dataDir,
     signingKey: registry.active,
+    // Retention is fixed to keep-history: the hub is the long-term archive
+    // of an agent's state graph (see the HUB_AGENT_GC_* notes in config.ts).
+    gc: { ...hub.agentGc, retention: "keep-history" },
   }),
-  { db, reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args) },
+  {
+    db,
+    reclaimDeployment: (args) => reclaimRunDeploymentRef.fn?.(args),
+    // CL-2670: project a terminal run's analytics facts from its log. Fire-and-
+    // forget; the projector owns its errors and must never block pack receipt.
+    projectRunFacts: (args) => {
+      void projectWorkflowRunFacts(
+        { db, repoStore: args.repoStore },
+        {
+          repoId: args.repoId,
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+        },
+      ).catch((err: unknown) => {
+        // ERROR, not WARN: the WRN level is invisible in Sentry, and a lost
+        // projection here permanently drops the run's facts on the live path
+        // (the projector only re-fires on a non-terminal → terminal transition).
+        // The boot backfill (backfillMissingWorkflowFacts) recovers it on next
+        // restart, but the failure must be Sentry-visible now (CL-2670 review).
+        log.error("workflow analytics fact projection failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
+  },
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
 
@@ -1054,13 +1088,7 @@ v1.route(
 v1.route("/", createMembersRouter(db));
 v1.route(
   "/",
-  createMyraThreadsRouter(
-    db,
-    sessionService,
-    grantStore,
-    eventCollectors,
-    sidecarRouter,
-  ),
+  createMyraThreadsRouter(db, sessionService, grantStore, eventCollectors),
 );
 v1.route("/", createArtifactsRouter(db));
 v1.route("/", createFileParseRouter(db));
@@ -1109,7 +1137,7 @@ v1.route(
     repoStore: repoStore.repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createNodeCrypto(registry.active),
+    cryptoProvider: createEd25519Crypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
   }),
@@ -1119,13 +1147,19 @@ v1.route(
 // supervisor (definition deployed like an agent) and persist run state to a
 // workflow_run_record row the UI polls; the projection bridge wrapped around
 // repoStore folds the sidecar's run events into that row.
+// Workflow analytics facts (CL-2670): aggregate insights + per-run breakdown,
+// derived from the run event logs by the fact projector. Owner/tenant-gated by
+// userId context, mounted alongside the /workflow-exec routes.
+v1.route("/", createWorkflowAnalyticsRouter(db));
+
 v1.route(
   "/",
   createWorkflowRunRecordsRouter({
     db,
+    repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createNodeCrypto(registry.active),
+    cryptoProvider: createEd25519Crypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,
@@ -1163,6 +1197,29 @@ void workflowReconciler
   .then(() => workflowReconciler.reclaimOrphanedDeployments())
   .catch((err) => {
     log.warn("initial workflow reconcile failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+
+// CL-2670: backfill analytics facts for any terminal run missing a fact — a run
+// whose live projection threw (WRN, now ERROR) or that reached terminal while the
+// projector was absent. Idempotent (skips runs that already have a fact) and
+// detached so it never blocks startup.
+void backfillMissingWorkflowFacts({
+  db,
+  repoStore,
+  deploymentDomain: config.rootTenant.domain,
+})
+  .then((result) => {
+    if (result.projected > 0) {
+      log.info("workflow analytics fact backfill projected {projected} runs", {
+        projected: result.projected,
+        skipped: result.skipped,
+      });
+    }
+  })
+  .catch((err) => {
+    log.error("workflow analytics fact backfill failed", {
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });

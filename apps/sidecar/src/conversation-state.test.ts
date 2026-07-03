@@ -182,7 +182,7 @@ function createOnDiskSubstrate(repoDir: string): RepoStore {
           typeof bytes === "string" ? Buffer.from(bytes) : Buffer.from(bytes);
         await fs.writeFile(dest, data);
       }
-      return { commitSha: "on-disk-sha" };
+      return { commitSha: "on-disk-sha", newlyTerminalRuns: [] };
     },
   };
 

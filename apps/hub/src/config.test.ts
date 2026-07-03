@@ -26,6 +26,9 @@ const MANAGED_KEYS = [
   "WORKFLOW_AUTOPUBLISH_MAP",
   "WEDGE_SWEEP_INTERVAL_MS",
   "WEDGE_UNROUTABLE_GRACE_MS",
+  "HUB_AGENT_GC_PACK_THRESHOLD",
+  "HUB_AGENT_GC_LOOSE_THRESHOLD",
+  "HUB_AGENT_GC_WARN_BYTES",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -142,7 +145,9 @@ describe("loadConfig", () => {
     setRequiredEnv();
     for (const bad of ["0", "-5", "1.5", "abc"]) {
       process.env["WEDGE_SWEEP_INTERVAL_MS"] = bad;
-      expect(() => loadConfig()).toThrow("WEDGE_SWEEP_INTERVAL_MS");
+      expect(() => loadConfig()).toThrow(
+        `WEDGE_SWEEP_INTERVAL_MS must be a positive integer (milliseconds); got "${bad}"`,
+      );
     }
   });
 
@@ -158,7 +163,9 @@ describe("loadConfig", () => {
     setRequiredEnv();
     for (const bad of ["0", "-1", "2.5", "nope"]) {
       process.env["WEDGE_UNROUTABLE_GRACE_MS"] = bad;
-      expect(() => loadConfig()).toThrow("WEDGE_UNROUTABLE_GRACE_MS");
+      expect(() => loadConfig()).toThrow(
+        `WEDGE_UNROUTABLE_GRACE_MS must be a positive integer (milliseconds); got "${bad}"`,
+      );
     }
   });
 
@@ -280,5 +287,36 @@ describe("getConfig", () => {
     const loaded = loadConfig();
 
     expect(getConfig()).toBe(loaded);
+  });
+});
+
+describe("hub agent GC config", () => {
+  it("uses the upstream hub defaults when env is unset", () => {
+    setRequiredEnv();
+    expect(loadConfig().hub.agentGc).toEqual({
+      packThreshold: 64,
+      looseThreshold: 2048,
+      warnBytes: 256 * 1024 * 1024,
+    });
+  });
+
+  it("overrides thresholds from env", () => {
+    setRequiredEnv();
+    process.env["HUB_AGENT_GC_PACK_THRESHOLD"] = "8";
+    process.env["HUB_AGENT_GC_LOOSE_THRESHOLD"] = "300";
+    process.env["HUB_AGENT_GC_WARN_BYTES"] = "4096";
+    expect(loadConfig().hub.agentGc).toEqual({
+      packThreshold: 8,
+      looseThreshold: 300,
+      warnBytes: 4096,
+    });
+  });
+
+  it("rejects a non-integer threshold", () => {
+    setRequiredEnv();
+    process.env["HUB_AGENT_GC_WARN_BYTES"] = "lots";
+    expect(() => loadConfig()).toThrow(
+      'HUB_AGENT_GC_WARN_BYTES must be a positive integer; got "lots"',
+    );
   });
 });

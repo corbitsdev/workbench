@@ -6,6 +6,7 @@ import {
   activeDisplayStepIndex,
   buildStepperSteps as buildRunStepperSteps,
   displayStepPhase,
+  failedRunErrorMessage,
   liveStatusLabel,
   LiveStatus,
   LiveStatusSlot,
@@ -129,6 +130,36 @@ describe("workflow-run-state", () => {
     expect(liveStatusLabel(state, NO_LABEL)).toBeNull();
   });
 
+  test("buildStepperSteps marks the active step failed when its runtime phase is failed, instead of leaving it as current", () => {
+    // research's terminal step (brief) failed while ground already completed —
+    // the display step must render as "failed", not fall through to "current"
+    // (CL-2654: a failed step looked identical to a still-running one).
+    const state = stateFrom([
+      ["intake", "completed"],
+      ["ground", "completed"],
+      ["brief", "failed"],
+    ]);
+    const stepper = buildRunStepperSteps(state, STEPS);
+    expect(stepper[1]?.status).toBe("failed");
+  });
+
+  test("a failed step is never skipped over as 'passed' just because a later, independently-running step progressed", () => {
+    // research (index 1) fails while report (index 2) is concurrently
+    // in-flight — a real DAG shape, not hypothetical (AGENTS.md: independent
+    // steps run concurrently). The old `laterProgressed` rule treated ANY
+    // non-completed step as passed once a later step moved, silently
+    // re-labeling the failed step "completed" (CL-2654 follow-up).
+    const state = stateFrom([
+      ["intake", "completed"],
+      ["ground", "completed"],
+      ["brief", "failed"],
+      ["write", "in-flight"],
+    ]);
+    expect(activeDisplayStepIndex(state, STEPS)).toBe(1);
+    const stepper = buildRunStepperSteps(state, STEPS);
+    expect(stepper[1]?.status).toBe("failed");
+  });
+
   test("buildStepperSteps marks every step completed once the run is completed, even if the terminal step output is absent", () => {
     // brief (research terminal) and persist are missing from the synthesized
     // record, but the run reports completed — nothing should linger as "current".
@@ -142,6 +173,49 @@ describe("workflow-run-state", () => {
     } as unknown as RunState;
     const stepper = buildRunStepperSteps(state, STEPS);
     expect(stepper.every((step) => step.status === "completed")).toBe(true);
+  });
+
+  test("failedRunErrorMessage returns the failed step's lastError message", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { phase: "completed" }],
+        ["ground", { phase: "completed" }],
+        [
+          "brief",
+          {
+            phase: "failed",
+            lastError: { message: "Attio API error: 403 Forbidden" },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(state)).toBe("Attio API error: 403 Forbidden");
+  });
+
+  test("failedRunErrorMessage returns null when the run has not failed or no step carries an error", () => {
+    expect(failedRunErrorMessage(null)).toBeNull();
+    const running = stateFrom([["intake", "in-flight"]]);
+    expect(failedRunErrorMessage(running)).toBeNull();
+    const failedNoMessage = {
+      phase: "failed",
+      steps: new Map([["brief", { phase: "failed" }]]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(failedNoMessage)).toBeNull();
+  });
+
+  test("failedRunErrorMessage returns the first lastError in map order if more than one step somehow carries one", () => {
+    // The adapter invariant is at most one lastError per run; this pins the
+    // documented fallback behavior (first-match-wins) if that invariant ever
+    // breaks, rather than leaving it undefined.
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["a", { phase: "failed", lastError: { message: "first" } }],
+        ["b", { phase: "failed", lastError: { message: "second" } }],
+      ]),
+    } as unknown as RunState;
+    expect(failedRunErrorMessage(state)).toBe("first");
   });
 
   test("LiveStatus renders the label with an ellipsis", () => {

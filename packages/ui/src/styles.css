@@ -37,6 +37,9 @@
   --color-green: var(--green);
   --color-green-deep: var(--green-deep);
   --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-deep: var(--red-deep);
+  --color-red-soft: var(--red-soft);
   --color-cream: var(--cream);
   --color-cream-deep: var(--cream-deep);
   --color-charcoal: var(--charcoal);
@@ -92,6 +95,9 @@
   --green: #7b9974;
   --green-deep: #425a3d;
   --green-soft: #c1d1be;
+  --red: #c1504a;
+  --red-deep: #8f3a36;
+  --red-soft: #ddaba9;
   --cream: #f7ead5;
   --cream-deep: #e4d5bc;
   --charcoal: #2b2627;

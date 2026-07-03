@@ -109,6 +109,7 @@ export {
   activeDisplayStepIndex,
   activeDisplayStep,
   buildStepperSteps as buildRunStepperSteps,
+  failedRunErrorMessage,
   liveStatusLabel,
   LiveStatusSlot,
 } from "./workflow-run-state";

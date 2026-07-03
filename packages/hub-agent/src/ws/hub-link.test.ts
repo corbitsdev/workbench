@@ -6,9 +6,8 @@ import {
   type SidecarRouter,
   type WsHandle,
 } from "@intx/hub-sessions";
-import { sign as nodeSign } from "node:crypto";
 import { createInMemoryTransport } from "@intx/mail-memory";
-import { importPrivateKeyBytes, verifySSHSignature } from "@intx/crypto-node";
+import { signEd25519, verifySSHSignature } from "@intx/crypto";
 import { base64Encode, hexEncode } from "@intx/types";
 import type {
   HarnessConfig,
@@ -73,7 +72,7 @@ import { hexDecode } from "@intx/types";
 // In-memory AgentKeyStore for tests. Tests that exercise challenge
 // response or deploy-commit verification register keys via the public
 // AgentKeyStore methods (loadOrGenerateKey, recordHubKey); the stub
-// satisfies the interface and uses real crypto-node primitives so
+// satisfies the interface and uses real @intx/crypto primitives so
 // signatures round-trip through the production verify path.
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
@@ -95,11 +94,10 @@ function createTestKeyStore(): AgentKeyStore & {
         keyPair,
       }));
     },
-    signChallenge(address, payload) {
+    async signChallenge(address, payload) {
       const kp = agentKeys.get(address);
       if (kp === undefined) return null;
-      const key = importPrivateKeyBytes(kp.privateKey);
-      return new Uint8Array(nodeSign(null, payload, key));
+      return await signEd25519(kp.privateKey, payload);
     },
     recordHubKey(address, hexHubPublicKey) {
       hubKeys.set(address, hexDecode(hexHubPublicKey));
@@ -348,8 +346,8 @@ function startTestServer(): TestEnv {
 
 const env = startTestServer();
 
-afterAll(() => {
-  env.server.stop(true);
+afterAll(async () => {
+  await env.server.stop(true);
 });
 
 describe("sidecar↔hub integration", () => {
@@ -570,11 +568,11 @@ describe("sidecar↔hub integration", () => {
     // The agent must be in the session manager's address list so the
     // register frame includes it in the routing table.
     sessions.addresses.push("agent-1@test.interchange");
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register("agent-1@test.interchange", createNodeCrypto(kp));
+    transport.register("agent-1@test.interchange", createEd25519Crypto(kp));
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -620,11 +618,11 @@ describe("sidecar↔hub integration", () => {
   test("sidecar forwards outbound mail to hub", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register("sender@test.interchange", createNodeCrypto(kp));
+    transport.register("sender@test.interchange", createEd25519Crypto(kp));
 
     const startLength = env.outboundMail.length;
     const client = createHubLink({
@@ -664,8 +662,8 @@ describe("sidecar↔hub integration", () => {
   });
 
   test("mail routes between two sidecars via hub", async () => {
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
 
     // Sidecar A
@@ -673,14 +671,14 @@ describe("sidecar↔hub integration", () => {
     const sessionsA = createMockSessionManager();
     sessionsA.addresses.push("alice@test.interchange");
     const kpA = await generateKeyPair();
-    transportA.register("alice@test.interchange", createNodeCrypto(kpA));
+    transportA.register("alice@test.interchange", createEd25519Crypto(kpA));
 
     // Sidecar B
     const transportB = createInMemoryTransport();
     const sessionsB = createMockSessionManager();
     sessionsB.addresses.push("bob@test.interchange");
     const kpB = await generateKeyPair();
-    transportB.register("bob@test.interchange", createNodeCrypto(kpB));
+    transportB.register("bob@test.interchange", createEd25519Crypto(kpB));
 
     const clientA = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -926,13 +924,13 @@ describe("sidecar↔hub integration", () => {
       ).rejects.toThrow("odd-length");
     } finally {
       client.close();
-      badServer.stop(true);
+      await badServer.stop(true);
     }
   });
 
   test("reconnect restores hubPublicKey into hubKeys map", async () => {
     const { generateKeyPair, createSSHSignature } = await import(
-      "@intx/crypto-node"
+      "@intx/crypto"
     );
 
     // Agent keypair — used for challenge/response signing.
@@ -1034,14 +1032,16 @@ describe("sidecar↔hub integration", () => {
 
       // Capture the verifyCommit callback to prove the correct hub key
       // was restored — not just any key.
-      let capturedVerifyCommit: ((p: string, s: string) => boolean) | undefined;
+      let capturedVerifyCommit:
+        | ((p: string, s: string) => Promise<boolean>)
+        | undefined;
       sessions.applyDeployPack = async (
         _addr: string,
         _pack: Uint8Array,
         _ref: string,
         _sha: string,
         _tid: string,
-        verifyCommit?: (payload: string, signature: string) => boolean,
+        verifyCommit?: (payload: string, signature: string) => Promise<boolean>,
       ) => {
         capturedVerifyCommit = verifyCommit;
       };
@@ -1058,25 +1058,25 @@ describe("sidecar↔hub integration", () => {
       // Create a real signature with the hub's private key and verify
       // it round-trips through the restored verifyCommit callback.
       const payload = "tree abc\nauthor t <t@t> 0 +0000\n\ntest\n";
-      const sig = createSSHSignature(
+      const sig = await createSSHSignature(
         payload,
         hubKp.privateKey,
         hubKp.publicKey,
       );
-      expect(capturedVerifyCommit!(payload, sig)).toBe(true);
+      expect(await capturedVerifyCommit!(payload, sig)).toBe(true);
 
       // A signature from a different key must fail, proving the callback
       // is bound to the specific hub key that was restored.
       const wrongKp = await generateKeyPair();
-      const wrongSig = createSSHSignature(
+      const wrongSig = await createSSHSignature(
         payload,
         wrongKp.privateKey,
         wrongKp.publicKey,
       );
-      expect(capturedVerifyCommit!(payload, wrongSig)).toBe(false);
+      expect(await capturedVerifyCommit!(payload, wrongSig)).toBe(false);
     } finally {
       client.close();
-      reconnectServer.stop(true);
+      await reconnectServer.stop(true);
     }
   });
 
@@ -1110,7 +1110,7 @@ describe("sidecar↔hub integration", () => {
       expect(pingEnv.router.getConnectedSidecars()).toContain("sc-ping");
     } finally {
       client.close();
-      pingEnv.server.stop(true);
+      await pingEnv.server.stop(true);
     }
   });
 
@@ -1263,7 +1263,7 @@ describe("sidecar↔hub integration", () => {
       // Force a disconnect by stopping the server. The WebSocket fires
       // its close event on the client, which schedules a reconnect
       // through the fake scheduler.
-      reconnectEnv.server.stop(true);
+      await reconnectEnv.server.stop(true);
       await waitFor(() => pendingReconnect !== null);
 
       // close() must cancel the scheduled reconnect. Without the fix
@@ -1273,10 +1273,12 @@ describe("sidecar↔hub integration", () => {
       expect(pendingReconnect).toBeNull();
     } finally {
       client.close();
-      reconnectEnv.server.stop(true);
+      await reconnectEnv.server.stop(true);
     }
   });
 
+  // WORKBENCH-LOCAL (CL-2405): reconnect backoff/jitter coverage — the
+  // backoff machinery under test is a workbench divergence from upstream.
   test("a failed connect schedules exactly one reconnect with a backoff delay", async () => {
     // Both the WebSocket `error` and `close` events fire on a failed
     // connect; the idempotent scheduleReconnectOnce guard must collapse
@@ -1396,14 +1398,14 @@ describe("sidecar↔hub integration", () => {
       // Drop the established connection. Because `open` reset the attempt
       // counter, the scheduled delay must be a first-attempt (base 300ms
       // +/-20%) value, not a backed-off one.
-      reconnectEnv.server.stop(true);
+      await reconnectEnv.server.stop(true);
       await waitFor(() => delays.length === 1);
 
       expect(delays[0]!).toBeGreaterThanOrEqual(240);
       expect(delays[0]!).toBeLessThanOrEqual(360);
     } finally {
       client.close();
-      reconnectEnv.server.stop(true);
+      await reconnectEnv.server.stop(true);
     }
   });
 
@@ -1480,11 +1482,11 @@ describe("sidecar↔hub integration", () => {
     const sessions = createMockSessionManager();
     const address = "agent-fallback@test.interchange";
     sessions.addresses.push(address);
-    const { generateKeyPair, createNodeCrypto } = await import(
-      "@intx/crypto-node"
+    const { generateKeyPair, createEd25519Crypto } = await import(
+      "@intx/crypto"
     );
     const kp = await generateKeyPair();
-    transport.register(address, createNodeCrypto(kp));
+    transport.register(address, createEd25519Crypto(kp));
 
     const consulted: string[] = [];
     const mailInboundRouter = {
@@ -1748,7 +1750,102 @@ describe("sidecar↔hub integration", () => {
         () =>
           !wfrRouter.getConnectedSidecars().includes("sc-wfr-bootstrap-race"),
       );
-      wfrServer.stop(true);
+      await wfrServer.stop(true);
+    }
+  });
+});
+
+describe("routability decoupled from restore", () => {
+  test("empty register ships before restore resolves; reconnect-with-addresses only after", async () => {
+    const frames: string[] = [];
+    const app = new Hono();
+    app.get(
+      "/ws",
+      upgradeWebSocket((_c) => ({
+        onMessage(evt, _ws) {
+          if (typeof evt.data === "string") {
+            frames.push(evt.data);
+          }
+        },
+      })),
+    );
+    const server = Bun.serve({ fetch: app.fetch, websocket, port: 0 });
+
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+
+    type RestoreResult = Awaited<ReturnType<SessionManager["restoreSessions"]>>;
+    let releaseRestore!: (result: RestoreResult) => void;
+    const pendingRestore = new Promise<RestoreResult>((resolve) => {
+      releaseRestore = resolve;
+    });
+    sessions.restoreSessions = () => pendingRestore;
+    sessions.getDeployRef = async () => "a".repeat(40);
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${server.port}/ws`,
+      sidecarId: "sc-early-register",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      // The empty-address register reaches the hub while restoreSessions is
+      // still pending: routability no longer waits on restore.
+      await waitFor(() =>
+        frames
+          .map((s) => JSON.parse(s))
+          .some((f: { type: string }) => f.type === "register"),
+      );
+      const beforeResolve = frames.map((s) => JSON.parse(s));
+      const registerFrames = beforeResolve.filter(
+        (f: { type: string }) => f.type === "register",
+      );
+      expect(registerFrames).toHaveLength(1);
+      expect(registerFrames[0].agentAddresses).toEqual([]);
+      // No reconnect yet: addresses enter addressIndex only after restore.
+      expect(
+        beforeResolve.some((f: { type: string }) => f.type === "reconnect"),
+      ).toBe(false);
+
+      releaseRestore({
+        restored: [
+          {
+            address: "agent-1@test.interchange",
+            keyPair: {
+              publicKey: new Uint8Array(32),
+              privateKey: new Uint8Array(32),
+            },
+          },
+        ],
+        failed: [],
+      });
+
+      // The challenged reconnect frame, carrying the restored address, ships
+      // only after restore resolves.
+      await waitFor(() =>
+        frames
+          .map((s) => JSON.parse(s))
+          .some((f: { type: string }) => f.type === "reconnect"),
+      );
+      const parsed = frames.map((s) => JSON.parse(s));
+      const reconnectFrame = parsed.find(
+        (f: { type: string }) => f.type === "reconnect",
+      );
+      expect(reconnectFrame.agentAddresses).toEqual([
+        "agent-1@test.interchange",
+      ]);
+      expect(
+        parsed.findIndex((f: { type: string }) => f.type === "register"),
+      ).toBeLessThan(
+        parsed.findIndex((f: { type: string }) => f.type === "reconnect"),
+      );
+    } finally {
+      client.close();
+      await server.stop(true);
     }
   });
 });

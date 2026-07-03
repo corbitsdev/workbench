@@ -13,6 +13,7 @@ import {
   lte,
   ne,
   or,
+  sql,
 } from "drizzle-orm";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
@@ -198,9 +199,7 @@ function normalizeSource(raw: Record<string, unknown> | null): ArtifactSource {
 function serializeArtifact(a: ArtifactRow) {
   return {
     id: a.id,
-    sessionId: a.sessionId,
     parentId: a.parentId ?? null,
-    painPointId: a.painPointId ?? null,
     kind: a.kind,
     title: a.title,
     content: a.content,
@@ -249,6 +248,7 @@ export function createArtifactsRouter(
     const kindParam = c.req.query("kind");
     const statusParam = c.req.query("status");
     const ownerPrincipalIdParam = c.req.query("ownerPrincipalId");
+    const creatorKindParam = c.req.query("creatorKind");
     const createdAfterParam = c.req.query("createdAfter");
     const createdBeforeParam = c.req.query("createdBefore");
     const cursorParam = c.req.query("cursor");
@@ -289,6 +289,19 @@ export function createArtifactsRouter(
       statusFilter = statusParam;
     }
 
+    const creatorKindValues = ["user", "agent"] as const;
+    type CreatorKindValue = (typeof creatorKindValues)[number];
+    const isCreatorKind = (value: string): value is CreatorKindValue =>
+      (creatorKindValues as readonly string[]).includes(value);
+
+    let creatorKindFilter: CreatorKindValue | undefined;
+    if (creatorKindParam !== undefined) {
+      if (!isCreatorKind(creatorKindParam)) {
+        return c.json({ error: "Invalid creatorKind filter" }, 400);
+      }
+      creatorKindFilter = creatorKindParam;
+    }
+
     const pageLimit = Math.min(
       Math.max(1, Number(limitParam ?? 20) || 20),
       100,
@@ -327,6 +340,29 @@ export function createArtifactsRouter(
     const ownerWhere = ownerPrincipalIdParam
       ? eq(artifact.ownerPrincipalId, ownerPrincipalIdParam)
       : undefined;
+
+    // Creator-kind (agent vs human) is a facet on the owner principal, not a
+    // column on `artifact`, so resolve the matching principal ids up front
+    // and fold them into the artifact query as an ownerPrincipalId membership
+    // check. No matches means the filter must exclude everything, not fall
+    // through to unfiltered.
+    let creatorKindWhere: ReturnType<typeof sql> | undefined;
+    if (creatorKindFilter) {
+      const matchingPrincipals = await db
+        .select({ id: intxSchema.principal.id })
+        .from(intxSchema.principal)
+        .where(
+          and(
+            eq(intxSchema.principal.tenantId, userContext.tenantId),
+            eq(intxSchema.principal.kind, creatorKindFilter),
+          ),
+        );
+      const matchingIds = matchingPrincipals.map((p) => p.id);
+      creatorKindWhere =
+        matchingIds.length > 0
+          ? inArray(artifact.ownerPrincipalId, matchingIds)
+          : sql`false`;
+    }
     const createdAfterWhere = createdAfter
       ? gte(artifact.createdAt, createdAfter)
       : undefined;
@@ -370,6 +406,7 @@ export function createArtifactsRouter(
       statusWhere,
       kindWhere,
       ownerWhere,
+      creatorKindWhere,
       createdAfterWhere,
       createdBeforeWhere,
       searchWhere,
@@ -537,7 +574,6 @@ export function createArtifactsRouter(
             tenantId: userContext.tenantId,
             principalId: userContext.principalId,
             ownerPrincipalId: userContext.principalId,
-            sessionId: null,
             kind,
             title,
             content,
@@ -738,7 +774,6 @@ export function createArtifactsRouter(
               tenantId: userContext.tenantId,
               principalId: userContext.principalId,
               ownerPrincipalId: userContext.principalId,
-              sessionId: null,
               kind: uploadArtifactKind(mimeType),
               title: file.name,
               content: "",

@@ -62,9 +62,7 @@ describe("@workbench/client request construction", () => {
   it("POSTs a create-artifact body and returns the parsed artifact", async () => {
     const responseArtifact = {
       id: "art-9",
-      sessionId: null,
       parentId: null,
-      painPointId: null,
       kind: "link",
       title: "Docs",
       content: "https://example.com",
@@ -112,9 +110,7 @@ describe("@workbench/client request construction", () => {
   it("uploads files as multipart/form-data and returns the parsed artifacts", async () => {
     const responseArtifact = {
       id: "art-up",
-      sessionId: null,
       parentId: null,
-      painPointId: null,
       kind: "file",
       title: "notes.txt",
       content: "upl-1",
@@ -247,6 +243,21 @@ describe("@workbench/client request construction", () => {
       "http://localhost:4000/api/v1/artifacts",
     );
   });
+
+  it("forwards the creatorKind filter on the query string", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
+
+    await listArtifacts(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { creatorKind: "agent" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts?creatorKind=agent",
+    );
+  });
 });
 
 describe("@workbench/client baseUrl resolution", () => {
@@ -370,9 +381,7 @@ describe("@workbench/client response and error handling", () => {
       artifacts: [
         {
           id: "a",
-          sessionId: null,
           parentId: null,
-          painPointId: null,
           kind: "link",
           title: "T",
           content: "C",

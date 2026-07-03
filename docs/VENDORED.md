@@ -5,7 +5,7 @@ code into our tree so we can change behavior the upstream packages don't expose 
 seam for — without editing the `interchange/` submodule. Every divergence from the
 upstream original is tagged with a `// WORKBENCH-LOCAL (CL-XXXX)` comment.
 
-**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host`
+**Audit handle:** `git grep "WORKBENCH-LOCAL (CL-" -- apps/sidecar packages/workflow-host packages/storage-isogit`
 lists every divergence in one pass. Run it before and after an interchange pin
 bump and confirm no block disappeared. The re-sync process (diff each vendored
 file against the new upstream, re-apply upstream changes _while preserving every
@@ -77,6 +77,12 @@ There are two kinds of vendoring:
   `apps/sidecar/src/workflow-host-wiring.ts` (a duck-typed seam — see AGENTS.md).
   This supersedes the interim console→stderr redirect that was carried in
   `bin/workflow-child` (now removed).
+- **WORKBENCH-LOCAL change (CL-2651):** interpolation fix in
+  `supervisor/supervisor.ts` — upstream logs a literal `{reason}` (missing the
+  `$`) in both the control-channel and event-channel `onCrash` logs, so the
+  crash cause never prints. Both sites are fixed and marked
+  `// WORKBENCH-LOCAL (CL-2651)`. Still unfixed upstream at pin `13fb9ac`;
+  drop these blocks only when upstream interpolates the reason itself.
 - **Lint:** the package is `eslint`-exempt (`eslint.config.ts` `globalIgnores`,
   same as `interchange/**`) — it is vendored upstream code with its own
   disable-directive conventions.
@@ -90,6 +96,67 @@ There are two kinds of vendoring:
   IPC-compatible with the vendored child. A silent divergence there corrupts hub
   run reads with a green build — re-check these two adapters byte-for-byte on
   every bump.
+
+### `packages/storage-isogit` → `@workbench/storage-isogit`
+
+- **Vendors:** `@intx/storage-isogit` — a copy of
+  `interchange/packages/storage-isogit` (re-synced at pin `13fb9ac`, bringing
+  in `gc.ts`, `repo-disk.ts`, `repo-lock.ts` and the write-path reclaim). No
+  longer fully verbatim: `store.ts` carries the **WORKBENCH-LOCAL (CL-2663)**
+  read-serialization divergence below; everything else is byte-identical to
+  upstream.
+- **Imported by:** `apps/hub` and `apps/sidecar` agent-repo/context stores
+  (`createIsogitStore`, `createAgentRepoStore` paths) — both sides of the
+  pack-exchange wire.
+- **Re-sync rule:** re-copy from upstream on every pin bump, then re-apply the
+  CL-2663 block in `store.ts` (everything else stays a clean copy).
+  **On-disk-format parity invariant:** the hub reads packs and repos the sidecar
+  writes (and vice versa); `store.ts` / `pack-receive.ts` / `pack-send.ts` must
+  stay format-identical to the upstream the other consumers compile against. A
+  silent format divergence corrupts agent-repo reads with a green build — the
+  same failure class as the workflow-host repo-store adapters above.
+- **`receivePackObjects` lock asymmetry (CL-2663):** unlike `applyPack`, which
+  acquires the repo-dir lock itself, `receivePackObjects` does NOT self-lock —
+  callers must already hold the per-directory lock (`withRepoDirLock`) around
+  it. It currently has no production caller in this repo; if one is added,
+  wrap the call in the lock. Documented here rather than diverging from the
+  verbatim vendor.
+- **Read-vs-GC race — WORKBENCH-LOCAL (CL-2663) divergence in `store.ts`:**
+  upstream runs store reads (`readAt`, `log`, `readManifestHistory` — any
+  git-object walk) without the repo-dir lock while `maybeGCUnderLock` on the
+  write path publishes a consolidated pack and deletes the superseded ones; a
+  read that enumerated the old pack then fails on a still-reachable object
+  (isomorphic-git `InternalError: Could not read packfile ...
+pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
+  The CL-2663 block wraps those three read methods in `withRepoDirLock`, so
+  reads and GC serialize per repo dir. A bounded retry on the narrow pack-miss
+  error was tried first and rejected: the torn-`.idx` failure shapes are
+  unmatchable bare `TypeError`s deep in iso-git, so a narrow retry still
+  loses. Tradeoff: git-object reads queue behind writers/GC on the same dir;
+  working-tree reads (`load`, `readBlob`) stay unlocked. Local-only because
+  we never modify `interchange/`; **drop condition:** upstream
+  `@intx/storage-isogit` coordinating reads with GC (locking, retrying, or
+  epoch-pinning pack access) — then re-copy verbatim. Permanent regression
+  guard: `src/gc-read-race.test.ts` (WORKBENCH-LOCAL (CL-2663) test file;
+  reproduced the failure 5/5 before the fix). On every pin bump, re-apply the
+  CL-2663 block on top of upstream `store.ts` — a literal re-copy compiles
+  green and silently re-introduces the race.
+
+### `packages/hub-agent` → `@workbench/hub-agent` (fork, NOT a verbatim vendor)
+
+- **Status:** genuine long-lived fork of `@intx/hub-agent`, predating the vendor
+  discipline. It carries real workbench features upstream lacks (reconnect
+  backoff/jitter and the outbound queue from the CL-2405 sidecar-disconnect work,
+  `sanitizeAddress`/agent-paths exports) but its divergences are **untagged** —
+  the WORKBENCH-LOCAL audit and the drift script are blind to it.
+- **Known upstream fixes not yet adopted** (found in the 13fb9ac bump review,
+  tracked in CL-2662): upstream's `repoOpQueues`/`drainRepoOps` model (serializes
+  all per-agent repo ops and drains before `deleteAgentDir`; ours serializes only
+  mail commits) and the empty-address `register` frame on socket open (provisions
+  route during session restore).
+- **Re-sync rule:** do NOT literally re-copy from upstream — that would drop the
+  reconnect machinery. Diff deliberately, adopt upstream fixes piecewise, and tag
+  any newly-audited divergence with a WORKBENCH-LOCAL token as it is touched.
 
 ---
 
@@ -113,6 +180,37 @@ Each row is a WORKBENCH-LOCAL divergence kept on top of the upstream copy.
 The non-vendored helper that backs the CL-2535 hook lives at
 `apps/sidecar/src/workflow-resume.ts` (`hostSatisfyAwaitSignal`,
 `recoverParkedRunFromLog`) — it is our own code, not a vendored file.
+
+## Supersession audit — pin `13fb9ac` (CL-2651, 2026-07-01)
+
+Upstream baseline is now interchange `13fb9ac`. Every WORKBENCH-LOCAL block was
+adjudicated against the `2c43b57..13fb9ac` range; none was superseded:
+
+- **CL-2400 vs upstream `14e8dff`** ("Register the sidecar for routing before
+  restoring sessions"): different layer. Upstream fixes the hub's sidecar
+  routing map (empty-address `register` frame on WS socket-open, so provisions
+  route during session restore). Ours orders the sidecar-local
+  `DeploymentAddressRegistry` `Map.set` before `supervisor.spawn`/`deploy` so
+  workflow-run pack pushes never throw "no agent address registered". Kept.
+- **CL-2231 vs upstream agent-repo GC (`f0c95b3`, `67e7b0f`, `080241d`,
+  `88a24a5`)**: complementary. Upstream reclaims objects INSIDE live agent
+  repos (iso-git GC on the write path) and drains agent-repo operation chains
+  before deleting an AGENT directory. Ours removes ORPHANED per-deployment
+  workflow-run/step-state repo DIRECTORIES on workflow undeploy. No sub-piece
+  overlaps; kept in full.
+- **CL-2340 drain barriers vs upstream `88a24a5`/`5e2c202`**: different layer.
+  Upstream drains agent-repo reads/pack-applies in `hub-agent`'s session
+  manager; ours drains workflow-run PACK PUSHES in the sidecar undeploy hook
+  so a late ack cannot resurrect a stale delta cursor. Kept.
+- **Sealed event log (upstream `c7cbd58`/`ca253d4`)**: terminated runs are now
+  compacted to one `events.jsonl`. All local read paths (CL-2535 recovery,
+  CL-2537 watcher, self-discovery) route through the layout-aware
+  `readAllEventsForRun` in the vendored `adapters/repo-store.ts` (re-synced
+  from upstream); sealing is terminal-only, so parked runs are never sealed;
+  the CL-2231 sweep removes whole directories and is layout-agnostic. No fix
+  needed.
+- **CL-2651 `{reason}` interpolation**: still broken upstream at `13fb9ac`
+  (both crash-log sites); re-applied and kept.
 
 ## On every interchange pin bump
 

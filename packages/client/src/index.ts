@@ -101,6 +101,7 @@ export const ListArtifactsParamsSchema = type({
   "kind?": "string",
   "status?": "'draft' | 'approved' | 'rejected'",
   "ownerPrincipalId?": "string",
+  "creatorKind?": "'user' | 'agent'",
   /** Date-only `yyyy-mm-dd` or ISO timestamp; only artifacts created at/after this are returned. */
   "createdAfter?": "string",
   /** Date-only `yyyy-mm-dd` upper bound (inclusive end-of-day) or ISO timestamp. */
@@ -362,6 +363,7 @@ export async function listArtifacts(
   if (params.status) qs.set("status", params.status);
   if (params.ownerPrincipalId)
     qs.set("ownerPrincipalId", params.ownerPrincipalId);
+  if (params.creatorKind) qs.set("creatorKind", params.creatorKind);
   if (params.createdAfter) qs.set("createdAfter", params.createdAfter);
   if (params.createdBefore) qs.set("createdBefore", params.createdBefore);
   if (params.cursor) qs.set("cursor", params.cursor);

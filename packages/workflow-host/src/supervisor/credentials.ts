@@ -27,11 +27,14 @@
 // callback so the supervisor doesn't have to encode the deployment-
 // domain into the workflow-host package.
 
-import { createHash } from "node:crypto";
-
 import { type } from "arktype";
 
-import type { Principal, RepoId, RepoStore } from "@intx/hub-sessions";
+import { hexEncode } from "@intx/types";
+import type {
+  Principal,
+  RepoId,
+  RepoStore,
+} from "@intx/hub-sessions/substrate";
 
 /**
  * Path inside each step's `agent-state` repo that carries the step's
@@ -191,10 +194,12 @@ async function readStepGrants(
  * the JSON.stringify pass produces the same byte string for a given
  * grants array.
  */
-export function hashGrants(grants: readonly unknown[]): string {
-  const hash = createHash("sha256");
-  hash.update(JSON.stringify(grants));
-  return hash.digest("hex");
+export async function hashGrants(grants: readonly unknown[]): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(JSON.stringify(grants)),
+  );
+  return hexEncode(new Uint8Array(digest));
 }
 
 /**
@@ -224,7 +229,7 @@ export async function assembleCredentialsSnapshot(
       stepId,
       address,
       grants,
-      contentHash: hashGrants(grants),
+      contentHash: await hashGrants(grants),
     });
   }
   return { steps };

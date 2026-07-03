@@ -13,6 +13,13 @@ watchPatterns = ["apps/hub/**", "apps/sidecar/**", "packages/**", "scripts/**", 
 preDeployCommand = "bun run scripts/db-setup.ts && bun run apps/hub/bin/seed-startup.ts"
 startCommand = "bun run apps/hub/src/index.ts"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+# The hub binds Bun.serve only after blocking boot work (seedGlobalTenant,
+# seedAgentTemplates, reconcileMemberInstanceGrants — apps/hub/src/index.ts
+# :151/:161/:171), so /health cannot answer until boot completes. At 30s
+# Railway marked a still-booting hub unhealthy and recycled it, stretching the
+# window where the redeployed sidecar can't reach the hub WS (CL-2646). Give the
+# new hub enough runway to finish boot and pass /health so Railway does a rolling
+# cutover (old hub serves until the new one is ready) instead of recycling.
+healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3

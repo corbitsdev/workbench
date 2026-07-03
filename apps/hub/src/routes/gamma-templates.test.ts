@@ -238,7 +238,7 @@ describe("createGammaTemplatesRouter", () => {
         }),
       );
       expect(res.status).toBe(400);
-      const json = await res.json();
+      const json = (await res.json()) as { error: string };
       expect(json.error).toBeString();
     });
 
@@ -713,7 +713,7 @@ describe("createGammaTemplatesRouter", () => {
         }),
       );
       expect(res.status).toBe(201);
-      const json = await res.json();
+      const json = (await res.json()) as { ok: boolean };
       expect(json.ok).toBe(true);
       expect(grantInserts).toHaveLength(0);
     });
@@ -868,7 +868,7 @@ describe("createGammaTemplatesRouter", () => {
         }),
       );
       expect(res.status).toBe(200);
-      const json = await res.json();
+      const json = (await res.json()) as { ok: boolean };
       expect(json.ok).toBe(true);
     });
   });

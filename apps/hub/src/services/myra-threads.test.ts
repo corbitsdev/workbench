@@ -13,6 +13,7 @@ let collectorEvents: { type: string }[] = [];
 let agentReply = "Pricing Deep Dive";
 let agentShouldThrow = false;
 let lastIsogitDir: string | null = null;
+let lastIsogitGcPolicy: unknown = null;
 
 function resetTitleMocks() {
   lastCreateEventCollectorConfig = null;
@@ -20,12 +21,14 @@ function resetTitleMocks() {
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
   lastIsogitDir = null;
+  lastIsogitGcPolicy = null;
   ancestorChainResult = ["tn-global"];
 }
 
 mock.module("@workbench/storage-isogit", () => ({
-  createIsogitStore: mock((dir: string) => {
+  createIsogitStore: mock((dir: string, _signer?: unknown, gc?: unknown) => {
     lastIsogitDir = dir;
+    lastIsogitGcPolicy = gc ?? null;
     return Promise.resolve({});
   }),
 }));
@@ -107,7 +110,10 @@ mock.module("@intx/db", () => ({
 
 mock.module("../config", () => ({
   getConfig: () => ({
-    hub: { dataDir: "/tmp/myra-title-test" },
+    hub: {
+      dataDir: "/tmp/myra-title-test",
+      agentGc: { packThreshold: 16, looseThreshold: 512, warnBytes: 1024 },
+    },
     rootTenant: { slug: "global", domain: "global.test" },
   }),
 }));
@@ -146,27 +152,6 @@ mock.module("./agent-provisioning", () => ({
     err.message.includes("Agent already exists for address"),
 }));
 
-// CL-2518: assessPersonalAgentSync drives the per-thread updateAvailable flag on
-// the list. Mock it at the sibling-service boundary so the minimal db mocks here
-// (no agentInstance.findFirst / grant select) don't have to satisfy the real
-// assessment, and so each test controls the flag directly.
-let assessResult: { available: boolean; reason: string | null } = {
-  available: false,
-  reason: null,
-};
-const assessSpy = mock((_db: unknown, _instanceId: string) =>
-  Promise.resolve(assessResult),
-);
-// CL-2518: relaunchMyraThread restores grants via refreshInstanceGrantsFromDefinition
-// only on the defensive already-exists path; spy on it so that test can assert it.
-const refreshGrantsSpy = mock(() =>
-  Promise.resolve({ refreshed: true, pushed: false }),
-);
-mock.module("./grant-reconcile", () => ({
-  assessPersonalAgentSync: assessSpy,
-  refreshInstanceGrantsFromDefinition: refreshGrantsSpy,
-}));
-
 // CL-2517: mock the tenant-provisioning boundary so createMyraThread's reseed
 // call is a controllable spy (the minimal create-db mock has no agent.findFirst,
 // so the real helper would throw). lookupMember is only used by
@@ -189,7 +174,6 @@ import {
   generateMyraThreadTitle,
   listMyraThreads,
   MyraThreadLaunchError,
-  relaunchMyraThread,
   renameMyraThread,
 } from "./myra-threads";
 
@@ -890,6 +874,15 @@ describe("generateMyraThreadTitle", () => {
     expect(lastIsogitDir).toBe(
       "/tmp/myra-title-test/myra-title/tn-global/prn-member",
     );
+    // The durable title repo must reclaim on the write path (CL-2663): the
+    // configured hub thresholds reach the store, with keep-history retention
+    // since the audit trail is durable user data.
+    expect(lastIsogitGcPolicy).toEqual({
+      packThreshold: 16,
+      looseThreshold: 512,
+      warnBytes: 1024,
+      retention: "keep-history",
+    });
   });
 
   it("returns null when firstMessage is blank without touching the db", async () => {
@@ -915,13 +908,7 @@ describe("generateMyraThreadTitle", () => {
 });
 
 describe("listMyraThreads", () => {
-  beforeEach(() => {
-    assessResult = { available: false, reason: null };
-    assessSpy.mockClear();
-    assessSpy.mockImplementation(() => Promise.resolve(assessResult));
-  });
-
-  it("maps rows, falls back to default labels by position, and defaults updateAvailable false", async () => {
+  it("maps rows and falls back to default labels by position", async () => {
     const rows = [
       {
         id: "map-1",
@@ -960,348 +947,20 @@ describe("listMyraThreads", () => {
         instanceId: "inst-1",
         label: "Chat",
         createdAt: "2026-01-01T00:00:00.000Z",
-        updateAvailable: false,
       },
       {
         id: "map-2",
         instanceId: "inst-2",
         label: "Chat 2",
         createdAt: "2026-01-02T00:00:00.000Z",
-        updateAvailable: false,
       },
       {
         id: "map-3",
         instanceId: "inst-3",
         label: "Pricing deep dive",
         createdAt: "2026-01-03T00:00:00.000Z",
-        updateAvailable: false,
       },
     ]);
-  });
-
-  it("surfaces updateAvailable per thread from assessPersonalAgentSync against each instance", async () => {
-    const rows = [
-      {
-        id: "map-1",
-        instanceId: "inst-stale",
-        label: "Stale chat",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      {
-        id: "map-2",
-        instanceId: "inst-current",
-        label: "Current chat",
-        createdAt: new Date("2026-01-02T00:00:00Z"),
-      },
-    ];
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const db: any = {
-      query: {
-        memberAgentInstance: { findMany: mock(() => Promise.resolve(rows)) },
-      },
-    };
-    // Only the drifted instance reports an available update — proving the flag
-    // is computed per thread against its own instance id, not globally.
-    assessSpy.mockImplementation((_db: unknown, instanceId: string) =>
-      Promise.resolve(
-        instanceId === "inst-stale"
-          ? { available: true, reason: "org_template_newer" }
-          : { available: false, reason: null },
-      ),
-    );
-
-    const threads = await listMyraThreads(db, {
-      tenantId: "tn-global",
-      memberPrincipalId: "prn-member",
-    });
-
-    expect(threads.map((t) => [t.id, t.updateAvailable])).toEqual([
-      ["map-1", true],
-      ["map-2", false],
-    ]);
-    expect(assessSpy).toHaveBeenCalledWith(expect.anything(), "inst-stale");
-    expect(assessSpy).toHaveBeenCalledWith(expect.anything(), "inst-current");
-  });
-});
-
-describe("relaunchMyraThread", () => {
-  // Captures db.delete(sessionAsset).where(...) — the pre-relaunch manifest clear
-  // that stops the "pack" phase 503 on an existing instance (CL-2539).
-  const deleteSessionAssetSpy = mock((_table: unknown) => ({
-    where: mock(() => Promise.resolve()),
-  }));
-
-  beforeEach(() => {
-    ancestorChainResult = ["tn-global"];
-    reseedResult = { reseeded: false, agentId: null };
-    reseedSpy.mockClear();
-    launchAgentSessionMock.mockClear();
-    deleteSessionAssetSpy.mockClear();
-    launchShouldThrow = null;
-  });
-
-  function buildRelaunchDb(opts: {
-    mapping:
-      | {
-          id: string;
-          instanceId: string;
-          label: string | null;
-          createdAt: Date;
-        }
-      | undefined;
-    instance?: Record<string, unknown>;
-    agentDefs?: Record<string, unknown>[];
-  }) {
-    const agentDefs = opts.agentDefs ?? [
-      { id: "agt-myra", tenantId: "tn-global", systemPrompt: "You are Myra." },
-    ];
-    return {
-      query: {
-        memberAgentInstance: {
-          findFirst: mock(() => Promise.resolve(opts.mapping)),
-        },
-        agent: { findMany: mock(() => Promise.resolve(agentDefs)) },
-        agentInstance: {
-          findFirst: mock(() => Promise.resolve(opts.instance)),
-        },
-      },
-      delete: deleteSessionAssetSpy,
-    };
-  }
-
-  // The sidecar router is stateful: a successful endSession (undeploy) drops the
-  // address from it, mirroring sendAgentUndeploy removing the address on the
-  // sidecar's ack. relaunchMyraThread only launches once the address is
-  // un-routable, so a launch happening proves the teardown landed first.
-  function buildDeps(opts?: {
-    routable?: string[];
-    endSessionThrows?: boolean;
-    endSessionClears?: boolean;
-  }) {
-    const routable = new Set(opts?.routable ?? ["inst-1@global.test"]);
-    const endSession = mock((address: string) => {
-      if (opts?.endSessionThrows) {
-        return Promise.reject(new Error("undeploy timed out"));
-      }
-      if (opts?.endSessionClears !== false) routable.delete(address);
-      return Promise.resolve();
-    });
-    return {
-      // biome-ignore lint/suspicious/noExplicitAny: structural mock
-      sessionService: { endSession } as any,
-      // biome-ignore lint/suspicious/noExplicitAny: structural mock
-      grantStore: {} as any,
-      // biome-ignore lint/suspicious/noExplicitAny: structural mock
-      eventCollectors: {} as any,
-      // biome-ignore lint/suspicious/noExplicitAny: structural mock
-      sidecarRouter: {
-        getRoutableAddresses: () => Array.from(routable),
-      } as any,
-      endSession,
-    };
-  }
-
-  it("reseeds the tenant's own def, ends the live session, then relaunches", async () => {
-    reseedResult = { reseeded: true, agentId: "agt-myra" };
-    const db = buildRelaunchDb({
-      mapping: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      instance: {
-        id: "inst-1",
-        address: "inst-1@global.test",
-        principalId: "prn-inst",
-        sessionId: "ses-1",
-      },
-    });
-    const deps = buildDeps();
-
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await relaunchMyraThread(db as any, deps, {
-      tenantId: "tn-global",
-      tenantDomain: "global.test",
-      memberPrincipalId: "prn-member",
-      threadId: "map-1",
-    });
-
-    expect(reseedSpy).toHaveBeenCalledTimes(1);
-    // The live session is ended (undeployed) before the relaunch so the
-    // provision does not evict a still-routable agent.
-    expect(deps.endSession).toHaveBeenCalledWith(
-      "inst-1@global.test",
-      "myra_thread_update",
-    );
-    expect(launchAgentSessionMock).toHaveBeenCalledTimes(1);
-    // The prior session_asset manifest is cleared before the relaunch so the
-    // pack-phase INSERT can't collide with the first launch's rows (CL-2539).
-    expect(deleteSessionAssetSpy).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      thread: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-      applied: true,
-    });
-  });
-
-  it("does NOT reseed an inherited (parent-tenant) def — own-def gate", async () => {
-    ancestorChainResult = ["tn-global", "tn-root"];
-    const db = buildRelaunchDb({
-      mapping: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      instance: {
-        id: "inst-1",
-        address: "inst-1@global.test",
-        principalId: "prn-inst",
-        sessionId: "ses-1",
-      },
-      agentDefs: [
-        { id: "agt-root", tenantId: "tn-root", systemPrompt: "You are Myra." },
-      ],
-    });
-
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await relaunchMyraThread(db as any, buildDeps(), {
-      tenantId: "tn-global",
-      tenantDomain: "global.test",
-      memberPrincipalId: "prn-member",
-      threadId: "map-1",
-    });
-
-    expect(reseedSpy).not.toHaveBeenCalled();
-    expect(launchAgentSessionMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("returns null without launching when the caller does not own the thread", async () => {
-    const db = buildRelaunchDb({ mapping: undefined });
-
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await relaunchMyraThread(db as any, buildDeps(), {
-      tenantId: "tn-global",
-      tenantDomain: "global.test",
-      memberPrincipalId: "prn-member",
-      threadId: "missing",
-    });
-
-    expect(result).toBeNull();
-    expect(launchAgentSessionMock).not.toHaveBeenCalled();
-  });
-
-  it("throws MyraThreadLaunchError naming the failing package when the relaunch fails", async () => {
-    launchShouldThrow = new Error(
-      'Source provider "granola" is not registered',
-    );
-    const db = buildRelaunchDb({
-      mapping: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      instance: {
-        id: "inst-1",
-        address: "inst-1@global.test",
-        principalId: "prn-inst",
-        sessionId: "ses-1",
-      },
-    });
-
-    let thrown: unknown;
-    try {
-      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-      await relaunchMyraThread(db as any, buildDeps(), {
-        tenantId: "tn-global",
-        tenantDomain: "global.test",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-      });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
-    expect((thrown as MyraThreadLaunchError).detail).toContain("granola");
-  });
-
-  it("restores grants and reports not-applied if the agent re-appears during relaunch", async () => {
-    launchShouldThrow = new Error(
-      "Agent already exists for address inst-1@global.test",
-    );
-    const db = buildRelaunchDb({
-      mapping: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      instance: {
-        id: "inst-1",
-        address: "inst-1@global.test",
-        principalId: "prn-inst",
-        sessionId: "ses-1",
-      },
-    });
-    refreshGrantsSpy.mockClear();
-
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await relaunchMyraThread(db as any, buildDeps(), {
-      tenantId: "tn-global",
-      tenantDomain: "global.test",
-      memberPrincipalId: "prn-member",
-      threadId: "map-1",
-    });
-
-    // launchAgentSession's failure cleanup wipes this instance's grants on an
-    // already-exists, so we restore them and tell the truth: not applied.
-    expect(result?.applied).toBe(false);
-    expect(result?.thread.id).toBe("map-1");
-    expect(refreshGrantsSpy).toHaveBeenCalledTimes(1);
-  });
-
-  it("does NOT relaunch (reports not-applied) when the live session teardown fails", async () => {
-    const db = buildRelaunchDb({
-      mapping: {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Pricing",
-        createdAt: new Date("2026-01-01T00:00:00Z"),
-      },
-      instance: {
-        id: "inst-1",
-        address: "inst-1@global.test",
-        principalId: "prn-inst",
-        sessionId: "ses-1",
-      },
-    });
-
-    // endSession rejects → the sidecar may still hold the agent → must NOT launch
-    // (launching would evict it → 502, or hit already-exists → wipe grants).
-    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await relaunchMyraThread(
-      db as any,
-      buildDeps({ endSessionThrows: true }),
-      {
-        tenantId: "tn-global",
-        tenantDomain: "global.test",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-      },
-    );
-
-    expect(result?.applied).toBe(false);
-    expect(launchAgentSessionMock).not.toHaveBeenCalled();
-    // The early not-applied return happens before the manifest clear, so we
-    // never touch session_asset when we're not going to relaunch (CL-2539).
-    expect(deleteSessionAssetSpy).not.toHaveBeenCalled();
   });
 });
 

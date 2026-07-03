@@ -74,6 +74,7 @@ export interface UseArtifactsParams {
   kind?: string;
   status?: ArtifactStatus;
   ownerPrincipalId?: string;
+  creatorKind?: "user" | "agent";
   createdAfter?: string;
   createdBefore?: string;
   enabled?: boolean;
@@ -93,6 +94,7 @@ export function useArtifacts(
       params.kind ?? "",
       params.status ?? "",
       params.ownerPrincipalId ?? "",
+      params.creatorKind ?? "",
       params.createdAfter ?? "",
       params.createdBefore ?? "",
     ],

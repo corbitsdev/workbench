@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorkflowPanelProps } from "@workbench/ui";
 import * as workflowHooks from "../hooks/use-workflow";
-import type { RunRecord } from "../lib/run-state-adapter";
+import type { LogRunState, RunRecord } from "../lib/run-state-adapter";
 
 function CustomPanel({
   deploymentId,
@@ -54,12 +54,24 @@ let record: RunRecord | null = null;
 let isLoading = false;
 let isError = false;
 let deployments: workflowHooks.WorkflowDeployment[] = [];
+// The log-derived run state drives the stepper; step content comes from the
+// log-served step outputs (CL-2669). Both swapped per test.
+let logStateData: LogRunState | undefined = {
+  runId: "wfr_1",
+  phase: "running",
+  lastSeq: 1,
+  steps: [],
+};
+let logStateError = false;
+let stepOutputsData: Record<string, unknown> = {};
 
 const resumeMutateAsync = mock(async () => undefined);
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
   useWorkflowRecord: () => ({ data: record ?? undefined, isLoading, isError }),
+  useWorkflowRunState: () => ({ data: logStateData, isError: logStateError }),
+  useWorkflowStepOutputs: () => ({ data: stepOutputsData }),
   useResumeWorkflow: () => ({
     mutateAsync: resumeMutateAsync,
     isPending: false,
@@ -96,8 +108,6 @@ function makeRecord(over: Partial<RunRecord>): RunRecord {
     runId: "wfr_1",
     kind: "with-panel",
     status: "awaiting",
-    currentStepId: "gate",
-    outputs: {},
     ...over,
   };
 }
@@ -109,6 +119,9 @@ describe("WorkflowRunPane", () => {
     isLoading = false;
     isError = false;
     deployments = [];
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    stepOutputsData = {};
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
   });
@@ -128,6 +141,40 @@ describe("WorkflowRunPane", () => {
     });
     await waitFor(() => screen.getByText("Workflow run"));
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("falls back to a legible run state when the log query errors, instead of hanging on Loading run…", async () => {
+    // Repro of Finding B: a legacy run (no deploymentId) 400s on /state, so the
+    // log query errors and logState is undefined. The pane used to sit on
+    // "Loading run…" forever. It must fall back to the record-derived run-level
+    // state and render the terminal failure copy.
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = undefined;
+    logStateError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Workflow run"));
+    // Legible terminal copy, not a permanent loading placeholder.
+    screen.getByText(/this run failed\. start a new run to try again\./i);
+    expect(screen.queryByText("Loading run…")).toBeNull();
+  });
+
+  it("keeps showing Loading run… while the log is genuinely still loading (no error, deployment present)", () => {
+    // The fallback must NOT fire while the log is merely in flight — only on a
+    // real error / missing deployment. A run with a deploymentId and no error is
+    // still loading and should show the placeholder.
+    record = makeRecord({
+      kind: "no-panel",
+      status: "running",
+      deploymentId: "ses_d",
+    });
+    logStateData = undefined;
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    screen.getByText("Loading run…");
   });
 
   it("shows the loading placeholder while the record query is loading", () => {
@@ -157,8 +204,9 @@ describe("WorkflowRunPane", () => {
     expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 
-  it("hands the record outputs map and skill library straight to the Panel", async () => {
-    record = makeRecord({ outputs: { "step-ok": { headline: "hi" } } });
+  it("hands the log-served step outputs and skill library straight to the Panel", async () => {
+    record = makeRecord({});
+    stepOutputsData = { "step-ok": { headline: "hi" } };
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
@@ -204,8 +252,6 @@ describe("WorkflowRunPane", () => {
   it("onSignal is a no-op once the run is terminal", async () => {
     record = makeRecord({
       status: "completed",
-      currentStepId: null,
-      outputs: { persist: {} },
     });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
@@ -219,7 +265,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [
@@ -251,7 +296,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_old",
     });
     deployments = [
@@ -293,7 +337,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [
@@ -346,7 +389,6 @@ describe("WorkflowRunPane", () => {
     record = makeRecord({
       kind: "with-panel",
       status: "completed",
-      currentStepId: null,
       deploymentId: "ses_dep1",
     });
     deployments = [

@@ -19,7 +19,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createNodeCrypto, generateKeyPair } from "@intx/crypto-node";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
 import { createInMemoryTransport } from "@intx/mail-memory";
 import type { RepoId, RepoStore } from "@intx/hub-sessions";
 import {
@@ -150,13 +150,13 @@ function createReclaimTestRepoStore(dataDir: string): RepoStore {
     },
     async writeTreePreservingPrefix(_p, _id, _ref, args) {
       await args.merge(new Map());
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
     // The deploy router's grants bridge writes `state/grants.json` to each
     // step's agent-state repo before `spawn()`. The reclaim path does not
     // read these back, so a no-op write that lands a commit is sufficient.
     async writeTree() {
-      return { commitSha: "stub-sha" };
+      return { commitSha: "stub-sha", newlyTerminalRuns: [] };
     },
   };
 
@@ -261,7 +261,7 @@ async function standUpDeployment(
     transport,
     repoStore,
     signingKeySeed: keyPair.privateKey,
-    createAgentCrypto: createNodeCrypto,
+    createAgentCrypto: createEd25519Crypto,
     registerDeployment: () => {
       /* no-op */
     },
@@ -280,6 +280,7 @@ async function standUpDeployment(
       SIDECAR_TOKEN: "tok_test",
       SIDECAR_CACHE_MAX_BYTES: "1000000",
       SIDECAR_REGISTRY_MAX_TARBALL_BYTES: "1000000",
+      SIDECAR_ADAPTER_MANIFEST: "[]",
     },
     multistepMailRouter: createMultistepMailRouter(),
     multistepSignalRouter: createMultistepSignalRouter(),

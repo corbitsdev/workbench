@@ -18,9 +18,7 @@ import {
 
 const validArtifact = {
   id: "art-1",
-  sessionId: null,
   parentId: null,
-  painPointId: null,
   kind: "link",
   title: "Docs",
   content: "https://example.com",

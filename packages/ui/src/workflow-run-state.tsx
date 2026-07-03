@@ -95,6 +95,12 @@ function hasAnyProgress(state: RunState | null, step: DisplayStep): boolean {
  * `StepCompleted` is missing: a step is treated as passed when it is completed
  * OR any later step has progressed. Returns the last index once every step is
  * complete.
+ *
+ * A step whose own phase is `failed` is NEVER treated as passed, even if a
+ * later, independently-running branch has progressed — independent DAG steps
+ * run concurrently (AGENTS.md), so a later step's progress says nothing about
+ * whether this one failed. Without this, the `laterProgressed` rule below
+ * would silently re-label a failed step "completed" (CL-2654 follow-up).
  */
 export function activeDisplayStepIndex(
   state: RunState | null,
@@ -103,7 +109,9 @@ export function activeDisplayStepIndex(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     if (step === undefined) continue;
-    if (displayStepPhase(state, step.stepIds) === "completed") continue;
+    const phase = displayStepPhase(state, step.stepIds);
+    if (phase === "completed") continue;
+    if (phase === "failed") return i;
     const laterProgressed = steps
       .slice(i + 1)
       .some((later) => hasAnyProgress(state, later));
@@ -129,10 +137,14 @@ export function buildStepperSteps(
     } else if (i > activeIdx) {
       status = "pending";
     } else {
-      status =
-        displayStepPhase(state, step.stepIds) === "completed"
-          ? "completed"
-          : "current";
+      const phase = displayStepPhase(state, step.stepIds);
+      if (phase === "completed") {
+        status = "completed";
+      } else if (phase === "failed") {
+        status = "failed";
+      } else {
+        status = "current";
+      }
     }
     return { number: i + 1, label: step.label, status };
   });
@@ -173,6 +185,27 @@ export function liveStatusLabel(
   const phase = displayStepPhase(state, step.stepIds);
   if (phase === "completed" || phase === "awaiting-signal") return null;
   return step.activityLabel ?? null;
+}
+
+/**
+ * The message from whichever step failed the run, or null if the run has not
+ * failed or no step carries a `lastError`. `RunState.steps` has no run-level
+ * error field — the failing step's own `lastError` (populated by the hub's
+ * run-state adapter from the record's `error` field) is the only place the
+ * message lives.
+ *
+ * Returns the first `lastError` found in map-iteration order. This relies on
+ * the adapter's invariant that at most one step carries `lastError` per run
+ * (`apps/web/src/lib/run-state-adapter.ts` only ever attaches it to the
+ * single active/failed step) — if that invariant ever breaks, this picks an
+ * arbitrary one rather than surfacing the ambiguity.
+ */
+export function failedRunErrorMessage(state: RunState | null): string | null {
+  if (state?.phase !== "failed") return null;
+  for (const step of state.steps.values()) {
+    if (step.lastError !== undefined) return step.lastError.message;
+  }
+  return null;
 }
 
 /** The single live progress line shown under the stepper. */

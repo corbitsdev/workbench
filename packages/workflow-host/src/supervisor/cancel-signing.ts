@@ -30,8 +30,9 @@ import type {
   RepoId,
   RepoStore as SubstrateRepoStore,
   WorkflowRunSupervisorPrincipal,
-} from "@intx/hub-sessions";
+} from "@intx/hub-sessions/substrate";
 import type { CancelOrigin } from "@intx/workflow";
+import { hexEncode } from "@intx/types";
 
 import type {
   PrincipalSigner,
@@ -179,7 +180,7 @@ export async function commitCancelRequested(
           origin: opts.origin,
           at: opts.at,
         });
-        const signature = opts.signAsPrincipal(
+        const signature = await opts.signAsPrincipal(
           SUPERVISOR_PRINCIPAL_KIND,
           payloadBytes,
         );
@@ -223,12 +224,8 @@ function serializeSignedPayload(signed: SignedPayload): {
 } {
   return {
     principalKind: signed.principalKind,
-    sig: bytesToHex(signed.sig),
+    sig: hexEncode(signed.sig),
   };
-}
-
-function bytesToHex(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("hex");
 }
 
 export { OnDiskEnvelope as CancelRequestedOnDiskEnvelopeForTest };

@@ -3,8 +3,21 @@ import { schema as intxSchema } from "@intx/db";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
-import { createWorkflowReconciler } from "./workflow-reconciler";
 import { workflowRunRecord } from "../db/schema";
+
+// The reconciler writes a run terminal via run-store's setRunStatus (CL-2669).
+// Mock that boundary so the failOrphanedRuns tests observe the status write
+// against the current test's in-memory rows without threading a drizzle
+// `.where(eq(id))` expression the fake DB cannot parse.
+let failRowsRef: Map<string, { status: string }> | null = null;
+mock.module("../workflow-executor/run-store", () => ({
+  setRunStatus: async (_db: unknown, runId: string, status: string) => {
+    const row = failRowsRef?.get(runId);
+    if (row) row.status = status;
+  },
+}));
+
+const { createWorkflowReconciler } = await import("./workflow-reconciler");
 
 type Row = {
   deploymentId: string | null;
@@ -53,27 +66,16 @@ type RunRow = {
   status: "running" | "awaiting" | "completed" | "failed";
 };
 
-// Stateful db for failOrphanedRuns. The reconciler, for each NON-routable
-// candidate, calls loadRunRecord (findFirst) then save (update) before moving
-// to the next — so findFirst dequeues candidates in order and update writes
-// back to the row findFirst just handed out. This round-trips the real
-// status/error transition rather than asserting a mock.
-//
-// CAVEAT: findFirst serves by dequeue ORDER, not by the requested run id (the
-// real loadRunRecord looks up by id; this mock cannot extract it from drizzle's
-// SQL expression). So `nonRoutableIdsInOrder` MUST match the exact order the
-// reconciler reaches loadRunRecord. Keep failOrphanedRuns tests to at most ONE
-// served candidate (the others routable/awaiting/empty) so a mismatched order
-// can never silently write to the wrong row — the failure mode that made a
-// multi-candidate test pass on broken code (CL-2575 review).
-function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
-  const rows = new Map<string, RunRow & { error: string | null }>(
-    runs.map((r) => [r.id, { ...r, error: null }]),
+// Stateful db for failOrphanedRuns. The select serves the stuck-run candidates;
+// the reconciler marks a genuinely-interrupted `running` run terminal via the
+// mocked setRunStatus (CL-2669), which writes back to this same `rows` map by
+// runId — so a test asserts the real status transition, not a mock.
+function makeFailDb(runs: RunRow[]) {
+  const rows = new Map<string, RunRow & { status: string }>(
+    runs.map((r) => [r.id, { ...r }]),
   );
-  // The reconciler only calls loadRunRecord (findFirst) for NON-routable
-  // candidates, in stuckRuns order. Seed the dequeue with exactly those.
-  const pending = [...nonRoutableIdsInOrder];
-  let lastHandedOut: string | null = null;
+  // The mocked setRunStatus writes against this map (CL-2669).
+  failRowsRef = rows;
   const db = {
     select: () => ({
       from: () => ({
@@ -85,51 +87,6 @@ function makeFailDb(runs: RunRow[], nonRoutableIdsInOrder: string[]) {
               status: r.status,
             })),
           ),
-      }),
-    }),
-    query: {
-      workflowRunRecord: {
-        findFirst: () => {
-          const id = pending.shift();
-          if (id === undefined) {
-            lastHandedOut = null;
-            return Promise.resolve(undefined);
-          }
-          lastHandedOut = id;
-          const r = rows.get(id)!;
-          return Promise.resolve({
-            id: r.id,
-            deploymentId: r.deploymentId,
-            kind: "k",
-            tenantId: "t",
-            principalId: "p",
-            status: r.status,
-            currentStepId: null,
-            input: {},
-            outputs: {},
-            error: r.error,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-            deletedAt: null,
-          });
-        },
-      },
-    },
-    update: () => ({
-      set: (vals: {
-        status: "running" | "awaiting" | "completed" | "failed";
-        error: string | null;
-      }) => ({
-        where: () => {
-          if (lastHandedOut !== null) {
-            const r = rows.get(lastHandedOut);
-            if (r !== undefined) {
-              r.status = vals.status;
-              r.error = vals.error;
-            }
-          }
-          return Promise.resolve();
-        },
       }),
     }),
   } as unknown as HubDb;
@@ -359,7 +316,7 @@ describe("failOrphanedRuns", () => {
     const runs: RunRow[] = [
       { id: "run_1", deploymentId: "ses_gone", status: "running" },
     ];
-    const { db, rows } = makeFailDb(runs, ["run_1"]);
+    const { db, rows } = makeFailDb(runs);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
@@ -372,7 +329,6 @@ describe("failOrphanedRuns", () => {
     await reconciler.failOrphanedRuns();
 
     expect(rows.get("run_1")!.status).toBe("failed");
-    expect(rows.get("run_1")!.error).toBe("interrupted by restart");
   });
 
   it("leaves a running run whose supervisor IS routable untouched (safety invariant)", async () => {
@@ -380,7 +336,7 @@ describe("failOrphanedRuns", () => {
       { id: "run_live", deploymentId: "ses_live", status: "running" },
     ];
     // ses_live's supervisor IS in the routable snapshot — never fail it.
-    const { db, rows } = makeFailDb(runs, []);
+    const { db, rows } = makeFailDb(runs);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
@@ -393,7 +349,6 @@ describe("failOrphanedRuns", () => {
     await reconciler.failOrphanedRuns();
 
     expect(rows.get("run_live")!.status).toBe("running");
-    expect(rows.get("run_live")!.error).toBeNull();
   });
 
   it("leaves an awaitSignal-parked (awaiting) run untouched even when its supervisor is NOT routable (CL-2575)", async () => {
@@ -412,7 +367,7 @@ describe("failOrphanedRuns", () => {
     // loadRunRecord, so on the fixed code findFirst is never called and the
     // seeded id is simply never consumed → the run stays awaiting. (Single
     // candidate, so the order-based dequeue cannot serve the wrong row.)
-    const { db, rows } = makeFailDb(runs, ["run_parked"]);
+    const { db, rows } = makeFailDb(runs);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,
@@ -425,14 +380,13 @@ describe("failOrphanedRuns", () => {
     await reconciler.failOrphanedRuns();
 
     expect(rows.get("run_parked")!.status).toBe("awaiting");
-    expect(rows.get("run_parked")!.error).toBeNull();
   });
 
   it("is idempotent: a second pass with no in-flight rows fails nothing", async () => {
     // After the first pass marks the row failed, the real query would no
     // longer return it (status NOT IN running/awaiting). Model that as an
     // empty candidate set: the pass must complete without writing anything.
-    const { db, rows } = makeFailDb([], []);
+    const { db, rows } = makeFailDb([]);
     const reconciler = createWorkflowReconciler({
       db,
       events: makeEvents().events,

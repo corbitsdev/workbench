@@ -25,11 +25,14 @@ function makeDb(opts: {
   findMany?: unknown[];
   findFirst?: unknown;
   inserted?: Record<string, unknown>[];
+  /** Results returned by successive `db.select(...).from(...).where(...)` calls, in call order. */
+  selectResults?: unknown[][];
 }): HubDb {
+  const selectResults = [...(opts.selectResults ?? [])];
   const select = mock(() => {
     const chain = {
       from: mock(() => chain),
-      where: mock(() => Promise.resolve([])),
+      where: mock(() => Promise.resolve(selectResults.shift() ?? [])),
     };
     return chain;
   });
@@ -306,6 +309,144 @@ describe("GET /artifacts", () => {
     expect(where).toContain("2026-06-20T23:59:59.999Z");
     const body = (await res.json()) as { artifacts: unknown[] };
     expect(body.artifacts).toHaveLength(1);
+  });
+
+  it("filters by kind", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const app = appWith(
+      makeDb({ findMany: [{ ...ROW, id: "art-onepager", kind: "one-pager" }] }),
+    );
+    const res = await app.request("/artifacts?kind=one-pager");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { artifacts: { kind: string }[] };
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0]?.kind).toBe("one-pager");
+  });
+
+  it("filters by creatorKind, resolving matching owner principal ids first", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const db = makeDb({
+      findMany: [{ ...ROW, id: "art-by-agent", ownerPrincipalId: "prn-agent" }],
+      selectResults: [[{ id: "prn-agent" }]],
+    });
+    const captured = db as unknown as {
+      query: {
+        artifact: {
+          findMany: (opts: { where: unknown }) => Promise<unknown[]>;
+        };
+      };
+    };
+    const calls: { where: unknown }[] = [];
+    const inner = captured.query.artifact.findMany;
+    captured.query.artifact.findMany = (opts: { where: unknown }) => {
+      calls.push({ where: opts.where });
+      return inner(opts);
+    };
+    const app = appWith(db);
+
+    const res = await app.request("/artifacts?creatorKind=agent");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { artifacts: { id: string }[] };
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0]?.id).toBe("art-by-agent");
+
+    const collect = (node: unknown, seen = new Set<unknown>()): string[] => {
+      if (node == null || seen.has(node)) return [];
+      if (typeof node === "string") return [node];
+      if (typeof node !== "object") return [];
+      seen.add(node);
+      const out: string[] = [];
+      for (const value of Object.values(node as Record<string, unknown>)) {
+        out.push(...collect(value, seen));
+      }
+      return out;
+    };
+    const where = collect(calls[0]?.where).join(" ");
+    expect(where).toContain("prn-agent");
+  });
+
+  it("forces an unmatchable predicate when creatorKind matches no principals", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const db = makeDb({ findMany: [ROW], selectResults: [[]] });
+    const captured = db as unknown as {
+      query: {
+        artifact: {
+          findMany: (opts: { where: unknown }) => Promise<unknown[]>;
+        };
+      };
+    };
+    const calls: { where: unknown }[] = [];
+    const inner = captured.query.artifact.findMany;
+    captured.query.artifact.findMany = (opts: { where: unknown }) => {
+      calls.push({ where: opts.where });
+      return inner(opts);
+    };
+    const app = appWith(db);
+
+    const res = await app.request("/artifacts?creatorKind=agent");
+    expect(res.status).toBe(200);
+
+    const collect = (node: unknown, seen = new Set<unknown>()): string[] => {
+      if (node == null || seen.has(node)) return [];
+      if (typeof node === "string") return [node];
+      if (typeof node !== "object") return [];
+      seen.add(node);
+      const out: string[] = [];
+      for (const value of Object.values(node as Record<string, unknown>)) {
+        out.push(...collect(value, seen));
+      }
+      return out;
+    };
+    // No principal matched `creatorKind=agent`, so the query layer must be
+    // handed a predicate that can never match (`false`), not fall through to
+    // unfiltered.
+    const where = collect(calls[0]?.where).join(" ");
+    expect(where).toContain("false");
+  });
+
+  it("400s on an invalid creatorKind filter", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const app = appWith(makeDb({}));
+    const res = await app.request("/artifacts?creatorKind=bogus");
+    expect(res.status).toBe(400);
+  });
+
+  it("combines kind, creatorKind, and date-range filters", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const db = makeDb({
+      findMany: [
+        {
+          ...ROW,
+          id: "art-combined",
+          kind: "one-pager",
+          ownerPrincipalId: "prn-agent",
+        },
+      ],
+      selectResults: [[{ id: "prn-agent" }]],
+    });
+    const app = appWith(db);
+    const res = await app.request(
+      "/artifacts?kind=one-pager&creatorKind=agent&createdAfter=2026-06-01&createdBefore=2026-06-30",
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { artifacts: { id: string }[] };
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0]?.id).toBe("art-combined");
   });
 });
 

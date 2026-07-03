@@ -2,8 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api } from "../lib/api";
 import {
+  isLogStateTerminal,
   isRecordTerminal,
+  logRunStateSchema,
+  reconcileRunState,
+  runStateFromLog,
   runStateFromRecord,
+  runWasInterrupted,
+  type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
 
@@ -22,9 +28,6 @@ const runRecordSchema = type({
   runId: "string",
   kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
-  currentStepId: "string|null",
-  outputs: type({ "[string]": "unknown" }),
-  "error?": "string",
   "deploymentId?": "string",
 });
 
@@ -154,6 +157,88 @@ export function useWorkflowRecord(
   });
 }
 
+// Log-derived run state (CL-2669 Phase 1b). Reads the run's authoritative
+// per-step state folded from its native git event log, replacing the coarse
+// record projection as the stepper's source of truth. Gated on a present runId;
+// polls every 2s while the run is non-terminal and stops the instant it settles
+// (completed/failed/cancelled) — a parked `awaiting-signal` gate keeps polling,
+// since the log phase (not a separate record status) tells us the run is live.
+// staleTime 0 so a resume's fresh state is never served stale. SSE is a later
+// ticket; this poll is the interim cadence.
+export function useWorkflowRunState(
+  runId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<LogRunState>({
+    queryKey: ["workflow-run-state", runId, tenantId ?? null],
+    enabled: !!runId,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      return data && !isLogStateTerminal(data.phase) ? 2000 : false;
+    },
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(`/workflow-exec/runs/${runId as string}/state`, tenantId),
+      );
+      const parsed = logRunStateSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow run-state response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
+export {
+  runStateFromLog,
+  runStateFromRecord,
+  reconcileRunState,
+  runWasInterrupted,
+};
+
+// Resolved step outputs for a run, read from its native event log (CL-2669):
+// the hub replays the deployment's workflow-run log once and returns every
+// completed step's resolved output as a stepId -> output map. Keyed by the run's
+// `deploymentId` (the log is per-deployment); gated until it is known. Polls
+// while the run is still active so a newly-completed step's output appears, and
+// stops once the run settles.
+const stepOutputsSchema = type({ outputs: type({ "[string]": "unknown" }) });
+
+export function useWorkflowStepOutputs(
+  deploymentId: string | null | undefined,
+  tenantId?: string | null,
+  active = false,
+) {
+  return useQuery<Record<string, unknown>>({
+    queryKey: ["workflow-step-outputs", deploymentId ?? null, tenantId ?? null],
+    enabled: !!deploymentId,
+    staleTime: 0,
+    retry: false,
+    refetchInterval: active ? 2000 : false,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-runs/${encodeURIComponent(deploymentId as string)}/steps`,
+          tenantId,
+        ),
+      );
+      const parsed = stepOutputsSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow step-outputs response: ${parsed.summary}`,
+        );
+      }
+      return parsed.outputs;
+    },
+  });
+}
+
 export function useStartWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -248,8 +333,6 @@ export function useArchiveWorkflowRun(tenantId?: string | null) {
     },
   });
 }
-
-export { runStateFromRecord };
 
 const workflowCredentialSchema = type({
   id: "string",

@@ -149,7 +149,6 @@ describe("Myra thread mutations (tenant scoping)", () => {
           instanceId: "inst-old",
           label: "Old chat",
           createdAt: "2025-12-31T00:00:00.000Z",
-          updateAvailable: false,
         },
       ],
     );
@@ -170,10 +169,7 @@ describe("Myra thread mutations (tenant scoping)", () => {
     });
 
     await waitFor(() => expect(cachedBeforeCallerNavigate).toBeDefined());
-    expect(cachedBeforeCallerNavigate).toContainEqual({
-      ...thread,
-      updateAvailable: false,
-    });
+    expect(cachedBeforeCallerNavigate).toContainEqual(thread);
   });
 
   it("shares an in-flight create for duplicate empty-chat requests", async () => {

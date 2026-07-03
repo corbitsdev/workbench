@@ -3,7 +3,7 @@ import { Hono } from "hono";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
-import type { RunState } from "../workflow-executor/executor";
+import type { RunState } from "../workflow-executor/run-store";
 
 // Override only getAncestorChain (the routes walk the tenant chain); preserve
 // every other @intx/db export so sibling suites in the same process keep theirs.
@@ -20,11 +20,14 @@ mock.module("@intx/db", () => ({
 // resume needs to address the sidecar.
 const runs = new Map<string, RunState>();
 mock.module("../workflow-executor/run-store", () => ({
-  createRunStore: () => ({
-    save: async (state: RunState) => {
-      runs.set(state.runId, structuredClone(state));
-    },
-  }),
+  setRunStatus: async (
+    _db: unknown,
+    runId: string,
+    status: RunState["status"],
+  ) => {
+    const found = runs.get(runId);
+    if (found) runs.set(runId, structuredClone({ ...found, status }));
+  },
   insertRunRecord: async (
     _db: unknown,
     args: {
@@ -42,9 +45,6 @@ mock.module("../workflow-executor/run-store", () => ({
       tenantId: args.tenantId,
       principalId: args.principalId,
       status: "running",
-      currentStepId: null,
-      input: args.input,
-      outputs: {},
       ...(args.deploymentId !== null
         ? { deploymentId: args.deploymentId }
         : {}),
@@ -59,11 +59,8 @@ mock.module("../workflow-executor/run-store", () => ({
   softDeleteRunRecord: async (_db: unknown, runId: string) => {
     runs.delete(runId);
   },
-  markRunStopped: async (_db: unknown, state: RunState, error: string) => {
-    runs.set(
-      state.runId,
-      structuredClone({ ...state, status: "failed", error }),
-    );
+  markRunStopped: async (_db: unknown, state: RunState) => {
+    runs.set(state.runId, structuredClone({ ...state, status: "failed" }));
   },
   listRunRecords: async (
     _db: unknown,
@@ -80,6 +77,49 @@ mock.module("../workflow-executor/run-store", () => ({
         status: r.status,
         createdAt: new Date(),
       })),
+}));
+
+// Preserve LogRunStateSchema (the route validates its output through it) and
+// override only getWorkflowRunState — the log fold itself is covered by the real
+// on-disk integration test; here we prove the route's gating + wiring + shape.
+const realRunStateFromLog = await import(
+  "../workflow-executor/run-state-from-log"
+);
+const runStateCalls: {
+  deploymentId: string;
+  runId: string;
+  kind: string;
+  deploymentDomain: string;
+}[] = [];
+let cannedLogState: unknown = {
+  runId: "R",
+  phase: "failed",
+  lastSeq: 3,
+  steps: [
+    {
+      stepId: "s1",
+      phase: "completed",
+      stepType: "agent",
+      currentAttempt: 1,
+    },
+  ],
+};
+let runStateShouldThrow = false;
+mock.module("../workflow-executor/run-state-from-log", () => ({
+  ...realRunStateFromLog,
+  getWorkflowRunState: async (
+    _deps: unknown,
+    args: {
+      deploymentId: string;
+      runId: string;
+      kind: string;
+      deploymentDomain: string;
+    },
+  ) => {
+    runStateCalls.push(args);
+    if (runStateShouldThrow) throw new Error("truncated log");
+    return cannedLogState;
+  },
 }));
 
 const { createWorkflowRunRecordsRouter } = await import(
@@ -116,9 +156,11 @@ function resetCaptures(): void {
   ensureCalls.length = 0;
   provisionCalls.length = 0;
   reclaimCalls.length = 0;
+  runStateCalls.length = 0;
   sendShouldThrow = false;
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
+  runStateShouldThrow = false;
 }
 
 const reclaimDeployment = async (args: {
@@ -229,6 +271,9 @@ function routerWith(opts: {
     "/",
     createWorkflowRunRecordsRouter({
       db: opts.db ?? makeDb(),
+      repoStore: {} as unknown as Parameters<
+        typeof createWorkflowRunRecordsRouter
+      >[0]["repoStore"],
       sidecarRouter,
       sessionService,
       cryptoProvider: {} as CryptoProvider,
@@ -294,8 +339,8 @@ describe("workflow runs on the sidecar (records router)", () => {
 
     expect(status).toBe(200);
     expect(json.status).toBe("running");
-    expect(json.currentStepId).toBeNull();
-    expect(json.outputs).toEqual({});
+    expect(json.currentStepId).toBeUndefined();
+    expect(json.outputs).toBeUndefined();
     expect(typeof json.runId).toBe("string");
 
     // Provisioned once, into the DEFINITION's tenant + deploy principal (the
@@ -386,7 +431,6 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
@@ -435,7 +479,6 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
@@ -459,25 +502,9 @@ describe("workflow runs on the sidecar (records router)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "selectKinds",
       });
     return runId;
   }
-
-  test("resume rejects an attio kind-selection payload missing a kind with 400 and sends no signal", async () => {
-    resetCaptures();
-    const a = app();
-    const runId = await parkedAttioRun(a);
-
-    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "kind-selection",
-      payload: { generate: { "cold-email": true } },
-    });
-
-    expect(r.status).toBe(400);
-    expect(r.json.error).toMatch(/invalid resume payload/);
-    expect(sentSignals).toHaveLength(0);
-  });
 
   test("resume rejects an attio sync-approval payload with a non-boolean confirm", async () => {
     resetCaptures();
@@ -493,32 +520,38 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentSignals).toHaveLength(0);
   });
 
-  test("resume passes through a valid attio kind-selection payload", async () => {
+  test("resume passes through the agent-decided review payload (no kind-selection validation)", async () => {
+    // CL-2664: the plan is agent-decided; there is no kind-selection gate. The
+    // human review signal carries approved pieces and is not schema-validated.
     resetCaptures();
     const a = app();
     const runId = await parkedAttioRun(a);
-    const generate: Record<string, boolean> = {};
-    for (const kind of [
-      "cold-email",
-      "follow-up-email",
-      "twitter-post",
-      "linkedin-post",
-      "research-brief",
-      "task-explanation",
-      "gamma-presentation",
-      "blog",
-      "single-page-website",
-    ])
-      generate[kind] = kind === "cold-email";
 
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "kind-selection",
-      payload: { generate },
+      signalName: "review",
+      payload: {
+        approvedPieces: [{ type: "cold-email", title: "T", content: "C" }],
+      },
     });
 
     expect(r.status).toBe(200);
     expect(sentSignals).toHaveLength(1);
-    expect(sentSignals[0]?.signalName).toBe("kind-selection");
+    expect(sentSignals[0]?.signalName).toBe("review");
+  });
+
+  test("resume passes through a valid attio sync-approval confirm payload", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await parkedAttioRun(a);
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "sync-approval",
+      payload: { confirm: false },
+    });
+
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("sync-approval");
   });
 
   test("resume does not validate an unregistered signal on a registered kind", async () => {
@@ -639,6 +672,120 @@ describe("workflow runs on the sidecar (records router)", () => {
   });
 });
 
+describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669)", () => {
+  test("returns the folded log state for the run's owner, addressed by its deployment + kind", async () => {
+    resetCaptures();
+    cannedLogState = {
+      runId: "R",
+      phase: "failed",
+      lastSeq: 3,
+      steps: [
+        {
+          stepId: "s1",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+        },
+        { stepId: "s2", phase: "failed", stepType: "human", currentAttempt: 1 },
+      ],
+    };
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const runId = start.json.runId;
+
+    const read = await get(a, `/workflow-exec/runs/${runId}/state`);
+    expect(read.status).toBe(200);
+    expect(read.json.phase).toBe("failed");
+    expect(read.json.steps).toHaveLength(2);
+    // Addressed by the run's OWN per-run deployment + its kind, pulled from the
+    // seeded record — not from any client-supplied field.
+    expect(runStateCalls).toEqual([
+      {
+        deploymentId: "ses_run_1",
+        runId,
+        kind: "pain-point-collateral",
+        deploymentDomain: "wf.localhost",
+      },
+    ]);
+  });
+
+  test("500s and does not return an unvalidated body when the fold yields a bad shape", async () => {
+    resetCaptures();
+    cannedLogState = {
+      runId: "R",
+      phase: "not-a-phase",
+      lastSeq: 0,
+      steps: [],
+    };
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
+    expect(read.status).toBe(500);
+    expect(read.json.error).toBe("failed to read run state");
+  });
+
+  test("a fold/read failure degrades to an empty pending state (200), never a 500 that bricks the pane", async () => {
+    resetCaptures();
+    runStateShouldThrow = true;
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
+    expect(read.status).toBe(200);
+    expect(read.json.phase).toBe("pending");
+    expect(read.json.steps).toEqual([]);
+    expect(read.json.runId).toBe(start.json.runId);
+    // The read WAS attempted (and threw) — the route did not silently skip it.
+    expect(runStateCalls).toHaveLength(1);
+  });
+
+  test("cross-user read is forbidden 403 and never reads the log", async () => {
+    resetCaptures();
+    const owner = app();
+    const start = await post(
+      owner,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    const intruder = appAs({ tenantId: "tn-1", principalId: "prn-other" });
+    const read = await get(
+      intruder,
+      `/workflow-exec/runs/${start.json.runId}/state`,
+    );
+    expect(read.status).toBe(403);
+    expect(runStateCalls).toHaveLength(0);
+  });
+
+  test("unknown run is 404 and never reads the log", async () => {
+    resetCaptures();
+    const a = app();
+    const read = await get(a, "/workflow-exec/runs/wfr_missing/state");
+    expect(read.status).toBe(404);
+    expect(runStateCalls).toHaveLength(0);
+  });
+
+  test("a run with no deployment is 400 and never reads the log", async () => {
+    resetCaptures();
+    const a = routerWith({ db: makeDb() });
+    // A run record with no deploymentId (legacy / never-provisioned).
+    runs.set("wfr_nodeploy", {
+      runId: "wfr_nodeploy",
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status: "running",
+    });
+    const read = await get(a, "/workflow-exec/runs/wfr_nodeploy/state");
+    expect(read.status).toBe(400);
+    expect(runStateCalls).toHaveLength(0);
+  });
+});
+
 // biome-ignore lint/suspicious/noExplicitAny: test response shape
 async function archive(
   a: AppHono,
@@ -690,7 +837,6 @@ describe("archive workflow run (CL-2629)", () => {
       runs.set(runId, {
         ...parked,
         status: "awaiting",
-        currentStepId: "select",
       });
 
     const r = await archive(a, runId);

@@ -5,7 +5,7 @@ import { getLogger } from "@intx/log";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
-import { createRunStore, loadRunRecord } from "../workflow-executor/run-store";
+import { setRunStatus } from "../workflow-executor/run-store";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 
@@ -113,7 +113,6 @@ export function createWorkflowReconciler(deps: {
 
     if (stuckRuns.length === 0) return;
 
-    const runStore = createRunStore(deps.db);
     let failed = 0;
     let preservedParked = 0;
     for (const run of stuckRuns) {
@@ -145,11 +144,10 @@ export function createWorkflowReconciler(deps: {
         continue;
 
       try {
-        const state = await loadRunRecord(deps.db, run.id);
-        if (state === null) continue;
-        state.status = "failed";
-        state.error = "interrupted by restart";
-        await runStore.save(state);
+        // Mark the genuinely-interrupted run terminal. The failure REASON is no
+        // longer persisted (the log is the source of truth for run detail,
+        // CL-2669); the coarse `failed` status is the index signal.
+        await setRunStatus(deps.db, run.id, "failed");
         failed += 1;
       } catch (err) {
         log.warn("failOrphanedRuns: failed to mark run failed", {

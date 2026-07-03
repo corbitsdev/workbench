@@ -9,19 +9,27 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
-import type { RunState } from "../workflow-executor/executor";
 import { isTerminalRunStatus } from "../workflow-executor/run-status";
 import {
-  createRunStore,
   insertRunRecord,
   listRunRecords,
   loadRunRecord,
   markRunStopped,
+  setRunStatus,
   softDeleteRunRecord,
 } from "../workflow-executor/run-store";
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
-import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
+import type {
+  AgentRepoStore,
+  SessionService,
+  SidecarRouter,
+} from "@intx/hub-sessions";
+import {
+  getWorkflowRunState,
+  LogRunStateSchema,
+  type LogRunState,
+} from "../workflow-executor/run-state-from-log";
 import type { CryptoProvider } from "@intx/types/runtime";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import type {
@@ -34,13 +42,13 @@ const log = getLogger(["api", "workflow-run-records"]);
 const StartBody = type({ "input?": "unknown" });
 const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 
+// The thin run-INDEX response (CL-2669): run-level identity + coarse status.
+// Per-step state (phase / outputs / errors) is read separately from the log via
+// GET /workflow-exec/runs/:runId/state.
 const RunStateResponse = type({
   runId: "string",
   kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
-  currentStepId: "string|null",
-  outputs: "object",
-  "error?": "string",
   "deploymentId?": "string",
 });
 
@@ -114,26 +122,17 @@ function stateResponse(state: {
   runId: string;
   kind: string;
   status: "running" | "awaiting" | "completed" | "failed";
-  currentStepId: string | null;
-  outputs: Record<string, unknown>;
-  error?: string;
   deploymentId?: string;
 }): {
   runId: string;
   kind: string;
   status: string;
-  currentStepId: string | null;
-  outputs: Record<string, unknown>;
-  error?: string;
   deploymentId?: string;
 } {
   return {
     runId: state.runId,
     kind: state.kind,
     status: state.status,
-    currentStepId: state.currentStepId,
-    outputs: state.outputs,
-    ...(state.error !== undefined ? { error: state.error } : {}),
     ...(state.deploymentId !== undefined
       ? { deploymentId: state.deploymentId }
       : {}),
@@ -148,6 +147,7 @@ function stateResponse(state: {
 // row, which the UI polls. Reads are a single indexed row lookup — no replay.
 export function createWorkflowRunRecordsRouter(deps: {
   db: HubDb;
+  repoStore: AgentRepoStore;
   sidecarRouter: SidecarRouter;
   sessionService: SessionService;
   cryptoProvider: CryptoProvider;
@@ -162,7 +162,6 @@ export function createWorkflowRunRecordsRouter(deps: {
 }): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
   const resolveContext = deps.resolveContext ?? getRequestedUserContext;
-  const runStore = createRunStore(deps.db);
 
   router.post(
     "/workflow-exec/:kind/start",
@@ -295,12 +294,7 @@ export function createWorkflowRunRecordsRouter(deps: {
           deploymentId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
-        const failed: RunState = {
-          ...state,
-          status: "failed",
-          error: "failed to start workflow run",
-        };
-        await runStore.save(failed);
+        await setRunStatus(deps.db, runId, "failed");
         return c.json({ error: "failed to start workflow run" }, 500);
       }
 
@@ -368,9 +362,9 @@ export function createWorkflowRunRecordsRouter(deps: {
     "/workflow-exec/records/:runId",
     describeRoute({
       tags: ["Workflows"],
-      summary: "Read a thin-executor workflow run state",
+      summary: "Read a workflow run's index row",
       description:
-        "Returns the run record state — status, currentStepId, and the stepId->output map — as a single indexed read.",
+        "Returns the thin run-index row — run-level identity, kind, and coarse status — as a single indexed read. Per-step state (phase / outputs / errors) is read from the native event log via GET /workflow-exec/runs/:runId/state.",
       parameters: [
         {
           name: "runId",
@@ -415,6 +409,116 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       return c.json(stateResponse(state));
+    },
+  );
+
+  // Log-derived RunState (CL-2669 Phase 1a). Reads the run's native git event
+  // log through the #534 layout-aware reader and folds it through the native
+  // @intx/workflow state machine — returning the full run phase + per-step
+  // phase/attempt/timing/type the runtime itself computes. Additive: it does not
+  // replace the record read above; it proves the log is the source of truth
+  // before any table is removed. Owner-gated identically to the record read.
+  router.get(
+    "/workflow-exec/runs/:runId/state",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Read a workflow run's state from its native event log",
+      description:
+        "Folds the run's append-only git event log through the native @intx/workflow state machine to return the authoritative RunState: run phase plus per-step phase, attempt, timing, and execution type (human/agent/deterministic/inline). Handles both in-flight (per-event) and sealed (combined) log layouts.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Log-derived run state",
+          content: {
+            "application/json": { schema: resolver(LogRunStateSchema) },
+          },
+        },
+        400: {
+          description: "Run has no deployment",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const runId = c.req.param("runId");
+      const record = await loadRunRecord(deps.db, runId);
+      if (!record) return c.json({ error: "run not found" }, 404);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, record);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
+      if (record.deploymentId === undefined) {
+        return c.json({ error: "run has no deployment log to read" }, 400);
+      }
+
+      // A fold/read failure (a TransitionError on a truncated log, an empty
+      // repo, a reader failure) must NOT become a 500 that bricks the pane.
+      // Degrade to an empty pending state the FE reconciles against the run-level
+      // index status (an aborted run then renders failed via the overlay; a live
+      // run shows "waiting for activity") rather than hanging or crashing.
+      let runState: LogRunState;
+      try {
+        runState = await getWorkflowRunState(
+          { repoStore: deps.repoStore },
+          {
+            deploymentId: record.deploymentId,
+            runId,
+            kind: record.kind,
+            deploymentDomain: deps.deploymentDomain,
+          },
+        );
+      } catch (err) {
+        log.warn(
+          "workflow log-state read failed; serving empty pending state",
+          {
+            runId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          },
+        );
+        runState = { runId, phase: "pending", lastSeq: 0, steps: [] };
+      }
+      const parsed = LogRunStateSchema(runState);
+      if (parsed instanceof type.errors) {
+        log.error("workflow log-state failed validation", {
+          runId,
+          error: new Error(parsed.summary),
+        });
+        return c.json({ error: "failed to read run state" }, 500);
+      }
+      return c.json(parsed);
     },
   );
 
@@ -547,9 +651,8 @@ export function createWorkflowRunRecordsRouter(deps: {
       // Optimistically clear the gate so the UI resumes polling — a row in
       // 'awaiting' pauses the poll. The projection bridge advances it as the
       // sidecar emits the next StepStarted/StepCompleted/RunCompleted.
-      const advanced: RunState = { ...state, status: "running" };
-      await runStore.save(advanced);
-      return c.json(stateResponse(advanced));
+      await setRunStatus(deps.db, state.runId, "running");
+      return c.json(stateResponse({ ...state, status: "running" }));
     },
   );
 
@@ -626,7 +729,7 @@ export function createWorkflowRunRecordsRouter(deps: {
         // Mark terminal first so the record is consistent (and the janitor would
         // reclaim it) even if the immediate teardown below fails. Shared with the
         // operator abort path so terminal-marking never drifts between them.
-        await markRunStopped(deps.db, state, "stopped by user");
+        await markRunStopped(deps.db, state);
         if (state.deploymentId !== undefined) {
           await deps
             .reclaimDeployment({

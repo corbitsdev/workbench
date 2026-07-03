@@ -13,6 +13,7 @@ import {
   useStartWorkflow,
   useWorkflowRecord,
   useWorkflowRuns,
+  useWorkflowRunState,
 } from "./use-workflow";
 
 const originalFetch = globalThis.fetch;
@@ -36,8 +37,6 @@ const runningRecord = {
   runId: "wfr_1",
   kind: "pain-point-collateral",
   status: "running",
-  currentStepId: "analyze",
-  outputs: { intake: { content: "{}" } },
 };
 
 afterEach(() => {
@@ -110,8 +109,8 @@ describe("useWorkflowRecord", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(requested).toContain("/workflow-exec/records/wfr_1");
     expect(requested).toContain("tenantId=tn-x");
-    expect(result.current.data?.currentStepId).toBe("analyze");
-    expect(result.current.data?.outputs).toEqual({ intake: { content: "{}" } });
+    expect(result.current.data?.status).toBe("running");
+    expect(result.current.data?.kind).toBe("pain-point-collateral");
   });
 
   it("surfaces an error for a malformed record shape", async () => {
@@ -121,6 +120,72 @@ describe("useWorkflowRecord", () => {
       )) as typeof fetch;
 
     const { result } = renderHook(() => useWorkflowRecord("wfr_1"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+});
+
+describe("useWorkflowRunState", () => {
+  const logRunState = {
+    runId: "wfr_1",
+    phase: "running",
+    lastSeq: 3,
+    steps: [
+      {
+        stepId: "intake",
+        phase: "completed",
+        stepType: "human",
+        currentAttempt: 1,
+      },
+      {
+        stepId: "review",
+        phase: "awaiting-signal",
+        stepType: "human",
+        currentAttempt: 1,
+        awaitingSignalName: "approve",
+      },
+    ],
+  };
+
+  it("is disabled when runId is null", () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState(null), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(called).toBe(false);
+  });
+
+  it("reads and parses the log-derived state from the runs/:id/state endpoint", async () => {
+    let requested = "";
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(jsonResponse(200, logRunState));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1", "tn-x"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain("/workflow-exec/runs/wfr_1/state");
+    expect(requested).toContain("tenantId=tn-x");
+    expect(result.current.data?.steps[1]?.phase).toBe("awaiting-signal");
+    expect(result.current.data?.steps[1]?.awaitingSignalName).toBe("approve");
+  });
+
+  it("surfaces an error for a malformed log-state shape", async () => {
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) =>
+      Promise.resolve(
+        jsonResponse(200, { runId: "x", phase: "bogus", steps: [] }),
+      )) as typeof fetch;
+
+    const { result } = renderHook(() => useWorkflowRunState("wfr_1"), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
@@ -137,9 +202,7 @@ describe("useStartWorkflow", () => {
     ) => {
       requested = String(url);
       method = init?.method ?? "GET";
-      return Promise.resolve(
-        jsonResponse(200, { ...runningRecord, currentStepId: null }),
-      );
+      return Promise.resolve(jsonResponse(200, { ...runningRecord }));
     }) as typeof fetch;
 
     const { result } = renderHook(() => useStartWorkflow("tn-x"), {
@@ -187,7 +250,6 @@ describe("useResumeWorkflow", () => {
         jsonResponse(200, {
           ...runningRecord,
           status: "awaiting",
-          currentStepId: "review",
         }),
       );
     }) as typeof fetch;
@@ -204,16 +266,14 @@ describe("useResumeWorkflow", () => {
       signalName: "context",
       payload: { context: "hi" },
     });
-    expect(next.currentStepId).toBe("review");
+    expect(next.status).toBe("awaiting");
   });
 
-  it("optimistically flips the cached record from awaiting to running on mutate (keeping currentStepId)", async () => {
+  it("optimistically flips the cached record from awaiting to running on mutate", async () => {
     const awaitingRecord = {
       runId: "wfr_1",
       kind: "pain-point-collateral",
       status: "awaiting" as const,
-      currentStepId: "context",
-      outputs: { intake: { content: "{}" } },
     };
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -229,7 +289,6 @@ describe("useResumeWorkflow", () => {
       return jsonResponse(200, {
         ...awaitingRecord,
         status: "running",
-        currentStepId: "analyze",
       });
     }) as typeof fetch;
 
@@ -251,10 +310,8 @@ describe("useResumeWorkflow", () => {
         "tn-x",
       ]) as {
         status: string;
-        currentStepId: string;
       };
       expect(cached.status).toBe("running");
-      expect(cached.currentStepId).toBe("context");
     });
 
     release();
@@ -266,8 +323,6 @@ describe("useResumeWorkflow", () => {
       runId: "wfr_1",
       kind: "pain-point-collateral",
       status: "awaiting" as const,
-      currentStepId: "context",
-      outputs: { intake: { content: "{}" } },
     };
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false } },

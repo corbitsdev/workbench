@@ -22,7 +22,6 @@ const bytea = customType<{ data: Buffer; driverData: Buffer }>({
   },
 });
 
-export const severity = ["low", "medium", "high", "critical"] as const;
 export const artifactStatus = ["draft", "approved", "rejected"] as const;
 export const transcriptSource = ["paste", "granola", "artifact"] as const;
 
@@ -114,7 +113,7 @@ export const workflowRun = pgTable("workflow_run", {
   // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId
   // (a `ses_…` string, not a uuid) for runs deployed through the native stack.
   // Null for legacy pipeline-session rows. The uuid `id` stays the PK so the
-  // painPoint/transcript FKs are unaffected.
+  // transcript FK is unaffected.
   deploymentId: text("deployment_id"),
   tenantId: text("tenant_id").notNull(),
   principalId: text("principal_id").notNull(),
@@ -141,12 +140,14 @@ export const workflowRun = pgTable("workflow_run", {
   deletedAt: timestamp("deleted_at"),
 });
 
-// CL-2240: thin-executor run state. Execution of a deployed workflow definition
-// is held entirely in this one row — `outputs` is a stepId->output map, gates
-// park the run at `status: 'awaiting'` on `currentStepId`. Reads are a single
-// indexed lookup (no event-log replay), and resume reads this record and
-// continues. Distinct from the `workflow_run` deployment-index table, which the
-// native-deploy path still owns.
+// CL-2669: thin RUN INDEX. A run's authoritative per-step and run state is read
+// on demand from its native git event log (`run-state-from-log.ts`), not
+// mirrored here — this row is a run-level index only: tenancy/ownership, the run
+// kind, the coarse run-level `status`, and run-level timing (`startedAt` /
+// `endedAt`). The former step-level mirror columns (`current_step_id`,
+// `outputs`, `error`) were removed; step data now comes from the log. Distinct
+// from the `workflow_run` deployment-index table, which the native-deploy path
+// still owns.
 export const workflowRunStateStatus = [
   "running",
   "awaiting",
@@ -163,13 +164,12 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
   status: text("status", { enum: workflowRunStateStatus })
     .notNull()
     .default("running"),
-  currentStepId: text("current_step_id"),
   input: jsonb("input").$type<unknown>(),
-  outputs: jsonb("outputs")
-    .$type<Record<string, unknown>>()
-    .notNull()
-    .default({}),
-  error: text("error"),
+  // Run-level wall-clock timing, written by the projection bridge from the
+  // log's RunStarted / terminal events (CL-2669). Not the per-step timing —
+  // that stays in the log.
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()
@@ -180,46 +180,44 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
 
 export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
 
-export const painPoint = pgTable("pain_point", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: uuid("session_id")
-    .notNull()
-    .references(() => workflowRun.id, { onDelete: "cascade" }),
-  severity: text("severity", { enum: severity }).notNull(),
-  context: text("context").notNull(),
-  quote: text("quote").notNull(),
-  selected: boolean("selected").notNull().default(false),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
-// migrations). Nesting via parent_id; provenance via pain_point_id (nullable).
-export const artifact = pgTable(
-  "artifact",
+// migrations). Nesting via parent_id.
+export const artifact = pgTable("artifact", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: text("tenant_id"),
+  principalId: text("principal_id"),
+  ownerPrincipalId: text("owner_principal_id"),
+  // Null for artifacts created directly by agents via the artifact_* tools
+  // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
+  // Workflow paths always supply a valid id.
+  parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
+    onDelete: "cascade",
+  }),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  source: jsonb("source").$type<Record<string, unknown>>(),
+  status: text("status", { enum: artifactStatus }).notNull().default("draft"),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at")
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+// CL-2668: durable agent memory moved out of the artifact table into its own
+// table. No version history — a save is a plain overwrite. One row per
+// (tenant, owner) via a plain unique index (no longer scoped by kind, since
+// this table holds nothing else).
+export const memory = pgTable(
+  "memory",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    tenantId: text("tenant_id"),
-    principalId: text("principal_id"),
-    ownerPrincipalId: text("owner_principal_id"),
-    sessionId: uuid("session_id").references(() => workflowRun.id, {
-      onDelete: "cascade",
-    }),
-    // Null for artifacts created directly by agents via the artifact_* tools
-    // or write_artifact (they are tenant/principal scoped, not workflow_run scoped).
-    // Workflow paths always supply a valid id.
-    parentId: uuid("parent_id").references((): AnyPgColumn => artifact.id, {
-      onDelete: "cascade",
-    }),
-    painPointId: uuid("pain_point_id").references(() => painPoint.id, {
-      onDelete: "set null",
-    }),
-    kind: text("kind").notNull(),
-    title: text("title").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    ownerPrincipalId: text("owner_principal_id").notNull(),
     content: text("content").notNull(),
-    source: jsonb("source").$type<Record<string, unknown>>(),
-    status: text("status", { enum: artifactStatus }).notNull().default("draft"),
-    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at")
       .notNull()
@@ -227,13 +225,10 @@ export const artifact = pgTable(
       .$onUpdate(() => new Date()),
   },
   (t) => ({
-    // CL-2413: durable agent memory is one row per owning member principal. A
-    // partial unique index makes that an invariant — concurrent first-saves
-    // upsert onto the same row instead of forking into duplicate memory rows.
-    // Scoped to kind='memory' so it never constrains other artifact kinds.
-    memoryPerOwnerUniq: uniqueIndex("artifact_memory_per_owner_uniq")
-      .on(t.tenantId, t.ownerPrincipalId)
-      .where(sql`${t.kind} = 'memory'`),
+    memoryTenantOwnerUniq: uniqueIndex("memory_tenant_owner_uniq").on(
+      t.tenantId,
+      t.ownerPrincipalId,
+    ),
   }),
 );
 
@@ -433,4 +428,9 @@ export const outputFeedback = pgTable(
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
 
-export { analyticsEvent, analyticsRollupDaily } from "@workbench/analytics";
+export {
+  analyticsEvent,
+  analyticsRollupDaily,
+  workflowRunFact,
+  workflowStepFact,
+} from "@workbench/analytics";

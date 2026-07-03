@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, it, mock } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";

@@ -8,25 +8,26 @@ import type {
   RepoId,
   RepoStore,
 } from "@intx/hub-sessions";
-import { createWorkflowRunBlobSubstrate } from "@intx/workflow-host";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
-import { createRunStore, loadRunRecord } from "./run-store";
+import { applyRunProjection, loadRunRecord } from "./run-store";
 import { becameTerminal } from "./run-status";
 import { WorkflowMeta } from "../lib/workflow-meta";
 
-// Projection bridge (CL-2243). Workflows execute on the sidecar supervisor and
-// commit their run events to a workflow-run git repo; the sidecar packs those
-// commits to the hub, where they land via `AgentRepoStore.receiveWorkflowRunPack`.
-// This bridge wraps that receive seam: on every workflow-run pack, it folds the
-// run's event log into the `workflow_run_record` row the UI already polls. No
-// event-log replay on read, no SSE — the row is materialized once per commit.
+// Projection bridge (CL-2243 / CL-2669). Workflows execute on the sidecar
+// supervisor and commit their run events to a workflow-run git repo; the sidecar
+// packs those commits to the hub, where they land via
+// `AgentRepoStore.receiveWorkflowRunPack`. This bridge wraps that receive seam:
+// on every workflow-run pack, it folds the run's event log into the RUN-LEVEL
+// index columns of the `workflow_run_record` row (coarse `status` + run
+// wall-clock timing). Per-step state (phase / outputs / errors) is NOT mirrored
+// here — it is read on demand from the log (`run-state-from-log.ts`).
 //
 // The fold is UPDATE-ONLY: rows are seeded at /start with their full tenancy +
 // ownership metadata, so a runId with no row (e.g. a run started outside the
 // records path) is a harmless no-op. Re-projection on a later pack is idempotent
-// (the full log replays to the same state), so the bridge is safe to run on
-// every pack.
+// (the full log replays to the same run-level state), so the bridge is safe to
+// run on every pack.
 
 const log = getLogger(["workflow", "projection-bridge"]);
 
@@ -50,7 +51,6 @@ const BACKLOG_IDLE_MS = 200;
 const PROJECTED_EVENT_TYPES: readonly string[] = [
   "RunStarted",
   "StepStarted",
-  "StepCompleted",
   "StepFailed",
   "SignalAwaited",
   "SignalReceived",
@@ -69,11 +69,6 @@ const WorkflowEventBlob = type({
 // Field-level narrows for the branches that read more than `type`. We assert
 // only what we read so an envelope-shape drift surfaces loudly at the boundary.
 const WithStepId = type({ stepId: "string", "+": "ignore" });
-const WithOutputRef = type({
-  stepId: "string",
-  output: { ref: "string" },
-  "+": "ignore",
-});
 const WithErrorMessage = type({ error: { message: "string" }, "+": "ignore" });
 const WithStepFailure = type({
   stepId: "string",
@@ -180,6 +175,17 @@ export type ReclaimRunDeploymentFn = (args: {
   runId: string;
 }) => void;
 
+// Fired once when a run's record transitions non-terminal → terminal (CL-2670),
+// so the caller can project the run's analytics facts from its log. Decoupled
+// from deployment reclaim: fires for every terminal run, deployment or not, and
+// never for `awaiting` (`becameTerminal`). Best-effort — the callback owns its
+// errors and must not block pack receipt.
+export type ProjectRunFactsFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+}) => void;
+
 export interface RunEventEntry {
   runId: string;
   event: { type: string } & Record<string, unknown>;
@@ -187,31 +193,39 @@ export interface RunEventEntry {
 
 export interface ProjectedRun {
   status: RunRecordStatus;
-  currentStepId: string | null;
-  // stepId -> output ref, in completion order; resolved to values before save.
-  completedRefs: { stepId: string; ref: string }[];
+  // Run wall-clock timing folded from the log (CL-2669): first RunStarted `at`
+  // and the terminal event `at`. Absent until the log reports them.
+  startedAt?: string;
+  endedAt?: string;
   error?: string;
   // Per-step failures captured from StepFailed events, used to enrich the
-  // generic RunFailed message with which step(s) failed and why.
+  // generic RunFailed message with which step(s) failed and why (logged only —
+  // the reason is not persisted; the log is the source of truth).
   failedSteps: { stepId: string; message: string }[];
 }
 
+// Read an event's ISO `at` timestamp, if present.
+const WithAt = type({ at: "string", "+": "ignore" });
+function eventAt(event: RunEventEntry["event"]): string | undefined {
+  const narrowed = WithAt(event);
+  return narrowed instanceof type.errors ? undefined : narrowed.at;
+}
+
 // Fold an ordered run-event stream (possibly interleaving several runs on one
-// repo ref) into per-run projected state. Events arrive in seq order, so per-run
-// ordering is preserved and the last status-affecting event wins.
+// repo ref) into per-run RUN-LEVEL projected state: coarse status, run timing,
+// and (for failure logging) the failing steps. Events arrive in seq order, so
+// per-run ordering is preserved and the last status-affecting event wins.
 export function foldRunEvents(
   entries: readonly RunEventEntry[],
 ): Map<string, ProjectedRun> {
   const runs = new Map<string, ProjectedRun>();
+  // Last step to start per run — used only to attribute a StepFailed that
+  // carries no stepId. Not part of the projected (persisted) state.
+  const lastStepId = new Map<string, string>();
   const ensure = (runId: string): ProjectedRun => {
     let run = runs.get(runId);
     if (run === undefined) {
-      run = {
-        status: "running",
-        currentStepId: null,
-        completedRefs: [],
-        failedSteps: [],
-      };
+      run = { status: "running", failedSteps: [] };
       runs.set(runId, run);
     }
     return run;
@@ -222,23 +236,15 @@ export function foldRunEvents(
     switch (event.type) {
       case "RunStarted": {
         run.status = "running";
+        const at = eventAt(event);
+        if (run.startedAt === undefined && at !== undefined) run.startedAt = at;
         break;
       }
       case "StepStarted": {
         const narrowed = WithStepId(event);
         if (!(narrowed instanceof type.errors)) {
           run.status = "running";
-          run.currentStepId = narrowed.stepId;
-        }
-        break;
-      }
-      case "StepCompleted": {
-        const narrowed = WithOutputRef(event);
-        if (!(narrowed instanceof type.errors)) {
-          run.completedRefs.push({
-            stepId: narrowed.stepId,
-            ref: narrowed.output.ref,
-          });
+          lastStepId.set(runId, narrowed.stepId);
         }
         break;
       }
@@ -252,7 +258,10 @@ export function foldRunEvents(
               ? "step failed"
               : msgOnly.error.message;
           run.error = message;
-          run.failedSteps.push({ stepId: run.currentStepId ?? "?", message });
+          run.failedSteps.push({
+            stepId: lastStepId.get(runId) ?? "?",
+            message,
+          });
         } else {
           run.error = `step "${narrowed.stepId}" failed: ${narrowed.error.message}`;
           run.failedSteps.push({
@@ -263,26 +272,25 @@ export function foldRunEvents(
         break;
       }
       case "SignalAwaited": {
-        const narrowed = WithStepId(event);
         run.status = "awaiting";
-        if (!(narrowed instanceof type.errors))
-          run.currentStepId = narrowed.stepId;
         break;
       }
       case "SignalReceived": {
-        // Gate cleared; the next StepStarted re-marks the active step.
+        // Gate cleared; the next StepStarted re-marks the run running.
         run.status = "running";
         break;
       }
       case "RunCompleted": {
         run.status = "completed";
-        run.currentStepId = null;
+        const at = eventAt(event);
+        if (at !== undefined) run.endedAt = at;
         break;
       }
       case "RunFailed": {
         const narrowed = WithErrorMessage(event);
         run.status = "failed";
-        run.currentStepId = null;
+        const at = eventAt(event);
+        if (at !== undefined) run.endedAt = at;
         const runMessage =
           narrowed instanceof type.errors ? undefined : narrowed.error.message;
         run.error = describeFailure(runMessage, run.failedSteps);
@@ -290,7 +298,8 @@ export function foldRunEvents(
       }
       case "RunCancelled": {
         run.status = "failed";
-        run.currentStepId = null;
+        const at = eventAt(event);
+        if (at !== undefined) run.endedAt = at;
         run.error = "cancelled";
         break;
       }
@@ -365,49 +374,38 @@ export async function projectWorkflowRunRepo(
   db: HubDb,
   repoId: RepoId,
   onTerminalRun?: ReclaimRunDeploymentFn,
+  onRunFacts?: ProjectRunFactsFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
   const runs = foldRunEvents(entries);
-  const store = createRunStore(db);
 
   for (const [runId, projected] of runs) {
     const existing = await loadRunRecord(db, runId);
     if (existing === null) continue;
 
-    const outputs: Record<string, unknown> = { ...existing.outputs };
-    const unresolved = projected.completedRefs.filter(
-      ({ stepId }) => !(stepId in outputs),
-    );
-    if (unresolved.length > 0) {
-      const blobs = createWorkflowRunBlobSubstrate({
-        substrate: repoStore,
-        repoId,
-        principal: HUB_PRINCIPAL,
-        runId,
-        ref: RUN_EVENT_REF,
-      });
-      for (const { stepId, ref } of unresolved) {
-        try {
-          outputs[stepId] = await blobs.resolveRef(ref);
-        } catch (err) {
-          log.warn("workflow projection: step output resolve failed", {
-            runId,
-            stepId,
-            ref,
-            error: err instanceof Error ? err : new Error(String(err)),
-          });
-        }
-      }
-    }
-
-    await store.save({
-      ...existing,
+    await applyRunProjection(db, runId, {
       status: projected.status,
-      currentStepId: projected.currentStepId,
-      outputs,
-      ...(projected.error !== undefined ? { error: projected.error } : {}),
+      ...(projected.startedAt !== undefined
+        ? { startedAt: projected.startedAt }
+        : {}),
+      ...(projected.endedAt !== undefined
+        ? { endedAt: projected.endedAt }
+        : {}),
     });
+
+    // Project the run's analytics facts on the first non-terminal → terminal
+    // transition (CL-2670), decoupled from reclaim: it fires whether or not the
+    // run owns a deployment. Fire this BEFORE `onTerminalRun` (deployment
+    // reclaim), which rm's the run's owned dirs (CL-2231): fact projection reads
+    // the run's event repo, and though persistence is retained, ordering the read
+    // ahead of any reclaim removes the race entirely (CL-2670 review).
+    if (
+      onRunFacts !== undefined &&
+      becameTerminal(existing.status, projected.status)
+    ) {
+      onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
+    }
 
     // Tear down the run's single-use deployment the moment it reaches a terminal
     // status (per-run deployment, CL-2582). Gated on the first non-terminal →
@@ -503,15 +501,32 @@ export function createCoalescingScheduler(
 // next pack).
 export function wrapRepoStoreWithProjection(
   base: AgentRepoStore,
-  deps: { db: HubDb; reclaimDeployment?: ReclaimRunDeploymentFn },
+  deps: {
+    db: HubDb;
+    reclaimDeployment?: ReclaimRunDeploymentFn;
+    // CL-2670: project a terminal run's analytics facts. Given the run + its
+    // workflow-run RepoId (already in scope here), reads the log and upserts the
+    // derived facts. Best-effort, fire-and-forget.
+    projectRunFacts?: (args: {
+      repoStore: AgentRepoStore;
+      repoId: RepoId;
+      runId: string;
+      kind: string;
+      tenantId: string;
+    }) => void;
+  },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
+    const repoId: RepoId = { kind: "workflow-run", id };
     try {
       await projectWorkflowRunRepo(
         base.repoStore,
         deps.db,
-        { kind: "workflow-run", id },
+        repoId,
         deps.reclaimDeployment,
+        deps.projectRunFacts === undefined
+          ? undefined
+          : (a) => deps.projectRunFacts?.({ repoStore: base, repoId, ...a }),
       );
     } catch (err) {
       log.error("workflow projection failed", {

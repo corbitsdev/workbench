@@ -41,12 +41,12 @@ const log = getLogger(["interchange", "hub-agent", "orchestrator"]);
 
 export type SidecarCryptoOps = {
   generateKeyPair(): Promise<KeyPair>;
-  signEd25519(privateKey: Uint8Array, payload: Uint8Array): Uint8Array;
+  signEd25519(privateKey: Uint8Array, payload: Uint8Array): Promise<Uint8Array>;
   verifySSHSig(
     payload: string,
     signature: string,
     publicKey: Uint8Array,
-  ): boolean;
+  ): Promise<boolean>;
 };
 
 /**
@@ -129,6 +129,7 @@ export type SidecarOrchestratorConfig = {
   drainInboundRouter?: DrainInboundRouter;
   pingIntervalMs?: number;
   reconnectDelayMs?: number;
+  // WORKBENCH-LOCAL (CL-2405): reconnect-backoff/outbound-queue tuning.
   maxReconnectDelayMs?: number;
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
@@ -164,6 +165,7 @@ export function createSidecarOrchestrator(
     drainInboundRouter,
     pingIntervalMs,
     reconnectDelayMs,
+    // WORKBENCH-LOCAL (CL-2405)
     maxReconnectDelayMs,
     maxOutboundQueue,
     scheduleReconnect,
@@ -255,6 +257,7 @@ export function createSidecarOrchestrator(
     ...(drainInboundRouter !== undefined ? { drainInboundRouter } : {}),
     ...(pingIntervalMs !== undefined ? { pingIntervalMs } : {}),
     ...(reconnectDelayMs !== undefined ? { reconnectDelayMs } : {}),
+    // WORKBENCH-LOCAL (CL-2405)
     ...(maxReconnectDelayMs !== undefined ? { maxReconnectDelayMs } : {}),
     ...(maxOutboundQueue !== undefined ? { maxOutboundQueue } : {}),
     ...(scheduleReconnect !== undefined ? { scheduleReconnect } : {}),

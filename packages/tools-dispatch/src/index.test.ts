@@ -12,11 +12,11 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 // bun's `mock.module` is process-global, so the partial mocks below would
 // otherwise bleed into sibling test files (e.g. interchange-tools.test.ts):
-// their graphs import the real `drizzle-orm` / `@intx/crypto-node` and would
+// their graphs import the real `drizzle-orm` / `@intx/crypto` and would
 // hit a partial mock missing exports like `desc` / `armorEncode`. Spread the
 // real modules so the mocks override only the specific exports under test.
 const realDrizzle = await import("drizzle-orm");
-const realCrypto = await import("@intx/crypto-node");
+const realCrypto = await import("@intx/crypto");
 
 let idCounter = 0;
 mock.module("@intx/hub-common", () => ({
@@ -70,13 +70,13 @@ mock.module("@intx/db", () => ({
 }));
 
 let generateKeyPairCalls = 0;
-mock.module("@intx/crypto-node", () => ({
+mock.module("@intx/crypto", () => ({
   ...realCrypto,
   generateKeyPair: async () => {
     generateKeyPairCalls += 1;
     return { publicKey: "pub", privateKey: "priv" };
   },
-  createNodeCrypto: (kp: unknown) => ({ _crypto: kp }),
+  createEd25519Crypto: (kp: unknown) => ({ _crypto: kp }),
 }));
 
 const { createDispatchTools, DISPATCH_HUB_TOOLS, DISPATCH_AGENT_DEFINITION } =

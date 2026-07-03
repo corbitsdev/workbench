@@ -5,8 +5,7 @@
 //
 // The active key signs new deploy commits. All trusted keys verify old commits.
 
-import { importPrivateKeyBytes } from "@intx/crypto-node";
-import { createPublicKey } from "node:crypto";
+import { derivePublicKeyBytes } from "@intx/crypto";
 
 export type SigningKeyEntry = {
   version: number;
@@ -20,7 +19,9 @@ export type SigningKeyRegistry = {
   getPublicKeyHex(version: number): string | null;
 };
 
-export function parseSigningKeys(raw: string): SigningKeyRegistry {
+export async function parseSigningKeys(
+  raw: string,
+): Promise<SigningKeyRegistry> {
   const entries = raw
     .split(",")
     .map((s) => s.trim())
@@ -64,17 +65,7 @@ export function parseSigningKeys(raw: string): SigningKeyRegistry {
     }
 
     const privateKey = new Uint8Array(rawBytes);
-    const privateKeyObj = importPrivateKeyBytes(privateKey);
-    const publicKeyObj = createPublicKey(privateKeyObj);
-    const spkiDer = publicKeyObj.export({
-      type: "spki",
-      format: "der",
-    }) as Buffer;
-    const publicKey = new Uint8Array(
-      spkiDer.buffer,
-      spkiDer.byteOffset + spkiDer.length - 32,
-      32,
-    );
+    const publicKey = await derivePublicKeyBytes(privateKey);
 
     all.set(version, { version, privateKey, publicKey });
   }
@@ -99,6 +90,8 @@ export function parseSigningKeys(raw: string): SigningKeyRegistry {
   };
 }
 
-export function loadSigningKeyRegistry(raw: string): SigningKeyRegistry {
+export function loadSigningKeyRegistry(
+  raw: string,
+): Promise<SigningKeyRegistry> {
   return parseSigningKeys(raw);
 }

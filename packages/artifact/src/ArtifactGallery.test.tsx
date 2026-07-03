@@ -18,9 +18,7 @@ afterEach(cleanup);
 
 const artifact: ArtifactWithSession = {
   id: "a-1",
-  sessionId: "wf-1",
   parentId: null,
-  painPointId: "p-1",
   kind: "email",
   title: "Sales automation ROI",
   content: "body",
@@ -265,6 +263,84 @@ describe("ArtifactGallery", () => {
     );
     fireEvent.click(item);
     expect(onOwnerFilterChange).toHaveBeenCalledWith("p-1");
+  });
+
+  it("renders the type filter menu with distinct kinds from the artifact set", async () => {
+    const onKindFilterChange = mock(() => {});
+    const artifacts = [artifact, { ...artifact, id: "a-2", kind: "one-pager" }];
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts,
+        onKindFilterChange,
+      }),
+    );
+    const trigger = screen.getByRole("button", { name: /All types/ });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    await waitFor(() => screen.getByRole("menu"));
+    screen.getByRole("menuitem", { name: "Email" });
+    screen.getByRole("menuitem", { name: "One-Pager" });
+  });
+
+  it("calls onKindFilterChange when a type is selected", async () => {
+    const onKindFilterChange = mock(() => {});
+    const artifacts = [artifact, { ...artifact, id: "a-2", kind: "one-pager" }];
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts,
+        onKindFilterChange,
+      }),
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /All types/ }), {
+      key: "ArrowDown",
+    });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: "One-Pager" }),
+    );
+    fireEvent.click(item);
+    expect(onKindFilterChange).toHaveBeenCalledWith("one-pager");
+  });
+
+  it("does not hide the type dropdown once a single-kind filter is applied", () => {
+    // Selecting a kind narrows `artifacts` server-side to that one kind; the
+    // dropdown must stay visible (and keep the selected kind as an option) so
+    // the user has a path back to "All types".
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        kind: "email",
+        onKindFilterChange: mock(() => {}),
+      }),
+    );
+    screen.getByRole("button", { name: /Email/ });
+  });
+
+  it("renders the creator-kind filter menu and calls the handler on select", async () => {
+    const onCreatorKindFilterChange = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        onCreatorKindFilterChange,
+      }),
+    );
+    const trigger = screen.getByRole("button", { name: /All creators/ });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const item = await waitFor(() =>
+      screen.getByRole("menuitem", { name: "Agent" }),
+    );
+    fireEvent.click(item);
+    expect(onCreatorKindFilterChange).toHaveBeenCalledWith("agent");
+  });
+
+  it("reflects the active creator-kind filter in the trigger label", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        creatorKind: "user",
+        onCreatorKindFilterChange: mock(() => {}),
+      }),
+    );
+    screen.getByRole("button", { name: /Human/ });
+    expect(screen.queryByText("All creators")).toBeNull();
   });
 
   it("hides advanced filter controls until the Filters toggle is opened", () => {

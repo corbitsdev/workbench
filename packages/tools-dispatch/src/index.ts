@@ -7,7 +7,7 @@ import {
   createGrantStore,
 } from "@intx/db";
 import type { DB } from "@intx/db";
-import { generateKeyPair, createNodeCrypto } from "@intx/crypto-node";
+import { generateKeyPair, createEd25519Crypto } from "@intx/crypto";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -284,7 +284,7 @@ export function createDispatchTools(context: DispatchContext): AgentTool[] {
         const fromAddress = callerInstance?.address ?? "dispatcher@system";
 
         const kp = await generateKeyPair();
-        const cryptoProvider = createNodeCrypto(kp);
+        const cryptoProvider = createEd25519Crypto(kp);
         const mailId = generateId("sessionMail");
 
         await sessionService.sendUserMessage({

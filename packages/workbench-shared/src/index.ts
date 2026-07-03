@@ -85,9 +85,7 @@ export type ArtifactSource = typeof ArtifactSource.infer;
 
 export const Artifact = type({
   id: "string",
-  sessionId: "string | null",
   parentId: "string | null",
-  painPointId: "string | null",
   kind: "string",
   title: "string",
   content: "string",

@@ -266,7 +266,6 @@ export function createFileParseRouter(
           tenantId: userContext.tenantId,
           principalId: userContext.principalId,
           ownerPrincipalId: userContext.principalId,
-          sessionId: null,
           kind: "file",
           title: parsed.filename,
           content,

@@ -18,7 +18,7 @@ import type {
   RepoId,
   RepoStore as SubstrateRepoStore,
   ReplayProcessingToInboxResult,
-} from "@intx/hub-sessions";
+} from "@intx/hub-sessions/substrate";
 import type {
   InferenceSource,
   OutboundMessage,
@@ -100,7 +100,7 @@ export type SignedPayload = {
 export type PrincipalSigner = (
   kind: WorkflowSupervisorPrincipalKind,
   payload: Uint8Array,
-) => SignedPayload;
+) => Promise<SignedPayload>;
 
 /**
  * Mail-bus interface the supervisor needs. The shape is the minimal
@@ -432,7 +432,7 @@ export interface WorkflowSupervisorBindings {
    * that needs to assert on the env's HOST_PUBKEY, or a wiring path
    * that wants the keypair lifecycle to flow through its own crypto
    * boundary). Production wires it against the same
-   * `@intx/crypto-node` generator the supervisor would have used.
+   * `@intx/crypto` generator the supervisor would have used.
    */
   ipcKeyPairFactory?: () => Promise<{
     privateKey: Uint8Array;
