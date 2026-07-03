@@ -108,7 +108,7 @@ describe("WorkflowDock", () => {
     expect(container.querySelector("aside")).toBeNull();
   });
 
-  it("is hidden on fresh load when every run is already terminal", async () => {
+  it("is hidden on fresh load when every run has already completed", async () => {
     records = [listRow("run_done", "completed")];
     statesByRunId["run_done"] = logState("run_done", "completed", [
       { stepId: "fetch", phase: "completed" },
@@ -175,17 +175,13 @@ describe("WorkflowDock", () => {
     ]);
     renderDock();
 
-    const card = await waitFor(() =>
-      screen.getByTestId("workflow-dock-card"),
-    );
+    const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
     // Finished runs collapse to a one-line summary by default; expand to see blocks.
     fireEvent.click(
       card.querySelector("[data-testid=dock-card-toggle]") as HTMLElement,
     );
     await waitFor(() => {
-      expect(
-        screen.getByText(/rate-limiting requests right now/),
-      ).toBeTruthy();
+      expect(screen.getByText(/rate-limiting requests right now/)).toBeTruthy();
     });
     expect(screen.queryByText(/API error/)).toBeNull();
     expect(card.textContent).toContain("Failed");

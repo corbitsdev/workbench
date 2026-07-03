@@ -81,6 +81,16 @@ mock.module("../components/MyraChatSurface", () => ({
     ),
 }));
 
+// The dock owns its data fetching and has dedicated tests (WorkflowDock.test.tsx);
+// stub it here so the page test needs no QueryClientProvider or api mock.
+mock.module("../components/WorkflowDock", () => ({
+  WorkflowDock: (props: { conversationId: string | null }) =>
+    React.createElement("div", {
+      "data-testid": "workflow-dock",
+      "data-conversation-id": props.conversationId ?? "",
+    }),
+}));
+
 mock.module("../components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
@@ -146,6 +156,11 @@ describe("ChatThreadPage", () => {
   it("renders the chat surface for a valid thread", () => {
     renderAt("/chats/t1");
     expect(screen.getByTestId("label").textContent).toBe("First");
+    // The dock is scoped to the active thread's instance (the conversation id
+    // workflow starts stamp as originConversationId).
+    expect(
+      screen.getByTestId("workflow-dock").getAttribute("data-conversation-id"),
+    ).toBe("i1");
   });
 
   it("canonicalizes an unknown thread id to the resolved thread", () => {

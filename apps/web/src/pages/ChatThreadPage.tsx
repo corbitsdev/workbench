@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
+import { WorkflowDock } from "../components/WorkflowDock";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
@@ -127,11 +128,17 @@ export function ChatThreadPage() {
 
   return (
     <ErrorBoundary>
-      <div className="h-full">
-        <MyraChatSurface
-          session={session}
-          threadLabel={active?.label}
-          onUserSend={maybeTitleFromFirstMessage}
+      <div className="flex h-full">
+        <div className="h-full min-w-0 flex-1">
+          <MyraChatSurface
+            session={session}
+            threadLabel={active?.label}
+            onUserSend={maybeTitleFromFirstMessage}
+          />
+        </div>
+        <WorkflowDock
+          conversationId={active?.instanceId ?? null}
+          tenantId={activeTenantId}
         />
       </div>
     </ErrorBoundary>

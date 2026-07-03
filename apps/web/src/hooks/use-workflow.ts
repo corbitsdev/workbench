@@ -104,6 +104,52 @@ export function useWorkflowRuns(tenantId?: string | null) {
   });
 }
 
+// A run row as returned by the conversation-scoped list (CL-2680). The list
+// projection keeps `originConversationId` raw (string | null), unlike the
+// single-record response which omits it when null.
+const conversationRunSchema = type({
+  runId: "string",
+  kind: "string",
+  status: "'running'|'awaiting'|'completed'|'failed'",
+  createdAt: "string",
+  originConversationId: "string|null",
+});
+export type ConversationWorkflowRun = typeof conversationRunSchema.infer;
+const conversationRunListSchema = conversationRunSchema.array();
+
+// Runs surfaced in the chat workflow dock (CL-2680): every run whose
+// originConversationId matches the open conversation. Gated off entirely when
+// no conversation is open. Polls on the shared 5s list cadence while enabled —
+// discovery must poll unconditionally, because runs are started server-side
+// (a Myra tool) so no client mutation exists to invalidate this list; the
+// per-run 2s state poll lives in `useWorkflowRunState` on each mounted card.
+export function useConversationWorkflowRuns(
+  conversationId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<ConversationWorkflowRun[]>({
+    queryKey: ["conversation-workflow-runs", conversationId, tenantId ?? null],
+    enabled: conversationId !== null && conversationId !== "",
+    refetchInterval: 5000,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-exec/records?originConversationId=${encodeURIComponent(conversationId as string)}`,
+          tenantId,
+        ),
+      );
+      const parsed = conversationRunListSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected conversation workflow-records response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
 export function useWorkflowDeployments(
   tenantId?: string | null,
   options?: { enabled?: boolean },

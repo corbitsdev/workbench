@@ -41,6 +41,14 @@ export {
   isUIBlock,
   UIBlockView,
   type UIBlockViewProps,
+  DockRunInputSchema,
+  DockRunPhaseSchema,
+  dockRunBlocks,
+  progressStateForStepPhase,
+  type DockRunInput,
+  type DockRunPhase,
+  type DockRunStep,
+  type DockStepPhase,
 } from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
