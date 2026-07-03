@@ -26,6 +26,7 @@ import { WRITE_ARTIFACT_HUB_TOOLS } from "../tools/write-artifact";
 import { LIST_AGENTS_HUB_TOOLS } from "../tools/list-agents";
 import { IDENTITY_HUB_TOOLS } from "../tools/identity";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
+import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
 import type {
   SessionService,
@@ -49,9 +50,11 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   ...LINEAR_HUB_TOOLS,
-  // gamma_list_templates lives in HUB_BACKED_TOOLS (hub-backed, tenant DB);
-  // GAMMA_HUB_TOOLS carries only the credential tools that call the Gamma API.
+  // GAMMA_HUB_TOOLS carries only the credential tools that call the Gamma API;
+  // gamma_list_templates executes via HUB_BACKED_TOOLS and is listed here (like
+  // every other hub-backed tool) so the Tools gallery and search still show it.
   ...GAMMA_HUB_TOOLS,
+  ...GAMMA_TEMPLATES_HUB_TOOLS,
   ...GRANOLA_HUB_TOOLS,
   ...HACKERNEWS_HUB_TOOLS,
   ...GITHUB_HUB_TOOLS,
