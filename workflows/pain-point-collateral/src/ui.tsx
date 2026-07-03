@@ -5,6 +5,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
@@ -1112,16 +1113,7 @@ export function Panel(props: WorkflowPanelProps) {
 
       {/* Body — renders ONLY the active display group */}
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
-        {failed && (
-          <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
-            <p className="text-[13px] font-medium text-orange">
-              This run failed.
-            </p>
-            <p className="mt-1 text-[12px] text-text-3">
-              Review the step details and start a new run.
-            </p>
-          </div>
-        )}
+        {failed && <FailedRunNotice state={state} steps={DISPLAY_STEPS} />}
 
         {/* Group 0 — Transcript: intake → select (note-selection signal) → fetch */}
         {group === "transcript" && (

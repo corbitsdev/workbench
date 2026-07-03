@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, test } from "bun:test";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { RunState } from "@intx/workflow";
 import {
   activeDisplayStep,
@@ -43,6 +43,11 @@ function stateFrom(entries: [string, string][]): RunState {
     steps: new Map(entries.map(([id, phase]) => [id, { phase }])),
   } as unknown as RunState;
 }
+
+// RTL's auto-cleanup only registers in the first file that imports it, so in a
+// non-isolated full-suite run this file's renders leak across tests without an
+// explicit cleanup.
+afterEach(cleanup);
 
 describe("workflow-run-state", () => {
   test("first step is active with no run state", () => {

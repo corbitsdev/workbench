@@ -211,6 +211,56 @@ export function failedRunErrorMessage(state: RunState | null): string | null {
   return failedRunError(state)?.userMessage ?? null;
 }
 
+/**
+ * Label of the first display step whose aggregate phase is `failed`, or null.
+ * Deliberately does NOT require `state.phase === "failed"`: a panel that flags
+ * failure from a single failed step before the run's own phase flips (e.g.
+ * pain-point-collateral's hasFailed) still gets the step name.
+ */
+export function failedDisplayStepLabel(
+  state: RunState | null,
+  steps: readonly DisplayStep[],
+): string | null {
+  if (state === null) return null;
+  for (const step of steps) {
+    if (displayStepPhase(state, step.stepIds) === "failed") return step.label;
+  }
+  return null;
+}
+
+const NO_ERROR_DETAILS =
+  "No error details are available. Start a new run to try again.";
+
+/**
+ * The one failed-run notice every workflow panel renders (CL-2659): which
+ * display step failed plus the SANITIZED error from the shared classifier
+ * (CL-2660) — never the raw step error, and never bespoke per-panel error
+ * text. Falls back to an honest no-details line when no step carries a
+ * `lastError`.
+ */
+export function FailedRunNotice({
+  state,
+  steps,
+}: {
+  state: RunState | null;
+  steps: readonly DisplayStep[];
+}) {
+  const stepLabel = failedDisplayStepLabel(state, steps);
+  const heading =
+    stepLabel === null ? "Run failed" : `Run failed at ${stepLabel}`;
+  return (
+    <div
+      role="alert"
+      className="border-orange bg-orange-soft rounded-panel border p-4"
+    >
+      <p className="text-orange-deep text-sm font-medium">{heading}</p>
+      <p className="text-orange-deep mt-1 text-sm">
+        {failedRunErrorMessage(state) ?? NO_ERROR_DETAILS}
+      </p>
+    </div>
+  );
+}
+
 /** The single live progress line shown under the stepper. */
 export function LiveStatus({ label }: { label: string }) {
   return (

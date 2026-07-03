@@ -7,6 +7,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
@@ -463,10 +464,8 @@ export function Panel(props: WorkflowPanelProps) {
       <LiveStatusSlot label={liveLabel} />
 
       {failed && (
-        <div className="mx-6 mt-4 rounded-panel border border-orange bg-orange-soft p-4">
-          <p className="text-sm text-orange-deep">
-            This run failed. Review the run log and try again.
-          </p>
+        <div className="mx-6 mt-4">
+          <FailedRunNotice state={state} steps={DISPLAY_STEPS} />
         </div>
       )}
 
