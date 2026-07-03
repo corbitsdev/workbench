@@ -196,7 +196,7 @@ export function Stat({
 }) {
   return (
     <div
-      className={`flex flex-col gap-1.5 rounded-[12px] border ${emphasis ? "border-accent/25 bg-surface-2 p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]" : "border-border bg-surface p-4"}`}
+      className={`flex flex-col gap-1.5 rounded-[12px] border border-border bg-surface ${emphasis ? "p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]" : "p-4"}`}
     >
       <CardLabel>{label}</CardLabel>
       <div className="flex items-baseline gap-2">
