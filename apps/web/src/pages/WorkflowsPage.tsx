@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router";
 import { toHumanLabel } from "@workbench/ui";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { UnifiedCatalogModal } from "../components/layout/UnifiedCatalogModal";
+import { WorkflowCatalog } from "../components/WorkflowCatalog";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { WorkflowsDashboard } from "../components/WorkflowsDashboard";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -642,6 +643,13 @@ export function WorkflowsPage() {
               setFilters(DEFAULT_RUN_FILTERS);
               setPinned(true);
             }}
+            catalog={
+              <WorkflowCatalog
+                tenantId={activeTenantId}
+                runKinds={kindOptions}
+                onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
+              />
+            }
           />
         )}
       </div>

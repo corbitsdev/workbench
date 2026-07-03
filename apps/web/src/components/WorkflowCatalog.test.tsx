@@ -111,9 +111,7 @@ describe("WorkflowCatalog", () => {
 
     const recent = screen.getByRole("region", { name: "Recently run" });
     within(recent).getByText("Pain Point Collateral Generation");
-    expect(
-      within(recent).queryByText("Gamma presentation creator"),
-    ).toBeNull();
+    expect(within(recent).queryByText("Gamma presentation creator")).toBeNull();
 
     const more = screen.getByRole("region", { name: "More workflows" });
     within(more).getByText("Gamma presentation creator");
@@ -153,6 +151,9 @@ describe("WorkflowCatalog", () => {
 
     screen.getByText("Pain Point Collateral Generation");
     expect(screen.queryByText("Gamma presentation creator")).toBeNull();
+
+    await user.clear(screen.getByPlaceholderText(/search workflows/i));
+    await user.type(screen.getByPlaceholderText(/search workflows/i), "zzz");
     screen.getByText("No workflows match your search.");
   });
 

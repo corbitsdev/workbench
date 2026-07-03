@@ -55,6 +55,7 @@ export interface WorkflowsDashboardProps {
   startingKind: string | null;
   onFilterStatus: (status: RunStatus) => void;
   onShowAll: () => void;
+  catalog: React.ReactNode;
 }
 
 function PlusIcon() {
@@ -220,6 +221,7 @@ export function WorkflowsDashboard({
   startingKind,
   onFilterStatus,
   onShowAll,
+  catalog,
 }: WorkflowsDashboardProps) {
   const [favoriteKinds, setFavoriteKinds] =
     useState<string[]>(readFavoriteKinds);
@@ -314,17 +316,20 @@ export function WorkflowsDashboard({
 
   if (runs.length === 0) {
     return wrap(
-      <div className="flex min-h-full flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-        {missingNote}
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-            No workflows yet
-          </h1>
-          <p className="text-[13px] text-text-2">
-            Start your first workflow and it will show up here.
-          </p>
+      <div className="mx-auto max-w-[1180px] px-6 py-8">
+        <div className="flex flex-col items-center gap-4 py-8 text-center">
+          {missingNote}
+          <div className="flex flex-col gap-1.5">
+            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
+              No workflows yet
+            </h1>
+            <p className="text-[13px] text-text-2">
+              Start a workflow from the catalog and it will show up here.
+            </p>
+          </div>
+          <NewRunButton onClick={onNewRun} />
         </div>
-        <NewRunButton onClick={onNewRun} />
+        {catalog}
       </div>,
     );
   }
@@ -394,6 +399,8 @@ export function WorkflowsDashboard({
               </div>
             )}
           </section>
+
+          {catalog}
         </div>
 
         {workflowKinds.length > 0 && (

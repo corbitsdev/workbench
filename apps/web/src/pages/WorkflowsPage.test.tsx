@@ -666,7 +666,7 @@ describe("WorkflowsPage", () => {
     };
     renderWorkflowsPage();
     screen.getByText(/no workflows yet/i);
-    screen.getByText(/start your first workflow/i);
+    screen.getByText(/start a workflow from the catalog/i);
     // Exactly one visible New-run CTA (the welcome button); the collapsed rail's
     // New-run is aria-hidden, so the landing has no competing/duplicate button.
     screen.getByRole("button", { name: /new run/i });
