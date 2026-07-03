@@ -120,7 +120,14 @@ describe("GET /api/tenants/:tenantId/principals/:principalId/activity", () => {
     });
     const ok = await app.request(url("prn-self", `?cursor=${token}`));
     expect(ok.status).toBe(200);
-    expect(serviceCalls[0]).toMatchObject({ cursor: token });
+    // Decoded once at the route boundary; the service receives the object.
+    expect(serviceCalls[0]).toMatchObject({
+      cursor: {
+        timestamp: "2026-07-01T10:00:00.000Z",
+        sourceTable: "workflow_run_record",
+        id: "run-1",
+      },
+    });
 
     const bad = await app.request(url("prn-self", "?cursor=%7Bnope"));
     expect(bad.status).toBe(400);

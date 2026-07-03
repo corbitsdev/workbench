@@ -1,6 +1,11 @@
 import { authorize, type GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import { decodeTimelineCursor, TimelineEntrySchema } from "@workbench/timeline";
+import {
+  decodeTimelineCursor,
+  encodeTimelineCursor,
+  TimelineEntrySchema,
+  type TimelineCursor,
+} from "@workbench/timeline";
 import { type } from "arktype";
 import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
@@ -149,10 +154,11 @@ export function createPrincipalActivityRouter({
         );
       }
 
-      const cursor = c.req.query("cursor");
-      if (cursor !== undefined && cursor !== "") {
+      const cursorToken = c.req.query("cursor");
+      let cursor: TimelineCursor | undefined;
+      if (cursorToken !== undefined && cursorToken !== "") {
         try {
-          decodeTimelineCursor(cursor);
+          cursor = decodeTimelineCursor(cursorToken);
         } catch {
           return c.json(
             { error: { code: "bad_request", message: "Invalid cursor" } },
@@ -167,9 +173,15 @@ export function createPrincipalActivityRouter({
           tenantId: tenant.id,
           principalId: targetPrincipalId,
           limit,
-          ...(cursor !== undefined && cursor !== "" ? { cursor } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
         });
-        return c.json(page);
+        return c.json({
+          entries: page.entries,
+          nextCursor:
+            page.nextCursor === null
+              ? null
+              : encodeTimelineCursor(page.nextCursor),
+        });
       } catch (error) {
         log.error(
           "Principal activity failed for tenant {tenantId} principal {principalId}: {error}",

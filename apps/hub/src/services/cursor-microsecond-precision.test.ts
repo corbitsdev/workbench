@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
-import type { TimelineEntry } from "@workbench/timeline";
+import type { TimelineCursor, TimelineEntry } from "@workbench/timeline";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
@@ -46,7 +46,7 @@ describe("cursor with microsecond timestamps (hub stamps created_at via now())",
     await seedSession("us-s4", "2026-07-01T10:00:01Z");
 
     const paged: TimelineEntry[] = [];
-    let cursor: string | undefined;
+    let cursor: TimelineCursor | undefined;
     for (let i = 0; i < 10; i++) {
       const result = await getPrincipalActivityPage({
         db,

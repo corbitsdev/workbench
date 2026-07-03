@@ -6,7 +6,7 @@ import { buildTimelineUnionQuery } from "./union-sql";
 
 const dialect = new PgDialect();
 
-const scope = { tenantId: "ten_test", principalId: "prn_test" };
+const scope = { tenantId: "ten_test", principalIds: ["prn_test"] };
 
 function render(args: Parameters<typeof buildTimelineUnionQuery>[0]) {
   return dialect.sqlToQuery(buildTimelineUnionQuery(args));
@@ -40,7 +40,7 @@ describe("buildTimelineUnionQuery", () => {
   test("binds tenant and principal params for every branch", () => {
     const { params } = render({ scope, limit: 20 });
     const tenantBinds = params.filter((p) => p === scope.tenantId);
-    const principalBinds = params.filter((p) => p === scope.principalId);
+    const principalBinds = params.filter((p) => p === "prn_test");
     expect(tenantBinds.length).toBeGreaterThanOrEqual(timelineSources.length);
     expect(principalBinds.length).toBeGreaterThanOrEqual(
       timelineSources.length,
@@ -68,6 +68,50 @@ describe("buildTimelineUnionQuery", () => {
     expect(sql).toContain("order by ts desc, source_table asc, id asc");
     const limitBinds = params.filter((p) => p === 25);
     expect(limitBinds.length).toBe(timelineSources.length + 1);
+  });
+
+  test("scopes every branch to the full principal-id set with bound params", () => {
+    const multi = {
+      tenantId: "ten_test",
+      principalIds: ["prn_user", "prn_synth_a", "prn_synth_b"],
+    };
+    const { sql, params } = render({ scope: multi, limit: 10 });
+    for (const id of multi.principalIds) {
+      const binds = params.filter((p) => p === id);
+      expect(binds.length).toBeGreaterThanOrEqual(timelineSources.length);
+    }
+    expect(sql).toContain(" in (");
+    expect(sql).not.toContain("prn_synth_a");
+  });
+
+  test("rejects an empty principal-id set", () => {
+    expect(() =>
+      buildTimelineUnionQuery({
+        scope: { tenantId: "ten_test", principalIds: [] },
+        limit: 5,
+      }),
+    ).toThrow(/principal/i);
+  });
+
+  test("selects a lossless ts_text column alongside ts in every branch and the outer select", () => {
+    const { sql } = render({ scope, limit: 20 });
+    const branchAliases = sql.match(/as ts_text/g) ?? [];
+    expect(branchAliases.length).toBe(timelineSources.length);
+    expect(sql).toContain(
+      "select id, kind, source_table, ts, ts_text, summary",
+    );
+    const textCasts = sql.match(/::timestamptz::text/g) ?? [];
+    expect(textCasts.length).toBe(timelineSources.length);
+  });
+
+  test("binds the cursor timestamp verbatim into the keyset predicate", () => {
+    const pgText = "2026-07-01 10:00:00.123456+00";
+    const { params } = render({
+      scope,
+      limit: 20,
+      cursor: { timestamp: pgText, sourceTable: "artifact", id: "abc" },
+    });
+    expect(params).toContain(pgText);
   });
 
   test("rejects a non-positive or non-integer limit", () => {

@@ -1,17 +1,19 @@
-import { type } from "arktype";
+import { schema as intxSchema } from "@intx/db";
 import {
   buildTimelineUnionQuery,
-  decodeTimelineCursor,
-  encodeTimelineCursor,
   TimelineEntrySchema,
+  type TimelineCursor,
   type TimelineEntry,
 } from "@workbench/timeline";
+import { type } from "arktype";
+import { and, eq } from "drizzle-orm";
 
 import type { HubDb } from "../db";
+import { memberAgentInstance } from "../db/schema";
 
 export type PrincipalActivityPage = {
   entries: TimelineEntry[];
-  nextCursor: string | null;
+  nextCursor: TimelineCursor | null;
 };
 
 function toIsoTimestamp(value: unknown): string {
@@ -24,23 +26,57 @@ function toIsoTimestamp(value: unknown): string {
   return date.toISOString();
 }
 
-// Thin execution over @workbench/timeline: run the descriptor-generated union
-// with keyset pagination and validate every row through the package's entry
-// schema at the boundary. All domain knowledge (sources, scoping, ordering)
-// stays in the package.
+// Session, mail, inference-turn, and tool-call rows attribute to the agent
+// INSTANCE's synthetic principal (provisioning launches instances under their
+// own principal), not the owning user's member principal. The workbench-owned
+// member_agent_instance link maps user -> owned instances; joining through
+// agent_instance recovers each instance's synthetic principal. Tenant-pinned
+// on both sides so an instance id reused in another tenant cannot bleed
+// attribution across the boundary.
+export async function resolveTimelinePrincipalIds(args: {
+  db: HubDb;
+  tenantId: string;
+  principalId: string;
+}): Promise<string[]> {
+  const rows = await args.db
+    .select({ principalId: intxSchema.agentInstance.principalId })
+    .from(memberAgentInstance)
+    .innerJoin(
+      intxSchema.agentInstance,
+      and(
+        eq(intxSchema.agentInstance.id, memberAgentInstance.instanceId),
+        eq(intxSchema.agentInstance.tenantId, memberAgentInstance.tenantId),
+      ),
+    )
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, args.tenantId),
+        eq(memberAgentInstance.memberPrincipalId, args.principalId),
+      ),
+    );
+  return [
+    ...new Set<string>([args.principalId, ...rows.map((r) => r.principalId)]),
+  ];
+}
+
+// Thin execution over @workbench/timeline: resolve the queried principal's
+// attribution set, run the descriptor-generated union with keyset pagination,
+// and validate every row through the package's entry schema at the boundary.
+// The next cursor carries the boundary row's timestamp as the verbatim
+// Postgres text (`ts_text`) — never a JS Date reformat, which truncates
+// microseconds and drops rows at a sub-millisecond page boundary.
 export async function getPrincipalActivityPage(args: {
   db: HubDb;
   tenantId: string;
   principalId: string;
   limit: number;
-  cursor?: string;
+  cursor?: TimelineCursor;
 }): Promise<PrincipalActivityPage> {
-  const cursor =
-    args.cursor !== undefined ? decodeTimelineCursor(args.cursor) : undefined;
+  const principalIds = await resolveTimelinePrincipalIds(args);
   const query = buildTimelineUnionQuery({
-    scope: { tenantId: args.tenantId, principalId: args.principalId },
+    scope: { tenantId: args.tenantId, principalIds },
     limit: args.limit,
-    ...(cursor !== undefined ? { cursor } : {}),
+    ...(args.cursor !== undefined ? { cursor: args.cursor } : {}),
   });
 
   // postgres-js returns an array-like RowList; PGlite (integration tests)
@@ -66,15 +102,24 @@ export async function getPrincipalActivityPage(args: {
     return parsed;
   });
 
-  const last = entries[entries.length - 1];
-  const nextCursor =
-    entries.length === args.limit && last !== undefined
-      ? encodeTimelineCursor({
-          timestamp: last.timestamp,
-          sourceTable: last.sourceTable,
-          id: last.id,
-        })
-      : null;
+  const lastRow = rows[rows.length - 1];
+  const lastEntry = entries[entries.length - 1];
+  let nextCursor: TimelineCursor | null = null;
+  if (
+    entries.length === args.limit &&
+    lastRow !== undefined &&
+    lastEntry !== undefined
+  ) {
+    const tsText = lastRow["ts_text"];
+    if (typeof tsText !== "string" || tsText === "") {
+      throw new Error("Timeline row is missing its lossless ts_text column");
+    }
+    nextCursor = {
+      timestamp: tsText,
+      sourceTable: lastEntry.sourceTable,
+      id: lastEntry.id,
+    };
+  }
 
   return { entries, nextCursor };
 }

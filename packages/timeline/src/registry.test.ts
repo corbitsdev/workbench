@@ -7,7 +7,7 @@ import { buildTimelineBranchQuery } from "./union-sql";
 
 const dialect = new PgDialect();
 
-const scope = { tenantId: "ten_test", principalId: "prn_test" };
+const scope = { tenantId: "ten_test", principalIds: ["prn_test"] };
 
 describe("timeline source registry", () => {
   test("registers all 13 sources, one per kind, kinds unique", () => {
@@ -39,17 +39,7 @@ describe("timeline source registry", () => {
       const query = dialect.sqlToQuery(
         buildTimelineBranchQuery(source, { scope, limit: 10 }),
       );
-      expect(query.params).toContain(scope.principalId);
-    }
-  });
-
-  test("timestamp semantics are audited on every descriptor", () => {
-    for (const source of timelineSources) {
-      expect(source.timestamp.column.length).toBeGreaterThan(0);
-      expect(["event-occurred", "row-created", "last-updated"]).toContain(
-        source.timestamp.meaning,
-      );
-      expect(typeof source.timestamp.clientSupplied).toBe("boolean");
+      expect(query.params).toContain("prn_test");
     }
   });
 

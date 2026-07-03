@@ -1,7 +1,11 @@
 import { type } from "arktype";
 
+// `timestamp` is the verbatim Postgres text rendering of the boundary row's
+// timestamptz (microsecond precision) — not a JS ISO string. It must round-
+// trip untouched into the keyset predicate's `::timestamptz` cast; any
+// Date-based reformat truncates to milliseconds and drops boundary rows.
 export const TimelineCursorSchema = type({
-  timestamp: "string.date.iso",
+  timestamp: "string > 0",
   sourceTable: "string > 0",
   id: "string > 0",
 });

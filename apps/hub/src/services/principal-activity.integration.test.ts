@@ -13,6 +13,7 @@ import { pushSchema } from "drizzle-kit/api";
 import {
   buildTimelineBranchQuery,
   timelineSources,
+  type TimelineCursor,
   type TimelineEntry,
 } from "@workbench/timeline";
 
@@ -192,7 +193,7 @@ async function seedCredential(args: {
   );
 }
 
-function page(args: { limit: number; cursor?: string }) {
+function page(args: { limit: number; cursor?: TimelineCursor }) {
   return getPrincipalActivityPage({
     db,
     tenantId: TENANT,
@@ -226,7 +227,7 @@ describe("descriptor drift guard — registry strings vs the real schema", () =>
     "descriptor %s references only tables and columns that exist",
     async (_kind, descriptor) => {
       const query = buildTimelineBranchQuery(descriptor, {
-        scope: { tenantId: TENANT, principalId: PRINCIPAL },
+        scope: { tenantId: TENANT, principalIds: [PRINCIPAL] },
         limit: 1,
       });
       // Executes against the pushed drizzle schema: a renamed table or
@@ -402,7 +403,7 @@ describe("getPrincipalActivityPage — union over real tables", () => {
     expect(full.entries).toHaveLength(6);
 
     const paged: TimelineEntry[] = [];
-    let cursor: string | undefined;
+    let cursor: TimelineCursor | undefined;
     let rounds = 0;
     for (;;) {
       const result = await page({
@@ -430,12 +431,6 @@ describe("getPrincipalActivityPage — union over real tables", () => {
 
     const shortPage = await page({ limit: 3 });
     expect(shortPage.nextCursor).toBeNull();
-  });
-
-  test("rejects a malformed cursor token", async () => {
-    await expect(page({ limit: 5, cursor: "not-a-cursor" })).rejects.toThrow(
-      /invalid timeline cursor/i,
-    );
   });
 });
 

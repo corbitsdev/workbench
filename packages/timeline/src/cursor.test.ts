@@ -23,13 +23,18 @@ describe("timeline cursor", () => {
     expect(() => decodeTimelineCursor(token)).toThrow();
   });
 
-  test("rejects a cursor with a non-timestamp timestamp", () => {
+  test("round-trips Postgres microsecond timestamp text verbatim", () => {
+    const cursor = {
+      timestamp: "2026-07-01 10:00:00.123456+00",
+      sourceTable: "agent_session",
+      id: "ses-1",
+    };
+    expect(decodeTimelineCursor(encodeTimelineCursor(cursor))).toEqual(cursor);
+  });
+
+  test("rejects a cursor with an empty timestamp", () => {
     const token = Buffer.from(
-      JSON.stringify({
-        timestamp: "yesterday",
-        sourceTable: "artifact",
-        id: "x",
-      }),
+      JSON.stringify({ timestamp: "", sourceTable: "artifact", id: "x" }),
     ).toString("base64url");
     expect(() => decodeTimelineCursor(token)).toThrow();
   });

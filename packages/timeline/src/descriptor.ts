@@ -49,4 +49,12 @@ export type TimelineSourceDescriptor = {
   summarySql: string;
 };
 
-export type TimelineScope = { tenantId: string; principalId: string };
+// `principalIds` is a set because human activity spans principals: the user's
+// member principal plus the synthetic principals of agent instances they own
+// (sessions, mail, turns, and tool calls attribute to the instance principal,
+// not the user). Callers resolve the set; the generator scopes every branch
+// to it by construction.
+export type TimelineScope = {
+  tenantId: string;
+  principalIds: readonly string[];
+};
