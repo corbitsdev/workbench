@@ -12,20 +12,32 @@ import { MemoryRouter } from "react-router";
 import * as apiActual from "../lib/api";
 import { WorkflowDock } from "./WorkflowDock";
 
-type ApiCall = { method: string; path: string };
+type ApiCall = { method: string; path: string; body?: unknown };
 
 let apiCalls: ApiCall[] = [];
 let records: unknown = [];
 let statesByRunId: Record<string, unknown> = {};
 
-async function fakeApi(method: string, path: string): Promise<unknown> {
-  apiCalls.push({ method, path });
+async function fakeApi(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<unknown> {
+  apiCalls.push({ method, path, body });
   if (path.includes("originConversationId=")) return records;
   const stateMatch = /\/workflow-exec\/runs\/([^/]+)\/state/.exec(path);
   if (stateMatch?.[1] !== undefined) {
     const state = statesByRunId[stateMatch[1]];
     if (state === undefined) throw new Error(`no state for ${stateMatch[1]}`);
     return state;
+  }
+  const resumeMatch = /\/workflow-exec\/records\/([^/]+)\/resume/.exec(path);
+  if (resumeMatch?.[1] !== undefined) {
+    return {
+      runId: resumeMatch[1],
+      kind: "pain-point-collateral",
+      status: "running",
+    };
   }
   throw new Error(`unexpected api call: ${method} ${path}`);
 }
@@ -257,6 +269,42 @@ describe("WorkflowDock", () => {
     const { container } = renderDock();
     await waitFor(() => expect(apiCalls.length).toBeGreaterThan(before));
     expect(container.querySelector("aside")).toBeNull();
+  });
+
+  it("resumes the gated run with its recovered signalName when the gate button is used (CL-2681)", async () => {
+    records = [listRow("run_gate", "awaiting", "pain-point-collateral")];
+    statesByRunId["run_gate"] = logState("run_gate", "running", [
+      {
+        stepId: "review-gate",
+        phase: "awaiting-signal",
+        awaitingSignalName: "approve-draft",
+      },
+    ]);
+    renderDock();
+
+    const button = await waitFor(() =>
+      screen.getByRole("button", { name: "Continue" }),
+    );
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      const resume = apiCalls.find((c) => c.path.includes("/resume"));
+      expect(resume).toBeDefined();
+    });
+    const resume = apiCalls.find((c) => c.path.includes("/resume"))!;
+    expect(resume.method).toBe("POST");
+    expect(resume.path).toContain("/workflow-exec/records/run_gate/resume");
+    expect(resume.body).toMatchObject({ signalName: "approve-draft" });
+  });
+
+  it("shows no gate button when the awaiting step's signalName is unrecoverable", async () => {
+    records = [listRow("run_gate", "awaiting", "pain-point-collateral")];
+    statesByRunId["run_gate"] = logState("run_gate", "running", [
+      { stepId: "review-gate", phase: "awaiting-signal" },
+    ]);
+    renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
   });
 
   it("links each card to the full run page", async () => {
