@@ -9,9 +9,12 @@ export {
   type UIResponse,
   type DocumentActions,
   type ExtractedUIBlock,
+  type FormField,
+  type FormFieldOption,
   parseToolResult,
   extractUIBlockFromText,
   isUIBlock,
+  isFormField,
 } from "./ui-block";
 export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";
 export {

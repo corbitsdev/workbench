@@ -37,7 +37,12 @@ export const ProgressStepSchema = type({
 export type ProgressStep = typeof ProgressStepSchema.infer;
 
 export const UIResponseSchema = type({
-  blockKind: "'choice'",
+  // The interactive block that produced this response (CL-2715). `choice` posts a
+  // single option; `form` posts a structured field map; `multiSelect` posts an
+  // array of picked values. The host (WorkflowDock) routes all three the same
+  // way — by `signalName` + verbatim `payload` — so the discriminant is carried
+  // for the renderer's benefit, never branched on downstream.
+  blockKind: "'choice' | 'form' | 'multiSelect'",
   value: "string",
   // When the interactive block is a workflow gate (CL-2681), it carries the
   // pending gate's `awaitSignal` name. The host resumes the run with this
@@ -51,6 +56,88 @@ export const UIResponseSchema = type({
 });
 /** An interactive block's response, posted back to the agent as the next turn. */
 export type UIResponse = typeof UIResponseSchema.infer;
+
+/**
+ * A selectable option for a `select` / `multiSelect` form field or the
+ * standalone `multiSelect` block (CL-2715). `value` is what the field submits;
+ * `label` is what the human reads.
+ */
+export type FormFieldOption = {
+  value: string;
+  label: string;
+  description?: string;
+};
+
+/**
+ * A single typed input in a `form` block (CL-2715). Kept minimal — only the
+ * field kinds the real pre-execution config + intake gates need (ab-config
+ * variants, attio review/sync-approval, reddit/seo/last30days intake), NOT a
+ * general form-builder DSL. On submit the form emits a `Record<name, value>`
+ * payload: text/textarea/select → string, number → number, multiSelect →
+ * string[], group → an array of per-row records.
+ *
+ * Like the parent UIBlock union, this is a plain TS discriminated union
+ * validated by a hand-written guard rather than an arktype `scope()` — the
+ * `group` variant nests `FormField[]`, and arktype's recursive-scope compiler
+ * hits the same `Apply is not a function` cycle bug documented on UIBlock. The
+ * guard (see {@link isFormField}) mirrors the runtime shape exactly; a
+ * workflow's submitted payload is validated by the workflow-owned arktype
+ * schema at the /resume boundary, not by this contract.
+ */
+export type FormField =
+  | {
+      kind: "text";
+      name: string;
+      label?: string;
+      placeholder?: string;
+      required?: boolean;
+      defaultValue?: string;
+    }
+  | {
+      kind: "textarea";
+      name: string;
+      label?: string;
+      placeholder?: string;
+      required?: boolean;
+      defaultValue?: string;
+    }
+  | {
+      kind: "number";
+      name: string;
+      label?: string;
+      placeholder?: string;
+      required?: boolean;
+      defaultValue?: number;
+    }
+  | {
+      kind: "select";
+      name: string;
+      label?: string;
+      required?: boolean;
+      options: FormFieldOption[];
+      defaultValue?: string;
+    }
+  | {
+      kind: "multiSelect";
+      name: string;
+      label?: string;
+      required?: boolean;
+      min?: number;
+      max?: number;
+      options: FormFieldOption[];
+    }
+  | {
+      // A repeatable group of leaf fields — the multi-variant case (ab-config's
+      // N provider/model variants). Its sub-fields may NOT themselves be groups
+      // (one level of nesting only). Submits an array of per-row records.
+      kind: "group";
+      name: string;
+      label?: string;
+      addLabel?: string;
+      min?: number;
+      max?: number;
+      fields: Exclude<FormField, { kind: "group" }>[];
+    };
 
 /**
  * UIBlock is a recursive discriminated union — the "canvas" variant wraps
@@ -113,6 +200,36 @@ export type UIBlock =
       }[];
     }
   | { kind: "progress"; title?: string; steps: ProgressStep[] }
+  | {
+      // A multi-field input gate (CL-2715). Renders typed fields and, on submit,
+      // emits a structured `Record<name, value>` payload via the same
+      // verbatim-payload seam `choice` uses. When `signalName` is set the host
+      // resumes the run with that signal + the field-value payload; a required
+      // field left empty holds the submit button (mirroring promptBox.required).
+      kind: "form";
+      prompt?: string;
+      signalName?: string;
+      submitLabel?: string;
+      fields: FormField[];
+    }
+  | {
+      // An N-of-M selection gate (CL-2715): pick between `min` and `max` of the
+      // options. Emits the picked values as an ARRAY payload. `min` defaults to
+      // 1 (a selection gate must pick at least one); the submit button holds
+      // until the count is in range.
+      kind: "multiSelect";
+      prompt?: string;
+      signalName?: string;
+      submitLabel?: string;
+      min?: number;
+      max?: number;
+      options: {
+        id: string;
+        label: string;
+        value?: string;
+        description?: string;
+      }[];
+    }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
 
 export type ExtractedUIBlock = {
@@ -131,8 +248,61 @@ const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "error",
   "choice",
   "progress",
+  "form",
+  "multiSelect",
   "canvas",
 ]);
+
+const FORM_FIELD_KINDS = new Set<FormField["kind"]>([
+  "text",
+  "textarea",
+  "number",
+  "select",
+  "multiSelect",
+  "group",
+]);
+
+function isFormFieldOption(value: unknown): value is FormFieldOption {
+  if (typeof value !== "object" || value === null) return false;
+  const opt = value as Record<string, unknown>;
+  return typeof opt.value === "string" && typeof opt.label === "string";
+}
+
+/**
+ * Structural guard for a single {@link FormField}. Shallow per variant: it
+ * confirms the discriminant plus the fields the renderer reads. A `group`
+ * recurses one level into its sub-fields and rejects a nested group (the type
+ * forbids it; the guard enforces it at runtime so a malformed block degrades to
+ * text rather than infinitely nesting).
+ */
+export function isFormField(
+  value: unknown,
+  allowGroup = true,
+): value is FormField {
+  if (typeof value !== "object" || value === null) return false;
+  const field = value as Record<string, unknown>;
+  if (
+    typeof field.kind !== "string" ||
+    !FORM_FIELD_KINDS.has(field.kind as FormField["kind"])
+  ) {
+    return false;
+  }
+  if (typeof field.name !== "string" || field.name.length === 0) return false;
+  if (field.kind === "select" || field.kind === "multiSelect") {
+    return (
+      Array.isArray(field.options) && field.options.every(isFormFieldOption)
+    );
+  }
+  if (field.kind === "group") {
+    if (!allowGroup) return false;
+    return (
+      Array.isArray(field.fields) &&
+      field.fields.length > 0 &&
+      field.fields.every((sub) => isFormField(sub, false))
+    );
+  }
+  return true;
+}
 
 function hasKind(value: unknown): value is { kind: string } {
   return (
@@ -187,6 +357,24 @@ export function isUIBlock(value: unknown): value is UIBlock {
         block.steps.length > 0 &&
         (block.steps as unknown[]).every(
           (step) => !(ProgressStepSchema(step) instanceof type.errors),
+        )
+      );
+    case "form":
+      return (
+        Array.isArray(block.fields) &&
+        block.fields.length > 0 &&
+        (block.fields as unknown[]).every((field) => isFormField(field))
+      );
+    case "multiSelect":
+      return (
+        Array.isArray(block.options) &&
+        block.options.length > 0 &&
+        (block.options as unknown[]).every(
+          (opt) =>
+            typeof opt === "object" &&
+            opt !== null &&
+            typeof (opt as Record<string, unknown>).id === "string" &&
+            typeof (opt as Record<string, unknown>).label === "string",
         )
       );
     case "canvas":
