@@ -75,7 +75,32 @@ describe("routeConversationSignal", () => {
     expect(routing.gates).toHaveLength(2);
   });
 
-  it("is a no-op when no gate is pending", () => {
-    expect(routeConversationSignal([])).toEqual({ mode: "none" });
+  it("is multi even when two runs share the SAME signalName — the run, not the name, disambiguates", () => {
+    const sameName = (runId: string): PendingGate => ({
+      runId,
+      runKind: "pain-point-collateral",
+      signalName: "review-draft",
+    });
+    const routing = routeConversationSignal([
+      sameName("run_1"),
+      sameName("run_2"),
+    ]);
+    expect(routing.mode).toBe("multi");
+    if (routing.mode !== "multi") throw new Error("expected multi");
+    expect(routing.gates.map((g) => g.runId)).toEqual(["run_1", "run_2"]);
+  });
+
+  it("is a no-op when the only awaiting run's signal is unrecoverable (folded from run state)", () => {
+    // A conversation with one awaiting run whose gate name never made it into
+    // the log: pendingGateForRun yields null, so the conversation has zero
+    // routable gates → free text stays a normal chat turn.
+    const gates = [
+      pendingGateForRun({
+        runId: "run_1",
+        runKind: "pain-point-collateral",
+        steps: [{ phase: "awaiting-signal" }],
+      }),
+    ].filter((g): g is PendingGate => g !== null);
+    expect(routeConversationSignal(gates)).toEqual({ mode: "none" });
   });
 });

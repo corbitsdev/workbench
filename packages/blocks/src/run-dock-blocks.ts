@@ -77,7 +77,6 @@ export function dockRunBlocks(run: DockRunInput): UIBlock[] {
   // waiting. Omitted when the gate's signalName is unrecoverable (no target).
   const gate = pendingGateForRun({
     runId: run.runId,
-    runKind: run.runId,
     steps: run.steps,
   });
   if (gate !== null) {

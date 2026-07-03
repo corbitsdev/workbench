@@ -147,6 +147,7 @@ export function ChatThreadPage() {
             threadLabel={active?.label}
             onUserSend={maybeTitleFromFirstMessage}
             signalRouting={signalRouting}
+            resumeInFlight={resumeGate.isPending}
             onResumeSignal={(runId, signalName, text) =>
               resumeGate
                 .mutateAsync({
@@ -154,7 +155,7 @@ export function ChatThreadPage() {
                   signalName,
                   payload: { instruction: text },
                 })
-                .catch(() => undefined)
+                .then(() => undefined)
             }
           />
         </div>

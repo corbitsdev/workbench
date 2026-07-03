@@ -9,6 +9,11 @@ mock.module("@workbench/chat", () => ({
   ChatPanel: (props: {
     messages: unknown[];
     onSend: (t: string) => void;
+    onRespond?: (r: {
+      blockKind: "choice";
+      value: string;
+      signalName?: string;
+    }) => void;
     notice?: React.ReactNode;
     inputDisabled?: boolean;
     inputAccessory?: React.ReactNode;
@@ -45,6 +50,20 @@ mock.module("@workbench/chat", () => ({
         { onClick: () => props.onSend("hello") },
         "send",
       ),
+      props.onRespond
+        ? React.createElement(
+            "button",
+            {
+              onClick: () =>
+                props.onRespond?.({
+                  blockKind: "choice",
+                  value: "yes",
+                  signalName: "approve",
+                }),
+            },
+            "respond",
+          )
+        : null,
     ),
 }));
 
@@ -134,8 +153,8 @@ describe("MyraChatSurface", () => {
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {
     const sendSpy = mock((_t: string) => {});
-    const resumeSpy = mock(
-      (_runId: string, _signal: string, _text: string) => {},
+    const resumeSpy = mock((_runId: string, _signal: string, _text: string) =>
+      Promise.resolve(),
     );
     render(
       React.createElement(MyraChatSurface, {
@@ -149,6 +168,73 @@ describe("MyraChatSurface", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(resumeSpy).toHaveBeenCalledWith("run_1", "approve", "hello");
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it("on a failed resume, posts the text as a normal chat turn and surfaces the reason (CL-2681)", async () => {
+    const sendSpy = mock((_t: string) => {});
+    const resumeSpy = mock((_runId: string, _signal: string, _text: string) =>
+      Promise.reject(new Error("This run is no longer waiting for input.")),
+    );
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(sendSpy),
+        signalRouting: {
+          mode: "single",
+          gate: { runId: "run_1", runKind: "k", signalName: "approve" },
+        },
+        onResumeSignal: resumeSpy,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(resumeSpy).toHaveBeenCalledTimes(1);
+    // The rejection is handled on a microtask; wait for the fallback + notice.
+    expect((await screen.findByTestId("accessory")).textContent).toMatch(
+      /no longer waiting/,
+    );
+    // The user's text is not lost — it is re-posted as a normal chat turn.
+    expect(sendSpy).toHaveBeenCalledWith("hello");
+  });
+
+  it("ignores a second send while a resume is already in flight (double-fire guard, CL-2681)", () => {
+    const sendSpy = mock((_t: string) => {});
+    const resumeSpy = mock((_runId: string, _signal: string, _text: string) =>
+      Promise.resolve(),
+    );
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(sendSpy),
+        signalRouting: {
+          mode: "single",
+          gate: { runId: "run_1", runKind: "k", signalName: "approve" },
+        },
+        onResumeSignal: resumeSpy,
+        resumeInFlight: true,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "send" }));
+    expect(resumeSpy).not.toHaveBeenCalled();
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
+  it("routes a gate choice response through the resume path, not a chat turn (CL-2681 / CL-2682)", () => {
+    const sendSpy = mock((_t: string) => {});
+    const resumeSpy = mock((_runId: string, _signal: string, _text: string) =>
+      Promise.resolve(),
+    );
+    render(
+      React.createElement(MyraChatSurface, {
+        session: readySession(sendSpy),
+        signalRouting: {
+          mode: "single",
+          gate: { runId: "run_9", runKind: "k", signalName: "review" },
+        },
+        onResumeSignal: resumeSpy,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "respond" }));
+    // Signal name comes from the response block; the run from the sole gate.
+    expect(resumeSpy).toHaveBeenCalledWith("run_9", "approve", "yes");
     expect(sendSpy).not.toHaveBeenCalled();
   });
 

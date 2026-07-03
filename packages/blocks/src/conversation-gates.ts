@@ -32,10 +32,15 @@ export interface GateStepInput {
   awaitingSignalName?: string | undefined;
 }
 
-/** A run parked on a resolvable `awaitSignal` gate. */
+/**
+ * A run parked on a resolvable `awaitSignal` gate. `runKind` is the workflow
+ * kind for multi-gate disambiguation display; it is optional because the dock
+ * card path resolves a single run's gate purely for its `signalName` and has no
+ * kind to pass — only the conversation-level scan (which lists the runs) does.
+ */
 export interface PendingGate {
   runId: string;
-  runKind: string;
+  runKind?: string;
   signalName: string;
 }
 
@@ -50,7 +55,7 @@ export interface PendingGate {
  */
 export function pendingGateForRun(run: {
   runId: string;
-  runKind: string;
+  runKind?: string;
   steps: readonly GateStepInput[];
 }): PendingGate | null {
   for (const step of run.steps) {
@@ -58,7 +63,7 @@ export function pendingGateForRun(run: {
     if (step.awaitingSignalName === undefined) continue;
     return {
       runId: run.runId,
-      runKind: run.runKind,
+      ...(run.runKind !== undefined ? { runKind: run.runKind } : {}),
       signalName: step.awaitingSignalName,
     };
   }

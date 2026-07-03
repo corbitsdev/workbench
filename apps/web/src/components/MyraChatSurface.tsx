@@ -131,7 +131,23 @@ type MyraChatSurfaceProps = {
    * normal chat turn and a hint tells the user to use a run's card button.
    */
   signalRouting?: SignalRouting;
-  onResumeSignal?: (runId: string, signalName: string, text: string) => void;
+  /**
+   * Resume a pending gate. Must reject on failure (it returns the resume
+   * mutation's promise, NOT a pre-swallowed one) so this surface can surface the
+   * reason and — for the free-text path — fall back to posting the text as a
+   * normal chat turn rather than silently losing the user's message (CL-2681).
+   */
+  onResumeSignal?: (
+    runId: string,
+    signalName: string,
+    text: string,
+  ) => Promise<void>;
+  /**
+   * The resume mutation's `isPending`. Threaded in as the double-fire guard: a
+   * rapid second Enter/click while a resume is in flight is ignored, so at most
+   * one resume fires per gate (CL-2681).
+   */
+  resumeInFlight?: boolean;
 };
 
 export function MyraChatSurface({
@@ -145,6 +161,7 @@ export function MyraChatSurface({
   onClose,
   signalRouting,
   onResumeSignal,
+  resumeInFlight,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity = threadLabel
     ? { ...MYRA, tagline: threadLabel }
@@ -156,6 +173,8 @@ export function MyraChatSurface({
 
   const activeContext = useActiveContext();
   const [attached, setAttached] = useState<ActiveContext[]>([]);
+  // Sanitized reason for a failed gate resume (CL-2681), shown above the prompt.
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const attachCurrent = useCallback((): boolean => {
     if (!activeContext) return false;
@@ -254,23 +273,36 @@ export function MyraChatSurface({
   // message. Inline (not a first-class Interchange attachment) because Myra's
   // DeepSeek/openai-compatible harness does not ingest document attachment
   // ContentBlocks (CL-2495 spike). Cleared once the send is dispatched.
+  const resumeFailureMessage = (err: unknown): string =>
+    err instanceof Error && err.message.trim().length > 0
+      ? err.message
+      : "Couldn't send your response to the workflow. Please try again.";
+
   const handleSend = (text: string, attachments?: PendingAttachment[]) => {
+    setResumeError(null);
     // Single pending gate: free text is the gate's answer, not a chat turn
-    // (CL-2681). Routed only when there are no attachments — an attachment is a
-    // conversation act, not a gate payload. With >1 gate pending we do NOT
-    // auto-route (the hint below tells the user to use a card).
+    // (CL-2681). Routed only when there are NO attachments AND no active-context
+    // pills — both are conversation acts, not gate payloads (FIX 4). With >1 gate
+    // pending we do NOT auto-route (the hint below tells the user to use a card).
+    const noAttachments =
+      (attachments === undefined || attachments.length === 0) &&
+      attached.length === 0;
     if (
       signalRouting?.mode === "single" &&
       onResumeSignal !== undefined &&
-      (attachments === undefined || attachments.length === 0) &&
+      noAttachments &&
       text.trim().length > 0
     ) {
+      // Double-fire guard: ignore a second Enter while a resume is in flight.
+      if (resumeInFlight) return;
+      const { runId, signalName } = signalRouting.gate;
       onUserSend?.(text);
-      onResumeSignal(
-        signalRouting.gate.runId,
-        signalRouting.gate.signalName,
-        text,
-      );
+      void onResumeSignal(runId, signalName, text).catch((err: unknown) => {
+        // The resume failed (e.g. a stale-gate 409) — never lose the user's
+        // text: post it as a normal chat turn and surface the reason.
+        setResumeError(resumeFailureMessage(err));
+        void session.send(text);
+      });
       return;
     }
     onUserSend?.(text);
@@ -283,7 +315,29 @@ export function MyraChatSurface({
     if (attached.length > 0) setAttached([]);
     return session.send(composed, attachments);
   };
-  const handleRespond = (response: UIResponse) => session.send(response.value);
+
+  // A gate choice block (CL-2682 routes these through this handler) carries its
+  // `awaitSignal` name; route it through the resume path — same contract as the
+  // dock card — instead of posting the option value as a chat turn (FIX 3). The
+  // target run is the conversation's sole pending gate. On failure surface the
+  // reason (the choice value, unlike free text, is not re-posted as a turn).
+  const handleRespond = (response: UIResponse) => {
+    setResumeError(null);
+    if (
+      response.signalName !== undefined &&
+      onResumeSignal !== undefined &&
+      signalRouting?.mode === "single"
+    ) {
+      if (resumeInFlight) return;
+      void onResumeSignal(
+        signalRouting.gate.runId,
+        response.signalName,
+        response.value,
+      ).catch((err: unknown) => setResumeError(resumeFailureMessage(err)));
+      return;
+    }
+    return session.send(response.value);
+  };
 
   // With more than one workflow gate pending, free text cannot pick a run for
   // the user (CL-2681) — tell them to answer from a run's card in the dock.
@@ -303,9 +357,19 @@ export function MyraChatSurface({
       />
     ) : null;
 
+  const resumeErrorNotice =
+    resumeError !== null ? (
+      <p className="text-xs text-red" role="alert">
+        {resumeError}
+      </p>
+    ) : null;
+
   const inputAccessory =
-    multiGateHint !== null || attachedPills !== null ? (
+    multiGateHint !== null ||
+    attachedPills !== null ||
+    resumeErrorNotice !== null ? (
       <div className="space-y-1.5">
+        {resumeErrorNotice}
         {multiGateHint}
         {attachedPills}
       </div>

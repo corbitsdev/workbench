@@ -536,6 +536,11 @@ export function createWorkflowRunRecordsRouter(deps: {
           description: "Run not found",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        409: {
+          description:
+            "Run is not currently awaiting this signal (stale resume) — no signal was delivered and the run's status is unchanged (CL-2681)",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         503: {
           description:
             "Deploy in progress — the sidecar has not reconnected within the bounded wait; retry after the Retry-After hint (CL-2707)",
@@ -574,6 +579,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       const result = await resumeWorkflowRun(
         {
           db: deps.db,
+          repoStore: deps.repoStore.repoStore,
           sidecarRouter: deps.sidecarRouter,
           deploymentDomain: deps.deploymentDomain,
           ensureDeploymentRoutable: deps.ensureDeploymentRoutable,
