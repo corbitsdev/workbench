@@ -822,6 +822,17 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/timeline": {
+      "name": "@workbench/timeline",
+      "dependencies": {
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tool-credentials": {
       "name": "@workbench/tool-credentials",
       "version": "0.1.0",
@@ -2346,6 +2357,8 @@
     "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
 
     "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
+
+    "@workbench/timeline": ["@workbench/timeline@workspace:packages/timeline"],
 
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 
