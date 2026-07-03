@@ -5,6 +5,7 @@ import { schema as intx } from "@intx/db";
 import * as wb from "../db/schema";
 import type { HubDb } from "../db";
 import { createActorDetailRouter } from "./actor-detail";
+import { createActorSearchRouter } from "./actor-search";
 
 function appWith(
   opts: { throwing?: boolean; pages?: unknown[][] } = {},
@@ -76,5 +77,55 @@ describe("actor detail route", () => {
   it("returns 500 when the lookup throws", async () => {
     const res = await appWith({ throwing: true }).request("/prn_x");
     expect(res.status).toBe(500);
+  });
+});
+
+describe("actor route precedence (search vs detail)", () => {
+  // Mirrors the mount order in apps/hub/src/index.ts: the static `/search`
+  // segment must win over the dynamic `:principalId` detail route so
+  // GET /actors/search never resolves the actor named "search".
+  function composedApp(): Hono<{
+    Variables: { tenant: { id: string }; principal: { id: string } };
+  }> {
+    const db = drizzle(
+      async (query: string) => {
+        // Search runs two queries (users, agents); detail runs a principal
+        // lookup. Return empty rows for either — we assert on which router ran.
+        if (query.includes('"principal"')) return { rows: [] };
+        return { rows: [] };
+      },
+      { schema: { ...intx, ...wb } },
+    ) as unknown as HubDb;
+
+    const app = new Hono<{
+      Variables: { tenant: { id: string }; principal: { id: string } };
+    }>();
+    app.use("*", async (c, next) => {
+      c.set("tenant", { id: "tn-1" });
+      c.set("principal", { id: "prn-1" });
+      await next();
+    });
+    app.route("/actors/search", createActorSearchRouter({ db }));
+    app.route("/actors/:principalId", createActorDetailRouter({ db }));
+    return app;
+  }
+
+  it("routes GET /actors/search to the search router, not the :principalId detail route", async () => {
+    const app = composedApp();
+    // Search with a valid query returns 200 with an `actors` array.
+    const search = await app.request("/actors/search?q=acme");
+    expect(search.status).toBe(200);
+    const body = (await search.json()) as { actors?: unknown };
+    expect(Array.isArray(body.actors)).toBe(true);
+    // The detail route would 404 on an unknown principal — proving "search"
+    // was NOT treated as a principal id.
+    expect(search.status).not.toBe(404);
+  });
+
+  it("still routes a real principal id to the detail route", async () => {
+    const app = composedApp();
+    const detail = await app.request("/actors/prn_missing");
+    // Empty rows → detail returns 404 (not the search 200/actors shape).
+    expect(detail.status).toBe(404);
   });
 });

@@ -5,6 +5,7 @@ import * as wb from "../db/schema";
 import type { HubDb } from "../db";
 import {
   searchActors,
+  getActorById,
   ActorSearchQueryTooShortError,
   ACTOR_SEARCH_MIN_QUERY_LENGTH,
   ACTOR_SEARCH_MAX_RESULTS,
@@ -119,5 +120,40 @@ describe("searchActors", () => {
     for (const call of calls) {
       expect(call.params).toContain("%50\\%%");
     }
+  });
+});
+
+describe("getActorById", () => {
+  it("binds BOTH principalId and tenantId into the principal lookup WHERE (a dropped tenant predicate fails here)", async () => {
+    const { db, calls } = makeRecordingDb(() => []);
+    const result = await getActorById(db, {
+      tenantId: "tn-secret",
+      principalId: "prn_x",
+    });
+    // No principal row → null, and only the scoped principal lookup ran.
+    expect(result).toBeNull();
+    expect(calls.length).toBe(1);
+    const lookup = calls[0]!;
+    expect(lookup.query).toContain('"principal"."id"');
+    expect(lookup.query).toContain('"principal"."tenant_id"');
+    expect(lookup.params).toContain("prn_x");
+    expect(lookup.params).toContain("tn-secret");
+  });
+
+  it("resolves a user principal that matches in-tenant to its identity", async () => {
+    const { db } = makeRecordingDb((query) =>
+      // First call: principal lookup. Second: user identity join.
+      query.includes('"user"')
+        ? [["Myra Ops", "myra@example.com"]]
+        : [["prn_u1", "user", "active"]],
+    );
+    const actor = await getActorById(db, {
+      tenantId: "tn-1",
+      principalId: "prn_u1",
+    });
+    expect(actor).not.toBeNull();
+    expect(actor!.kind).toBe("user");
+    expect(actor!.displayName).toBe("Myra Ops");
+    expect(actor!.email).toBe("myra@example.com");
   });
 });

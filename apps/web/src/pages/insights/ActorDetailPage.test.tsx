@@ -143,6 +143,39 @@ describe("ActorDetailPage", () => {
     screen.getByText("Last active");
   });
 
+  it("trusts router-state identity when its id matches the route principal", async () => {
+    // Fetch resolves to null; the matching state actor should render instantly.
+    actorResult = null;
+    renderAt("prn_match", {
+      id: "prn_match",
+      kind: "agent",
+      displayName: "Oat",
+      status: "active",
+    });
+
+    await waitFor(() => {
+      screen.getByRole("heading", { name: "Oat" });
+    });
+  });
+
+  it("ignores a router-state actor whose id does not match the route principal (anti-spoof)", async () => {
+    // A spoofed navigation payload for a DIFFERENT principal must not be
+    // trusted for header identity; the page fetches by the route id instead.
+    actorResult = null;
+    renderAt("prn_real", {
+      id: "prn_other",
+      kind: "user",
+      displayName: "Spoofed Name",
+      status: "active",
+    });
+
+    await waitFor(() => {
+      screen.getByRole("heading", { name: "Unknown actor" });
+    });
+    expect(screen.queryByText("Spoofed Name")).toBeNull();
+    expect(actorCalls).toContain("prn_real");
+  });
+
   it("still renders the timeline when identity lookup fails, without faking a name", async () => {
     actorResult = null;
     renderAt("prn_unknown");

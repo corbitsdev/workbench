@@ -11,9 +11,11 @@ describe("badgeVariants", () => {
     expect(classes).toContain("text-text-3");
   });
 
-  it("uses Summit Blue tokens for the identity tone", () => {
+  it("uses Summit Blue tokens for the identity tone, with the deep text shade for AA contrast", () => {
     const classes = badgeVariants({ tone: "identity" });
-    expect(classes).toContain("text-blue");
+    // Deep blue text (not the mid `--blue`) so `text-*` on `bg-blue/10` clears
+    // WCAG AA 4.5:1 on light themes.
+    expect(classes).toContain("text-blue-deep");
     expect(classes).toContain("bg-blue/10");
   });
 

@@ -76,7 +76,13 @@ export function ActorDetailPage() {
   const { activeTenantId, loading } = useActiveWorkbench();
 
   const principalId = id ?? "";
-  const stateActor = isActorState(location.state) ? location.state : null;
+  // Only trust router-state identity when it is FOR this principal. The state is
+  // caller-supplied (a spoofable navigation payload), so a mismatched id must
+  // be ignored and the identity fetched by id instead.
+  const stateActor =
+    isActorState(location.state) && location.state.id === principalId
+      ? location.state
+      : null;
 
   const actorQuery = useQuery({
     queryKey: ["actor", activeTenantId, principalId],
@@ -90,7 +96,13 @@ export function ActorDetailPage() {
     ...(stateActor ? { placeholderData: stateActor } : {}),
   });
 
-  const activityQuery = usePrincipalActivity(activeTenantId ?? "", principalId);
+  const activityQuery = usePrincipalActivity(
+    activeTenantId ?? "",
+    principalId,
+    {
+      enabled: !!activeTenantId && principalId !== "",
+    },
+  );
   const entries = activityQuery.data?.pages.flatMap((p) => p.entries) ?? [];
   const lastActive = entries[0]?.timestamp ?? null;
 
@@ -99,7 +111,7 @@ export function ActorDetailPage() {
   const backLink = (
     <Link
       to="/insights"
-      className="inline-flex min-h-[32px] items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-medium text-text-3 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+      className="inline-flex min-h-[40px] items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-medium text-text-3 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
     >
       <ArrowLeft className="h-3.5 w-3.5" />
       Insights

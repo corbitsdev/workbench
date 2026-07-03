@@ -10,6 +10,7 @@ import {
   listArtifacts,
   listWorkflows,
   uploadArtifacts,
+  type Actor,
 } from "./index";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
@@ -348,7 +349,7 @@ describe("@workbench/client response and error handling", () => {
   });
 
   it("resolves a single actor under the tenant api prefix and parses it", async () => {
-    const actor = {
+    const actor: Actor = {
       id: "prn_u1",
       kind: "user",
       displayName: "Myra Ops",
@@ -381,6 +382,39 @@ describe("@workbench/client response and error handling", () => {
     );
 
     expect(result).toBeNull();
+  });
+
+  it("surfaces the hub's object-shaped error message on a non-404 actor failure", async () => {
+    // The hub returns `{ error: { code, message } }`; getActor must read
+    // `.message`, not stringify the object into `[object Object]`.
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse(
+          { error: { code: "internal_error", message: "Actor lookup failed" } },
+          500,
+        ),
+      ),
+    );
+
+    await expect(
+      getActor(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { tenantId: "tn-1", principalId: "prn_u1" },
+      ),
+    ).rejects.toThrow("Actor lookup failed");
+  });
+
+  it("falls back to an HTTP status when the actor error body has no message", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ error: { code: "boom" } }, 500)),
+    );
+
+    await expect(
+      getActor(
+        { baseUrl: "http://localhost:4000", fetch: fetcher },
+        { tenantId: "tn-1", principalId: "prn_u1" },
+      ),
+    ).rejects.toThrow("HTTP 500");
   });
 
   it("throws when the actor response fails schema validation", async () => {

@@ -543,8 +543,14 @@ export async function getActor(
   });
   if (res.status === 404) return null;
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    // The hub returns `{ error: { code, message } }` (an object). Reach into
+    // `.message` so a 500 surfaces the human string, not `[object Object]`.
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string } | string;
+    };
+    const message =
+      typeof body.error === "string" ? body.error : body.error?.message;
+    throw new Error(message ?? `HTTP ${res.status}`);
   }
   const raw = (await res.json()) as unknown;
   const parsed = ActorSchema(raw);

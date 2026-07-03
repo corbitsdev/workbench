@@ -15,7 +15,7 @@ export const badgeVariants = cva(
     variants: {
       tone: {
         neutral: "border-border bg-surface-2 text-text-3",
-        identity: "border-blue/40 bg-blue/10 text-blue",
+        identity: "border-blue/40 bg-blue/10 text-blue-deep",
         accent: "border-accent/40 bg-accent/10 text-accent",
         positive: "border-green/40 bg-green/10 text-green",
         danger: "border-red/40 bg-red/10 text-red",
@@ -26,6 +26,9 @@ export const badgeVariants = cva(
     },
   },
 );
+
+/** The badge tones, shared so callers can type a tone-mapping table. */
+export type BadgeTone = NonNullable<VariantProps<typeof badgeVariants>["tone"]>;
 
 interface BadgeProps
   extends ComponentPropsWithoutRef<"span">,

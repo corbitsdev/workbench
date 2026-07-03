@@ -1,62 +1,10 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  CircleDot,
-  Database,
-  FileText,
-  KeyRound,
-  Layers,
-  MessageCircle,
-  MessageSquare,
-  ShieldCheck,
-  Sparkles,
-  Upload,
-  Workflow,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
-import {
-  getPrincipalActivity,
-  type TimelineEntry,
-  type TimelineEntryKind,
-} from "@workbench/client";
+import { getPrincipalActivity, type TimelineEntry } from "@workbench/client";
+import { KIND_META, relativeTime } from "./timeline-kinds";
 
 const TIMELINE_PAGE_SIZE = 50;
-
-// Neutral, non-anthropomorphizing labels: each row states what was recorded,
-// not what anyone "decided" or "wanted".
-export const KIND_META: Record<
-  TimelineEntryKind,
-  { label: string; icon: LucideIcon }
-> = {
-  session: { label: "Session", icon: CircleDot },
-  message: { label: "Message", icon: MessageSquare },
-  inference_turn: { label: "Inference turn", icon: Sparkles },
-  tool_call: { label: "Tool call", icon: Wrench },
-  workflow_run: { label: "Workflow run", icon: Workflow },
-  artifact: { label: "Artifact", icon: FileText },
-  artifact_version: { label: "Artifact version", icon: Layers },
-  upload: { label: "Upload", icon: Upload },
-  memory: { label: "Memory", icon: Database },
-  approval: { label: "Approval", icon: CheckCircle2 },
-  output_feedback: { label: "Feedback", icon: MessageCircle },
-  grant: { label: "Grant", icon: ShieldCheck },
-  credential: { label: "Credential", icon: KeyRound },
-};
-
-function relativeTime(iso: string, now: Date): string {
-  const then = new Date(iso).getTime();
-  const diffMs = now.getTime() - then;
-  if (diffMs < 60_000) return "just now";
-  const minutes = Math.floor(diffMs / 60_000);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 function dayKey(iso: string): string {
   const d = new Date(iso);
@@ -100,14 +48,13 @@ function TimelineRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
     <li
       data-testid="timeline-entry"
       data-kind={entry.kind}
-      tabIndex={0}
-      className="group flex items-start gap-3 rounded-[10px] px-3 py-2.5 outline-none transition-colors hover:bg-row-hover focus-visible:ring-1 focus-visible:ring-accent"
+      className="flex items-start gap-3 rounded-[10px] px-3 py-2.5"
     >
-      <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[8px] border border-border bg-surface-2 text-text-3 transition-colors group-hover:text-text-2">
+      <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-[8px] border border-border bg-surface-2 text-text-3">
         <Icon className="h-3.5 w-3.5" />
       </span>
       <span className="min-w-0 flex-1">
-        <Badge tone="neutral" className="mb-1">
+        <Badge tone={meta.tone} className="mb-1">
           {meta.label}
         </Badge>
         <span className="block truncate text-[13px] text-text-2">
@@ -133,15 +80,18 @@ function TimelineRow({ entry, now }: { entry: TimelineEntry; now: Date }) {
 
 function TimelineSkeleton() {
   return (
-    <div className="flex flex-col gap-2" data-testid="timeline-loading">
+    <div className="flex flex-col gap-0.5" data-testid="timeline-loading">
       {[0, 1, 2, 3, 4].map((i) => (
         <div key={i} className="flex items-start gap-3 px-3 py-2.5">
-          <Skeleton className="h-6 w-6 rounded-[8px]" />
-          <div className="flex flex-1 flex-col gap-1.5">
-            <Skeleton className="h-2.5 w-16" />
+          <Skeleton className="mt-0.5 h-6 w-6 rounded-[8px]" />
+          <div className="min-w-0 flex-1">
+            <Skeleton className="mb-1 h-4 w-16 rounded-[4px]" />
             <Skeleton className="h-3.5 w-3/4" />
           </div>
-          <Skeleton className="h-6 w-12" />
+          <div className="flex flex-col items-end gap-1 pt-0.5">
+            <Skeleton className="h-2.5 w-12" />
+            <Skeleton className="h-2.5 w-10" />
+          </div>
         </div>
       ))}
     </div>
@@ -154,7 +104,11 @@ function TimelineSkeleton() {
  * TanStack dedupes them onto one cache entry, so the header's derived stats and
  * the timeline rows always agree and Load-more appends update both.
  */
-export function usePrincipalActivity(tenantId: string, principalId: string) {
+export function usePrincipalActivity(
+  tenantId: string,
+  principalId: string,
+  options: { enabled?: boolean } = {},
+) {
   return useInfiniteQuery({
     queryKey: ["principal-activity", tenantId, principalId],
     queryFn: ({ pageParam, signal }) =>
@@ -169,6 +123,7 @@ export function usePrincipalActivity(tenantId: string, principalId: string) {
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    enabled: options.enabled ?? true,
   });
 }
 
@@ -232,7 +187,7 @@ export function ActorTimeline({
             onClick={() => {
               void activityQuery.refetch();
             }}
-            className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+            className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
           >
             Retry
           </button>
@@ -249,7 +204,7 @@ export function ActorTimeline({
         <div className="flex flex-col gap-5">
           {groups.map((group) => (
             <section key={group.key} className="flex flex-col gap-1">
-              <h3 className="sticky top-0 z-10 -mx-1 bg-page/95 px-1 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] tabular-nums text-text-3 backdrop-blur">
+              <h3 className="sticky top-0 z-10 -mx-1 bg-bg/95 px-1 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] tabular-nums text-text-3 backdrop-blur">
                 {group.label}
               </h3>
               <ul className="flex flex-col gap-0.5 border-l border-border pl-2">
@@ -271,7 +226,7 @@ export function ActorTimeline({
                 onClick={() => {
                   void activityQuery.fetchNextPage();
                 }}
-                className="flex min-h-[32px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-50"
+                className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-[colors,transform] hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:opacity-50"
               >
                 {activityQuery.isFetchingNextPage ? "Loading…" : "Load more"}
               </button>
