@@ -1,25 +1,25 @@
 import { getAncestorChain, schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { type } from "arktype";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { requestBodySchema } from "../lib/openapi";
-import { randomBytes, randomUUID } from "node:crypto";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
 import { isTerminalRunStatus } from "../workflow-executor/run-status";
 import {
-  insertRunRecord,
   listRunRecords,
   loadRunRecord,
   markRunStopped,
-  setRunStatus,
   softDeleteRunRecord,
 } from "../workflow-executor/run-store";
+import {
+  assertRunOwnership,
+  resumeWorkflowRun,
+  startWorkflowRun,
+} from "../workflow-executor/run-exec";
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
-import { validateResumePayload } from "../workflow-executor/resume-payload-registry";
 import type {
   AgentRepoStore,
   SessionService,
@@ -31,7 +31,6 @@ import {
   type LogRunState,
 } from "../workflow-executor/run-state-from-log";
 import type { CryptoProvider } from "@intx/types/runtime";
-import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
@@ -61,69 +60,6 @@ const RunStateResponse = type({
 
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
-
-function mintRunId(): string {
-  return `wfr_${randomBytes(16).toString("hex")}`;
-}
-
-// Resolve the most-specific deployment of `kind` visible along the user's
-// tenant chain (active workbench shadows inherited globals; ties break on
-// recency). Mirrors the native start route's shadowing rule.
-async function resolveDeployment(
-  db: HubDb,
-  chain: readonly string[],
-  kind: string,
-): Promise<{
-  deploymentId: string;
-  tenantId: string;
-  principalId: string;
-} | null> {
-  const candidates = await db.query.workflowRun.findMany({
-    where: and(
-      eq(workflowRun.kind, kind),
-      inArray(workflowRun.tenantId, [...chain]),
-      isNotNull(workflowRun.deploymentId),
-      isNull(workflowRun.deletedAt),
-    ),
-    orderBy: desc(workflowRun.createdAt),
-  });
-  const rank = new Map(chain.map((t, i) => [t, i]));
-  let best: (typeof candidates)[number] | undefined;
-  let bestRank = Number.POSITIVE_INFINITY;
-  for (const candidate of candidates) {
-    const r = rank.get(candidate.tenantId) ?? Number.POSITIVE_INFINITY;
-    if (r < bestRank) {
-      bestRank = r;
-      best = candidate;
-    }
-  }
-  if (!best?.deploymentId) return null;
-  return {
-    deploymentId: best.deploymentId,
-    tenantId: best.tenantId,
-    principalId: best.principalId,
-  };
-}
-
-// Ownership/tenancy gate for reading or resuming a specific run. The record's
-// tenant must be visible along the caller's tenant chain, AND the caller must
-// own the run (the run's principal is the caller's principal in that tenant).
-// Returns a gate result to deny, or null to allow. A cross-user request is
-// denied 403; a record in a tenant outside the caller's chain is 404 (it does
-// not exist for them).
-function assertRunOwnership(
-  chain: readonly string[],
-  context: { principalId: string },
-  state: { tenantId: string; principalId: string },
-): { status: 403 | 404; error: string } | null {
-  if (!chain.includes(state.tenantId)) {
-    return { status: 404, error: "run not found" };
-  }
-  if (state.principalId !== context.principalId) {
-    return { status: 403, error: "Forbidden" };
-  }
-  return null;
-}
 
 function stateResponse(state: {
   runId: string;
@@ -238,12 +174,6 @@ export function createWorkflowRunRecordsRouter(deps: {
 
       const kind = c.req.param("kind");
       const chain = await getAncestorChain(deps.db, context.tenantId);
-      // The registry row resolves the kind's tenant + deploy principal; its
-      // deploymentId is the operator's shared deployment and is NOT reused —
-      // each run gets its own (per-run deployment, CL-2582).
-      const definition = await resolveDeployment(deps.db, chain, kind);
-      if (!definition)
-        return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
 
       let body: unknown = {};
       try {
@@ -255,73 +185,28 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (parsed instanceof type.errors) {
         return c.json({ error: `invalid start body: ${parsed.summary}` }, 400);
       }
-      const input = parsed.input ?? {};
-      const originConversationId = parsed.originConversationId ?? null;
 
-      // Mint the runId here and thread it to the sidecar as the trigger mail's
-      // messageId. The supervisor derives the run's id from the message id, so
-      // the seeded row and every run event the sidecar emits share this id — the
-      // projection bridge folds those events back into this exact row.
-      const runId = mintRunId();
-
-      // A freshly-deployed supervisor is routable by construction, so the start
-      // path needs no ensureDeploymentRoutable (resume still does — a parked run's
-      // deployment can lose its address to a restart).
-      let deploymentId: string;
-      try {
-        ({ deploymentId } = await deps.provisionRunDeployment({
-          kind,
-          tenantId: definition.tenantId,
-          creatorPrincipalId: definition.principalId,
-        }));
-      } catch (err) {
-        log.error("workflow run provision failed", {
-          runId,
-          kind,
-          tenantId: definition.tenantId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-        return c.json({ error: "failed to provision workflow run" }, 500);
-      }
-
-      const state = await insertRunRecord(deps.db, {
-        runId,
-        deploymentId,
-        kind,
-        tenantId: definition.tenantId,
-        principalId: context.principalId,
-        input,
-        originConversationId,
-      });
-
-      try {
-        await deps.sessionService.sendUserMessage({
-          agentAddress: deriveDeploymentAddress({
-            deploymentId,
-            deploymentDomain: deps.deploymentDomain,
-          }),
-          from: `hub@${deps.deploymentDomain}`,
-          messageId: runId,
-          date: new Date(),
-          content: JSON.stringify(input),
-          sessionId: randomUUID(),
-          tenantId: definition.tenantId,
+      const result = await startWorkflowRun(
+        {
+          db: deps.db,
+          sessionService: deps.sessionService,
           cryptoProvider: deps.cryptoProvider,
-        });
-      } catch (err) {
-        log.error("workflow run-start failed", {
-          runId,
+          deploymentDomain: deps.deploymentDomain,
+          provisionRunDeployment: deps.provisionRunDeployment,
+        },
+        {
           kind,
-          deploymentId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-        await setRunStatus(deps.db, runId, "failed");
-        return c.json({ error: "failed to start workflow run" }, 500);
-      }
+          chain,
+          principalId: context.principalId,
+          input: parsed.input ?? {},
+          originConversationId: parsed.originConversationId ?? null,
+        },
+      );
+      if (!result.ok) return c.json({ error: result.error }, result.status);
 
       // Return the seeded row immediately (status 'running'); the UI polls it and
       // the projection bridge advances it as the sidecar emits run events.
-      return c.json(stateResponse(state));
+      return c.json(stateResponse(result.state));
     },
   );
 
@@ -610,12 +495,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (!context) return c.json({ error: "User context not found" }, 403);
 
       const runId = c.req.param("runId");
-      const state = await loadRunRecord(deps.db, runId);
-      if (!state) return c.json({ error: "run not found" }, 404);
-
       const chain = await getAncestorChain(deps.db, context.tenantId);
-      const gate = assertRunOwnership(chain, context, state);
-      if (gate) return c.json({ error: gate.error }, gate.status);
 
       let body: unknown;
       try {
@@ -628,64 +508,23 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: `invalid resume body: ${parsed.summary}` }, 400);
       }
 
-      // Validate the gate payload at the trust boundary for workflows/signals
-      // that register a schema; unregistered ones pass through untouched.
-      const payloadCheck = validateResumePayload(
-        state.kind,
-        parsed.signalName,
-        parsed.payload ?? {},
-      );
-      if (!payloadCheck.ok) {
-        return c.json(
-          { error: `invalid resume payload: ${payloadCheck.error}` },
-          400,
-        );
-      }
-
-      if (state.deploymentId === undefined) {
-        return c.json({ error: "run has no deployment to signal" }, 400);
-      }
-
-      // The run owns its single-use deployment (`state.deploymentId`) — a per-run
-      // deployment writes NO `workflow_run` registry row, so we must NOT look it
-      // up there. Recover only the deploy principal (needed to revive the
-      // supervisor's rows if a restart dropped it) from the kind's registry row,
-      // exactly as start does; a kind with no active deployment can't be resumed.
-      const definition = await resolveDeployment(deps.db, chain, state.kind);
-      if (!definition)
-        return c.json({ error: "workflow deployment not found" }, 404);
-
-      try {
-        await deps.ensureDeploymentRoutable({
-          deploymentId: state.deploymentId,
-          kind: state.kind,
-          tenantId: state.tenantId,
-          creatorPrincipalId: definition.principalId,
-        });
-        deps.sidecarRouter.sendSignalDeliver({
-          agentAddress: deriveDeploymentAddress({
-            deploymentId: state.deploymentId,
-            deploymentDomain: deps.deploymentDomain,
-          }),
-          runId: state.runId,
-          signalName: parsed.signalName,
-          signalId: randomUUID(),
-          payload: parsed.payload ?? {},
-        });
-      } catch (err) {
-        log.error("workflow resume signal failed", {
+      const result = await resumeWorkflowRun(
+        {
+          db: deps.db,
+          sidecarRouter: deps.sidecarRouter,
+          deploymentDomain: deps.deploymentDomain,
+          ensureDeploymentRoutable: deps.ensureDeploymentRoutable,
+        },
+        {
           runId,
+          chain,
+          principalId: context.principalId,
           signalName: parsed.signalName,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-        return c.json({ error: "failed to deliver signal" }, 500);
-      }
-
-      // Optimistically clear the gate so the UI resumes polling — a row in
-      // 'awaiting' pauses the poll. The projection bridge advances it as the
-      // sidecar emits the next StepStarted/StepCompleted/RunCompleted.
-      await setRunStatus(deps.db, state.runId, "running");
-      return c.json(stateResponse({ ...state, status: "running" }));
+          payload: parsed.payload ?? {},
+        },
+      );
+      if (!result.ok) return c.json({ error: result.error }, result.status);
+      return c.json(stateResponse(result.state));
     },
   );
 

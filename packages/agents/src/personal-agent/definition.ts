@@ -77,4 +77,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = canonicalizeToolNames([
   "list_skills",
   "search_skills",
   "load_skill",
+  "workflow_start",
+  "workflow_list_runs",
+  "workflow_signal",
 ]);

@@ -71,6 +71,7 @@
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-skills": "workspace:*",
+        "@workbench/tools-workflows": "workspace:*",
         "@workbench/tools-x": "workspace:*",
         "@workbench/tools-youtube": "workspace:*",
         "arktype": "catalog:",
@@ -1174,6 +1175,19 @@
       "devDependencies": {
         "@intx/agent": "workspace:*",
         "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-workflows": {
+      "name": "@workbench/tools-workflows",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
@@ -2427,6 +2441,8 @@
     "@workbench/tools-skills": ["@workbench/tools-skills@workspace:packages/tools-skills"],
 
     "@workbench/tools-vercel": ["@workbench/tools-vercel@workspace:packages/tools-vercel"],
+
+    "@workbench/tools-workflows": ["@workbench/tools-workflows@workspace:packages/tools-workflows"],
 
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
 

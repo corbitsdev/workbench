@@ -34,6 +34,12 @@ import type {
   SidecarRouter,
   RepoStore,
 } from "@intx/hub-sessions";
+import type { CryptoProvider } from "@intx/types/runtime";
+import type {
+  EnsureDeploymentRoutableFn,
+  ProvisionRunDeploymentFn,
+} from "../routes/workflow-runs";
+import { WORKFLOWS_HUB_TOOLS } from "../tools/workflow-run-tools";
 import {
   canonicalizeToolNames,
   expandToolAliasGrants,
@@ -74,6 +80,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...IDENTITY_HUB_TOOLS,
   ...SKILLS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
+  ...WORKFLOWS_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {
@@ -95,6 +102,13 @@ export type ContextToolEntry = {
     sidecarRouter?: SidecarRouter;
     repoStore?: RepoStore;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
+    // Workflow-exec wiring for the workflow-run tools (CL-2678); pre-bound in
+    // index.ts alongside the /workflow-exec routes so both rails share the
+    // same start/resume service.
+    cryptoProvider?: CryptoProvider;
+    deploymentDomain?: string;
+    provisionRunDeployment?: ProvisionRunDeploymentFn;
+    ensureDeploymentRoutable?: EnsureDeploymentRoutableFn;
   }) => AgentTool[];
 };
 
