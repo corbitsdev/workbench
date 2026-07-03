@@ -68,8 +68,8 @@ async function createFromTemplate(
   return { gammaUrl: result.gammaUrl, gammaId: result.gammaId };
 }
 
-// Tenant-owned templates are stored in the hub DB and listed via the hub
-// ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL in apps/hub). This schema
+// Tenant-owned templates are stored in the hub DB and listed via the
+// hub-backed tool (GAMMA_TEMPLATES_HUB_TOOLS in apps/hub). This schema
 // describes a single template as returned to the agent at runtime.
 export const GammaTemplateSchema = type({
   id: "string",
@@ -126,9 +126,9 @@ export const TEMPLATE_DEFINITIONS: ToolDefinition[] = [
   GAMMA_CREATE_FROM_TEMPLATE_DEFINITION,
 ];
 
-// gamma_list_templates is excluded from this factory — it is registered in the
-// hub as a ContextToolEntry (GAMMA_LIST_TEMPLATES_HUB_TOOL) that reads from the
-// tenant DB rather than requiring Gamma API credentials.
+// gamma_list_templates is excluded from this factory — it is its own
+// hub-backed factory (`gammaTemplates` in interchange-tools.ts) that reads
+// from the tenant DB rather than requiring Gamma API credentials.
 export function createTemplateTools(config: GammaToolsConfig): AgentTool[] {
   const resolved = resolveConfig(config);
   return [

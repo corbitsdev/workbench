@@ -137,6 +137,20 @@ describe("canonicalizeToolNames (CL-2145)", () => {
 });
 
 describe("toolPackagesForCapabilities", () => {
+  // CL-2597: gamma_list_templates was unreachable from workflow steps because
+  // it canonicalized to the credentialed gamma factory, whose loaded bundle
+  // excludes it. It must map to the hub-backed gamma-templates factory AND
+  // still pin the @workbench/tools-gamma tarball.
+  it("maps gamma_list_templates to the hub-backed gamma-templates factory", () => {
+    const canonical = canonicalizeToolNames(["gamma_list_templates"]);
+    expect(canonical).toEqual([
+      "@workbench/tools-gamma/gamma-templates:gamma_list_templates",
+    ]);
+    expect(toolPackagesForCapabilities(canonical)).toEqual([
+      { name: "@workbench/tools-gamma", version: "^0.1.0" },
+    ]);
+  });
+
   it("pins @workbench/tools-last30days when the workflow brief tool is declared", () => {
     const pins = toolPackagesForCapabilities(
       canonicalizeToolNames(["last30days_workflow_brief"]),

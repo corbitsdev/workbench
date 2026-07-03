@@ -14,8 +14,10 @@ Setup steps list the available artifacts and Granola notes, then an
 `intake` `awaitSignal` gate collects the chosen source (artifact / call / pasted
 text) plus template, deck title, and audience/tone/goal. The intake UI fetches
 the Gamma templates from the hub (`GET /api/v1/gamma-templates`) rather than a
-workflow step — `gamma_list_templates` is a hub ContextToolEntry and cannot run
-inside a workflow deployment. Both readers
+workflow step; that HTTP path also computes per-caller `canManage` and walks
+the tenant ancestor chain. (`gamma_list_templates` itself is hub-backed and
+CAN run in a workflow step since CL-2597 — the intake UI keeps the HTTP
+fetch for those extra projections.) Both readers
 (`artifact_read`, `granola_get_note`) run `nonFatal`; the unused one degrades and
 `generate` uses whichever source resolved.
 
