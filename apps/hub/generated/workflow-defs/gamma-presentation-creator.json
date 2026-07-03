@@ -28,7 +28,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
-            "workbench.argMap": "{}"
+            "workbench.argMap": "{\"limit\":{\"literal\":50}}"
           }
         },
         "drainBehavior": "cancel",
@@ -53,7 +53,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
-            "workbench.argMap": "{}"
+            "workbench.argMap": "{\"limit\":{\"literal\":30}}"
           }
         },
         "drainBehavior": "cancel"
@@ -196,6 +196,35 @@
           "generate-1"
         ]
       },
+      "describe-1": {
+        "kind": "step",
+        "id": "describe-1",
+        "agent": {
+          "id": "presentation-describe-1",
+          "systemPrompt": "You are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: presentation-describe-1",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.generate-1.output"
+        },
+        "after": [
+          "generate-1"
+        ]
+      },
       "preview-1": {
         "kind": "awaitSignal",
         "id": "preview-1",
@@ -213,16 +242,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_create"
+            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"kind\":{\"literal\":\"presentation\"},\"content\":{\"from\":\"reply\"}}"
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
           }
         },
         "drainBehavior": "cancel",
@@ -232,12 +261,16 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.generate-1.output"
+              "from": "steps.render-1.output"
+            },
+            {
+              "from": "steps.describe-1.output"
             }
           ]
         },
         "after": [
-          "check-1"
+          "check-1",
+          "describe-1"
         ]
       },
       "check-1": {
@@ -327,6 +360,35 @@
           "generate-2"
         ]
       },
+      "describe-2": {
+        "kind": "step",
+        "id": "describe-2",
+        "agent": {
+          "id": "presentation-describe-2",
+          "systemPrompt": "You are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: presentation-describe-2",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.generate-2.output"
+        },
+        "after": [
+          "generate-2"
+        ]
+      },
       "preview-2": {
         "kind": "awaitSignal",
         "id": "preview-2",
@@ -344,16 +406,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_create"
+            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"kind\":{\"literal\":\"presentation\"},\"content\":{\"from\":\"reply\"}}"
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
           }
         },
         "drainBehavior": "cancel",
@@ -363,12 +425,16 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.generate-2.output"
+              "from": "steps.render-2.output"
+            },
+            {
+              "from": "steps.describe-2.output"
             }
           ]
         },
         "after": [
-          "check-2"
+          "check-2",
+          "describe-2"
         ]
       },
       "check-2": {
@@ -458,6 +524,35 @@
           "generate-3"
         ]
       },
+      "describe-3": {
+        "kind": "step",
+        "id": "describe-3",
+        "agent": {
+          "id": "presentation-describe-3",
+          "systemPrompt": "You are given the slide content of a Gamma deck. Write ONE sentence describing what the deck is, for a listing next to the deck link.\n\n- One sentence, under 160 characters. No preamble, no \"This deck\", no quotes.\n- Name the subject and the point of the deck, not the slide structure.\n- Use \"workbench\", never \"workspace\". No em dashes, no hashtags, no corporate superlatives.\n\nOutput only the sentence.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "deepseek-v4-flash"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: presentation-describe-3",
+          "tags": {
+            "workbench.stepKind": "inline-inference"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.generate-3.output"
+        },
+        "after": [
+          "generate-3"
+        ]
+      },
       "preview-3": {
         "kind": "awaitSignal",
         "id": "preview-3",
@@ -475,16 +570,16 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "@workbench/tools-artifact/artifact:artifact_create"
+            "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"kind\":{\"literal\":\"presentation\"},\"content\":{\"from\":\"reply\"}}"
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
           }
         },
         "drainBehavior": "cancel",
@@ -494,12 +589,16 @@
               "from": "steps.intake.output"
             },
             {
-              "from": "steps.generate-3.output"
+              "from": "steps.render-3.output"
+            },
+            {
+              "from": "steps.describe-3.output"
             }
           ]
         },
         "after": [
-          "preview-3"
+          "preview-3",
+          "describe-3"
         ]
       }
     },
@@ -511,16 +610,19 @@
       "fetch-note",
       "generate-1",
       "render-1",
+      "describe-1",
       "preview-1",
       "persist-1",
       "check-1",
       "generate-2",
       "render-2",
+      "describe-2",
       "preview-2",
       "persist-2",
       "check-2",
       "generate-3",
       "render-3",
+      "describe-3",
       "preview-3",
       "persist-3"
     ]
