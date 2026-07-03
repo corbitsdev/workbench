@@ -3,6 +3,7 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
@@ -18,6 +19,7 @@ import {
   assertRunOwnership,
   resumeWorkflowRun,
   startWorkflowRun,
+  type RunExecFailure,
 } from "../workflow-executor/run-exec";
 import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import type {
@@ -61,6 +63,19 @@ const RunStateResponse = type({
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
 
+// The deploy-window 503 body (CL-2707). Unlike every other failure — which
+// returns the flat { error: string } shape — this one nests a machine-readable
+// `code` and a human `message` so the FE can auto-retry and show an honest
+// "finishing an update" state. Exported so the OpenAPI 503 responses reference
+// the real body contract, not a bare description.
+export const DeployInProgressResponse = type({
+  error: {
+    code: "'deploy_in_progress'",
+    message: "string",
+  },
+});
+export type DeployInProgress = typeof DeployInProgressResponse.infer;
+
 function stateResponse(state: {
   runId: string;
   kind: string;
@@ -87,6 +102,21 @@ function stateResponse(state: {
   };
 }
 
+// Map a run-exec failure to an HTTP response. The deploy-window 503 (CL-2707)
+// gets a sanitized, machine-readable body and a Retry-After header so the FE
+// can auto-retry and show an honest "redeploying" state — never a raw 500 with
+// "workflow resume signal failed". All other failures keep the flat
+// { error: string } shape the existing surface returns.
+function runExecErrorResponse(c: Context, result: RunExecFailure): Response {
+  if (result.status === 503) {
+    // A 503 only ever originates from the deploy-window failure, which always
+    // sets both fields — no fallback needed.
+    c.header("Retry-After", String(result.retryAfterSeconds));
+    return c.json({ error: { code: result.code, message: result.error } }, 503);
+  }
+  return c.json({ error: result.error }, result.status);
+}
+
 // Workflow runs surface (CL-2243). State lives in the workflow_run_record row,
 // but EXECUTION runs on the sidecar supervisor (the definition is deployed like
 // an agent). /start seeds the row and fires the deployment's trigger mail;
@@ -105,6 +135,12 @@ export function createWorkflowRunRecordsRouter(deps: {
   // Tears down a run's single-use per-run deployment (CL-2582), used by the
   // archive route to free an active run's resources immediately.
   reclaimDeployment: ReclaimDeploymentFn;
+  // CL-2707: sidecar readiness probe (sidecarRouter.getConnectedSidecars). When
+  // provided, start/resume wait bounded for a sidecar during the deploy window
+  // instead of failing instantly. The timeout/interval overrides are for tests.
+  isSidecarConnected?: () => boolean;
+  sidecarWaitTimeoutMs?: number;
+  sidecarPollIntervalMs?: number;
   // Injectable for tests only.
   resolveContext?: typeof getRequestedUserContext;
 }): Hono<{ Variables: { userId: string } }> {
@@ -160,6 +196,15 @@ export function createWorkflowRunRecordsRouter(deps: {
           description: "No deployment",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        503: {
+          description:
+            "Deploy in progress — the sidecar has not reconnected within the bounded wait; retry after the Retry-After hint (CL-2707)",
+          content: {
+            "application/json": {
+              schema: resolver(DeployInProgressResponse),
+            },
+          },
+        },
       },
     }),
     async (c) => {
@@ -193,6 +238,15 @@ export function createWorkflowRunRecordsRouter(deps: {
           cryptoProvider: deps.cryptoProvider,
           deploymentDomain: deps.deploymentDomain,
           provisionRunDeployment: deps.provisionRunDeployment,
+          ...(deps.isSidecarConnected !== undefined
+            ? { isSidecarConnected: deps.isSidecarConnected }
+            : {}),
+          ...(deps.sidecarWaitTimeoutMs !== undefined
+            ? { sidecarWaitTimeoutMs: deps.sidecarWaitTimeoutMs }
+            : {}),
+          ...(deps.sidecarPollIntervalMs !== undefined
+            ? { sidecarPollIntervalMs: deps.sidecarPollIntervalMs }
+            : {}),
         },
         {
           kind,
@@ -202,7 +256,7 @@ export function createWorkflowRunRecordsRouter(deps: {
           originConversationId: parsed.originConversationId ?? null,
         },
       );
-      if (!result.ok) return c.json({ error: result.error }, result.status);
+      if (!result.ok) return runExecErrorResponse(c, result);
 
       // Return the seeded row immediately (status 'running'); the UI polls it and
       // the projection bridge advances it as the sidecar emits run events.
@@ -482,6 +536,15 @@ export function createWorkflowRunRecordsRouter(deps: {
           description: "Run not found",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        503: {
+          description:
+            "Deploy in progress — the sidecar has not reconnected within the bounded wait; retry after the Retry-After hint (CL-2707)",
+          content: {
+            "application/json": {
+              schema: resolver(DeployInProgressResponse),
+            },
+          },
+        },
       },
     }),
     async (c) => {
@@ -514,6 +577,15 @@ export function createWorkflowRunRecordsRouter(deps: {
           sidecarRouter: deps.sidecarRouter,
           deploymentDomain: deps.deploymentDomain,
           ensureDeploymentRoutable: deps.ensureDeploymentRoutable,
+          ...(deps.isSidecarConnected !== undefined
+            ? { isSidecarConnected: deps.isSidecarConnected }
+            : {}),
+          ...(deps.sidecarWaitTimeoutMs !== undefined
+            ? { sidecarWaitTimeoutMs: deps.sidecarWaitTimeoutMs }
+            : {}),
+          ...(deps.sidecarPollIntervalMs !== undefined
+            ? { sidecarPollIntervalMs: deps.sidecarPollIntervalMs }
+            : {}),
         },
         {
           runId,
@@ -523,7 +595,7 @@ export function createWorkflowRunRecordsRouter(deps: {
           payload: parsed.payload ?? {},
         },
       );
-      if (!result.ok) return c.json({ error: result.error }, result.status);
+      if (!result.ok) return runExecErrorResponse(c, result);
       return c.json(stateResponse(result.state));
     },
   );

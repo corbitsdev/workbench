@@ -98,6 +98,7 @@ export function WorkflowCatalog({
 }: WorkflowCatalogProps) {
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [redeploying, setRedeploying] = useState(false);
 
   const { data: workflowDeployments = [], isPending } =
     useWorkflowDeployments(tenantId);
@@ -130,14 +131,20 @@ export function WorkflowCatalog({
   const handleStart = (kind: string) => {
     if (startWorkflow.isPending) return;
     setError(null);
+    setRedeploying(false);
     startWorkflow
-      .mutateAsync({ kind, input: {} })
+      .mutateAsync({
+        kind,
+        input: {},
+        onRedeploying: () => setRedeploying(true),
+      })
       .then((res) => onWorkflowStarted(res.runId))
       .catch((err: unknown) => {
         setError(
           err instanceof Error ? err.message : "Could not start the workflow.",
         );
-      });
+      })
+      .finally(() => setRedeploying(false));
   };
 
   return (
@@ -156,7 +163,13 @@ export function WorkflowCatalog({
         />
       </div>
 
-      {error && (
+      {redeploying && (
+        <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-text-2">
+          Finishing an update — retrying…
+        </div>
+      )}
+
+      {error && !redeploying && (
         <div className="rounded-lg border border-orange bg-[rgba(233,132,40,0.12)] px-3 py-2 text-[13px] text-orange-deep">
           {error}
         </div>

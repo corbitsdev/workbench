@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
-import { api } from "../lib/api";
+import { api, withDeployRetry } from "../lib/api";
 import {
   isLogStateTerminal,
   isRecordTerminal,
@@ -285,17 +285,34 @@ export function useWorkflowStepOutputs(
   return { ...state, data };
 }
 
+// A start/resume that lands during the deploy window (hub up, sidecar
+// reconnecting) gets a 503 { code: "deploy_in_progress" } (CL-2707). Rather than
+// flash an error, the mutation auto-retries with bounded backoff and calls
+// `onRedeploying` before each wait so the caller can show an honest transient
+// state; any other failure surfaces immediately.
 export function useStartWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
-      const raw = await api<unknown>(
-        "POST",
-        withTenant(
-          `/workflow-exec/${encodeURIComponent(kind)}/start`,
-          tenantId,
-        ),
-        { input },
+    mutationFn: async ({
+      kind,
+      input,
+      onRedeploying,
+    }: {
+      kind: string;
+      input: unknown;
+      onRedeploying?: () => void;
+    }) => {
+      const raw = await withDeployRetry(
+        () =>
+          api<unknown>(
+            "POST",
+            withTenant(
+              `/workflow-exec/${encodeURIComponent(kind)}/start`,
+              tenantId,
+            ),
+            { input },
+          ),
+        onRedeploying ? { onRetrying: onRedeploying } : undefined,
       );
       return parseRunRecord(raw);
     },
@@ -323,17 +340,23 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
     mutationFn: async ({
       signalName,
       payload,
+      onRedeploying,
     }: {
       signalName: string;
       payload?: unknown;
+      onRedeploying?: () => void;
     }) => {
-      const raw = await api<unknown>(
-        "POST",
-        withTenant(
-          `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
-          tenantId,
-        ),
-        { signalName, payload },
+      const raw = await withDeployRetry(
+        () =>
+          api<unknown>(
+            "POST",
+            withTenant(
+              `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
+              tenantId,
+            ),
+            { signalName, payload },
+          ),
+        onRedeploying ? { onRetrying: onRedeploying } : undefined,
       );
       return parseRunRecord(raw);
     },

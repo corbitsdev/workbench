@@ -28,10 +28,74 @@ const log = getLogger(["workflow-exec", "run-exec"]);
 
 export type RunExecFailure = {
   ok: false;
-  status: 400 | 403 | 404 | 500;
+  status: 400 | 403 | 404 | 500 | 503;
   error: string;
+  // Set on the deploy-window 503 (CL-2707): a machine-readable code and the
+  // Retry-After hint the FE uses to auto-retry rather than flash a raw error.
+  code?: "deploy_in_progress";
+  retryAfterSeconds?: number;
 };
 export type RunExecResult = { ok: true; state: RunState } | RunExecFailure;
+
+// CL-2707: on every deploy the hub boots ~70s before the sidecar reconnects.
+// A user-initiated start/resume that lands in that window otherwise fails
+// instantly and rawly (session launch 503 "No sidecar available", resume 500
+// "workflow resume signal failed"). When an `isSidecarConnected` probe is
+// injected, the sidecar-dependent step first WAITS (bounded) for a connection
+// — the same getConnectedSidecars() surface CL-2699 uses for boot autopublish.
+// Omitted (e.g. Myra chat tools) → proceed immediately (unchanged behavior).
+export type SidecarReadinessDeps = {
+  isSidecarConnected?: () => boolean;
+  sidecarWaitTimeoutMs?: number;
+  sidecarPollIntervalMs?: number;
+};
+
+// Bounded server-side hold: kept well under a typical proxy read timeout so the
+// request returns cleanly instead of being killed mid-wait. The FE auto-retry
+// (CL-2707) covers the rest of the ~70s reconnect window across attempts.
+const SIDECAR_WAIT_TIMEOUT_MS = 20_000;
+const SIDECAR_POLL_INTERVAL_MS = 2_000;
+// Retry-After hint returned with the deploy-window 503. Larger than one poll
+// interval so a client retry lands after the sidecar has had a real chance to
+// reconnect, not while this same request is still holding.
+const DEPLOY_IN_PROGRESS_RETRY_SECONDS = 10;
+
+// Bounded wait for a sidecar connection. Returns immediately (no delay, one
+// probe) when a sidecar is already connected — the common case adds no latency.
+// On timeout returns false so the caller can emit an honest 503 instead of a
+// deep raw failure. A missing probe means "don't gate" (returns true).
+async function waitForSidecarReady(
+  deps: SidecarReadinessDeps,
+): Promise<boolean> {
+  const probe = deps.isSidecarConnected;
+  if (probe === undefined || probe()) return true;
+
+  const timeoutMs = deps.sidecarWaitTimeoutMs ?? SIDECAR_WAIT_TIMEOUT_MS;
+  const intervalMs = deps.sidecarPollIntervalMs ?? SIDECAR_POLL_INTERVAL_MS;
+  const deadline = Date.now() + timeoutMs;
+  log.info("waiting for a sidecar connection before workflow action", {
+    timeoutMs,
+  });
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (probe()) {
+      log.info("sidecar connected; proceeding with workflow action");
+      return true;
+    }
+  }
+  return probe();
+}
+
+function deployInProgressFailure(): RunExecFailure {
+  return {
+    ok: false,
+    status: 503,
+    code: "deploy_in_progress",
+    retryAfterSeconds: DEPLOY_IN_PROGRESS_RETRY_SECONDS,
+    error:
+      "The workbench is finishing an update — this run will resume automatically. Try again in a moment.",
+  };
+}
 
 function mintRunId(): string {
   return `wfr_${randomBytes(16).toString("hex")}`;
@@ -102,7 +166,7 @@ export type StartWorkflowRunDeps = {
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
   provisionRunDeployment: ProvisionRunDeploymentFn;
-};
+} & SidecarReadinessDeps;
 
 /**
  * Start a run of `kind` owned by `principalId`: resolve the kind's registry
@@ -127,6 +191,13 @@ export async function startWorkflowRun(
       status: 404,
       error: `no deployed workflow of kind "${opts.kind}"`,
     };
+  }
+
+  // Provisioning a per-run deployment needs the sidecar. During the deploy
+  // window (hub up, sidecar reconnecting) wait bounded for it rather than
+  // failing the provision instantly (CL-2707).
+  if (!(await waitForSidecarReady(deps))) {
+    return deployInProgressFailure();
   }
 
   const runId = mintRunId();
@@ -198,7 +269,7 @@ export type ResumeWorkflowRunDeps = {
   sidecarRouter: SidecarRouter;
   deploymentDomain: string;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
-};
+} & SidecarReadinessDeps;
 
 /**
  * Deliver a gate signal to a parked run's sidecar supervisor and optimistically
@@ -251,6 +322,13 @@ export async function resumeWorkflowRun(
   const definition = await resolveDeployment(deps.db, opts.chain, state.kind);
   if (!definition) {
     return { ok: false, status: 404, error: "workflow deployment not found" };
+  }
+
+  // Re-establishing/signalling the supervisor needs the sidecar. During the
+  // deploy window (hub up, sidecar reconnecting) wait bounded for it rather
+  // than throwing a raw "signal failed" 500 instantly (CL-2707).
+  if (!(await waitForSidecarReady(deps))) {
+    return deployInProgressFailure();
   }
 
   try {
