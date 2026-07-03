@@ -25,7 +25,11 @@ describe("timeline cursor", () => {
 
   test("rejects a cursor with a non-timestamp timestamp", () => {
     const token = Buffer.from(
-      JSON.stringify({ timestamp: "yesterday", sourceTable: "artifact", id: "x" }),
+      JSON.stringify({
+        timestamp: "yesterday",
+        sourceTable: "artifact",
+        id: "x",
+      }),
     ).toString("base64url");
     expect(() => decodeTimelineCursor(token)).toThrow();
   });

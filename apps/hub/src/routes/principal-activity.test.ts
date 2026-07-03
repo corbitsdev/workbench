@@ -42,11 +42,14 @@ import { createPrincipalActivityRouter } from "./principal-activity";
 
 function buildApp(callerPrincipalId: string) {
   const hub = new Hono<RouteEnv>();
-  hub.use("/api/tenants/:tenantId/principals/:principalId/activity/*", async (c, next) => {
-    c.set("tenant", { id: "tnt_test" });
-    c.set("principal", { id: callerPrincipalId });
-    await next();
-  });
+  hub.use(
+    "/api/tenants/:tenantId/principals/:principalId/activity/*",
+    async (c, next) => {
+      c.set("tenant", { id: "tnt_test" });
+      c.set("principal", { id: callerPrincipalId });
+      await next();
+    },
+  );
   hub.route(
     "/api/tenants/:tenantId/principals/:principalId/activity",
     createPrincipalActivityRouter({ db: {} as never, grantStore: {} as never }),

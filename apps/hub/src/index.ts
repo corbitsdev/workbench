@@ -96,6 +96,7 @@ import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
 import { createActorSearchRouter } from "./routes/actor-search";
 import { createActivityRouter } from "./routes/activity";
+import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -622,6 +623,10 @@ const hubApp = createApp({
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/activity",
+  createPrincipalActivityRouter({ db, grantStore }),
+);
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(
   "/api/tenants/:tenantId/actors/search",

@@ -21,7 +21,13 @@ describe("buildTimelineUnionQuery", () => {
 
   test("every branch emits the identical column set with text-cast ids", () => {
     const { sql } = render({ scope, limit: 20 });
-    for (const alias of ["as id", "as kind", "as source_table", "as ts", "as summary"]) {
+    for (const alias of [
+      "as id",
+      "as kind",
+      "as source_table",
+      "as ts",
+      "as summary",
+    ]) {
       const count = sql.match(new RegExp(alias, "g")) ?? [];
       expect(count.length).toBeGreaterThanOrEqual(timelineSources.length);
     }
@@ -36,7 +42,9 @@ describe("buildTimelineUnionQuery", () => {
     const tenantBinds = params.filter((p) => p === scope.tenantId);
     const principalBinds = params.filter((p) => p === scope.principalId);
     expect(tenantBinds.length).toBeGreaterThanOrEqual(timelineSources.length);
-    expect(principalBinds.length).toBeGreaterThanOrEqual(timelineSources.length);
+    expect(principalBinds.length).toBeGreaterThanOrEqual(
+      timelineSources.length,
+    );
   });
 
   test("uses keyset pagination, never OFFSET", () => {

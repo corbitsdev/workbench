@@ -1,4 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
 
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -54,7 +61,12 @@ async function seedSession(args: {
   await client.query(
     `insert into agent_session (id, tenant_id, agent_id, principal_id, status, created_at, updated_at)
      values ($1, $2, 'agt-x', $3, 'active', $4, $4)`,
-    [args.id, args.tenantId ?? TENANT, args.principalId ?? PRINCIPAL, args.createdAt],
+    [
+      args.id,
+      args.tenantId ?? TENANT,
+      args.principalId ?? PRINCIPAL,
+      args.createdAt,
+    ],
   );
 }
 
@@ -113,7 +125,12 @@ async function seedRunRecord(args: {
   await client.query(
     `insert into workflow_run_record (id, kind, tenant_id, principal_id, status, created_at, updated_at)
      values ($1, 'last30days', $2, $3, 'completed', $4, $4)`,
-    [args.id, args.tenantId ?? TENANT, args.principalId ?? PRINCIPAL, args.createdAt],
+    [
+      args.id,
+      args.tenantId ?? TENANT,
+      args.principalId ?? PRINCIPAL,
+      args.createdAt,
+    ],
   );
 }
 
@@ -146,7 +163,12 @@ async function seedMemory(args: {
   await client.query(
     `insert into memory (id, tenant_id, owner_principal_id, content, created_at, updated_at)
      values ($1, $2, $3, 'remember this', $4, $4)`,
-    [args.id, args.tenantId ?? TENANT, args.ownerPrincipalId ?? PRINCIPAL, args.updatedAt],
+    [
+      args.id,
+      args.tenantId ?? TENANT,
+      args.ownerPrincipalId ?? PRINCIPAL,
+      args.updatedAt,
+    ],
   );
 }
 
@@ -159,7 +181,12 @@ async function seedCredential(args: {
   await client.query(
     `insert into credential (id, tenant_id, principal_id, provider_id, name, type, secret, created_at, updated_at)
      values ($1, $2, $3, 'prv-x', 'My key', 'api_key', 'sealed', $4, $4)`,
-    [args.id, args.tenantId ?? TENANT, args.principalId ?? PRINCIPAL, args.createdAt],
+    [
+      args.id,
+      args.tenantId ?? TENANT,
+      args.principalId === undefined ? PRINCIPAL : args.principalId,
+      args.createdAt,
+    ],
   );
 }
 
@@ -222,7 +249,10 @@ describe("getPrincipalActivityPage — union over real tables", () => {
     });
     await seedToolCall({ id: "evt-1", occurredAt: "2026-07-01T10:03:00Z" });
     await seedRunRecord({ id: "run-1", createdAt: "2026-07-01T10:04:00Z" });
-    await seedMemory({ id: "3a0b8f60-0000-4000-8000-000000000001", updatedAt: "2026-07-01T10:05:00Z" });
+    await seedMemory({
+      id: "3a0b8f60-0000-4000-8000-000000000001",
+      updatedAt: "2026-07-01T10:05:00Z",
+    });
     await seedCredential({ id: "crd-1", createdAt: "2026-07-01T10:06:00Z" });
 
     const result = await page({ limit: 20 });
@@ -336,7 +366,10 @@ describe("getPrincipalActivityPage — union over real tables", () => {
     const tied = "2026-07-01T06:00:00Z";
     await seedSession({ id: "ses-tie", createdAt: tied });
     await seedRunRecord({ id: "run-tie", createdAt: tied });
-    await seedMemory({ id: "3a0b8f60-0000-4000-8000-0000000000b1", updatedAt: tied });
+    await seedMemory({
+      id: "3a0b8f60-0000-4000-8000-0000000000b1",
+      updatedAt: tied,
+    });
     await seedCredential({ id: "crd-tie", createdAt: tied });
     await seedSession({ id: "ses-late", createdAt: "2026-07-01T06:30:00Z" });
     await seedMail({
@@ -352,7 +385,10 @@ describe("getPrincipalActivityPage — union over real tables", () => {
     let cursor: string | undefined;
     let rounds = 0;
     for (;;) {
-      const result = await page({ limit: 2, ...(cursor !== undefined ? { cursor } : {}) });
+      const result = await page({
+        limit: 2,
+        ...(cursor !== undefined ? { cursor } : {}),
+      });
       paged.push(...result.entries);
       if (result.nextCursor === null) break;
       cursor = result.nextCursor;
