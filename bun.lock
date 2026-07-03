@@ -1387,6 +1387,8 @@
         "@intx/workflow": "workspace:*",
         "@tanstack/react-query": "5.100.14",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",

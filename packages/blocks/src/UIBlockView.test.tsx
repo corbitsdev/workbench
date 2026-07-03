@@ -163,6 +163,81 @@ describe("UIBlockView", () => {
     expect(received?.payload).toEqual(payload);
   });
 
+  it("disables submit until a required prompt-box note is entered (CL-2730)", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const block: UIBlock = {
+      kind: "choice",
+      prompt: "Refine the draft.",
+      signalName: "preview-1",
+      promptBox: {
+        placeholder: "What should change?",
+        payloadKey: "feedback",
+        required: true,
+      },
+      options: [
+        {
+          id: "refine",
+          label: "Refine with notes",
+          value: "refine",
+          payload: { approved: false },
+        },
+      ],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    const button = screen.getByRole("button", { name: "Refine with notes" });
+    // Held while the required note is empty: clicking does nothing.
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button);
+    expect(received).toBeUndefined();
+    // A whitespace-only note does not satisfy the trim guard.
+    fireEvent.change(screen.getByPlaceholderText("What should change?"), {
+      target: { value: "   " },
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    // A real note unlocks submission and folds under the payload key.
+    fireEvent.change(screen.getByPlaceholderText("What should change?"), {
+      target: { value: "Tighten the opening." },
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    expect(received?.payload).toEqual({
+      approved: false,
+      feedback: "Tighten the opening.",
+    });
+  });
+
+  it("submits freely when the prompt-box is not required (CL-2730)", () => {
+    let received: UIResponse | undefined;
+    const onRespond = (response: UIResponse) => {
+      received = response;
+    };
+    const block: UIBlock = {
+      kind: "choice",
+      signalName: "ab-decision",
+      // ab-compare's rationale box: optional, must never gate the pick.
+      promptBox: { placeholder: "Why did it win?", payloadKey: "rationale" },
+      options: [
+        {
+          id: "Variant 2",
+          label: "Variant 2 wins",
+          value: "Variant 2",
+          payload: { ranking: [{ rank: 1, label: "Variant 2" }] },
+        },
+      ],
+    };
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    const button = screen.getByRole("button", { name: "Variant 2 wins" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(button);
+    expect(received?.value).toBe("Variant 2");
+    expect(received?.payload).toEqual({
+      ranking: [{ rank: 1, label: "Variant 2" }],
+    });
+  });
+
   it("marks an awaiting step with a non-action (blue) status token, not orange", () => {
     const block: UIBlock = {
       kind: "progress",

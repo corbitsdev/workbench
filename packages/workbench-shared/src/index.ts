@@ -4,6 +4,7 @@ export * from "./palette";
 export * from "./active-context";
 export * from "./attio-task-agent";
 export * from "./ab-compare";
+export * from "./gamma-presentation";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

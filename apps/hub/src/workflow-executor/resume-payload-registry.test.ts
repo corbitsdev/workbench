@@ -157,4 +157,62 @@ describe("validateResumePayload", () => {
       }),
     ).toEqual({ ok: true });
   });
+
+  test("accepts a gamma preview approval on any round's gate", () => {
+    for (const signal of ["preview-1", "preview-2", "preview-3"]) {
+      expect(
+        validateResumePayload("gamma-presentation-creator", signal, {
+          approved: true,
+        }),
+      ).toEqual({ ok: true });
+    }
+  });
+
+  test("accepts a gamma preview refine with feedback", () => {
+    expect(
+      validateResumePayload("gamma-presentation-creator", "preview-1", {
+        approved: false,
+        feedback: "Tighten the opening slide.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a gamma refine with no feedback (guidance-less re-roll)", () => {
+    // A refine (`approved: false`) drives the next `generate-N` step; without a
+    // note it would blind re-roll, so the boundary rejects it (CL-2730).
+    expect(
+      validateResumePayload("gamma-presentation-creator", "preview-1", {
+        approved: false,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("rejects a gamma refine with an empty-string feedback", () => {
+    expect(
+      validateResumePayload("gamma-presentation-creator", "preview-2", {
+        approved: false,
+        feedback: "",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("rejects a hollow gamma preview payload with no decision", () => {
+    // The generic free-text path would POST `{ instruction: "..." }`; the check
+    // gate branches on `approved`, so a payload without it is not a decision.
+    const result = validateResumePayload(
+      "gamma-presentation-creator",
+      "preview-1",
+      { instruction: "looks fine" },
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  test("rejects a gamma preview payload with a non-boolean approved", () => {
+    const result = validateResumePayload(
+      "gamma-presentation-creator",
+      "preview-2",
+      { approved: "yes" },
+    );
+    expect(result.ok).toBe(false);
+  });
 });

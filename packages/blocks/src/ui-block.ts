@@ -91,8 +91,16 @@ export type UIBlock =
       // typed value is folded into the selected option's structured `payload`
       // under `payloadKey` when non-empty, so a choice can carry a rationale (or
       // any per-decision note) the panel equivalent collects. Only meaningful for
-      // options that carry an object `payload`.
-      promptBox?: { placeholder?: string; payloadKey: string };
+      // options that carry an object `payload`. When `required` is true the note
+      // is mandatory: every option's submit button in the choice is disabled
+      // until the note is non-empty (CL-2730) — mirroring the run-page panel's
+      // `feedback.trim().length > 0` guard so a dock decision cannot be submitted
+      // with an empty required note (e.g. a guidance-less refine).
+      promptBox?: {
+        placeholder?: string;
+        payloadKey: string;
+        required?: boolean;
+      };
       options: {
         id: string;
         label: string;

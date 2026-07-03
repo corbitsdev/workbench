@@ -412,6 +412,12 @@ function ChoiceBlock({
       [block.promptBox.payloadKey]: note,
     };
   }
+  // A `required` prompt-box makes the note mandatory: every option's submit is
+  // held until the note is non-empty (trim), mirroring the run-page panel's
+  // `feedback.trim().length > 0` guard (CL-2730). A non-required box (the
+  // default — e.g. ab-compare's optional rationale) never gates submission.
+  const noteRequiredMissing =
+    block.promptBox?.required === true && promptText.trim().length === 0;
   return (
     <div className="space-y-2">
       {block.prompt !== undefined && (
@@ -431,6 +437,7 @@ function ChoiceBlock({
           <button
             key={option.id}
             type="button"
+            disabled={noteRequiredMissing}
             onClick={() => {
               setAnswered(option.label);
               const payload = resolvePayload(option.payload);
@@ -443,7 +450,7 @@ function ChoiceBlock({
                 ...(payload !== undefined ? { payload } : {}),
               });
             }}
-            className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange"
+            className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
           >
             {option.label}
           </button>
