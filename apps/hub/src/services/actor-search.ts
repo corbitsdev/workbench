@@ -179,3 +179,84 @@ export async function searchActors(
   }
   return validated;
 }
+
+export interface GetActorByIdParams {
+  tenantId: string;
+  principalId: string;
+}
+
+/**
+ * Resolves a single principal to its {@link Actor} identity within a tenant, or
+ * `null` when no such principal exists in that tenant. Powers the deep-linkable
+ * actor detail page, which must render identity (name, kind, status, email)
+ * from the principal id alone. Tenant-scoped by construction — the principal
+ * row must match `tenantId` before either identity join runs. The agent join
+ * mirrors {@link searchActors}: it matches INSTANCE principals only
+ * (`principal.refId = agentInstance.id`), the only kind that can carry a
+ * timeline.
+ */
+export async function getActorById(
+  db: HubDb,
+  params: GetActorByIdParams,
+): Promise<Actor | null> {
+  const [principalRow] = await db
+    .select({
+      id: principal.id,
+      kind: principal.kind,
+      status: principal.status,
+    })
+    .from(principal)
+    .where(
+      and(
+        eq(principal.id, params.principalId),
+        eq(principal.tenantId, params.tenantId),
+      ),
+    )
+    .limit(1);
+
+  if (principalRow === undefined) return null;
+
+  if (principalRow.kind === "user") {
+    const [userRow] = await db
+      .select({ name: user.name, email: user.email })
+      .from(principal)
+      .innerJoin(user, eq(principal.refId, user.id))
+      .where(eq(principal.id, principalRow.id))
+      .limit(1);
+    if (userRow === undefined) return null;
+    const actor = ActorSchema({
+      id: principalRow.id,
+      kind: "user",
+      displayName: userRow.name,
+      email: userRow.email,
+      status: principalRow.status,
+    });
+    if (actor instanceof type.errors) {
+      throw new Error(`Invalid actor shape: ${actor.summary}`);
+    }
+    return actor;
+  }
+
+  if (principalRow.kind === "agent") {
+    const [agentRow] = await db
+      .select({ name: agent.name })
+      .from(principal)
+      .innerJoin(agentInstance, eq(principal.refId, agentInstance.id))
+      .innerJoin(agent, eq(agentInstance.agentId, agent.id))
+      .where(eq(principal.id, principalRow.id))
+      .limit(1);
+    if (agentRow === undefined) return null;
+    const actor = ActorSchema({
+      id: principalRow.id,
+      kind: "agent",
+      displayName: agentRow.name,
+      status: principalRow.status,
+    });
+    if (actor instanceof type.errors) {
+      throw new Error(`Invalid actor shape: ${actor.summary}`);
+    }
+    return actor;
+  }
+
+  return null;
+}
