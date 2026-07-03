@@ -99,6 +99,7 @@ import { createActorSearchRouter } from "./routes/actor-search";
 import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
 import { createPricingRouter } from "./routes/pricing";
+import { prewarmPriceCatalog } from "./lib/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createPrincipalRosterRouter } from "./routes/principal-roster";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
@@ -628,6 +629,12 @@ const hubApp = createApp({
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
+
+// CL-2749: pre-warm the shared models.dev pricing cache on boot so the first
+// post-deploy Insights pricing request is served warm instead of eating the
+// fetch latency (or a 503). Detached and fail-safe — prewarmPriceCatalog owns
+// its errors, so this never blocks or fails startup if models.dev is down.
+void prewarmPriceCatalog();
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/activity",
   createPrincipalActivityRouter({ db, grantStore }),

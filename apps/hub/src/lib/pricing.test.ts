@@ -11,13 +11,80 @@ mock.module("../config", () => ({
   }),
 }));
 
-const { getProviderLogo, resetProviderLogoCache } = await import("./pricing");
+const { getPriceCatalog, resetPriceCatalogCache } = await import(
+  "@workbench/pricing"
+);
 
-afterEach(() => resetProviderLogoCache());
+const { getProviderLogo, resetProviderLogoCache, prewarmPriceCatalog } =
+  await import("./pricing");
+
+afterEach(() => {
+  resetProviderLogoCache();
+  resetPriceCatalogCache();
+});
 
 function svgResponse(body: string): Response {
   return new Response(body, { status: 200 });
 }
+
+const PRICING_PAYLOAD = {
+  anthropic: {
+    id: "anthropic",
+    name: "Anthropic",
+    models: {
+      "claude-opus-4-5": {
+        id: "claude-opus-4-5",
+        name: "Claude Opus 4.5",
+        cost: { input: 5, output: 25 },
+      },
+    },
+  },
+};
+
+function jsonResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+describe("prewarmPriceCatalog", () => {
+  it("warms the shared cache so a later request serves without refetching", async () => {
+    const originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return jsonResponse(PRICING_PAYLOAD);
+    }) as unknown as typeof fetch;
+    try {
+      await prewarmPriceCatalog();
+      expect(calls).toBe(1);
+
+      // A subsequent request hits the warm cache — no second models.dev fetch.
+      const catalog = await getPriceCatalog({
+        url: "https://models.dev/api.json",
+        ttlMs: 1000,
+        timeoutMs: 1000,
+      });
+      expect(catalog.models["claude-opus-4-5"]?.input).toBe(5);
+      expect(calls).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("does not throw when models.dev is unavailable, so boot is never blocked", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new Error("models.dev down");
+    }) as unknown as typeof fetch;
+    try {
+      await expect(prewarmPriceCatalog()).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
 
 describe("getProviderLogo", () => {
   it("returns svg markup and caches it within the TTL", async () => {

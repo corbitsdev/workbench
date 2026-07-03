@@ -1,6 +1,9 @@
+import { getLogger } from "@intx/log";
 import { getPriceCatalog, type PriceCatalog } from "@workbench/pricing";
 
 import { loadConfig } from "../config";
+
+const log = getLogger(["hub", "pricing"]);
 
 /**
  * Hub-side models.dev integration (CL-2714). Fetches and caches the pricing
@@ -16,6 +19,30 @@ export async function loadPriceCatalog(): Promise<PriceCatalog> {
     ttlMs: pricing.ttlMs,
     timeoutMs: pricing.fetchTimeoutMs,
   });
+}
+
+/**
+ * Best-effort boot warmup of the shared models.dev pricing cache (CL-2749). On
+ * a fresh deploy the in-process TTL cache is cold, so the first Insights pricing
+ * request eats the full models.dev fetch latency or takes a 503 on failure.
+ * Warming the same fetch/cache path a request would hit populates the shared
+ * cache so the first post-deploy request is served warm.
+ *
+ * Non-blocking and fail-safe: this must never block hub startup nor fail it if
+ * models.dev is unavailable. The underlying fetch already applies a timeout and
+ * failure backoff and throws on failure with no cached entry; here we catch and
+ * log rather than propagate. The catalog is a global (tenant-independent), so no
+ * tenant or per-request config is needed at boot.
+ */
+export async function prewarmPriceCatalog(): Promise<void> {
+  try {
+    await loadPriceCatalog();
+    log.info("pricing cache pre-warm: ok");
+  } catch (error) {
+    log.warn("pricing cache pre-warm: failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 interface LogoEntry {
