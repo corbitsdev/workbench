@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import { api } from "../lib/api";
@@ -9,6 +10,7 @@ import {
   runStateFromLog,
   runStateFromRecord,
   runWasInterrupted,
+  stepOutputsFromLog,
   type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
@@ -201,42 +203,23 @@ export {
   runWasInterrupted,
 };
 
-// Resolved step outputs for a run, read from its native event log (CL-2669):
-// the hub replays the deployment's workflow-run log once and returns every
-// completed step's resolved output as a stepId -> output map. Keyed by the run's
-// `deploymentId` (the log is per-deployment); gated until it is known. Polls
-// while the run is still active so a newly-completed step's output appears, and
-// stops once the run settles.
-const stepOutputsSchema = type({ outputs: type({ "[string]": "unknown" }) });
-
+// Resolved step outputs for a run, decoded from the run-keyed log-derived
+// /state fold (CL-2704). The legacy deployment-keyed
+// /workflow-runs/:deploymentId/steps read 404s under per-run deployments
+// (CL-2582), so outputs are mapped straight off the RunState this run's
+// `useWorkflowRunState` query already polls — same cache entry, no second
+// request, same 2s-while-active cadence.
 export function useWorkflowStepOutputs(
-  deploymentId: string | null | undefined,
+  runId: string | null,
   tenantId?: string | null,
-  active = false,
 ) {
-  return useQuery<Record<string, unknown>>({
-    queryKey: ["workflow-step-outputs", deploymentId ?? null, tenantId ?? null],
-    enabled: !!deploymentId,
-    staleTime: 0,
-    retry: false,
-    refetchInterval: active ? 2000 : false,
-    queryFn: async () => {
-      const raw = await api<unknown>(
-        "GET",
-        withTenant(
-          `/workflow-runs/${encodeURIComponent(deploymentId as string)}/steps`,
-          tenantId,
-        ),
-      );
-      const parsed = stepOutputsSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(
-          `Unexpected workflow step-outputs response: ${parsed.summary}`,
-        );
-      }
-      return parsed.outputs;
-    },
-  });
+  const state = useWorkflowRunState(runId, tenantId);
+  const data = useMemo(
+    () =>
+      state.data === undefined ? undefined : stepOutputsFromLog(state.data),
+    [state.data],
+  );
+  return { ...state, data };
 }
 
 export function useStartWorkflow(tenantId?: string | null) {

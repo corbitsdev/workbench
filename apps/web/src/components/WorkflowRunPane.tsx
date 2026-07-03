@@ -19,7 +19,6 @@ import {
   useWorkflowRunState,
   useWorkflowStepOutputs,
 } from "../hooks/use-workflow";
-import { isLogStateTerminal } from "../lib/run-state-adapter";
 import { useSkillLibrary } from "../hooks/use-skills";
 
 interface WorkflowRunPaneProps {
@@ -74,14 +73,9 @@ function WorkflowRunPaneInner({
     runId,
     tenantId,
   );
-  // Step outputs come from the run's native event log (CL-2669), keyed by the
-  // deployment; poll alongside the run while it is still active.
-  const logActive = logState ? !isLogStateTerminal(logState.phase) : false;
-  const { data: stepOutputsData } = useWorkflowStepOutputs(
-    record?.deploymentId,
-    tenantId,
-    logActive,
-  );
+  // Step outputs come from the run-keyed log fold (CL-2704) — never the
+  // record's deploymentId, which 404s under per-run deployments (CL-2582).
+  const { data: stepOutputsData } = useWorkflowStepOutputs(runId, tenantId);
   const resume = useResumeWorkflow(runId, tenantId);
   const { data: credentials } = useWorkflowCredentials(tenantId);
   const { data: skills } = useSkillLibrary(tenantId);
