@@ -29,6 +29,7 @@ import { ToolDetail } from "./pages/ToolDetail";
 import { SettingsToolDetail } from "./pages/SettingsToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
 import { ActorDetailPage } from "./pages/insights/ActorDetailPage";
+import { WorkflowTracePage } from "./pages/insights/WorkflowTracePage";
 
 // Static navigation commands for the command palette, kept beside the route
 // table so a new top-level route adds its palette entry in the same place. Each
@@ -182,6 +183,10 @@ export const router = createBrowserRouter([
           { path: "/tools/:name", element: <ToolDetail /> },
           { path: "/insights", element: <InsightsDashboard /> },
           { path: "/insights/users/:id", element: <ActorDetailPage /> },
+          {
+            path: "/insights/trace/:runId",
+            element: <WorkflowTracePage />,
+          },
         ],
       },
     ],

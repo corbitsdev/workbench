@@ -20,6 +20,7 @@ import {
   TokenMosaic,
 } from "./insights/viz";
 import { ActorActivitySection } from "./insights/ActorActivity";
+import { RecentActivity } from "./insights/RecentActivity";
 import {
   cacheHitRate,
   computeDelta,
@@ -795,6 +796,19 @@ export function InsightsDashboard() {
         {activeTenantId && (
           <div className="mb-10">
             <ActorActivitySection tenantId={activeTenantId} />
+          </div>
+        )}
+
+        {/* CL-2526 Recent Activity feed: a reverse-chronological slice for the
+            current user's principal, each workflow_run row deep-linking to its
+            trace page. Self-contained; own query lifecycle. A tenant-wide feed
+            needs a new hub endpoint (follow-up). */}
+        {activeTenantId && activeWorkbench && (
+          <div className="mb-10">
+            <RecentActivity
+              tenantId={activeTenantId}
+              principalId={activeWorkbench.id}
+            />
           </div>
         )}
 
