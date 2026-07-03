@@ -70,12 +70,86 @@ function shortRunId(runId: string): string {
   return runId.length > 12 ? `${runId.slice(0, 12)}…` : runId;
 }
 
+// Keep the dock scannable: only the most attention-worthy runs get cards; the
+// rest are one link away on the Workflows page.
+const MAX_DOCK_CARDS = 10;
+
+const FOCUS_RING =
+  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent";
+
+// Per-conversation UI prefs, following the app's storage pattern
+// (use-myra-threads.ts): localStorage for the collapse pref (survives reloads),
+// sessionStorage for dismissed failed runs (hidden for the session only).
+function collapseKey(conversationId: string): string {
+  return `workflow-dock-collapsed:${conversationId}`;
+}
+
+function dismissKey(conversationId: string): string {
+  return `workflow-dock-dismissed:${conversationId}`;
+}
+
+function readCollapsed(conversationId: string | null): boolean {
+  if (!conversationId) return false;
+  try {
+    return localStorage.getItem(collapseKey(conversationId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(conversationId: string | null, collapsed: boolean) {
+  if (!conversationId) return;
+  try {
+    if (collapsed) localStorage.setItem(collapseKey(conversationId), "1");
+    else localStorage.removeItem(collapseKey(conversationId));
+  } catch {
+    // storage unavailable
+  }
+}
+
+function readDismissed(conversationId: string | null): string[] {
+  if (!conversationId) return [];
+  try {
+    const raw = sessionStorage.getItem(dismissKey(conversationId));
+    if (raw === null) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.filter((v): v is string => typeof v === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeDismissed(conversationId: string | null, runIds: string[]) {
+  if (!conversationId) return;
+  try {
+    sessionStorage.setItem(dismissKey(conversationId), JSON.stringify(runIds));
+  } catch {
+    // storage unavailable
+  }
+}
+
+// Per-state counts in attention order, e.g. "1 awaiting, 2 running" — the
+// collapsed rail's text alternative to its color-only dots.
+function stateCountSummary(runs: readonly ConversationWorkflowRun[]): string {
+  const order: RunStatus[] = ["awaiting", "running", "failed", "completed"];
+  const parts: string[] = [];
+  for (const status of order) {
+    const count = runs.filter((run) => run.status === status).length;
+    if (count > 0) parts.push(`${count} ${status}`);
+  }
+  return parts.join(", ");
+}
+
 function WorkflowDockCard({
   run,
   tenantId,
+  onDismiss,
 }: {
   run: ConversationWorkflowRun;
   tenantId?: string | null;
+  onDismiss?: (runId: string) => void;
 }) {
   const {
     data: log,
@@ -144,7 +218,10 @@ function WorkflowDockCard({
           data-testid="dock-card-toggle"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2 rounded-md text-left",
+            FOCUS_RING,
+          )}
         >
           <span
             className={cn("h-2 w-2 shrink-0 rounded-full", meta.dot)}
@@ -163,13 +240,33 @@ function WorkflowDockCard({
         </button>
         <Link
           to={`/workflows/${run.runId}`}
-          className="shrink-0 rounded-md border border-border px-2 py-0.5 text-xs text-text-2 hover:bg-row-hover hover:text-text"
+          className={cn(
+            "shrink-0 rounded-md border border-border px-2 py-0.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
+            FOCUS_RING,
+          )}
         >
           Open
         </Link>
+        {run.status === "failed" && onDismiss !== undefined && (
+          <button
+            type="button"
+            aria-label={`Dismiss ${run.kind}`}
+            onClick={() => onDismiss(run.runId)}
+            className={cn(
+              "shrink-0 rounded-md px-1.5 py-0.5 text-xs text-text-3 hover:bg-row-hover hover:text-text",
+              FOCUS_RING,
+            )}
+          >
+            Dismiss
+          </button>
+        )}
       </div>
       {open && (
-        <div className="space-y-2 border-t border-border px-3 py-2.5">
+        <div
+          role="status"
+          aria-live="polite"
+          className="space-y-2 border-t border-border px-3 py-2.5"
+        >
           {isPending && (
             <p className="text-xs text-text-3">Loading run progress…</p>
           )}
@@ -191,7 +288,11 @@ function WorkflowDockCard({
 }
 
 export interface WorkflowDockProps {
-  /** The open conversation (Myra thread instance id); null when none is open. */
+  /**
+   * The open conversation's Myra thread id; null when none is open.
+   * conversationId == Myra thread id — producers (workflow_start tool,
+   * chat-initiated starts) stamp the same id as originConversationId.
+   */
   conversationId: string | null;
   tenantId?: string | null;
 }
@@ -204,28 +305,53 @@ export interface WorkflowDockProps {
  */
 export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
   const { data: runs } = useConversationWorkflowRuns(conversationId, tenantId);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsedState] = useState(() =>
+    readCollapsed(conversationId),
+  );
+  const [dismissed, setDismissed] = useState<string[]>(() =>
+    readDismissed(conversationId),
+  );
   const [sawActive, setSawActive] = useState(false);
 
   // Failed runs count as needing attention: hiding a failure on reload would
   // bury it. Only a conversation whose runs are all completed loads dock-less.
-  const hasActive = (runs ?? []).some((run) => run.status !== "completed");
+  // A dismissed failed run no longer counts — the user has acknowledged it.
+  const visibleRuns = useMemo(
+    () => (runs ?? []).filter((run) => !dismissed.includes(run.runId)),
+    [runs, dismissed],
+  );
+  const hasActive = visibleRuns.some((run) => run.status !== "completed");
   useEffect(() => {
     if (hasActive) setSawActive(true);
   }, [hasActive]);
   useEffect(() => {
     setSawActive(false);
+    setCollapsedState(readCollapsed(conversationId));
+    setDismissed(readDismissed(conversationId));
   }, [conversationId]);
+
+  const setCollapsed = (value: boolean) => {
+    setCollapsedState(value);
+    writeCollapsed(conversationId, value);
+  };
+
+  const dismissRun = (runId: string) => {
+    setDismissed((previous) => {
+      const next = [...previous, runId];
+      writeDismissed(conversationId, next);
+      return next;
+    });
+  };
 
   const sorted = useMemo(
     () =>
-      [...(runs ?? [])].sort((a, b) => {
+      [...visibleRuns].sort((a, b) => {
         const byAttention =
           ATTENTION_ORDER[a.status] - ATTENTION_ORDER[b.status];
         if (byAttention !== 0) return byAttention;
         return b.createdAt.localeCompare(a.createdAt);
       }),
-    [runs],
+    [visibleRuns],
   );
 
   if (sorted.length === 0 || (!hasActive && !sawActive)) return null;
@@ -238,9 +364,12 @@ export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
       >
         <button
           type="button"
-          aria-label="Expand workflow dock"
+          aria-label={`Expand workflows: ${stateCountSummary(sorted)}`}
           onClick={() => setCollapsed(false)}
-          className="flex flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-text-2 hover:bg-row-hover hover:text-text"
+          className={cn(
+            "flex flex-col items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-text-2 hover:bg-row-hover hover:text-text",
+            FOCUS_RING,
+          )}
         >
           <ChevronsLeft size={14} aria-hidden />
           {sorted.length}
@@ -255,7 +384,11 @@ export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
                 "h-2 w-2 rounded-full",
                 STATUS_META[run.status].dot,
               )}
-            />
+            >
+              <span className="sr-only">
+                {`${run.kind}: ${STATUS_META[run.status].label}`}
+              </span>
+            </span>
           ))}
         </div>
       </aside>
@@ -273,15 +406,34 @@ export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
           type="button"
           aria-label="Collapse workflow dock"
           onClick={() => setCollapsed(true)}
-          className="rounded-md p-1 text-text-3 hover:bg-row-hover hover:text-text"
+          className={cn(
+            "rounded-md p-1 text-text-3 hover:bg-row-hover hover:text-text",
+            FOCUS_RING,
+          )}
         >
           <ChevronsRight size={16} aria-hidden />
         </button>
       </div>
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
-        {sorted.map((run) => (
-          <WorkflowDockCard key={run.runId} run={run} tenantId={tenantId} />
+        {sorted.slice(0, MAX_DOCK_CARDS).map((run) => (
+          <WorkflowDockCard
+            key={run.runId}
+            run={run}
+            tenantId={tenantId}
+            onDismiss={dismissRun}
+          />
         ))}
+        {sorted.length > MAX_DOCK_CARDS && (
+          <Link
+            to="/workflows"
+            className={cn(
+              "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
+              FOCUS_RING,
+            )}
+          >
+            {sorted.length - MAX_DOCK_CARDS} more — open Workflows
+          </Link>
+        )}
       </div>
     </aside>
   );

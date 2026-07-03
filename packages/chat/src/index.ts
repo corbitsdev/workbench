@@ -43,6 +43,7 @@ export {
   type UIBlockViewProps,
   DockRunInputSchema,
   DockRunPhaseSchema,
+  DockStepPhaseSchema,
   dockRunBlocks,
   progressStateForStepPhase,
   type DockRunInput,

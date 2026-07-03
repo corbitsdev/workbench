@@ -117,11 +117,28 @@ const conversationRunSchema = type({
 export type ConversationWorkflowRun = typeof conversationRunSchema.infer;
 const conversationRunListSchema = conversationRunSchema.array();
 
+export const CONVERSATION_RUN_POLL_MS = 5000;
+export const CONVERSATION_RUN_IDLE_POLL_MS = 60_000;
+
+// Poll cadence for the conversation run list: 5s while any listed run is still
+// advancing; backed off to a slow idle tick when the list is empty or fully
+// terminal. Discovery can't stop entirely — runs are started by producers the
+// client never sees as a mutation (the workflow_start Myra tool stamps the
+// thread id as originConversationId server-side), so the idle tick is what
+// eventually surfaces a run started mid-conversation.
+export function conversationRunPollInterval(
+  runs: readonly { status: string }[] | undefined,
+): number {
+  if (runs === undefined || runListIsActive(runs)) {
+    return CONVERSATION_RUN_POLL_MS;
+  }
+  return CONVERSATION_RUN_IDLE_POLL_MS;
+}
+
 // Runs surfaced in the chat workflow dock (CL-2680): every run whose
-// originConversationId matches the open conversation. Gated off entirely when
-// no conversation is open. Polls on the shared 5s list cadence while enabled —
-// discovery must poll unconditionally, because runs are started server-side
-// (a Myra tool) so no client mutation exists to invalidate this list; the
+// originConversationId matches the open conversation (the Myra thread id).
+// Gated off entirely when no conversation is open. Polls on the shared 5s list
+// cadence while a run is live, backing off once the list goes quiescent; the
 // per-run 2s state poll lives in `useWorkflowRunState` on each mounted card.
 export function useConversationWorkflowRuns(
   conversationId: string | null,
@@ -130,7 +147,7 @@ export function useConversationWorkflowRuns(
   return useQuery<ConversationWorkflowRun[]>({
     queryKey: ["conversation-workflow-runs", conversationId, tenantId ?? null],
     enabled: conversationId !== null && conversationId !== "",
-    refetchInterval: 5000,
+    refetchInterval: (query) => conversationRunPollInterval(query.state.data),
     queryFn: async () => {
       const raw = await api<unknown>(
         "GET",

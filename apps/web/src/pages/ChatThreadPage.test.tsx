@@ -153,14 +153,15 @@ describe("ChatThreadPage", () => {
     screen.getByText(/loading your chats/i);
   });
 
-  it("renders the chat surface for a valid thread", () => {
+  it("renders the chat surface and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
     expect(screen.getByTestId("label").textContent).toBe("First");
-    // The dock is scoped to the active thread's instance (the conversation id
-    // workflow starts stamp as originConversationId).
+    // conversationId == Myra thread id; producers (workflow_start tool,
+    // chat-initiated starts) stamp the same id as originConversationId — never
+    // the instance id.
     expect(
       screen.getByTestId("workflow-dock").getAttribute("data-conversation-id"),
-    ).toBe("i1");
+    ).toBe("t1");
   });
 
   it("canonicalizes an unknown thread id to the resolved thread", () => {

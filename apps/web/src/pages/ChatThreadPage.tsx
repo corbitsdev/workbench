@@ -136,8 +136,10 @@ export function ChatThreadPage() {
             onUserSend={maybeTitleFromFirstMessage}
           />
         </div>
+        {/* conversationId == Myra thread id; producers (workflow_start tool,
+            chat-initiated starts) stamp the same id as originConversationId. */}
         <WorkflowDock
-          conversationId={active?.instanceId ?? null}
+          conversationId={active?.id ?? null}
           tenantId={activeTenantId}
         />
       </div>

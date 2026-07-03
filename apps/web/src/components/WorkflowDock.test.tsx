@@ -85,6 +85,8 @@ beforeEach(() => {
   apiCalls = [];
   records = [];
   statesByRunId = {};
+  localStorage.clear();
+  sessionStorage.clear();
   mock.module("../lib/api", () => ({ ...apiActual, api: fakeApi }));
 });
 
@@ -197,16 +199,64 @@ describe("WorkflowDock", () => {
 
     fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
     expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
-    const expand = screen.getByLabelText("Expand workflow dock");
+    // The rail's expand label carries the per-state counts — the text
+    // alternative to its color-only dots.
+    const expand = screen.getByLabelText("Expand workflows: 1 running");
     expect(expand.textContent).toContain("1");
-    expect(screen.getByTestId("dock-rail-dot")).toBeTruthy();
+    const dot = screen.getByTestId("dock-rail-dot");
+    expect(dot.textContent).toContain("ab-compare-hitl: Running");
 
     // A background refetch re-render must not reopen the dock.
     await queryClient.refetchQueries();
     expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
 
-    fireEvent.click(screen.getByLabelText("Expand workflow dock"));
+    fireEvent.click(screen.getByLabelText("Expand workflows: 1 running"));
     await waitFor(() => screen.getByTestId("workflow-dock-card"));
+  });
+
+  it("persists the collapsed state per conversation across remounts", async () => {
+    records = [listRow("run_running", "running")];
+    statesByRunId["run_running"] = logState("run_running", "running", [
+      { stepId: "draft", phase: "in-flight" },
+    ]);
+    const first = renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    fireEvent.click(screen.getByLabelText("Collapse workflow dock"));
+    first.unmount();
+    queryClient.clear();
+
+    renderDock();
+    await waitFor(() => screen.getByLabelText("Expand workflows: 1 running"));
+    expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
+  });
+
+  it("shows the dock on fresh load when a run has failed", async () => {
+    records = [listRow("run_failed", "failed")];
+    statesByRunId["run_failed"] = logState("run_failed", "failed", [
+      { stepId: "fetch", phase: "failed", lastError: { message: "x" } },
+    ]);
+    const { container } = renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    expect(container.querySelector("aside")).toBeTruthy();
+  });
+
+  it("dismissing a failed run hides it, and the dock stays hidden for the session", async () => {
+    records = [listRow("run_failed", "failed")];
+    statesByRunId["run_failed"] = logState("run_failed", "failed", [
+      { stepId: "fetch", phase: "failed", lastError: { message: "x" } },
+    ]);
+    const first = renderDock();
+    await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    fireEvent.click(screen.getByLabelText("Dismiss ab-compare-hitl"));
+    expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
+    first.unmount();
+    queryClient.clear();
+
+    // Same session, fresh mount: the dismissal persists (sessionStorage).
+    const before = apiCalls.length;
+    const { container } = renderDock();
+    await waitFor(() => expect(apiCalls.length).toBeGreaterThan(before));
+    expect(container.querySelector("aside")).toBeNull();
   });
 
   it("links each card to the full run page", async () => {
