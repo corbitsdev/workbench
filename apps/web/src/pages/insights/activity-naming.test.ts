@@ -59,11 +59,21 @@ describe("describeActivityEntry", () => {
     expect(d.headline).toBe("Blocked: Search");
   });
 
-  test("a non-allow effect (e.g. ask) is not mislabeled Allowed", () => {
+  test("an ask grant reads as needs-approval, never Blocked or Allowed", () => {
     const d = describeActivityEntry(
       entry({ kind: "grant", summary: "tool:exa__search invoke ask" }),
     );
-    expect(d.headline).toBe("Blocked: Search");
+    expect(d.headline).toBe("Needs approval: Search");
+    expect(d.headline).not.toContain("Blocked");
+    expect(d.headline).not.toContain("Allowed");
+  });
+
+  test("an unknown/unrecorded effect is neutral, never denied", () => {
+    const d = describeActivityEntry(
+      entry({ kind: "grant", summary: "tool:exa__search invoke" }),
+    );
+    expect(d.headline).toBe("Permission checked: Search");
+    expect(d.headline).not.toContain("Blocked");
   });
 
   test("non-tool grant humanizes the resource", () => {

@@ -1,7 +1,14 @@
 /// <reference types="bun" />
 import "../../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
 
@@ -108,7 +115,7 @@ describe("ActorDetailPage", () => {
     screen.getByText("Agent");
   });
 
-  it("derives quick stats from the loaded activity", async () => {
+  it("derives the stat strip from the loaded activity, not fabricated numbers", async () => {
     actorResult = {
       id: "prn_u1",
       kind: "user",
@@ -133,14 +140,40 @@ describe("ActorDetailPage", () => {
     ];
     renderAt("prn_u1");
 
-    await waitFor(() => {
-      screen.getByText("Entries loaded");
-    });
-    await waitFor(() => {
-      screen.getByText("2");
-    });
+    const strip = await waitFor(() => screen.getByTestId("trace-stat-strip"));
+    await waitFor(() => within(strip).getByText("Moments loaded"));
+    // Two loaded moments, one distinct kind (both messages).
+    await waitFor(() => within(strip).getByText("2"));
+    within(strip).getByText("Kinds seen");
+    within(strip).getByText("1");
     // Last-active derived from the newest entry, not fabricated.
-    screen.getByText("Last active");
+    within(strip).getByText("Last active");
+  });
+
+  it("switches to the moment-walker on the Activity facet tab", async () => {
+    actorResult = {
+      id: "prn_u1",
+      kind: "user",
+      displayName: "Myra Ops",
+      status: "active",
+    };
+    activityEntries = [
+      {
+        id: "m1",
+        kind: "message",
+        sourceTable: "message",
+        timestamp: "2026-07-01T15:00:00.000Z",
+        summary: "hi",
+      },
+    ];
+    renderAt("prn_u1");
+
+    await waitFor(() => screen.getByRole("heading", { name: "Myra Ops" }));
+    // Overview is the default facet; the moment-walker listbox is not shown yet.
+    expect(screen.queryByRole("listbox")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Activity" }));
+    await waitFor(() => screen.getByRole("listbox"));
   });
 
   it("trusts router-state identity when its id matches the route principal", async () => {

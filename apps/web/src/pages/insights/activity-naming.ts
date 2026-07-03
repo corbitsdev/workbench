@@ -49,12 +49,24 @@ export function parseToolResource(resource: string): ParsedToolResource | null {
   return { factory: rest.slice(0, sep), name: rest.slice(sep + 2) };
 }
 
+/**
+ * Grant verb, three-valued from the effect token so the headline never
+ * contradicts the effect badge (GRANT_EFFECT_LABEL in trace-links): a
+ * needs-approval grant must not read as denied, and an unrecorded/unknown
+ * effect must fall back to a neutral, non-denial phrasing — never "Blocked".
+ */
+function grantVerb(effect: string): string {
+  if (effect === "allow") return "Allowed";
+  if (effect === "deny") return "Blocked";
+  if (effect === "ask") return "Needs approval";
+  return "Permission checked";
+}
+
 function describeGrant(summary: string): EntryDescription {
   const parts = summary.trim().split(/\s+/);
   const resource = parts[0] ?? "";
   const effect = parts[parts.length - 1] ?? "";
-  const allowed = effect === "allow";
-  const verb = allowed ? "Allowed" : "Blocked";
+  const verb = grantVerb(effect);
 
   const tool = parseToolResource(resource);
   if (tool !== null) {
