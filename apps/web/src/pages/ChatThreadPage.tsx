@@ -1,11 +1,15 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Navigate, useNavigate, useParams } from "react-router";
+import type { ThreadInsert } from "@workbench/chat";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { WorkflowDock } from "../components/WorkflowDock";
+import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
 import { useConversationGates } from "../hooks/use-conversation-gates";
 import { useResumeConversationGate } from "../hooks/use-workflow";
+import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
+import { useDockFocus } from "../lib/dock-focus";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
@@ -84,6 +88,43 @@ export function ChatThreadPage() {
     active ? String(threadTurns.length) : undefined,
   );
 
+  // Run-addressed workflow events (CL-2682): derived from the same conversation
+  // runs the dock polls, rendered as their own thread bubbles.
+  const runEvents = useWorkflowRunEvents(active?.id ?? null, activeTenantId);
+  const inserts: ThreadInsert[] = useMemo(
+    () =>
+      runEvents.map((event) => ({
+        id: event.id,
+        at: event.at,
+        node: <WorkflowEventBubble event={event} />,
+      })),
+    [runEvents],
+  );
+
+  // "Open in dock" reveals the dock where the requested run's card lives —
+  // scroll it into view and pulse it — without reaching into WorkflowDock's
+  // internals (CL-2681 owns that file).
+  const dockRef = useRef<HTMLDivElement>(null);
+  const focus = useDockFocus();
+  useEffect(() => {
+    if (focus === null) return;
+    const el = dockRef.current;
+    if (el === null) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    el.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "nearest",
+    });
+    el.setAttribute("data-dock-focused", "1");
+    const timer = window.setTimeout(
+      () => el.removeAttribute("data-dock-focused"),
+      1200,
+    );
+    return () => window.clearTimeout(timer);
+  }, [focus]);
+
   if (isLoading) {
     return <CenteredNotice>Loading your chats…</CenteredNotice>;
   }
@@ -157,14 +198,20 @@ export function ChatThreadPage() {
                 })
                 .then(() => undefined)
             }
+            inserts={inserts}
           />
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,
             chat-initiated starts) stamp the same id as originConversationId. */}
-        <WorkflowDock
-          conversationId={active?.id ?? null}
-          tenantId={activeTenantId}
-        />
+        <div
+          ref={dockRef}
+          className="flex h-full motion-safe:transition-shadow data-[dock-focused=1]:shadow-[inset_2px_0_0_0_var(--color-accent)]"
+        >
+          <WorkflowDock
+            conversationId={active?.id ?? null}
+            tenantId={activeTenantId}
+          />
+        </div>
       </div>
     </ErrorBoundary>
   );

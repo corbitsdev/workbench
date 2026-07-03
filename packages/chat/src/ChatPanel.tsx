@@ -7,7 +7,11 @@ import {
   type QuickReply,
   type ChatActivity,
 } from "./types";
-import { ChatThread, type ChatThreadProps } from "./ChatThread";
+import {
+  ChatThread,
+  type ChatThreadProps,
+  type ThreadInsert,
+} from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
 import { ChatInput } from "./ChatInput";
 import type { AttachmentPolicy, PendingAttachment } from "./attachments";
@@ -17,6 +21,8 @@ import type { FeedbackSubjectKind } from "./feedback-types";
 export interface ChatPanelProps {
   agent: ChatAgentIdentity;
   messages: ChatMessage[];
+  /** Extra thread items (e.g. workflow-event bubbles) merged in by timestamp. */
+  inserts?: ThreadInsert[];
   /** Committed message text (and any attachments) from the input bar. Host handles transport. */
   onSend: (
     text: string,
@@ -82,6 +88,7 @@ export interface ChatPanelProps {
 export function ChatPanel({
   agent,
   messages,
+  inserts,
   onSend,
   typing,
   activity,
@@ -170,6 +177,7 @@ export function ChatPanel({
 
       <ChatThread
         messages={messages}
+        {...(inserts !== undefined ? { inserts } : {})}
         {...(typing !== undefined ? { typing } : {})}
         {...(activity !== undefined ? { activity } : {})}
         agentName={agent.name}

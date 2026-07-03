@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
@@ -8,6 +8,12 @@ import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
+
+function byTimestamp(a: string, b: string): number {
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
+}
 
 function formatActivityLabel(
   activity: ChatActivity,
@@ -25,8 +31,23 @@ function formatActivityLabel(
   }
 }
 
+/**
+ * A host-supplied node interleaved into the thread by timestamp — e.g. a
+ * run-addressed workflow-event bubble that is not part of the agent message
+ * stream. Kept generic (no domain shape) so the chat package stays transport-
+ * and domain-free; the host owns what `node` renders.
+ */
+export interface ThreadInsert {
+  id: string;
+  /** ISO instant used to order this insert against messages' `createdAt`. */
+  at: string;
+  node: ReactNode;
+}
+
 export interface ChatThreadProps {
   messages: ChatMessage[];
+  /** Extra thread items (e.g. workflow events) merged in by timestamp. */
+  inserts?: ThreadInsert[];
   /** Render a typing indicator after the last message when true. */
   typing?: boolean;
   /** What the agent is currently doing, shown as a contextual status label instead of the generic typing dots. */
@@ -77,6 +98,7 @@ export interface ChatThreadProps {
 /** The scrollable list of message bubbles. */
 export function ChatThread({
   messages,
+  inserts,
   typing,
   activity,
   agentName,
@@ -105,6 +127,78 @@ export function ChatThread({
 
   const hasActivity = activity !== undefined && activity !== null;
 
+  function renderMessage(message: ChatMessage): ReactNode {
+    const isSettledAgent =
+      message.role === "agent" && message.status !== "sending";
+    const { cleanedText, urls } = isSettledAgent
+      ? extractImageURLs(message.content)
+      : { cleanedText: message.content, urls: [] };
+    const displayMessage =
+      urls.length > 0 ? { ...message, content: cleanedText } : message;
+
+    return (
+      <div key={message.id} className="flex flex-col gap-1.5">
+        <MessageBubble
+          message={displayMessage}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+          {...(onAction !== undefined ? { onAction } : {})}
+          {...(onRate !== undefined ? { onRate } : {})}
+          {...(getRating !== undefined ? { getRating } : {})}
+          {...(resolveAttachmentUrl !== undefined
+            ? { resolveAttachmentUrl }
+            : {})}
+        />
+        {urls.map((url) => (
+          <UrlImageCard key={url} url={url} />
+        ))}
+        {message.role === "agent" &&
+          (() => {
+            const visibleToolCalls =
+              hideToolCall === undefined
+                ? message.toolCalls
+                : message.toolCalls?.filter((c) => !hideToolCall(c));
+            if (visibleToolCalls === undefined || visibleToolCalls.length === 0)
+              return null;
+            return (
+              <ToolNarrative
+                toolCalls={visibleToolCalls}
+                {...(formatToolSummary !== undefined
+                  ? { formatSummary: formatToolSummary }
+                  : {})}
+                {...(compactToolActivity !== undefined
+                  ? { compact: compactToolActivity }
+                  : {})}
+                {...(summarizeToolCalls !== undefined
+                  ? { summarizeCalls: summarizeToolCalls }
+                  : {})}
+                {...(onRespond !== undefined ? { onRespond } : {})}
+                {...(onAction !== undefined ? { onAction } : {})}
+                className="pl-1"
+              />
+            );
+          })()}
+      </div>
+    );
+  }
+
+  // Merge host inserts (e.g. workflow-event bubbles) into the message stream by
+  // timestamp. A stable sort keeps same-timestamp order deterministic, so live
+  // events land after the messages that preceded them without reordering the
+  // conversation.
+  const items: { key: string; at: string; node: ReactNode }[] = [
+    ...messages.map((message) => ({
+      key: `m:${message.id}`,
+      at: message.createdAt,
+      node: renderMessage(message),
+    })),
+    ...(inserts ?? []).map((insert) => ({
+      key: `i:${insert.id}`,
+      at: insert.at,
+      node: insert.node,
+    })),
+  ];
+  items.sort((a, b) => byTimestamp(a.at, b.at));
+
   return (
     <div
       ref={scrollRef}
@@ -130,62 +224,11 @@ export function ChatThread({
             </p>
           </div>
         ))}
-      {messages.map((message) => {
-        const isSettledAgent =
-          message.role === "agent" && message.status !== "sending";
-        const { cleanedText, urls } = isSettledAgent
-          ? extractImageURLs(message.content)
-          : { cleanedText: message.content, urls: [] };
-        const displayMessage =
-          urls.length > 0 ? { ...message, content: cleanedText } : message;
-
-        return (
-          <div key={message.id} className="flex flex-col gap-1.5">
-            <MessageBubble
-              message={displayMessage}
-              {...(onRespond !== undefined ? { onRespond } : {})}
-              {...(onAction !== undefined ? { onAction } : {})}
-              {...(onRate !== undefined ? { onRate } : {})}
-              {...(getRating !== undefined ? { getRating } : {})}
-              {...(resolveAttachmentUrl !== undefined
-                ? { resolveAttachmentUrl }
-                : {})}
-            />
-            {urls.map((url) => (
-              <UrlImageCard key={url} url={url} />
-            ))}
-            {message.role === "agent" &&
-              (() => {
-                const visibleToolCalls =
-                  hideToolCall === undefined
-                    ? message.toolCalls
-                    : message.toolCalls?.filter((c) => !hideToolCall(c));
-                if (
-                  visibleToolCalls === undefined ||
-                  visibleToolCalls.length === 0
-                )
-                  return null;
-                return (
-                  <ToolNarrative
-                    toolCalls={visibleToolCalls}
-                    {...(formatToolSummary !== undefined
-                      ? { formatSummary: formatToolSummary }
-                      : {})}
-                    {...(compactToolActivity !== undefined
-                      ? { compact: compactToolActivity }
-                      : {})}
-                    {...(summarizeToolCalls !== undefined
-                      ? { summarizeCalls: summarizeToolCalls }
-                      : {})}
-                    {...(onRespond !== undefined ? { onRespond } : {})}
-                    {...(onAction !== undefined ? { onAction } : {})}
-                    className="pl-1"
-                  />
-                );
-              })()}
-          </div>
-        );
-      })}
+      {items.map((item) => (
+        <div key={item.key} className="contents">
+          {item.node}
+        </div>
+      ))}
       {hasActivity && agentName !== undefined && (
         <div className="flex items-start" aria-live="polite">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">

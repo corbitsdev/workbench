@@ -6,6 +6,7 @@ import {
   ChatPanel,
   type ChatAgentIdentity,
   type ChatDockState,
+  type ThreadInsert,
   type UIResponse,
   type PendingAttachment,
   type SignalRouting,
@@ -118,6 +119,8 @@ type MyraChatSurfaceProps = {
   threadLabel?: string;
   /** Notified with the text whenever the user sends a message (for auto-title). */
   onUserSend?: (text: string) => void;
+  /** Run-addressed workflow-event bubbles interleaved into the thread (CL-2682). */
+  inserts?: ThreadInsert[];
   dockState?: ChatDockState;
   onToggleDock?: () => void;
   expanded?: boolean;
@@ -154,6 +157,7 @@ export function MyraChatSurface({
   session,
   threadLabel,
   onUserSend,
+  inserts,
   dockState,
   onToggleDock,
   expanded,
@@ -379,6 +383,7 @@ export function MyraChatSurface({
     <ChatPanel
       {...chrome}
       messages={session.messages}
+      {...(inserts !== undefined ? { inserts } : {})}
       onSend={handleSend}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}

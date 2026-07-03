@@ -91,6 +91,13 @@ mock.module("../components/WorkflowDock", () => ({
     }),
 }));
 
+// Run-addressed workflow events derive from the shared conversation-runs query
+// (WorkflowDock's hook); stub the derivation so the page test needs no
+// QueryClientProvider — the derivation has its own tests (use-workflow-run-events).
+mock.module("../hooks/use-workflow-run-events", () => ({
+  useWorkflowRunEvents: () => [],
+}));
+
 mock.module("../components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
