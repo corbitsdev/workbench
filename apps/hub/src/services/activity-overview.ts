@@ -244,6 +244,16 @@ export async function getUsageByPerson(args: {
   // deployed step) are torn down per run, so a mapping row each would accumulate
   // junk the deployment reclaim never sweeps; resolving here keeps attribution
   // stateless and touches nothing on the workflow-stability-critical run path.
+  //
+  // KNOWN CAVEAT (CL-2711): for a LEGACY deployment with multiple run records by
+  // different principals (pre-CL-2582, when one deployment served many serial
+  // runs), the `DISTINCT ON (agent_instance.id)` + `ORDER BY … created_at DESC`
+  // collapse attributes ALL of that instance's usage to the MOST-RECENT runner —
+  // the earlier runners' share is silently folded into the latest. This mirrors
+  // the sibling `deployment_id`-not-unique constraint documented on
+  // `getUsageByWorkflowType`. The current per-run-deployment model is 1 run : 1
+  // deployment, so a live deployment only ever has one runner; this only skews
+  // historical analytics buckets that still hold pre-CL-2582 rows.
   const workflowOwnerByInstance = db
     .selectDistinctOn([agentInstance.id], {
       instanceId: agentInstance.id,
