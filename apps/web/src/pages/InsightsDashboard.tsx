@@ -1,7 +1,9 @@
 import { PagePanel } from "@workbench/ui";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router";
 import { AlertTriangle, BarChart2 } from "lucide-react";
+import { actorHref } from "./insights/ActorActivity";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
 import type {
@@ -559,7 +561,18 @@ function PersonBreakdown({
             {orderedPeople.map((row) => (
               <tr key={row.principalId}>
                 <td className="px-4 py-2 text-text">
-                  {row.name ?? "Unknown member"}
+                  <Link
+                    to={actorHref(row.principalId)}
+                    state={{
+                      id: row.principalId,
+                      kind: "user",
+                      displayName: row.name ?? "Unknown member",
+                      status: "active",
+                    }}
+                    className="rounded-[4px] outline-none hover:text-accent hover:underline focus-visible:ring-1 focus-visible:ring-accent"
+                  >
+                    {row.name ?? "Unknown member"}
+                  </Link>
                   {row.isSelf && (
                     <span className="ml-1.5 text-[11px] font-semibold text-accent">
                       (me)
