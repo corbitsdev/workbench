@@ -252,6 +252,7 @@ const RUN_RECORD_DDL = `
     principal_id text NOT NULL,
     status text NOT NULL DEFAULT 'running',
     input jsonb,
+    origin_conversation_id text,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
