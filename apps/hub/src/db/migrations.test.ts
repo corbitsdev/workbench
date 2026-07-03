@@ -259,3 +259,45 @@ describe("0031 adds meta to workflow_run (CL-2321)", () => {
     expect(sql).not.toMatch(/DEFAULT/i);
   });
 });
+
+describe("0039 adds principal-activity timeline indexes (CL-2490)", () => {
+  const sql = readFileSync(
+    join(
+      import.meta.dir,
+      "../../migrations/0039_principal_activity_indexes.sql",
+    ),
+    "utf-8",
+  );
+
+  it("indexes every direct-scoped timeline source on (tenant, principal, ts DESC)", () => {
+    for (const [table, principalColumn, tsColumn] of [
+      ["inference_turn", "session_id", "started_at"],
+      ["agent_session", "principal_id", "created_at"],
+      ["session_mail", "session_id", "created_at"],
+      ["analytics_event", "principal_id", "occurred_at"],
+      ["workflow_run_record", "principal_id", "created_at"],
+      ["artifact", "principal_id", "created_at"],
+      ["artifact", "owner_principal_id", "created_at"],
+      ["upload", "principal_id", "created_at"],
+      ["memory", "owner_principal_id", "updated_at"],
+      ["approval", "principal_id", "created_at"],
+      ["output_feedback", "principal_id", "created_at"],
+      ["grant", "principal_id", "created_at"],
+      ["credential", "principal_id", "created_at"],
+    ] as const) {
+      expect(sql).toMatch(
+        new RegExp(
+          `CREATE INDEX IF NOT EXISTS "[a-z_]+" ON "${table}" \\("tenant_id", "${principalColumn}", "${tsColumn}" DESC\\)`,
+          "i",
+        ),
+      );
+    }
+  });
+
+  it("scopes artifact_version by author and keeps the tool_call index partial", () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "[a-z_]+" ON "artifact_version" \("author_id", "created_at" DESC\)/i,
+    );
+    expect(sql).toMatch(/WHERE event_type = 'tool_call'/i);
+  });
+});
