@@ -109,8 +109,12 @@ export type ActivityOverview = {
    * hub-owned `member_agent_instance` link (instance → owning member). The
    * analytics principal on raw events is the per-instance synthetic principal,
    * NOT the user, so attribution goes through this link rather than a naive
-   * principal==user assumption. Instances with no member link (e.g. shared
-   * agents) are excluded — their usage cannot be attributed to one person.
+   * principal==user assumption. Per-run workflow instances carry no such link
+   * (CL-2705), so they are additionally resolved through
+   * `workflow_run_record.principalId` — the human who started the run — keyed on
+   * the `ins_<deploymentId>` address convention. Instances with neither a member
+   * link nor a workflow run record (e.g. shared/system agents) are excluded —
+   * their usage cannot be attributed to one person.
    */
   byPerson: UsageByPersonRow[];
   /**
@@ -225,13 +229,70 @@ export async function getUsageByPerson(args: {
     )
     .as("owner_by_instance");
 
+  // Per-run workflow instances (CL-2582/CL-2705) carry the workflow
+  // DEFINITION's synthetic principal and never get a `member_agent_instance`
+  // mapping — the human who started the run exists only on
+  // `workflow_run_record.principalId`. Resolve those instances THROUGH the run
+  // record: a workflow instance's `address` is `ins_<deploymentId>…` (the same
+  // LIKE convention `getUsageByWorkflowType` uses) and
+  // `workflow_run_record.deploymentId` names the same per-run deployment, so the
+  // record's `principalId` — the tenant `kind:"user"` member principal, exactly
+  // the type `member_agent_instance` stores — is the owning member. Collapse to
+  // one owner per instance (most recent run record) so the LIKE join can't fan
+  // out and multiply counts. We resolve through the record rather than minting a
+  // mapping per ephemeral instance because those instances (supervisor + every
+  // deployed step) are torn down per run, so a mapping row each would accumulate
+  // junk the deployment reclaim never sweeps; resolving here keeps attribution
+  // stateless and touches nothing on the workflow-stability-critical run path.
+  //
+  // KNOWN CAVEAT (CL-2711): for a LEGACY deployment with multiple run records by
+  // different principals (pre-CL-2582, when one deployment served many serial
+  // runs), the `DISTINCT ON (agent_instance.id)` + `ORDER BY … created_at DESC`
+  // collapse attributes ALL of that instance's usage to the MOST-RECENT runner —
+  // the earlier runners' share is silently folded into the latest. This mirrors
+  // the sibling `deployment_id`-not-unique constraint documented on
+  // `getUsageByWorkflowType`. The current per-run-deployment model is 1 run : 1
+  // deployment, so a live deployment only ever has one runner; this only skews
+  // historical analytics buckets that still hold pre-CL-2582 rows.
+  const workflowOwnerByInstance = db
+    .selectDistinctOn([agentInstance.id], {
+      instanceId: agentInstance.id,
+      memberPrincipalId: workflowRunRecord.principalId,
+    })
+    .from(agentInstance)
+    .innerJoin(
+      workflowRunRecord,
+      and(
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+        like(
+          agentInstance.address,
+          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+        ),
+      ),
+    )
+    .where(eq(agentInstance.tenantId, tenantId))
+    .orderBy(agentInstance.id, desc(workflowRunRecord.createdAt))
+    .as("workflow_owner_by_instance");
+
+  // One owning member per instance, preferring the explicit
+  // `member_agent_instance` mapping and falling back to the workflow run
+  // record's principal. The two instance sets are disjoint (a workflow per-run
+  // instance has no mapping row and vice versa), so left-joining both and
+  // `coalesce`-ing picks whichever is present — mapping first when, defensively,
+  // both are. Instances in neither set (e.g. shared/system agents) coalesce to
+  // NULL and are dropped by the `IS NOT NULL` filter below, staying unattributed
+  // rather than being force-assigned.
+  const resolvedMemberPrincipalId = sql<string>`coalesce(${ownerByInstance.memberPrincipalId}, ${workflowOwnerByInstance.memberPrincipalId})`;
+
   // `principalId` here is the owning member's tenant `kind: "user"` principal
   // (the column `ensureMember` writes and the route's `c.get("principal")`
   // reads), NOT the per-instance synthetic principal on raw analytics events —
   // so comparing it to `callerPrincipalId` for `isSelf` is like-for-like.
   const rows = await db
     .select({
-      principalId: ownerByInstance.memberPrincipalId,
+      principalId: sql<string>`${resolvedMemberPrincipalId}`,
       name: intxSchema.user.name,
       turnCount: sumInt(analyticsRollupDaily.turnCount),
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
@@ -239,13 +300,17 @@ export async function getUsageByPerson(args: {
       outputTokens: sumInt(analyticsRollupDaily.outputTokens),
     })
     .from(analyticsRollupDaily)
-    .innerJoin(
+    .leftJoin(
       ownerByInstance,
       eq(ownerByInstance.instanceId, analyticsRollupDaily.instanceId),
     )
     .leftJoin(
+      workflowOwnerByInstance,
+      eq(workflowOwnerByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .leftJoin(
       intxSchema.principal,
-      eq(intxSchema.principal.id, ownerByInstance.memberPrincipalId),
+      eq(intxSchema.principal.id, resolvedMemberPrincipalId),
     )
     .leftJoin(
       intxSchema.user,
@@ -254,6 +319,7 @@ export async function getUsageByPerson(args: {
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
+        isNotNull(resolvedMemberPrincipalId),
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
@@ -262,7 +328,7 @@ export async function getUsageByPerson(args: {
           : undefined,
       ),
     )
-    .groupBy(ownerByInstance.memberPrincipalId, intxSchema.user.name);
+    .groupBy(resolvedMemberPrincipalId, intxSchema.user.name);
 
   return rows
     .map((row) => ({
