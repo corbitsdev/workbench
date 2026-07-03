@@ -52,8 +52,10 @@ function createGammaToolByName(
   );
 }
 
-// gamma_list_templates is registered as a ContextToolEntry in the hub (reads tenant DB),
-// so it is excluded from GAMMA_HUB_TOOLS which are credential-backed Gamma API tools.
+// gamma_list_templates reads tenant-owned templates from the hub DB, so it is
+// excluded from GAMMA_HUB_TOOLS (credential-backed Gamma API tools) and is
+// instead its own hub-backed factory (`gammaTemplates` in interchange-tools.ts),
+// executed hub-side by apps/hub/src/tools/gamma-templates.ts.
 const GAMMA_HUB_DEFINITIONS = GAMMA_DEFINITIONS.filter(
   (d) => d.name !== "gamma_list_templates",
 );
