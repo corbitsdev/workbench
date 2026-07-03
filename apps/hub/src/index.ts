@@ -94,6 +94,7 @@ import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
+import { createActorSearchRouter } from "./routes/actor-search";
 import { createActivityRouter } from "./routes/activity";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -622,6 +623,10 @@ const hubApp = createApp({
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
+hubApp.route(
+  "/api/tenants/:tenantId/actors/search",
+  createActorSearchRouter({ db }),
+);
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 
