@@ -39,7 +39,12 @@ import type {
 
 const log = getLogger(["api", "workflow-run-records"]);
 
-const StartBody = type({ "input?": "unknown" });
+const StartBody = type({
+  "input?": "unknown",
+  // The conversation the run is being started from (CL-2677); omitted for
+  // direct starts with no chat context.
+  "originConversationId?": "string",
+});
 const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 
 // The thin run-INDEX response (CL-2669): run-level identity + coarse status.
@@ -50,6 +55,7 @@ const RunStateResponse = type({
   kind: "string",
   status: "'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
+  "originConversationId?": "string",
 });
 
 const ErrorResponse = type({ error: "string" });
@@ -123,11 +129,13 @@ function stateResponse(state: {
   kind: string;
   status: "running" | "awaiting" | "completed" | "failed";
   deploymentId?: string;
+  originConversationId?: string;
 }): {
   runId: string;
   kind: string;
   status: string;
   deploymentId?: string;
+  originConversationId?: string;
 } {
   return {
     runId: state.runId,
@@ -135,6 +143,9 @@ function stateResponse(state: {
     status: state.status,
     ...(state.deploymentId !== undefined
       ? { deploymentId: state.deploymentId }
+      : {}),
+    ...(state.originConversationId !== undefined
+      ? { originConversationId: state.originConversationId }
       : {}),
   };
 }
@@ -200,6 +211,10 @@ export function createWorkflowRunRecordsRouter(deps: {
             "application/json": { schema: resolver(RunStateResponse) },
           },
         },
+        400: {
+          description: "Invalid start body",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         403: {
           description: "Forbidden",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
@@ -236,7 +251,11 @@ export function createWorkflowRunRecordsRouter(deps: {
         body = {};
       }
       const parsed = StartBody(body);
-      const input = parsed instanceof type.errors ? {} : (parsed.input ?? {});
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid start body: ${parsed.summary}` }, 400);
+      }
+      const input = parsed.input ?? {};
+      const originConversationId = parsed.originConversationId ?? null;
 
       // Mint the runId here and thread it to the sidecar as the trigger mail's
       // messageId. The supervisor derives the run's id from the message id, so
@@ -271,6 +290,7 @@ export function createWorkflowRunRecordsRouter(deps: {
         tenantId: definition.tenantId,
         principalId: context.principalId,
         input,
+        originConversationId,
       });
 
       try {
@@ -310,7 +330,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       tags: ["Workflows"],
       summary: "List thin-executor workflow runs",
       description:
-        "Lists the run records visible to the user along the tenant chain. Optional `?kind=` filters.",
+        "Lists the run records visible to the user along the tenant chain. Optional `?kind=` and `?originConversationId=` filter.",
       parameters: [
         {
           name: "tenantId",
@@ -324,6 +344,14 @@ export function createWorkflowRunRecordsRouter(deps: {
           in: "query",
           required: false,
           description: "Filter by workflow kind.",
+          schema: { type: "string" },
+        },
+        {
+          name: "originConversationId",
+          in: "query",
+          required: false,
+          description:
+            "Filter to runs started from this conversation (CL-2677).",
           schema: { type: "string" },
         },
       ],
@@ -348,11 +376,15 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (forbidden) return c.json({ error: "Forbidden" }, 403);
       if (!context) return c.json({ error: "User context not found" }, 403);
       const chain = await getAncestorChain(deps.db, context.tenantId);
+      const originFilter = c.req.query("originConversationId");
       const rows = await listRunRecords(
         deps.db,
         chain,
         context.principalId,
         c.req.query("kind"),
+        originFilter !== undefined
+          ? { originConversationId: originFilter }
+          : undefined,
       );
       return c.json(rows);
     },
