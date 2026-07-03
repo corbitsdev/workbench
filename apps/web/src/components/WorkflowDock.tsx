@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { ChevronsLeft, ChevronsRight } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronUp,
+} from "lucide-react";
 import {
   UIBlockView,
   DockRunPhaseSchema,
@@ -83,28 +88,46 @@ const FOCUS_RING =
 // Per-conversation UI prefs, following the app's storage pattern
 // (use-myra-threads.ts): localStorage for the collapse pref (survives reloads),
 // sessionStorage for dismissed failed runs (hidden for the session only).
-function collapseKey(conversationId: string): string {
-  return `workflow-dock-collapsed:${conversationId}`;
+type DockVariant = "dock" | "popup";
+
+function collapseKey(conversationId: string, variant: DockVariant): string {
+  const suffix = variant === "popup" ? ":popup" : "";
+  return `workflow-dock-collapsed:${conversationId}${suffix}`;
 }
 
 function dismissKey(conversationId: string): string {
   return `workflow-dock-dismissed:${conversationId}`;
 }
 
-function readCollapsed(conversationId: string | null): boolean {
-  if (!conversationId) return false;
+// The popup surface is small, so it opens collapsed by default; the side dock
+// opens expanded. An explicit stored pref always wins over the default.
+function readCollapsed(
+  conversationId: string | null,
+  variant: DockVariant,
+): boolean {
+  const fallback = variant === "popup";
+  if (!conversationId) return fallback;
   try {
-    return localStorage.getItem(collapseKey(conversationId)) === "1";
+    const stored = localStorage.getItem(collapseKey(conversationId, variant));
+    if (stored === "1") return true;
+    if (stored === "0") return false;
+    return fallback;
   } catch {
-    return false;
+    return fallback;
   }
 }
 
-function writeCollapsed(conversationId: string | null, collapsed: boolean) {
+function writeCollapsed(
+  conversationId: string | null,
+  variant: DockVariant,
+  collapsed: boolean,
+) {
   if (!conversationId) return;
   try {
-    if (collapsed) localStorage.setItem(collapseKey(conversationId), "1");
-    else localStorage.removeItem(collapseKey(conversationId));
+    localStorage.setItem(
+      collapseKey(conversationId, variant),
+      collapsed ? "1" : "0",
+    );
   } catch {
     // storage unavailable
   }
@@ -341,6 +364,12 @@ export interface WorkflowDockProps {
    */
   conversationId: string | null;
   tenantId?: string | null;
+  /**
+   * "dock" (default) is the side rail beside the full-page chat; "popup" is the
+   * compact top strip inside the floating/docked Myra chat (CL-2685), which
+   * opens collapsed given its small surface.
+   */
+  variant?: DockVariant;
 }
 
 /**
@@ -349,10 +378,14 @@ export interface WorkflowDockProps {
  * rest of the mount so completions remain visible. Collapsible to a thin rail
  * that keeps the count and a state dot per run.
  */
-export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
+export function WorkflowDock({
+  conversationId,
+  tenantId,
+  variant = "dock",
+}: WorkflowDockProps) {
   const { data: runs } = useConversationWorkflowRuns(conversationId, tenantId);
   const [collapsed, setCollapsedState] = useState(() =>
-    readCollapsed(conversationId),
+    readCollapsed(conversationId, variant),
   );
   const [dismissed, setDismissed] = useState<string[]>(() =>
     readDismissed(conversationId),
@@ -372,13 +405,13 @@ export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
   }, [hasActive]);
   useEffect(() => {
     setSawActive(false);
-    setCollapsedState(readCollapsed(conversationId));
+    setCollapsedState(readCollapsed(conversationId, variant));
     setDismissed(readDismissed(conversationId));
-  }, [conversationId]);
+  }, [conversationId, variant]);
 
   const setCollapsed = (value: boolean) => {
     setCollapsedState(value);
-    writeCollapsed(conversationId, value);
+    writeCollapsed(conversationId, variant, value);
   };
 
   const dismissRun = (runId: string) => {
@@ -401,6 +434,95 @@ export function WorkflowDock({ conversationId, tenantId }: WorkflowDockProps) {
   );
 
   if (sorted.length === 0 || (!hasActive && !sawActive)) return null;
+
+  const isPopup = variant === "popup";
+
+  if (collapsed && isPopup) {
+    return (
+      <aside
+        aria-label="Workflow dock"
+        className="flex shrink-0 items-center gap-2 border-b border-border bg-surface px-3 py-1.5"
+      >
+        <button
+          type="button"
+          aria-label={`Expand workflows: ${stateCountSummary(sorted)}`}
+          onClick={() => setCollapsed(false)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-1 py-0.5 text-xs font-medium text-text-2 hover:bg-row-hover hover:text-text",
+            FOCUS_RING,
+          )}
+        >
+          <ChevronDown size={14} aria-hidden />
+          Workflows
+          <span className="rounded-full bg-surface-2 px-1.5 text-text-3">
+            {sorted.length}
+          </span>
+        </button>
+        <div className="flex flex-1 items-center gap-1.5">
+          {sorted.map((run) => (
+            <span
+              key={run.runId}
+              data-testid="dock-rail-dot"
+              title={`${run.kind}: ${STATUS_META[run.status].label}`}
+              className={cn(
+                "h-2 w-2 rounded-full",
+                STATUS_META[run.status].dot,
+              )}
+            >
+              <span className="sr-only">
+                {`${run.kind}: ${STATUS_META[run.status].label}`}
+              </span>
+            </span>
+          ))}
+        </div>
+      </aside>
+    );
+  }
+
+  if (isPopup) {
+    return (
+      <aside
+        aria-label="Workflow dock"
+        className="flex max-h-56 shrink-0 flex-col border-b border-border bg-surface"
+      >
+        <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+          <span className="text-xs font-semibold text-text">Workflows</span>
+          <button
+            type="button"
+            aria-label="Collapse workflow dock"
+            onClick={() => setCollapsed(true)}
+            className={cn(
+              "rounded-md p-1 text-text-3 hover:bg-row-hover hover:text-text",
+              FOCUS_RING,
+            )}
+          >
+            <ChevronUp size={16} aria-hidden />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
+          {sorted.slice(0, MAX_DOCK_CARDS).map((run) => (
+            <WorkflowDockCard
+              key={run.runId}
+              run={run}
+              tenantId={tenantId}
+              onDismiss={dismissRun}
+            />
+          ))}
+          {sorted.length > MAX_DOCK_CARDS && (
+            <Link
+              to="/workflows"
+              className={cn(
+                "block rounded-md px-2 py-1.5 text-xs text-text-2 hover:bg-row-hover hover:text-text",
+                FOCUS_RING,
+              )}
+            >
+              {sorted.length - MAX_DOCK_CARDS} more — open Workflows
+            </Link>
+          )}
+        </div>
+      </aside>
+    );
+  }
 
   if (collapsed) {
     return (

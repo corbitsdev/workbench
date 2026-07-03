@@ -19,6 +19,7 @@ import {
 } from "../hooks/use-myra-threads";
 import { ExpandedChatOverlay, MyraChatSurface } from "./MyraChatSurface";
 import { ThreadSwitcher } from "./ThreadSwitcher";
+import { WorkflowDock } from "./WorkflowDock";
 
 const DOCK_STATE_KEY = "myra-chat-dock-state";
 
@@ -141,6 +142,14 @@ export function PersonalAgentChat() {
   const panel = (
     <div className="flex h-full flex-col">
       {switcherBar}
+      {/* conversationId == Myra thread id; workflow producers stamp the same id
+          as originConversationId, so the strip shows only THIS thread's runs.
+          Hidden entirely until the thread has an active run. */}
+      <WorkflowDock
+        conversationId={activeThread?.id ?? null}
+        tenantId={activeTenantId}
+        variant="popup"
+      />
       <div className="min-h-0 flex-1">
         <MyraChatSurface
           session={session}
