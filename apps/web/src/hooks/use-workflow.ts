@@ -261,14 +261,37 @@ export function useWorkflowRunState(
   runId: string | null,
   tenantId?: string | null,
 ) {
+  const queryClient = useQueryClient();
   return useQuery<LogRunState>({
     queryKey: ["workflow-run-state", runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
     retry: false,
+    // A transient first-fetch error must NOT permanently freeze the pane
+    // (CL-2727): keep the poll armed whenever there is no data yet — first load
+    // OR after an error — so a single early failure self-heals on the next tick
+    // instead of disarming `refetchInterval` forever (the old `data && …` guard
+    // returned false while `data` was undefined, wedging the poll). A genuine
+    // parse error still surfaces immediately via `isError`; the interval simply
+    // re-attempts.
+    //
+    // The INDEX status is authoritative for run-level terminal (CL-2727): an
+    // operator abort or the hub liveness sweep writes `failed` only to the index
+    // (`workflow_run_record`), never to the log — so `/state` (a pure log fold)
+    // reports `running`/`pending` forever while `/runs` reports `failed`. Keying
+    // the poll only on the log phase would poll `/state` indefinitely. Consult
+    // the record cache first and stop the moment the index settles, even if the
+    // log hasn't. The poll otherwise stops once the log itself settles.
     refetchInterval: (query) => {
+      const record = queryClient.getQueryData<RunRecord>([
+        "workflow-record",
+        runId,
+        tenantId ?? null,
+      ]);
+      if (record && isRecordTerminal(record.status)) return false;
       const data = query.state.data;
-      return data && !isLogStateTerminal(data.phase) ? 2000 : false;
+      if (!data) return 2000;
+      return isLogStateTerminal(data.phase) ? false : 2000;
     },
     queryFn: () => fetchWorkflowRunState(runId as string, tenantId),
   });

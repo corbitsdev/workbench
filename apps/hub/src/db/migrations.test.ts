@@ -260,6 +260,53 @@ describe("0031 adds meta to workflow_run (CL-2321)", () => {
   });
 });
 
+describe("0041 creates workflow_run_step (CL-2727)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0041_workflow_run_step.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?workflow_run_step"?/i);
+    for (const col of [
+      "id",
+      "run_id",
+      "step_id",
+      "phase",
+      "attempts",
+      "started_at",
+      "ended_at",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("adds the (run_id, step_id) unique constraint", () => {
+    expect(sql).toMatch(
+      /CONSTRAINT "workflow_run_step_run_step_uniq" UNIQUE \("run_id", "step_id"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the per-step projection is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
 describe("0040 adds principal-activity timeline indexes on workbench tables only (CL-2490)", () => {
   const sql = readFileSync(
     join(

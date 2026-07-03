@@ -88,6 +88,34 @@ mock.module("../workflow-executor/run-store", () => ({
         createdAt: new Date(),
         originConversationId: r.originConversationId ?? null,
       })),
+  // CL-2727 stats reads. The aggregation logic is exercised over a real DB in
+  // run-stats.integration.test.ts; here the route gating is what matters, so
+  // canned shapes suffice.
+  getRunKindStats: async (
+    _db: unknown,
+    _tenantIds: readonly string[],
+    _principalId: string,
+    kind?: string,
+  ) => [
+    {
+      kind: kind ?? "brief",
+      runs: { running: 1, awaiting: 0, completed: 2, failed: 0, total: 3 },
+      steps: { total: 4, byPhase: { completed: 4 }, avgDurationMs: 1500 },
+    },
+  ],
+  listRunSteps: async (_db: unknown, runId: string) => {
+    const found = runs.get(runId);
+    if (!found) return [];
+    return [
+      {
+        stepId: "s1",
+        phase: "completed",
+        attempts: 1,
+        startedAt: new Date("2026-04-01T00:00:00.000Z"),
+        endedAt: new Date("2026-04-01T00:00:02.000Z"),
+      },
+    ];
+  },
 }));
 
 // Preserve LogRunStateSchema (the route validates its output through it) and
@@ -288,6 +316,10 @@ function makeDb(
       workflowRun: {
         findMany: async () => deployments,
         findFirst: async () => deployments[0],
+      },
+      // CL-2727: the solo stats read fetches run-level timing.
+      workflowRunRecord: {
+        findFirst: async () => ({ startedAt: null, endedAt: null }),
       },
     },
   };
@@ -1230,5 +1262,50 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
     expect(provisionCalls).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
     expect(runs.size).toBe(0);
+  });
+});
+
+describe("GET /workflow-exec/stats (CL-2727)", () => {
+  test("aggregate mode returns the by-kind stats for the caller", async () => {
+    const { status, json } = await get(app(), "/workflow-exec/stats");
+    expect(status).toBe(200);
+    expect(Array.isArray(json)).toBe(true);
+    expect(json[0].kind).toBe("brief");
+    expect(json[0].runs.total).toBe(3);
+    expect(json[0].steps.avgDurationMs).toBe(1500);
+  });
+
+  test("kind filter is passed through to the aggregate", async () => {
+    const { status, json } = await get(app(), "/workflow-exec/stats?kind=deck");
+    expect(status).toBe(200);
+    expect(json[0].kind).toBe("deck");
+  });
+
+  test("solo mode returns a seeded run's per-step breakdown with durations", async () => {
+    resetCaptures();
+    const a = app();
+    // Seed a run via /start so loadRunRecord (the in-memory mock) finds it.
+    const started = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    expect(started.status).toBe(200);
+    const runId = started.json.runId as string;
+
+    const { status, json } = await get(
+      a,
+      `/workflow-exec/stats?runId=${runId}`,
+    );
+    expect(status).toBe(200);
+    expect(json.runId).toBe(runId);
+    expect(json.steps).toHaveLength(1);
+    expect(json.steps[0].stepId).toBe("s1");
+    expect(json.steps[0].durationMs).toBe(2000);
+  });
+
+  test("solo mode 404s for an unknown run", async () => {
+    const { status } = await get(app(), "/workflow-exec/stats?runId=nope");
+    expect(status).toBe(404);
   });
 });

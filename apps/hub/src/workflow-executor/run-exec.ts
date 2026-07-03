@@ -429,9 +429,12 @@ export async function resumeWorkflowRun(
     return { ok: false, status: 500, error: "failed to deliver signal" };
   }
 
-  // Optimistically clear the gate so the UI resumes polling — a row in
-  // 'awaiting' pauses the poll. The projection bridge advances it as the
-  // sidecar emits the next StepStarted/StepCompleted/RunCompleted.
-  await setRunStatus(deps.db, state.runId, "running");
+  // CL-2727: the projection bridge is the SOLE writer of run STATUS progression
+  // — we no longer optimistically persist `running` here. The gate is cleared on
+  // disk by the delivered signal; the sidecar emits SignalReceived + the next
+  // StepStarted, and the projection bridge folds the row from `awaiting` back to
+  // `running` on the resulting pack. The response still reports the optimistic
+  // `running` so the caller's UI reacts immediately, but the DB row is advanced
+  // only by the log-derived projection.
   return { ok: true, state: { ...state, status: "running" } };
 }

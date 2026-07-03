@@ -61,6 +61,15 @@ const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
+// CL-2727 run liveness sweep. Generous defaults so a healthy-but-slow run is
+// never failed: a GONE supervisor with no progress is orphaned past the grace,
+// while a ROUTABLE supervisor with no progress (a slow first step) is left alone
+// until the far longer hard deadline. See run-liveness-sweep.ts for the full
+// predicate.
+const DEFAULT_RUN_LIVENESS_STALL_GRACE_MS = 5 * 60 * 1000;
+const DEFAULT_RUN_LIVENESS_START_HARD_DEADLINE_MS = 20 * 60 * 1000;
+const DEFAULT_RUN_LIVENESS_INTERVAL_MS = 60 * 1000;
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -240,6 +249,29 @@ export function loadConfig() {
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
       "milliseconds",
     ),
+    // CL-2727 continuous run liveness sweep. `stallGraceMs`: a GONE-supervisor
+    // run must be idle at least this long before it is orphan-failed (also the
+    // candidate-scan cutoff). `startHardDeadlineMs`: a ROUTABLE-supervisor run
+    // that has made NO progress is only failed past this far longer deadline —
+    // a slow first step under it is left alone (the false-positive fix).
+    // `intervalMs`: how often the loop runs. Override with RUN_LIVENESS_*.
+    runLivenessSweep: {
+      stallGraceMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_STALL_GRACE_MS",
+        DEFAULT_RUN_LIVENESS_STALL_GRACE_MS,
+        "milliseconds",
+      ),
+      startHardDeadlineMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_START_HARD_DEADLINE_MS",
+        DEFAULT_RUN_LIVENESS_START_HARD_DEADLINE_MS,
+        "milliseconds",
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_INTERVAL_MS",
+        DEFAULT_RUN_LIVENESS_INTERVAL_MS,
+        "milliseconds",
+      ),
+    },
   };
 
   log.info("Configuration loaded", {

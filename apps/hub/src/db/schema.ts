@@ -183,6 +183,55 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
 
 export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
 
+// CL-2727: per-step run state PROJECTION. Where `workflow_run_record` carries a
+// run's coarse run-level status, this table mirrors the AUTHORITATIVE per-step
+// state the native `@intx/workflow` state machine computes as it folds the run's
+// event log (`run-state-from-log.ts` → `resumeFromLog`): one row per (run, step)
+// with the step's phase, attempt count, and wall-clock timing. Written UPDATE-OR-
+// INSERT by the projection bridge on every pack (idempotent — the full log folds
+// to the same state), so the hub can serve per-step state + aggregate stats
+// without re-reading the git log on every request. NOT a re-invented fold: the
+// values come straight from the native RunState. Workbench-owned; distinct from
+// both `workflow_run` (deployment index) and `workflow_run_record` (run index).
+export const workflowRunStepPhases = [
+  "in-flight",
+  "awaiting-signal",
+  "awaiting-timer",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export const workflowRunStep = pgTable(
+  "workflow_run_step",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The owning run (`workflow_run_record.id`, a text run id). Not a DB foreign
+    // key — the projection bridge upserts steps for whatever run its log names,
+    // and the record row is seeded independently at /start.
+    runId: text("run_id").notNull(),
+    stepId: text("step_id").notNull(),
+    phase: text("phase", { enum: workflowRunStepPhases }).notNull(),
+    // The native StepState.currentAttempt (1-based once a step has started).
+    attempts: integer("attempts").notNull().default(0),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    runStepUniq: unique("workflow_run_step_run_step_uniq").on(
+      t.runId,
+      t.stepId,
+    ),
+  }),
+);
+
+export type WorkflowRunStepRow = typeof workflowRunStep.$inferSelect;
+
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
 // migrations). Nesting via parent_id.

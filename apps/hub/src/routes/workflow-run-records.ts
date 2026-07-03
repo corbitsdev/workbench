@@ -4,13 +4,19 @@ import { type } from "arktype";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import type { Context } from "hono";
+import { streamSSE } from "hono/streaming";
 import { describeRoute, resolver } from "hono-openapi";
+import { subscribeKind } from "@intx/hub-sessions";
+import type { Principal, RepoId } from "@intx/hub-sessions";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 import { getRequestedUserContext } from "../lib/user-context";
+import { workflowRunRecord } from "../db/schema";
 import { isTerminalRunStatus } from "../workflow-executor/run-status";
 import {
+  getRunKindStats,
   listRunRecords,
+  listRunSteps,
   loadRunRecord,
   markRunStopped,
   softDeleteRunRecord,
@@ -33,12 +39,45 @@ import {
   type LogRunState,
 } from "../workflow-executor/run-state-from-log";
 import type { CryptoProvider } from "@intx/types/runtime";
-import type {
-  EnsureDeploymentRoutableFn,
-  ProvisionRunDeploymentFn,
+import {
+  deriveWorkflowRunRepoId,
+  type EnsureDeploymentRoutableFn,
+  type ProvisionRunDeploymentFn,
 } from "./workflow-runs";
 
 const log = getLogger(["api", "workflow-run-records"]);
+
+// SSE run-state stream (CL-2727). The envelope subscribeKind narrows each
+// committed event blob through, and the on-disk `type` discriminators it tails —
+// the same set the raw-event stream in workflow-runs.ts uses. A run-state stream
+// re-folds and re-emits the authoritative RunState whenever a new event lands,
+// replacing the FE's fixed-interval poll of GET /workflow-exec/runs/:runId/state.
+const RUN_SSE_EVENT_REF = "refs/heads/main";
+const RUN_SSE_HUB_PRINCIPAL: Principal = { kind: "hub" };
+const RUN_SSE_EVENT_BLOB = type({
+  type: "string",
+  seq: "number",
+  "+": "ignore",
+});
+const RUN_SSE_EVENT_TYPES: readonly string[] = [
+  "RunStarted",
+  "StepStarted",
+  "StepCompleted",
+  "StepFailed",
+  "AttemptScheduled",
+  "SignalAwaited",
+  "SignalReceived",
+  "TimerSet",
+  "TimerFired",
+  "CancelRequested",
+  "CancelPropagated",
+  "ChildSpawned",
+  "ChildCancelRequested",
+  "ChildCompleted",
+  "RunCompleted",
+  "RunFailed",
+  "RunCancelled",
+];
 
 const StartBody = type({
   "input?": "unknown",
@@ -62,6 +101,43 @@ const RunStateResponse = type({
 
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
+
+// CL-2727 stats shapes, computed from the per-step projection. `RunKindStats` is
+// the by-kind aggregate; `SoloRunStats` is a single run's per-step breakdown.
+export const RunKindStatsSchema = type({
+  kind: "string",
+  runs: {
+    running: "number",
+    awaiting: "number",
+    completed: "number",
+    failed: "number",
+    total: "number",
+  },
+  steps: {
+    total: "number",
+    byPhase: { "[string]": "number" },
+    avgDurationMs: "number | null",
+  },
+});
+export const RunKindStatsListSchema = RunKindStatsSchema.array();
+export type RunKindStatsList = typeof RunKindStatsListSchema.infer;
+
+export const SoloRunStatsSchema = type({
+  runId: "string",
+  kind: "string",
+  status: "'running'|'awaiting'|'completed'|'failed'",
+  "startedAt?": "string | null",
+  "endedAt?": "string | null",
+  steps: type({
+    stepId: "string",
+    phase: "string",
+    attempts: "number",
+    "startedAt?": "string | null",
+    "endedAt?": "string | null",
+    "durationMs?": "number | null",
+  }).array(),
+});
+export type SoloRunStats = typeof SoloRunStatsSchema.infer;
 
 // The deploy-window 503 body (CL-2707). Unlike every other failure — which
 // returns the flat { error: string } shape — this one nests a machine-readable
@@ -330,6 +406,112 @@ export function createWorkflowRunRecordsRouter(deps: {
     },
   );
 
+  // CL-2727: run stats computed from the per-step projection. Without `?runId=`
+  // it returns the by-kind aggregate for the caller's runs along the tenant
+  // chain (optionally filtered by `?kind=`); with `?runId=` it returns that one
+  // run's per-step breakdown (owner-gated). Neither replays the git log — both
+  // read the projected `workflow_run_step` + `workflow_run_record` tables.
+  router.get(
+    "/workflow-exec/stats",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Workflow run stats from the per-step projection",
+      description:
+        "Aggregate run + per-step stats derived from the per-step projection (workflow_run_step). Default: by-kind aggregate (run counts by status, step phase distribution, mean step duration) for the caller's runs along the tenant chain. With `?runId=`: that run's per-step breakdown (phase, attempts, timing, duration). Optional `?kind=` filters the aggregate; `?tenantId=` selects a workbench the user belongs to.",
+      parameters: [
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "kind",
+          in: "query",
+          required: false,
+          description: "Filter the by-kind aggregate to one workflow kind.",
+          schema: { type: "string" },
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          description: "Return one run's per-step breakdown instead.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "By-kind aggregate, or a solo run's per-step breakdown",
+          content: {
+            "application/json": { schema: resolver(RunKindStatsListSchema) },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found (solo mode)",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+
+      const runId = c.req.query("runId");
+      if (runId !== undefined) {
+        const state = await loadRunRecord(deps.db, runId);
+        if (!state) return c.json({ error: "run not found" }, 404);
+        const gate = assertRunOwnership(chain, context, state);
+        if (gate) return c.json({ error: gate.error }, gate.status);
+
+        const record = await deps.db.query.workflowRunRecord.findFirst({
+          where: eq(workflowRunRecord.id, runId),
+          columns: { startedAt: true, endedAt: true },
+        });
+        const steps = await listRunSteps(deps.db, runId);
+        const solo: SoloRunStats = {
+          runId: state.runId,
+          kind: state.kind,
+          status: state.status,
+          startedAt: record?.startedAt?.toISOString() ?? null,
+          endedAt: record?.endedAt?.toISOString() ?? null,
+          steps: steps.map((s) => ({
+            stepId: s.stepId,
+            phase: s.phase,
+            attempts: s.attempts,
+            startedAt: s.startedAt?.toISOString() ?? null,
+            endedAt: s.endedAt?.toISOString() ?? null,
+            durationMs:
+              s.startedAt !== null && s.endedAt !== null
+                ? s.endedAt.getTime() - s.startedAt.getTime()
+                : null,
+          })),
+        };
+        return c.json(solo);
+      }
+
+      const stats = await getRunKindStats(
+        deps.db,
+        chain,
+        context.principalId,
+        c.req.query("kind"),
+      );
+      return c.json(stats);
+    },
+  );
+
   router.get(
     "/workflow-exec/records/:runId",
     describeRoute({
@@ -491,6 +673,150 @@ export function createWorkflowRunRecordsRouter(deps: {
         return c.json({ error: "failed to read run state" }, 500);
       }
       return c.json(parsed);
+    },
+  );
+
+  // Live run-state SSE (CL-2727). Reuses the existing streamSSE + subscribeKind
+  // tail pattern (workflow-runs.ts /stream), but instead of forwarding raw
+  // events it re-folds the run's log through the native state machine and emits
+  // the authoritative RunState on the initial connect and on every subsequent
+  // event — so the FE can drop its fixed-interval poll of the /state route.
+  router.get(
+    "/workflow-exec/runs/:runId/state/stream",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Stream a workflow run's log-derived state",
+      description:
+        "Server-Sent Events stream of the run's authoritative RunState (run phase + per-step phase/attempt/timing), re-folded from the native git event log on connect and on every new event. Replaces polling GET /workflow-exec/runs/:runId/state. Optional `?tenantId=` selects a workbench the user belongs to.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Server-Sent Events stream of the run's RunState",
+          content: { "text/event-stream": {} },
+        },
+        400: {
+          description: "Run has no deployment",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const runId = c.req.param("runId");
+      const record = await loadRunRecord(deps.db, runId);
+      if (!record) return c.json({ error: "run not found" }, 404);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, record);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
+      if (record.deploymentId === undefined) {
+        return c.json({ error: "run has no deployment log to read" }, 400);
+      }
+      const deploymentId = record.deploymentId;
+
+      const repoId: RepoId = {
+        kind: "workflow-run",
+        id: deriveWorkflowRunRepoId({
+          deploymentId,
+          deploymentDomain: deps.deploymentDomain,
+        }),
+      };
+
+      // Re-fold + emit the current RunState. A fold/read failure degrades to an
+      // empty pending state (matching the non-stream route) rather than tearing
+      // the stream down.
+      const emitState = async (
+        stream: Parameters<Parameters<typeof streamSSE>[1]>[0],
+      ): Promise<void> => {
+        let runState: LogRunState;
+        try {
+          runState = await getWorkflowRunState(
+            { repoStore: deps.repoStore },
+            {
+              deploymentId,
+              runId,
+              kind: record.kind,
+              deploymentDomain: deps.deploymentDomain,
+            },
+          );
+        } catch (err) {
+          log.warn("workflow run-state stream fold failed; emitting pending", {
+            runId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          runState = { runId, phase: "pending", lastSeq: 0, steps: [] };
+        }
+        await stream.writeSSE({ data: JSON.stringify(runState) });
+      };
+
+      return streamSSE(c, async (stream) => {
+        const abort = new AbortController();
+        stream.onAbort(() => abort.abort());
+
+        // Emit the current state immediately so a late subscriber is never blank.
+        await emitState(stream);
+
+        const iter = subscribeKind(
+          deps.repoStore.repoStore,
+          RUN_SSE_HUB_PRINCIPAL,
+          repoId,
+          RUN_SSE_EVENT_REF,
+          RUN_SSE_EVENT_BLOB,
+          {
+            signal: abort.signal,
+            from: { seq: 0 },
+            kinds: RUN_SSE_EVENT_TYPES,
+          },
+        );
+
+        try {
+          for await (const entry of iter) {
+            // Only this run's events trigger a re-fold (one repo can carry
+            // several runs' event streams).
+            if (entry.runId !== runId) continue;
+            await emitState(stream);
+          }
+        } catch (err) {
+          if (!abort.signal.aborted) {
+            log.error("workflow run-state stream failed", {
+              runId,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
+          }
+        }
+      });
     },
   );
 

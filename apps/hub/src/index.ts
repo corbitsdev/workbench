@@ -73,6 +73,7 @@ import {
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
@@ -1203,6 +1204,19 @@ const workflowReconciler = createWorkflowReconciler({
   reclaimDeployment,
 });
 workflowReconciler.start();
+// CL-2727: continuous liveness sweep. Where failOrphanedRuns runs ONCE at boot,
+// this marks runs whose supervisor dies while the hub stays up (lost pack / dead
+// child) — via a compare-and-set that can only ever flip a STILL-`running` run,
+// never an `awaiting` one (the CL-2575 invariant).
+const runLivenessSweep = createRunLivenessSweep({
+  db,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  deploymentDomain: config.rootTenant.domain,
+  stallGraceMs: config.runLivenessSweep.stallGraceMs,
+  startHardDeadlineMs: config.runLivenessSweep.startHardDeadlineMs,
+  intervalMs: config.runLivenessSweep.intervalMs,
+});
+runLivenessSweep.start();
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
