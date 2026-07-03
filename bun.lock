@@ -51,6 +51,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
+        "@workbench/timeline": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-artifact": "workspace:*",
@@ -819,6 +820,17 @@
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
         "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/timeline": {
+      "name": "@workbench/timeline",
+      "dependencies": {
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
     },
@@ -2346,6 +2358,8 @@
     "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
 
     "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
+
+    "@workbench/timeline": ["@workbench/timeline@workspace:packages/timeline"],
 
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 

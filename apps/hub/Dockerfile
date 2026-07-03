@@ -30,6 +30,7 @@ COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
+COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
@@ -84,6 +85,7 @@ COPY packages/chat/ packages/chat/
 COPY packages/last30days-core/ packages/last30days-core/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
+COPY packages/timeline/ packages/timeline/
 COPY packages/tool-credentials/ packages/tool-credentials/
 COPY packages/tools-agents/ packages/tools-agents/
 COPY packages/tools-artifact/ packages/tools-artifact/
