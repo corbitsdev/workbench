@@ -630,6 +630,25 @@
         "react": "*",
       },
     },
+    "packages/blocks": {
+      "name": "@workbench/blocks",
+      "dependencies": {
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
     "packages/catalog": {
       "name": "@workbench/catalog",
       "dependencies": {
@@ -2314,6 +2333,8 @@
     "@workbench/approvals": ["@workbench/approvals@workspace:packages/approvals"],
 
     "@workbench/artifact": ["@workbench/artifact@workspace:packages/artifact"],
+
+    "@workbench/blocks": ["@workbench/blocks@workspace:packages/blocks"],
 
     "@workbench/catalog": ["@workbench/catalog@workspace:packages/catalog"],
 
