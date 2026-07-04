@@ -32,7 +32,7 @@ import {
 } from "./insights/viz";
 import { ActorActivitySection } from "./insights/ActorActivity";
 import { CostInsights } from "./insights/CostInsights";
-import { TenantActivityFeed } from "./insights/TenantActivityFeed";
+import { DeferredActivitySection } from "./insights/DeferredActivitySection";
 import {
   cacheHitRate,
   computeDelta,
@@ -1253,7 +1253,7 @@ export function InsightsDashboard() {
               <motion.div variants={SECTION_ITEM}>
                 <SectionLabel>Activity</SectionLabel>
                 <div className="mt-4 flex flex-col gap-10">
-                  <TenantActivityFeed tenantId={activeTenantId} />
+                  <DeferredActivitySection tenantId={activeTenantId} />
                   <ActorActivitySection tenantId={activeTenantId} />
                 </div>
               </motion.div>

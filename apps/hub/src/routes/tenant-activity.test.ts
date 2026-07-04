@@ -19,8 +19,8 @@ const sampleEntry = {
 let serviceCalls: unknown[] = [];
 let serviceResult: unknown = { entries: [sampleEntry], nextCursor: null };
 let serviceError: Error | null = null;
-mock.module("../services/principal-activity", () => ({
-  getTenantActivityPage: mock(async (args: unknown) => {
+mock.module("../services/tenant-activity-cache", () => ({
+  getCachedTenantActivityPage: mock(async (args: unknown) => {
     serviceCalls.push(args);
     if (serviceError) throw serviceError;
     return serviceResult;

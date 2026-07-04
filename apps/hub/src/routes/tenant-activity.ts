@@ -10,7 +10,7 @@ import { Hono, type Env } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 
 import type { HubDb } from "../db";
-import { getTenantActivityPage } from "../services/principal-activity";
+import { getCachedTenantActivityPage } from "../services/tenant-activity-cache";
 
 const log = getLogger(["hub", "tenant-activity"]);
 
@@ -122,7 +122,7 @@ export function createTenantActivityRouter({
       }
 
       try {
-        const page = await getTenantActivityPage({
+        const page = await getCachedTenantActivityPage({
           db,
           tenantId: tenant.id,
           limit,

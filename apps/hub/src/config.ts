@@ -180,6 +180,18 @@ export function loadConfig() {
       // behind a never-resolving in-flight promise.
       fetchTimeoutMs: parsePositiveIntEnv("MODELS_DEV_TIMEOUT_MS", 10_000),
     },
+    // Insights (CL-2753). The tenant-wide activity feed runs the heaviest
+    // Insights query — a per-row UNION across un-indexable interchange tables.
+    // A short in-process TTL memoizes the tenant-wide FIRST page so N members
+    // opening the feed within the window collapse to one DB union instead of
+    // one per open. Only the redacted tenant-wide first page is cached; deep
+    // (cursor) pages and per-principal drill-downs are never memoized.
+    insights: {
+      tenantActivityCacheTtlMs: parsePositiveIntEnv(
+        "INSIGHTS_TENANT_ACTIVITY_CACHE_TTL_MS",
+        45_000,
+      ),
+    },
     // Error reporting. Optional: when SENTRY_DSN is unset, Sentry and its log
     // sink are a no-op (see setupObservability). Read directly by initSentry at
     // startup; mirrored here for visibility. Default environment is 'production'.
