@@ -172,6 +172,34 @@ describe("RunConsole", () => {
     screen.getByText(/Attio is rate-limiting requests right now/i);
   });
 
+  it("gives each step dot a color transition so live phase changes ease instead of hard-cutting (CL-2781)", () => {
+    record = makeRecord({ status: "running" });
+    logStateData = makeLogState({
+      phase: "running",
+      steps: [
+        {
+          stepId: "plan",
+          phase: "completed",
+          stepType: "agent",
+          currentAttempt: 1,
+        },
+      ],
+    });
+    const { container } = render(
+      <RunConsole deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    const dot = container.querySelector("span.rounded-full");
+    expect(dot).not.toBeNull();
+    // The dot must animate its color (transition-colors), and still carry the
+    // phase color class so the two compose rather than one replacing the other.
+    expect(dot?.className).toContain("transition-colors");
+    expect(dot?.className).toContain("bg-green-500");
+    // The step row itself also transitions its border/background on phase change.
+    const row = container.querySelector("li");
+    expect(row?.className).toContain("transition-colors");
+  });
+
   it("shows a live animated Starting… state for a provisioning run, not a frozen 'no steps' panel (CL-2755)", () => {
     record = makeRecord({ status: "provisioning" });
     logStateData = undefined;

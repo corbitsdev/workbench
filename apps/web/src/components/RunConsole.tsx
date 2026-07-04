@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button, classifyRunError, toHumanLabel } from "@workbench/ui";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
@@ -74,6 +75,7 @@ export function RunConsole({
   tenantId,
   onClose,
 }: RunConsoleProps) {
+  const reduceMotion = useReducedMotion();
   // Guard falsy id so no record query fires against an empty runId.
   const safeId = deploymentId || null;
   const { data: record, isLoading } = useWorkflowRecord(safeId, tenantId);
@@ -177,63 +179,80 @@ export function RunConsole({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {!settled && <p className="text-[13px] text-text-3">Loading run…</p>}
-        {settled && !state && (
-          <p className="text-[13px] text-text-3">
-            {connected ? "Waiting for run activity…" : "Connecting…"}
-          </p>
-        )}
-        {settled &&
-          state &&
-          terminal &&
-          state.phase === "failed" &&
-          interrupted && (
-            <div className="flex flex-col items-start gap-3">
+        {/* CL-2781: crossfade the coarse body phase (loading → waiting → content)
+            so the provisioning/loading → first streamed frame doesn't hard-cut a
+            full layout swap. Reduced motion collapses it to an instant show. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={!settled ? "loading" : !state ? "waiting" : "content"}
+            initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0, y: -6 }}
+            transition={{ duration: reduceMotion ? 0 : 0.18, ease: "easeOut" }}
+          >
+            {!settled && (
+              <p className="text-[13px] text-text-3">Loading run…</p>
+            )}
+            {settled && !state && (
               <p className="text-[13px] text-text-3">
-                This run was interrupted and can't continue. Start a new run to
-                pick up where you left off.
+                {connected ? "Waiting for run activity…" : "Connecting…"}
               </p>
-              <Button variant="primary" size="sm" onClick={onClose}>
-                Start a new run
-              </Button>
-            </div>
-          )}
-        {settled &&
-          state &&
-          terminal &&
-          state.phase === "failed" &&
-          !interrupted && (
-            <p className="text-[13px] text-text-3">
-              This run failed. Start a new run to try again.
-            </p>
-          )}
-        {settled && state && steps.length === 0 && !terminal && (
-          <p className="text-[13px] text-text-3">No steps have started yet.</p>
-        )}
-        {settled && state && steps.length > 0 && (
-          <ol className="flex flex-col gap-3">
-            {steps.map((step) => (
-              <RunStepRow
-                key={step.stepId}
-                step={step}
-                runState={state}
-                // Bug fix (2): never fire a signal when the run is terminal.
-                onApprove={
-                  terminal
-                    ? () => undefined
-                    : (signalName) =>
-                        resume
-                          .mutateAsync({
-                            signalName,
-                            payload: { approved: true },
-                          })
-                          .catch(() => undefined)
-                }
-                approving={resume.isPending && !terminal}
-              />
-            ))}
-          </ol>
-        )}
+            )}
+            {settled &&
+              state &&
+              terminal &&
+              state.phase === "failed" &&
+              interrupted && (
+                <div className="flex flex-col items-start gap-3">
+                  <p className="text-[13px] text-text-3">
+                    This run was interrupted and can't continue. Start a new run
+                    to pick up where you left off.
+                  </p>
+                  <Button variant="primary" size="sm" onClick={onClose}>
+                    Start a new run
+                  </Button>
+                </div>
+              )}
+            {settled &&
+              state &&
+              terminal &&
+              state.phase === "failed" &&
+              !interrupted && (
+                <p className="text-[13px] text-text-3">
+                  This run failed. Start a new run to try again.
+                </p>
+              )}
+            {settled && state && steps.length === 0 && !terminal && (
+              <p className="text-[13px] text-text-3">
+                No steps have started yet.
+              </p>
+            )}
+            {settled && state && steps.length > 0 && (
+              <ol className="flex flex-col gap-3">
+                {steps.map((step) => (
+                  <RunStepRow
+                    key={step.stepId}
+                    step={step}
+                    runState={state}
+                    // Bug fix (2): never fire a signal when the run is terminal.
+                    onApprove={
+                      terminal
+                        ? () => undefined
+                        : (signalName) =>
+                            resume
+                              .mutateAsync({
+                                signalName,
+                                payload: { approved: true },
+                              })
+                              .catch(() => undefined)
+                    }
+                    approving={resume.isPending && !terminal}
+                  />
+                ))}
+              </ol>
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -250,22 +269,35 @@ function RunStepRow({
   onApprove: (signalName: string) => void;
   approving: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
   const awaitingSignal =
     step.phase === "awaiting-signal" ? step.awaitingSignal : undefined;
   return (
-    <li className="rounded-[10px] border border-border bg-surface px-3 py-3">
+    <li className="rounded-[10px] border border-border bg-surface px-3 py-3 transition-colors duration-200">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2">
+          {/* CL-2781: transition-colors so the phase dot eases between states
+              instead of hard-cutting as live SSE frames arrive. */}
           <span
-            className={`h-2 w-2 shrink-0 rounded-full ${STEP_PHASE_DOT[step.phase]}`}
+            className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-200 ease-out ${STEP_PHASE_DOT[step.phase]}`}
           />
           <span className="truncate text-[13px] font-medium text-text">
             {toHumanLabel(step.stepId)}
           </span>
         </div>
-        <span className="shrink-0 text-[12px] text-text-3">
-          {STEP_PHASE_LABELS[step.phase]}
-        </span>
+        {/* CL-2781: crossfade the phase label on swap rather than snapping text. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.span
+            key={step.phase}
+            className="shrink-0 text-[12px] text-text-3"
+            initial={reduceMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0 : 0.15, ease: "easeOut" }}
+          >
+            {STEP_PHASE_LABELS[step.phase]}
+          </motion.span>
+        </AnimatePresence>
       </div>
 
       {step.lastError && (

@@ -1,5 +1,13 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import { toHumanLabel } from "@workbench/ui";
@@ -65,6 +73,7 @@ function WorkflowRunPaneInner({
   onClose,
 }: WorkflowRunPaneProps) {
   const runId = deploymentId;
+  const reduceMotion = useReducedMotion();
   const {
     data: record,
     isLoading,
@@ -222,56 +231,7 @@ function WorkflowRunPaneInner({
     />
   ) : null;
 
-  if (isError) {
-    return (
-      <div className="flex h-full items-center justify-center border border-border bg-bg">
-        <p className="text-[13px] text-text-3">
-          We couldn't load this workflow run. Close and reopen it to retry.
-        </p>
-      </div>
-    );
-  }
-
-  if (isLoading || !record || !state) {
-    return (
-      <div className="flex h-full items-center justify-center border border-border bg-bg">
-        <p className="text-[13px] text-text-3">Loading run…</p>
-      </div>
-    );
-  }
-
-  // CL-2755: a run still cold-starting its per-run deployment shows a live
-  // "Starting…" state WITH motion — never a frozen empty panel — until the
-  // projection advances it to `running`.
-  if (record.status === "provisioning") {
-    return <WorkflowStartingIndicator variant="pane" />;
-  }
-
-  // CL-2755 (handoff flicker): once the run flips provisioning→running we don't
-  // yet know whether this kind ships a custom Panel — the module is still
-  // loading. Keep showing the animated loading state so a panel workflow goes
-  // Starting → Panel directly, WITHOUT a flash of the generic RunConsole shell in
-  // between. The spinner is continuous with the provisioning frame above.
-  if (uiModulePending) {
-    return (
-      <WorkflowStartingIndicator variant="pane" label="Loading workflow…" />
-    );
-  }
-
-  if (!Panel) {
-    return (
-      <div className="relative h-full">
-        <RunConsole
-          deploymentId={runId}
-          tenantId={tenantId}
-          onClose={onClose}
-        />
-        {metaBadge}
-      </div>
-    );
-  }
-
-  const terminal = isRecordTerminal(record.status);
+  const terminal = record ? isRecordTerminal(record.status) : false;
 
   // onSignal maps directly to the resume endpoint; no-op once terminal or while a
   // signal is still latched (guards double-submit for the FULL latch window, not
@@ -306,49 +266,141 @@ function WorkflowRunPaneInner({
       });
   };
 
-  return (
-    <ErrorBoundary
-      fallback={
-        <div className="flex h-full items-center justify-center border border-border bg-bg">
-          <p className="text-[13px] text-text-3">
-            This workflow view ran into a problem rendering. The run is still
-            active — close and reopen it to retry.
-          </p>
-        </div>
-      }
-    >
-      <Suspense
-        fallback={
+  // Resolve the current pane view as a keyed node so the top-level transition
+  // below can crossfade between coarse phases (loading / provisioning /
+  // first-frame / panel). Early guards narrow record/state within each branch.
+  function renderView(): { key: string; node: ReactNode } {
+    if (isError) {
+      return {
+        key: "error",
+        node: (
           <div className="flex h-full items-center justify-center border border-border bg-bg">
-            <p className="text-[13px] text-text-3">Loading workflow…</p>
+            <p className="text-[13px] text-text-3">
+              We couldn't load this workflow run. Close and reopen it to retry.
+            </p>
           </div>
-        }
-      >
-        <div className="relative h-full">
-          {redeploying && (
-            <div className="absolute inset-x-0 top-0 z-20 border-b border-border bg-surface px-3 py-2 text-center text-[13px] text-text-2">
-              Finishing an update — retrying…
+        ),
+      };
+    }
+
+    if (isLoading || !record || !state) {
+      return {
+        key: "loading",
+        node: (
+          <div className="flex h-full items-center justify-center border border-border bg-bg">
+            <p className="text-[13px] text-text-3">Loading run…</p>
+          </div>
+        ),
+      };
+    }
+
+    // CL-2755: a run still cold-starting its per-run deployment shows a live
+    // "Starting…" state WITH motion — never a frozen empty panel — until the
+    // projection advances it to `running`.
+    if (record.status === "provisioning") {
+      return {
+        key: "provisioning",
+        node: <WorkflowStartingIndicator variant="pane" />,
+      };
+    }
+
+    // CL-2755 (handoff flicker): once the run flips provisioning→running we
+    // don't yet know whether this kind ships a custom Panel — the module is
+    // still loading. Keep showing the animated loading state so a panel workflow
+    // goes Starting → Panel directly, WITHOUT a flash of the generic RunConsole
+    // shell in between. The spinner is continuous with the provisioning frame.
+    if (uiModulePending) {
+      return {
+        key: "loading-workflow",
+        node: (
+          <WorkflowStartingIndicator variant="pane" label="Loading workflow…" />
+        ),
+      };
+    }
+
+    if (!Panel) {
+      return {
+        key: "console",
+        node: (
+          <div className="relative h-full">
+            <RunConsole
+              deploymentId={runId}
+              tenantId={tenantId}
+              onClose={onClose}
+            />
+            {metaBadge}
+          </div>
+        ),
+      };
+    }
+
+    return {
+      key: "panel",
+      node: (
+        <ErrorBoundary
+          fallback={
+            <div className="flex h-full items-center justify-center border border-border bg-bg">
+              <p className="text-[13px] text-text-3">
+                This workflow view ran into a problem rendering. The run is
+                still active — close and reopen it to retry.
+              </p>
             </div>
-          )}
-          {signalPending && <WorkingIndicator />}
-          <Panel
-            deploymentId={runId}
-            state={state}
-            logRead={logState !== undefined}
-            connected={
-              record.status === "running" || record.status === "awaiting"
+          }
+        >
+          <Suspense
+            fallback={
+              <div className="flex h-full items-center justify-center border border-border bg-bg">
+                <p className="text-[13px] text-text-3">Loading workflow…</p>
+              </div>
             }
-            stepOutputs={stepOutputs}
-            signalPending={signalPending}
-            onSignal={handleSignal}
-            onClose={onClose}
-            credentials={credentials}
-            skills={skills}
-          />
-          {metaBadge}
-        </div>
-      </Suspense>
-    </ErrorBoundary>
+          >
+            <div className="relative h-full">
+              {redeploying && (
+                <div className="absolute inset-x-0 top-0 z-20 border-b border-border bg-surface px-3 py-2 text-center text-[13px] text-text-2">
+                  Finishing an update — retrying…
+                </div>
+              )}
+              {signalPending && <WorkingIndicator />}
+              <Panel
+                deploymentId={runId}
+                state={state}
+                logRead={logState !== undefined}
+                connected={
+                  record.status === "running" || record.status === "awaiting"
+                }
+                stepOutputs={stepOutputs}
+                signalPending={signalPending}
+                onSignal={handleSignal}
+                onClose={onClose}
+                credentials={credentials}
+                skills={skills}
+              />
+              {metaBadge}
+            </div>
+          </Suspense>
+        </ErrorBoundary>
+      ),
+    };
+  }
+
+  const view = renderView();
+
+  // CL-2781: crossfade between the coarse pane phases so the provisioning /
+  // "Loading run…" → first streamed frame no longer hard-cuts a full layout
+  // swap. Reduced motion collapses it to an instant show.
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <motion.div
+        key={view.key}
+        className="h-full"
+        initial={reduceMotion ? false : { opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={reduceMotion ? { opacity: 1 } : { opacity: 0 }}
+        transition={{ duration: reduceMotion ? 0 : 0.2, ease: "easeOut" }}
+      >
+        {view.node}
+      </motion.div>
+    </AnimatePresence>
   );
 }
 
