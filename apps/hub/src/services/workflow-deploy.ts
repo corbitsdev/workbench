@@ -203,13 +203,22 @@ export function createWorkflowDeployService(deps: {
       //     we KEEP `writeStepAgentRows` for it — but it needs NO instance row,
       //     NO grants file (the deny-all path never reads `grants.json`), and NO
       //     launchSession.
-      //   deployed (reasoning with tools) — the full per-step provisioning: an
-      //     `agent` row, an `agent_instance` row, a `state/grants.json`, and a
-      //     launched session.
+      //   deployed (reasoning with tools) — an `agent` row, an
+      //     `agent_instance` row, and a `state/grants.json`. As of CL-2782 its
+      //     per-step `launchSession` is ALSO no-op'd: the launched session was
+      //     pure up-front overhead (~17s of serialized deploy→pack→session-start
+      //     round-trips per step) that nothing the running step reads is
+      //     produced by. Execution rebuilds everything from these hub-written
+      //     artifacts — the agent def from workflow.json, the grants from
+      //     `state/grants.json`, and the tool manifest/credentials via hub RPC
+      //     gated on the `agent` row — none of it from the launch. The
+      //     `reestablishSupervisor` path already runs deployed steps with no
+      //     launched session (its production precedent).
       //
-      // `launchSession` is no-op'd below for both the inline and deterministic
-      // sets — that, plus skipping their agent-state repos, is the
-      // session-per-step RAM win.
+      // `launchSession` is no-op'd below for EVERY step class — inline,
+      // deterministic, and deployed — so no step launches a per-step session.
+      // That, plus skipping the inline/deterministic agent-state repos, is the
+      // session-per-step RAM win (now extended to deployed steps by CL-2782).
       const inlineStepIds = collectInlineStepIds(params.workflow);
       const deterministicStepIds = collectDeterministicToolStepIds(
         params.workflow,
@@ -224,8 +233,11 @@ export function createWorkflowDeployService(deps: {
       const agentRowStepIds = allStepIds.filter(
         (stepId) => !inlineStepIds.has(stepId),
       );
+      // No step launches a per-step session (CL-2782): every step's derived
+      // agentId is in the no-launch set, so `toLaunchSession` returns a resolved
+      // no-op for all of them and the SessionService is never touched.
       const noLaunchAgentIds = new Set(
-        [...inlineStepIds, ...deterministicStepIds].map((stepId) =>
+        allStepIds.map((stepId) =>
           deriveStepAgentId({ deploymentId: params.deploymentId, stepId }),
         ),
       );
@@ -263,15 +275,20 @@ export function createWorkflowDeployService(deps: {
         capabilityNames: stepCapabilityNames,
       });
 
-      // Persist a per-step `agent_instance` row before the orchestrator
-      // launches each deployed step. Interchange's launch callbacks
-      // deliberately do no DB writes — the native single-agent route creates
-      // the instance row itself before `launchSession` (hub-api instances.ts),
-      // and the `agent.deploy.ack` handler then resolves it via
-      // `requireInstance` to store the step's public key. The orchestrator runs
-      // the same launch path, so without this row every step deploy fails with
-      // "No active instance found for address". Inline and deterministic-tool
-      // steps never launch a session, so they get no instance row.
+      // Persist a per-step `agent_instance` row for each deployed step. Its
+      // original justification — that the orchestrator's per-step launch fires
+      // an `agent.deploy` whose ack `requireInstance`-resolves this row — is
+      // STALE as of CL-2782: the deployed-step `launchSession` is now no-op'd,
+      // so no per-step `agent.deploy.ack` fires and nothing reads this row's
+      // public key. The row is KEPT (safe inert: null sessionId, no reader)
+      // because CL-2705 per-step usage attribution joins it — activity-overview's
+      // `workflowOwnerByInstance` maps a step's synthetic principal back to the
+      // run owner via `member_agent_instance`, and deployed reasoning steps emit
+      // inference usage, so dropping the row would silently regress per-step
+      // attribution. Do NOT "clean up the dead row": it is load-bearing for
+      // attribution, not for the (now absent) launch. Inline and deterministic-
+      // tool steps declare no reasoning usage under a per-step instance, so they
+      // get no instance row.
       await writeStepInstanceRows({
         db,
         deploymentId: params.deploymentId,
@@ -1126,11 +1143,18 @@ export function collectDeterministicToolStepIds(
 }
 
 // Wrap the SessionService launch hook so a no-launch step's agentId resolves
-// to a no-op resolved promise WITHOUT calling `launchSession`. The no-launch
-// set is the inline-inference steps (CL-2251) plus the deterministic-tool steps
-// (CL-2252): the orchestrator only awaits the promise, so never launching means
-// zero per-step agent-state repos / sessions for either — the session-per-step
-// RAM win. Fully-deployed reasoning steps launch unchanged.
+// to a no-op resolved promise WITHOUT calling `launchSession`. As of CL-2782 the
+// no-launch set is EVERY step — inline-inference (CL-2251), deterministic-tool
+// (CL-2252), and fully-deployed reasoning steps: the orchestrator only awaits
+// the promise, so never launching means zero per-step sessions and drops the
+// ~17s of serialized per-step deploy→pack→session-start round-trips from
+// workflow start. Execution rebuilds each step's def/grants/tools/credentials
+// from the hub-written artifacts (workflow.json, `state/grants.json`, the
+// `agent` row + hub RPC), never from the launch. The orchestrator still calls
+// this hook once per step; because `noLaunchAgentIds` now covers `allStepIds`,
+// every call takes the no-op branch. The `launchDeployedSession` branch below is
+// retained as the launch mechanism but is not currently reached in the workflow
+// deploy path (no caller passes a step agentId outside the no-launch set).
 export function toLaunchSession(
   sessionService: SessionService,
   noLaunchAgentIds: ReadonlySet<string> = new Set(),

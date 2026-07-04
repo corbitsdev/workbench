@@ -973,9 +973,10 @@ describe("collectDeterministicToolStepIds", () => {
 });
 
 // Integration-style proof of CONDITION 2: a workflow with an inline step
-// deploys creating ZERO agent-state repos and ZERO launchSession calls for
-// the inline step, while the deployed step gets the full per-step
-// provisioning unchanged. Exercises the real `createWorkflowDeployService`
+// deploys creating ZERO agent-state repos for the inline step, while the
+// deployed step still gets its agent-state grants repo + agent/instance rows.
+// Neither launches a session — CL-2782 no-op'd the deployed-step launch too, so
+// launches=0 for the whole deploy. Exercises the real `createWorkflowDeployService`
 // (real director registry + real orchestrator) across its seams; only the
 // db / repoStore / sessionService / sidecarRouter boundaries are mocked.
 describe("deployWorkflow inline-step partition (CL-2251)", () => {
@@ -1097,15 +1098,17 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
 
     expect(result.kind).toBe("multi-step");
 
-    // CONDITION 2 — the inline step never launched a session; the deployed
-    // step did. (The supervisor uses sendAgentDeploy, not launchSession.)
+    // CONDITION 2 — NO step launches a per-step session (CL-2782 no-op'd the
+    // deployed-step launch too); the inline step never did. The supervisor uses
+    // sendAgentDeploy, not launchSession, so launches=0 across the whole deploy.
     const launchedIds = launched.map((l) => l.agentId);
-    expect(launchedIds).toContain("ins_ses_inline-draft");
+    expect(launchedIds).toEqual([]);
+    expect(launchedIds).not.toContain("ins_ses_inline-draft");
     expect(launchedIds).not.toContain("ins_ses_inline-analyze");
-    expect(launchedIds).toHaveLength(1);
 
-    // No agent-state grants repo was written for the inline step; the deployed
-    // step's grants repo was. (The workflow-kind repo write is separate.)
+    // The deployed step's grants repo is STILL written (execution reads it at
+    // run time) even though it no longer launches; the inline step gets none.
+    // (The workflow-kind repo write is separate.)
     const agentStateIds = writeTreeRepoIds
       .filter((r) => r.kind === "agent-state")
       .map((r) => r.id);
@@ -1132,8 +1135,9 @@ describe("deployWorkflow inline-step partition (CL-2251)", () => {
 
 // Integration-style proof of CL-2252: a deterministic tool step deploys
 // keeping ONLY its `agent` row — no `agent_instance` row, no `state/grants.json`
-// agent-state repo, and no launchSession — while inline + fully-deployed steps
-// are unaffected. Exercises the real `createWorkflowDeployService` across its
+// agent-state repo, and no launchSession. The fully-deployed step keeps both
+// rows + its grants repo but (as of CL-2782) also no longer launches. Exercises
+// the real `createWorkflowDeployService` across its
 // seams; only the db / repoStore / sessionService / sidecarRouter boundaries
 // are mocked.
 describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
@@ -1254,14 +1258,16 @@ describe("deployWorkflow deterministic-tool partition (CL-2252)", () => {
 
     expect(result.kind).toBe("multi-step");
 
-    // No launchSession for the deterministic tool step (nor the inline step);
-    // only the fully-deployed reasoning step launches.
+    // No launchSession for ANY step — CL-2782 no-op'd the deployed-step launch
+    // too, so launches=0 across the deploy (deterministic, inline, AND the
+    // fully-deployed reasoning step).
     const launchedIds = launched.map((l) => l.agentId);
-    expect(launchedIds).toEqual(["ins_ses_det-draft"]);
+    expect(launchedIds).toEqual([]);
+    expect(launchedIds).not.toContain("ins_ses_det-draft");
     expect(launchedIds).not.toContain("ins_ses_det-fetch");
 
     // 0 agent-state repos for the deterministic tool step (no grants.json);
-    // the deployed reasoning step still gets one.
+    // the deployed reasoning step still gets one (execution reads it).
     const agentStateIds = writeTreeRepoIds
       .filter((r) => r.kind === "agent-state")
       .map((r) => r.id);
