@@ -175,6 +175,12 @@ export function createWorkflowDeployService(deps: {
     Promise<EnsureDeploymentRoutableResult>
   >();
 
+  // TEMP-INSTRUMENTATION CL-2780: deployWorkflow writes its measured DB+grant
+  // fan-out duration here so provisionRunDeployment can fold it into the
+  // one-line provision summary. Read synchronously right after the awaited
+  // deployWorkflow call resolves, so no interleave can clobber it.
+  let lastDbFanoutMs = 0;
+
   const service: WorkflowDeployService = {
     deployWorkflow: async (params) => {
       const walk = walkCapabilities(params.workflow, directorRegistry);
@@ -230,6 +236,8 @@ export function createWorkflowDeployService(deps: {
       // every such step carries the same union pins the orchestrator hands it.
       // Inline steps are skipped: no harness, no row.
       const stepCapabilityNames = capabilityNames(walk);
+      // TEMP-INSTRUMENTATION CL-2780
+      const dbfanoutStart = performance.now();
       await writeStepAgentRows({
         db,
         deploymentId: params.deploymentId,
@@ -297,6 +305,26 @@ export function createWorkflowDeployService(deps: {
         creatorPrincipalId: params.creatorPrincipalId,
         harnessSessionId: params.config.sessionId,
       });
+      // TEMP-INSTRUMENTATION CL-2780
+      const dbfanoutMs = performance.now() - dbfanoutStart;
+      lastDbFanoutMs = dbfanoutMs;
+
+      // TEMP-INSTRUMENTATION CL-2780: accumulate per-launch timing across the
+      // deploy's launchSession calls (count/sum/max), wrapping the launch hook.
+      const launchTiming = { count: 0, sum: 0, max: 0 };
+      const timedLaunchSession: LaunchSessionFn = (launchParams) => {
+        const launchStart = performance.now();
+        const result = toLaunchSession(
+          deps.sessionService,
+          noLaunchAgentIds,
+        )(launchParams);
+        return result.finally(() => {
+          const ms = performance.now() - launchStart;
+          launchTiming.count += 1;
+          launchTiming.sum += ms;
+          if (ms > launchTiming.max) launchTiming.max = ms;
+        });
+      };
 
       // The orchestrator still walks every step (it pins each step's
       // InferenceSource into the supervisor frame's `sources` map, which the
@@ -309,7 +337,8 @@ export function createWorkflowDeployService(deps: {
       const orchestrator = createWorkflowDeployOrchestrator({
         directorRegistry,
         workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-        launchSession: toLaunchSession(deps.sessionService, noLaunchAgentIds),
+        // TEMP-INSTRUMENTATION CL-2780: timed wrapper around toLaunchSession.
+        launchSession: timedLaunchSession,
         sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
       });
 
@@ -327,11 +356,22 @@ export function createWorkflowDeployService(deps: {
         ),
       ]);
 
-      return orchestrator.deployWorkflow({
+      const deployResult = await orchestrator.deployWorkflow({
         ...params,
         operatorApprovals,
         toolPackagePins,
       });
+      // TEMP-INSTRUMENTATION CL-2780
+      log.info(
+        "launchSession timing kind={kind}: launches={count} totalLaunchMs={sum} maxMs={max}",
+        {
+          kind: params.workflow.id,
+          count: launchTiming.count,
+          sum: Math.round(launchTiming.sum),
+          max: Math.round(launchTiming.max),
+        },
+      );
+      return deployResult;
     },
 
     ensureDeploymentRoutable: async (args) => {
@@ -361,10 +401,17 @@ export function createWorkflowDeployService(deps: {
     },
 
     provisionRunDeployment: async (args) => {
+      // TEMP-INSTRUMENTATION CL-2780
+      const provisionStart = performance.now();
+      const defStart = performance.now();
       const definition = await readWorkflowDefinition(
         deps.repoStore,
         args.kind,
       );
+      // TEMP-INSTRUMENTATION CL-2780
+      const defMs = performance.now() - defStart;
+      // TEMP-INSTRUMENTATION CL-2780
+      const configStart = performance.now();
       const { deploymentId, config, deployContent } =
         await resolveWorkflowDeployConfig({
           db,
@@ -373,6 +420,10 @@ export function createWorkflowDeployService(deps: {
           deploymentDomain: args.deploymentDomain,
           definition,
         });
+      // TEMP-INSTRUMENTATION CL-2780
+      const configMs = performance.now() - configStart;
+      // TEMP-INSTRUMENTATION CL-2780
+      const deployStart = performance.now();
       try {
         await service.deployWorkflow({
           workflow: definition,
@@ -407,6 +458,21 @@ export function createWorkflowDeployService(deps: {
         }
         throw err;
       }
+      // TEMP-INSTRUMENTATION CL-2780
+      const deployMs = performance.now() - deployStart;
+      // TEMP-INSTRUMENTATION CL-2780
+      log.info(
+        "provision timing kind={kind} steps={steps}: def={def}ms config={config}ms dbfanout={dbfanout}ms deployWorkflow={deployWorkflow}ms total={total}ms",
+        {
+          kind: args.kind,
+          steps: definition.stepOrder.length,
+          def: Math.round(defMs),
+          config: Math.round(configMs),
+          dbfanout: Math.round(lastDbFanoutMs),
+          deployWorkflow: Math.round(deployMs),
+          total: Math.round(performance.now() - provisionStart),
+        },
+      );
       log.info("provisioned per-run workflow deployment", {
         deploymentId,
         kind: args.kind,
@@ -966,6 +1032,8 @@ export async function writeStepGrantFiles(args: {
   if (args.stepIds.length === 0) return;
   const grants = buildStepGrantRules(args.capabilityNames);
   const contents = JSON.stringify({ grants });
+  // TEMP-INSTRUMENTATION CL-2780
+  const grantLoopStart = performance.now();
   for (const stepId of args.stepIds) {
     const repoId = `${args.deploymentId}-${stepId}`;
     await args.repoStore.repoStore.writeTree(
@@ -978,6 +1046,15 @@ export async function writeStepGrantFiles(args: {
       },
     );
   }
+  // TEMP-INSTRUMENTATION CL-2780
+  log.info(
+    "writeStepGrantFiles timing deploymentId={deploymentId}: steps={steps} writeTreeLoop={writeTreeLoop}ms",
+    {
+      deploymentId: args.deploymentId,
+      steps: args.stepIds.length,
+      writeTreeLoop: Math.round(performance.now() - grantLoopStart),
+    },
+  );
 }
 
 export function createWorkflowRepoWriter(

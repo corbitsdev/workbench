@@ -1195,6 +1195,8 @@ export function createSidecarDeployRouter(deps: {
         "workflow.json",
       );
       const workflowAssetBytes = JSON.stringify(projection.definition, null, 2);
+      // WORKBENCH-LOCAL-TEMP (CL-2780): provisioning-path timing instrumentation.
+      const assetWriteStart = performance.now();
       try {
         await mkdir(dirname(workflowAssetPath), { recursive: true });
         // Idempotent: only rewrite when the on-disk content differs from
@@ -1223,6 +1225,9 @@ export function createSidecarDeployRouter(deps: {
           { cause },
         );
       }
+
+      // WORKBENCH-LOCAL-TEMP (CL-2780): asset-write phase duration.
+      const assetWriteMs = performance.now() - assetWriteStart;
 
       const wired = createSidecarWorkflowSupervisor({
         // Hold the constructed supervisor in the outer scope so the
@@ -1283,6 +1288,8 @@ export function createSidecarDeployRouter(deps: {
       // supervisor reads with keys the write so the read and the write
       // address the same repo. A missing or empty file would make every
       // authorize fail closed, so the write must surface its failure.
+      // WORKBENCH-LOCAL-TEMP (CL-2780): grants-write phase duration.
+      const grantsStart = performance.now();
       await writeStepGrants({
         repoStore: deps.repoStore,
         deploymentId,
@@ -1290,6 +1297,8 @@ export function createSidecarDeployRouter(deps: {
         deriveStepRepoId: stepStrategy.deriveStepRepoId,
         grants: frame.config.grants,
       });
+      // WORKBENCH-LOCAL-TEMP (CL-2780)
+      const grantsMs = performance.now() - grantsStart;
 
       // OUTBOUND half of mailbox ownership (§3a): register the spawned
       // agent's signing key on the host transport so the supervisor's
@@ -1379,7 +1388,22 @@ export function createSidecarDeployRouter(deps: {
       // `exited` against `readyPromise` and the rejection propagates
       // here. The router lets it surface; the link's deploy handler
       // converts the rejection into a structured failure frame.
+      // WORKBENCH-LOCAL-TEMP (CL-2780): spawn phase duration.
+      const spawnStart = performance.now();
       await wired.supervisor.spawn(spawnOpts);
+      // WORKBENCH-LOCAL-TEMP (CL-2780): child is spawned/ready once spawn
+      // resolves; emit the per-phase multi-step deploy breakdown.
+      const spawnMs = performance.now() - spawnStart;
+      logger.info(
+        "multistep deploy timing kind={kind}: assetWrite={assetWrite}ms grants={grants}ms spawn={spawn}ms total={total}ms",
+        {
+          kind: projection.definition.id,
+          assetWrite: Math.round(assetWriteMs),
+          grants: Math.round(grantsMs),
+          spawn: Math.round(spawnMs),
+          total: Math.round(assetWriteMs + grantsMs + spawnMs),
+        },
+      );
       // Child process is live after `spawn` resolves; the failure
       // unwind needs the supervisor handle from here on.
       wiredForUnwind = wired;
