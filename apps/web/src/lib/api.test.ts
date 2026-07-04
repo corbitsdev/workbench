@@ -1,7 +1,9 @@
 /// <reference types="bun" />
+import "../test-setup";
 import { describe, expect, it } from "bun:test";
 import {
   ApiError,
+  buildEventSourceUrl,
   isDeployInProgress,
   toApiError,
   withDeployRetry,
@@ -10,6 +12,26 @@ import {
 function res(status: number, headers?: Record<string, string>): Response {
   return new Response(null, { status, headers });
 }
+
+describe("buildEventSourceUrl", () => {
+  it("targets the same-origin /api/v1 proxy path, never a cross-origin hub base", () => {
+    // A credentialed cross-origin EventSource is dropped by Safari ITP / Brave,
+    // so the SSE URL must ride the same-origin /api/v1 proxy (Vite in dev, the
+    // Vercel rewrite in prod) — window.location.origin — regardless of any
+    // VITE_API_BASE_URL the normal fetch client may use.
+    const url = buildEventSourceUrl(
+      "/workflow-exec/runs/wfr_1/state/stream?tenantId=tn-x",
+    );
+    expect(url).toBe(
+      "http://localhost/api/v1/workflow-exec/runs/wfr_1/state/stream?tenantId=tn-x",
+    );
+    expect(new URL(url).origin).toBe(window.location.origin);
+  });
+
+  it("normalizes a leading slash", () => {
+    expect(buildEventSourceUrl("x/y")).toBe("http://localhost/api/v1/x/y");
+  });
+});
 
 describe("toApiError", () => {
   it("uses the message from a flat { error: string } body (back-compat)", () => {

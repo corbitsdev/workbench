@@ -21,6 +21,22 @@ export function buildRootUrl(path: string): string {
   return new URL(`/${path.replace(/^\//, "")}`, resolveBase()).toString();
 }
 
+// EventSource URL for an /api/v1 SSE route. ALWAYS same-origin — never apiBase —
+// because a credentialed cross-origin EventSource is silently dropped by Safari
+// ITP and Brave shields (the connection opens but frames never surface). The
+// same-origin /api/v1 path is proxied to the hub in every environment: the Vite
+// dev proxy locally, and the Vercel `/api/(.*)` → `${HUB_UPSTREAM_URL}` rewrite
+// in prod (see vercel.json) — the same path the normal API client already rides
+// in prod, where VITE_API_BASE_URL is empty so resolveBase() is same-origin too.
+// The auth cookie is same-origin, so the proxied stream authenticates. (Regular
+// fetch is unaffected and may still use apiBase directly in a split-origin dev.)
+export function buildEventSourceUrl(path: string): string {
+  return new URL(
+    `/api/v1/${path.replace(/^\//, "")}`,
+    window.location.origin,
+  ).toString();
+}
+
 const VersionResponse = type({
   buildSha: "string | null",
 });

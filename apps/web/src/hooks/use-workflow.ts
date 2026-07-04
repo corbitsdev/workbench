@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
-import { api, withDeployRetry } from "../lib/api";
+import { api, buildEventSourceUrl, withDeployRetry } from "../lib/api";
+import { subscribeWorkflowRunStateStream } from "../lib/workflow-run-state-stream";
 import {
   isLogStateTerminal,
   isRecordTerminal,
@@ -261,44 +262,122 @@ export async function fetchWorkflowRunState(
   return parsed;
 }
 
+// Fall back to a degraded /state read every Nth consecutive SSE reconnect
+// failure (CL-2779). N > 1 so a normal provisioning-window blip (the stream 400s
+// until the deployment log exists) is ridden out by backoff rather than
+// re-fetching /state on every error. Because the reconnect delay itself backs
+// off (1s → capped 30s), re-reading every Nth error is a SLOW, error-gated
+// cadence (~90s between reads once the backoff is capped), never the old fixed
+// 2s poll. It re-fires — not once — so a persistently blocked stream (SSE
+// dropped by a proxy, where a live run's `onState` never arrives to reset the
+// count) still keeps pulling the run's progress and its eventual completion,
+// which a fire-once guard would freeze on the first snapshot forever.
+const STREAM_FALLBACK_EVERY_ERRORS = 3;
+
+// Live run-state SSE subscription (CL-2779). Opens the shared EventSource for a
+// run and pushes each authoritative, validated RunState straight into the SAME
+// TanStack Query cache entry `useWorkflowRunState` reads — so every consumer of
+// that entry (the pane, the dock card, the conversation gate scan) updates live
+// as the run executes, instead of lagging behind a fixed-interval poll. Gated
+// with `enabled` so it connects only for a present, non-terminal run.
+//
+// EventSource is the one sanctioned use of a subscription effect here (a stream,
+// not a data fetch). The one-shot `queryFn` in `useWorkflowRunState` remains the
+// initial snapshot and the fallback target; this only layers live updates on top.
+export function useWorkflowRunStateStream(
+  runId: string | null,
+  tenantId?: string | null,
+  options?: { enabled?: boolean },
+): void {
+  const queryClient = useQueryClient();
+  const enabled = (options?.enabled ?? true) && !!runId;
+
+  useEffect(() => {
+    if (!enabled || runId === null) return;
+    const url = buildEventSourceUrl(
+      withTenant(`/workflow-exec/runs/${runId}/state/stream`, tenantId),
+    );
+    const key = workflowRunStateQueryKey(runId, tenantId);
+
+    return subscribeWorkflowRunStateStream(url, {
+      onState: (state) => {
+        queryClient.setQueryData<LogRunState>(key, state);
+      },
+      onError: (consecutiveErrors) => {
+        // A persistently unreachable stream (SSE blocked by a proxy) never fires
+        // `onState`, so the module's error count keeps climbing. Re-read /state
+        // once every Nth error so a still-running run keeps advancing and its
+        // completion is eventually fetched — degraded but self-healing, not a
+        // frozen snapshot. The stream is disabled the moment the run goes
+        // terminal (see `useWorkflowRunState`), which tears this subscription
+        // down and stops the re-reads. A successful frame resets the count in
+        // the module, so this only fires while the stream is genuinely down.
+        if (
+          consecutiveErrors < STREAM_FALLBACK_EVERY_ERRORS ||
+          consecutiveErrors % STREAM_FALLBACK_EVERY_ERRORS !== 0
+        ) {
+          return;
+        }
+        void queryClient
+          .fetchQuery<LogRunState>({
+            queryKey: key,
+            queryFn: () => fetchWorkflowRunState(runId, tenantId),
+            staleTime: 0,
+            retry: false,
+          })
+          .catch(() => undefined);
+      },
+    });
+  }, [enabled, runId, tenantId, queryClient]);
+}
+
 export function useWorkflowRunState(
   runId: string | null,
   tenantId?: string | null,
 ) {
   const queryClient = useQueryClient();
-  return useQuery<LogRunState>({
+  // The per-step state now arrives live over SSE (CL-2779), pushed into this
+  // cache entry by `useWorkflowRunStateStream` below — so there is no longer a
+  // fixed-interval `refetchInterval` poll of /state (the source of the ~90s
+  // "frozen while running" lag and the provisioning 400-loop, CL-2777). This
+  // one-shot `queryFn` is the initial snapshot (and the stream-error fallback
+  // target); a genuine parse/read error still surfaces via `isError` — during
+  // the provisioning window /state 400s here exactly as before, so the panes'
+  // record-derived "Starting…" fallback is unchanged.
+  const query = useQuery<LogRunState>({
     queryKey: ["workflow-run-state", runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
     retry: false,
-    // A transient first-fetch error must NOT permanently freeze the pane
-    // (CL-2727): keep the poll armed whenever there is no data yet — first load
-    // OR after an error — so a single early failure self-heals on the next tick
-    // instead of disarming `refetchInterval` forever (the old `data && …` guard
-    // returned false while `data` was undefined, wedging the poll). A genuine
-    // parse error still surfaces immediately via `isError`; the interval simply
-    // re-attempts.
-    //
-    // The INDEX status is authoritative for run-level terminal (CL-2727): an
-    // operator abort or the hub liveness sweep writes `failed` only to the index
-    // (`workflow_run_record`), never to the log — so `/state` (a pure log fold)
-    // reports `running`/`pending` forever while `/runs` reports `failed`. Keying
-    // the poll only on the log phase would poll `/state` indefinitely. Consult
-    // the record cache first and stop the moment the index settles, even if the
-    // log hasn't. The poll otherwise stops once the log itself settles.
-    refetchInterval: (query) => {
-      const record = queryClient.getQueryData<RunRecord>([
-        "workflow-record",
-        runId,
-        tenantId ?? null,
-      ]);
-      if (record && isRecordTerminal(record.status)) return false;
-      const data = query.state.data;
-      if (!data) return 2000;
-      return isLogStateTerminal(data.phase) ? false : 2000;
-    },
     queryFn: () => fetchWorkflowRunState(runId as string, tenantId),
   });
+
+  // Stop streaming once the run can no longer advance, so a finished run holds no
+  // idle EventSource open. Terminal is read from the log phase (reactive via this
+  // query) and, when a record is mounted alongside, from the INDEX status — which
+  // is authoritative for run-level terminal (CL-2727): an operator abort or the
+  // liveness sweep writes `failed` only to the index, never the log.
+  //
+  // NOTE: the record read below is a NON-reactive cache peek. It self-heals in
+  // every current consumer because they all mount `useWorkflowRecord` for the
+  // same key alongside this hook — so when the index flips terminal that record
+  // query re-renders the component, re-running this hook to read the fresh cache
+  // and disable the stream. A FUTURE standalone consumer that calls
+  // `useWorkflowRunState` WITHOUT a co-located `useWorkflowRecord` would not get
+  // that re-render on an index-only abort (log stays non-terminal), leaving the
+  // stream open until unmount; such a consumer must also observe the record (or
+  // this should be upgraded to `useWorkflowRecord` here).
+  const record = queryClient.getQueryData<RunRecord>([
+    "workflow-record",
+    runId,
+    tenantId ?? null,
+  ]);
+  const terminal =
+    (record !== undefined && isRecordTerminal(record.status)) ||
+    (query.data !== undefined && isLogStateTerminal(query.data.phase));
+  useWorkflowRunStateStream(runId, tenantId, { enabled: !terminal });
+
+  return query;
 }
 
 export {
