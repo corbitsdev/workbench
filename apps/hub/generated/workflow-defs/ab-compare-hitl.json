@@ -41,7 +41,19 @@
           },
           "drainBehavior": "cancel",
           "input": {
-            "from": "trigger.payload"
+            "merge": [
+              {
+                "from": "trigger.payload"
+              },
+              {
+                "project": {
+                  "from": "steps.config.output"
+                },
+                "fields": [
+                  "input"
+                ]
+              }
+            ]
           }
         },
         "after": [
