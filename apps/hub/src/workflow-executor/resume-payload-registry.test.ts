@@ -413,4 +413,148 @@ describe("validateResumePayload", () => {
       ).ok,
     ).toBe(false);
   });
+
+  // -------------------------------------------------------------------------
+  // pain-point-collateral (CL-2775) — the four migrated dock gates + the
+  // panel-owned format-selection all validate here.
+  // -------------------------------------------------------------------------
+  test("accepts a pain-point note-selection with a noteId", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "note-selection", {
+        noteId: "note_1",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a pain-point note-selection with an empty noteId", () => {
+    // The fetch step reads steps.select.output into granola_get_note; an empty id
+    // would fetch nothing, so the boundary rejects it.
+    expect(
+      validateResumePayload("pain-point-collateral", "note-selection", {
+        noteId: "",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a pain-point context payload (optional, empty is valid)", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "context", {}),
+    ).toEqual({ ok: true });
+    expect(
+      validateResumePayload("pain-point-collateral", "context", {
+        context: "Focus on onboarding.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a pain-point context payload with a non-string context", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "context", {
+        context: 42,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a pain-point selection with an array of ids", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "pain-point-selection", {
+        selectedIds: ["pp1", "pp2"],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a pain-point selection missing selectedIds", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "pain-point-selection", {})
+        .ok,
+    ).toBe(false);
+  });
+
+  test("rejects a pain-point selection with an empty selectedIds (CL-2775)", () => {
+    // The dock form's min:1 and the panel both require a pick; an empty selection
+    // generates no collateral, so a hand-crafted empty POST is rejected here.
+    expect(
+      validateResumePayload("pain-point-collateral", "pain-point-selection", {
+        selectedIds: [],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a pain-point format-selection with generation items", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "format-selection", {
+        items: [
+          {
+            format: "email",
+            painPointId: "pp1",
+            painPointTitle: "Slow onboarding",
+            painPointDetail: "Takes weeks.",
+            severity: "high",
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a pain-point format item with no pain point id", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "format-selection", {
+        items: [
+          {
+            format: "email",
+            painPointId: "",
+            painPointTitle: "x",
+            painPointDetail: "y",
+            severity: "high",
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a pain-point review with full approved pieces", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "review", {
+        approvedPieces: [
+          { format: "email", title: "Follow-up", content: "Hi Acme…" },
+        ],
+        decisions: [
+          {
+            format: "email",
+            title: "Follow-up",
+            content: "Hi Acme…",
+            approved: true,
+          },
+        ],
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a pain-point review approved piece with empty content (fidelity guard)", () => {
+    // The persist argMap reads title/format/content off each approvedPieces
+    // entry; an empty-content piece would persist a hollow artifact, so the
+    // boundary rejects a display-fields-only (content-less) approval (CL-2775).
+    expect(
+      validateResumePayload("pain-point-collateral", "review", {
+        approvedPieces: [{ format: "email", title: "Follow-up", content: "" }],
+        decisions: [
+          {
+            format: "email",
+            title: "Follow-up",
+            content: "",
+            approved: true,
+          },
+        ],
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a pain-point review that approved nothing (empty arrays)", () => {
+    expect(
+      validateResumePayload("pain-point-collateral", "review", {
+        approvedPieces: [],
+        decisions: [],
+      }),
+    ).toEqual({ ok: true });
+  });
 });

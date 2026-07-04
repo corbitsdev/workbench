@@ -10,6 +10,11 @@ import {
   RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
   GammaPreviewPayloadSchema,
+  PainPointContextPayloadSchema,
+  PainPointFormatSelectionPayloadSchema,
+  PainPointNoteSelectionPayloadSchema,
+  PainPointReviewPayloadSchema,
+  PainPointSelectionPayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -81,6 +86,21 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     intake: RedditIntakePayloadSchema,
     "recommendation-review": RedditReviewPayloadSchema,
     "opportunity-selection": RedditSelectionPayloadSchema,
+  },
+  // pain-point-collateral (CL-2775): four gates migrated to dock UIBlocks (choice
+  // / form / form / reviewList) and `format-selection` kept on the run-page panel.
+  // Registering all five rejects a malformed resume at the boundary — a note-less
+  // selection, a content-less approved piece (the fidelity contract: the persist
+  // argMap reads title/format/content, so an empty-content piece would persist a
+  // hollow artifact), a format item without a pain point — rather than poisoning
+  // the downstream fetch/persist steps. The dock blocks and the panel POST the
+  // same shapes.
+  "pain-point-collateral": {
+    "note-selection": PainPointNoteSelectionPayloadSchema,
+    context: PainPointContextPayloadSchema,
+    "pain-point-selection": PainPointSelectionPayloadSchema,
+    "format-selection": PainPointFormatSelectionPayloadSchema,
+    review: PainPointReviewPayloadSchema,
   },
 };
 

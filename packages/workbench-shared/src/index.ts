@@ -7,6 +7,7 @@ export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./last30days";
 export * from "./reddit-opportunity-scanner";
+export * from "./pain-point-collateral";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

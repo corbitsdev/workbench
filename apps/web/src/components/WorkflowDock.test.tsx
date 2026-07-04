@@ -35,7 +35,7 @@ async function fakeApi(
   if (resumeMatch?.[1] !== undefined) {
     return {
       runId: resumeMatch[1],
-      kind: "pain-point-collateral",
+      kind: "smoke-test",
       status: "running",
     };
   }
@@ -135,7 +135,7 @@ describe("WorkflowDock", () => {
   it("renders a card per run, sorted by attention, with progress states from the log", async () => {
     records = [
       listRow("run_running", "running"),
-      listRow("run_gate", "awaiting", "pain-point-collateral"),
+      listRow("run_gate", "awaiting", "smoke-test"),
     ];
     statesByRunId["run_running"] = logState("run_running", "running", [
       { stepId: "fetch_sources", phase: "completed" },
@@ -157,7 +157,7 @@ describe("WorkflowDock", () => {
     });
 
     // Attention sort: the awaiting (needs-you) run leads.
-    expect(cards[0]?.textContent).toContain("pain-point-collateral");
+    expect(cards[0]?.textContent).toContain("smoke-test");
     expect(cards[0]?.textContent).toContain("Needs you");
     expect(cards[1]?.textContent).toContain("ab-compare-hitl");
     expect(cards[1]?.textContent).toContain("Running");
@@ -272,7 +272,7 @@ describe("WorkflowDock", () => {
   });
 
   it("resumes the gated run with its recovered signalName when the gate button is used (CL-2681)", async () => {
-    records = [listRow("run_gate", "awaiting", "pain-point-collateral")];
+    records = [listRow("run_gate", "awaiting", "smoke-test")];
     statesByRunId["run_gate"] = logState("run_gate", "running", [
       {
         stepId: "review-gate",
@@ -371,7 +371,7 @@ describe("WorkflowDock", () => {
   });
 
   it("shows no gate button when the awaiting step's signalName is unrecoverable", async () => {
-    records = [listRow("run_gate", "awaiting", "pain-point-collateral")];
+    records = [listRow("run_gate", "awaiting", "smoke-test")];
     statesByRunId["run_gate"] = logState("run_gate", "running", [
       { stepId: "review-gate", phase: "awaiting-signal" },
     ]);
@@ -396,9 +396,7 @@ describe("WorkflowDock", () => {
     // moving Starting state, not the frozen "Waiting for the first step…" copy or
     // a raw log error. No state is seeded, so /state would error — the card must
     // not depend on it.
-    records = [
-      listRow("run_starting", "provisioning", "pain-point-collateral"),
-    ];
+    records = [listRow("run_starting", "provisioning", "smoke-test")];
     const { container } = renderDock();
 
     const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
