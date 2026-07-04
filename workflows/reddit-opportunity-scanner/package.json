@@ -11,6 +11,10 @@
     "./ui": {
       "types": "./src/ui.tsx",
       "default": "./src/ui.tsx"
+    },
+    "./blocks": {
+      "types": "./src/blocks.ts",
+      "default": "./src/blocks.ts"
     }
   },
   "scripts": {
@@ -22,11 +26,14 @@
     "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
+    "@workbench/blocks": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@workbench/shared": "workspace:*",
+    "@workbench/tools-reddit": "workspace:*",
     "@workbench/test-utils": "workspace:*",
     "@testing-library/react": "^16.3.2",
     "@types/bun": "latest",

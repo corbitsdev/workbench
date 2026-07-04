@@ -6,6 +6,7 @@ export * from "./attio-task-agent";
 export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./last30days";
+export * from "./reddit-opportunity-scanner";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

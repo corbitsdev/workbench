@@ -27,9 +27,6 @@ export type RedditToolsConfig = {
 };
 
 const RedditSortLiteral = type('"relevance" | "new" | "top" | "comment_count"');
-const RedditSubredditSortLiteral = type(
-  '"relevance" | "hot" | "top" | "new" | "comments"',
-);
 const RedditTimeframeLiteral = type(
   '"all" | "day" | "week" | "month" | "year"',
 );
@@ -41,13 +38,57 @@ const RedditSearchArgs = type({
   "limit?": "1 <= number.integer <= 100",
 });
 
-const RedditSubredditSearchArgs = type({
-  subreddit: "string > 0",
-  query: "string > 0",
-  "sort?": RedditSubredditSortLiteral,
-  "timeframe?": RedditTimeframeLiteral,
-  "limit?": "1 <= number.integer <= 100",
-});
+const SUBREDDIT_SORTS = new Set(["relevance", "hot", "top", "new", "comments"]);
+const TIMEFRAMES = new Set(["all", "day", "week", "month", "year"]);
+
+export interface NormalizedSubredditSearch {
+  subreddit: string;
+  query: string;
+  sort: string;
+  timeframe: string;
+  limit: number;
+}
+
+/**
+ * Relocated per-row normalization for a subreddit search (CL-2769).
+ *
+ * The reddit-opportunity-scanner review gate maps each planned search straight
+ * into `reddit_subreddit_search`; the run-page panel used to strip a leading
+ * "r/" from the subreddit and default sort/timeframe/limit client-side before
+ * submitting. Moving that here (mirroring CL-2765's normalizeIntake) makes every
+ * search row COMPLETE regardless of the path it took: a block-form submission
+ * carrying "r/devops" and no sort/timeframe/limit reaches the API with a bare
+ * "devops" subreddit and the panel's former defaults, so a naive verbatim
+ * migration can't hand the tool an "r/"-prefixed subreddit the API rejects.
+ */
+
+// The workflow's search-plan default limit — kept in lockstep with the panel's
+// per-row default (workflows/reddit-opportunity-scanner/src/ui.tsx). The review
+// gate always sends a concrete `limit`, so this fallback only applies to a
+// direct tool call that omits it (e.g. Larry driving the tool ad hoc).
+const SUBREDDIT_DEFAULT_LIMIT = 15;
+
+export function normalizeSubredditSearchArgs(
+  raw: Record<string, unknown>,
+): NormalizedSubredditSearch {
+  const subredditRaw =
+    typeof raw.subreddit === "string" ? raw.subreddit.trim() : "";
+  const subreddit = subredditRaw.replace(/^\/?r\//iu, "").trim();
+  const query = typeof raw.query === "string" ? raw.query.trim() : "";
+  const sort =
+    typeof raw.sort === "string" && SUBREDDIT_SORTS.has(raw.sort)
+      ? raw.sort
+      : "relevance";
+  const timeframe =
+    typeof raw.timeframe === "string" && TIMEFRAMES.has(raw.timeframe)
+      ? raw.timeframe
+      : "month";
+  const limit =
+    typeof raw.limit === "number" && raw.limit > 0
+      ? Math.min(Math.floor(raw.limit), MAX_LIMIT)
+      : SUBREDDIT_DEFAULT_LIMIT;
+  return { subreddit, query, sort, timeframe, limit };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -316,20 +357,23 @@ async function searchSubreddit(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const parsed = RedditSubredditSearchArgs(args);
-  if (parsed instanceof type.errors) {
-    throw new Error(`reddit_subreddit_search: ${parsed.summary}`);
+  const norm = normalizeSubredditSearchArgs(args);
+  if (norm.subreddit.length === 0 || norm.query.length === 0) {
+    throw new Error(
+      "reddit_subreddit_search: subreddit and query are required",
+    );
   }
   const url = new URL(`${resolvedBaseURL(config)}/v1/reddit/subreddit/search`);
-  url.searchParams.set("subreddit", parsed.subreddit);
-  url.searchParams.set("query", parsed.query);
-  applyCommonParams(url, parsed);
+  url.searchParams.set("subreddit", norm.subreddit);
+  url.searchParams.set("query", norm.query);
+  url.searchParams.set("sort", norm.sort);
+  url.searchParams.set("timeframe", norm.timeframe);
 
   const data = await fetchJSON(config, url, signal);
   const posts = extractPosts(data)
     .map(parseRedditPost)
     .filter((post): post is RedditPost => post !== null)
-    .slice(0, resolveLimit(parsed));
+    .slice(0, norm.limit);
   return JSON.stringify(posts.map(normalizeRedditPost), null, 2);
 }
 

@@ -7,6 +7,7 @@ import { buildAbCompareHitlBlocks } from "@workbench/workflow-ab-compare-hitl/bl
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
 import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
+import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
 
 // Per-kind dock block builders (CL-2683). A migrated workflow supplies its own
 // builder — deriving richer, kind-specific UIBlocks (results tables, typed
@@ -26,6 +27,7 @@ const builders: Record<string, DockBlockBuilder> = {
   "attio-task-agent": buildAttioTaskAgentBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
   "last30days-research": buildLast30daysBlocks,
+  "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
 };
 
 export function buildDockBlocks(

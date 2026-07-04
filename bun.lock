@@ -1458,6 +1458,7 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1466,7 +1467,9 @@
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/shared": "workspace:*",
         "@workbench/test-utils": "workspace:*",
+        "@workbench/tools-reddit": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {

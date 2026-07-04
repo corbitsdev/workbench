@@ -5,6 +5,9 @@ import {
   ClarificationPayloadSchema,
   Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
+  RedditIntakePayloadSchema,
+  RedditReviewPayloadSchema,
+  RedditSelectionPayloadSchema,
   GammaIntakePayloadSchema,
   GammaPreviewPayloadSchema,
   SyncApprovalPayloadSchema,
@@ -66,6 +69,18 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // The block form and the run-page panel POST the same shape.
   "last30days-research": {
     intake: Last30daysIntakePayloadSchema,
+  },
+  // reddit-opportunity-scanner (CL-2769): all three gates carry structured
+  // payloads the deterministic map steps read. The intake gate REQUIRES an
+  // http(s) URL (the scrape step fetches it); the review gate REQUIRES at least
+  // one keyword, subreddit, and search row (the collect step maps over the
+  // searches); the selection gate REQUIRES at least one selected opportunity
+  // with a non-empty title + content (the persist step maps each into an
+  // artifact). The block UIBlocks and the run-page panel POST the same shapes.
+  "reddit-opportunity-scanner": {
+    intake: RedditIntakePayloadSchema,
+    "recommendation-review": RedditReviewPayloadSchema,
+    "opportunity-selection": RedditSelectionPayloadSchema,
   },
 };
 

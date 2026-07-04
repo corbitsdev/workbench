@@ -340,4 +340,77 @@ describe("validateResumePayload", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  test("accepts a reddit intake with an http(s) URL and optional hints", () => {
+    expect(
+      validateResumePayload("reddit-opportunity-scanner", "intake", {
+        inputUrl: "https://example.com",
+        brandName: "Acme",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a reddit intake with a non-URL inputUrl (CL-2769)", () => {
+    // The scrape step fetches inputUrl; the panel enforced the http(s) shape
+    // client-side, and the boundary enforces it for the block form too.
+    expect(
+      validateResumePayload("reddit-opportunity-scanner", "intake", {
+        inputUrl: "not a url",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a reddit review payload with keywords, subreddits, and searches", () => {
+    expect(
+      validateResumePayload(
+        "reddit-opportunity-scanner",
+        "recommendation-review",
+        {
+          keywords: ["observability"],
+          subreddits: ["devops"],
+          searches: [{ subreddit: "devops", query: "otel pain" }],
+        },
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a reddit review payload with no searches (nothing to collect)", () => {
+    expect(
+      validateResumePayload(
+        "reddit-opportunity-scanner",
+        "recommendation-review",
+        {
+          keywords: ["observability"],
+          subreddits: ["devops"],
+          searches: [],
+        },
+      ).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a reddit selection payload with a titled, non-empty opportunity", () => {
+    expect(
+      validateResumePayload(
+        "reddit-opportunity-scanner",
+        "opportunity-selection",
+        {
+          selected: [{ title: "Alerting is broken", content: "# Brief" }],
+        },
+      ),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a reddit selection payload whose opportunity has empty content (CL-2769)", () => {
+    // The persist map reads `content` into artifact_create; a blank content
+    // would save an empty document, so the boundary rejects it.
+    expect(
+      validateResumePayload(
+        "reddit-opportunity-scanner",
+        "opportunity-selection",
+        {
+          selected: [{ title: "Alerting is broken", content: "" }],
+        },
+      ).ok,
+    ).toBe(false);
+  });
 });

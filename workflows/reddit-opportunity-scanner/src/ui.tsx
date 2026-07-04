@@ -14,6 +14,16 @@ import {
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
+import {
+  type AnalyzeResult,
+  deriveBusinessContext,
+  type Opportunity,
+  parseAnalyzeOutput,
+  parseCurateOutput,
+  type SearchPlanItem,
+} from "./parse";
+
+export type { AnalyzeResult, Opportunity };
 
 // ── Step order + labels ───────────────────────────────────────────────────────
 
@@ -45,59 +55,6 @@ const REVIEW_SIGNAL = "recommendation-review";
 const SELECTION_SIGNAL = "opportunity-selection";
 
 // ── Output schemas ──────────────────────────────────────────────────────────────
-
-// Agent / inline-inference step output: the sidecar wraps the reply in
-// { reply, turn }. We JSON.parse(reply) to get structured data.
-const AgentStepOutput = type({ reply: "string", "turn?": "unknown" });
-
-const Recommendation = type({
-  label: "string",
-  "intent?": "string",
-  "reason?": "string",
-  "confidence?": "number",
-});
-
-const SearchPlanItem = type({
-  subreddit: "string",
-  query: "string",
-  "intent?": "string",
-  "reason?": "string",
-  "sort?": "string",
-  "timeframe?": "string",
-  "limit?": "number",
-});
-
-type SearchPlanItem = typeof SearchPlanItem.infer;
-
-const AnalyzeJSON = type({
-  "whatTheySell?": "string",
-  "icp?": "string",
-  "competitors?": "string[]",
-  "audienceNotes?": "string",
-  "keywords?": Recommendation.array(),
-  "subreddits?": Recommendation.array(),
-  "searches?": SearchPlanItem.array(),
-});
-
-export type AnalyzeResult = typeof AnalyzeJSON.infer;
-
-const Opportunity = type({
-  id: "string",
-  title: "string",
-  subreddit: "string",
-  signal: "'buying-signal' | 'pain-point' | 'competitor-mention'",
-  "score?": "number",
-  "detail?": "string",
-  "evidence?": "string",
-  "whyItMatters?": "string",
-  "suggestedAction?": "string",
-  "content?": "string",
-  "url?": "string",
-});
-
-export type Opportunity = typeof Opportunity.infer;
-
-const ScanJSON = type({ "opportunities?": Opportunity.array() });
 
 // deterministicToolStep output: { callId: string, content: "<JSON>" }
 const ToolResultEnvelope = type({ callId: "string", content: "string" });
@@ -148,40 +105,6 @@ function buildStepperSteps(state: RunState | null): WorkflowStep[] {
 
 function activeStep(state: RunState | null): StepKey {
   return activeDisplayStep(state, DISPLAY_STEPS)?.key as StepKey;
-}
-
-// ── Parsers ───────────────────────────────────────────────────────────────────
-
-function parseAnalyzeOutput(raw: unknown): AnalyzeResult | "pending" | "error" {
-  const envelope = AgentStepOutput(raw);
-  if (envelope instanceof type.errors) return "pending";
-
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(envelope.reply);
-  } catch {
-    return "error";
-  }
-
-  const parsed = AnalyzeJSON(decoded);
-  if (parsed instanceof type.errors) return "error";
-  return parsed;
-}
-
-function parseCurateOutput(raw: unknown): Opportunity[] | "pending" | "error" {
-  const envelope = AgentStepOutput(raw);
-  if (envelope instanceof type.errors) return "pending";
-
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(envelope.reply);
-  } catch {
-    return "error";
-  }
-
-  const parsed = ScanJSON(decoded);
-  if (parsed instanceof type.errors) return "error";
-  return parsed.opportunities ?? [];
 }
 
 // ── Shared primitives ──────────────────────────────────────────────────────────
@@ -615,18 +538,7 @@ function RecommendationForm({
     ]);
 
   const competitors = analysis.competitors ?? [];
-  const businessContext = [
-    analysis.whatTheySell !== undefined
-      ? `What they sell: ${analysis.whatTheySell}`
-      : null,
-    analysis.icp !== undefined ? `ICP: ${analysis.icp}` : null,
-    analysis.audienceNotes !== undefined
-      ? `Audience: ${analysis.audienceNotes}`
-      : null,
-    competitors.length > 0 ? `Competitors: ${competitors.join(", ")}` : null,
-  ]
-    .filter((line): line is string => line !== null)
-    .join("\n");
+  const businessContext = deriveBusinessContext(analysis);
 
   const validSearches = searches
     .filter(
