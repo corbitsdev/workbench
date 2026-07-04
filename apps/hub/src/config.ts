@@ -192,6 +192,24 @@ export function loadConfig() {
         45_000,
       ),
     },
+    // Workflow deploy caches (CL-2760). Model-source catalog resolution and the
+    // parsed+validated workflow definition are both recomputed on every provision
+    // AND every re-establish. Short in-process TTLs collapse that redundant work.
+    // The TTLs are deliberately short — long enough to absorb a burst of
+    // run-starts, short enough that an operator catalog change is picked up within
+    // the window rather than masked. The definition cache is keyed on (kind,
+    // mtime) but ALSO carries a TTL backstop: a checkout/restore that preserves
+    // mtime while changing content cannot serve a stale definition past the TTL.
+    workflowDeploy: {
+      modelSourceCacheTtlMs: parsePositiveIntEnv(
+        "WORKFLOW_MODEL_SOURCE_CACHE_TTL_MS",
+        45_000,
+      ),
+      definitionCacheTtlMs: parsePositiveIntEnv(
+        "WORKFLOW_DEFINITION_CACHE_TTL_MS",
+        45_000,
+      ),
+    },
     // Error reporting. Optional: when SENTRY_DSN is unset, Sentry and its log
     // sink are a no-op (see setupObservability). Read directly by initSentry at
     // startup; mirrored here for visibility. Default environment is 'production'.

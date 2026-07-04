@@ -1,5 +1,5 @@
-import { describe, expect, mock, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schema as intxSchema } from "@intx/db";
@@ -25,6 +25,18 @@ import {
   deterministicToolStep,
   inlineInferenceStep,
 } from "@workbench/agents";
+
+// readWorkflowDefinition reads its cache TTL from getConfig(); apps/hub tests do
+// not preload test-setup/loadConfig, so stub the one field it touches.
+mock.module("../config", () => ({
+  getConfig: () => ({
+    workflowDeploy: {
+      modelSourceCacheTtlMs: 45_000,
+      definitionCacheTtlMs: 45_000,
+    },
+  }),
+}));
+
 import {
   buildStepGrantRules,
   buildSupervisorDeployFrame,
@@ -34,6 +46,7 @@ import {
   createWorkflowDeployService,
   createWorkflowRepoWriter,
   readWorkflowDefinition,
+  resetWorkflowDefinitionCache,
   toLaunchSession,
   toSendMultiStepDeploy,
   ensureDeploymentInstanceActive,
@@ -683,6 +696,129 @@ describe("readWorkflowDefinition", () => {
       await rm(dir, { recursive: true, force: true });
     }
   }
+
+  beforeEach(() => {
+    resetWorkflowDefinitionCache();
+  });
+
+  const TTL = 45_000;
+
+  // A second valid envelope with a DIFFERENT id, used to prove the mtime cache
+  // returns the previously-parsed result while mtime is unchanged, and re-parses
+  // once mtime moves or the TTL elapses.
+  const CHANGED_DEFINITION = {
+    id: "changed-definition",
+    triggers: [{ type: "manual" }],
+    stepOrder: ["intake", "analyze"],
+    steps: { intake: { kind: "step" }, analyze: { kind: "step" } },
+  } as unknown as WorkflowDefinition;
+
+  test("serves the cached parse while mtime is unchanged AND within the TTL (CL-2760 F4)", async () => {
+    await withRepoDir(async (dir, repoStore) => {
+      const path = join(dir, "workflow.json");
+      // Pin an integer-ms mtime so a later restore reproduces the exact mtimeMs
+      // (utimes takes a Date, so a fractional stat mtime cannot be restored).
+      const fixed = new Date(Math.floor(Date.now() / 1000) * 1000);
+      await writeFile(path, JSON.stringify(VALID_DEFINITION), "utf8");
+      await utimes(path, fixed, fixed);
+
+      const first = await readWorkflowDefinition(repoStore, "f4-unchanged", {
+        ttlMs: TTL,
+        now: () => 1_000,
+      });
+      expect(first.id).toBe("pain-point-collateral");
+
+      // Overwrite the file bytes but restore the SAME mtime. A cache keyed on
+      // mtime must serve the previously-parsed definition, ignoring the new
+      // bytes on disk — so a re-read within the TTL must NOT reflect the change.
+      await writeFile(path, JSON.stringify(CHANGED_DEFINITION), "utf8");
+      await utimes(path, fixed, fixed);
+
+      const second = await readWorkflowDefinition(repoStore, "f4-unchanged", {
+        ttlMs: TTL,
+        now: () => 1_000 + TTL - 1,
+      });
+      expect(second.id).toBe("pain-point-collateral");
+      // The returned value is a clone, never the shared cached reference.
+      expect(second).not.toBe(first);
+      expect(second).toEqual(first);
+    });
+  });
+
+  test("re-reads once the TTL elapses even when mtime is unchanged (CL-2760 F4 backstop)", async () => {
+    await withRepoDir(async (dir, repoStore) => {
+      const path = join(dir, "workflow.json");
+      const fixed = new Date(Math.floor(Date.now() / 1000) * 1000);
+      await writeFile(path, JSON.stringify(VALID_DEFINITION), "utf8");
+      await utimes(path, fixed, fixed);
+
+      const first = await readWorkflowDefinition(repoStore, "f4-ttl", {
+        ttlMs: TTL,
+        now: () => 1_000,
+      });
+      expect(first.id).toBe("pain-point-collateral");
+
+      // A checkout/restore that preserves mtime while changing content. Past the
+      // TTL the (kind, mtime) entry must NOT be served — the read re-validates
+      // and reflects the new content.
+      await writeFile(path, JSON.stringify(CHANGED_DEFINITION), "utf8");
+      await utimes(path, fixed, fixed);
+
+      const second = await readWorkflowDefinition(repoStore, "f4-ttl", {
+        ttlMs: TTL,
+        now: () => 1_000 + TTL + 1,
+      });
+      expect(second.id).toBe("changed-definition");
+    });
+  });
+
+  test("re-parses when the file mtime changes (CL-2760 F4)", async () => {
+    await withRepoDir(async (dir, repoStore) => {
+      const path = join(dir, "workflow.json");
+      await writeFile(path, JSON.stringify(VALID_DEFINITION), "utf8");
+      const first = await readWorkflowDefinition(repoStore, "f4-changed", {
+        ttlMs: TTL,
+        now: () => 1_000,
+      });
+      expect(first.id).toBe("pain-point-collateral");
+
+      // New bytes AND a bumped mtime — the cache entry is stale, so the read must
+      // re-parse and reflect the new definition even well within the TTL.
+      await writeFile(path, JSON.stringify(CHANGED_DEFINITION), "utf8");
+      const bumped = new Date(Date.now() + 5_000);
+      await utimes(path, bumped, bumped);
+
+      const second = await readWorkflowDefinition(repoStore, "f4-changed", {
+        ttlMs: TTL,
+        now: () => 1_000 + 1,
+      });
+      expect(second.id).toBe("changed-definition");
+    });
+  });
+
+  test("returns an isolated clone — mutating the result does not corrupt the cache (CL-2760 F4)", async () => {
+    await withRepoDir(async (dir, repoStore) => {
+      const path = join(dir, "workflow.json");
+      const fixed = new Date(Math.floor(Date.now() / 1000) * 1000);
+      await writeFile(path, JSON.stringify(VALID_DEFINITION), "utf8");
+      await utimes(path, fixed, fixed);
+
+      const first = await readWorkflowDefinition(repoStore, "f4-clone", {
+        ttlMs: TTL,
+        now: () => 1_000,
+      });
+      // Mutate the returned definition as a downstream seam might.
+      (first as { id: string }).id = "mutated-by-caller";
+      (first.stepOrder as string[]).push("injected");
+
+      const second = await readWorkflowDefinition(repoStore, "f4-clone", {
+        ttlMs: TTL,
+        now: () => 1_000 + 1,
+      });
+      expect(second.id).toBe("pain-point-collateral");
+      expect(second.stepOrder).toEqual(["intake", "analyze"]);
+    });
+  });
 
   test("reads and validates workflow.json from the repo working tree", async () => {
     await withRepoDir(async (dir, repoStore) => {

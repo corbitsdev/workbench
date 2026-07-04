@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -25,6 +25,18 @@ import {
   getWorkflowAnalytics,
   getWorkflowRunBreakdown,
 } from "@workbench/analytics";
+
+// readWorkflowDefinition (reached via the fact projector) reads its cache TTL
+// from getConfig(); apps/hub tests do not preload test-setup/loadConfig, so stub
+// the one field it touches.
+mock.module("../config", () => ({
+  getConfig: () => ({
+    workflowDeploy: {
+      modelSourceCacheTtlMs: 45_000,
+      definitionCacheTtlMs: 45_000,
+    },
+  }),
+}));
 
 import { schema } from "../db";
 import type { HubDb } from "../db";

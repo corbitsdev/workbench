@@ -1,0 +1,75 @@
+import type { InferenceSource } from "@intx/types/runtime";
+import { LLM_DEFAULT_MODEL } from "@workbench/agents";
+
+import { getConfig } from "../config";
+
+// Model-source catalog cache (CL-2760). `resolveWorkflowDeploySource` resolves
+// the tenant's inference sources — including a per-extra-model DB round-trip loop
+// — on every provision AND every re-establish (the CL-2756 re-establish path
+// sits on top of it too). The resolution is a pure function of the tenant and
+// the declared-model set, and the operator catalog changes infrequently, so a
+// short in-process TTL memo collapses a burst of run-starts for the same
+// (tenant, model-set) onto ONE resolution.
+//
+// Scope kept deliberately correct:
+//   - The key is `${tenantId}:${sorted declared models}` — a cached chain can
+//     never cross the tenant boundary, and a different declared-model set always
+//     re-resolves.
+//   - The TTL is short (config-driven, ~45s default) so a catalog change is
+//     picked up within the window rather than masked.
+//   - Inflight de-dup: concurrent callers for the same key await one resolution.
+//
+// In-process only, mirroring `tenant-activity-cache.ts` and the models.dev
+// pricing TTL — the hub has no redis.
+
+type CacheEntry = { sources: InferenceSource[]; storedAt: number };
+
+const cache = new Map<string, CacheEntry>();
+let inflight = new Map<string, Promise<InferenceSource[]>>();
+
+/** Test-only: clears the workflow model-source cache. */
+export function resetWorkflowModelSourceCache(): void {
+  cache.clear();
+  inflight = new Map();
+}
+
+function cacheKey(tenantId: string, extraModels: readonly string[]): string {
+  const models = [LLM_DEFAULT_MODEL, ...extraModels].sort();
+  return `${tenantId}:${models.join(",")}`;
+}
+
+// Memoize the catalog-resolved source chain (before any per-step maxTokens is
+// lifted — that step is a cheap pure map the caller applies to a copy). `resolve`
+// is the uncached DB resolver injected by the caller.
+export async function getCachedCatalogSources(args: {
+  tenantId: string;
+  extraModels: readonly string[];
+  resolve: () => Promise<InferenceSource[]>;
+  ttlMs?: number;
+  now?: () => number;
+}): Promise<InferenceSource[]> {
+  const ttlMs = args.ttlMs ?? getConfig().workflowDeploy.modelSourceCacheTtlMs;
+  const clock = args.now ?? Date.now;
+  const key = cacheKey(args.tenantId, args.extraModels);
+
+  const cached = cache.get(key);
+  if (cached !== undefined && clock() - cached.storedAt < ttlMs) {
+    return cached.sources;
+  }
+
+  const existing = inflight.get(key);
+  if (existing !== undefined) return existing;
+
+  const promise = args
+    .resolve()
+    .then((sources) => {
+      cache.set(key, { sources, storedAt: clock() });
+      return sources;
+    })
+    .finally(() => {
+      inflight.delete(key);
+    });
+
+  inflight.set(key, promise);
+  return promise;
+}

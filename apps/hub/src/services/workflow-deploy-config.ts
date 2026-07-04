@@ -6,6 +6,7 @@ import type { DeployContent } from "@intx/hub-sessions";
 import type { WorkflowDefinition } from "@intx/workflow";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 import type { HubDb } from "../db";
+import { getCachedCatalogSources } from "./workflow-model-source-cache";
 
 export type WorkflowDeployConfig = {
   deploymentId: string;
@@ -96,6 +97,51 @@ function applyModelMaxTokens(
 // The catalog is the operator-approved set: every source it returns is an
 // offering the operator made tenant-visible, which is what
 // `pickStepInferenceSource` cross-checks the deploy's defaultSource against.
+// Resolve the tenant catalog sources from the DB, uncached. The default model
+// chain is required; each extra step-preferred model is resolved optionally via
+// its own round-trip (this is the loop the CL-2760 cache collapses).
+async function resolveCatalogSourcesUncached(
+  db: HubDb,
+  tenantId: string,
+  extraModels: readonly string[],
+): Promise<InferenceSource[]> {
+  const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
+  const resolution = await resolveModelSources(db, tenantId, [requirement]);
+  if (!resolution.ok) {
+    if (resolution.reason === "no_requirements") {
+      throw new Error(
+        `workflow deploy: no model requirement to resolve for tenant ${tenantId}`,
+      );
+    }
+    const skips = resolution.skips
+      .map((s) => `${s.provider} (${s.reason})`)
+      .join(", ");
+    const detail =
+      skips.length > 0 ? `; skipped: ${skips}` : " (empty tenant catalog)";
+    throw new Error(
+      `workflow deploy: model "${resolution.model}" is unavailable in tenant ${tenantId}${detail}`,
+    );
+  }
+  // The default model chain is required; its head is the deploy defaultSource.
+  // Step-preferred models are OPTIONAL — a step opts into one via a per-step
+  // preference, and pickStepInferenceSource falls back to the default when it is
+  // absent. Resolve each (the default is already covered and excluded by
+  // collectDeclaredStepModels) and append only the offerings the catalog carries,
+  // so the deploy never fails on a preferred model the tenant lacks.
+  const sources = [...resolution.sources];
+  for (const model of extraModels) {
+    const extra = await resolveModelSources(db, tenantId, [{ model }]);
+    if (!extra.ok) continue;
+    for (const source of extra.sources) {
+      const present = sources.some(
+        (s) => s.provider === source.provider && s.model === source.model,
+      );
+      if (!present) sources.push(source);
+    }
+  }
+  return sources;
+}
+
 export async function resolveWorkflowDeploySource(args: {
   db: HubDb;
   tenantId: string;
@@ -107,45 +153,17 @@ export async function resolveWorkflowDeploySource(args: {
   // source's `defaults.maxTokens`.
   modelMaxTokens?: ReadonlyMap<string, number>;
 }): Promise<InferenceSource[]> {
-  const requirement: ModelRequirement = { model: LLM_DEFAULT_MODEL };
-  const resolution = await resolveModelSources(args.db, args.tenantId, [
-    requirement,
-  ]);
-  if (!resolution.ok) {
-    if (resolution.reason === "no_requirements") {
-      throw new Error(
-        `workflow deploy: no model requirement to resolve for tenant ${args.tenantId}`,
-      );
-    }
-    const skips = resolution.skips
-      .map((s) => `${s.provider} (${s.reason})`)
-      .join(", ");
-    const detail =
-      skips.length > 0 ? `; skipped: ${skips}` : " (empty tenant catalog)";
-    throw new Error(
-      `workflow deploy: model "${resolution.model}" is unavailable in tenant ${args.tenantId}${detail}`,
-    );
-  }
-  // The default model chain is required; its head is the deploy defaultSource.
-  // Step-preferred models are OPTIONAL — a step opts into one via a per-step
-  // preference, and pickStepInferenceSource falls back to the default when it is
-  // absent. Resolve each (the default is already covered and excluded by
-  // collectDeclaredStepModels) and append only the offerings the catalog carries,
-  // so the deploy never fails on a preferred model the tenant lacks.
-  const sources = [...resolution.sources];
-  for (const model of args.extraModels ?? []) {
-    const extra = await resolveModelSources(args.db, args.tenantId, [
-      { model },
-    ]);
-    if (!extra.ok) continue;
-    for (const source of extra.sources) {
-      const present = sources.some(
-        (s) => s.provider === source.provider && s.model === source.model,
-      );
-      if (!present) sources.push(source);
-    }
-  }
-  return applyModelMaxTokens(sources, args.modelMaxTokens ?? new Map());
+  const extraModels = args.extraModels ?? [];
+  // Catalog resolution is memoized per (tenant, declared-model set) with a short
+  // TTL; maxTokens is a cheap pure map lifted onto fresh copies afterward, so it
+  // stays outside the cache and can vary per caller without a re-resolve.
+  const sources = await getCachedCatalogSources({
+    tenantId: args.tenantId,
+    extraModels,
+    resolve: () =>
+      resolveCatalogSourcesUncached(args.db, args.tenantId, extraModels),
+  });
+  return applyModelMaxTokens([...sources], args.modelMaxTokens ?? new Map());
 }
 
 // Assemble the base HarnessConfig from a resolved source chain and a

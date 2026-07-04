@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createWorkflowDeployOrchestrator,
@@ -25,6 +25,7 @@ import {
   INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
 } from "@workbench/agents";
+import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import type { WorkflowDefinition } from "@intx/workflow";
 import type { AgentDefinition, BaseEnv } from "@intx/agent";
@@ -595,14 +596,66 @@ export function buildSupervisorDeployFrame(args: {
 // the same envelope schema the deploy route parses request bodies with, so a
 // missing or drifted file fails loudly at the boundary rather than reaching the
 // sidecar as an unchecked cast.
+// Parsed+validated definition cache (CL-2760). readFile + JSON.parse + full
+// arktype envelope validation ran on every provision and every re-establish.
+// The definition on disk is immutable until an operator redeploys the workflow
+// (which rewrites workflow.json, bumping its mtime), so memoizing by (kind,
+// mtimeMs) reuses the validated result while the file is unchanged and
+// re-parses the moment it changes. The cheap `stat` still runs each call — only
+// the readFile + parse + validate is skipped. In-process only.
+//
+// A TTL backstop caps how long a (kind, mtimeMs) entry may serve: a
+// checkout/restore that preserves mtime while changing content would otherwise
+// serve a stale definition indefinitely. Once the TTL elapses the entry is
+// re-read and re-validated even if mtime is unchanged.
+type WorkflowDefinitionCacheEntry = {
+  mtimeMs: number;
+  storedAt: number;
+  definition: WorkflowDefinition;
+};
+const workflowDefinitionCache = new Map<string, WorkflowDefinitionCacheEntry>();
+
+/** Test-only: clears the parsed workflow-definition cache. */
+export function resetWorkflowDefinitionCache(): void {
+  workflowDefinitionCache.clear();
+}
+
 export async function readWorkflowDefinition(
   repoStore: AgentRepoStore,
   kind: string,
+  opts?: { now?: () => number; ttlMs?: number },
 ): Promise<WorkflowDefinition> {
   const dir = repoStore.repoStore.getRepoDir({ kind: "workflow", id: kind });
+  const path = join(dir, WORKFLOW_JSON_PATH);
+  const clock = opts?.now ?? Date.now;
+  const ttlMs = opts?.ttlMs ?? getConfig().workflowDeploy.definitionCacheTtlMs;
+
+  let mtimeMs: number | undefined;
+  try {
+    mtimeMs = (await stat(path)).mtimeMs;
+  } catch {
+    // Fall through to readFile so the existing missing-file error message (which
+    // callers depend on) is the one surfaced, rather than a stat error.
+    mtimeMs = undefined;
+  }
+
+  if (mtimeMs !== undefined) {
+    const cached = workflowDefinitionCache.get(kind);
+    if (
+      cached !== undefined &&
+      cached.mtimeMs === mtimeMs &&
+      clock() - cached.storedAt < ttlMs
+    ) {
+      // Clone on the way out: the definition flows by reference into the
+      // external @intx/workflow-deploy seam, so the cached copy must stay
+      // read-only and immune to cross-run mutation.
+      return structuredClone(cached.definition);
+    }
+  }
+
   let parsedJson: unknown;
   try {
-    const raw = await readFile(join(dir, WORKFLOW_JSON_PATH), "utf8");
+    const raw = await readFile(path, "utf8");
     parsedJson = JSON.parse(raw);
   } catch (cause) {
     throw new Error(
@@ -615,7 +668,17 @@ export async function readWorkflowDefinition(
       `cannot re-establish workflow "${kind}": persisted definition is invalid: ${parsed.summary}`,
     );
   }
-  return parsed as WorkflowDefinition;
+  const definition = parsed as WorkflowDefinition;
+  if (mtimeMs !== undefined) {
+    workflowDefinitionCache.set(kind, {
+      mtimeMs,
+      storedAt: clock(),
+      definition,
+    });
+  }
+  // Clone the fresh result too so the cached copy can never be reached by
+  // reference through the returned value.
+  return structuredClone(definition);
 }
 
 // Persist a per-step `agent` row so the tool-credential gate can authorize each

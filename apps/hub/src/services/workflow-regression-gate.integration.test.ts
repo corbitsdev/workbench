@@ -27,6 +27,18 @@ import {
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
+
+// readWorkflowDefinition reads its cache TTL from getConfig(); apps/hub tests do
+// not preload test-setup/loadConfig, so stub the one field it touches.
+mock.module("../config", () => ({
+  getConfig: () => ({
+    workflowDeploy: {
+      modelSourceCacheTtlMs: 45_000,
+      definitionCacheTtlMs: 45_000,
+    },
+  }),
+}));
+
 import {
   createWorkflowDeployService,
   readWorkflowDefinition,
