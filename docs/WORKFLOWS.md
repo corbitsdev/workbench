@@ -144,6 +144,16 @@ resolves its tools at run time over a hub RPC instead:
   written into each deployed step's agent-state repo at deploy time by
   `writeStepGrantFiles` (`workflow-deploy.ts:1043`, called at `:271`) on the hub
   and by `writeStepGrants` (`workflow-host-wiring.ts:214`) on the sidecar.
+  `writeStepGrants` writes each step's `grants.json` to its own
+  `<deploymentId>-<stepId>` repo with a **bounded worker pool** (CL-2783,
+  `STEP_GRANTS_WRITE_CONCURRENCY = 12`, tagged `WORKBENCH-LOCAL`), not a serial
+  loop: the writes sit on the cold workflow-spawn critical path and each step's
+  isogit commit+fsync cost ~254ms serially, while `@workbench/storage-isogit`
+  locks per-DIRECTORY (`withRepoDirLock`) so different-repo writes never
+  contend. The pool `Promise.all` still rejects on the first write failure, so
+  a failed grant write rejects the whole deploy (fail-at-deploy preserved). The
+  supervisor's matching per-step READ loop (`assembleCredentialsSnapshot`) stays
+  serial by design — it is a plain working-tree `fs.readFile`, not a commit.
 
 This rail is a workbench-specific replacement. Interchange's reference
 `step-agent-tools.ts` (which re-derives a step address from the deployment

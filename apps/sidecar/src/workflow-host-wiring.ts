@@ -211,7 +211,9 @@ function createStepStrategy(args: {
  * unwinds the partial state) rather than spawning a child that would
  * fail every authorize closed against an empty grant set.
  */
-async function writeStepGrants(args: {
+export const STEP_GRANTS_PATH_FOR_TEST = STEP_GRANTS_PATH;
+
+export async function writeStepGrants(args: {
   repoStore: RepoStore;
   deploymentId: string;
   stepOrder: readonly string[];
@@ -225,7 +227,8 @@ async function writeStepGrants(args: {
   // rather than `{}` (which the snapshot's validator rejects).
   const grants = args.grants ?? [];
   const serialized = JSON.stringify({ grants }, null, 2);
-  for (const stepId of args.stepOrder) {
+
+  async function writeOne(stepId: string): Promise<void> {
     const repoId = args.deriveStepRepoId({
       deploymentId: args.deploymentId,
       stepId,
@@ -240,7 +243,43 @@ async function writeStepGrants(args: {
       },
     );
   }
+
+  // WORKBENCH-LOCAL (CL-2783): the per-step grant writes were a serial
+  // `for ... await` loop. Each write is an isogit commit + fsync into a
+  // DISTINCT repo (`<deploymentId>-<stepId>`). `repoStore.writeTree`
+  // serializes on a per-`repoId` lock (the RepoStore substrate's
+  // `withRepoLock`, mirrored by `@workbench/storage-isogit`'s per-directory
+  // `withRepoDirLock` one layer down), NOT a global one, and every substrate
+  // cache is keyed by `repoId` -- so concurrent writes to different step
+  // repos never share a lock or torn state. Running them serially stacks
+  // each step's commit+fsync wait
+  // end-to-end (~254ms/step measured), which dominates cold workflow-spawn
+  // latency. Parallelize with a bounded worker pool: enough concurrency to
+  // overlap the fsync waits, but capped so a large workflow does not open
+  // hundreds of file descriptors / commit workers at once. `Promise.all`
+  // over the workers rejects on the FIRST write failure, preserving the
+  // serial loop's fail-at-deploy contract (the caller's `finally` unwinds
+  // the partial deploy) -- do not swallow per-step rejections here.
+  const stepOrder = args.stepOrder;
+  const poolSize = Math.min(STEP_GRANTS_WRITE_CONCURRENCY, stepOrder.length);
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      const stepId = stepOrder[index];
+      if (stepId === undefined) return;
+      await writeOne(stepId);
+    }
+  }
+  await Promise.all(Array.from({ length: poolSize }, () => worker()));
+  // WORKBENCH-LOCAL (CL-2783) end.
 }
+
+// WORKBENCH-LOCAL (CL-2783): bound on concurrent per-step grant writes.
+// Chosen to overlap the isogit commit+fsync waits without opening an
+// unbounded number of fds / commit workers on a large workflow.
+const STEP_GRANTS_WRITE_CONCURRENCY = 12;
 
 // The supervisor's `binaryPath` binding resolves to the sidecar's
 // own `bin/workflow-child` script via `import.meta.resolve` against
