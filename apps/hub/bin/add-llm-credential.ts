@@ -80,7 +80,7 @@ export function detectProvider(): {
   };
 }
 
-/** Detect the google-genai credential used by SEO enrichment (tkww-pilot parity). */
+/** Detect the google-genai credential backing the Gemini model offerings. */
 export function detectGoogleAi(): {
   providerName: string;
   apiKey: string;
@@ -339,7 +339,7 @@ if (import.meta.main) {
   const googleAi = detectGoogleAi();
   if (googleAi) {
     log("");
-    log("Also upserting google-genai credential for SEO enrichment...");
+    log("Also upserting google-genai credential for Gemini models...");
     await upsertCredential(tenantId, sessionCookies, googleAi);
   }
 }

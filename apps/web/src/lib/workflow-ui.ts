@@ -22,8 +22,6 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
     import("@workbench/workflow-pain-point-collateral/ui"),
   "reddit-opportunity-scanner": () =>
     import("@workbench/workflow-reddit-opportunity-scanner/ui"),
-  "seo-enrichment-from-image": () =>
-    import("@workbench/workflow-seo-enrichment-from-image/ui"),
   "last30days-research": () =>
     import("@workbench/workflow-last30days-research/ui"),
 };

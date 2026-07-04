@@ -283,20 +283,14 @@ bun run apps/hub/bin/seed-credentials.ts
 `GEMINI_API_KEY` is accepted as an alias for `GOOGLE_GEMINI_API_KEY`. Optional
 overrides: `GOOGLE_AI_CREDENTIAL_NAME` (default `google-ai`),
 `GOOGLE_AI_MODEL` (default `gemini-3.1-flash-lite`, stored in credential metadata
-only — the enrich step uses the workflow's `defaultModel`, not this env var).
+only).
 
-### SEO enrichment (Google Gemini)
+### Google Gemini credential
 
-The `seo-enrichment` workflow's enrich step resolves a **tenant-owned** credential
-named **`google-ai`** on provider **`google-genai`**, model
-**`gemini-3.1-flash-lite`**, base URL `https://generativelanguage.googleapis.com`.
-This is separate from the Myra/agent `openai-compatible` credential and requires
-multimodal inference (product image + prompt per row).
-
-After deploying a release that switches SEO enrich to Gemini, **re-run
-`seed-credentials.ts`** with a Gemini API key. Existing credentials named
-`Google Gemini` or bound to `opencode-zen` will not satisfy the new requirement.
-Workflow runs that already failed will not self-heal — start a new run after seeding.
+Seeding a Gemini key creates a **tenant-owned** credential named **`google-ai`** on
+provider **`google-genai`**, base URL `https://generativelanguage.googleapis.com`.
+This backs the Gemini model offerings and is separate from the Myra/agent
+`openai-compatible` credential.
 
 Verify in admin-ui (Tenants → your org → Providers / Credentials):
 
@@ -323,15 +317,8 @@ Entries without a key set in the environment are skipped silently. Running the s
 1. Open `https://<web domain>` and sign in with a Google account matching `GOOGLE_ALLOWED_DOMAINS`
 2. The hub auto-provisions your Myra instance on first sign-in
 3. Open Myra chat — if it loads and responds, the hub, sidecar, and credentials are all wired up correctly
-4. If SEO enrichment is enabled: start a **new** SEO enrichment workflow in a workbench,
-   upload an `.xlsx`, run enrich, and confirm rows with valid image URLs reach review
-   (not `enrichment failed` on every row)
 
-Check hub logs for any `launchError` output on the first `/v1/me` request. A `resolveCredentialRequirement failed` error means the credential name does not match the agent definition's requirement (`Myra LLM` for agents, `google-ai` for SEO enrich).
-
-Per-row enrich failures are logged at `workflow.seo-enrichment` and surface in Sentry when
-`SENTRY_DSN` is set, while the UI shows sanitized reasons (`image unavailable`,
-`enrichment failed`, `response invalid`).
+Check hub logs for any `launchError` output on the first `/v1/me` request. A `resolveCredentialRequirement failed` error means the credential name does not match the agent definition's requirement (`Myra LLM` for agents).
 
 ---
 

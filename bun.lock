@@ -153,7 +153,6 @@
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
-        "@workbench/workflow-seo-enrichment-from-image": "workspace:*",
         "arktype": "^2.2.0",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
@@ -1473,28 +1472,6 @@
         "react": "^19.0.0",
       },
     },
-    "workflows/seo-enrichment-from-image": {
-      "name": "@workbench/workflow-seo-enrichment-from-image",
-      "version": "0.1.0",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "*",
-      },
-    },
     "workflows/smoke-test": {
       "name": "@workbench/workflow-smoke-test",
       "version": "0.1.0",
@@ -2488,8 +2465,6 @@
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
-
-    "@workbench/workflow-seo-enrichment-from-image": ["@workbench/workflow-seo-enrichment-from-image@workspace:workflows/seo-enrichment-from-image"],
 
     "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 
