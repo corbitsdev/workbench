@@ -3,6 +3,7 @@ import { cn, Markdown } from "@workbench/ui";
 import type {
   FormField,
   ProgressStepState,
+  ReviewListDisplayField,
   UIBlock,
   UIResponse,
 } from "./ui-block";
@@ -70,6 +71,13 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
     case "multiSelect":
       return (
         <MultiSelectBlock
+          block={block}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+        />
+      );
+    case "reviewList":
+      return (
+        <ReviewListBlock
           block={block}
           {...(onRespond !== undefined ? { onRespond } : {})}
         />
@@ -926,6 +934,225 @@ function MultiSelectBlock({
         {pending ? "Submitting…" : (block.submitLabel ?? "Submit")}
       </button>
     </div>
+  );
+}
+
+// Spread the row's FULL verbatim payload flat and stamp the human's verdict
+// (CL-2759). A non-object payload (a bare string/number) can't be spread, so it
+// is nested under a `payload` key rather than dropped — the downstream step
+// still gets the record plus `approved`. The verdict `approved` is written LAST
+// and intentionally overrides any `approved` field the payload itself carries:
+// the three consumers use `approved` as the canonical decision key by design.
+function decisionEntry(payload: unknown, approved: boolean): unknown {
+  if (
+    typeof payload === "object" &&
+    payload !== null &&
+    !Array.isArray(payload)
+  ) {
+    return { ...(payload as Record<string, unknown>), approved };
+  }
+  return { payload, approved };
+}
+
+// The helper line shown when submit is held because the approved count sits
+// outside [min, max] (CL-2759) — so a disabled submit is never a silent dead
+// button. Null when the count is already in range.
+function rangeHintFor(count: number, min: number, max: number): string | null {
+  if (count >= min && count <= max) return null;
+  if (count < min) return `Approve at least ${min} to continue.`;
+  return `Approve at most ${max} to continue.`;
+}
+
+function ReviewListCell({
+  kind,
+  value,
+}: {
+  kind: ReviewListDisplayField["kind"];
+  value: string;
+}) {
+  if (kind === "markdown") {
+    return <Markdown className="text-sm text-text">{value}</Markdown>;
+  }
+  if (kind === "badge") {
+    return (
+      <span className="inline-block max-w-full break-words rounded-full border border-border bg-bg px-2 py-0.5 text-xs text-text-2">
+        {value}
+      </span>
+    );
+  }
+  if (kind === "link") {
+    return (
+      <a
+        href={value}
+        target="_blank"
+        rel="noreferrer"
+        className="block min-w-0 truncate text-sm text-orange underline hover:text-orange/80"
+      >
+        {value}
+      </a>
+    );
+  }
+  return <span className="block break-words text-sm text-text">{value}</span>;
+}
+
+function ReviewListBlock({
+  block,
+  onRespond,
+}: {
+  block: Extract<UIBlock, { kind: "reviewList" }>;
+  onRespond?: (response: UIResponse) => void | Promise<void>;
+}) {
+  const [decisions, setDecisions] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    for (const row of block.rows) {
+      initial[row.id] = (row.defaultDecision ?? "approved") === "approved";
+    }
+    return initial;
+  });
+  const [submitted, setSubmitted] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const approvedCount = block.rows.filter(
+    (row) => decisions[row.id] === true,
+  ).length;
+
+  if (submitted) {
+    return (
+      <p className="text-xs italic text-text-3">
+        Approved {approvedCount} of {block.rows.length}.
+      </p>
+    );
+  }
+
+  const approvedKey = block.approvedKey ?? "approvedPieces";
+  const min = Math.max(block.min ?? 0, 0);
+  // Clamp the effective max so a caller passing max < min (or a negative) can
+  // never wedge submit permanently disabled: the ceiling is at least `min` and
+  // never below the row count's natural cap.
+  const max = Math.max(min, block.max ?? block.rows.length);
+  const inRange = approvedCount >= min && approvedCount <= max;
+  const rangeHint = rangeHintFor(approvedCount, min, max);
+
+  async function submit() {
+    if (pending) return;
+    const approvedPayloads = block.rows
+      .filter((row) => decisions[row.id] === true)
+      .map((row) => row.payload);
+    const decisionList = block.rows.map((row) =>
+      decisionEntry(row.payload, decisions[row.id] === true),
+    );
+    setError(null);
+    setPending(true);
+    try {
+      await onRespond?.({
+        blockKind: "reviewList",
+        value: `${approvedCount} of ${block.rows.length} approved`,
+        ...(block.signalName !== undefined
+          ? { signalName: block.signalName }
+          : {}),
+        payload: { [approvedKey]: approvedPayloads, decisions: decisionList },
+      });
+      setSubmitted(true);
+    } catch (err: unknown) {
+      setError(submitErrorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Surface className="space-y-3 px-3 py-3">
+      {block.title !== undefined && (
+        <h3 className="text-sm font-semibold text-text">{block.title}</h3>
+      )}
+      {block.prompt !== undefined && (
+        <p className="text-sm text-text-2">{block.prompt}</p>
+      )}
+      {block.rows.length === 0 && (
+        <p className="text-sm italic text-text-3">No records to review.</p>
+      )}
+      <ul className="space-y-2">
+        {block.rows.map((row) => {
+          const approved = decisions[row.id] === true;
+          return (
+            <li
+              key={row.id}
+              data-testid="review-row"
+              data-approved={approved}
+              className={cn(
+                "space-y-2 rounded-lg border border-border p-2.5",
+                !approved && "opacity-60",
+              )}
+            >
+              <dl className="space-y-1">
+                {block.displayFields.map((field) => {
+                  const raw = row.fields[field.key];
+                  if (raw === undefined) return null;
+                  return (
+                    <div key={field.key} className="flex flex-col gap-0.5">
+                      <dt className="text-xs font-medium text-text-3">
+                        {field.label}
+                      </dt>
+                      <dd>
+                        <ReviewListCell kind={field.kind} value={String(raw)} />
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  aria-pressed={approved}
+                  onClick={() =>
+                    setDecisions((prev) => ({ ...prev, [row.id]: true }))
+                  }
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs",
+                    approved
+                      ? "border-green bg-green/10 text-green"
+                      : "border-border text-text-2 hover:border-green hover:text-green",
+                  )}
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={!approved}
+                  onClick={() =>
+                    setDecisions((prev) => ({ ...prev, [row.id]: false }))
+                  }
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs",
+                    !approved
+                      ? "border-red bg-red/10 text-red"
+                      : "border-border text-text-2 hover:border-red hover:text-red",
+                  )}
+                >
+                  Reject
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {error !== null && <SubmitError message={error} />}
+      {rangeHint !== null && <p className="text-xs text-text-3">{rangeHint}</p>}
+      <button
+        type="button"
+        disabled={!inRange || pending}
+        onClick={() => {
+          void submit();
+        }}
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+      >
+        {pending && <Spinner />}
+        {pending
+          ? "Submitting…"
+          : (block.submitLabel ?? `Submit ${approvedCount} approved`)}
+      </button>
+    </Surface>
   );
 }
 

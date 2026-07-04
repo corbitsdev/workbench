@@ -42,7 +42,7 @@ export const UIResponseSchema = type({
   // array of picked values. The host (WorkflowDock) routes all three the same
   // way — by `signalName` + verbatim `payload` — so the discriminant is carried
   // for the renderer's benefit, never branched on downstream.
-  blockKind: "'choice' | 'form' | 'multiSelect'",
+  blockKind: "'choice' | 'form' | 'multiSelect' | 'reviewList'",
   value: "string",
   // When the interactive block is a workflow gate (CL-2681), it carries the
   // pending gate's `awaitSignal` name. The host resumes the run with this
@@ -67,6 +67,30 @@ export type FormFieldOption = {
   label: string;
   description?: string;
 };
+
+/**
+ * A column in a `reviewList` block (CL-2759). `key` indexes the row's `fields`
+ * map; `label` is the human header; `kind` chooses the cell renderer (plain
+ * text, rendered markdown, a badge pill, or a clickable link). Absent `kind`
+ * renders as text.
+ */
+export const ReviewListDisplayFieldSchema = type({
+  key: "string",
+  label: "string",
+  "kind?": "'text' | 'markdown' | 'badge' | 'link'",
+});
+export type ReviewListDisplayField = typeof ReviewListDisplayFieldSchema.infer;
+
+/**
+ * The emitted decision for one row of a `reviewList` block (CL-2759): the row's
+ * FULL verbatim `payload` spread flat, plus the human's `approved` verdict.
+ * Extra keys (the payload's own fields) are allowed through — this schema only
+ * pins the `approved` discriminant a downstream step branches on.
+ */
+export const ReviewListDecisionSchema = type({
+  approved: "boolean",
+});
+export type ReviewListDecision = typeof ReviewListDecisionSchema.infer;
 
 /**
  * A single typed input in a `form` block (CL-2715). Kept minimal — only the
@@ -230,6 +254,32 @@ export type UIBlock =
         description?: string;
       }[];
     }
+  | {
+      // A per-record approve/reject gate over an array of rich, model-generated
+      // records (CL-2759): the one HITL shape no other primitive expresses.
+      // Each row shows `displayFields` drawn from its `fields` map and carries a
+      // verbatim `payload` (the FULL record) forwarded downstream. On submit it
+      // emits the approved rows' payloads under `approvedKey` (default
+      // "approvedPieces") plus a `decisions` array covering EVERY row with its
+      // `approved` verdict. `min`/`max` bound the approved count; the submit
+      // button holds until it is in range. Each row's `defaultDecision` seeds
+      // its toggle (default "approved").
+      kind: "reviewList";
+      title?: string;
+      prompt?: string;
+      signalName?: string;
+      submitLabel?: string;
+      approvedKey?: string;
+      min?: number;
+      max?: number;
+      displayFields: ReviewListDisplayField[];
+      rows: {
+        id: string;
+        fields: Record<string, string | number>;
+        payload: unknown;
+        defaultDecision?: "approved" | "rejected";
+      }[];
+    }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
 
 export type ExtractedUIBlock = {
@@ -250,6 +300,7 @@ const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "progress",
   "form",
   "multiSelect",
+  "reviewList",
   "canvas",
 ]);
 
@@ -375,6 +426,25 @@ export function isUIBlock(value: unknown): value is UIBlock {
             opt !== null &&
             typeof (opt as Record<string, unknown>).id === "string" &&
             typeof (opt as Record<string, unknown>).label === "string",
+        )
+      );
+    case "reviewList":
+      return (
+        Array.isArray(block.displayFields) &&
+        block.displayFields.length > 0 &&
+        (block.displayFields as unknown[]).every(
+          (field) =>
+            !(ReviewListDisplayFieldSchema(field) instanceof type.errors),
+        ) &&
+        Array.isArray(block.rows) &&
+        (block.rows as unknown[]).every(
+          (row) =>
+            typeof row === "object" &&
+            row !== null &&
+            typeof (row as Record<string, unknown>).id === "string" &&
+            typeof (row as Record<string, unknown>).fields === "object" &&
+            (row as Record<string, unknown>).fields !== null &&
+            "payload" in (row as Record<string, unknown>),
         )
       );
     case "canvas":
