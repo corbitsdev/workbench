@@ -239,11 +239,14 @@ async function buildStepTools(args: {
   const { ctx } = args;
   const storeDir = path.dirname(args.workdir);
 
+  const manifestStart = performance.now();
   const { rawManifestBytes, assetMounts } = await fetchStepToolManifest({
     ctx,
     storeDir,
   });
+  const manifestMs = performance.now() - manifestStart;
 
+  const loadStart = performance.now();
   const loadedPackages = await loadToolPackages({
     rawManifestBytes,
     assetMounts,
@@ -253,6 +256,7 @@ async function buildStepTools(args: {
     cacheMaxBytes: ctx.cacheMaxBytes,
     registryMaxTarballBytes: ctx.registryMaxTarballBytes,
   });
+  const loadMs = performance.now() - loadStart;
 
   const requiredProviders = new Set<string>();
   for (const pkg of loadedPackages) {
@@ -263,6 +267,7 @@ async function buildStepTools(args: {
       }
     }
   }
+  const credStart = performance.now();
   const credentialEnv = await fetchToolCredentials({
     hubHttpUrl: ctx.hubHttpUrl,
     sidecarToken: ctx.sidecarToken,
@@ -271,6 +276,19 @@ async function buildStepTools(args: {
     providerNames: [...requiredProviders],
     agentAddress: ctx.stepAddress,
   });
+  const credMs = performance.now() - credStart;
+
+  logger.info(
+    "Step tool build timing for {address}: manifest={manifestMs}ms load={loadMs}ms credentials={credMs}ms packages={packages} providers={providers}",
+    {
+      address: ctx.stepAddress,
+      manifestMs: Math.round(manifestMs),
+      loadMs: Math.round(loadMs),
+      credMs: Math.round(credMs),
+      packages: loadedPackages.length,
+      providers: requiredProviders.size,
+    },
+  );
 
   const hubRpcContext = {
     baseURL: ctx.hubHttpUrl,
