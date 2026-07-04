@@ -81,6 +81,14 @@ function WorkflowRunPaneInner({
   const { data: skills } = useSkillLibrary(tenantId);
   const { data: deployments } = useWorkflowDeployments(tenantId);
   const signalInFlightRef = useRef(false);
+  // The specific awaitSignal name we submitted, captured at click. The pending
+  // latch clears only once THIS signal leaves the run's awaiting-signal set (the
+  // gate we acted on was consumed / advanced) — never merely because the /resume
+  // POST resolved, which only delivers the signal seconds before the run moves.
+  // Keying on the signal (not the first active step) is what makes concurrent
+  // gates and same-stepId re-awaits clear correctly: the first active step can
+  // stay parked on a DIFFERENT gate while ours advances.
+  const pendingSignalRef = useRef<string | null>(null);
   const [signalPending, setSignalPending] = useState(false);
   // True while a resume is auto-retrying through the deploy window (CL-2707), so
   // the pane shows an honest transient banner instead of flashing an error.
@@ -137,6 +145,43 @@ function WorkflowRunPaneInner({
     );
     return active?.stepId ?? null;
   }, [logState]);
+
+  // The set of awaitSignal names the run is currently parked on. Derived with the
+  // same predicate as the shared gate router (phase `awaiting-signal` +
+  // recovered `awaitingSignalName`): a run can hold several concurrently.
+  const awaitingSignalNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const s of logState?.steps ?? []) {
+      if (s.phase === "awaiting-signal" && s.awaitingSignalName !== undefined)
+        names.add(s.awaitingSignalName);
+    }
+    return names;
+  }, [logState]);
+
+  // Release the pending latch only on a POSITIVE advance: the specific signal we
+  // submitted is no longer in the run's awaiting-signal set (its gate was
+  // consumed), or the run went terminal. We never clear on a transient poll gap —
+  // if the log hasn't loaded (`logState` undefined) we hold the latch, so a
+  // momentary null read can't re-enable the button. A stalled backend (resume 200
+  // but the run never moves) keeps the button disabled and "Working…" showing —
+  // honest, since the run is still parked on our gate.
+  useEffect(() => {
+    if (!signalPending) return;
+    const terminalNow = record ? isRecordTerminal(record.status) : false;
+    if (terminalNow) {
+      pendingSignalRef.current = null;
+      signalInFlightRef.current = false;
+      setSignalPending(false);
+      return;
+    }
+    if (!logState) return;
+    const submitted = pendingSignalRef.current;
+    if (submitted !== null && !awaitingSignalNames.has(submitted)) {
+      pendingSignalRef.current = null;
+      signalInFlightRef.current = false;
+      setSignalPending(false);
+    }
+  }, [awaitingSignalNames, logState, signalPending, record]);
 
   const workflowSteps = useMemo(
     () =>
@@ -209,10 +254,19 @@ function WorkflowRunPaneInner({
 
   const terminal = isRecordTerminal(record.status);
 
-  // onSignal maps directly to the resume endpoint; no-op once terminal or already posting.
+  // onSignal maps directly to the resume endpoint; no-op once terminal or while a
+  // signal is still latched (guards double-submit for the FULL latch window, not
+  // just the in-flight POST).
   const handleSignal = (signalName: string, payload?: unknown) => {
     if (terminal || signalInFlightRef.current) return;
     signalInFlightRef.current = true;
+    // Capture the signal we're submitting; the effect above clears the latch only
+    // once THIS signal leaves the awaiting-signal set. The latch — and the
+    // in-flight guard — stay set through the POST's resolution, because /resume
+    // only delivers the signal, it doesn't advance the run. So the button stays
+    // disabled and "Working…" shows until the gate we acted on actually advances,
+    // never re-enabling on the same still-parked gate.
+    pendingSignalRef.current = signalName;
     setSignalPending(true);
     setRedeploying(false);
     resume
@@ -221,10 +275,14 @@ function WorkflowRunPaneInner({
         payload,
         onRedeploying: () => setRedeploying(true),
       })
-      .catch(() => undefined)
-      .finally(() => {
+      .catch(() => {
+        // On failure, release the latch and the in-flight guard so the user can
+        // retry, and let the resume hook's error surface through the failure path.
+        pendingSignalRef.current = null;
         signalInFlightRef.current = false;
         setSignalPending(false);
+      })
+      .finally(() => {
         setRedeploying(false);
       });
   };
@@ -253,6 +311,7 @@ function WorkflowRunPaneInner({
               Finishing an update — retrying…
             </div>
           )}
+          {signalPending && <WorkingIndicator />}
           <Panel
             deploymentId={runId}
             state={state}
@@ -271,6 +330,27 @@ function WorkflowRunPaneInner({
         </div>
       </Suspense>
     </ErrorBoundary>
+  );
+}
+
+// One shared, always-animated "Working…" indicator for the whole latch window.
+// Rendered by the pane (not each panel) so EVERY unmigrated legacy panel — whose
+// own gate button only dims statically, or doesn't change at all — shows live
+// motion from click until the gate advances. `animate-spin` guarantees actual
+// motion, not a static string, so the pane never reads as frozen.
+function WorkingIndicator() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-[13px] text-text-2 shadow-md"
+    >
+      <span
+        aria-hidden
+        className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-text-3 border-t-transparent"
+      />
+      Working…
+    </div>
   );
 }
 

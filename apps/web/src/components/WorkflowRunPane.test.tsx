@@ -2,6 +2,7 @@
 import "../test-setup";
 import { afterEach, describe, it, expect, mock } from "bun:test";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -35,7 +36,10 @@ function CustomPanel({
           out-{stepId}:{JSON.stringify(output)}
         </span>
       ))}
-      <button onClick={() => onSignal("approve", { ok: true })}>
+      <button
+        disabled={signalPending}
+        onClick={() => onSignal("approve", { ok: true })}
+      >
         fire-signal
       </button>
     </div>
@@ -251,8 +255,25 @@ describe("WorkflowRunPane", () => {
     expect(typeof call?.onRedeploying).toBe("function");
   });
 
-  it("passes signalPending to the Panel and raises it while the resume is in flight", async () => {
+  it("latches signalPending after the resume resolves and clears it only once the signalled gate is consumed", async () => {
+    // CL-2764: the /resume POST only DELIVERS the signal; the run advances past
+    // the gate seconds later on the next poll. The pending latch must survive the
+    // POST resolving so the gate button stays disabled + "Working…" until the
+    // signal we submitted leaves the awaiting-signal set — never re-enabling on
+    // the still-parked gate.
     record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
     let resolveResume: (() => void) | undefined;
     resumeMutateAsync.mockImplementation(
       () =>
@@ -260,20 +281,231 @@ describe("WorkflowRunPane", () => {
           resolveResume = () => resolve(undefined);
         }),
     );
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    const button = screen.getByText("fire-signal") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // Shared live "Working…" indicator is present during the latch.
+    screen.getByText("Working…");
+
+    // POST resolves — signal delivered — but the run is still on the same gate.
+    await act(async () => {
+      resolveResume?.();
+      await Promise.resolve();
+    });
+    // Latch must remain: disabled + pending, no premature re-enable.
+    expect(screen.getByText("signal-pending:true")).toBeTruthy();
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // The run now advances past the gate: our signal leaves the awaiting set.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        { stepId: "gate", phase: "completed" },
+        { stepId: "next", phase: "in-flight" },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    // Indicator gone once the gate advanced.
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
+  it("re-enables when a NON-FIRST concurrent gate is signalled and only that gate advances (wrong-step-key regression)", async () => {
+    // Two gates awaiting concurrently. The user signals gateB (the second, whose
+    // signal is "approve"). Only gateB completes; gateA stays parked. Keying the
+    // latch on the FIRST active step would stick the button disabled forever
+    // because gateA is still awaiting — keying on the submitted signal clears it.
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "hold",
+        },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // gateB advances; gateA (the FIRST active step) stays awaiting.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "hold",
+        },
+        { stepId: "gateB", phase: "completed" },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("clears the latch when the same-stepId gate is consumed even if the step later re-awaits", async () => {
+    // A map/loop step re-awaits under the same stepId. The latch must clear the
+    // moment our signal is consumed (leaves the awaiting set) — it must not stay
+    // stuck because the same stepId is present again.
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "loop",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // The signal is consumed: same stepId, no longer awaiting our signal.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [{ stepId: "loop", phase: "in-flight" }],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("does not release the latch on a transient poll gap where the log momentarily reads undefined", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // Poll gap: the log query momentarily has no data. The latch must hold.
+    logStateData = undefined;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.getByText("signal-pending:true")).toBeTruthy();
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("clears the pending latch on resume error so the user can retry", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    resumeMutateAsync.mockImplementation(async () => {
+      throw new Error("resume failed");
+    });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
     await waitFor(() => screen.getByText("signal-pending:false"));
 
     screen.getByText("fire-signal").click();
-    await waitFor(() => screen.getByText("signal-pending:true"));
-
-    resolveResume?.();
+    // The error releases the latch even though the gate never advanced.
     await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(screen.queryByText("Working…")).toBeNull();
+    expect(resumeMutateAsync).toHaveBeenCalledTimes(1);
   });
 
   it("shows a transient redeploying banner while a resume auto-retries the deploy window", async () => {
     record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
     let resolveResume: (() => void) | undefined;
     resumeMutateAsync.mockImplementation(
       (vars?: { onRedeploying?: () => void }) => {
@@ -291,10 +523,14 @@ describe("WorkflowRunPane", () => {
 
     await waitFor(() => screen.getByText("Finishing an update — retrying…"));
 
-    resolveResume?.();
-    await waitFor(() =>
-      expect(screen.queryByText("Finishing an update — retrying…")).toBeNull(),
-    );
+    // Flush the resume resolution (its `.finally` clears the redeploying flag)
+    // inside act so the state update applies deterministically, not on an
+    // unbatched microtask that races the assertion.
+    await act(async () => {
+      resolveResume?.();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Finishing an update — retrying…")).toBeNull();
   });
 
   it("onSignal is a no-op once the run is terminal", async () => {
