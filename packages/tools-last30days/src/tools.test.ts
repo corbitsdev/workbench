@@ -355,6 +355,33 @@ describe("last30days_ground_queries", () => {
   });
 });
 
+// CL-2765 dock-payload integration: the intake gate is now a `form` UIBlock that
+// emits `{ topic, focus }` VERBATIM (no client-side derivation). This drives that
+// block-shaped payload through the REAL ground-step derivation (the running
+// `last30days_ground_queries` tool, via normalizeIntake) and asserts the base
+// query is still the human's focus — not the bare topic. A naive verbatim-form
+// migration that dropped the relocated derivation would fall the base query back
+// to `topic` here and fail this test (the #595 empty/blunted-prompt class).
+describe("last30days_ground_queries — block-form intake fidelity (CL-2765)", () => {
+  test("a { topic, focus } form payload grounds every source on focus, not topic", async () => {
+    const content = await runGround({
+      topic: "AI coding agents",
+      focus: "enterprise procurement risks",
+      reply: "not json",
+    });
+    for (const key of SOURCE_KEYS) {
+      expect(content[key]).toBe("enterprise procurement risks");
+    }
+  });
+
+  test("a { topic } form payload with no focus grounds on the topic", async () => {
+    const content = await runGround({ topic: "AI coding agents", reply: "{}" });
+    for (const key of SOURCE_KEYS) {
+      expect(content[key]).toBe("AI coding agents");
+    }
+  });
+});
+
 function fullTool(name: string) {
   const tool = createLast30daysTools().find((t) => t.definition.name === name);
   if (!tool || tool.kind !== "full") {

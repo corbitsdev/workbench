@@ -314,4 +314,30 @@ describe("validateResumePayload", () => {
     );
     expect(result.ok).toBe(false);
   });
+
+  test("accepts a last30days intake payload with a topic (focus optional)", () => {
+    // The block form emits `{ topic, focus }` verbatim (CL-2765); topic alone is
+    // a valid submit — the server derives the query/window.
+    expect(
+      validateResumePayload("last30days-research", "intake", {
+        topic: "AI coding agents",
+        focus: "enterprise procurement risks",
+      }),
+    ).toEqual({ ok: true });
+    expect(
+      validateResumePayload("last30days-research", "intake", {
+        topic: "AI coding agents",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a last30days intake payload with an empty topic", () => {
+    // Every source query and the report title derive from the topic; a blank
+    // topic would ground the whole scan on nothing, so it is rejected here.
+    const result = validateResumePayload("last30days-research", "intake", {
+      topic: "",
+      focus: "some angle",
+    });
+    expect(result.ok).toBe(false);
+  });
 });

@@ -3,6 +3,7 @@ import {
   AbConfigPayloadSchema,
   AbDecisionPayloadSchema,
   ClarificationPayloadSchema,
+  Last30daysIntakePayloadSchema,
   MemberSelectionPayloadSchema,
   GammaIntakePayloadSchema,
   GammaPreviewPayloadSchema,
@@ -59,6 +60,13 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
   // step revises from it, so a guidance-less refine is rejected rather than
   // blind re-rolling; an approve needs no note.
   "gamma-presentation-creator": GAMMA_SIGNALS,
+  // last30days-research (CL-2765): the one `intake` gate REQUIRES a non-empty
+  // topic — every source query and the report title derive from it, so a
+  // topic-less intake is rejected here rather than grounding the scan on nothing.
+  // The block form and the run-page panel POST the same shape.
+  "last30days-research": {
+    intake: Last30daysIntakePayloadSchema,
+  },
 };
 
 export type ResumePayloadValidation =

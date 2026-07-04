@@ -1410,6 +1410,7 @@
       "dependencies": {
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",

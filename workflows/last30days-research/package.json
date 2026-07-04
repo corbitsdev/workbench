@@ -8,6 +8,10 @@
     "./ui": {
       "types": "./src/ui.tsx",
       "default": "./src/ui.tsx"
+    },
+    "./blocks": {
+      "types": "./src/blocks.ts",
+      "default": "./src/blocks.ts"
     }
   },
   "scripts": {
@@ -18,6 +22,7 @@
   "dependencies": {
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
+    "@workbench/blocks": "workspace:*",
     "@workbench/last30days-core": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:",
