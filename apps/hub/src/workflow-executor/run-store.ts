@@ -32,7 +32,7 @@ export interface RunState {
   kind: string;
   tenantId: string;
   principalId: string;
-  status: "running" | "awaiting" | "completed" | "failed";
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
   // The deployment this run belongs to. Read by the records router to address
   // the sidecar supervisor for trigger/signal delivery.
   deploymentId?: string;
@@ -75,15 +75,19 @@ export async function insertRunRecord(
     principalId: string;
     input: unknown;
     originConversationId: string | null;
+    // CL-2755: the run's initial status. Async start seeds `provisioning` before
+    // the deployment exists; the default keeps every other caller unchanged.
+    status?: RunState["status"];
   },
 ): Promise<RunState> {
+  const status = args.status ?? "running";
   await db.insert(workflowRunRecord).values({
     id: args.runId,
     deploymentId: args.deploymentId,
     kind: args.kind,
     tenantId: args.tenantId,
     principalId: args.principalId,
-    status: "running",
+    status,
     input: args.input,
     originConversationId: args.originConversationId,
   });
@@ -92,12 +96,49 @@ export async function insertRunRecord(
     kind: args.kind,
     tenantId: args.tenantId,
     principalId: args.principalId,
-    status: "running",
+    status,
     ...(args.deploymentId !== null ? { deploymentId: args.deploymentId } : {}),
     ...(args.originConversationId !== null
       ? { originConversationId: args.originConversationId }
       : {}),
   };
+}
+
+// CL-2755: compare-and-set fail for the async start tail. Flips a run to `failed`
+// ONLY if it is STILL `provisioning` at write time — the `status = 'provisioning'`
+// predicate is the guard. This closes the hard-deadline/late-provision race: if
+// the deadline already failed the run (or the projection advanced it past
+// provisioning), a late tail step matches zero rows and leaves it untouched.
+// Returns whether a row was flipped (for logging/tests).
+export async function failRunIfStillProvisioning(
+  db: HubDb,
+  runId: string,
+): Promise<boolean> {
+  const flipped = await db
+    .update(workflowRunRecord)
+    .set({ status: "failed" })
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        eq(workflowRunRecord.status, "provisioning"),
+      ),
+    )
+    .returning({ id: workflowRunRecord.id });
+  return flipped.length > 0;
+}
+
+// CL-2755: attach the freshly-provisioned per-run deployment to a run row once
+// the async start tail has minted it. Written before the trigger mail fires so
+// every pack the projection bridge receives can be addressed to the run.
+export async function setRunDeployment(
+  db: HubDb,
+  runId: string,
+  deploymentId: string,
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ deploymentId })
+    .where(eq(workflowRunRecord.id, runId));
 }
 
 // Set a run's coarse run-level status (CL-2669). The single write primitive the
@@ -200,6 +241,7 @@ export async function listRunSteps(
 export interface RunKindStats {
   kind: string;
   runs: {
+    provisioning: number;
     running: number;
     awaiting: number;
     completed: number;
@@ -267,7 +309,14 @@ export async function getRunKindStats(
     if (entry === undefined) {
       entry = {
         kind: k,
-        runs: { running: 0, awaiting: 0, completed: 0, failed: 0, total: 0 },
+        runs: {
+          provisioning: 0,
+          running: 0,
+          awaiting: 0,
+          completed: 0,
+          failed: 0,
+          total: 0,
+        },
         steps: { total: 0, byPhase: {}, avgDurationMs: null },
         durationSumMs: 0,
         durationCount: 0,

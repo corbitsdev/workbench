@@ -15,6 +15,7 @@ import {
 import { buildDockBlocks } from "../lib/dock-block-builders";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { stepOutputsFromLog } from "../lib/run-state-adapter";
+import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import { cn, failedRunError } from "@workbench/ui";
 import {
   isRecordTerminal,
@@ -29,10 +30,12 @@ import type { RunRecord } from "../lib/run-state-adapter";
 
 type RunStatus = ConversationWorkflowRun["status"];
 
-// Attention sort: needs-you first, then running, then finished.
+// Attention sort: needs-you first, then running/starting, then finished.
 const ATTENTION_ORDER: Record<RunStatus, number> = {
   awaiting: 0,
   running: 1,
+  // CL-2755: a starting run sits with the active (running) runs.
+  provisioning: 1,
   failed: 2,
   completed: 3,
 };
@@ -49,9 +52,20 @@ const STATUS_META: Record<
     stripe: "border-l-orange",
     chip: "text-orange",
   },
+  // The actively-working state carries live motion too (CL-2755, emil) so a
+  // running run never reads deader than a pre-flight `provisioning` one.
   running: {
     label: "Running",
-    dot: "bg-blue",
+    dot: "bg-blue animate-pulse motion-reduce:animate-none",
+    stripe: "border-l-blue",
+    chip: "text-blue",
+  },
+  // CL-2755: the run's deployment is still cold-starting. `animate-pulse` on the
+  // dot gives the collapsed rail visible motion so a starting run never reads as
+  // frozen.
+  provisioning: {
+    label: "Starting",
+    dot: "bg-blue animate-pulse motion-reduce:animate-none",
     stripe: "border-l-blue",
     chip: "text-blue",
   },
@@ -72,6 +86,8 @@ const STATUS_META: Record<
 function fallbackPhase(status: RunStatus): DockRunPhase {
   if (status === "completed") return "completed";
   if (status === "failed") return "failed";
+  // `provisioning` (CL-2755) has no log yet — treat it as the live `running`
+  // phase for the dock-block fallback; the card body renders a Starting state.
   return "running";
 }
 
@@ -160,7 +176,13 @@ function writeDismissed(conversationId: string | null, runIds: string[]) {
 // Per-state counts in attention order, e.g. "1 awaiting, 2 running" — the
 // collapsed rail's text alternative to its color-only dots.
 function stateCountSummary(runs: readonly ConversationWorkflowRun[]): string {
-  const order: RunStatus[] = ["awaiting", "running", "failed", "completed"];
+  const order: RunStatus[] = [
+    "awaiting",
+    "provisioning",
+    "running",
+    "failed",
+    "completed",
+  ];
   const parts: string[] = [];
   for (const status of order) {
     const count = runs.filter((run) => run.status === status).length;
@@ -322,20 +344,27 @@ function WorkflowDockCard({
           aria-live="polite"
           className="space-y-2 border-t border-border px-3 py-2.5"
         >
-          {isPending && (
+          {run.status === "provisioning" && (
+            <WorkflowStartingIndicator variant="compact" />
+          )}
+          {run.status !== "provisioning" && isPending && (
             <p className="text-xs text-text-3">Loading run progress…</p>
           )}
-          {isError && (
+          {run.status !== "provisioning" && isError && (
             <p className="text-xs text-text-3">
               Couldn't load this run's progress. It may still be starting up.
             </p>
           )}
-          {!isPending && !isError && blocks.length === 0 && (
-            <p className="text-xs text-text-3">Waiting for the first step…</p>
-          )}
-          {blocks.map((block, index) => (
-            <UIBlockView key={index} block={block} onRespond={onRespond} />
-          ))}
+          {run.status !== "provisioning" &&
+            !isPending &&
+            !isError &&
+            blocks.length === 0 && (
+              <p className="text-xs text-text-3">Waiting for the first step…</p>
+            )}
+          {run.status !== "provisioning" &&
+            blocks.map((block, index) => (
+              <UIBlockView key={index} block={block} onRespond={onRespond} />
+            ))}
         </div>
       )}
     </div>

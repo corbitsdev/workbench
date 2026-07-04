@@ -106,7 +106,15 @@ export function createWorkflowReconciler(deps: {
       .from(workflowRunRecord)
       .where(
         and(
-          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          // CL-2755: `provisioning` runs are swept too — a run seeded before its
+          // deployment existed and stranded by a hub crash mid-provision has no
+          // live supervisor and can never resume, so it must be failed like an
+          // interrupted `running` run. `awaiting` is preserved (CL-2575).
+          inArray(workflowRunRecord.status, [
+            "provisioning",
+            "running",
+            "awaiting",
+          ]),
           isNull(workflowRunRecord.deletedAt),
         ),
       );
@@ -127,12 +135,15 @@ export function createWorkflowReconciler(deps: {
       // genuinely-interrupted `running` run is unrecoverable, so only it is
       // failed. (The query selects both statuses so this single in-loop branch
       // owns the decision and is unit-testable; awaiting runs are few.)
-      if (run.status !== "running") {
+      // Only `awaiting` is resumable across a restart and preserved (CL-2575);
+      // `running` and `provisioning` (CL-2755) are both failable when orphaned.
+      if (run.status === "awaiting") {
         preservedParked += 1;
         continue;
       }
       // A run with no deployment can never have a routable supervisor, so it
-      // is unconditionally orphaned by a restart.
+      // is unconditionally orphaned by a restart. A `provisioning` run always
+      // has a null deployment, so it falls straight through to the fail below.
       const supervisorAddress =
         run.deploymentId === null
           ? null

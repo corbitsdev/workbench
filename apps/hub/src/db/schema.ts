@@ -149,6 +149,11 @@ export const workflowRun = pgTable("workflow_run", {
 // from the `workflow_run` deployment-index table, which the native-deploy path
 // still owns.
 export const workflowRunStateStatus = [
+  // CL-2755: the initial state of a run whose per-run deployment is still being
+  // provisioned off the /start critical path. Non-terminal; the projection
+  // bridge folds it to `running` on the first RunStarted event, or the start
+  // tail flips it to `failed` if provisioning/trigger fails.
+  "provisioning",
   "running",
   "awaiting",
   "completed",

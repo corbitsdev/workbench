@@ -29,6 +29,7 @@ const HOVER_CLOSE_DELAY_MS = 260;
 
 const STATUS_FILTER_OPTIONS: { value: RunStatusFilter; label: string }[] = [
   { value: "all", label: "All" },
+  { value: "provisioning", label: "Starting" },
   { value: "running", label: "Running" },
   { value: "awaiting", label: "Awaiting" },
   { value: "completed", label: "Completed" },

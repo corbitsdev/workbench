@@ -44,7 +44,7 @@ async function fakeApi(
 
 function listRow(
   runId: string,
-  status: "running" | "awaiting" | "completed" | "failed",
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed",
   kind = "ab-compare-hitl",
 ) {
   return {
@@ -389,5 +389,27 @@ describe("WorkflowDock", () => {
     await waitFor(() => screen.getByTestId("workflow-dock-card"));
     const link = screen.getByRole("link", { name: "Open" });
     expect(link.getAttribute("href")).toBe("/workflows/run_running");
+  });
+
+  it("renders a live animated Starting… state for a provisioning run without waiting on the log (CL-2755)", async () => {
+    // A provisioning run has no deployment and no log yet — the card must show a
+    // moving Starting state, not the frozen "Waiting for the first step…" copy or
+    // a raw log error. No state is seeded, so /state would error — the card must
+    // not depend on it.
+    records = [
+      listRow("run_starting", "provisioning", "pain-point-collateral"),
+    ];
+    const { container } = renderDock();
+
+    const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
+    // The status chip reads Starting.
+    expect(card.textContent).toContain("Starting");
+    // Motion is present (animated spinner) — the run never looks frozen.
+    await waitFor(() =>
+      expect(screen.getByTestId("workflow-starting-indicator")).toBeTruthy(),
+    );
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    // The frozen "waiting" copy is NOT shown for a provisioning run.
+    expect(screen.queryByText("Waiting for the first step…")).toBeNull();
   });
 });

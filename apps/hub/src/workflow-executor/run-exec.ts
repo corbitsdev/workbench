@@ -14,12 +14,14 @@ import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
 } from "../routes/workflow-runs";
+import type { ReclaimDeploymentFn } from "../services/workflow-deploy";
 import { getAwaitingSignalNames } from "./run-awaiting-signals";
 import { validateResumePayload } from "./resume-payload-registry";
 import {
+  failRunIfStillProvisioning,
   insertRunRecord,
   loadRunRecord,
-  setRunStatus,
+  setRunDeployment,
   type RunState,
 } from "./run-store";
 
@@ -40,7 +42,16 @@ export type RunExecFailure = {
   code?: "deploy_in_progress";
   retryAfterSeconds?: number;
 };
-export type RunExecResult = { ok: true; state: RunState } | RunExecFailure;
+export type RunExecSuccess = {
+  ok: true;
+  state: RunState;
+  // CL-2755: async-start only. The detached provision-and-trigger task the route
+  // does NOT await (it responds immediately with the `provisioning` state). Its
+  // errors are self-handled — it flips the run to `failed` and never rejects — so
+  // this promise is exposed purely so tests can await the tail deterministically.
+  backgroundTask?: Promise<void>;
+};
+export type RunExecResult = RunExecSuccess | RunExecFailure;
 
 // CL-2707: on every deploy the hub boots ~70s before the sidecar reconnects.
 // A user-initiated start/resume that lands in that window otherwise fails
@@ -64,6 +75,13 @@ const SIDECAR_POLL_INTERVAL_MS = 2_000;
 // interval so a client retry lands after the sidecar has had a real chance to
 // reconnect, not while this same request is still holding.
 const DEPLOY_IN_PROGRESS_RETRY_SECONDS = 10;
+
+// CL-2755: hard ceiling on the async provision-and-trigger tail. A cold per-run
+// deploy is seconds; this is the "never stuck provisioning forever" backstop —
+// past it the tail gives up and flips the run to `failed` (loud, terminal)
+// rather than leaving it wedged in `provisioning`. The boot orphan sweep is the
+// other backstop for a hub crash mid-provision.
+const PROVISION_HARD_DEADLINE_MS = 3 * 60 * 1000;
 
 // Bounded wait for a sidecar connection. Returns immediately (no delay, one
 // probe) when a sidecar is already connected — the common case adds no latency.
@@ -171,13 +189,25 @@ export type StartWorkflowRunDeps = {
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
   provisionRunDeployment: ProvisionRunDeploymentFn;
+  // CL-2755: tears down a per-run deployment the async start tail minted AFTER
+  // the run had already been failed (the hard-deadline/failRun race). Without it
+  // that deployment would run behind a `failed` record — a phantom run. The
+  // reconciler janitor is the backstop, but reclaiming eagerly here closes the
+  // window immediately. Optional so non-route callers can omit it.
+  reclaimDeployment?: ReclaimDeploymentFn;
 } & SidecarReadinessDeps;
 
 /**
- * Start a run of `kind` owned by `principalId`: resolve the kind's registry
- * deployment along the tenant chain, provision a fresh per-run deployment
- * (CL-2582), seed the run record, and fire the trigger mail whose messageId is
- * the minted runId (the supervisor derives the run id from it).
+ * Start a run of `kind` owned by `principalId` (CL-2755, async start): resolve
+ * the kind's registry deployment along the tenant chain, seed the run record in
+ * a `provisioning` state, and return IMMEDIATELY — the per-run deployment
+ * cold-start (CL-2582) + trigger mail run on a detached background task
+ * (`backgroundTask`) so the browser gets an instant ack instead of blocking on
+ * the full deploy. The tail is loud-fail: on sidecar timeout, provision failure,
+ * or trigger failure it flips the run to `failed`; on success it attaches the
+ * deployment and fires the trigger mail (messageId === runId) only once the
+ * deployment is routable, then lets the projection bridge advance the run to
+ * `running`.
  */
 export async function startWorkflowRun(
   deps: StartWorkflowRunDeps,
@@ -198,48 +228,204 @@ export async function startWorkflowRun(
     };
   }
 
-  // Provisioning a per-run deployment needs the sidecar. During the deploy
-  // window (hub up, sidecar reconnecting) wait bounded for it rather than
-  // failing the provision instantly (CL-2707).
-  if (!(await waitForSidecarReady(deps))) {
-    return deployInProgressFailure();
-  }
-
   const runId = mintRunId();
 
-  // A freshly-deployed supervisor is routable by construction, so the start
-  // path needs no ensureDeploymentRoutable (resume still does — a parked run's
-  // deployment can lose its address to a restart).
-  let deploymentId: string;
-  try {
-    ({ deploymentId } = await deps.provisionRunDeployment({
-      kind: opts.kind,
-      tenantId: definition.tenantId,
-      creatorPrincipalId: definition.principalId,
-    }));
-  } catch (err) {
-    log.error("workflow run provision failed", {
-      runId,
-      kind: opts.kind,
-      tenantId: definition.tenantId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-    return {
-      ok: false,
-      status: 500,
-      error: "failed to provision workflow run",
-    };
-  }
-
+  // Durable-first: the run row exists (status `provisioning`, no deployment yet)
+  // before we return, so the FE can poll it and show live "Starting…" progress
+  // the instant the 200 lands — the deploy is no longer on the critical path.
   const state = await insertRunRecord(deps.db, {
     runId,
-    deploymentId,
+    deploymentId: null,
     kind: opts.kind,
     tenantId: definition.tenantId,
     principalId: opts.principalId,
     input: opts.input,
     originConversationId: opts.originConversationId,
+    status: "provisioning",
   });
+
+  const backgroundTask = provisionAndTrigger(deps, {
+    runId,
+    kind: opts.kind,
+    input: opts.input,
+    tenantId: definition.tenantId,
+    deployPrincipalId: definition.principalId,
+  });
+
+  return { ok: true, state, backgroundTask };
+}
+
+type ProvisionTailOpts = {
+  runId: string;
+  kind: string;
+  input: unknown;
+  tenantId: string;
+  deployPrincipalId: string;
+};
+
+// Fail the run ONLY if it is still `provisioning` (CAS) — never clobber a run the
+// deadline or the projection already moved. Logs the reason regardless.
+async function failProvisioningRun(
+  deps: StartWorkflowRunDeps,
+  opts: ProvisionTailOpts,
+  reason: string,
+  err?: unknown,
+): Promise<void> {
+  log.error(reason, {
+    runId: opts.runId,
+    kind: opts.kind,
+    tenantId: opts.tenantId,
+    ...(err !== undefined
+      ? { error: err instanceof Error ? err : new Error(String(err)) }
+      : {}),
+  });
+  await failRunIfStillProvisioning(deps.db, opts.runId).catch((setErr) => {
+    log.error("failed to mark provisioning run failed", {
+      runId: opts.runId,
+      error: setErr instanceof Error ? setErr : new Error(String(setErr)),
+    });
+  });
+}
+
+// True only while the run row is still `provisioning`. A `false` means the
+// deadline/failRun or the projection already moved the run on — the tail MUST NOT
+// attach a deployment or fire a trigger behind that record.
+async function stillProvisioning(
+  deps: StartWorkflowRunDeps,
+  runId: string,
+): Promise<boolean> {
+  const row = await loadRunRecord(deps.db, runId);
+  return row?.status === "provisioning";
+}
+
+// The run was failed (deadline/late-provision race) AFTER its deployment was
+// already minted — tear that deployment down so it never runs behind a `failed`
+// record (a phantom run). This is ESSENTIAL, not just optimization, for the
+// pre-attach bail: the reconciler janitor (`reclaimOrphanedDeployments`) keys off
+// the run row's `deploymentId`, so a deployment minted but never attached (null
+// on the row) is invisible to it and would leak without this eager reclaim. For
+// the post-attach bail the janitor is a backstop. Best-effort either way.
+async function reclaimAbandonedDeployment(
+  deps: StartWorkflowRunDeps,
+  opts: ProvisionTailOpts,
+  deploymentId: string,
+  reason: string,
+): Promise<void> {
+  log.warn("reclaiming abandoned per-run deployment (start-tail race)", {
+    runId: opts.runId,
+    deploymentId,
+    reason,
+  });
+  if (deps.reclaimDeployment === undefined) return;
+  await deps
+    .reclaimDeployment({
+      deploymentId,
+      tenantId: opts.tenantId,
+      reason: `CL-2755 abandoned start-tail deployment for run ${opts.runId}: ${reason}`,
+    })
+    .catch((err) => {
+      log.warn("abandoned deployment reclaim failed (janitor will retry)", {
+        runId: opts.runId,
+        deploymentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+}
+
+// CL-2755: the detached start tail. Provisions the per-run deployment, attaches
+// it to the run, then fires the trigger mail — NEVER before the deployment is
+// routable. It NEVER throws (every error path fails the run via CAS and returns),
+// so a caller that does not await it gets no unhandled rejection. A hard deadline
+// races the body: if provisioning hangs (or resolves late), the deadline fails
+// the run and the abandoned body's race-guards (below) bail — reclaiming any
+// deployment already minted so nothing runs behind the `failed` record.
+async function provisionAndTrigger(
+  deps: StartWorkflowRunDeps,
+  opts: ProvisionTailOpts,
+): Promise<void> {
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    deadlineTimer = setTimeout(() => {
+      void failProvisioningRun(
+        deps,
+        opts,
+        "workflow run provisioning exceeded hard deadline",
+      ).finally(resolve);
+    }, PROVISION_HARD_DEADLINE_MS);
+  });
+
+  try {
+    await Promise.race([runProvisionAndTrigger(deps, opts), deadline]);
+  } finally {
+    if (deadlineTimer !== undefined) clearTimeout(deadlineTimer);
+  }
+}
+
+// The provisioning body. NEVER throws: each failure fails the run (CAS) and
+// returns. After the deployment is minted, RE-READS the run status before both
+// attaching the deployment and firing the trigger — if the deadline (or a
+// concurrent fail) already moved the run off `provisioning`, it bails and
+// reclaims the freshly-minted deployment so it can never run behind a `failed`
+// record.
+async function runProvisionAndTrigger(
+  deps: StartWorkflowRunDeps,
+  opts: ProvisionTailOpts,
+): Promise<void> {
+  // Provisioning a per-run deployment needs the sidecar. During the deploy
+  // window (hub up, sidecar reconnecting) wait bounded for it rather than
+  // failing the provision instantly (CL-2707).
+  if (!(await waitForSidecarReady(deps))) {
+    await failProvisioningRun(
+      deps,
+      opts,
+      "no sidecar available to provision the run",
+    );
+    return;
+  }
+
+  // A freshly-deployed supervisor is routable by construction, so the start path
+  // needs no ensureDeploymentRoutable (resume still does — a parked run's
+  // deployment can lose its address to a restart).
+  let deploymentId: string;
+  try {
+    ({ deploymentId } = await deps.provisionRunDeployment({
+      kind: opts.kind,
+      tenantId: opts.tenantId,
+      creatorPrincipalId: opts.deployPrincipalId,
+    }));
+  } catch (err) {
+    await failProvisioningRun(deps, opts, "workflow run provision failed", err);
+    return;
+  }
+
+  // Race guard: the deadline may have failed the run while the provision was in
+  // flight. Do NOT attach the deployment to a no-longer-provisioning record —
+  // reclaim it and bail.
+  if (!(await stillProvisioning(deps, opts.runId))) {
+    await reclaimAbandonedDeployment(
+      deps,
+      opts,
+      deploymentId,
+      "run left provisioning before deployment attach",
+    );
+    return;
+  }
+
+  // Attach the deployment BEFORE the trigger fires so every pack the projection
+  // bridge receives can be addressed to this run.
+  await setRunDeployment(deps.db, opts.runId, deploymentId);
+
+  // Second race guard: never fire the trigger for a run the deadline failed
+  // between the attach and here — tear the deployment down instead.
+  if (!(await stillProvisioning(deps, opts.runId))) {
+    await reclaimAbandonedDeployment(
+      deps,
+      opts,
+      deploymentId,
+      "run left provisioning before trigger",
+    );
+    return;
+  }
 
   try {
     await deps.sessionService.sendUserMessage({
@@ -248,25 +434,21 @@ export async function startWorkflowRun(
         deploymentDomain: deps.deploymentDomain,
       }),
       from: `hub@${deps.deploymentDomain}`,
-      messageId: runId,
+      messageId: opts.runId,
       date: new Date(),
       content: JSON.stringify(opts.input),
       sessionId: randomUUID(),
-      tenantId: definition.tenantId,
+      tenantId: opts.tenantId,
       cryptoProvider: deps.cryptoProvider,
     });
   } catch (err) {
-    log.error("workflow run-start failed", {
-      runId,
-      kind: opts.kind,
-      deploymentId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-    await setRunStatus(deps.db, runId, "failed");
-    return { ok: false, status: 500, error: "failed to start workflow run" };
+    await failProvisioningRun(
+      deps,
+      opts,
+      "workflow run trigger send failed",
+      err,
+    );
   }
-
-  return { ok: true, state };
 }
 
 export type ResumeWorkflowRunDeps = {

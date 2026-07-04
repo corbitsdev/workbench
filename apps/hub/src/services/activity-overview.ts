@@ -514,7 +514,13 @@ export async function getActivityOverview(args: {
       .where(
         and(
           runBase,
-          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          // CL-2755: a `provisioning` run is actively executing (its deployment
+          // is cold-starting) — count it as an active execution too.
+          inArray(workflowRunRecord.status, [
+            "provisioning",
+            "running",
+            "awaiting",
+          ]),
         ),
       ),
     db

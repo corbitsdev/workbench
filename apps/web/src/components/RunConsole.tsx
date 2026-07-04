@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Button, classifyRunError, toHumanLabel } from "@workbench/ui";
+import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import type { RunPhase, RunState, StepPhase, StepState } from "@intx/workflow";
 import {
   isRecordTerminal,
@@ -120,6 +121,31 @@ export function RunConsole({
   const activeIndex = activeStep
     ? steps.findIndex((s) => s.stepId === activeStep.stepId) + 1
     : null;
+
+  // CL-2755: while the run's per-run deployment is still cold-starting
+  // (`provisioning`), show a live "Starting…" state WITH motion instead of the
+  // static "No steps have started yet." — a provisioning run must never look
+  // frozen.
+  if (record?.status === "provisioning") {
+    return (
+      <div className="flex h-full flex-col overflow-hidden border border-border bg-bg">
+        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-[14px] font-medium text-text">
+              Workflow run
+            </p>
+            <p className="truncate text-[12px] text-text-3">Starting…</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            Close
+          </Button>
+        </header>
+        <div className="min-h-0 flex-1">
+          <WorkflowStartingIndicator variant="pane" />
+        </div>
+      </div>
+    );
+  }
 
   // Bug fix (1): show a stable "Loading run…" until the initial backlog flush
   // has settled, to avoid animating through historical steps in the header.

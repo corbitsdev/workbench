@@ -15,7 +15,15 @@ export type RunStatus = (typeof workflowRunStateStatus)[number];
 // `RunCancelled` folds into `failed` in the projection (there is no `cancelled`
 // status row), so the terminal set is exactly these two.
 export const TERMINAL_RUN_STATUSES = ["completed", "failed"] as const;
-export const NON_TERMINAL_RUN_STATUSES = ["running", "awaiting"] as const;
+// `provisioning` (CL-2755) is non-terminal: a run whose per-run deployment is
+// still being minted off the /start critical path has not settled — it advances
+// to `running` (projection) or `failed` (start tail) — and is never a candidate
+// for the terminal-teardown / reclaim path.
+export const NON_TERMINAL_RUN_STATUSES = [
+  "provisioning",
+  "running",
+  "awaiting",
+] as const;
 
 const TERMINAL_SET: ReadonlySet<RunStatus> = new Set(TERMINAL_RUN_STATUSES);
 

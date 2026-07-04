@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import { toHumanLabel } from "@workbench/ui";
 import { RunConsole } from "./RunConsole";
+import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { loadWorkflowUI } from "../lib/workflow-ui";
 import { usePublishActiveContext } from "../lib/active-context-store";
@@ -109,7 +110,7 @@ function WorkflowRunPaneInner({
     return match?.meta ?? null;
   }, [deployments, recordDeploymentId]);
 
-  const { data: uiModule } = useQuery({
+  const { data: uiModule, isPending: uiModulePending } = useQuery({
     queryKey: ["workflow-ui-module", kind],
     queryFn: () => loadWorkflowUI(kind as string),
     enabled: kind !== null,
@@ -236,6 +237,24 @@ function WorkflowRunPaneInner({
       <div className="flex h-full items-center justify-center border border-border bg-bg">
         <p className="text-[13px] text-text-3">Loading run…</p>
       </div>
+    );
+  }
+
+  // CL-2755: a run still cold-starting its per-run deployment shows a live
+  // "Starting…" state WITH motion — never a frozen empty panel — until the
+  // projection advances it to `running`.
+  if (record.status === "provisioning") {
+    return <WorkflowStartingIndicator variant="pane" />;
+  }
+
+  // CL-2755 (handoff flicker): once the run flips provisioning→running we don't
+  // yet know whether this kind ships a custom Panel — the module is still
+  // loading. Keep showing the animated loading state so a panel workflow goes
+  // Starting → Panel directly, WITHOUT a flash of the generic RunConsole shell in
+  // between. The spinner is continuous with the provisioning frame above.
+  if (uiModulePending) {
+    return (
+      <WorkflowStartingIndicator variant="pane" label="Loading workflow…" />
     );
   }
 

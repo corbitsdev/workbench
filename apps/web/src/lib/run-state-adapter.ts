@@ -8,7 +8,10 @@ import type { RunPhase, RunState, StepState } from "@intx/workflow";
 export interface RunRecord {
   runId: string;
   kind: string;
-  status: "running" | "awaiting" | "completed" | "failed";
+  // `provisioning` (CL-2755): the run's per-run deployment is still cold-starting
+  // off the /start critical path. Non-terminal — the FE shows a live "Starting…"
+  // state until the projection advances it to `running`.
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
   // The deployment that produced this run (CL-2321) — used to resolve the exact
   // deployed version and to read the run's event log / step outputs. Absent on
   // runs created before the record began persisting it.

@@ -171,4 +171,17 @@ describe("RunConsole", () => {
     expect(screen.queryByText(/API error/)).toBeNull();
     screen.getByText(/Attio is rate-limiting requests right now/i);
   });
+
+  it("shows a live animated Starting… state for a provisioning run, not a frozen 'no steps' panel (CL-2755)", () => {
+    record = makeRecord({ status: "provisioning" });
+    logStateData = undefined;
+    const { container } = render(
+      <RunConsole deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    expect(screen.getByTestId("workflow-starting-indicator")).toBeTruthy();
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    // The static empty-state copy must not be what a starting run shows.
+    expect(screen.queryByText("No steps have started yet.")).toBeNull();
+  });
 });

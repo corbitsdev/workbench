@@ -97,7 +97,15 @@ function describeFailure(
   return runMessage ?? "workflow run failed";
 }
 
-type RunRecordStatus = "running" | "awaiting" | "completed" | "failed";
+// The fold never PRODUCES `provisioning` (it is the pre-deployment seed status,
+// CL-2755) — but a run's EXISTING status can be `provisioning` when the first
+// pack arrives, so the previous-status parameters below must admit it.
+type RunRecordStatus =
+  | "provisioning"
+  | "running"
+  | "awaiting"
+  | "completed"
+  | "failed";
 
 export function isNewWorkflowRunFailure(
   previousStatus: RunRecordStatus,

@@ -94,7 +94,7 @@ const ResumeBody = type({ signalName: "string", "payload?": "unknown" });
 const RunStateResponse = type({
   runId: "string",
   kind: "string",
-  status: "'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
   "originConversationId?": "string",
 });
@@ -107,6 +107,7 @@ const ArchiveResponse = type({ archived: "true" });
 export const RunKindStatsSchema = type({
   kind: "string",
   runs: {
+    provisioning: "number",
     running: "number",
     awaiting: "number",
     completed: "number",
@@ -125,7 +126,7 @@ export type RunKindStatsList = typeof RunKindStatsListSchema.infer;
 export const SoloRunStatsSchema = type({
   runId: "string",
   kind: "string",
-  status: "'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "startedAt?": "string | null",
   "endedAt?": "string | null",
   steps: type({
@@ -155,7 +156,7 @@ export type DeployInProgress = typeof DeployInProgressResponse.infer;
 function stateResponse(state: {
   runId: string;
   kind: string;
-  status: "running" | "awaiting" | "completed" | "failed";
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
   deploymentId?: string;
   originConversationId?: string;
 }): {
@@ -229,7 +230,7 @@ export function createWorkflowRunRecordsRouter(deps: {
       tags: ["Workflows"],
       summary: "Start a workflow run",
       description:
-        "Seeds a run record and triggers the run on the sidecar supervisor (the deployed definition executes there). Returns the seeded run state immediately; the record advances asynchronously as the sidecar emits events. Optional `?tenantId=` selects a workbench the user belongs to.",
+        "Seeds a run record in a `provisioning` state and returns immediately, WITHOUT awaiting the per-run deployment cold-start (CL-2755). The deployment is minted and the trigger fired on a background task; the record advances to `running` as the sidecar emits events, or to `failed` if provisioning fails. Optional `?tenantId=` selects a workbench the user belongs to.",
       parameters: [
         {
           name: "kind",
@@ -314,6 +315,10 @@ export function createWorkflowRunRecordsRouter(deps: {
           cryptoProvider: deps.cryptoProvider,
           deploymentDomain: deps.deploymentDomain,
           provisionRunDeployment: deps.provisionRunDeployment,
+          // CL-2755: lets the async start tail reclaim a deployment it minted
+          // AFTER the run was already failed (deadline race), so it never runs
+          // behind a `failed` record.
+          reclaimDeployment: deps.reclaimDeployment,
           ...(deps.isSidecarConnected !== undefined
             ? { isSidecarConnected: deps.isSidecarConnected }
             : {}),
@@ -334,8 +339,11 @@ export function createWorkflowRunRecordsRouter(deps: {
       );
       if (!result.ok) return runExecErrorResponse(c, result);
 
-      // Return the seeded row immediately (status 'running'); the UI polls it and
-      // the projection bridge advances it as the sidecar emits run events.
+      // CL-2755: return the seeded row immediately (status 'provisioning') —
+      // WITHOUT awaiting the per-run deployment cold-start. `startWorkflowRun`
+      // provisions + fires the trigger on a detached background task; the UI
+      // polls this row and the projection bridge advances it to 'running' once
+      // the sidecar emits its first event, or the tail flips it to 'failed'.
       return c.json(stateResponse(result.state));
     },
   );

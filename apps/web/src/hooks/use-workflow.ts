@@ -29,7 +29,7 @@ function withTenant(path: string, tenantId?: string | null): string {
 const runRecordSchema = type({
   runId: "string",
   kind: "string",
-  status: "'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
 });
 
@@ -112,7 +112,7 @@ export function useWorkflowRuns(tenantId?: string | null) {
 const conversationRunSchema = type({
   runId: "string",
   kind: "string",
-  status: "'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   createdAt: "string",
   originConversationId: "string|null",
 });
@@ -210,8 +210,12 @@ export function useWorkflowRecord(
     // A forbidden/missing record is not transient — don't retry it on the poll
     // cadence (that turned a single 403 into a steady stream against one record).
     retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.status === "running" ? 2000 : false,
+    // Poll while the run is still starting (`provisioning`, CL-2755) or a step is
+    // executing (`running`); stop once it parks on a gate or settles.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "provisioning" ? 2000 : false;
+    },
     queryFn: async () => {
       const raw = await api<unknown>(
         "GET",

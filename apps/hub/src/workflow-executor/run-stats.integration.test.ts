@@ -119,6 +119,7 @@ describe("getRunKindStats — by-kind aggregate from the projection", () => {
 
     const brief = byKind.get("brief");
     expect(brief?.runs).toEqual({
+      provisioning: 0,
       running: 0,
       awaiting: 0,
       completed: 1,

@@ -46,9 +46,19 @@ function CustomPanel({
   );
 }
 
+// A controllable deferred so a test can hold the custom-Panel module in a
+// PENDING state at the provisioning→running flip and assert no generic-shell
+// flash (CL-2755 handoff flicker).
+let resolveSlowPanel: (() => void) | null = null;
 mock.module("../lib/workflow-ui", () => ({
   loadWorkflowUI: async (kind: string) => {
     if (kind === "with-panel") return { Panel: CustomPanel };
+    if (kind === "slow-panel") {
+      await new Promise<void>((resolve) => {
+        resolveSlowPanel = resolve;
+      });
+      return { Panel: CustomPanel };
+    }
     return {};
   },
 }));
@@ -141,6 +151,7 @@ describe("WorkflowRunPane", () => {
     stepOutputsRequestedId = undefined;
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
+    resolveSlowPanel = null;
   });
 
   it("renders the workflow kind own Panel when its module exports one", async () => {
@@ -749,5 +760,59 @@ describe("WorkflowRunPane", () => {
     expect(
       screen.queryByRole("button", { name: /Workflow version/i }),
     ).toBeNull();
+  });
+
+  it("renders a live animated Starting… state for a provisioning run, never the frozen panel (CL-2755)", async () => {
+    // The run's per-run deployment is still cold-starting: no deployment, no log.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { container } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    const indicator = await waitFor(() =>
+      screen.getByTestId("workflow-starting-indicator"),
+    );
+    // Motion is the hard requirement — an animated spinner must be present.
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    expect(indicator.textContent).toContain("Starting");
+    // The workflow's own panel is NOT rendered while provisioning.
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("transitions Starting → custom Panel with NO generic-shell flash while the Panel module is still loading (CL-2755 handoff flicker)", async () => {
+    // The Panel module is held PENDING (slow-panel, reset to null by afterEach)
+    // so the running flip lands while `uiModule` is still loading — the exact
+    // window the flicker fix covers.
+    record = makeRecord({ kind: "slow-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+
+    // The projection advances the run to running while the Panel module has NOT
+    // resolved yet.
+    record = makeRecord({ kind: "slow-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    // While the module loads, the animated loading state stays up — the generic
+    // RunConsole shell ("Workflow run" header) must NEVER flash in between.
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+    expect(screen.queryByText("Workflow run")).toBeNull();
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+
+    // Resolve the module → straight to the custom Panel, no shell in between.
+    resolveSlowPanel?.();
+    await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+    expect(screen.queryByText("Workflow run")).toBeNull();
   });
 });

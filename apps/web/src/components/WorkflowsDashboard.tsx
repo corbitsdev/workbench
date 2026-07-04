@@ -8,6 +8,7 @@ import { statusDotClass, statusLabel } from "../pages/WorkflowsPage";
 type RunStatus = WorkflowRun["status"];
 
 const STAT_STATUSES: RunStatus[] = [
+  "provisioning",
   "running",
   "awaiting",
   "completed",
@@ -238,6 +239,7 @@ export function WorkflowsDashboard({
 
   const counts = useMemo(() => {
     const base: Record<RunStatus, number> = {
+      provisioning: 0,
       running: 0,
       awaiting: 0,
       completed: 0,
@@ -249,7 +251,10 @@ export function WorkflowsDashboard({
 
   const activeRuns = useMemo(() => {
     const active = runs.filter(
-      (r) => r.status === "running" || r.status === "awaiting",
+      (r) =>
+        r.status === "provisioning" ||
+        r.status === "running" ||
+        r.status === "awaiting",
     );
     return active.sort((a, b) => {
       if (a.status !== b.status) return a.status === "awaiting" ? -1 : 1;

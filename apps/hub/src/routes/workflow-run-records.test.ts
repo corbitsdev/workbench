@@ -28,6 +28,15 @@ mock.module("../workflow-executor/run-store", () => ({
     const found = runs.get(runId);
     if (found) runs.set(runId, structuredClone({ ...found, status }));
   },
+  // CL-2755 CAS: fail only if still provisioning.
+  failRunIfStillProvisioning: async (_db: unknown, runId: string) => {
+    const found = runs.get(runId);
+    if (found && found.status === "provisioning") {
+      runs.set(runId, structuredClone({ ...found, status: "failed" }));
+      return true;
+    }
+    return false;
+  },
   insertRunRecord: async (
     _db: unknown,
     args: {
@@ -38,6 +47,7 @@ mock.module("../workflow-executor/run-store", () => ({
       principalId: string;
       input: unknown;
       originConversationId: string | null;
+      status?: RunState["status"];
     },
   ) => {
     const state: RunState = {
@@ -45,7 +55,7 @@ mock.module("../workflow-executor/run-store", () => ({
       kind: args.kind,
       tenantId: args.tenantId,
       principalId: args.principalId,
-      status: "running",
+      status: args.status ?? "running",
       ...(args.deploymentId !== null
         ? { deploymentId: args.deploymentId }
         : {}),
@@ -55,6 +65,15 @@ mock.module("../workflow-executor/run-store", () => ({
     };
     runs.set(state.runId, structuredClone(state));
     return state;
+  },
+  // CL-2755: the async start tail attaches the deployment once provisioned.
+  setRunDeployment: async (
+    _db: unknown,
+    runId: string,
+    deploymentId: string,
+  ) => {
+    const found = runs.get(runId);
+    if (found) runs.set(runId, structuredClone({ ...found, deploymentId }));
   },
   loadRunRecord: async (_db: unknown, runId: string) => {
     const found = runs.get(runId);
@@ -99,7 +118,14 @@ mock.module("../workflow-executor/run-store", () => ({
   ) => [
     {
       kind: kind ?? "brief",
-      runs: { running: 1, awaiting: 0, completed: 2, failed: 0, total: 3 },
+      runs: {
+        provisioning: 0,
+        running: 1,
+        awaiting: 0,
+        completed: 2,
+        failed: 0,
+        total: 3,
+      },
       steps: { total: 4, byPhase: { completed: 4 }, avgDurationMs: 1500 },
     },
   ],
@@ -397,8 +423,21 @@ async function get(
   return { status: res.status, json: await res.json() };
 }
 
+// CL-2755: the start route responds BEFORE the deploy completes; the provision
+// + trigger run on a detached background task. Poll the in-memory row until that
+// tail settles (the run failed, or the trigger mail for this run went out) so the
+// assertions below observe a deterministic end state, not a race.
+async function settleStart(runId: string): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    const row = runs.get(runId);
+    const triggered = sentMessages.some((m) => m.messageId === runId);
+    if (row?.status === "failed" || triggered) return;
+    await new Promise((res) => setTimeout(res, 5));
+  }
+}
+
 describe("workflow runs on the sidecar (records router)", () => {
-  test("start provisions a FRESH per-run deployment from the definition and triggers IT, not the shared registry deployment (CL-2582)", async () => {
+  test("start returns 'provisioning' immediately then provisions a FRESH per-run deployment and triggers IT, not the shared registry deployment (CL-2582 / CL-2755)", async () => {
     resetCaptures();
     const a = app();
     const { status, json } = await post(
@@ -409,11 +448,14 @@ describe("workflow runs on the sidecar (records router)", () => {
       },
     );
 
+    // CL-2755: instant ack — the run is seeded `provisioning` with NO deployment
+    // yet, and the response lands without waiting for the cold deploy.
     expect(status).toBe(200);
-    expect(json.status).toBe("running");
-    expect(json.currentStepId).toBeUndefined();
-    expect(json.outputs).toBeUndefined();
+    expect(json.status).toBe("provisioning");
+    expect(json.deploymentId).toBeUndefined();
     expect(typeof json.runId).toBe("string");
+
+    await settleStart(json.runId);
 
     // Provisioned once, into the DEFINITION's tenant + deploy principal (the
     // shared registry row), NOT the caller's principal.
@@ -425,8 +467,9 @@ describe("workflow runs on the sidecar (records router)", () => {
     });
 
     // The run runs on its OWN fresh deployment, never the shared `ses_dep1`.
-    expect(json.deploymentId).toBe("ses_run_1");
-    expect(json.deploymentId).not.toBe("ses_dep1");
+    const settled = runs.get(json.runId);
+    expect(settled?.deploymentId).toBe("ses_run_1");
+    expect(settled?.deploymentId).not.toBe("ses_dep1");
 
     // The linchpin of the projection bridge: the trigger mail's messageId IS the
     // run record id, and it targets the fresh per-run deployment's address.
@@ -453,7 +496,7 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentMessages).toHaveLength(0);
   });
 
-  test("start 500s and seeds no run record when per-run provision fails", async () => {
+  test("start acks 'provisioning' then flips the run to failed when per-run provision fails, and fires no trigger (CL-2755)", async () => {
     resetCaptures();
     provisionShouldThrow = true;
     const a = app();
@@ -462,14 +505,20 @@ describe("workflow runs on the sidecar (records router)", () => {
       "/workflow-exec/pain-point-collateral/start",
       { input: {} },
     );
-    expect(status).toBe(500);
-    expect(json.error).toMatch(/failed to provision/);
-    // No row seeded and no trigger sent — the run never came into being.
-    expect([...runs.values()]).toHaveLength(0);
+    // The ack is instant and optimistic; the failure surfaces on the run record.
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The seeded row is flipped to a visible terminal `failed` — never left stuck
+    // provisioning — and no trigger mail ever fires.
+    const seeded = runs.get(json.runId);
+    expect(seeded?.status).toBe("failed");
     expect(sentMessages).toHaveLength(0);
   });
 
-  test("start marks the run failed and 500s when the sidecar trigger send throws", async () => {
+  test("start acks 'provisioning' then flips the run to failed when the sidecar trigger send throws (CL-2755)", async () => {
     resetCaptures();
     sendShouldThrow = true;
     const a = app();
@@ -480,13 +529,16 @@ describe("workflow runs on the sidecar (records router)", () => {
         input: {},
       },
     );
-    expect(status).toBe(500);
-    expect(json.error).toMatch(/failed to start/);
-    // The run was provisioned and the row seeded before the trigger failed; the
-    // row is flipped to failed so the UI doesn't poll a phantom run (its orphaned
-    // deployment is reclaimed by the terminal-teardown + janitor sweep).
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The run was provisioned before the trigger failed; the row is flipped to
+    // failed so the UI doesn't poll a phantom run (its orphaned deployment is
+    // reclaimed by the terminal-teardown + janitor sweep).
     expect(provisionCalls).toHaveLength(1);
-    const seeded = [...runs.values()][0];
+    const seeded = runs.get(json.runId);
     expect(seeded?.status).toBe("failed");
   });
 
@@ -497,6 +549,8 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    // CL-2755: let the async start tail attach the deployment before parking.
+    await settleStart(runId);
     // Simulate the bridge having parked the row at a gate.
     const parked = runs.get(runId);
     if (parked)
@@ -546,6 +600,7 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     const parked = runs.get(runId);
     if (parked)
       runs.set(runId, {
@@ -569,6 +624,7 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     const parked = runs.get(runId);
     if (parked)
       runs.set(runId, {
@@ -631,8 +687,11 @@ describe("workflow runs on the sidecar (records router)", () => {
     const a = app();
     const runId = await parkedAttioRun(a);
 
+    // A signal with NO registered schema for this kind passes through unvalidated.
+    // (`task-selection` became registered in CL-2731, so it is no longer a valid
+    // stand-in for "unregistered" — use a genuinely-unregistered signal name.)
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "task-selection",
+      signalName: "freeform-note",
       payload: { anything: "goes" },
     });
 
@@ -657,12 +716,15 @@ describe("workflow runs on the sidecar (records router)", () => {
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
     expect(read.status).toBe(200);
     expect(read.json.runId).toBe(start.json.runId);
-    expect(read.json.status).toBe("running");
-    // The fresh per-run deploymentId persisted at start round-trips through the
-    // read DTO.
+    // CL-2755: the record stays `provisioning` until the projection bridge folds
+    // the first RunStarted (not exercised here); the read round-trips it.
+    expect(read.json.status).toBe("provisioning");
+    // The fresh per-run deploymentId the async tail attached round-trips through
+    // the read DTO.
     expect(read.json.deploymentId).toBe("ses_run_1");
   });
 
@@ -936,6 +998,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const read = await get(a, `/workflow-exec/runs/${runId}/state`);
     expect(read.status).toBe(200);
@@ -965,6 +1028,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
     expect(read.status).toBe(500);
     expect(read.json.error).toBe("failed to read run state");
@@ -977,6 +1041,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
     expect(read.status).toBe(200);
     expect(read.json.phase).toBe("pending");
@@ -1051,6 +1116,7 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const r = await archive(a, runId);
     expect(r.status).toBe(200);
@@ -1073,6 +1139,7 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     // Park the run at a gate, as the projection bridge would.
     const parked = runs.get(runId);
     if (parked)
@@ -1141,6 +1208,7 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const r = await archive(a, runId);
     expect(r.status).toBe(200);
@@ -1156,6 +1224,9 @@ async function seedParkedRun(a: AppHono): Promise<string> {
     input: {},
   });
   const runId = start.json.runId;
+  // CL-2755: wait for the async start tail to attach the deployment (resume
+  // needs it), THEN park the run at a gate.
+  await settleStart(runId);
   const parked = runs.get(runId);
   if (parked) runs.set(runId, { ...parked, status: "awaiting" });
   sidecarProbeCalls = 0;
@@ -1221,18 +1292,21 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
     expect(sentSignals).toHaveLength(0);
   });
 
-  test("start takes the fast path and provisions when the sidecar is already connected", async () => {
+  test("start's background tail takes the fast path and provisions when the sidecar is already connected (CL-2755)", async () => {
     resetCaptures();
     const a = app();
     const r = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    // Instant ack; the sidecar probe + provision happen on the background tail.
     expect(r.status).toBe(200);
+    expect(r.json.status).toBe("provisioning");
+    await settleStart(r.json.runId);
     expect(provisionCalls).toHaveLength(1);
     expect(sidecarProbeCalls).toBe(1);
   });
 
-  test("start waits then provisions when the sidecar connects after a few polls", async () => {
+  test("start's background tail waits then provisions when the sidecar connects after a few polls (CL-2755)", async () => {
     resetCaptures();
     sidecarConnectsAtProbe = 3;
     const a = app();
@@ -1240,28 +1314,33 @@ describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
       input: {},
     });
     expect(r.status).toBe(200);
+    await settleStart(r.json.runId);
     expect(sidecarProbeCalls).toBeGreaterThanOrEqual(3);
     expect(provisionCalls).toHaveLength(1);
     expect(sentMessages).toHaveLength(1);
   });
 
-  test("start times out to a sanitized 503 with Retry-After and provisions nothing", async () => {
+  test("start still acks instantly but the background tail flips the run failed (provisioning nothing) when the sidecar never reconnects (CL-2755)", async () => {
     resetCaptures();
     sidecarConnectsAtProbe = Number.POSITIVE_INFINITY;
     const a = app();
-    const res = await a.request("/workflow-exec/pain-point-collateral/start", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ input: {} }),
-    });
-    expect(res.status).toBe(503);
-    expect(res.headers.get("retry-after")).toBe("10");
-    const json = (await res.json()) as { error: { code: string } };
-    expect(json.error.code).toBe("deploy_in_progress");
-    // The run never came into being — no provision, no trigger, no row.
+    const { status, json } = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    // The move off the critical path (CL-2755): start no longer blocks or 503s
+    // on the deploy window — it acks `provisioning` immediately.
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The tail waited for a sidecar, timed out, and marked the run failed loudly
+    // — provisioning nothing and firing no trigger.
+    expect(runs.get(json.runId)?.status).toBe("failed");
     expect(provisionCalls).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
-    expect(runs.size).toBe(0);
   });
 });
 
