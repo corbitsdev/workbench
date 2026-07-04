@@ -14,11 +14,17 @@
  * A third folds a free-text answer:
  *   - clarification    → a `choice` with a `promptBox`, folded into `answers`
  *
- * The other two gates (`review`, `sync-approval`) are multi-field FORMS the
- * choice block cannot yet collect — emitting a generic "Continue" choice would
- * POST an empty payload and corrupt the run. They get a run-page `link` instead
- * (the strangler, like ab-compare-hitl's config gate); full block-driven forms
- * are CL-2715.
+ * The `sync-approval` gate — the one DESTRUCTIVE gate — is block-driven as a
+ * pair of choices (CL-2684): a confirm choice carrying `{ confirm: true }` plus
+ * the write locators and a required note prompt-box, and a separate skip choice
+ * carrying `{ confirm: false }`. See syncApprovalBlocks for why a choice, not a
+ * form, is the safe primitive here (a form field cannot express a real boolean).
+ *
+ * The `review` gate stays a run-page `link` (the strangler): it must emit the
+ * selected drafts as full content-bearing objects (`approvedPieces`, which the
+ * persist map iterates), and neither the form nor the multiSelect block can
+ * carry an array of arbitrary objects filtered from a known list through the
+ * verbatim-payload seam — so it is deferred to the run-page panel.
  *
  * Review lessons carried from CL-2683: the action affordance (the choice) is the
  * only orange surface — passive/awaiting states render as text/link/error, never
@@ -34,7 +40,13 @@ import {
   type ProgressStep,
   type UIBlock,
 } from "@workbench/blocks";
-import { parseDecision, parseMembers, parseTasks } from "./parse";
+import {
+  parseDecision,
+  parseFirstLinkedRecord,
+  parseMembers,
+  parseSelectedTaskId,
+  parseTasks,
+} from "./parse";
 
 /** The awaitSignal gate names (match the workflow def in ./index.ts). */
 export const MEMBER_SELECTION_SIGNAL = "member-selection";
@@ -204,6 +216,103 @@ function clarificationBlock(input: AttioTaskAgentBlockInput): UIBlock {
   };
 }
 
+// The sync-approval gate is the ONE destructive gate: confirming attaches a
+// note to the linked Attio record and marks the task complete. It is migrated
+// to a pair of CHOICE blocks, not a form (CL-2684): a form field cannot express
+// a real boolean, and a string "false" is truthy — it would fire the write-back
+// the `syncGate` branches on. A choice carries a verbatim boolean + the write
+// locators in each option's payload, so the safety invariant is structural:
+//   - "Attach and complete" is a SEPARATE choice whose payload is
+//     `{ confirm: true, taskId, parentObject, parentRecordId }` (locators read
+//     from prior step state, never typed), with a REQUIRED prompt-box that folds
+//     the mandatory note under `note` — the button holds until the note is
+//     non-empty, so an empty/unconfirmed submit can never fire the write.
+//   - "Skip" is a separate choice whose payload is `{ confirm: false }`.
+// The /resume boundary (SyncApprovalPayloadSchema) independently rejects a
+// confirm missing any locator or the note, so neither the dock nor a replayed
+// request can drive a hollow write-back. When the locators are unresolvable the
+// dock never offers a confirm — only a skip (or an error), mirroring the panel.
+function syncApprovalBlocks(input: AttioTaskAgentBlockInput): UIBlock[] {
+  const recordDecoded = parseFirstLinkedRecord(input.stepOutputs.fetchTask);
+  const taskDecoded = parseSelectedTaskId(input.stepOutputs.selectTask);
+  if (
+    recordDecoded.status === "malformed" ||
+    taskDecoded.status === "malformed"
+  ) {
+    // A malformed decode strands the user on the destructive gate: the dock
+    // can't safely offer the write-back, but the run page can. Send them there
+    // rather than dead-ending on an error (CL-2684).
+    return [
+      { kind: "error", message: "Couldn't read the task details to sync." },
+      runPageLink(
+        input.runId,
+        "Complete the write-back on the run page",
+        "The task details couldn't be read here — review and finish the sync on the run page.",
+      ),
+    ];
+  }
+
+  const skip: UIBlock = {
+    kind: "choice",
+    signalName: SYNC_APPROVAL_SIGNAL,
+    options: [
+      {
+        id: "skip",
+        label: "Skip the write-back",
+        value: "skip",
+        payload: { confirm: false },
+      },
+    ],
+  };
+
+  const record = recordDecoded.status === "ok" ? recordDecoded.value : null;
+  const taskId = taskDecoded.status === "ok" ? taskDecoded.value : null;
+  if (record === null || taskId === null) {
+    // Nothing to write back to — offer only the no-op, never a confirm with
+    // missing locators (which the boundary would reject anyway).
+    return [
+      {
+        kind: "text",
+        text: "No linked Attio record to write back to — nothing to sync.",
+      },
+      skip,
+    ];
+  }
+
+  const decision = parseDecision(input.stepOutputs.analyze);
+  const proposedNote =
+    decision.status === "ok"
+      ? decision.value.proposedTaskUpdate?.note
+      : undefined;
+  const confirm: UIBlock = {
+    kind: "choice",
+    prompt: `Attach a note to the ${record.object} record ${record.recordId} and mark the task complete.`,
+    signalName: SYNC_APPROVAL_SIGNAL,
+    promptBox: {
+      placeholder:
+        proposedNote !== undefined && proposedNote.length > 0
+          ? `Suggested: ${proposedNote}`
+          : "The note to attach to the record…",
+      payloadKey: "note",
+      required: true,
+    },
+    options: [
+      {
+        id: "attach-and-complete",
+        label: "Attach and complete",
+        value: "confirm",
+        payload: {
+          confirm: true,
+          taskId,
+          parentObject: record.object,
+          parentRecordId: record.recordId,
+        },
+      },
+    ],
+  };
+  return [confirm, skip];
+}
+
 export function buildAttioTaskAgentBlocks(
   input: AttioTaskAgentBlockInput,
 ): UIBlock[] {
@@ -237,15 +346,9 @@ export function buildAttioTaskAgentBlocks(
         ),
       );
     } else if (gate.signalName === SYNC_APPROVAL_SIGNAL) {
-      // Write-back confirmation carries a note + record locators — a form, and a
-      // DESTRUCTIVE one. Never collect it with a generic choice; run page only.
-      blocks.push(
-        runPageLink(
-          input.runId,
-          "Confirm the Attio write-back on the run page",
-          "Approve attaching the note and completing the task on the run page.",
-        ),
-      );
+      // The DESTRUCTIVE write-back confirmation, now block-driven as a pair of
+      // choices (CL-2684) — see syncApprovalBlocks for the safety invariant.
+      blocks.push(...syncApprovalBlocks(input));
     } else {
       // An unknown gate the dock can't collect — send the human to the run page
       // rather than inventing an affordance (CL-2683 lesson).

@@ -25,7 +25,7 @@ import {
 import { type } from "arktype";
 import { MAX_ROUNDS } from "./constants";
 
-/** The intake form gate's `awaitSignal` name (matches the workflow def). */
+/** The intake gate's `awaitSignal` name (matches the workflow def). */
 export const INTAKE_SIGNAL = "intake";
 
 /** A pending preview gate's signal name is `preview-<round>` (see index.ts). */
@@ -188,17 +188,29 @@ export function buildGammaBlocks(input: GammaBlockInput): UIBlock[] {
           ),
         );
       }
-    } else {
-      // The intake gate is a multi-field form the dock can't collect yet — a
-      // generic choice would POST an empty payload and corrupt the run. Send the
-      // user to the run page's intake form instead (full block-driven intake is
-      // CL-2715).
-      const description =
-        gate.signalName === INTAKE_SIGNAL
-          ? "Set up the deck — title, template, and source — on the run page."
-          : "This run needs input the dock can't collect yet — continue on the run page.";
+    } else if (gate.signalName === INTAKE_SIGNAL) {
+      // The intake gate needs the deck's Gamma TEMPLATE and (optionally) a source
+      // artifact / Granola note — all opaque ids the user cannot obtain in the
+      // dock. Only the run page can query the template catalogue and the source
+      // pickers, so the dock is a visibility surface here: it shows progress and
+      // links to the run page to launch the deck, rather than demanding ids in a
+      // form (CL-2684).
       blocks.push(
-        runPageLink(input.runId, "Continue on the run page", description),
+        runPageLink(
+          input.runId,
+          "Set up the deck on the run page",
+          "Pick the Gamma template and the source to build from on the run page.",
+        ),
+      );
+    } else {
+      // Any other gate needs input the dock can't collect — send the user to the
+      // run page rather than POST an empty payload and corrupt the run.
+      blocks.push(
+        runPageLink(
+          input.runId,
+          "Continue on the run page",
+          "This run needs input the dock can't collect yet — continue on the run page.",
+        ),
       );
     }
   }

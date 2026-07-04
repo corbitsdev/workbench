@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
+import { SyncApprovalPayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
   runStateFromLog,
@@ -28,6 +29,9 @@ const toolInline = (value: unknown): string =>
   `inline:${JSON.stringify({ content: JSON.stringify(value) })}`;
 const replyInline = (value: unknown): string =>
   `inline:${JSON.stringify({ reply: JSON.stringify(value) })}`;
+// A human awaitSignal step stores its resume payload verbatim (no envelope).
+const signalInline = (value: unknown): string =>
+  `inline:${JSON.stringify(value)}`;
 
 const MEMBERS = [
   {
@@ -186,12 +190,112 @@ describe("attio-task-agent blocks — real log→state→blocks seam", () => {
     if (link?.kind === "link") expect(link.url).toBe("/workflows/run_attio");
   });
 
-  it("defers the destructive sync-approval gate to a run-page link", () => {
-    const blocks = build(
-      buildLog({ stepId: "approveSync", signal: "sync-approval" }),
+  it("renders confirm + skip choices at the destructive sync-approval gate, note-gated (CL-2684)", () => {
+    const log = buildLog(
+      { stepId: "approveSync", signal: "sync-approval" },
+      {
+        fetchTask: {
+          outputRef: toolInline({
+            linkedRecords: [{ object: "companies", recordId: "rec_1" }],
+          }),
+          phase: "completed",
+        },
+        selectTask: {
+          outputRef: signalInline({ taskId: "task_1" }),
+          phase: "completed",
+        },
+        analyze: {
+          outputRef: replyInline({
+            status: "ready",
+            reasoning: "Done.",
+            proposedTaskUpdate: { note: "Pilot kicked off." },
+          }),
+          phase: "completed",
+        },
+      },
     );
-    expect(blocks.some((b) => b.kind === "choice")).toBe(false);
-    expect(blocks.some((b) => b.kind === "link")).toBe(true);
+    const blocks = build(log);
+    // No run-page link — the gate is block-driven now.
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
+
+    const choices = blocks.filter((b) => b.kind === "choice");
+    const confirm = choices.find((c) =>
+      c.kind === "choice"
+        ? c.options.some((o) => o.id === "attach-and-complete")
+        : false,
+    );
+    const skip = choices.find((c) =>
+      c.kind === "choice" ? c.options.some((o) => o.id === "skip") : false,
+    );
+
+    if (confirm?.kind !== "choice")
+      throw new Error("expected a confirm choice");
+    expect(confirm.signalName).toBe("sync-approval");
+    // The write locators are carried in the payload, never typed by the human.
+    expect(confirm.options[0]?.payload).toEqual({
+      confirm: true,
+      taskId: "task_1",
+      parentObject: "companies",
+      parentRecordId: "rec_1",
+    });
+    // A REQUIRED note prompt-box gates the destructive write.
+    expect(confirm.promptBox?.payloadKey).toBe("note");
+    expect(confirm.promptBox?.required).toBe(true);
+
+    if (skip?.kind !== "choice") throw new Error("expected a skip choice");
+    expect(skip.options[0]?.payload).toEqual({ confirm: false });
+
+    // The confirm payload with the folded note validates at the boundary; the
+    // SAME payload without the note (an empty prompt-box) is REJECTED — the
+    // destructive write cannot fire on an unconfirmed/empty submit.
+    const confirmPayload = confirm.options[0]?.payload as Record<
+      string,
+      unknown
+    >;
+    expect(
+      SyncApprovalPayloadSchema({
+        ...confirmPayload,
+        note: "Pilot done.",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      SyncApprovalPayloadSchema(confirmPayload) instanceof type.errors,
+    ).toBe(true);
+    // The skip payload is always valid.
+    expect(
+      SyncApprovalPayloadSchema({ confirm: false }) instanceof type.errors,
+    ).toBe(false);
+  });
+
+  it("offers only a skip (never a confirm) when there is no linked record to write back to", () => {
+    const log = buildLog(
+      { stepId: "approveSync", signal: "sync-approval" },
+      {
+        fetchTask: {
+          outputRef: toolInline({ linkedRecords: [] }),
+          phase: "completed",
+        },
+        selectTask: {
+          outputRef: signalInline({ taskId: "task_1" }),
+          phase: "completed",
+        },
+      },
+    );
+    const blocks = build(log);
+    const choices = blocks.filter((b) => b.kind === "choice");
+    // A single skip choice, no confirm option anywhere.
+    expect(
+      choices.some((c) =>
+        c.kind === "choice"
+          ? c.options.some((o) => o.id === "attach-and-complete")
+          : false,
+      ),
+    ).toBe(false);
+    expect(
+      choices.some((c) =>
+        c.kind === "choice" ? c.options.some((o) => o.id === "skip") : false,
+      ),
+    ).toBe(true);
   });
 
   it("sends the member gate to a run-page link when the completed producer's output is not resolvable", () => {

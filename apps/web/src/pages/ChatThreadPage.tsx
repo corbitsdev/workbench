@@ -189,13 +189,9 @@ export function ChatThreadPage() {
             onUserSend={maybeTitleFromFirstMessage}
             signalRouting={signalRouting}
             resumeInFlight={resumeGate.isPending}
-            onResumeSignal={(runId, signalName, text) =>
+            onResumeSignal={(runId, signalName, payload) =>
               resumeGate
-                .mutateAsync({
-                  runId,
-                  signalName,
-                  payload: { instruction: text },
-                })
+                .mutateAsync({ runId, signalName, payload })
                 .then(() => undefined)
             }
             inserts={inserts}

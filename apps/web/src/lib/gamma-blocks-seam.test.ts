@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
+import { GammaIntakePayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
   runStateFromLog,
@@ -172,7 +173,7 @@ describe("gamma-presentation-creator blocks — real log→state→blocks seam",
     }
   });
 
-  it("sends the intake form gate to the run page, not an empty choice", () => {
+  it("links to the run page at the intake gate rather than demanding opaque ids in a form (CL-2684)", () => {
     const log = parseLog({
       runId: "run_intake",
       phase: "running" as const,
@@ -202,10 +203,27 @@ describe("gamma-presentation-creator blocks — real log→state→blocks seam",
       stepOutputs: stepOutputsFromLog(log),
     });
 
-    // A multi-field form the dock can't collect → run-page link, no choice.
+    // The intake gate needs the Gamma TEMPLATE + source (opaque ids the dock
+    // can't resolve), so the dock is a visibility surface: a run-page link, NOT
+    // a form demanding those ids.
+    expect(blocks.some((b) => b.kind === "form")).toBe(false);
     expect(blocks.some((b) => b.kind === "choice")).toBe(false);
     const link = blocks.find((b) => b.kind === "link");
-    expect(link?.kind === "link" && link.url).toBe("/workflows/run_intake");
+    if (link?.kind !== "link") throw new Error("expected a run-page link");
+    expect(link.url).toBe("/workflows/run_intake");
+
+    // The run-page panel still submits through the same boundary schema: a
+    // well-formed intake validates; a hollow one (no title/template) is rejected.
+    const wellFormed = {
+      deckTitle: "Security review deck",
+      gammaId: "tmpl_1",
+      text: "Paste the brief here.",
+    };
+    expect(GammaIntakePayloadSchema(wellFormed) instanceof type.errors).toBe(
+      false,
+    );
+    const hollow = { deckTitle: "", gammaId: "", text: "" };
+    expect(GammaIntakePayloadSchema(hollow) instanceof type.errors).toBe(true);
   });
 
   it("omits an out-of-line (blob) draft, so no actionable decision renders", () => {

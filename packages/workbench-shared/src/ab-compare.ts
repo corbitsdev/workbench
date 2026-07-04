@@ -30,14 +30,18 @@ export const AbDecisionPayloadSchema = type({
 });
 export type AbDecisionPayload = typeof AbDecisionPayloadSchema.infer;
 
-// One variant slot in the `ab-config` gate payload. The execute map reads
-// providerName/model/input off each; extra keys (label/systemPrompt/skillIds)
-// ride along untouched.
+// One variant slot in the `ab-config` gate payload. `providerName` + `model`
+// are what the compose step reads to label + reveal each variant; extra keys
+// (label/systemPrompt/skillIds) ride along untouched. `input` is optional: the
+// run-page panel copies the shared prompt onto each variant, but the shared
+// top-level `input` is the authoritative prompt (the execute step reads it, not
+// the per-variant copy), so the block-driven dock form omits the redundant
+// per-variant duplicate (CL-2684).
 export const AbConfigVariantSchema = type({
   "label?": "string",
-  providerName: "string",
-  model: "string",
-  input: "string",
+  providerName: "string > 0",
+  model: "string > 0",
+  "input?": "string",
   "systemPrompt?": "string",
   "skillIds?": "string[]",
 });
@@ -47,8 +51,12 @@ export type AbConfigVariant = typeof AbConfigVariantSchema.infer;
 // shared input. Rejecting an empty/instruction-only payload here stops a generic
 // "Continue" affordance from posting `{ instruction: "" }` and corrupting the
 // run (the execute map would fold `variants` to undefined).
+// A comparison needs at least TWO variants (one is not a comparison) and the
+// dock form caps at six; enforce both at the boundary so a degenerate 1-variant
+// or oversized payload is rejected here, not just by the form's client-side
+// min/max (CL-2684).
 export const AbConfigPayloadSchema = type({
-  variants: AbConfigVariantSchema.array().atLeastLength(1),
-  input: "string",
+  variants: AbConfigVariantSchema.array().atLeastLength(2).atMostLength(6),
+  input: "string > 0",
 });
 export type AbConfigPayload = typeof AbConfigPayloadSchema.infer;

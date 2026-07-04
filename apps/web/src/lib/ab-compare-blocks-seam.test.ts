@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { buildAbCompareHitlBlocks } from "@workbench/workflow-ab-compare-hitl/blocks";
+import { AbConfigPayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
   runStateFromLog,
@@ -139,5 +140,57 @@ describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
     // Nothing to compare → no actionable choice, a run-page link instead.
     expect(blocks.some((b) => b.kind === "choice")).toBe(false);
     expect(blocks.some((b) => b.kind === "link")).toBe(true);
+  });
+
+  it("at the config gate renders a variants form whose emitted payload validates (CL-2684)", () => {
+    const log = parseLog({
+      runId: "run_cfg",
+      phase: "running" as const,
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "config",
+          phase: "awaiting-signal" as const,
+          stepType: "human" as const,
+          currentAttempt: 1,
+          awaitingSignalName: "ab-config",
+        },
+      ],
+    });
+
+    const blocks = buildAbCompareHitlBlocks({
+      runId: log.runId,
+      phase: runStateFromLog(log).phase,
+      steps: log.steps.map((step) => ({
+        stepId: step.stepId,
+        phase: step.phase,
+        ...(step.awaitingSignalName !== undefined
+          ? { awaitingSignalName: step.awaitingSignalName }
+          : {}),
+      })),
+      stepOutputs: stepOutputsFromLog(log),
+    });
+
+    const form = blocks.find((b) => b.kind === "form");
+    if (form?.kind !== "form") throw new Error("expected a form block");
+    expect(form.signalName).toBe("ab-config");
+    const group = form.fields.find((f) => f.name === "variants");
+    if (group?.kind !== "group") throw new Error("expected a variants group");
+
+    // Build the payload the FormBlock emits from THESE field names (a wrong
+    // field name here would produce a payload the boundary rejects).
+    const row = (provider: string, model: string) => ({
+      [group.fields[0]!.name]: provider,
+      [group.fields[1]!.name]: model,
+    });
+    const payload: Record<string, unknown> = {
+      // Two variants — the boundary requires a real comparison (CL-2684).
+      variants: [
+        row("openai-compatible", "kimi-k2.6"),
+        row("anthropic", "claude-opus-4-8"),
+      ],
+      input: "Ship it.",
+    };
+    expect(AbConfigPayloadSchema(payload) instanceof type.errors).toBe(false);
   });
 });

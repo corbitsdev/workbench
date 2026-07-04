@@ -2,7 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
 import { pendingGateForRun } from "@workbench/blocks";
 import { composeComparisonResult } from "@workbench/tools-ab-compare";
-import { AbDecisionPayloadSchema } from "@workbench/shared";
+import {
+  AbConfigPayloadSchema,
+  AbDecisionPayloadSchema,
+} from "@workbench/shared";
 import {
   buildAbCompareHitlBlocks,
   CONFIG_SIGNAL,
@@ -110,7 +113,7 @@ describe("ab-compare-hitl blocks (integration)", () => {
     }
   });
 
-  it("at the config gate emits a run-page link, never an empty-submit choice", () => {
+  it("at the config gate emits a variants form bound to the ab-config signal (CL-2684)", () => {
     const configSteps = [
       {
         stepId: "config",
@@ -124,14 +127,53 @@ describe("ab-compare-hitl blocks (integration)", () => {
       steps: configSteps,
       stepOutputs: {},
     });
-    // No choice — a "Continue" choice would POST `{ instruction: "" }` and
-    // corrupt the run (execute would fold `variants` to undefined).
+    // No run-page link and no bare choice — a real form now collects the config.
+    expect(blocks.some((b) => b.kind === "link")).toBe(false);
     expect(blocks.some((b) => b.kind === "choice")).toBe(false);
-    const link = blocks.find((b) => b.kind === "link");
-    expect(link?.kind).toBe("link");
-    if (link?.kind === "link") {
-      expect(link.url).toBe("/workflows/run_1");
-    }
+    const form = blocks.find((b) => b.kind === "form");
+    if (form?.kind !== "form") throw new Error("expected a form block");
+    const gate = pendingGateForRun({ runId: "run_1", steps: configSteps });
+    expect(form.signalName).toBe(gate?.signalName);
+    expect(form.signalName).toBe(CONFIG_SIGNAL);
+
+    const group = form.fields.find((f) => f.name === "variants");
+    if (group?.kind !== "group") throw new Error("expected a variants group");
+    expect(group.min).toBe(2);
+    expect(group.fields.map((f) => f.name).sort()).toEqual([
+      "model",
+      "providerName",
+    ]);
+    const provider = group.fields.find((f) => f.name === "providerName");
+    if (provider?.kind !== "select")
+      throw new Error("expected a provider select");
+    expect(provider.required).toBe(true);
+    const input = form.fields.find((f) => f.name === "input");
+    if (input?.kind !== "textarea")
+      throw new Error("expected an input textarea");
+    expect(input.required).toBe(true);
+  });
+
+  it("a well-formed config submission validates at the boundary; a hollow one is rejected (CL-2684)", () => {
+    // The shape the FormBlock emits from the fields the builder declares:
+    // group `variants` → array of per-row records, top-level `input` → string.
+    const wellFormed = {
+      variants: [
+        { providerName: "openai-compatible", model: "kimi-k2.6" },
+        { providerName: "anthropic", model: "claude-opus-4-8" },
+      ],
+      input: "Write a tagline for a GTM workbench.",
+    };
+    expect(AbConfigPayloadSchema(wellFormed) instanceof type.errors).toBe(
+      false,
+    );
+
+    // A variant missing its provider (an unfilled select) — the FormBlock's
+    // required gating holds this client-side, and the boundary rejects it too.
+    const hollow = {
+      variants: [{ providerName: "", model: "" }],
+      input: "",
+    };
+    expect(AbConfigPayloadSchema(hollow) instanceof type.errors).toBe(true);
   });
 
   it("at the decision gate with no resolvable outputs, links to the run page instead of an actionable choice", () => {

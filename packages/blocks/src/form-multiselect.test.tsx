@@ -1,6 +1,12 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { type } from "arktype";
 import React from "react";
 
@@ -66,10 +72,11 @@ describe("form block", () => {
 
   it("renders each typed field's label", () => {
     render(<UIBlockView block={block} />);
-    expect(screen.getByText("Campaign")).not.toBeNull();
-    expect(screen.getByText("Audience")).not.toBeNull();
-    expect(screen.getByText("Budget")).not.toBeNull();
-    expect(screen.getByText("Variants")).not.toBeNull();
+    // getByText throws if the label is absent, so the call IS the assertion.
+    screen.getByText("Campaign");
+    screen.getByText("Audience");
+    screen.getByText("Budget");
+    screen.getByText("Variants");
   });
 
   it("holds submit until required fields are filled, then emits a structured payload", () => {
@@ -155,6 +162,34 @@ describe("form block", () => {
     };
     const out = IntakeConfigSchema(bad);
     expect(out instanceof type.errors).toBe(true);
+  });
+
+  it('drops empty optional fields from the payload instead of emitting "" (CL-2684)', () => {
+    let received: UIResponse | undefined;
+    const dropBlock: UIBlock = {
+      kind: "form",
+      signalName: "intake",
+      fields: [
+        { kind: "text", name: "deckTitle", label: "Title", required: true },
+        { kind: "text", name: "audience", label: "Audience" },
+        { kind: "textarea", name: "source", label: "Source" },
+      ],
+    };
+    render(
+      <UIBlockView
+        block={dropBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /Title/ }), {
+      target: { value: "My deck" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    // Only the touched required field is present — the untouched optionals are
+    // absent, not blank strings that would fire wasted downstream field-reads.
+    expect(received?.payload).toEqual({ deckTitle: "My deck" });
   });
 
   it("supports a repeatable group — adding a row yields a two-row array payload", () => {
@@ -321,6 +356,125 @@ describe("multiSelect block", () => {
     expect(out instanceof type.errors).toBe(false);
     // An empty selection would be rejected by the same boundary schema.
     expect(SelectionSchema([]) instanceof type.errors).toBe(true);
+  });
+});
+
+describe("number field NaN guard (CL-2684)", () => {
+  const numberBlock: UIBlock = {
+    kind: "form",
+    signalName: "n",
+    fields: [
+      { kind: "text", name: "title", label: "Title", required: true },
+      { kind: "number", name: "budget", label: "Budget" },
+    ],
+  };
+
+  it("omits a non-numeric optional number from the payload instead of emitting NaN", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={numberBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /Title/ }), {
+      target: { value: "Deck" },
+    });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Budget" }), {
+      target: { value: "not a number" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    // The garbage number never reaches the payload — no NaN key at all.
+    expect(received?.payload).toEqual({ title: "Deck" });
+  });
+
+  it("holds submit when a REQUIRED number field is non-numeric", () => {
+    const requiredNumber: UIBlock = {
+      kind: "form",
+      signalName: "n",
+      fields: [
+        { kind: "number", name: "budget", label: "Budget", required: true },
+      ],
+    };
+    render(<UIBlockView block={requiredNumber} />);
+    const submit = screen.getByRole("button", { name: "Submit" });
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Budget/ }), {
+      target: { value: "abc" },
+    });
+    // NaN must not satisfy a required number — submit stays disabled.
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByRole("spinbutton", { name: /Budget/ }), {
+      target: { value: "42" },
+    });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+  });
+});
+
+describe("optimistic-submit failure keeps input (CL-2684)", () => {
+  const block: UIBlock = {
+    kind: "form",
+    signalName: "intake",
+    fields: [{ kind: "text", name: "title", label: "Title", required: true }],
+  };
+
+  it("shows a live 'Submitting…' state while the host resume is in flight", async () => {
+    let resolve: (() => void) | undefined;
+    const onRespond = () =>
+      new Promise<void>((res) => {
+        resolve = res;
+      });
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    fireEvent.change(screen.getByRole("textbox", { name: /Title/ }), {
+      target: { value: "Deck" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    // While awaiting, the button shows the pending label (not frozen on "Submit").
+    await screen.findByText("Submitting…");
+    resolve?.();
+    // On success the form collapses to its submitted note.
+    await screen.findByText("Submitted.");
+  });
+
+  it("keeps the form populated and surfaces an inline error when the resume fails", async () => {
+    const onRespond = () =>
+      Promise.reject(new Error("This run is no longer waiting for input."));
+    render(<UIBlockView block={block} onRespond={onRespond} />);
+    const input = screen.getByRole("textbox", {
+      name: /Title/,
+    }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Deck" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    // The failure is surfaced inline and the typed value is NOT lost.
+    await screen.findByText("This run is no longer waiting for input.");
+    expect(
+      (screen.getByRole("textbox", { name: /Title/ }) as HTMLInputElement)
+        .value,
+    ).toBe("Deck");
+    // The form did not collapse — it can be resubmitted.
+    expect(screen.queryByText("Submitted.")).toBeNull();
+  });
+
+  it("keeps a choice block's buttons live after a failed resume", async () => {
+    const onRespond = () => Promise.reject(new Error("stale gate"));
+    const choice: UIBlock = {
+      kind: "choice",
+      prompt: "Approve?",
+      signalName: "approve",
+      options: [{ id: "yes", label: "Approve", value: "yes" }],
+    };
+    render(<UIBlockView block={choice} onRespond={onRespond} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await screen.findByText("stale gate");
+    // Not locked into "You chose:" — the button is still there to retry.
+    expect(screen.queryByText(/You chose/)).toBeNull();
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Approve" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false),
+    );
   });
 });
 

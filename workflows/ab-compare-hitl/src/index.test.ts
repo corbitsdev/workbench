@@ -73,6 +73,45 @@ describe("ab-compare-hitl native workflow", () => {
     expect(signalNames).toContain("ab-decision");
   });
 
+  test("threads the shared prompt into every execute variant even when the config omits per-variant input (CL-2684)", async () => {
+    // The block-driven dock form submits ONE shared `input` and per-variant
+    // records WITHOUT their own `input` (the schema made it optional). Run the
+    // real workflow through runLocal and capture the input each `execute` step
+    // actually receives — a prompt-less variant would run the model on garbage.
+    const { invoker, ran } = makeRecordingInvoker({
+      "hitl-ab-execute": { reply: "an answer" },
+      "hitl-ab-compose": { content: '{"ranking":[],"variants":[]}' },
+      "hitl-ab-persist": { artifactId: "art_1" },
+    });
+    const run = runLocal(workflow, { invokeStep: invoker });
+
+    await run.signal("ab-config", {
+      // Dock-form shape: no per-variant `input`.
+      variants: [
+        { label: "Variant 1", providerName: "openai-compatible", model: "a" },
+        { label: "Variant 2", providerName: "anthropic", model: "b" },
+      ],
+      input: "Write a tagline for a GTM workbench.",
+    });
+    await run.signal("ab-decision", {
+      ranking: [{ rank: 1, label: "Variant 1" }],
+    });
+    await run.complete;
+
+    const executeInputs = ran
+      .filter((r) => r.id === "hitl-ab-execute")
+      .map((r) => r.input as Record<string, unknown>);
+    expect(executeInputs).toHaveLength(2);
+    for (const input of executeInputs) {
+      // Each mapped variant carries the shared prompt the execute agent runs on,
+      // plus its own provider/model identity.
+      expect(input.input).toBe("Write a tagline for a GTM workbench.");
+      expect(typeof input.model).toBe("string");
+    }
+    // The two variants stay distinct (identity threaded per-item, not collapsed).
+    expect(executeInputs[0]?.model).not.toBe(executeInputs[1]?.model);
+  });
+
   test("has no agent compare step — the decision is a human signal", () => {
     expect(workflow.steps.compare).toBeUndefined();
 

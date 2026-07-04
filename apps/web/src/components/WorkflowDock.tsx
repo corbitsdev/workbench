@@ -13,6 +13,7 @@ import {
   type UIResponse,
 } from "@workbench/chat";
 import { buildDockBlocks } from "../lib/dock-block-builders";
+import { resolveResumePayload } from "../lib/resume-payload";
 import { stepOutputsFromLog } from "../lib/run-state-adapter";
 import { cn, failedRunError } from "@workbench/ui";
 import {
@@ -185,38 +186,28 @@ function WorkflowDockCard({
   const resumeGate = useResumeConversationGate(tenantId);
   // Finished runs collapse to their one-line summary by default.
   const [open, setOpen] = useState(() => !isRecordTerminal(run.status));
-  // Sanitized reason for a failed resume (CL-2681) — surfaced on the card rather
-  // than silently swallowed, so a stale-gate 409 tells the user what happened.
-  const [resumeError, setResumeError] = useState<string | null>(null);
 
   // A gate choice block carries its `awaitSignal` name (CL-2681); selecting it
   // resumes THIS run with that signal + the option value as payload. The
   // in-flight mutation is the double-fire guard — the ChoiceBlock disables after
   // a click and a second click while pending is ignored. A non-gate choice (no
   // signalName) is ignored here.
-  const onRespond = (response: UIResponse) => {
+  const onRespond = (response: UIResponse): void | Promise<void> => {
     if (response.signalName === undefined) return;
     if (resumeGate.isPending) return;
-    setResumeError(null);
-    resumeGate
+    // Return the mutation promise so the interactive block awaits it and shows
+    // its own inline pending/error, keeping the user's input on failure
+    // (CL-2684). A rejection propagates to the block — it is not swallowed here.
+    return resumeGate
       .mutateAsync({
         runId: run.runId,
         signalName: response.signalName,
-        // A choice that carries a structured payload (CL-2683, e.g. a ranked
-        // decision) resumes with it verbatim; a plain choice or free text posts
-        // the string value wrapped as an instruction.
-        payload:
-          response.payload !== undefined
-            ? response.payload
-            : { instruction: response.value },
+        // The shared block-resume contract (CL-2684): a structured payload
+        // (form field map, typed choice, multiSelect array) resumes verbatim; a
+        // plain choice or free text wraps the value as an instruction.
+        payload: resolveResumePayload(response),
       })
-      .catch((err: unknown) =>
-        setResumeError(
-          err instanceof Error && err.message.trim().length > 0
-            ? err.message
-            : "Couldn't send your response to the workflow. Please try again.",
-        ),
-      );
+      .then(() => undefined);
   };
 
   const record: RunRecord = {
@@ -345,11 +336,6 @@ function WorkflowDockCard({
           {blocks.map((block, index) => (
             <UIBlockView key={index} block={block} onRespond={onRespond} />
           ))}
-          {resumeError !== null && (
-            <p className="text-xs text-red" role="alert">
-              {resumeError}
-            </p>
-          )}
         </div>
       )}
     </div>

@@ -253,14 +253,25 @@ export type TaskSelectionPayload = typeof TaskSelectionPayloadSchema.infer;
 export const ClarificationPayloadSchema = type({ "answers?": "string" });
 export type ClarificationPayload = typeof ClarificationPayloadSchema.infer;
 
-// The sync-approval gate confirms (or skips) the Attio write-back. `confirm` is
-// required; the record/task locators and note are present only on a confirm.
+// The sync-approval gate confirms (or skips) the DESTRUCTIVE Attio write-back.
+// This is a two-branch contract so a confirm can never fire a hollow write
+// (CL-2684): a SKIP is `{ confirm: false }` and nothing else is needed; a
+// CONFIRM (`confirm: true`) REQUIRES the full write locators — the record the
+// note attaches to (`parentObject` + `parentRecordId`), the `taskId` to
+// complete, and a non-empty `note` — so a confirm with any locator or the note
+// missing is rejected at the /resume boundary rather than reaching
+// attio_create_note / attio_update_task and writing nothing (or the wrong
+// thing). The run-page panel assembles the locators from prior step state and
+// gates the note; the dock's block path carries the same locators in the
+// confirm option's payload and gates the note with a required prompt-box.
 export const SyncApprovalPayloadSchema = type({
-  confirm: "boolean",
-  "taskId?": "string",
-  "parentObject?": "string",
-  "parentRecordId?": "string",
-  "note?": "string",
+  confirm: "false",
+}).or({
+  confirm: "true",
+  taskId: "string > 0",
+  parentObject: "string > 0",
+  parentRecordId: "string > 0",
+  note: "string >= 1",
 });
 export type SyncApprovalPayload = typeof SyncApprovalPayloadSchema.infer;
 

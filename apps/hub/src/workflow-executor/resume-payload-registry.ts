@@ -4,6 +4,7 @@ import {
   AbDecisionPayloadSchema,
   ClarificationPayloadSchema,
   MemberSelectionPayloadSchema,
+  GammaIntakePayloadSchema,
   GammaPreviewPayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
@@ -11,10 +12,14 @@ import {
 
 // The gamma-presentation-creator workflow parks a `preview-<round>` gate per
 // round (MAX_ROUNDS = 3 in the workflow def); every one carries the same
-// approve/refine decision shape, so validate each with the same schema.
-const GAMMA_PREVIEW_SIGNALS: Record<string, Type> = Object.fromEntries(
-  [1, 2, 3].map((round) => [`preview-${round}`, GammaPreviewPayloadSchema]),
-);
+// approve/refine decision shape, so validate each with the same schema. The
+// one-shot `intake` gate up front carries the deck brief (CL-2684).
+const GAMMA_SIGNALS: Record<string, Type> = {
+  intake: GammaIntakePayloadSchema,
+  ...Object.fromEntries(
+    [1, 2, 3].map((round) => [`preview-${round}`, GammaPreviewPayloadSchema]),
+  ),
+};
 
 // Per-workflow-kind → per-signal-name resume-payload validators. The /resume
 // route is generic across every workflow; the raw resume payload is otherwise
@@ -45,14 +50,15 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "ab-decision": AbDecisionPayloadSchema,
     "ab-config": AbConfigPayloadSchema,
   },
-  // gamma-presentation-creator (CL-2730): each preview gate's approve/refine
-  // decision REQUIRES a boolean `approved` — the `check-N` gate branches on it,
-  // so a payload with no decision is rejected here rather than mis-routing the
-  // round. A refine (`approved: false`) additionally REQUIRES a non-empty
-  // `feedback` — the next round's generate step revises from it, so a
-  // guidance-less refine is rejected rather than blind re-rolling; an approve
-  // needs no note.
-  "gamma-presentation-creator": GAMMA_PREVIEW_SIGNALS,
+  // gamma-presentation-creator: the `intake` gate REQUIRES a deck title + a
+  // Gamma template (CL-2684) — the render step reads both. Each preview gate's
+  // approve/refine decision REQUIRES a boolean `approved` (CL-2730) — the
+  // `check-N` gate branches on it, so a payload with no decision is rejected
+  // here rather than mis-routing the round. A refine (`approved: false`)
+  // additionally REQUIRES a non-empty `feedback` — the next round's generate
+  // step revises from it, so a guidance-less refine is rejected rather than
+  // blind re-rolling; an approve needs no note.
+  "gamma-presentation-creator": GAMMA_SIGNALS,
 };
 
 export type ResumePayloadValidation =

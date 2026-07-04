@@ -15,8 +15,13 @@ import type {
  */
 export interface UIBlockViewProps {
   block: UIBlock;
-  /** Invoked when an interactive block produces a response to send to the agent. */
-  onRespond?: ((response: UIResponse) => void) | undefined;
+  /**
+   * Invoked when an interactive block produces a response to send to the agent.
+   * May return a promise (the host's resume mutation) — interactive blocks await
+   * it and only mark themselves submitted on success, so a failed resume keeps
+   * the user's input intact for a retry (CL-2684).
+   */
+  onRespond?: ((response: UIResponse) => void | Promise<void>) | undefined;
   /** Invoked for document actions (copy / download / save-artifact). */
   onAction?:
     | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
@@ -102,6 +107,52 @@ function Surface({
       {children}
     </div>
   );
+}
+
+// A live, animated spinner shown while a submit awaits the host resume (CL-2684).
+// The animation is the point: a frozen "Submitting…" reads as a stalled UI, so
+// the indicator must visibly move for the whole in-flight window.
+function Spinner() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 animate-spin"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+      />
+    </svg>
+  );
+}
+
+// The legible, retryable failure line shown inline on a block whose submit was
+// rejected by the host (CL-2684): the form/selection stays populated so the user
+// can fix and resubmit without re-typing.
+function SubmitError({ message }: { message: string }) {
+  return (
+    <p className="text-xs text-red" role="alert">
+      {message}
+    </p>
+  );
+}
+
+// The host resume rejects with an Error; surface its message when it carries one,
+// otherwise a plain-language fallback (never a raw code).
+function submitErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message.trim().length > 0) return err.message;
+  return "Couldn't send your response. Please try again.";
 }
 
 function MarkdownBlock({
@@ -440,6 +491,13 @@ function leafFilled(field: LeafField, value: LeafValue): boolean {
   if (field.kind === "multiSelect") {
     return Array.isArray(value) && value.length >= Math.max(field.min ?? 1, 1);
   }
+  if (field.kind === "number") {
+    // A required number must parse to a real number: a non-empty but
+    // non-numeric entry (e.g. "abc") is NaN and must NOT satisfy the field, or
+    // submit would enable on a value leafToPayload then drops (CL-2684).
+    if (typeof value !== "string" || value.trim().length === 0) return false;
+    return !Number.isNaN(Number(value));
+  }
   return typeof value === "string" && value.trim().length > 0;
 }
 
@@ -452,13 +510,27 @@ function fieldSatisfied(field: FormField, value: FieldValue): boolean {
   );
 }
 
+// Empty optional fields are DROPPED from the payload rather than emitted as ""
+// (CL-2684): a downstream step that field-reads an optional (e.g. gamma intake's
+// artifactId/noteId) must see a missing key, not a blank that fires a wasted
+// lookup or injects an empty labeled value into a prompt. Required fields are
+// held non-empty by the submit gate, so they are never dropped here.
 function leafToPayload(field: LeafField, value: LeafValue): unknown {
-  if (field.kind === "multiSelect") return value;
+  if (field.kind === "multiSelect") {
+    const selected = value as string[];
+    return selected.length === 0 ? undefined : selected;
+  }
   if (field.kind === "number") {
     const text = value as string;
-    return text.trim().length === 0 ? undefined : Number(text);
+    if (text.trim().length === 0) return undefined;
+    // A non-numeric entry parses to NaN — omit it rather than emit NaN, which
+    // serializes to null and corrupts the downstream payload (CL-2684). A
+    // required number field is held non-empty AND non-NaN by leafFilled.
+    const parsed = Number(text);
+    return Number.isNaN(parsed) ? undefined : parsed;
   }
-  return value;
+  const text = value as string;
+  return text.trim().length === 0 ? undefined : text;
 }
 
 function fieldToPayload(field: FormField, value: FieldValue): unknown {
@@ -587,7 +659,7 @@ function FormBlock({
   onRespond,
 }: {
   block: Extract<UIBlock, { kind: "form" }>;
-  onRespond?: (response: UIResponse) => void;
+  onRespond?: (response: UIResponse) => void | Promise<void>;
 }) {
   const [values, setValues] = useState<Record<string, FieldValue>>(() => {
     const initial: Record<string, FieldValue> = {};
@@ -595,6 +667,8 @@ function FormBlock({
     return initial;
   });
   const [submitted, setSubmitted] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (submitted) {
     return <p className="text-xs italic text-text-3">Submitted.</p>;
@@ -623,7 +697,8 @@ function FormBlock({
     });
   }
 
-  function submit() {
+  async function submit() {
+    if (pending) return;
     const payload: Record<string, unknown> = {};
     for (const field of block.fields) {
       const converted = fieldToPayload(
@@ -632,15 +707,25 @@ function FormBlock({
       );
       if (converted !== undefined) payload[field.name] = converted;
     }
-    setSubmitted(true);
-    onRespond?.({
-      blockKind: "form",
-      value: "",
-      ...(block.signalName !== undefined
-        ? { signalName: block.signalName }
-        : {}),
-      payload,
-    });
+    setError(null);
+    setPending(true);
+    try {
+      await onRespond?.({
+        blockKind: "form",
+        value: "",
+        ...(block.signalName !== undefined
+          ? { signalName: block.signalName }
+          : {}),
+        payload,
+      });
+      // Only collapse the form once the host confirms the response landed — on
+      // failure the populated fields survive for a retry (CL-2684).
+      setSubmitted(true);
+    } catch (err: unknown) {
+      setError(submitErrorMessage(err));
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
@@ -726,13 +811,17 @@ function FormBlock({
           </fieldset>
         );
       })}
+      {error !== null && <SubmitError message={error} />}
       <button
         type="button"
-        disabled={!complete}
-        onClick={submit}
-        className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+        disabled={!complete || pending}
+        onClick={() => {
+          void submit();
+        }}
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
       >
-        {block.submitLabel ?? "Submit"}
+        {pending && <Spinner />}
+        {pending ? "Submitting…" : (block.submitLabel ?? "Submit")}
       </button>
     </Surface>
   );
@@ -743,10 +832,33 @@ function MultiSelectBlock({
   onRespond,
 }: {
   block: Extract<UIBlock, { kind: "multiSelect" }>;
-  onRespond?: (response: UIResponse) => void;
+  onRespond?: (response: UIResponse) => void | Promise<void>;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (pending) return;
+    setError(null);
+    setPending(true);
+    try {
+      await onRespond?.({
+        blockKind: "multiSelect",
+        value: selected.join(", "),
+        ...(block.signalName !== undefined
+          ? { signalName: block.signalName }
+          : {}),
+        payload: selected,
+      });
+      setSubmitted(true);
+    } catch (err: unknown) {
+      setError(submitErrorMessage(err));
+    } finally {
+      setPending(false);
+    }
+  }
 
   if (submitted) {
     return (
@@ -801,23 +913,17 @@ function MultiSelectBlock({
           );
         })}
       </div>
+      {error !== null && <SubmitError message={error} />}
       <button
         type="button"
-        disabled={!inRange}
+        disabled={!inRange || pending}
         onClick={() => {
-          setSubmitted(true);
-          onRespond?.({
-            blockKind: "multiSelect",
-            value: selected.join(", "),
-            ...(block.signalName !== undefined
-              ? { signalName: block.signalName }
-              : {}),
-            payload: selected,
-          });
+          void submit();
         }}
-        className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
       >
-        {block.submitLabel ?? "Submit"}
+        {pending && <Spinner />}
+        {pending ? "Submitting…" : (block.submitLabel ?? "Submit")}
       </button>
     </div>
   );
@@ -828,10 +934,12 @@ function ChoiceBlock({
   onRespond,
 }: {
   block: Extract<UIBlock, { kind: "choice" }>;
-  onRespond?: (response: UIResponse) => void;
+  onRespond?: (response: UIResponse) => void | Promise<void>;
 }) {
   const [answered, setAnswered] = useState<string | null>(null);
   const [promptText, setPromptText] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   if (answered !== null) {
     return <p className="text-xs italic text-text-3">You chose: {answered}</p>;
   }
@@ -853,6 +961,29 @@ function ChoiceBlock({
   // default — e.g. ab-compare's optional rationale) never gates submission.
   const noteRequiredMissing =
     block.promptBox?.required === true && promptText.trim().length === 0;
+  async function choose(option: (typeof block.options)[number]) {
+    if (pendingId !== null) return;
+    const payload = resolvePayload(option.payload);
+    setError(null);
+    setPendingId(option.id);
+    try {
+      await onRespond?.({
+        blockKind: "choice",
+        value: option.value ?? option.label,
+        ...(block.signalName !== undefined
+          ? { signalName: block.signalName }
+          : {}),
+        ...(payload !== undefined ? { payload } : {}),
+      });
+      // Only lock the choice once the host confirms it landed — a failed resume
+      // keeps the buttons live so the user can retry (CL-2684).
+      setAnswered(option.label);
+    } catch (err: unknown) {
+      setError(submitErrorMessage(err));
+    } finally {
+      setPendingId(null);
+    }
+  }
   return (
     <div className="space-y-2">
       {block.prompt !== undefined && (
@@ -867,27 +998,20 @@ function ChoiceBlock({
           className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
         />
       )}
+      {error !== null && <SubmitError message={error} />}
       <div className="flex flex-wrap gap-2">
         {block.options.map((option) => (
           <button
             key={option.id}
             type="button"
-            disabled={noteRequiredMissing}
+            disabled={noteRequiredMissing || pendingId !== null}
             onClick={() => {
-              setAnswered(option.label);
-              const payload = resolvePayload(option.payload);
-              onRespond?.({
-                blockKind: "choice",
-                value: option.value ?? option.label,
-                ...(block.signalName !== undefined
-                  ? { signalName: block.signalName }
-                  : {}),
-                ...(payload !== undefined ? { payload } : {}),
-              });
+              void choose(option);
             }}
-            className="rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
           >
-            {option.label}
+            {pendingId === option.id && <Spinner />}
+            {pendingId === option.id ? "Submitting…" : option.label}
           </button>
         ))}
       </div>

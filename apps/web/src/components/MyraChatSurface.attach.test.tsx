@@ -104,7 +104,7 @@ describe("MyraChatSurface active-context attach", () => {
 
   it("does NOT route to the gate when active-context pills are attached — composes a normal chat turn instead (CL-2681)", () => {
     const send = mock((_text: string) => {});
-    const resume = mock((_runId: string, _signal: string, _text: string) =>
+    const resume = mock((_runId: string, _signal: string, _payload: unknown) =>
       Promise.resolve(),
     );
     render(

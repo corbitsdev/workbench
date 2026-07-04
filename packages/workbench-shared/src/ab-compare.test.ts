@@ -46,10 +46,13 @@ describe("AbConfigPayloadSchema", () => {
     );
   });
 
-  test("rejects a variant missing its model", () => {
+  test("rejects when a variant is missing its model", () => {
     expect(
       rejects(AbConfigPayloadSchema, {
-        variants: [{ providerName: "openai", input: "x" }],
+        variants: [
+          { providerName: "openai", model: "gpt-4o", input: "x" },
+          { providerName: "anthropic", input: "x" },
+        ],
         input: "x",
       }),
     ).toBe(true);
@@ -64,9 +67,62 @@ describe("AbConfigPayloadSchema", () => {
             model: "gpt-4o",
             input: "Write a tagline.",
           },
+          {
+            providerName: "anthropic",
+            model: "claude-opus-4-8",
+            input: "Write a tagline.",
+          },
         ],
         input: "Write a tagline.",
       }),
     ).toBe(false);
+  });
+
+  test("rejects a degenerate 1-variant comparison and an oversized 7-variant one (CL-2684)", () => {
+    const variant = { providerName: "openai", model: "gpt-4o" };
+    expect(
+      rejects(AbConfigPayloadSchema, { variants: [variant], input: "x" }),
+    ).toBe(true);
+    expect(
+      rejects(AbConfigPayloadSchema, {
+        variants: Array.from({ length: 7 }, () => variant),
+        input: "x",
+      }),
+    ).toBe(true);
+  });
+
+  test("accepts variants with no per-variant input (the dock form shape, CL-2684)", () => {
+    // The shared top-level input is authoritative; the per-variant copy is
+    // optional, so the block-driven form can omit it.
+    expect(
+      rejects(AbConfigPayloadSchema, {
+        variants: [
+          { providerName: "openai-compatible", model: "kimi-k2.6" },
+          { providerName: "anthropic", model: "claude-opus-4-8" },
+        ],
+        input: "Write a tagline.",
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects a variant with an empty provider or model, and an empty shared input (CL-2684)", () => {
+    expect(
+      rejects(AbConfigPayloadSchema, {
+        variants: [
+          { providerName: "", model: "gpt-4o" },
+          { providerName: "anthropic", model: "claude-opus-4-8" },
+        ],
+        input: "x",
+      }),
+    ).toBe(true);
+    expect(
+      rejects(AbConfigPayloadSchema, {
+        variants: [
+          { providerName: "openai", model: "gpt-4o" },
+          { providerName: "anthropic", model: "claude-opus-4-8" },
+        ],
+        input: "",
+      }),
+    ).toBe(true);
   });
 });

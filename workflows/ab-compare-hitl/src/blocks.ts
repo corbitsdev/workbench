@@ -20,10 +20,80 @@ import {
   pendingGateForRun,
   progressStateForStepPhase,
   type DockRunInput,
+  type FormField,
+  type FormFieldOption,
   type ProgressStep,
   type UIBlock,
 } from "@workbench/blocks";
 import { composeComparisonResult } from "@workbench/tools-ab-compare";
+import { AB_COMPARISON_PROVIDER_PLUGINS } from "./models";
+
+// Plain-language labels for the provider plugins the config form offers. The
+// option VALUE is the plugin id the compose step reveals as the variant's
+// provider; the label is what the human reads (CL-2684).
+const PROVIDER_LABELS: Record<string, string> = {
+  anthropic: "Anthropic",
+  "openai-compatible": "OpenAI-compatible (OpenCode Zen)",
+  openai: "OpenAI",
+  "google-genai": "Google Gemini",
+};
+
+function providerFieldOptions(): FormFieldOption[] {
+  return AB_COMPARISON_PROVIDER_PLUGINS.map((plugin) => ({
+    value: plugin,
+    label: PROVIDER_LABELS[plugin] ?? plugin,
+  }));
+}
+
+// The block-driven config form (CL-2684): a repeatable group of provider+model
+// variants plus the shared prompt. Its submitted `Record<name, value>` payload
+// is `{ variants: [{ providerName, model }], input }` verbatim — exactly the
+// `ab-config` gate's shape (AbConfigPayloadSchema), which the /resume boundary
+// validates. Two variants are seeded (min 2) because a comparison needs at
+// least two; `input` is a required textarea so the run cannot start with no
+// prompt. Model is a free-text field: the dock has no tenant credential list to
+// derive a per-provider model menu from, so the human types the model id (the
+// blind reveal shows provider + model after the pick).
+function configForm(signalName: string): UIBlock {
+  const variants: FormField = {
+    kind: "group",
+    name: "variants",
+    label: "Variants to compare",
+    addLabel: "Add a variant",
+    min: 2,
+    max: 6,
+    fields: [
+      {
+        kind: "select",
+        name: "providerName",
+        label: "Provider",
+        required: true,
+        options: providerFieldOptions(),
+      },
+      {
+        kind: "text",
+        name: "model",
+        label: "Model",
+        placeholder: "e.g. claude-opus-4-8",
+        required: true,
+      },
+    ],
+  };
+  const input: FormField = {
+    kind: "textarea",
+    name: "input",
+    label: "Shared prompt",
+    placeholder: "The prompt to run across every variant…",
+    required: true,
+  };
+  return {
+    kind: "form",
+    prompt: "Set up the comparison: pick the variants and the shared prompt.",
+    signalName,
+    submitLabel: "Run comparison",
+    fields: [variants, input],
+  };
+}
 
 /** The human-decision gate's `awaitSignal` name (matches the workflow def). */
 export const DECISION_SIGNAL = "ab-decision";
@@ -158,17 +228,22 @@ export function buildAbCompareHitlBlocks(
           ),
         );
       }
+    } else if (gate.signalName === CONFIG_SIGNAL) {
+      // The config gate is now block-driven (CL-2684): a form collects the
+      // provider/model variants + the shared prompt and POSTs the structured
+      // `{ variants, input }` the `ab-config` gate requires (validated at the
+      // /resume boundary). The run-page panel stays as the strangler fallback.
+      blocks.push(configForm(gate.signalName));
     } else {
-      // Any non-decision gate (the `ab-config` gate today) requires a structured
-      // payload the dock cannot yet collect. Emitting a generic "Continue" choice
-      // would POST an empty payload and corrupt the run — send the user to the
-      // run page's config panel instead (full block-driven config is CL-2715).
-      const description =
-        gate.signalName === CONFIG_SIGNAL
-          ? "Set up the comparison variants and input on the run page."
-          : "This run needs input the dock can't collect yet — continue on the run page.";
+      // Any other non-decision gate requires a structured payload the dock
+      // cannot collect — send the user to the run page rather than POST an empty
+      // payload and corrupt the run.
       blocks.push(
-        runPageLink(input.runId, "Continue on the run page", description),
+        runPageLink(
+          input.runId,
+          "Continue on the run page",
+          "This run needs input the dock can't collect yet — continue on the run page.",
+        ),
       );
     }
   }

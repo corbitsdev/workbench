@@ -26,6 +26,7 @@ import {
 } from "@workbench/shared";
 import type { MyraSession } from "../hooks/use-myra-session";
 import { useActiveContext } from "../lib/active-context-store";
+import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { ActiveContextPills } from "./ActiveContextPills";
 
@@ -141,15 +142,19 @@ type MyraChatSurfaceProps = {
    */
   signalRouting?: SignalRouting;
   /**
-   * Resume a pending gate. Must reject on failure (it returns the resume
-   * mutation's promise, NOT a pre-swallowed one) so this surface can surface the
-   * reason and — for the free-text path — fall back to posting the text as a
-   * normal chat turn rather than silently losing the user's message (CL-2681).
+   * Resume a pending gate with a resolved payload (CL-2684). The caller passes
+   * the verbatim resume payload — a block response's structured payload, or a
+   * free-text `{ instruction }` — so a form/choice block resumes through the
+   * same contract as the WorkflowDock card, not a `value`-only `{ instruction }`
+   * that would drop a form's field map. Must reject on failure (it returns the
+   * resume mutation's promise, NOT a pre-swallowed one) so this surface can
+   * surface the reason and — for the free-text path — fall back to posting the
+   * text as a normal chat turn rather than silently losing the message (CL-2681).
    */
   onResumeSignal?: (
     runId: string,
     signalName: string,
-    text: string,
+    payload: unknown,
   ) => Promise<void>;
   /**
    * The resume mutation's `isPending`. Threaded in as the double-fire guard: a
@@ -313,12 +318,16 @@ export function MyraChatSurface({
       if (resumeInFlight) return;
       const { runId, signalName } = signalRouting.gate;
       onUserSend?.(text);
-      void onResumeSignal(runId, signalName, text).catch((err: unknown) => {
-        // The resume failed (e.g. a stale-gate 409) — never lose the user's
-        // text: post it as a normal chat turn and surface the reason.
-        setResumeError(resumeFailureMessage(err));
-        void session.send(text);
-      });
+      // Free text is the gate's answer wrapped as an instruction (the pre-block
+      // HITL path) — no block payload here.
+      void onResumeSignal(runId, signalName, { instruction: text }).catch(
+        (err: unknown) => {
+          // The resume failed (e.g. a stale-gate 409) — never lose the user's
+          // text: post it as a normal chat turn and surface the reason.
+          setResumeError(resumeFailureMessage(err));
+          void session.send(text);
+        },
+      );
       return;
     }
     onUserSend?.(text);
@@ -332,12 +341,14 @@ export function MyraChatSurface({
     return session.send(composed, attachments);
   };
 
-  // A gate choice block (CL-2682 routes these through this handler) carries its
-  // `awaitSignal` name; route it through the resume path — same contract as the
-  // dock card — instead of posting the option value as a chat turn (FIX 3). The
+  // A gate block (choice/form/multiSelect) carries its `awaitSignal` name; route
+  // it through the resume path with its RESOLVED payload — the same shared
+  // contract as the dock card (CL-2684) — instead of posting the value as a chat
+  // turn. A form emits `value: ""` with its field map in `payload`, so we must
+  // forward the resolved payload verbatim, never the bare value (FIX 3). The
   // target run is the conversation's sole pending gate. On failure surface the
-  // reason (the choice value, unlike free text, is not re-posted as a turn).
-  const handleRespond = (response: UIResponse) => {
+  // reason (a block response, unlike free text, is not re-posted as a turn).
+  const handleRespond = (response: UIResponse): void | Promise<void> => {
     setResumeError(null);
     if (
       response.signalName !== undefined &&
@@ -345,14 +356,17 @@ export function MyraChatSurface({
       signalRouting?.mode === "single"
     ) {
       if (resumeInFlight) return;
-      void onResumeSignal(
+      // Return the resume promise so the interactive block awaits it and shows
+      // its own inline pending/error, keeping the user's typed input on failure
+      // (CL-2684). A block response is not re-posted as a chat turn, so the
+      // rejection propagates to the block instead of the accessory notice.
+      return onResumeSignal(
         signalRouting.gate.runId,
         response.signalName,
-        response.value,
-      ).catch((err: unknown) => setResumeError(resumeFailureMessage(err)));
-      return;
+        resolveResumePayload(response),
+      ).then(() => undefined);
     }
-    return session.send(response.value);
+    session.send(response.value);
   };
 
   // With more than one workflow gate pending, free text cannot pick a run for

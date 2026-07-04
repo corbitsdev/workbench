@@ -110,6 +110,40 @@ describe("validateResumePayload", () => {
     expect(result.ok).toBe(false);
   });
 
+  test("accepts a fully-specified sync-approval confirm (locators + note)", () => {
+    expect(
+      validateResumePayload("attio-task-agent", "sync-approval", {
+        confirm: true,
+        taskId: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        note: "Pilot kicked off.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a sync-approval confirm that is missing the write locators (CL-2684)", () => {
+    // A confirm=true with no locators would fire attio_create_note against
+    // nothing — the destructive write must not proceed on a hollow confirm.
+    expect(
+      validateResumePayload("attio-task-agent", "sync-approval", {
+        confirm: true,
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("rejects a sync-approval confirm with an empty note (CL-2684)", () => {
+    expect(
+      validateResumePayload("attio-task-agent", "sync-approval", {
+        confirm: true,
+        taskId: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        note: "",
+      }).ok,
+    ).toBe(false);
+  });
+
   test("rejects a free-text-only ab-compare-hitl decision (no ranking)", () => {
     // A blind winner-pick cannot be free text — it must carry a ranking.
     const result = validateResumePayload("ab-compare-hitl", "ab-decision", {
@@ -152,10 +186,75 @@ describe("validateResumePayload", () => {
             model: "gpt-4o",
             input: "Write a tagline.",
           },
+          {
+            label: "Variant 2",
+            providerName: "anthropic",
+            model: "claude-opus-4-8",
+            input: "Write a tagline.",
+          },
         ],
         input: "Write a tagline.",
       }),
     ).toEqual({ ok: true });
+  });
+
+  test("rejects a degenerate 1-variant ab-config comparison (CL-2684)", () => {
+    expect(
+      validateResumePayload("ab-compare-hitl", "ab-config", {
+        variants: [{ providerName: "openai", model: "gpt-4o" }],
+        input: "Write a tagline.",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a dock config payload with no per-variant input (CL-2684)", () => {
+    // The block-driven form omits the redundant per-variant input; the shared
+    // top-level input is authoritative, so the per-variant copy is optional.
+    expect(
+      validateResumePayload("ab-compare-hitl", "ab-config", {
+        variants: [
+          { providerName: "openai-compatible", model: "kimi-k2.6" },
+          { providerName: "anthropic", model: "claude-opus-4-8" },
+        ],
+        input: "Write a tagline for a GTM workbench.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects an ab-config variant missing its provider or model (CL-2684)", () => {
+    expect(
+      validateResumePayload("ab-compare-hitl", "ab-config", {
+        variants: [{ providerName: "", model: "" }],
+        input: "Write a tagline.",
+      }).ok,
+    ).toBe(false);
+  });
+
+  test("accepts a gamma intake with a title and template", () => {
+    expect(
+      validateResumePayload("gamma-presentation-creator", "intake", {
+        deckTitle: "Security review deck",
+        gammaId: "tmpl_1",
+        text: "The brief.",
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("rejects a gamma intake with no title or no template (CL-2684)", () => {
+    // The render step reads deckTitle + gammaId; a hollow intake would render a
+    // titleless deck off no template, so the boundary rejects it.
+    expect(
+      validateResumePayload("gamma-presentation-creator", "intake", {
+        deckTitle: "",
+        gammaId: "tmpl_1",
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateResumePayload("gamma-presentation-creator", "intake", {
+        deckTitle: "A deck",
+        gammaId: "",
+      }).ok,
+    ).toBe(false);
   });
 
   test("accepts a gamma preview approval on any round's gate", () => {
