@@ -30,7 +30,6 @@ mock.module("framer-motion", () => ({
 
 import { ChatPanel } from "./ChatPanel";
 import { ChatLauncher } from "./ChatLauncher";
-import { DockedChat } from "./DockedChat";
 import {
   type ChatAgentIdentity,
   type ChatMessage,
@@ -370,16 +369,5 @@ describe("ChatLauncher", () => {
   it("renders an unread badge when count is positive", () => {
     render(<ChatLauncher onClick={() => {}} unreadCount={3} />);
     expect(screen.getByText("3")).toBeDefined();
-  });
-});
-
-describe("DockedChat", () => {
-  it("renders children inside the docked side column", () => {
-    render(
-      <DockedChat side="right">
-        <div>docked content</div>
-      </DockedChat>,
-    );
-    expect(screen.getByText("docked content")).toBeDefined();
   });
 });

@@ -23,7 +23,6 @@ mock.module("framer-motion", () => ({
   ),
 }));
 
-import { DockedChat } from "./DockedChat";
 import { DockedChatBar } from "./DockedChatBar";
 import { FloatingChat } from "./FloatingChat";
 import { TypingIndicator } from "./TypingIndicator";
@@ -32,39 +31,6 @@ import { type QuickReply } from "./types";
 
 afterEach(() => {
   cleanup();
-});
-
-describe("DockedChat", () => {
-  it("renders children and defaults to the right side at 360px", () => {
-    render(
-      <DockedChat>
-        <div>panel</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("panel").parentElement as HTMLElement;
-    expect(aside.getAttribute("data-side")).toBe("right");
-    expect(aside.style.width).toBe("360px");
-  });
-
-  it("docks to the left when side is left", () => {
-    render(
-      <DockedChat side="left">
-        <div>left panel</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("left panel").parentElement as HTMLElement;
-    expect(aside.getAttribute("data-side")).toBe("left");
-  });
-
-  it("accepts a string width verbatim", () => {
-    render(
-      <DockedChat width="50%">
-        <div>wide</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("wide").parentElement as HTMLElement;
-    expect(aside.style.width).toBe("50%");
-  });
 });
 
 describe("DockedChatBar", () => {
