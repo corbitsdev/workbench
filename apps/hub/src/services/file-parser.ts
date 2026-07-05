@@ -8,6 +8,9 @@ import {
 } from "@intx/agent";
 import { createInboundMessage } from "@intx/mime";
 import type { MessageAttachment } from "@intx/types/runtime";
+import { parseInferenceEvent } from "@intx/types/runtime";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
+import { type } from "arktype";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import { FILE_PARSER_NAME, FILE_PARSER_SYSTEM_PROMPT } from "@workbench/agents";
 import { randomUUID } from "node:crypto";
@@ -97,9 +100,23 @@ export interface ParseDocumentInput {
  * document content block (`turns.ts` → `anthropic.ts`), so a doc-incapable
  * caller (Myra on kimi) gets faithful text back regardless of its own model.
  */
+/**
+ * Attribution + sink for the file-parse turn's inference usage (CL-2801). The
+ * parse runs an in-process one-shot agent that never emits a sidecar
+ * `agent.event`, so its tokens are invisible to Insights unless we forward the
+ * local stream into the analytics subscriber. Usage is attributed to the
+ * caller (the agent that invoked `parse_file`), whose synthetic principal is
+ * `attributionPrincipalId`.
+ */
+export interface ParseDocumentAnalytics {
+  analytics: AnalyticsSubscriber;
+  attributionPrincipalId: string;
+}
+
 export async function parseDocument(
   db: HubDb,
   input: ParseDocumentInput,
+  analytics?: ParseDocumentAnalytics,
 ): Promise<string> {
   const def = await resolveFileParserDefinition(db, input.tenantId);
   if (!def) {
@@ -188,10 +205,21 @@ export async function parseDocument(
   // the extracted text comes from the send() reply, not the stream. The parse
   // turn is NOT recorded to any session — attributing it to the caller's live
   // session persisted the document dump as a phantom assistant turn (CL-2628
-  // review). If parse-turn cost accounting is wanted, it needs its own sink.
+  // review). Token usage IS forwarded (CL-2801): each inference event is fed to
+  // the analytics subscriber, keyed by this one-shot's own agent id so its seq
+  // space can't collide with the caller's sidecar events, and attributed to the
+  // caller's instance so its cost rolls up to the right person.
   async function drainStream(): Promise<void> {
-    for await (const _event of agentInst.stream()) {
-      // discard — the reply text comes from send(), not the stream
+    for await (const event of agentInst.stream()) {
+      if (analytics === undefined) continue;
+      const validated = parseInferenceEvent(event);
+      if (validated instanceof type.errors) continue;
+      await analytics.analytics.onLocalInferenceEvent({
+        tenantId: input.tenantId,
+        attributionPrincipalId: analytics.attributionPrincipalId,
+        eventAddress: def_.id,
+        event: validated,
+      });
     }
   }
   const pumpDone = drainStream();

@@ -1292,6 +1292,7 @@ app.route(
     sessionService,
     eventCollectors,
     sidecarRouter,
+    analytics: analyticsSubscriber,
     repoStore: repoStore.repoStore,
     buildToolDefinitions,
     // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound

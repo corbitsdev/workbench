@@ -6,6 +6,7 @@ import type { InboundMessage } from "@intx/types/runtime";
 // bytes ride as a native MessageAttachment (the crux of CL-2628 — this is what
 // the Anthropic adapter marshals into a document content block).
 let sentMessage: InboundMessage | null = null;
+let streamEvents: unknown[] = [];
 let findManyResult: Record<string, unknown>[] = [];
 let resolution: unknown = {
   ok: true,
@@ -23,7 +24,9 @@ let resolution: unknown = {
 mock.module("@intx/agent", () => ({
   createAgent: () =>
     Promise.resolve({
-      stream: async function* () {},
+      stream: async function* () {
+        for (const event of streamEvents) yield event;
+      },
       send: (message: InboundMessage) => {
         sentMessage = message;
         return Promise.resolve({ reply: "EXTRACTED TEXT", turn: {} });
@@ -85,6 +88,7 @@ const BASE_INPUT = {
 describe("parseDocument (CL-2628)", () => {
   beforeEach(() => {
     sentMessage = null;
+    streamEvents = [];
     findManyResult = [{ id: "agt_fp", tenantId: "tnt_1", name: "File Parser" }];
     resolution = {
       ok: true,
@@ -126,5 +130,82 @@ describe("parseDocument (CL-2628)", () => {
     await expect(parseDocument(makeDb() as never, BASE_INPUT)).rejects.toThrow(
       FileParseError,
     );
+  });
+});
+
+const inferenceDone = {
+  type: "inference.done",
+  seq: 4,
+  data: {
+    turn: {
+      role: "assistant",
+      content: [],
+      model: "claude-sonnet-5",
+      timestamp: 0,
+    },
+    usage: { input: 120, output: 30, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+    source: {
+      sourceId: "off_1",
+      provider: "anthropic",
+      model: "claude-sonnet-5",
+    },
+  },
+};
+const textDelta = {
+  type: "inference.text.delta",
+  seq: 3,
+  data: { token: "x", partial: { text: "x" } },
+};
+
+describe("parseDocument analytics forwarding (CL-2801)", () => {
+  beforeEach(() => {
+    sentMessage = null;
+    findManyResult = [{ id: "agt_fp", tenantId: "tnt_1", name: "File Parser" }];
+    resolution = {
+      ok: true,
+      sources: [
+        { id: "off_1", provider: "anthropic", model: "claude-sonnet-5" },
+      ],
+    };
+    streamEvents = [textDelta, inferenceDone];
+  });
+
+  it("forwards each inference event to the analytics subscriber, attributed to the caller", async () => {
+    const calls: unknown[] = [];
+    const analytics = {
+      onAgentEvent: () => Promise.resolve(),
+      onLocalInferenceEvent: (args: unknown) => {
+        calls.push(args);
+        return Promise.resolve();
+      },
+    };
+
+    await parseDocument(makeDb() as never, BASE_INPUT, {
+      analytics,
+      attributionPrincipalId: "prn_caller",
+    });
+
+    // Only the inference.done event maps to a fact; the text.delta is dropped by
+    // factsFromInferenceEvent, but every parsed inference event is forwarded.
+    expect(calls).toHaveLength(2);
+    const done = calls.find(
+      (c) => (c as { event: { type: string } }).event.type === "inference.done",
+    ) as {
+      tenantId: string;
+      attributionPrincipalId: string;
+      eventAddress: string;
+      event: { data: { usage: { input: number } } };
+    };
+    expect(done.tenantId).toBe("tnt_1");
+    expect(done.attributionPrincipalId).toBe("prn_caller");
+    expect(done.eventAddress).toMatch(/^file-parser-/);
+    expect(done.event.data.usage.input).toBe(120);
+  });
+
+  it("does not forward anything when no analytics dep is provided (no double sink)", async () => {
+    // Proves the sidecar path is not the source here: with no injected sink the
+    // in-process turn emits zero analytics, so it cannot be double-counted.
+    const text = await parseDocument(makeDb() as never, BASE_INPUT);
+    expect(text).toBe("EXTRACTED TEXT");
   });
 });

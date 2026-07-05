@@ -17,6 +17,7 @@ import type {
   RepoStore,
 } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
 import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
@@ -56,6 +57,7 @@ export function createHubToolsRouter(
     sessionService: SessionService;
     eventCollectors: EventCollectorRegistry;
     sidecarRouter: SidecarRouter;
+    analytics: AnalyticsSubscriber;
     repoStore: RepoStore;
     buildToolDefinitions: typeof buildToolDefinitions;
     // Workflow-exec wiring for the workflow-run tools (CL-2678).

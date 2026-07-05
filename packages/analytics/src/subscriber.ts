@@ -20,6 +20,28 @@ export type AnalyticsSubscriber = {
     agentAddress: string;
     event: InferenceEvent;
   }): Promise<void>;
+  /**
+   * Persist usage from a hub-side, in-process inference turn (e.g. the File
+   * Parser one-shot, CL-2801) that never round-trips through the sidecar
+   * `agent.event` stream and so has no agent address to resolve.
+   *
+   * The turn is attributed to the CALLER's active instance — the agent that
+   * invoked the one-shot (identified by `tenantId` + `attributionPrincipalId`,
+   * the instance's synthetic principal) — so its tokens roll up to the same
+   * person as the caller's own usage via the existing member_agent_instance
+   * join (getUsageByPerson). No new sink, no orphaned rows.
+   *
+   * `eventAddress` namespaces the idempotency key: it is the ephemeral
+   * one-shot agent's own address, distinct from the caller's, so a one-shot's
+   * `seq` space can never collide with the caller's own sidecar events under
+   * the shared session-scoped event key (no double-counting).
+   */
+  onLocalInferenceEvent(args: {
+    tenantId: string;
+    attributionPrincipalId: string;
+    eventAddress: string;
+    event: InferenceEvent;
+  }): Promise<void>;
 };
 
 export type AnalyticsSubscriberConfig = {
@@ -34,6 +56,8 @@ export function createAnalyticsSubscriber(
   // sidecar stops emitting events for an address once the instance ends, so a
   // cached active instance never becomes stale under normal operation.
   const instanceCache = new Map<string, ActiveInstance>();
+  // Separate cache for principal → instance (hub-local attribution).
+  const principalInstanceCache = new Map<string, ActiveInstance>();
 
   return {
     async onAgentEvent({ agentAddress, event }) {
@@ -65,7 +89,73 @@ export function createAnalyticsSubscriber(
         );
       }
     },
+
+    async onLocalInferenceEvent({
+      tenantId,
+      attributionPrincipalId,
+      eventAddress,
+      event,
+    }) {
+      const facts = factsFromInferenceEvent({
+        agentAddress: eventAddress,
+        event,
+      });
+      if (facts.length === 0) return;
+
+      try {
+        const instance = await resolveInstanceByPrincipal(
+          db,
+          principalInstanceCache,
+          tenantId,
+          attributionPrincipalId,
+        );
+        if (instance === null) {
+          // Honest attribution: never write an orphaned/unattributed row. Fail
+          // loudly in the logs (error → Sentry) instead of inventing an owner.
+          log.error(
+            "Dropping hub-local inference analytics: no active instance for principal {principalId} in tenant {tenantId}",
+            { principalId: attributionPrincipalId, tenantId },
+          );
+          return;
+        }
+
+        for (const fact of facts) {
+          await persistFact(db, instance, fact);
+        }
+      } catch (error) {
+        log.error(
+          "Failed to persist hub-local inference analytics for principal {principalId}: {error}",
+          {
+            principalId: attributionPrincipalId,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        );
+      }
+    },
   };
+}
+
+async function resolveInstanceByPrincipal(
+  db: DB["db"],
+  cache: Map<string, ActiveInstance>,
+  tenantId: string,
+  principalId: string,
+): Promise<ActiveInstance | null> {
+  const cacheKey = `${tenantId}:${principalId}`;
+  const cached = cache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
+  const row = await db.query.agentInstance.findFirst({
+    where: and(
+      eq(agentInstance.tenantId, tenantId),
+      eq(agentInstance.principalId, principalId),
+      isNull(agentInstance.endedAt),
+    ),
+  });
+
+  if (row === undefined) return null;
+  cache.set(cacheKey, row);
+  return row;
 }
 
 async function resolveInstance(

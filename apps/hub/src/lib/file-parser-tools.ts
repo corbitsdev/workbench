@@ -1,6 +1,7 @@
 import type { AgentTool } from "@intx/agent";
 import { and, eq } from "drizzle-orm";
 import { PARSE_FILE_DEFINITION } from "@workbench/tools-fileparser";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { artifact } from "../db/schema";
 import { parseDocument } from "../services/file-parser";
 import type { ContextToolEntry } from "./tool-registry";
@@ -12,6 +13,7 @@ type FileParserToolContext = {
   principalId: string;
   agentId: string;
   sessionId: string;
+  analytics?: AnalyticsSubscriber;
 };
 
 const DATA_URL_RE = /^data:([^;,]+);base64,(.*)$/s;
@@ -74,14 +76,23 @@ function createParseFileHandler(context: FileParserToolContext): AgentTool {
       }
       const bytes = new Uint8Array(Buffer.from(match[2]!, "base64"));
 
-      return parseDocument(context.db, {
-        tenantId: context.tenantId,
-        traceId: artifactId,
-        filename: row.title,
-        mimeType,
-        bytes,
-        ...(instructions !== undefined ? { instructions } : {}),
-      });
+      return parseDocument(
+        context.db,
+        {
+          tenantId: context.tenantId,
+          traceId: artifactId,
+          filename: row.title,
+          mimeType,
+          bytes,
+          ...(instructions !== undefined ? { instructions } : {}),
+        },
+        context.analytics === undefined
+          ? undefined
+          : {
+              analytics: context.analytics,
+              attributionPrincipalId: context.principalId,
+            },
+      );
     },
   };
 }

@@ -44,6 +44,7 @@ import {
   canonicalizeToolNames,
   expandToolAliasGrants,
 } from "@workbench/agents";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
 
 // Hub-session-token rail. Native-migrated tools (the first group) are
 // here only as the coexistence fallback and are removed once the native
@@ -100,6 +101,9 @@ export type ContextToolEntry = {
     sessionService?: SessionService;
     eventCollectors?: EventCollectorRegistry;
     sidecarRouter?: SidecarRouter;
+    // Sink for hub-side, in-process one-shot inference usage (File Parser,
+    // CL-2801) so its tokens land in analytics_event attributed to the caller.
+    analytics?: AnalyticsSubscriber;
     repoStore?: RepoStore;
     buildToolDefinitions?: (names: string[]) => ToolDefinition[];
     // Workflow-exec wiring for the workflow-run tools (CL-2678); pre-bound in
