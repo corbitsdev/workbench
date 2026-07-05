@@ -26,6 +26,7 @@ import {
   TOOL_GRANT_RESOURCE_PREFIX,
 } from "../lib/tool-grants";
 import { runDedupedRelaunch } from "./relaunch-breaker";
+import { getCachedCatalogSources } from "./workflow-model-source-cache";
 
 const log = getLogger(["api", "agents"]);
 
@@ -69,6 +70,97 @@ export async function resolveInstanceSourcesFromDefinition(
   return resolveModelSources(db, tenantId, modelRequirements, {
     invokerPreferences,
   });
+}
+
+type InstanceSourceResolution = Awaited<
+  ReturnType<typeof resolveInstanceSourcesFromDefinition>
+>;
+
+// Sentinel so a failed resolution propagates OUT of the cache thunk without
+// being memoized — caching an "unavailable" for the TTL would strand launches
+// after a transient catalog gap heals.
+class UnresolvedInstanceSourcesError extends Error {
+  constructor(
+    readonly resolution: Extract<InstanceSourceResolution, { ok: false }>,
+  ) {
+    super("unresolved instance sources");
+    this.name = "UnresolvedInstanceSourcesError";
+  }
+}
+
+/**
+ * Cached wrapper over `resolveInstanceSourcesFromDefinition` for the launch hot
+ * path (CL-2804). Reuses the workflow deploy catalog cache (CL-2760): a short
+ * per-(tenant, requirement-set) TTL memo, so a burst of launches for the same
+ * agent definition — e.g. a member spamming "+ New chat" — collapses onto one
+ * catalog resolution instead of re-hitting the DB every time.
+ *
+ * Correctness:
+ *   - Instances carrying invoker model preferences BYPASS the shared cache: the
+ *     preference-free key would return the wrong source ordering.
+ *   - `keyExtra` fingerprints the full model requirements (capabilities +
+ *     creator provider preferences), not just model names, so two definitions
+ *     requiring the same model with different capabilities never collide.
+ *   - Resolution is a pure function of (tenant, requirements), so a cached chain
+ *     never crosses a tenant boundary.
+ *   - Only a successful resolution is cached; an unavailable model re-resolves
+ *     on the next call rather than being pinned for the TTL.
+ */
+export async function resolveInstanceSourcesCached(
+  db: DB["db"],
+  tenantId: string,
+  agentRow: typeof agent.$inferSelect,
+  modelPreferences: unknown,
+): Promise<InstanceSourceResolution> {
+  const hasPreferences =
+    modelPreferences !== null &&
+    modelPreferences !== undefined &&
+    (!Array.isArray(modelPreferences) || modelPreferences.length > 0);
+  if (hasPreferences) {
+    return resolveInstanceSourcesFromDefinition(
+      db,
+      tenantId,
+      agentRow,
+      modelPreferences,
+    );
+  }
+
+  const modelRequirements =
+    agentRow.modelRequirements !== null
+      ? ModelRequirements.assert(agentRow.modelRequirements)
+      : [];
+  const extraModels = modelRequirements.map((r) => r.model);
+  const keyExtra = JSON.stringify(modelRequirements);
+
+  try {
+    // TTL is read from config by getCachedCatalogSources itself (same strict
+    // contract-guaranteed default the workflow deploy path uses) — no local TTL.
+    const sources = await getCachedCatalogSources({
+      tenantId,
+      extraModels,
+      keyExtra,
+      resolve: async () => {
+        const resolution = await resolveInstanceSourcesFromDefinition(
+          db,
+          tenantId,
+          agentRow,
+          null,
+        );
+        if (!resolution.ok) {
+          throw new UnresolvedInstanceSourcesError(resolution);
+        }
+        return resolution.sources;
+      },
+    });
+    // Deep copy: the cache returns its shared entry. A shallow [...] copy would
+    // still alias the InferenceSource objects (and their nested defaults), so an
+    // in-place mutation downstream of launchSession could corrupt the cached
+    // chain for other launches in the TTL window. structuredClone isolates it.
+    return { ok: true, sources: structuredClone(sources) };
+  } catch (err) {
+    if (err instanceof UnresolvedInstanceSourcesError) return err.resolution;
+    throw err;
+  }
 }
 
 /**
@@ -214,7 +306,7 @@ export async function launchAgentSession(
     where: eq(agentInstance.id, instanceId),
   });
 
-  const resolution = await resolveInstanceSourcesFromDefinition(
+  const resolution = await resolveInstanceSourcesCached(
     db,
     tenantId,
     agentRow,

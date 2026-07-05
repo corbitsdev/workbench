@@ -20,11 +20,7 @@ import {
   LLM_DEFAULT_MODEL,
   PERSONAL_AGENT_NAME,
 } from "@workbench/agents";
-import type {
-  SessionService,
-  EventCollectorRegistry,
-} from "@intx/hub-sessions";
-import type { GrantStore } from "@intx/types/authz";
+import type { SessionService } from "@intx/hub-sessions";
 import {
   createEventCollector,
   type TurnFinalized,
@@ -36,13 +32,7 @@ import {
   lookupMember,
   reseedAgentTemplateIfStale,
 } from "../lib/tenant-provisioning";
-import {
-  describeLaunchError,
-  launchFailureLogMessage,
-  launchAgentSession,
-  resolveInstanceSourcesFromDefinition,
-  type LaunchErrorDescription,
-} from "./agent-provisioning";
+import { resolveInstanceSourcesFromDefinition } from "./agent-provisioning";
 import { getLogger } from "@intx/log";
 
 const log = getLogger(["api", "myra-threads"]);
@@ -50,28 +40,6 @@ const log = getLogger(["api", "myra-threads"]);
 const { agent, agentInstance, agentSession, principal, grant } = intxSchema;
 
 export const MYRA_TEMPLATE_KEY = "myra";
-
-/**
- * Raised when a new Myra thread's session could not be launched. The thread's
- * rows are torn down before this is thrown, so a failed create leaves no orphan
- * instance that looks healthy. Carries the launch phase + detail (which names
- * the failing tool package where the sidecar surfaced it) for the HTTP layer.
- */
-export class MyraThreadLaunchError extends Error {
-  readonly phase: string | null;
-  readonly detail: string;
-  readonly leakedAgent: boolean;
-  constructor(
-    description: LaunchErrorDescription,
-    options?: { cause?: unknown },
-  ) {
-    super("Myra thread session launch failed", options);
-    this.name = "MyraThreadLaunchError";
-    this.phase = description.phase;
-    this.detail = description.detail;
-    this.leakedAgent = description.leakedAgent;
-  }
-}
 
 export type MyraThreadRow = {
   id: string;
@@ -180,11 +148,6 @@ async function teardownThreadRows(
 
 export async function createMyraThread(
   db: HubDb,
-  deps: {
-    sessionService: SessionService;
-    grantStore: GrantStore;
-    eventCollectors: EventCollectorRegistry;
-  },
   opts: {
     tenantId: string;
     tenantDomain: string;
@@ -308,85 +271,14 @@ export async function createMyraThread(
     }
   });
 
-  try {
-    await launchAgentSession(
-      db,
-      deps.sessionService,
-      deps.grantStore,
-      deps.eventCollectors,
-      {
-        agentId: def.id,
-        instanceId,
-        instancePrincipalId,
-        tenantId: opts.tenantId,
-        tenantDomain: opts.tenantDomain,
-        systemPrompt: def.systemPrompt ?? "",
-        now,
-      },
-    );
-  } catch (err) {
-    // No isAgentAlreadyExistsError carve-out here (unlike the agents.ts deploy
-    // route): every Myra thread gets a freshly-generated instanceId/principalId
-    // and therefore a brand-new agent address that has never been deployed. The
-    // orchestrator's reconnect path only ever re-provisions an existing
-    // instance's address, so an "already exists" collision cannot occur on this
-    // create path — any launch error here is a genuine failure and the
-    // half-created rows must be torn down.
-    const failure = describeLaunchError(err);
-    // A leaked agent means the sidecar's own undeploy also failed, so a
-    // provisioned agent survives on the sidecar with no way for the hub to reach
-    // it. Tearing down the hub rows here would orphan that zombie: the address
-    // keeps routing on the sidecar but has no hub row, so the next mail 502s
-    // until a sidecar restart. Keep the rows and mark the instance 'error' so
-    // relaunchInstanceIfNeeded (cold-start path; only skips 'stopped'+endedAt)
-    // re-attempts and the sidecar's already-exists carve-out adopts the live
-    // agent. (CL-2367)
-    if (failure.leakedAgent) {
-      log.error(
-        launchFailureLogMessage(
-          "Myra thread session launch failed AND the sidecar leaked the agent; keeping rows",
-          failure,
-        ),
-        {
-          instanceId,
-          phase: failure.phase,
-          detail: failure.detail,
-          leakedAgent: failure.leakedAgent,
-          error: err instanceof Error ? err : new Error(String(err)),
-        },
-      );
-      const errAt = new Date();
-      await db
-        .update(agentInstance)
-        .set({ status: "error", updatedAt: errAt })
-        .where(eq(agentInstance.id, instanceId));
-      throw new MyraThreadLaunchError(failure, { cause: err });
-    }
-    // Log the real Error (not a stringified message) at error level so the
-    // Sentry sink routes it through captureException with stack + cause.
-    log.error(
-      launchFailureLogMessage(
-        "Myra thread session launch failed; tearing down thread",
-        failure,
-      ),
-      {
-        instanceId,
-        phase: failure.phase,
-        detail: failure.detail,
-        leakedAgent: failure.leakedAgent,
-        error: err instanceof Error ? err : new Error(String(err)),
-      },
-    );
-    // Do not leave an orphan thread that looks healthy. Remove the rows we just
-    // created so the member does not get a 201 for an instance that never
-    // launched and cannot serve chat.
-    await teardownThreadRows(db, {
-      instanceId,
-      mappingId,
-      instancePrincipalId,
-    });
-    throw new MyraThreadLaunchError(failure, { cause: err });
-  }
+  // No session launch here (CL-2803): return the moment the rows exist so
+  // "+ New chat" is instant. The session is provisioned lazily on first open by
+  // the chat surface (useMyraSession → POST /instances/:id/sessions), which
+  // cold-launches a never-launched instance and drives the provisioning /
+  // error UI with retries. This mirrors the lazy personal-agent provisioning
+  // direction (CL-2793) and removes the serialized sidecar round-trips that made
+  // create block for 3-5s. A launch failure now surfaces in the chat session
+  // lifecycle (provisioning → error), not as a create-time 503.
 
   return {
     created: true,
@@ -446,10 +338,37 @@ const TITLE_SYSTEM_PROMPT =
 
 const DEFAULT_LABEL_PATTERN = /^Chat( \d+)?$/;
 
+// Upper bound for the first-message fallback title (CL-2805). Within the
+// "25-50 chars" the label should read as a title, not a truncated sentence.
+const TITLE_FALLBACK_MAX_CHARS = 48;
+
 function isDefaultLabel(label: string | null | undefined): boolean {
   const trimmed = label?.trim() ?? "";
   if (trimmed === "") return true;
   return DEFAULT_LABEL_PATTERN.test(trimmed);
+}
+
+/**
+ * Deterministic fallback title derived from the user's first message, used when
+ * the LLM title turn is unavailable, fails, or returns unusable text (CL-2805).
+ * Collapses whitespace, truncates on a word boundary, strips trailing
+ * punctuation. The caller guarantees a non-empty (trimmed) firstMessage, so this
+ * always returns a non-empty label — a chat is never left as the default "Chat".
+ */
+function titleFromFirstMessage(firstMessage: string): string {
+  const collapsed = firstMessage.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= TITLE_FALLBACK_MAX_CHARS) {
+    return collapsed.replace(/[.!?,;:]+$/u, "").trim() || collapsed;
+  }
+  const slice = collapsed.slice(0, TITLE_FALLBACK_MAX_CHARS);
+  const lastSpace = slice.lastIndexOf(" ");
+  // Only break on a word boundary when it keeps at least half the budget;
+  // otherwise a single very long token would collapse the title to nothing.
+  const cut =
+    lastSpace >= TITLE_FALLBACK_MAX_CHARS / 2
+      ? slice.slice(0, lastSpace)
+      : slice;
+  return cut.replace(/[.!?,;:]+$/u, "").trim() || cut;
 }
 
 function sanitizeTitle(raw: string): string | null {
@@ -732,14 +651,26 @@ export async function generateMyraThreadTitle(
   // Never overwrite a real title.
   if (!isDefaultLabel(mapping.label)) return null;
 
+  // Deterministic safety net: whenever the LLM title turn is unavailable or
+  // unusable we still name the thread from its first message rather than leave
+  // it as the default "Chat" (CL-2805). Failures are logged at ERROR (the hub
+  // Sentry sink drops WARN) so a persistently-failing title turn is visible.
+  const fallback = () =>
+    renameMyraThread(db, {
+      tenantId: opts.tenantId,
+      memberPrincipalId: opts.memberPrincipalId,
+      threadId: opts.threadId,
+      label: titleFromFirstMessage(firstMessage),
+    });
+
   try {
     const source = await resolveTitleSource(db, opts.tenantId);
     if (!source) {
-      log.warn("Myra title generation skipped: no inference source", {
+      log.error("Myra title generation: no inference source; using fallback", {
         tenantId: opts.tenantId,
         threadId: opts.threadId,
       });
-      return null;
+      return await fallback();
     }
 
     const raw = await runSerializedPerPrincipal(opts.memberPrincipalId, () =>
@@ -753,25 +684,22 @@ export async function generateMyraThreadTitle(
     );
     // The title inference turn producing no usable text is a real-world cause of
     // "new chats never get a title" (CL-2449): a model/config fault leaves chat
-    // working but the title turn empty. These paths used to return null silently
-    // — invisible to operators, since the catch below only WARNs (and WARN is
-    // not forwarded to Sentry). Log them so a persistently-empty title turn is
-    // diagnosable instead of presenting as an unexplained default label.
+    // working but the title turn empty. Fall back to the first-message title.
     if (raw === null) {
-      log.warn(
-        "Myra title generation produced no text; leaving default label",
-        { tenantId: opts.tenantId, threadId: opts.threadId },
-      );
-      return null;
+      log.error("Myra title generation produced no text; using fallback", {
+        tenantId: opts.tenantId,
+        threadId: opts.threadId,
+      });
+      return await fallback();
     }
 
     const title = sanitizeTitle(raw);
     if (title === null) {
-      log.warn(
-        "Myra title generation produced unusable text; leaving default label",
+      log.error(
+        "Myra title generation produced unusable text; using fallback",
         { tenantId: opts.tenantId, threadId: opts.threadId, raw },
       );
-      return null;
+      return await fallback();
     }
 
     return await renameMyraThread(db, {
@@ -781,11 +709,24 @@ export async function generateMyraThreadTitle(
       label: title,
     });
   } catch (err) {
-    log.warn("Myra title generation failed; leaving default label", {
+    log.error("Myra title generation failed; using fallback", {
       threadId: opts.threadId,
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error ? err : new Error(String(err)),
     });
-    return null;
+    // Best-effort: even the fallback rename must never throw over chat. If the
+    // DB write itself fails, log and leave the default label.
+    try {
+      return await fallback();
+    } catch (fallbackErr) {
+      log.error("Myra title fallback rename failed; leaving default label", {
+        threadId: opts.threadId,
+        error:
+          fallbackErr instanceof Error
+            ? fallbackErr
+            : new Error(String(fallbackErr)),
+      });
+      return null;
+    }
   }
 }
 

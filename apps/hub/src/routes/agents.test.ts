@@ -27,6 +27,9 @@ mock.module("../config", () => ({
       name: "Global Org",
       domain: "global.example.com",
     },
+    // launchAgentSession resolves sources through the CL-2760 catalog cache
+    // (CL-2804), which reads this TTL from config.
+    workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
 }));
 
@@ -62,13 +65,19 @@ import {
   registerWedgeSweepReconciler,
 } from "../services/agent-provisioning";
 import { resetRelaunchBreaker } from "../services/relaunch-breaker";
+import { resetWorkflowModelSourceCache } from "../services/workflow-model-source-cache";
 
 // The relaunch breaker is process-global module state (in-flight dedup +
 // failure cooldowns keyed by instance id). A failing launch in one test arms a
 // cooldown that suppresses a later test's relaunch of the same instance id,
 // so the suite must clear it between tests to stay order-independent.
+//
+// The launch path also memoizes catalog resolution (CL-2804); clear it too so a
+// resolution cached under one test's sourcesImpl can't leak into a later test
+// that varies sourcesImpl for the same tenant.
 beforeEach(() => {
   resetRelaunchBreaker();
+  resetWorkflowModelSourceCache();
 });
 
 const {

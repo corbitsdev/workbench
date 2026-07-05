@@ -32,17 +32,6 @@ const resolveMyraThreadContext = mock(() =>
   }),
 );
 
-class MyraThreadLaunchError extends Error {
-  readonly phase: string | null;
-  readonly detail: string;
-  constructor(phase: string | null, detail: string) {
-    super("Myra thread session launch failed");
-    this.name = "MyraThreadLaunchError";
-    this.phase = phase;
-    this.detail = detail;
-  }
-}
-
 mock.module("../services/myra-threads", () => ({
   listMyraThreads,
   createMyraThread,
@@ -50,7 +39,6 @@ mock.module("../services/myra-threads", () => ({
   deleteMyraThread,
   generateMyraThreadTitle,
   resolveMyraThreadContext,
-  MyraThreadLaunchError,
 }));
 
 const { createMyraThreadsRouter } = await import("./myra-threads");
@@ -67,12 +55,7 @@ function wrapWithAuth(router: Hono, userId = "usr-1"): Hono {
 
 function buildRouter(): Hono {
   // biome-ignore lint/suspicious/noExplicitAny: structural mocks for injected deps
-  return createMyraThreadsRouter(
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-  ) as unknown as Hono;
+  return createMyraThreadsRouter({} as any, {} as any) as unknown as Hono;
 }
 
 describe("Myra threads router", () => {
@@ -154,8 +137,9 @@ describe("Myra threads router", () => {
       created: boolean;
     };
     expect(body.thread.label).toBe("Pricing");
+    // CL-2803: create is lazy — the router calls the service with (db, opts)
+    // only, no session-launch deps, and returns 201 without launching.
     expect(createMyraThread).toHaveBeenCalledWith(
-      expect.anything(),
       expect.anything(),
       expect.objectContaining({
         tenantId: "tn-global",
@@ -163,30 +147,6 @@ describe("Myra threads router", () => {
         label: "Pricing",
       }),
     );
-  });
-
-  it("returns 503 with phase + detail (not 201) when the chat session fails to launch", async () => {
-    createMyraThread.mockRejectedValueOnce(
-      new MyraThreadLaunchError(
-        "pack",
-        "tool-package @workbench/tools-granola@1.2.3 failed",
-      ),
-    );
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request("/tenants/tn-global/me/myra/threads", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as {
-      error: string;
-      phase: string;
-      detail: string;
-    };
-    expect(body.error).toBe("Failed to launch Myra chat session");
-    expect(body.phase).toBe("pack");
-    expect(body.detail).toContain("@workbench/tools-granola@1.2.3");
   });
 
   it("returns 403 on create when the user is not a member of the tenant", async () => {

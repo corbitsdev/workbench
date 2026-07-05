@@ -33,9 +33,14 @@ export function resetWorkflowModelSourceCache(): void {
   inflight = new Map();
 }
 
-function cacheKey(tenantId: string, extraModels: readonly string[]): string {
+function cacheKey(
+  tenantId: string,
+  extraModels: readonly string[],
+  keyExtra?: string,
+): string {
   const models = [LLM_DEFAULT_MODEL, ...extraModels].sort();
-  return `${tenantId}:${models.join(",")}`;
+  const base = `${tenantId}:${models.join(",")}`;
+  return keyExtra ? `${base}:${keyExtra}` : base;
 }
 
 // Memoize the catalog-resolved source chain (before any per-step maxTokens is
@@ -45,12 +50,18 @@ export async function getCachedCatalogSources(args: {
   tenantId: string;
   extraModels: readonly string[];
   resolve: () => Promise<InferenceSource[]>;
+  // Optional discriminator folded into the key when the resolution depends on
+  // more than the (tenant, model-set) — e.g. an agent definition's per-model
+  // required capabilities / creator provider preferences (CL-2804). Two
+  // resolutions that would return different sources for the same model set MUST
+  // pass different keyExtra, or a cached chain leaks across them.
+  keyExtra?: string;
   ttlMs?: number;
   now?: () => number;
 }): Promise<InferenceSource[]> {
   const ttlMs = args.ttlMs ?? getConfig().workflowDeploy.modelSourceCacheTtlMs;
   const clock = args.now ?? Date.now;
-  const key = cacheKey(args.tenantId, args.extraModels);
+  const key = cacheKey(args.tenantId, args.extraModels, args.keyExtra);
 
   const cached = cache.get(key);
   if (cached !== undefined && clock() - cached.storedAt < ttlMs) {

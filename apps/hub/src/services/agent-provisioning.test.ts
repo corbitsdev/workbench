@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import * as intxDbReal from "@intx/db";
 import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import { SessionLaunchError } from "@intx/hub-sessions";
@@ -13,6 +13,9 @@ mock.module("../config", () => ({
       name: "Global Org",
       domain: "global.example.com",
     },
+    // launchAgentSession now resolves sources through the CL-2760 catalog cache
+    // (CL-2804); it reads this TTL.
+    workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
 }));
 
@@ -66,6 +69,14 @@ import {
   resetRelaunchBreaker,
   setRelaunchBreakerClock,
 } from "./relaunch-breaker";
+import { resetWorkflowModelSourceCache } from "./workflow-model-source-cache";
+
+// The launch path now memoizes catalog resolution (CL-2804). Clear it between
+// tests so a resolution cached under one test's sourcesImpl cannot leak into the
+// next (same tenant + requirements + no invoker prefs would otherwise hit).
+beforeEach(() => {
+  resetWorkflowModelSourceCache();
+});
 
 const mockSessionService: SessionService = {
   launchSession: mock(() => Promise.resolve()),

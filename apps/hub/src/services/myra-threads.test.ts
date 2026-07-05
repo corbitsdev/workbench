@@ -1,6 +1,4 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { getTableName } from "drizzle-orm";
-import type { PgTable } from "drizzle-orm/pg-core";
 
 // --- Module-boundary mocks for the title-generation inference path ---
 
@@ -173,7 +171,6 @@ import {
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
-  MyraThreadLaunchError,
   renameMyraThread,
 } from "./myra-threads";
 
@@ -182,6 +179,7 @@ describe("createMyraThread", () => {
     ancestorChainResult = ["tn-global"];
     reseedResult = { reseeded: false, agentId: null };
     reseedSpy.mockClear();
+    launchAgentSessionMock.mockClear();
   });
 
   function buildCreateDb(opts: {
@@ -231,119 +229,44 @@ describe("createMyraThread", () => {
     };
   }
 
-  const deps = {
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    sessionService: {} as any,
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    grantStore: {} as any,
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    eventCollectors: {} as any,
-  };
-
-  it("returns created:true when the session launches", async () => {
-    launchShouldThrow = null;
+  it("creates the rows and returns created:true WITHOUT launching a session (CL-2803)", async () => {
     let txCount = 0;
-    const db = buildCreateDb({ transactions: () => (txCount += 1) });
+    const deleted: unknown[] = [];
+    const inserted: Record<string, unknown>[] = [];
+    const db = buildCreateDb({
+      transactions: () => (txCount += 1),
+      deleted,
+      inserted,
+    });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await createMyraThread(db as any, deps, {
+    const result = await createMyraThread(db as any, {
       tenantId: "tn-global",
       tenantDomain: "global.test",
       memberPrincipalId: "prn-member",
     });
 
     expect(result.created).toBe(true);
-    expect(launchAgentSessionMock).toHaveBeenCalled();
-    // Only the create transaction ran — no teardown.
-    expect(txCount).toBe(1);
-  });
-
-  it("throws MyraThreadLaunchError and tears down the rows when the launch fails", async () => {
-    launchShouldThrow = new Error(
-      'Source provider "granola" is not registered',
-    );
-    let txCount = 0;
-    const deleted: unknown[] = [];
-    const db = buildCreateDb({ transactions: () => (txCount += 1), deleted });
-
-    let thrown: unknown;
-    try {
-      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-      await createMyraThread(db as any, deps, {
-        tenantId: "tn-global",
-        tenantDomain: "global.test",
-        memberPrincipalId: "prn-member",
-      });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
-    expect((thrown as MyraThreadLaunchError).detail).toContain("granola");
-    // The create transaction AND the teardown transaction both ran, so no
-    // orphan thread row survives a failed launch.
-    expect(txCount).toBe(2);
-    // Teardown deletes five rows: grant, member mapping, instance, the lingering
-    // agent_session, then the principal. The agent_session delete is the
-    // load-bearing one — without it the principal delete FK-violates (RESTRICT)
-    // and the rollback leaves the orphan it exists to remove. A count of 5 (not
-    // 4) is what guards that delete from being dropped. (The agents.ts rollback
-    // test pins the FK-dictated session→principal ordering by table identity.)
-    expect(deleted).toHaveLength(5);
-    // Pin the deletes by drizzle table name so a future change that drops the
-    // agent_session or principal delete — but adds an extra delete elsewhere,
-    // keeping the count at 5 — still fails here. getTableName reads the real
-    // table identity, so this asserts the actual rows torn down, not the count.
-    const deletedNames = deleted.map((d) => getTableName(d as PgTable));
-    expect(deletedNames).toContain("agent_session");
-    expect(deletedNames).toContain("principal");
-  });
-
-  it("does NOT tear down and marks the instance error when the launch leaked an agent", async () => {
-    const leaked = new Error("start failed; sidecar undeploy also failed");
-    (leaked as { leakedAgent?: boolean }).leakedAgent = true;
-    launchShouldThrow = leaked;
-    let txCount = 0;
-    const deleted: unknown[] = [];
-    const updated: Record<string, unknown>[] = [];
-    const db = buildCreateDb({
-      transactions: () => (txCount += 1),
-      deleted,
-      updated,
-    });
-
-    let thrown: unknown;
-    try {
-      // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-      await createMyraThread(db as any, deps, {
-        tenantId: "tn-global",
-        tenantDomain: "global.test",
-        memberPrincipalId: "prn-member",
-      });
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).toBeInstanceOf(MyraThreadLaunchError);
-    expect((thrown as MyraThreadLaunchError).leakedAgent).toBe(true);
-    // Only the create transaction ran — the teardown transaction MUST NOT,
-    // because deleting the rows orphans the leaked sidecar agent.
+    // First thread gets the default "Chat" label; a real, non-empty instance id.
+    expect(result.thread.label).toBe("Chat");
+    expect(result.thread.instanceId.length).toBeGreaterThan(0);
+    // The instance row is persisted as `deployed` (no session yet); the chat
+    // surface cold-launches it on first open.
+    const instanceInsert = inserted.find((v) => "address" in v);
+    expect(instanceInsert?.status).toBe("deployed");
+    // Lazy provisioning (CL-2803): create MUST NOT launch a session, and MUST
+    // NOT run a teardown — only the single create transaction runs.
+    expect(launchAgentSessionMock).not.toHaveBeenCalled();
     expect(txCount).toBe(1);
     expect(deleted).toHaveLength(0);
-    // The instance is marked 'error' so a later relaunch can adopt the live
-    // sidecar agent.
-    expect(updated).toHaveLength(1);
-    expect(getTableName(updated[0]!.table as PgTable)).toBe("agent_instance");
-    expect((updated[0]!.values as { status: string }).status).toBe("error");
   });
 
-  it("reseeds the tenant's own def before launch (CL-2517 wiring)", async () => {
-    launchShouldThrow = null;
+  it("reseeds the tenant's own def (CL-2517 wiring)", async () => {
     reseedResult = { reseeded: true, agentId: "agt-myra" };
     const db = buildCreateDb({ transactions: () => {} });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await createMyraThread(db as any, deps, {
+    await createMyraThread(db as any, {
       tenantId: "tn-global",
       tenantDomain: "acme.example.com",
       memberPrincipalId: "prn_member",
@@ -357,7 +280,6 @@ describe("createMyraThread", () => {
   });
 
   it("does NOT reseed an inherited (parent-tenant) def — own-def gate (CL-2517/M1)", async () => {
-    launchShouldThrow = null;
     ancestorChainResult = ["tn-global", "tn-root"];
     const db = buildCreateDb({
       transactions: () => {},
@@ -367,7 +289,7 @@ describe("createMyraThread", () => {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await createMyraThread(db as any, deps, {
+    await createMyraThread(db as any, {
       tenantId: "tn-global",
       tenantDomain: "acme.example.com",
       memberPrincipalId: "prn_member",
@@ -378,15 +300,6 @@ describe("createMyraThread", () => {
 });
 
 describe("createMyraThread (active-workbench attribution)", () => {
-  const deps = {
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    sessionService: {} as any,
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    grantStore: {} as any,
-    // biome-ignore lint/suspicious/noExplicitAny: structural mock
-    eventCollectors: {} as any,
-  };
-
   function buildDb(
     inserted: Record<string, unknown>[],
     agentDefs: Record<string, unknown>[],
@@ -411,7 +324,6 @@ describe("createMyraThread (active-workbench attribution)", () => {
   }
 
   it("creates the instance + mapping in the active child tenant using the root Myra definition", async () => {
-    launchShouldThrow = null;
     ancestorChainResult = ["tn-child", "tn-root"];
     const inserted: Record<string, unknown>[] = [];
     const db = buildDb(inserted, [
@@ -419,7 +331,7 @@ describe("createMyraThread (active-workbench attribution)", () => {
     ]);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await createMyraThread(db as any, deps, {
+    await createMyraThread(db as any, {
       tenantId: "tn-child",
       tenantDomain: "child.test",
       memberPrincipalId: "prn-member",
@@ -434,7 +346,6 @@ describe("createMyraThread (active-workbench attribution)", () => {
   });
 
   it("prefers the most-specific definition when the child has its own", async () => {
-    launchShouldThrow = null;
     ancestorChainResult = ["tn-child", "tn-root"];
     const inserted: Record<string, unknown>[] = [];
     const db = buildDb(inserted, [
@@ -443,7 +354,7 @@ describe("createMyraThread (active-workbench attribution)", () => {
     ]);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await createMyraThread(db as any, deps, {
+    await createMyraThread(db as any, {
       tenantId: "tn-child",
       tenantDomain: "child.test",
       memberPrincipalId: "prn-member",
@@ -454,14 +365,13 @@ describe("createMyraThread (active-workbench attribution)", () => {
   });
 
   it("throws a clear error when no Myra definition exists in the chain", async () => {
-    launchShouldThrow = null;
     ancestorChainResult = ["tn-child", "tn-root"];
     const db = buildDb([], []);
 
     let thrown: unknown;
     try {
       // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-      await createMyraThread(db as any, deps, {
+      await createMyraThread(db as any, {
         tenantId: "tn-child",
         tenantDomain: "child.test",
         memberPrincipalId: "prn-member",
@@ -473,7 +383,6 @@ describe("createMyraThread (active-workbench attribution)", () => {
   });
 
   it("attributes the analytics rollup to the child tenant for a child-tenant instance (subscriber seam)", async () => {
-    launchShouldThrow = null;
     ancestorChainResult = ["tn-child", "tn-root"];
     const inserted: Record<string, unknown>[] = [];
     const createDb = buildDb(inserted, [
@@ -481,7 +390,7 @@ describe("createMyraThread (active-workbench attribution)", () => {
     ]);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await createMyraThread(createDb as any, deps, {
+    await createMyraThread(createDb as any, {
       tenantId: "tn-child",
       tenantDomain: "child.test",
       memberPrincipalId: "prn-member",
@@ -726,7 +635,34 @@ describe("generateMyraThreadTitle", () => {
     expect(result).toBeNull();
   });
 
-  it("surfaces a genuine credential-resolution fault instead of silently falling back", async () => {
+  // db.update spy that captures the label handed to renameMyraThread and echoes
+  // it back as the persisted row, so a test can assert the exact fallback title.
+  function captureRenameLabel(db: ReturnType<typeof buildTitleDb>): {
+    labelRef: { value: string | null };
+  } {
+    const labelRef: { value: string | null } = { value: null };
+    db.update = mock(() => ({
+      set: (vals: { label: string }) => {
+        labelRef.value = vals.label;
+        return {
+          where: () => ({
+            returning: () =>
+              Promise.resolve([
+                {
+                  id: "map-1",
+                  instanceId: "inst-1",
+                  label: vals.label,
+                  createdAt: new Date("2026-01-01T00:00:00Z"),
+                },
+              ]),
+          }),
+        };
+      },
+    })) as never;
+    return { labelRef };
+  }
+
+  it("propagates a genuine credential-resolution fault to the fallback without running inference", async () => {
     resetTitleMocks();
     // A real fault (e.g. ambiguous credential match), not the optional title
     // credential simply being absent.
@@ -736,6 +672,7 @@ describe("generateMyraThreadTitle", () => {
     const db = buildTitleDb({
       mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
     });
+    const { labelRef } = captureRenameLabel(db);
 
     try {
       // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -750,12 +687,12 @@ describe("generateMyraThreadTitle", () => {
         },
       );
 
-      // Best-effort contract still holds (titling never breaks chat): null, no throw.
-      expect(result).toBeNull();
-      // But the fault short-circuits BEFORE any inference turn — proving it
-      // propagated to the logged handler rather than being swallowed and
-      // continuing on to the fallback source (which would have run a turn).
+      // The fault short-circuits BEFORE any inference turn (propagated to the
+      // handler, not swallowed and continued to a fallback source that would run
+      // a turn), then the first-message fallback names the thread.
       expect(lastCreateEventCollectorConfig).toBeNull();
+      expect(labelRef.value).toBe("Hello");
+      expect(result?.label).toBe("Hello");
     } finally {
       resolveCredentialRequirementMock.mockImplementation(() =>
         Promise.resolve(null),
@@ -763,12 +700,13 @@ describe("generateMyraThreadTitle", () => {
     }
   });
 
-  it("does not throw and returns null when inference fails", async () => {
+  it("falls back to the first-message title (logged at error) when inference throws", async () => {
     resetTitleMocks();
     agentShouldThrow = true;
     const db = buildTitleDb({
       mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat 2" },
     });
+    const { labelRef } = captureRenameLabel(db);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const result = await generateMyraThreadTitle(
@@ -782,28 +720,21 @@ describe("generateMyraThreadTitle", () => {
       },
     );
 
-    expect(result).toBeNull();
+    expect(labelRef.value).toBe("Hello");
+    expect(result?.label).toBe("Hello");
   });
 
-  it("returns null and does not rename when the inference turn yields no usable text", async () => {
+  it("falls back to the first-message title when the inference turn yields no usable text", async () => {
     // The real-world CL-2449 failure: chat works but the title turn comes back
     // empty (model/config fault). The turn does not throw — it produces empty
-    // text — so this exercises the non-throw no-op branch, which must leave the
-    // default label intact rather than persist a blank title.
+    // text. Rather than leave the default label, name the thread from its first
+    // message (truncated on a word boundary, trailing punctuation stripped).
     resetTitleMocks();
     agentReply = "   ";
-    let renameCalled = false;
     const db = buildTitleDb({
       mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
     });
-    db.update = mock(() => {
-      renameCalled = true;
-      return {
-        set: () => ({
-          where: () => ({ returning: () => Promise.resolve([]) }),
-        }),
-      };
-    }) as never;
+    const { labelRef } = captureRenameLabel(db);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const result = await generateMyraThreadTitle(
@@ -817,10 +748,37 @@ describe("generateMyraThreadTitle", () => {
       },
     );
 
-    expect(result).toBeNull();
-    expect(renameCalled).toBe(false);
     // The turn DID run (the failure is empty output, not a skipped turn).
     expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
+    // 40-char message (<= 48 budget): whole message, trailing "?" stripped.
+    expect(labelRef.value).toBe("How should we price the enterprise tier");
+    expect(result?.label).toBe("How should we price the enterprise tier");
+  });
+
+  it("truncates a long first-message fallback on a word boundary", async () => {
+    resetTitleMocks();
+    agentShouldThrow = true;
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+    });
+    const { labelRef } = captureRenameLabel(db);
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await generateMyraThreadTitle(
+      db as any,
+      {},
+      {
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage:
+          "Can you help me put together a comprehensive pricing strategy",
+      },
+    );
+
+    // Budget 48 chars; break at the last word boundary within it.
+    expect(labelRef.value).toBe("Can you help me put together a comprehensive");
+    expect((labelRef.value ?? "").length).toBeLessThanOrEqual(48);
   });
 
   it("sanitizes the model output before persisting it", async () => {

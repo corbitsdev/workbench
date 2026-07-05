@@ -2,11 +2,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { type } from "arktype";
 import type { DB } from "@intx/db";
-import type {
-  SessionService,
-  EventCollectorRegistry,
-} from "@intx/hub-sessions";
-import type { GrantStore } from "@intx/types/authz";
+import type { SessionService } from "@intx/hub-sessions";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 import {
@@ -14,7 +10,6 @@ import {
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
-  MyraThreadLaunchError,
   renameMyraThread,
   resolveMyraThreadContext,
 } from "../services/myra-threads";
@@ -50,8 +45,6 @@ const TitleMyraThreadBody = type({
 export function createMyraThreadsRouter(
   db: DB["db"],
   sessionService: SessionService,
-  grantStore: GrantStore,
-  eventCollectors: EventCollectorRegistry,
 ) {
   const app = new Hono<{ Variables: { userId: string } }>();
   const hubDb = db as unknown as HubDb;
@@ -122,21 +115,6 @@ export function createMyraThreadsRouter(
           },
         },
         403: { description: "Not a member of this tenant" },
-        503: {
-          description: "The chat session failed to launch",
-          content: {
-            "application/json": {
-              schema: resolver(
-                type({
-                  error: "string",
-                  "phase?": "string | null",
-                  "detail?": "string",
-                  "leakedAgent?": "boolean",
-                }),
-              ),
-            },
-          },
-        },
       },
     }),
     async (c) => {
@@ -149,32 +127,16 @@ export function createMyraThreadsRouter(
       if (!ctx) {
         return c.json({ error: "Not a member of this tenant" }, 403);
       }
-      try {
-        const result = await createMyraThread(
-          hubDb,
-          { sessionService, grantStore, eventCollectors },
-          {
-            tenantId: ctx.tenantId,
-            tenantDomain: ctx.tenantDomain,
-            memberPrincipalId: ctx.memberPrincipalId,
-            ...(body.label !== undefined ? { label: body.label } : {}),
-          },
-        );
-        return c.json(result, 201);
-      } catch (err) {
-        if (err instanceof MyraThreadLaunchError) {
-          return c.json(
-            {
-              error: "Failed to launch Myra chat session",
-              phase: err.phase,
-              detail: err.detail,
-              leakedAgent: err.leakedAgent,
-            },
-            503,
-          );
-        }
-        throw err;
-      }
+      // The session is provisioned lazily on first open (CL-2803), so create
+      // just persists the thread rows and returns immediately — no launch, no
+      // 503 launch-failure path here.
+      const result = await createMyraThread(hubDb, {
+        tenantId: ctx.tenantId,
+        tenantDomain: ctx.tenantDomain,
+        memberPrincipalId: ctx.memberPrincipalId,
+        ...(body.label !== undefined ? { label: body.label } : {}),
+      });
+      return c.json(result, 201);
     },
   );
 
