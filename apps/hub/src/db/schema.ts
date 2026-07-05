@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -13,7 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { feedbackSubjectKinds } from "@workbench/shared";
+import { adminAuditActions, feedbackSubjectKinds } from "@workbench/shared";
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -484,6 +485,32 @@ export const outputFeedback = pgTable(
 );
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
+
+// ─── Admin audit (CL-2735) ─────────────────────────────────────────
+//
+// Compliance record of cross-principal activity reads and admin grant/role
+// mutations. Workbench-owned; principal ids referenced by value only.
+export const adminAudit = pgTable(
+  "admin_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    action: text("action", { enum: adminAuditActions }).notNull(),
+    actorPrincipalId: text("actor_principal_id").notNull(),
+    targetPrincipalId: text("target_principal_id"),
+    resource: text("resource"),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    adminAuditTenantCreatedIdx: index("admin_audit_tenant_created_idx").on(
+      t.tenantId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type AdminAuditRow = typeof adminAudit.$inferSelect;
 
 export {
   analyticsEvent,

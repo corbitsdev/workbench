@@ -5,6 +5,7 @@ export * from "./active-context";
 export * from "./attio-task-agent";
 export * from "./ab-compare";
 export * from "./gamma-presentation";
+export * from "./governance";
 export * from "./last30days";
 export * from "./reddit-opportunity-scanner";
 export * from "./pain-point-collateral";

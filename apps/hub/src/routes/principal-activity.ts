@@ -14,6 +14,7 @@ import { describeRoute, resolver } from "hono-openapi";
 import type { HubDb } from "../db";
 import { getMomentDetail } from "../services/moment-detail";
 import { getPrincipalActivityPage } from "../services/principal-activity";
+import { recordAudit } from "../services/admin-audit";
 
 const log = getLogger(["hub", "principal-activity"]);
 
@@ -146,6 +147,21 @@ export function createPrincipalActivityRouter({
           limit,
           ...(cursor !== undefined ? { cursor } : {}),
         });
+        // CL-2735: activity is open intra-tenant, so a member can read any
+        // principal's timeline with no grant. Record cross-principal reads for
+        // compliance (who read whose timeline). Own-principal reads are noise
+        // and are not logged. Best-effort — never fails the read.
+        const caller = c.get("principal");
+        if (caller && caller.id !== targetPrincipalId) {
+          void recordAudit({
+            db,
+            tenantId: tenant.id,
+            action: "activity_read",
+            actorPrincipalId: caller.id,
+            targetPrincipalId,
+            resource: "activity:principal/read",
+          });
+        }
         return c.json({
           entries: page.entries,
           nextCursor:

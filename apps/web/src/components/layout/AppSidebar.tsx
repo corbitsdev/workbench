@@ -7,15 +7,17 @@ import {
   Workflow,
   Plus,
   Files,
-  Wrench,
   Search,
   FileText,
   FlaskConical,
   ChevronDown,
+  ShieldCheck,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@workbench/ui";
 import { useAuth } from "../AuthProvider";
+import { getMe } from "../../lib/hub-api";
 import {
   useCreateMyraThread,
   writeLastActiveThreadId,
@@ -29,9 +31,17 @@ const NAV_ITEMS = [
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
-  { to: "/tools", label: "Tools", icon: Wrench, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
+
+// Shown only to admins (Tools moved under Admin — CL-2719). The hub re-checks
+// the admin grant on every admin route, so this is nav visibility only.
+const ADMIN_NAV_ITEM = {
+  to: "/admin",
+  label: "Admin",
+  icon: ShieldCheck,
+  end: false,
+} as const;
 
 const DEMO_LINKS = [
   {
@@ -67,6 +77,11 @@ export function AppSidebar({
   const { session, signOut } = useAuth();
   const navigate = useNavigate();
   const createThread = useCreateMyraThread();
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
   const name = session.status === "authenticated" ? session.user.name : "";
   const initials =
     name
@@ -158,6 +173,17 @@ export function AppSidebar({
             {label}
           </NavLink>
         ))}
+        {meQuery.data?.isAdmin && (
+          <NavLink
+            to={ADMIN_NAV_ITEM.to}
+            end={ADMIN_NAV_ITEM.end}
+            onClick={onNavigate}
+            className={({ isActive }) => navItemClass(isActive)}
+          >
+            <ADMIN_NAV_ITEM.icon size={17} />
+            {ADMIN_NAV_ITEM.label}
+          </NavLink>
+        )}
       </nav>
 
       <details open className="group/demos mt-3 px-3">

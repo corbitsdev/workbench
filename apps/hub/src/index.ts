@@ -80,6 +80,8 @@ import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
+import { createAdminRouter } from "./routes/admin";
+import { isAdmin } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   registerDisconnectReconciler,
@@ -873,6 +875,17 @@ v1.get("/me", async (c) => {
     );
   }
 
+  // Whether the caller can see the Admin area, resolved through Interchange's
+  // native grant model (owner/admin roles hold the wildcard grants the admin
+  // gate probes). Cosmetic only — the hub admin routes re-check server-side.
+  // `workingTenantId` is the caller's membership in `rootTenantId` (the global
+  // org tenant), so this authorizes over the SAME tenant the admin route guard
+  // uses (`rootTenantId`) — the nav gate and the real gate cannot diverge.
+  let admin = false;
+  if (memberPrincipalId && workingTenantId) {
+    admin = await isAdmin(grantStore, memberPrincipalId, workingTenantId);
+  }
+
   return c.json({
     userId,
     userName,
@@ -884,6 +897,7 @@ v1.get("/me", async (c) => {
     provisioned: workingTenantId !== null,
     credentialResolved,
     personalAgentSyncAvailable,
+    isAdmin: admin,
     preferences,
   });
 });
@@ -1024,6 +1038,10 @@ v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route("/", createToolsRouter(db, assetService));
+v1.route(
+  "/",
+  createAdminRouter({ db, grantStore, assetService, rootTenantId }),
+);
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.

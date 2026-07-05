@@ -1,4 +1,5 @@
 export { Button, buttonVariants } from "./Button";
+export { ConfirmButton, type ConfirmButtonProps } from "./ConfirmButton";
 export { Badge, badgeVariants, type BadgeTone } from "./Badge";
 export { Skeleton } from "./Skeleton";
 export {
