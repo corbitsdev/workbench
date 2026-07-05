@@ -126,6 +126,16 @@ async function instanceStatusOf(instanceId: string): Promise<string> {
   return rows.rows[0]?.status ?? "MISSING";
 }
 
+async function instanceEndedAtOf(instanceId: string): Promise<Date | null> {
+  const rows = await client.query<{ ended_at: Date | null }>(
+    "SELECT ended_at FROM agent_instance WHERE id = $1",
+    [instanceId],
+  );
+  const row = rows.rows[0];
+  if (row === undefined) throw new Error(`instance ${instanceId} missing`);
+  return row.ended_at;
+}
+
 const REAP_AFTER = 30 * 60 * 1000;
 
 // One PGlite instance for the whole file (instantiating the WASM engine per
@@ -186,6 +196,42 @@ describe("createIdleSessionReaper", () => {
     expect(await sessionStatusOf(sessionId)).toBe("ended");
     // Instance stays relaunchable — NOT stopped.
     expect(await instanceStatusOf("ins_myra1")).toBe("running");
+  });
+
+  test("CL-2802: eviction never stamps agent_instance.endedAt (sleep/wake conversation retention guard)", async () => {
+    // The reaper's only safe-to-sleep property is that `agent_instance.endedAt`
+    // stays NULL after eviction: that NULL is what keeps the instance in
+    // `liveAgentAddresses` so the sidecar boot-reconciler does not reap its
+    // isogit conversation dir on a restart mid-sleep. If a future change ever
+    // stamped `agent_instance.endedAt` here, this must fail.
+    const address = `ins_myra10@${DOMAIN}`;
+    const { sessionId } = await seedChatAgent({
+      instanceId: "ins_myra10",
+      agentName: "Myra",
+      address,
+    });
+
+    expect(await instanceEndedAtOf("ins_myra10")).toBeNull();
+
+    let clock = 1_000_000;
+    const reaper = createIdleSessionReaper({
+      db,
+      endSession: async () => {},
+      getRoutableAddresses: () => [address],
+      eventCollectors: idleCollectors(),
+      reapAfterMs: REAP_AFTER,
+      now: () => clock,
+    });
+
+    await reaper.sweepOnce(); // seed
+    clock += REAP_AFTER + 1;
+    const result = await reaper.sweepOnce();
+
+    expect(result.evicted).toBe(1);
+    // Existing behavior, for context: the session is ended.
+    expect(await sessionStatusOf(sessionId)).toBe("ended");
+    // Core regression guard: the instance's endedAt must remain NULL.
+    expect(await instanceEndedAtOf("ins_myra10")).toBeNull();
   });
 
   test("spares a session whose activity is within the threshold", async () => {
