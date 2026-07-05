@@ -70,6 +70,15 @@ const DEFAULT_RUN_LIVENESS_STALL_GRACE_MS = 5 * 60 * 1000;
 const DEFAULT_RUN_LIVENESS_START_HARD_DEADLINE_MS = 20 * 60 * 1000;
 const DEFAULT_RUN_LIVENESS_INTERVAL_MS = 60 * 1000;
 
+// CL-2790 idle chat-session reaper. `reapAfterMs`: a live chat session with no
+// activity for this long is slept (undeployed, session ended, instance left
+// relaunchable). `intervalMs`: how often the sweep runs. Conservative defaults —
+// a full idle hour before sleeping, swept every 5 minutes. The reaper EVICTS
+// LIVE sessions, so it is gated behind `IDLE_SESSION_REAP_ENABLED` (default OFF)
+// until validated on staging.
+const DEFAULT_IDLE_SESSION_REAP_AFTER_MS = 60 * 60 * 1000;
+const DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS = 5 * 60 * 1000;
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -299,6 +308,22 @@ export function loadConfig() {
       intervalMs: parsePositiveIntEnv(
         "RUN_LIVENESS_INTERVAL_MS",
         DEFAULT_RUN_LIVENESS_INTERVAL_MS,
+        "milliseconds",
+      ),
+    },
+    // CL-2790 idle chat-session reaper. `enabled` is a kill switch, default OFF:
+    // this evicts LIVE sessions, so it stays dark until validated on staging.
+    // Override with IDLE_SESSION_REAP_*.
+    idleSessionReaper: {
+      enabled: parseBooleanEnv("IDLE_SESSION_REAP_ENABLED"),
+      reapAfterMs: parsePositiveIntEnv(
+        "IDLE_SESSION_REAP_AFTER_MS",
+        DEFAULT_IDLE_SESSION_REAP_AFTER_MS,
+        "milliseconds",
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "IDLE_SESSION_REAP_INTERVAL_MS",
+        DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS,
         "milliseconds",
       ),
     },

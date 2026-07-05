@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { AGENT_TEMPLATES } from "./templates";
+import { AGENT_TEMPLATES, isReapableChatAgent } from "./templates";
 
 describe("AGENT_TEMPLATES", () => {
   const inferenceProviderNames = new Set(["anthropic", "openai-compatible"]);
@@ -80,5 +80,35 @@ describe("AGENT_TEMPLATES", () => {
         expect(grant.resource.startsWith("tool:mail")).toBe(false);
       }
     }
+  });
+});
+
+describe("isReapableChatAgent", () => {
+  it("reaps ONLY the personal agent (the only one with an on-demand wake); never a shared agent", () => {
+    // CL-2790: Myra (kind:"personal") wakes via POST /v1/me. Oat is a shared,
+    // deployable chat agent but has NO wake trigger on its next message — a
+    // slept Oat would 502 with no self-heal — so it must NOT be reaped until the
+    // universal delivery-seam wake lands.
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    const oat = AGENT_TEMPLATES.find((t) => t.key === "oat");
+    expect(myra?.kind).toBe("personal");
+    expect(oat).toBeDefined();
+    expect(oat?.deployable).not.toBe(false);
+    expect(isReapableChatAgent(myra!.name)).toBe(true);
+    expect(isReapableChatAgent(oat!.name)).toBe(false);
+  });
+
+  it("never reaps the non-chat system agents (Loop, file-parser)", () => {
+    const loop = AGENT_TEMPLATES.find((t) => t.key === "loop");
+    const fileParser = AGENT_TEMPLATES.find((t) => t.key === "file-parser");
+    expect(loop?.deployable).toBe(false);
+    expect(fileParser?.deployable).toBe(false);
+    expect(isReapableChatAgent(loop!.name)).toBe(false);
+    expect(isReapableChatAgent(fileParser!.name)).toBe(false);
+  });
+
+  it("never reaps an unrecognized agent name", () => {
+    expect(isReapableChatAgent("Some Unknown Agent")).toBe(false);
+    expect(isReapableChatAgent("")).toBe(false);
   });
 });

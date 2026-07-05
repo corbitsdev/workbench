@@ -116,7 +116,11 @@ export {
 } from "./hammy-the-humanizer/definition";
 
 // Agent templates registry
-export { AGENT_TEMPLATES, type AgentTemplate } from "./templates";
+export {
+  AGENT_TEMPLATES,
+  type AgentTemplate,
+  isReapableChatAgent,
+} from "./templates";
 
 // Model catalog derived from the agent templates (single source of truth)
 export {

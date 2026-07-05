@@ -275,3 +275,27 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     ],
   },
 ];
+
+/**
+ * Whether a live agent instance with this display name is a user-facing chat
+ * agent that may be slept when idle and cleanly relaunched on the next
+ * interaction (CL-2790, the idle-session reaper).
+ *
+ * A name is reapable only when it matches a known template whose `kind` is
+ * `"personal"` — i.e. the per-member personal agent (Myra). CL-2790: the
+ * personal agent is the ONLY agent with a proven on-demand wake — a member's
+ * next visit hits `POST /v1/me`, which relaunches exactly the personal-agent
+ * instance (`relaunchInstanceIfNeeded` on the resolved `paInstanceId`). Shared
+ * / sub-agents (Oat, Walter, …) have no wake trigger on their next message: the
+ * mail route only checks instance `status === "running"` and a non-null
+ * `sessionId` (both still true after sleep) and never re-launches, so a slept
+ * shared agent 502s on its next (often agent-to-agent) message with no
+ * self-heal. So they are NOT reapable until a shared-agent wake path exists.
+ * `deployable` means "catalog-visible", NOT "safe to sleep" — do not use it as
+ * the discriminator. An unrecognized name (no template) is NOT reapable: the
+ * reaper only ever sleeps an agent it positively identifies as wakeable.
+ */
+export function isReapableChatAgent(agentName: string): boolean {
+  const template = AGENT_TEMPLATES.find((t) => t.name === agentName);
+  return template !== undefined && template.kind === "personal";
+}

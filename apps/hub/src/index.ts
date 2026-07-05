@@ -74,6 +74,7 @@ import {
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
+import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
@@ -520,6 +521,28 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
   graceMs: config.wedgeUnroutableGraceMs,
 });
 
+// CL-2790: idle chat-session reaper. Sleeps a user-facing chat session (Myra,
+// Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
+// marking its session ended, leaving the instance relaunchable so the next
+// interaction (POST /v1/me) brings it back cold. Gated behind a kill switch
+// (default OFF) — it evicts LIVE sessions. Fed by the agent-event stream and the
+// send-mail route (recordActivityForInstance, mounted below) so a
+// mid-conversation agent is never slept.
+const idleSessionReaper = createIdleSessionReaper({
+  db,
+  endSession: sessionService.endSession,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  enabled: config.idleSessionReaper.enabled,
+  reapAfterMs: config.idleSessionReaper.reapAfterMs,
+  intervalMs: config.idleSessionReaper.intervalMs,
+});
+if (config.idleSessionReaper.enabled) {
+  idleSessionReaper.start();
+  sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
+    idleSessionReaper.recordActivity(agentAddress);
+  });
+}
+
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
 // (terminal teardown), the deploy service (provision-failure rollback), and the
 // reconciler janitor (crash-orphan reclaim). All run state needed for history is
@@ -714,6 +737,22 @@ app.use(
   "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
   createAttachmentCapabilityGuard(db),
 );
+
+// CL-2790: an inbound user message is fresh activity — bump the idle-reaper
+// clock for the target instance so a user mid-conversation is never slept.
+// Best-effort and non-blocking: the resolve is fire-and-forget inside the
+// reaper, and we always fall through to the mail route.
+if (config.idleSessionReaper.enabled) {
+  app.use(
+    "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+    async (c, next) => {
+      const instanceId = c.req.param("instanceId");
+      if (instanceId)
+        void idleSessionReaper.recordActivityForInstance(instanceId);
+      await next();
+    },
+  );
+}
 
 // Mount hub app
 app.route("/", hubApp);
