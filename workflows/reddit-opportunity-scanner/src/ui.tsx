@@ -110,11 +110,7 @@ function activeStep(state: RunState | null): StepKey {
 // ── Shared primitives ──────────────────────────────────────────────────────────
 
 function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
-  );
+  return <section className="bg-surface p-6">{children}</section>;
 }
 
 function CardTitle({ children }: { children: React.ReactNode }) {
@@ -1086,7 +1082,7 @@ export function Panel(props: WorkflowPanelProps) {
   const failError = failedRunErrorMessage(state) ?? undefined;
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-bg">
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
         <div className="min-w-0">

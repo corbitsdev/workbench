@@ -153,7 +153,7 @@ function Shell(props: {
     props.state?.phase === "failed" || props.state?.phase === "cancelled";
   const liveLabel = failed ? null : liveStatusLabel(props.state, DISPLAY_STEPS);
   return (
-    <div className="border-border bg-bg flex h-full flex-col overflow-hidden rounded-panel border">
+    <div className="bg-bg flex h-full flex-col overflow-hidden">
       <header className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
         <div className="min-w-0">
           <p className="text-text truncate text-sm font-semibold">

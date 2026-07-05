@@ -1023,7 +1023,7 @@ export function Panel(props: WorkflowPanelProps) {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-bg">
       <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
         <div>
           <h2 className="text-base font-medium text-text">

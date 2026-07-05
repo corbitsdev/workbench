@@ -116,11 +116,7 @@ function activeStep(state: RunState | null): StepKey {
 // ── Shared layout ────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
-  );
+  return <section className="bg-surface p-6">{children}</section>;
 }
 
 function CardTitle({ children }: { children: ReactNode }) {

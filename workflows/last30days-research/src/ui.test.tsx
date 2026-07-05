@@ -330,12 +330,10 @@ describe("last30days Panel", () => {
         }}
       />,
     );
-    const synthesisCard = screen
-      .getByText("Synthesis")
-      .closest(".rounded-panel");
+    const synthesisCard = screen.getByText("Synthesis").closest("section.p-6");
     expect(synthesisCard).not.toBeNull();
     expect(
-      synthesisCard?.parentElement?.closest(".rounded-panel") ?? null,
+      synthesisCard?.parentElement?.closest("section.p-6") ?? null,
     ).toBeNull();
   });
 

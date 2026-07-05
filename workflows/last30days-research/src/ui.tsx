@@ -130,11 +130,7 @@ function parseWriteReply(raw: unknown): string | "pending" {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
-  );
+  return <section className="bg-surface p-6">{children}</section>;
 }
 
 function Spinner({ label }: { label?: string }) {
