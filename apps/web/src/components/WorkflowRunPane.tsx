@@ -233,6 +233,14 @@ function WorkflowRunPaneInner({
 
   const terminal = record ? isRecordTerminal(record.status) : false;
 
+  // CL-2785: the fast SSE log state (`logState.phase`) flips off `pending` a beat
+  // before the slower `record.status` projection reports `running`. Derive
+  // `started` from the log first so the coarse "Starting…" gate lifts the moment
+  // the run is genuinely live, not ~2s later when the record projection lands.
+  const logStarted = logState !== undefined && logState.phase !== "pending";
+  const started =
+    logStarted || record?.status === "running" || record?.status === "awaiting";
+
   // onSignal maps directly to the resume endpoint; no-op once terminal or while a
   // signal is still latched (guards double-submit for the FULL latch window, not
   // just the in-flight POST).
@@ -297,7 +305,7 @@ function WorkflowRunPaneInner({
     // CL-2755: a run still cold-starting its per-run deployment shows a live
     // "Starting…" state WITH motion — never a frozen empty panel — until the
     // projection advances it to `running`.
-    if (record.status === "provisioning") {
+    if (record.status === "provisioning" && !started) {
       return {
         key: "provisioning",
         node: <WorkflowStartingIndicator variant="pane" />,
@@ -365,9 +373,7 @@ function WorkflowRunPaneInner({
                 deploymentId={runId}
                 state={state}
                 logRead={logState !== undefined}
-                connected={
-                  record.status === "running" || record.status === "awaiting"
-                }
+                connected={!terminal && started}
                 stepOutputs={stepOutputs}
                 signalPending={signalPending}
                 onSignal={handleSignal}

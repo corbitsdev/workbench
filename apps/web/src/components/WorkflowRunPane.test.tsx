@@ -18,6 +18,7 @@ function CustomPanel({
   deploymentId,
   stepOutputs,
   signalPending,
+  connected,
   skills,
   onSignal,
 }: WorkflowPanelProps) {
@@ -25,6 +26,7 @@ function CustomPanel({
     <div>
       <span>custom-panel-for-{deploymentId}</span>
       <span>signal-pending:{String(signalPending)}</span>
+      <span>connected:{String(connected)}</span>
       <span>
         skills:
         {(skills ?? [])
@@ -814,5 +816,65 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
     expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
     expect(screen.queryByText("Workflow run")).toBeNull();
+  });
+
+  it("keeps the Starting… indicator up while provisioning and the log is still pending (CL-2785)", async () => {
+    // record projection reports provisioning; the fast log has NOT started yet
+    // (phase pending). The coarse gate must still show the animated indicator.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = { runId: "wfr_1", phase: "pending", lastSeq: 0, steps: [] };
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("lifts the Starting… gate the moment the fast log reads running, even while the record still says provisioning (CL-2785, the ~2s win)", async () => {
+    // The record projection lags at provisioning, but the SSE log has already
+    // flipped to running. `started` must derive from the log and advance the pane
+    // to the live view immediately instead of dwelling on the coarse gate.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+  });
+
+  it("falls through to the failure UI when a run fails during provisioning and never went live (CL-2785 regression — the provisioning guard is load-bearing)", async () => {
+    // A run that flipped provisioning→failed WITHOUT ever reaching running: the
+    // log never materialized (started = false). A naive `if (!started)` gate that
+    // drops the `record.status === "provisioning"` guard would STICK on the
+    // Starting… indicator here. The `provisioning && !started` form stops matching
+    // once status is failed, so the pane must render the legible failure UI.
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = undefined;
+    logStateError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Workflow run"));
+    screen.getByText(/this run failed\. start a new run to try again\./i);
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+  });
+
+  it("passes connected=true to the Panel for a live running run and connected=false once terminal (CL-2785)", async () => {
+    record = makeRecord({ kind: "with-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("connected:true"));
+
+    record = makeRecord({ kind: "with-panel", status: "completed" });
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("connected:false"));
   });
 });
