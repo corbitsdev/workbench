@@ -37,6 +37,18 @@ mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => activeContext,
 }));
 
+// The tenant roster section owns its own query lifecycle (covered by
+// TenantRoster.test); stub its hook so the dashboard test stays hermetic and
+// never reaches for the network.
+mock.module("../hooks/use-tenant-roster", () => ({
+  useTenantRoster: () => ({
+    data: { instances: [], runs: [] },
+    isLoading: false,
+    isError: false,
+    refetch: () => {},
+  }),
+}));
+
 mock.module("../hooks/use-model-pricing", () => ({
   useModelPricing: () => ({
     data: {

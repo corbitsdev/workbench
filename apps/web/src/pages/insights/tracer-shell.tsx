@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, Info } from "lucide-react";
+import { statusToneClass, type StatusTone } from "./status-tone";
 
 /**
  * Shared presentational shell for the two tracer surfaces (principal trace and
@@ -46,15 +47,8 @@ function avatarToneClass(tone: RootTone): string {
 }
 
 export interface StatusPill {
-  tone: "live" | "done" | "warn" | "danger";
+  tone: StatusTone;
   label: string;
-}
-
-function statusPillClass(tone: StatusPill["tone"]): string {
-  if (tone === "live") return "bg-green/15 text-green-deep";
-  if (tone === "warn") return "bg-gold/15 text-gold";
-  if (tone === "danger") return "bg-red/15 text-red-deep";
-  return "bg-surface-2 text-text-2";
 }
 
 /** Compact identity header: avatar, name, kind + raw id, status pill. */
@@ -91,7 +85,7 @@ export function CompactHeader({
           {initialsOf(root.name)}
         </span>
         <div className="min-w-0">
-          <h1 className="text-[17px] font-semibold tracking-[-0.02em] text-text">
+          <h1 className="text-[17px] font-semibold tracking-[-0.02em] text-balance text-text">
             {root.name}
           </h1>
           <p className="flex flex-wrap items-baseline gap-1.5 text-[11.5px] text-text-3">
@@ -105,7 +99,7 @@ export function CompactHeader({
         {status !== null && (
           <span
             data-testid="trace-status-pill"
-            className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-[6px] px-2 py-1 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusPillClass(
+            className={`ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-sm px-2 py-1 font-mono text-[9.5px] uppercase tracking-[0.05em] ${statusToneClass(
               status.tone,
             )}`}
           >
@@ -143,7 +137,7 @@ export function FacetTabs({
             role="tab"
             aria-selected={active}
             onClick={() => onSelect(f.id)}
-            className={`-mb-px flex min-h-[40px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-[12.5px] font-semibold outline-none transition-colors focus-visible:ring-1 focus-visible:ring-accent ${
+            className={`-mb-px flex min-h-[40px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-[12.5px] font-semibold outline-none transition-[color,border-color] duration-150 focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
               active
                 ? "border-accent text-text"
                 : "border-transparent text-text-3 hover:text-text"
@@ -205,7 +199,7 @@ export function StatStrip({ stats }: { stats: Stat[] }) {
 /** One-line facet description. */
 export function FacetDesc({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-3.5 mt-0.5 max-w-[70ch] text-[12.5px] text-text-2">
+    <p className="mb-3.5 mt-0.5 max-w-[70ch] text-pretty text-[12.5px] text-text-2">
       {children}
     </p>
   );
@@ -246,7 +240,7 @@ export function FacetCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="mb-2.5 rounded-[12px] border border-border bg-surface p-4 shadow-[var(--shadow)]">
+    <div className="mb-2.5 rounded border border-border bg-surface p-4 shadow-[var(--shadow-card)]">
       {title !== undefined && (
         <h3 className="mb-3 font-mono text-[10.5px] font-semibold uppercase tracking-[0.06em] text-text-3">
           {title}
@@ -293,7 +287,7 @@ export function NodeGrid({ nodes }: { nodes: TraceNode[] }) {
           </>
         );
         const cls =
-          "block rounded-[10px] border border-border bg-surface p-3 text-left shadow-[var(--shadow)] transition-[colors,box-shadow]";
+          "block rounded-[10px] border border-border bg-surface p-3 text-left shadow-[var(--shadow-card)] transition-[colors,box-shadow]";
         if (n.to !== undefined) {
           return (
             <Link
@@ -338,7 +332,7 @@ export function BottomNav({
         type="button"
         onClick={onPrev}
         disabled={index === 0}
-        className="inline-flex items-center gap-1 rounded-[8px] border border-border-strong bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-text outline-none transition-shadow hover:shadow-[var(--shadow)] focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+        className="inline-flex min-h-[40px] items-center gap-1 rounded-sm border border-border-strong bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-text outline-none transition-[box-shadow,transform] hover:shadow-[var(--shadow-card)] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
         Back
@@ -347,7 +341,7 @@ export function BottomNav({
         type="button"
         onClick={onNext}
         disabled={index === total - 1}
-        className="inline-flex items-center gap-1 rounded-[8px] border border-accent bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-white outline-none transition-colors hover:bg-accent-deep focus-visible:ring-1 focus-visible:ring-accent disabled:opacity-40"
+        className="inline-flex min-h-[40px] items-center gap-1 rounded-sm border border-accent bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-white outline-none transition-[color,background-color,transform] hover:bg-accent-deep focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
       >
         Next step
         <ArrowRight className="h-3.5 w-3.5" />

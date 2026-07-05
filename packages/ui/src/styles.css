@@ -127,6 +127,8 @@
   --border-strong: rgba(228, 213, 188, 0.22);
   --row-hover: rgba(228, 213, 188, 0.05);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 22px 60px rgba(0, 0, 0, 0.6);
+  /* Flat in-flow card elevation — a subtle lift, not the modal/popover --shadow. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
   --accent: #bf6b20;
   --accent-deep: #9a551a;
   --accent-soft: #d98f4a;
@@ -154,6 +156,8 @@ html[data-theme="corbits-dark"] {
   --border-strong: rgba(228, 213, 188, 0.22);
   --row-hover: rgba(228, 213, 188, 0.05);
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.4), 0 22px 60px rgba(0, 0, 0, 0.6);
+  /* Flat in-flow card elevation — a subtle lift, not the modal/popover --shadow. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
   --accent: #bf6b20;
   --accent-deep: #9a551a;
   --accent-soft: #d98f4a;
@@ -179,6 +183,7 @@ html[data-theme="corbits-light"] {
   --border-strong: rgba(43, 38, 39, 0.22);
   --row-hover: rgba(43, 38, 39, 0.05);
   --shadow: 0 2px 6px rgba(43, 38, 39, 0.05), 0 18px 50px rgba(43, 38, 39, 0.1);
+  --shadow-card: 0 1px 2px rgba(43, 38, 39, 0.06);
   --accent: #e98428;
   --accent-deep: #bf6b20;
   --accent-soft: #f2b277;
@@ -204,6 +209,7 @@ html[data-theme="tkww"] {
   --border-strong: #c4d4c0;
   --row-hover: rgba(21, 36, 26, 0.04);
   --shadow: 0 2px 6px rgba(21, 36, 26, 0.06), 0 18px 50px rgba(21, 36, 26, 0.1);
+  --shadow-card: 0 1px 2px rgba(21, 36, 26, 0.07);
   --accent: #2e7d50;
   --accent-deep: #1f5c3a;
   --accent-soft: #7bbf96;
@@ -229,6 +235,7 @@ html[data-theme="notion"] {
   --border-strong: #cbc9c3;
   --row-hover: rgba(55, 53, 47, 0.04);
   --shadow: 0 2px 6px rgba(55, 53, 47, 0.05), 0 18px 50px rgba(55, 53, 47, 0.1);
+  --shadow-card: 0 1px 2px rgba(55, 53, 47, 0.05);
   --accent: #000000;
   --accent-deep: #1a1a1a;
   --accent-soft: #4a4a4a;

@@ -13,7 +13,7 @@ import { pushSchema } from "drizzle-kit/api";
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { getPrincipalRoster } from "./principal-roster";
+import { getPrincipalRoster, getTenantRoster } from "./principal-roster";
 
 // Real-Postgres exercise of the roster query across the workbench-owned
 // member_agent_instance link, the intx agent_instance/agent identity, the
@@ -93,16 +93,18 @@ async function seedRun(args: {
   tenantId?: string;
   kind?: string;
   status?: string;
+  createdAt?: string;
 }): Promise<void> {
   await client.query(
     `insert into workflow_run_record (id, kind, tenant_id, principal_id, status, created_at, updated_at)
-     values ($1, $2, $3, $4, $5, now(), now())`,
+     values ($1, $2, $3, $4, $5, $6, now())`,
     [
       args.id,
       args.kind ?? "last30days",
       args.tenantId ?? TENANT,
       args.principalId ?? MEMBER,
       args.status ?? "completed",
+      args.createdAt ?? new Date().toISOString(),
     ],
   );
 }
@@ -216,6 +218,99 @@ describe("getPrincipalRoster", () => {
       principalId: MEMBER,
     });
 
+    expect(roster.runs.map((r) => r.runId)).toEqual(["run-live"]);
+  });
+});
+
+describe("getTenantRoster", () => {
+  test("lists every owned instance across members and recent runs across principals", async () => {
+    await seedAgent("agt-1", "Myra");
+    await seedAgent("agt-2", "Oat");
+    // Two instances owned by two DIFFERENT members — both belong to the tenant.
+    await seedOwnedInstance({
+      instanceId: "ins-1",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-1",
+      memberPrincipalId: MEMBER,
+    });
+    await seedOwnedInstance({
+      instanceId: "ins-2",
+      agentId: "agt-2",
+      syntheticPrincipalId: "prn-syn-2",
+      memberPrincipalId: OTHER_MEMBER,
+      status: "ended",
+    });
+    await seedSession({ id: "ses-1", principalId: "prn-syn-1" });
+    // Runs started by two different principals.
+    await seedRun({ id: "run-mine", principalId: MEMBER });
+    await seedRun({ id: "run-theirs", principalId: OTHER_MEMBER });
+
+    const roster = await getTenantRoster({ db, tenantId: TENANT });
+
+    expect(roster.instances.map((i) => i.name)).toEqual(["Myra", "Oat"]);
+    expect(roster.instances[0]!.sessionCount).toBe(1);
+    expect(new Set(roster.runs.map((r) => r.runId))).toEqual(
+      new Set(["run-mine", "run-theirs"]),
+    );
+  });
+
+  test("dedupes an instance shared by more than one member", async () => {
+    await seedAgent("agt-1", "Shared");
+    await seedOwnedInstance({
+      instanceId: "ins-shared",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-shared",
+      memberPrincipalId: MEMBER,
+    });
+    // A second member mapping to the SAME instance.
+    await client.query(
+      `insert into member_agent_instance (id, tenant_id, member_principal_id, template_key, agent_id, instance_id)
+       values ('link-second', $1, $2, 'myra', 'agt-1', 'ins-shared')`,
+      [TENANT, OTHER_MEMBER],
+    );
+
+    const roster = await getTenantRoster({ db, tenantId: TENANT });
+
+    expect(roster.instances.map((i) => i.instanceId)).toEqual(["ins-shared"]);
+  });
+
+  test("orders runs most-recent first and respects the run limit", async () => {
+    await seedRun({ id: "run-old", createdAt: "2024-01-01T00:00:00Z" });
+    await seedRun({ id: "run-mid", createdAt: "2024-06-01T00:00:00Z" });
+    await seedRun({ id: "run-new", createdAt: "2024-12-01T00:00:00Z" });
+
+    const roster = await getTenantRoster({ db, tenantId: TENANT, runLimit: 2 });
+
+    expect(roster.runs.map((r) => r.runId)).toEqual(["run-new", "run-mid"]);
+  });
+
+  test("does not cross tenants and excludes soft-deleted runs", async () => {
+    await seedAgent("agt-1", "Mine");
+    await seedOwnedInstance({
+      instanceId: "ins-mine",
+      agentId: "agt-1",
+      syntheticPrincipalId: "prn-syn-mine",
+    });
+    await client.query(
+      `insert into agent (id, tenant_id, creator_principal_id, name) values ('agt-x', $1, 'prn-creator', 'Alien')`,
+      [OTHER_TENANT],
+    );
+    await seedOwnedInstance({
+      instanceId: "ins-xtenant",
+      agentId: "agt-x",
+      syntheticPrincipalId: "prn-syn-xtenant",
+      tenantId: OTHER_TENANT,
+    });
+    await seedRun({ id: "run-live" });
+    await seedRun({ id: "run-gone" });
+    await seedRun({ id: "run-xtenant", tenantId: OTHER_TENANT });
+    await client.query(
+      `update workflow_run_record set deleted_at = now() where id = 'run-gone'`,
+    );
+
+    const roster = await getTenantRoster({ db, tenantId: TENANT });
+
+    expect(roster.instances.map((i) => i.instanceId)).toEqual(["ins-mine"]);
     expect(roster.runs.map((r) => r.runId)).toEqual(["run-live"]);
   });
 });

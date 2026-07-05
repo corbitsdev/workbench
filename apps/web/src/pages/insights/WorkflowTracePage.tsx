@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
+import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
   AlertTriangle,
   Bell,
@@ -44,6 +45,18 @@ import {
   type TraceNode,
   type TraceRoot,
 } from "./tracer-shell";
+
+// Light staggered fade for the timeline steps as they mount, matching the
+// dashboard's section entrance. Reduced-motion collapses it to an instant show
+// (the container's initial is set to false in that case).
+const STEP_CONTAINER: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.04, delayChildren: 0.02 } },
+};
+const STEP_ITEM: Variants = {
+  hidden: { opacity: 0, y: 6 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.2, ease: "easeOut" } },
+};
 
 const PHASE_LABEL: Record<LogStepState["phase"], string> = {
   "in-flight": "In flight",
@@ -177,7 +190,7 @@ function CopyButton({ text }: { text: string }) {
           timer.current = setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="flex items-center gap-1 rounded-[6px] border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      className="flex min-h-[40px] items-center gap-1 rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
     >
       {copied ? (
         <Check className="h-3 w-3 text-green" />
@@ -214,7 +227,7 @@ function PayloadView({ value }: { value: unknown }) {
           type="button"
           onClick={() => setRaw((r) => !r)}
           aria-pressed={raw}
-          className="rounded-[6px] border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          className="min-h-[40px] rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
         >
           {raw ? "Pretty" : "Raw JSON"}
         </button>
@@ -255,10 +268,11 @@ function TraceStepMoment({
       : null;
 
   return (
-    <li
+    <motion.li
+      variants={STEP_ITEM}
       data-testid="trace-step"
       data-phase={step.phase}
-      className="rounded-[12px] border border-border bg-surface shadow-[var(--shadow)]"
+      className="rounded border border-border bg-surface shadow-[var(--shadow-card)]"
     >
       <div className="flex items-start justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -296,22 +310,22 @@ function TraceStepMoment({
 
       <div className="px-4 pb-3">
         {classified !== null && (
-          <div className="rounded-[8px] border border-orange bg-orange-soft p-3">
-            <p className="text-[12px] font-medium text-orange-deep">
+          <div className="rounded-sm border border-red bg-red-soft p-3">
+            <p className="text-[12px] font-medium text-red-deep">
               {classified.userMessage}
             </p>
             <button
               type="button"
               onClick={() => setOperatorOpen((o) => !o)}
               aria-expanded={operatorOpen}
-              className="mt-2 text-[11px] font-medium text-orange-deep underline-offset-2 hover:underline focus-visible:outline-none"
+              className="mt-2 text-[11px] font-medium text-red-deep underline-offset-2 hover:underline focus-visible:outline-none"
             >
               {operatorOpen ? "Hide operator details" : "Operator details"}
             </button>
             {operatorOpen && (
               <pre
                 data-testid="trace-operator-details"
-                className="mt-2 max-h-[280px] overflow-auto rounded-[6px] border border-orange bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-2"
+                className="mt-2 max-h-[280px] overflow-auto rounded-sm border border-red bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-2"
               >
                 {step.lastError?.message}
               </pre>
@@ -346,7 +360,7 @@ function TraceStepMoment({
           )
         )}
       </div>
-    </li>
+    </motion.li>
   );
 }
 
@@ -384,13 +398,13 @@ export function toolRowsFromSteps(steps: LogStepState[]): ToolRow[] {
 function runStatusPill(phase: string | undefined): StatusPill {
   if (phase === "failed") return { tone: "danger", label: "Failed" };
   if (phase === "running" || phase === "in-flight") {
-    return { tone: "live", label: "Running" };
+    return { tone: "progress", label: "Running" };
   }
   if (phase === "awaiting-signal" || phase === "awaiting-timer") {
-    return { tone: "warn", label: "Awaiting" };
+    return { tone: "attention", label: "Awaiting" };
   }
-  if (phase === "completed") return { tone: "done", label: "Completed" };
-  return { tone: "done", label: phase ?? "Run" };
+  if (phase === "completed") return { tone: "positive", label: "Completed" };
+  return { tone: "neutral", label: phase ?? "Run" };
 }
 
 /**
@@ -405,6 +419,7 @@ function runStatusPill(phase: string | undefined): StatusPill {
 export function WorkflowTracePage() {
   const { runId } = useParams();
   const { activeTenantId } = useActiveWorkbench();
+  const reduceMotion = useReducedMotion();
   const safeId = runId ?? null;
   const [facetIndex, setFacetIndex] = useState(0);
   useFacetKeyboard(facetIndex, FACETS.length, setFacetIndex);
@@ -515,10 +530,10 @@ export function WorkflowTracePage() {
                 {runError !== null && (
                   <div
                     role="alert"
-                    className="flex items-start gap-2 rounded-[10px] border border-orange bg-orange-soft p-3"
+                    className="flex items-start gap-2 rounded-sm border border-red bg-red-soft p-3"
                   >
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-deep" />
-                    <p className="text-[13px] text-orange-deep">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-deep" />
+                    <p className="text-[13px] text-red-deep">
                       {runError.userMessage}
                     </p>
                   </div>
@@ -545,10 +560,13 @@ export function WorkflowTracePage() {
                       Each step is a moment — open its output or failure to step
                       into it.
                     </p>
-                    <ol
+                    <motion.ol
                       role="status"
                       aria-live="polite"
                       className="flex flex-col gap-2.5"
+                      variants={STEP_CONTAINER}
+                      initial={reduceMotion ? false : "hidden"}
+                      animate="show"
                     >
                       {steps.map((step, index) => (
                         <TraceStepMoment
@@ -562,7 +580,7 @@ export function WorkflowTracePage() {
                           }
                         />
                       ))}
-                    </ol>
+                    </motion.ol>
                   </>
                 )}
               </div>

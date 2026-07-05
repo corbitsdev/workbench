@@ -459,3 +459,40 @@ export async function listRunRecords(
     .orderBy(desc(workflowRunRecord.createdAt));
   return rows;
 }
+
+// Lists a tenant's most recent workflow runs across ALL principals (no owner
+// filter), most-recent first, capped by `limit`. Powers the tenant-wide
+// Insights roster where every run deep-links to its own trace, complementing
+// the principal-scoped listRunRecords used by the per-principal roster.
+export async function listTenantRunRecords(
+  db: HubDb,
+  tenantId: string,
+  limit: number,
+): Promise<
+  {
+    runId: string;
+    kind: string;
+    status: string;
+    principalId: string;
+    createdAt: Date;
+  }[]
+> {
+  const rows = await db
+    .select({
+      runId: workflowRunRecord.id,
+      kind: workflowRunRecord.kind,
+      status: workflowRunRecord.status,
+      principalId: workflowRunRecord.principalId,
+      createdAt: workflowRunRecord.createdAt,
+    })
+    .from(workflowRunRecord)
+    .where(
+      and(
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+      ),
+    )
+    .orderBy(desc(workflowRunRecord.createdAt))
+    .limit(limit);
+  return rows;
+}

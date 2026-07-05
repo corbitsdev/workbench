@@ -24,6 +24,7 @@ import {
   type StatusPill,
   type TraceRoot,
 } from "./tracer-shell";
+import { actorStatusTone } from "./status-tone";
 
 function isActorState(value: unknown): value is Actor {
   if (typeof value !== "object" || value === null) return false;
@@ -107,7 +108,14 @@ export function ActorDetailPage() {
     );
   }
 
-  const name = actor?.displayName ?? "Unknown actor";
+  // While the identity is still loading (and no trusted navigation payload
+  // seeded it), show a neutral loading label rather than flashing the
+  // "Unknown actor" fallback — that fallback is honest only once the lookup has
+  // actually resolved without a name.
+  const identityPending = actorQuery.isLoading && actor === null;
+  let name = "Unknown actor";
+  if (actor) name = actor.displayName;
+  else if (identityPending) name = "Loading actor…";
   const kindChip = actor?.kind === "agent" ? "agent" : "principal";
   const root: TraceRoot = {
     kindChip,
@@ -120,10 +128,10 @@ export function ActorDetailPage() {
   // "Active" state for a principal we haven't loaded.
   let status: StatusPill | null = null;
   if (actor) {
-    status =
-      actor.status === "active"
-        ? { tone: "live", label: "Active" }
-        : { tone: "warn", label: actor.status };
+    status = {
+      tone: actorStatusTone(actor.status),
+      label: actor.status === "active" ? "Active" : actor.status,
+    };
   }
 
   // The stat strip is derived from the activity union; until that query has

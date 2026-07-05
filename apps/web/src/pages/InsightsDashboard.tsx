@@ -33,6 +33,8 @@ import {
 import { ActorActivitySection } from "./insights/ActorActivity";
 import { CostInsights } from "./insights/CostInsights";
 import { DeferredActivitySection } from "./insights/DeferredActivitySection";
+import { TenantRoster } from "./insights/TenantRoster";
+import { SectionLabel } from "./insights/section-label";
 import {
   cacheHitRate,
   computeDelta,
@@ -109,16 +111,6 @@ function totalTokens(s: AnalyticsSummary): number {
     s.cacheReadTokens +
     s.cacheWriteTokens +
     s.thinkingTokens
-  );
-}
-
-// Uppercase + tracking is the brand "Caption" style (Red Hat Display, not mono).
-// Space Mono is reserved for true data readouts — numbers, IDs, timestamps.
-export function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-text-3">
-      {children}
-    </h2>
   );
 }
 
@@ -1249,6 +1241,11 @@ export function InsightsDashboard() {
             {/* MIDDLE band — the big tenant-wide activity feed. Every row
                 click-throughs into that entity's own trace. Per-principal is a
                 drill-down: the actor search below routes to /insights/users/:id. */}
+            {activeTenantId && (
+              <motion.div variants={SECTION_ITEM}>
+                <TenantRoster tenantId={activeTenantId} />
+              </motion.div>
+            )}
             {activeTenantId && (
               <motion.div variants={SECTION_ITEM}>
                 <SectionLabel>Activity</SectionLabel>

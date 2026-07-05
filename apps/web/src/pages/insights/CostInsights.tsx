@@ -15,13 +15,8 @@ import {
 import type { ActivityOverview, UsageByPersonRow } from "../../lib/hub-api";
 import { useModelPricing } from "../../hooks/use-model-pricing";
 import { ProviderLogoMark } from "./ProviderLogoMark";
-import {
-  CaveatNote,
-  HudCard,
-  SectionLabel,
-  Stat,
-  formatNumber,
-} from "../InsightsDashboard";
+import { CaveatNote, HudCard, Stat, formatNumber } from "../InsightsDashboard";
+import { SectionLabel } from "./section-label";
 
 type DateRange = { startDate?: string; endDate?: string };
 

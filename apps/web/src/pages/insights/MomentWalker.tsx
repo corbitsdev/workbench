@@ -472,7 +472,7 @@ export function MomentWalker({
               role="option"
               aria-selected={isSelected}
               onClick={() => setSelected(index)}
-              className={`cursor-pointer rounded-[12px] border bg-surface shadow-[var(--shadow)] transition-colors ${
+              className={`cursor-pointer rounded border bg-surface shadow-[var(--shadow-card)] transition-colors ${
                 isSelected
                   ? "border-accent"
                   : "border-border hover:bg-row-hover"

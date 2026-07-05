@@ -787,6 +787,42 @@ export async function getPrincipalRoster(
   return parsed;
 }
 
+// ─── Tenant roster (dashboard-level clickable Agents + runs, CL-2798) ──
+
+export const TenantRosterSchema = type({
+  instances: RosterInstanceSchema.array(),
+  runs: RosterRunSchema.array(),
+});
+export type TenantRoster = typeof TenantRosterSchema.infer;
+
+export const GetTenantRosterParamsSchema = type({
+  tenantId: "string",
+});
+export type GetTenantRosterParams = typeof GetTenantRosterParamsSchema.infer;
+
+/**
+ * Fetch a tenant's agent instances and most recent workflow runs
+ * (`GET /api/tenants/:tenantId/roster`). Powers the Insights dashboard's
+ * first-class, clickable Agents and Recent-runs surfaces: each instance
+ * deep-links to its trace (`/insights/users/:principalId`) and each run to its
+ * execution trace (`/insights/trace/:runId`).
+ */
+export async function getTenantRoster(
+  options: ClientOptions = {},
+  params: GetTenantRosterParams,
+): Promise<TenantRoster> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/roster`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = TenantRosterSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /roster response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export const GetMomentDetailParamsSchema = type({
   tenantId: "string",
   principalId: "string",

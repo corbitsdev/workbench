@@ -4,7 +4,10 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
-import { listRunRecords } from "../workflow-executor/run-store";
+import {
+  listRunRecords,
+  listTenantRunRecords,
+} from "../workflow-executor/run-store";
 
 const { agent, agentInstance, agentSession } = intxSchema;
 
@@ -120,6 +123,96 @@ export async function getPrincipalRoster(args: {
   const parsed = PrincipalRosterSchema({ instances, runs });
   if (parsed instanceof type.errors) {
     throw new Error(`Principal roster failed validation: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// The tenant-wide roster reuses the same per-item shapes as the principal
+// roster, but scopes to a whole tenant rather than one owner.
+export const TenantRosterSchema = type({
+  instances: RosterInstanceSchema.array(),
+  runs: RosterRunSchema.array(),
+});
+export type TenantRoster = typeof TenantRosterSchema.infer;
+
+// The default cap on the tenant-wide recent-runs list — enough to make runs a
+// first-class, clickable surface on the dashboard without unbounded fan-out.
+export const TENANT_ROSTER_RUN_LIMIT = 30;
+
+// Lists EVERY agent instance owned in a tenant and the tenant's most recent
+// workflow runs — the tenant-wide analogue of getPrincipalRoster. Instances
+// come through the same member_agent_instance -> agent_instance join (deduped
+// per instance, since a shared instance maps to more than one member), so each
+// carries its synthetic principal id for deep-linking to that instance's trace.
+// Runs come from the owner-agnostic listTenantRunRecords, most-recent first.
+export async function getTenantRoster(args: {
+  db: HubDb;
+  tenantId: string;
+  runLimit?: number;
+}): Promise<TenantRoster> {
+  const instanceRows = await args.db
+    .selectDistinctOn([memberAgentInstance.instanceId], {
+      instanceId: memberAgentInstance.instanceId,
+      principalId: agentInstance.principalId,
+      name: agent.name,
+      status: agentInstance.status,
+    })
+    .from(memberAgentInstance)
+    .innerJoin(
+      agentInstance,
+      and(
+        eq(agentInstance.id, memberAgentInstance.instanceId),
+        eq(agentInstance.tenantId, memberAgentInstance.tenantId),
+      ),
+    )
+    .innerJoin(agent, eq(agent.id, agentInstance.agentId))
+    .where(eq(memberAgentInstance.tenantId, args.tenantId));
+
+  const syntheticIds = instanceRows.map((r) => r.principalId);
+  const sessionCounts = new Map<string, number>();
+  if (syntheticIds.length > 0) {
+    const counts = await args.db
+      .select({
+        principalId: agentSession.principalId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(agentSession)
+      .where(
+        and(
+          eq(agentSession.tenantId, args.tenantId),
+          inArray(agentSession.principalId, syntheticIds),
+        ),
+      )
+      .groupBy(agentSession.principalId);
+    for (const c of counts) {
+      sessionCounts.set(c.principalId, Number(c.count));
+    }
+  }
+
+  const instances = instanceRows
+    .map((r) => ({
+      instanceId: r.instanceId,
+      principalId: r.principalId,
+      name: r.name,
+      status: r.status,
+      sessionCount: sessionCounts.get(r.principalId) ?? 0,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const runRows = await listTenantRunRecords(
+    args.db,
+    args.tenantId,
+    args.runLimit ?? TENANT_ROSTER_RUN_LIMIT,
+  );
+  const runs = runRows.map((r) => ({
+    runId: r.runId,
+    kind: r.kind,
+    status: r.status,
+  }));
+
+  const parsed = TenantRosterSchema({ instances, runs });
+  if (parsed instanceof type.errors) {
+    throw new Error(`Tenant roster failed validation: ${parsed.summary}`);
   }
   return parsed;
 }

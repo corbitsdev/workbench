@@ -4,7 +4,7 @@
 // arktype schema, and the malformed-body error path.
 import { describe, expect, it, mock } from "bun:test";
 import "./test-setup";
-import { getPrincipalRoster } from "./index";
+import { getPrincipalRoster, getTenantRoster } from "./index";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -83,6 +83,61 @@ describe("getPrincipalRoster", () => {
         { baseUrl: BASE, fetch: fetcher },
         { tenantId: "ten_1", principalId: "prn_1" },
       ),
+    ).rejects.toThrow(/Invalid \/roster response/);
+  });
+});
+
+describe("getTenantRoster", () => {
+  const roster = {
+    instances: [
+      {
+        instanceId: "ins_1",
+        principalId: "prn_syn_1",
+        name: "Myra",
+        status: "running",
+        sessionCount: 4,
+      },
+    ],
+    runs: [{ runId: "run_1", kind: "last30days", status: "completed" }],
+  };
+
+  it("builds the tenant-scoped roster URL under /api", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ instances: [], runs: [] })),
+    );
+
+    await getTenantRoster(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten/1" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE}/api/tenants/ten%2F1/roster`);
+  });
+
+  it("parses the instances and runs through the boundary schema", async () => {
+    const { fetcher } = makeFetch(() => Promise.resolve(jsonResponse(roster)));
+
+    const result = await getTenantRoster(
+      { baseUrl: BASE, fetch: fetcher },
+      { tenantId: "ten_1" },
+    );
+
+    expect(result.instances[0]?.principalId).toBe("prn_syn_1");
+    expect(result.runs[0]?.runId).toBe("run_1");
+  });
+
+  it("rejects a malformed body (run missing kind)", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({
+          instances: [],
+          runs: [{ runId: "run_1", status: "completed" }],
+        }),
+      ),
+    );
+
+    await expect(
+      getTenantRoster({ baseUrl: BASE, fetch: fetcher }, { tenantId: "ten_1" }),
     ).rejects.toThrow(/Invalid \/roster response/);
   });
 });
