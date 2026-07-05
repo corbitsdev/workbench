@@ -296,7 +296,7 @@ function WorkflowRunPaneInner({
         key: "loading",
         node: (
           <div className="flex h-full items-center justify-center border border-border bg-bg">
-            <p className="text-[13px] text-text-3">Loading run…</p>
+            <p className="text-[13px] text-text-3">Loading workflow…</p>
           </div>
         ),
       };

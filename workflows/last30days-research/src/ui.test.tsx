@@ -112,6 +112,26 @@ describe("last30days Panel", () => {
     expect(screen.queryByText(/^Working/)).toBeNull();
   });
 
+  test("after intake submit (signal pending) shows a live working state, not the dead 'Setting up workflow' copy (CL-2787)", () => {
+    // The user submitted the topic: the intake gate has left awaiting-signal but
+    // research has not produced steps yet. This transition window must read as
+    // live/working, not the pre-gate "Setting up workflow" placeholder.
+    render(
+      <Panel
+        {...baseProps}
+        signalPending
+        state={
+          {
+            phase: "running",
+            steps: new Map([["intake", { phase: "in-flight" as const }]]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    screen.getByText(/starting research/i);
+    expect(screen.queryByText(/setting up workflow/i)).toBeNull();
+  });
+
   test("intake copy no longer mentions the disabled Bluesky source", () => {
     render(
       <Panel

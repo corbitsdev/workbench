@@ -260,8 +260,9 @@ export function runNeverStarted(
  * placeholder: every phase maps to a truthful present-progress line.
  */
 export function runStartLabel(state: RunState | null): string {
-  if (state === null || state.phase === "pending") return "Starting the run…";
-  return "Getting the run ready…";
+  if (state === null || state.phase === "pending")
+    return "Starting your workflow…";
+  return "Preparing your workflow…";
 }
 
 const NO_ERROR_DETAILS =

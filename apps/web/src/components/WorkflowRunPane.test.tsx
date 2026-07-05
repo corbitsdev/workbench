@@ -173,10 +173,10 @@ describe("WorkflowRunPane", () => {
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
 
-  it("falls back to a legible run state when the log query errors, instead of hanging on Loading run…", async () => {
+  it("falls back to a legible run state when the log query errors, instead of hanging on Loading workflow…", async () => {
     // Repro of Finding B: a legacy run (no deploymentId) 400s on /state, so the
     // log query errors and logState is undefined. The pane used to sit on
-    // "Loading run…" forever. It must fall back to the record-derived run-level
+    // "Loading workflow…" forever. It must fall back to the record-derived run-level
     // state and render the terminal failure copy.
     record = makeRecord({ kind: "no-panel", status: "failed" });
     logStateData = undefined;
@@ -187,10 +187,10 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("Workflow run"));
     // Legible terminal copy, not a permanent loading placeholder.
     screen.getByText(/this run failed\. start a new run to try again\./i);
-    expect(screen.queryByText("Loading run…")).toBeNull();
+    expect(screen.queryByText("Loading workflow…")).toBeNull();
   });
 
-  it("keeps showing Loading run… while the log is genuinely still loading (no error, deployment present)", () => {
+  it("keeps showing Loading workflow… while the log is genuinely still loading (no error, deployment present)", () => {
     // The fallback must NOT fire while the log is merely in flight — only on a
     // real error / missing deployment. A run with a deploymentId and no error is
     // still loading and should show the placeholder.
@@ -204,7 +204,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    screen.getByText("Loading run…");
+    screen.getByText("Loading workflow…");
   });
 
   it("shows the loading placeholder while the record query is loading", () => {
@@ -213,7 +213,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    screen.getByText("Loading run…");
+    screen.getByText("Loading workflow…");
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
 

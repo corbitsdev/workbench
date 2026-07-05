@@ -299,14 +299,14 @@ describe("workflow-run-state", () => {
   });
 
   test("runStartLabel reports an honest run-start phase, never an indefinite wait", () => {
-    // No state yet / queued to start → "Starting the run".
-    expect(runStartLabel(null)).toBe("Starting the run…");
+    // No state yet / queued to start → "Starting your workflow".
+    expect(runStartLabel(null)).toBe("Starting your workflow…");
     expect(
       runStartLabel({
         phase: "pending",
         steps: new Map(),
       } as unknown as RunState),
-    ).toBe("Starting the run…");
+    ).toBe("Starting your workflow…");
     // Run-level phase moved to running but no step has activity yet → the runtime
     // is booting the first step.
     expect(
@@ -314,7 +314,7 @@ describe("workflow-run-state", () => {
         phase: "running",
         steps: new Map(),
       } as unknown as RunState),
-    ).toBe("Getting the run ready…");
+    ).toBe("Preparing your workflow…");
   });
 
   test("runNeverStarted is true only for a genuinely-read empty log", () => {

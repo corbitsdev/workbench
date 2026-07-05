@@ -298,11 +298,13 @@ function IntakeScreen({
   phase,
   connected,
   signalPending,
+  intakeDone,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
+  intakeDone: boolean;
   onSubmit: (payload: IntakePayload) => void;
 }) {
   const [topic, setTopic] = useState("");
@@ -311,9 +313,17 @@ function IntakeScreen({
   const canSubmit = connected && !signalPending && topic.trim().length > 0;
 
   if (phase !== "awaiting-signal") {
+    // The gate has either been submitted (signalPending) or already cleared and
+    // the run is advancing (intakeDone) — show an honest live working state, not
+    // the "Setting up workflow" pre-gate copy that reads as dead mid-run. Only a
+    // genuinely pre-gate run (still provisioning, nothing submitted) sees "Setting
+    // up workflow".
+    const advancing = signalPending || intakeDone;
     return (
       <Card>
-        <Spinner label="Setting up workflow…" />
+        <Spinner
+          label={advancing ? "Starting research…" : "Setting up workflow…"}
+        />
       </Card>
     );
   }
@@ -517,6 +527,7 @@ export function Panel(props: WorkflowPanelProps) {
             phase={phaseFor(state, "intake")}
             connected={connected}
             signalPending={signalPending}
+            intakeDone={intakeIsDone(state)}
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
         ) : current === "research" ? (
