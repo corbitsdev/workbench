@@ -9,6 +9,7 @@ export {
   resolveModelRate,
   computeCost,
   priceUsageRows,
+  UNKNOWN_MODEL_LABEL,
   type ModelsDevPayload,
   type ModelRate,
   type PriceCatalog,

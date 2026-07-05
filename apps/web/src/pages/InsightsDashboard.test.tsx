@@ -157,6 +157,7 @@ const mockOverview = {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       thinkingTokens: 0,
+      cost: null,
     },
     {
       principalId: "pri_other",
@@ -169,6 +170,7 @@ const mockOverview = {
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
       thinkingTokens: 0,
+      cost: null,
     },
   ],
   byWorkflowType: [
@@ -178,6 +180,7 @@ const mockOverview = {
       toolCallCount: 2,
       inputTokens: 500,
       outputTokens: 90,
+      cost: null,
     },
     {
       kind: "mvt-landing-page",
@@ -185,6 +188,7 @@ const mockOverview = {
       toolCallCount: 1,
       inputTokens: 120,
       outputTokens: 30,
+      cost: null,
     },
   ],
   inference: {
@@ -803,6 +807,7 @@ describe("dashboard data helpers", () => {
           toolCallCount: 15,
           inputTokens: 250,
           outputTokens: 150,
+          cost: null,
         },
         {
           kind: "orphan",
@@ -810,6 +815,7 @@ describe("dashboard data helpers", () => {
           toolCallCount: 1,
           inputTokens: 10,
           outputTokens: 5,
+          cost: null,
         },
       ],
     );
@@ -835,6 +841,7 @@ describe("dashboard data helpers", () => {
         cacheReadTokens: 0,
         cacheWriteTokens: 0,
         thinkingTokens: 0,
+        cost: null,
       },
       {
         principalId: "b",
@@ -847,6 +854,7 @@ describe("dashboard data helpers", () => {
         cacheReadTokens: 0,
         cacheWriteTokens: 0,
         thinkingTokens: 0,
+        cost: null,
       },
     ];
     expect(filterPeople(people, "me")).toHaveLength(1);

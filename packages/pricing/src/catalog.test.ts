@@ -6,6 +6,7 @@ import {
   computeCost,
   priceUsageRows,
   resolveModelRate,
+  UNKNOWN_MODEL_LABEL,
   type ModelsDevPayload,
   type PriceCatalog,
 } from "./catalog";
@@ -217,6 +218,7 @@ describe("computeCost", () => {
         outputTokens: 500_000,
         cacheReadTokens: 2_000_000,
         cacheWriteTokens: 100_000,
+        thinkingTokens: 0,
       },
       rate,
     );
@@ -237,6 +239,7 @@ describe("computeCost", () => {
         outputTokens: 0,
         cacheReadTokens: 0,
         cacheWriteTokens: 1_000_000,
+        thinkingTokens: 0,
       },
       rate,
     );
@@ -252,10 +255,45 @@ describe("computeCost", () => {
           outputTokens: 0,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
+          thinkingTokens: 0,
         },
         null,
       ),
     ).toBeNull();
+  });
+
+  test("thinking tokens are priced at the model's output rate (CL-2723)", () => {
+    const rate = resolveModelRate(catalog(), "claude-opus-4-5");
+    const cost = computeCost(
+      {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 200_000,
+      },
+      rate,
+    );
+    // 0.2M * $25/M output rate = $5
+    expect(cost?.thinking).toBeCloseTo(5, 6);
+    expect(cost?.total).toBeCloseTo(5, 6);
+  });
+
+  test("thinking tokens with no rate contribute zero, matching the output class", () => {
+    const rate = resolveModelRate(catalog(), "deepseek-v4-flash");
+    const cost = computeCost(
+      {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 1_000_000,
+      },
+      rate,
+    );
+    // deepseek-v4-flash DOES publish output ($0.28/M) in the fixture, so this
+    // asserts the thinking class truly reuses the resolved output rate.
+    expect(cost?.thinking).toBeCloseTo(0.28, 6);
   });
 });
 
@@ -269,6 +307,7 @@ describe("priceUsageRows", () => {
           outputTokens: 0,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
+          thinkingTokens: 0,
         },
         {
           model: "mystery-model",
@@ -276,6 +315,7 @@ describe("priceUsageRows", () => {
           outputTokens: 0,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
+          thinkingTokens: 0,
         },
       ],
       catalog(),
@@ -294,12 +334,87 @@ describe("priceUsageRows", () => {
           outputTokens: 0,
           cacheReadTokens: 0,
           cacheWriteTokens: 0,
+          thinkingTokens: 0,
         },
       ],
       catalog(),
     );
     expect(result.hasUnpriced).toBe(false);
     expect(result.cost.total).toBe(0);
+  });
+
+  test("an unpriced model flagged solely by thinking-token usage", () => {
+    const result = priceUsageRows(
+      [
+        {
+          model: "mystery-model",
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 42,
+        },
+      ],
+      catalog(),
+    );
+    expect(result.hasUnpriced).toBe(true);
+    expect(result.unpricedModels).toEqual(["mystery-model"]);
+  });
+
+  test("null-model usage under UNKNOWN_MODEL_LABEL is unpriced, never a silent $0 (CL-2723)", () => {
+    const result = priceUsageRows(
+      [
+        {
+          model: UNKNOWN_MODEL_LABEL,
+          inputTokens: 1_000_000,
+          outputTokens: 500_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+        },
+      ],
+      catalog(),
+    );
+    expect(result.hasUnpriced).toBe(true);
+    expect(result.unpricedModels).toEqual([UNKNOWN_MODEL_LABEL]);
+    expect(result.cost.total).toBe(0);
+  });
+
+  test("sums cost across multiple priced rows for the same and different models", () => {
+    const result = priceUsageRows(
+      [
+        {
+          model: "claude-opus-4-5",
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+        },
+        {
+          model: "claude-opus-4-5",
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+        },
+        {
+          model: "deepseek-v4-flash",
+          inputTokens: 0,
+          outputTokens: 1_000_000,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+        },
+      ],
+      catalog(),
+    );
+    // Two claude-opus-4-5 rows at $5/M input = $10, plus deepseek output $0.28/M = $0.28
+    expect(result.cost.input).toBeCloseTo(10, 6);
+    expect(result.cost.output).toBeCloseTo(0.28, 6);
+    expect(result.cost.total).toBeCloseTo(10.28, 6);
+    expect(result.hasUnpriced).toBe(false);
   });
 });
 

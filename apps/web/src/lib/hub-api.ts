@@ -524,6 +524,27 @@ const ActivityCountRowSchema = type({
   count: "number",
 });
 
+/**
+ * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
+ * `null` means the hub had no price catalog warm when it computed this row
+ * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
+ * some of the underlying models had no models.dev rate.
+ */
+export const PricedUsageSchema = type({
+  cost: {
+    input: "number",
+    output: "number",
+    cacheRead: "number",
+    cacheWrite: "number",
+    thinking: "number",
+    total: "number",
+  },
+  unpricedModels: "string[]",
+  hasUnpriced: "boolean",
+}).or("null");
+
+export type PricedUsageValue = typeof PricedUsageSchema.infer;
+
 export const UsageByPersonRowSchema = type({
   principalId: "string",
   name: "string | null",
@@ -535,6 +556,7 @@ export const UsageByPersonRowSchema = type({
   cacheReadTokens: "number",
   cacheWriteTokens: "number",
   thinkingTokens: "number",
+  cost: PricedUsageSchema,
 });
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
@@ -558,6 +580,7 @@ export const UsageByWorkflowTypeRowSchema = type({
   toolCallCount: "number",
   inputTokens: "number",
   outputTokens: "number",
+  cost: PricedUsageSchema,
 });
 
 export type UsageByWorkflowTypeRow = typeof UsageByWorkflowTypeRowSchema.infer;

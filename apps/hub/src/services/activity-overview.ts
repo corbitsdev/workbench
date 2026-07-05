@@ -16,6 +16,13 @@ import {
   type AnalyticsSummary,
 } from "@workbench/analytics";
 import {
+  priceUsageRows,
+  UNKNOWN_MODEL_LABEL,
+  type ModelUsageRow,
+  type PriceCatalog,
+  type PricedUsage,
+} from "@workbench/pricing";
+import {
   and,
   count,
   desc,
@@ -52,6 +59,14 @@ export type UsageByPersonRow = {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   thinkingTokens: number;
+  /**
+   * Dollar cost (CL-2723), priced per model then summed — never a blended
+   * cross-model rate. `null` when the caller supplied no price catalog (see
+   * `getUsageByPerson`'s `priceCatalog` param); this is the honest "not
+   * computed" state, distinct from `hasUnpriced` on a present `cost`, which
+   * means "computed, but some of this person's models had no models.dev rate."
+   */
+  cost: PricedUsage | null;
 };
 
 export type ActivityCountRow = { key: string; count: number };
@@ -63,6 +78,8 @@ export type UsageByWorkflowTypeRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  /** Dollar cost (CL-2723) — see {@link UsageByPersonRow.cost}. */
+  cost: PricedUsage | null;
 };
 
 export type ActivityOverview = {
@@ -218,8 +235,15 @@ export async function getUsageByPerson(args: {
   tenantId: string;
   callerPrincipalId: string | null;
   range?: AnalyticsDateRange;
+  /**
+   * models.dev rate catalog (CL-2723). Optional — the caller may not have one
+   * warm (see `activity.ts`'s best-effort fetch) — in which case `cost` on
+   * every row is `null`, never a fabricated `$0`.
+   */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<UsageByPersonRow[]> {
   const { db, tenantId, callerPrincipalId, range } = args;
+  const priceCatalog = args.priceCatalog ?? null;
 
   // `member_agent_instance` has no DB-level uniqueness on `instanceId`, so a
   // reassigned or re-provisioned instance can have more than one link row.
@@ -305,6 +329,11 @@ export async function getUsageByPerson(args: {
     .select({
       principalId: sql<string>`${resolvedMemberPrincipalId}`,
       name: intxSchema.user.name,
+      // Grouped in ALSO by model (CL-2723) so cost can be priced per model,
+      // then summed — a person using two models never gets a blended,
+      // fabricated rate. This fans out to one row per (person, model); the
+      // per-person totals below re-aggregate across that fan-out.
+      model: analyticsRollupDaily.model,
       turnCount: sumInt(analyticsRollupDaily.turnCount),
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
       inputTokens: sumInt(analyticsRollupDaily.inputTokens),
@@ -342,21 +371,68 @@ export async function getUsageByPerson(args: {
           : undefined,
       ),
     )
-    .groupBy(resolvedMemberPrincipalId, intxSchema.user.name);
+    .groupBy(
+      resolvedMemberPrincipalId,
+      intxSchema.user.name,
+      analyticsRollupDaily.model,
+    );
 
-  return rows
-    .map((row) => ({
-      principalId: row.principalId,
+  const byPrincipal = new Map<
+    string,
+    { name: string | null; modelRows: ModelUsageRow[] } & Omit<
+      UsageByPersonRow,
+      "principalId" | "name" | "isSelf" | "cost"
+    >
+  >();
+  for (const row of rows) {
+    const existing = byPrincipal.get(row.principalId) ?? {
       name: row.name ?? null,
-      isSelf:
-        callerPrincipalId !== null && row.principalId === callerPrincipalId,
-      turnCount: row.turnCount,
-      toolCallCount: row.toolCallCount,
+      turnCount: 0,
+      toolCallCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+      modelRows: [],
+    };
+    existing.turnCount += row.turnCount;
+    existing.toolCallCount += row.toolCallCount;
+    existing.inputTokens += row.inputTokens;
+    existing.outputTokens += row.outputTokens;
+    existing.cacheReadTokens += row.cacheReadTokens;
+    existing.cacheWriteTokens += row.cacheWriteTokens;
+    existing.thinkingTokens += row.thinkingTokens;
+    // A null model with real tokens is genuine usage that cannot be priced —
+    // route it through `priceUsageRows` under UNKNOWN_MODEL_LABEL so it lands
+    // in `unpricedModels`/`hasUnpriced`, never as a silent $0 (CL-2723).
+    existing.modelRows.push({
+      model: row.model ?? UNKNOWN_MODEL_LABEL,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
       cacheReadTokens: row.cacheReadTokens,
       cacheWriteTokens: row.cacheWriteTokens,
       thinkingTokens: row.thinkingTokens,
+    });
+    byPrincipal.set(row.principalId, existing);
+  }
+
+  return [...byPrincipal.entries()]
+    .map(([principalId, agg]) => ({
+      principalId,
+      name: agg.name,
+      isSelf: callerPrincipalId !== null && principalId === callerPrincipalId,
+      turnCount: agg.turnCount,
+      toolCallCount: agg.toolCallCount,
+      inputTokens: agg.inputTokens,
+      outputTokens: agg.outputTokens,
+      cacheReadTokens: agg.cacheReadTokens,
+      cacheWriteTokens: agg.cacheWriteTokens,
+      thinkingTokens: agg.thinkingTokens,
+      cost:
+        priceCatalog !== null
+          ? priceUsageRows(agg.modelRows, priceCatalog)
+          : null,
     }))
     .sort(
       (a, b) =>
@@ -368,8 +444,11 @@ export async function getUsageByWorkflowType(args: {
   db: DB["db"];
   tenantId: string;
   range?: AnalyticsDateRange;
+  /** models.dev rate catalog (CL-2723) — see {@link getUsageByPerson}. */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<UsageByWorkflowTypeRow[]> {
   const { db, tenantId, range } = args;
+  const priceCatalog = args.priceCatalog ?? null;
 
   // Workflow-run inference is recorded against per-deployment agent instances
   // whose `address` is `ins_<deploymentId>@…` (or `ins_<deploymentId>-<stepId>@…`
@@ -403,10 +482,16 @@ export async function getUsageByWorkflowType(args: {
   const rows = await db
     .select({
       kind: runByDeployment.kind,
+      // Grouped in ALSO by model (CL-2723) — see the identical rationale on
+      // `getUsageByPerson`.
+      model: analyticsRollupDaily.model,
       turnCount: sumInt(analyticsRollupDaily.turnCount),
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
       inputTokens: sumInt(analyticsRollupDaily.inputTokens),
       outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
     .innerJoin(
@@ -434,15 +519,51 @@ export async function getUsageByWorkflowType(args: {
           : undefined,
       ),
     )
-    .groupBy(runByDeployment.kind);
+    .groupBy(runByDeployment.kind, analyticsRollupDaily.model);
 
-  return rows
-    .map((row) => ({
-      kind: row.kind,
-      turnCount: row.turnCount,
-      toolCallCount: row.toolCallCount,
+  const byKind = new Map<
+    string,
+    { modelRows: ModelUsageRow[] } & Omit<
+      UsageByWorkflowTypeRow,
+      "kind" | "cost"
+    >
+  >();
+  for (const row of rows) {
+    const existing = byKind.get(row.kind) ?? {
+      turnCount: 0,
+      toolCallCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      modelRows: [],
+    };
+    existing.turnCount += row.turnCount;
+    existing.toolCallCount += row.toolCallCount;
+    existing.inputTokens += row.inputTokens;
+    existing.outputTokens += row.outputTokens;
+    // Null-model usage is priced as unpriced under UNKNOWN_MODEL_LABEL rather
+    // than dropped — never a silent $0 (CL-2723); see getUsageByPerson.
+    existing.modelRows.push({
+      model: row.model ?? UNKNOWN_MODEL_LABEL,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      thinkingTokens: row.thinkingTokens,
+    });
+    byKind.set(row.kind, existing);
+  }
+
+  return [...byKind.entries()]
+    .map(([kind, agg]) => ({
+      kind,
+      turnCount: agg.turnCount,
+      toolCallCount: agg.toolCallCount,
+      inputTokens: agg.inputTokens,
+      outputTokens: agg.outputTokens,
+      cost:
+        priceCatalog !== null
+          ? priceUsageRows(agg.modelRows, priceCatalog)
+          : null,
     }))
     .sort(
       (a, b) =>
@@ -455,10 +576,13 @@ export async function getActivityOverview(args: {
   tenantId: string;
   callerPrincipalId?: string | null;
   range?: AnalyticsDateRange;
+  /** models.dev rate catalog (CL-2723) — see {@link getUsageByPerson}. */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<ActivityOverview> {
   const { db, tenantId } = args;
   const callerPrincipalId = args.callerPrincipalId ?? null;
   const range = args.range ?? {};
+  const priceCatalog = args.priceCatalog ?? null;
 
   const tenantArtifacts = and(
     eq(artifact.tenantId, tenantId),
@@ -597,8 +721,8 @@ export async function getActivityOverview(args: {
       ? getAnalyticsSummary({ db, tenantId, range: previousRange })
       : Promise.resolve(null),
     getTokenDataStartDate({ db, tenantId }),
-    getUsageByPerson({ db, tenantId, callerPrincipalId, range }),
-    getUsageByWorkflowType({ db, tenantId, range }),
+    getUsageByPerson({ db, tenantId, callerPrincipalId, range, priceCatalog }),
+    getUsageByWorkflowType({ db, tenantId, range, priceCatalog }),
   ]);
 
   return {

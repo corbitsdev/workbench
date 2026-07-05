@@ -200,6 +200,45 @@ function CostByActorTable({ people }: { people: UsageByPersonRow[] }) {
       ),
     },
     {
+      key: "cost",
+      header: "Cost",
+      align: "right",
+      sortValue: (r) => r.cost?.cost.total ?? -1,
+      render: (r) => {
+        const cost = r.cost;
+        // "not priced" covers both a missing catalog (`cost === null`) and the
+        // case where every model with usage was unpriced (total stays $0 with
+        // `hasUnpriced`) — the latter must never read as a real $0.00 (CL-2723).
+        if (cost === null || (cost.hasUnpriced && cost.cost.total === 0)) {
+          const title =
+            cost === null
+              ? "Model pricing was unavailable when this was computed"
+              : `No models.dev rate for: ${cost.unpricedModels.join(", ")}`;
+          return (
+            <span
+              title={title}
+              className="rounded-[4px] bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-text-3"
+            >
+              not priced
+            </span>
+          );
+        }
+        return (
+          <span className="font-mono tabular-nums text-text">
+            {formatDollars(cost.cost.total)}
+            {cost.hasUnpriced && (
+              <span
+                title={`No rate for: ${cost.unpricedModels.join(", ")}`}
+                className="ml-1.5 rounded-[4px] bg-surface-2 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-text-3"
+              >
+                partial
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
       key: "inputTokens",
       header: "Input",
       align: "right",
@@ -250,7 +289,7 @@ function CostByActorTable({ people }: { people: UsageByPersonRow[] }) {
       rows={people}
       getRowKey={(r) => r.principalId}
       caption="Token spend by actor"
-      initialSort={{ key: "inputTokens", dir: "desc" }}
+      initialSort={{ key: "cost", dir: "desc" }}
       pageSize={10}
       emptyMessage="No attributed usage for this range"
     />
@@ -368,9 +407,9 @@ export function CostInsights({
         </HudCard>
         <HudCard label="Token spend by actor">
           <CaveatNote>
-            Dollar cost is attributed at the model level, not per actor — usage
-            rows here carry no per-actor model breakdown, so a per-person dollar
-            figure would be fabricated.
+            Cost is priced per model, per person, then summed (CL-2723) — never
+            a blended cross-model rate. &quot;partial&quot; means some of this
+            person&apos;s usage was on a model with no models.dev rate.
           </CaveatNote>
           <CostByActorTable people={overview.byPerson} />
         </HudCard>

@@ -240,6 +240,16 @@ export interface TokenUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheWriteTokens: number;
+  /**
+   * Reasoning/thinking tokens (CL-2723). models.dev publishes no separate
+   * `thinking` rate class — providers that bill reasoning tokens at all
+   * (Anthropic extended thinking, OpenAI reasoning models) bill them at the
+   * model's OUTPUT rate, so that is the rate this class prices against. This
+   * is a documented modeling choice, not a fabricated rate: if a provider ever
+   * bills thinking tokens differently, this is the one place to special-case
+   * it.
+   */
+  thinkingTokens: number;
 }
 
 export interface TokenCost {
@@ -247,6 +257,7 @@ export interface TokenCost {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  thinking: number;
   total: number;
 }
 
@@ -271,12 +282,15 @@ export function computeCost(
   const output = classCost(usage.outputTokens, rate.output);
   const cacheRead = classCost(usage.cacheReadTokens, rate.cacheRead);
   const cacheWrite = classCost(usage.cacheWriteTokens, rate.cacheWrite);
+  // Thinking tokens are priced at the output rate — see the TokenUsage doc.
+  const thinking = classCost(usage.thinkingTokens, rate.output);
   return {
     input,
     output,
     cacheRead,
     cacheWrite,
-    total: input + output + cacheRead + cacheWrite,
+    thinking,
+    total: input + output + cacheRead + cacheWrite + thinking,
   };
 }
 
@@ -285,8 +299,18 @@ const EMPTY_COST: TokenCost = {
   output: 0,
   cacheRead: 0,
   cacheWrite: 0,
+  thinking: 0,
   total: 0,
 };
+
+/**
+ * Label for usage telemetry that carries no model name (CL-2723). Such usage
+ * can never be priced — routing it through `priceUsageRows` under this label
+ * (rather than dropping it) forces it into `unpricedModels`/`hasUnpriced` so it
+ * renders as "not priced"/"partial", never a silent, fabricated $0. The parens
+ * keep it from colliding with any real models.dev id.
+ */
+export const UNKNOWN_MODEL_LABEL = "(unknown model)";
 
 /** Row of per-model usage keyed by the telemetry model name. */
 export interface ModelUsageRow extends TokenUsage {
@@ -321,7 +345,8 @@ export function priceUsageRows(
         row.inputTokens +
         row.outputTokens +
         row.cacheReadTokens +
-        row.cacheWriteTokens;
+        row.cacheWriteTokens +
+        row.thinkingTokens;
       if (usedTokens > 0) unpriced.add(row.model);
       continue;
     }
@@ -329,6 +354,7 @@ export function priceUsageRows(
     cost.output += rowCost.output;
     cost.cacheRead += rowCost.cacheRead;
     cost.cacheWrite += rowCost.cacheWrite;
+    cost.thinking += rowCost.thinking;
     cost.total += rowCost.total;
   }
 
