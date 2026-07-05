@@ -22,6 +22,7 @@ import {
   runStateFromLog,
   useWorkflowRecord,
   useWorkflowRunState,
+  useWorkflowRunTokens,
 } from "../../hooks/use-workflow";
 import {
   stepOutputsFromLog,
@@ -423,6 +424,7 @@ export function WorkflowTracePage() {
 
   const recordQuery = useWorkflowRecord(safeId, activeTenantId);
   const runStateQuery = useWorkflowRunState(safeId, activeTenantId);
+  const tokensQuery = useWorkflowRunTokens(safeId, activeTenantId);
 
   const logState = runStateQuery.data;
   const record = recordQuery.data;
@@ -589,11 +591,57 @@ export function WorkflowTracePage() {
                   Token classes for this run are kept separate and priced
                   independently.
                 </FacetDesc>
-                <GapBanner>
-                  Per-run token counts aren&rsquo;t attributed to this trace
-                  yet, and the dollar layer isn&rsquo;t wired into analytics —
-                  so no cost is shown rather than a fabricated one.
-                </GapBanner>
+                {tokensQuery.isLoading && (
+                  <div className="h-[64px] animate-pulse rounded-[12px] bg-surface-2" />
+                )}
+                {!tokensQuery.isLoading &&
+                  (tokensQuery.isError ||
+                    tokensQuery.data?.available !== true) && (
+                    <GapBanner>
+                      {tokensQuery.isError
+                        ? "Per-run token counts couldn't be loaded for this trace."
+                        : "Per-run token counts aren't attributed to this run yet — either no inference has landed for it, or (for a run that predates per-run deployments) its usage collapsed into a later run sharing the same deployment."}{" "}
+                      The dollar layer isn&rsquo;t wired into analytics yet
+                      either, so no cost is shown rather than a fabricated one.
+                    </GapBanner>
+                  )}
+                {!tokensQuery.isLoading &&
+                  !tokensQuery.isError &&
+                  tokensQuery.data?.available === true &&
+                  tokensQuery.data.totals !== undefined && (
+                    <FacetCard title="Token totals">
+                      <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px] sm:grid-cols-3">
+                        {(
+                          [
+                            ["Input", tokensQuery.data.totals.inputTokens],
+                            ["Output", tokensQuery.data.totals.outputTokens],
+                            [
+                              "Cache read",
+                              tokensQuery.data.totals.cacheReadTokens,
+                            ],
+                            [
+                              "Cache write",
+                              tokensQuery.data.totals.cacheWriteTokens,
+                            ],
+                            [
+                              "Thinking",
+                              tokensQuery.data.totals.thinkingTokens,
+                            ],
+                            ["Turns", tokensQuery.data.totals.turnCount],
+                          ] as const
+                        ).map(([label, value]) => (
+                          <div key={label}>
+                            <dt className="font-mono text-[9px] uppercase tracking-[0.09em] text-text-3">
+                              {label}
+                            </dt>
+                            <dd className="text-[13px] font-bold tabular-nums tracking-[-0.01em] text-text">
+                              {value.toLocaleString()}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </FacetCard>
+                  )}
               </div>
             )}
 

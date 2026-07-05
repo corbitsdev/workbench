@@ -82,6 +82,18 @@ export type UsageByWorkflowTypeRow = {
   cost: PricedUsage | null;
 };
 
+export type WorkflowRunTokenTotalsRow = {
+  /** `workflow_run_record.id` — the run this row's tokens are attributed to. */
+  runId: string;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+};
+
 export type ActivityOverview = {
   tenantId: string;
   range: AnalyticsDateRange;
@@ -569,6 +581,125 @@ export async function getUsageByWorkflowType(args: {
       (a, b) =>
         b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
     );
+}
+
+// CL-2809: per-RUN token attribution, read-side only. Workflow-run inference is
+// recorded against a per-deployment agent instance whose `address` embeds the
+// deploymentId (`ins_<deploymentId>…`, the same LIKE convention
+// `getUsageByWorkflowType` and `getUsageByPerson`'s `workflowOwnerByInstance`
+// use), and the per-run-deploy model (CL-2582) is 1 run : 1 deployment — so
+// resolving instance -> deploymentId -> workflow_run_record.id recovers the
+// per-run identity that raw analytics rows never carried.
+//
+// KNOWN CAVEAT (mirrors CL-2711 on `getUsageByPerson`): a LEGACY deployment
+// (pre-CL-2582) could serve several serial runs. `DISTINCT ON (agent_instance.id)`
+// + `ORDER BY workflow_run_record.created_at DESC` collapses those to the
+// MOST-RECENT run — the earlier runs on that shared deployment are NOT
+// separately attributable and are silently absent from the result (never
+// duplicated across rows). New/live per-run deployments only ever have one
+// runner, so this only skews historical buckets that still hold pre-CL-2582
+// rows.
+function runByInstanceJoin(db: DB["db"], tenantId: string) {
+  // Both projected columns are an underlying `id` (`agent_instance.id` and
+  // `workflow_run_record.id`). Left as plain columns they'd both emit the SQL
+  // name `"id"`, so the outer `group by "run_by_instance"."id"` is ambiguous.
+  // Keep `instanceId` a plain column (drizzle qualifies it as
+  // `"run_by_instance"."id"` in the join, so it stays unambiguous against
+  // `analytics_rollup_daily.instance_id`) and SQL-alias only the run id to the
+  // unique name `run_id` (no other joined table has that column, so the
+  // unqualified references drizzle emits for a `sql`-aliased field are safe).
+  return db
+    .selectDistinctOn([agentInstance.id], {
+      instanceId: agentInstance.id,
+      runId: sql<string>`${workflowRunRecord.id}`.as("run_id"),
+    })
+    .from(agentInstance)
+    .innerJoin(
+      workflowRunRecord,
+      and(
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+        like(
+          agentInstance.address,
+          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+        ),
+      ),
+    )
+    .where(eq(agentInstance.tenantId, tenantId))
+    .orderBy(agentInstance.id, desc(workflowRunRecord.createdAt))
+    .as("run_by_instance");
+}
+
+export async function getUsageByWorkflowRun(args: {
+  db: DB["db"];
+  tenantId: string;
+  range?: AnalyticsDateRange;
+}): Promise<WorkflowRunTokenTotalsRow[]> {
+  const { db, tenantId, range } = args;
+
+  const runByInstance = runByInstanceJoin(db, tenantId);
+
+  const rows = await db
+    .select({
+      runId: runByInstance.runId,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      runByInstance,
+      eq(runByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(runByInstance.runId);
+
+  return rows.map((row) => ({
+    runId: row.runId,
+    turnCount: row.turnCount,
+    toolCallCount: row.toolCallCount,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+    thinkingTokens: row.thinkingTokens,
+  }));
+}
+
+/**
+ * Single-run token totals for a run detail surface (e.g. the WorkflowTracePage
+ * cost facet). Returns `null` when the run has no attributable per-run
+ * instance — either it predates the per-run-deploy model, its deployment was
+ * never indexed, no inference has landed for it yet, or (the legacy caveat
+ * documented on `getUsageByWorkflowRun`) it was an earlier serial run on a
+ * shared deployment whose usage collapsed into a later run's row instead.
+ * Callers must render this as an honest gap, never as zero usage.
+ */
+export async function getWorkflowRunTokenTotals(args: {
+  db: DB["db"];
+  tenantId: string;
+  runId: string;
+}): Promise<WorkflowRunTokenTotalsRow | null> {
+  const rows = await getUsageByWorkflowRun({
+    db: args.db,
+    tenantId: args.tenantId,
+  });
+  return rows.find((row) => row.runId === args.runId) ?? null;
 }
 
 export async function getActivityOverview(args: {

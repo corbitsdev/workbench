@@ -44,6 +44,7 @@ import {
   type EnsureDeploymentRoutableFn,
   type ProvisionRunDeploymentFn,
 } from "./workflow-runs";
+import { getWorkflowRunTokenTotals } from "../services/activity-overview";
 
 const log = getLogger(["api", "workflow-run-records"]);
 
@@ -101,6 +102,26 @@ const RunStateResponse = type({
 
 const ErrorResponse = type({ error: "string" });
 const ArchiveResponse = type({ archived: "true" });
+
+// CL-2809: per-run token totals, read-side attribution over the existing
+// analytics rollup — see `getWorkflowRunTokenTotals`. `available: false` covers
+// every honest gap (no per-run instance attributable yet, or a legacy run
+// whose usage collapsed into a later serial run on the same shared
+// deployment) — the FE must render that as a gap, never as zero usage.
+export const WorkflowRunTokensResponse = type({
+  runId: "string",
+  available: "boolean",
+  "totals?": {
+    turnCount: "number",
+    toolCallCount: "number",
+    inputTokens: "number",
+    outputTokens: "number",
+    cacheReadTokens: "number",
+    cacheWriteTokens: "number",
+    thinkingTokens: "number",
+  },
+});
+export type WorkflowRunTokens = typeof WorkflowRunTokensResponse.infer;
 
 // CL-2727 stats shapes, computed from the per-step projection. `RunKindStats` is
 // the by-kind aggregate; `SoloRunStats` is a single run's per-step breakdown.
@@ -571,6 +592,86 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       return c.json(stateResponse(state));
+    },
+  );
+
+  router.get(
+    "/workflow-exec/records/:runId/tokens",
+    describeRoute({
+      tags: ["Workflows"],
+      summary: "Read a workflow run's per-run token totals",
+      description:
+        "Per-run token totals recovered read-side from the existing analytics rollup (CL-2809): no new sink, no sidecar or schema change. `available: false` covers every honest gap — no per-run instance is attributable yet, or (documented legacy caveat) this run was an earlier serial run on a shared pre-CL-2582 deployment whose usage collapsed into a later run's row. Cost-in-dollars is a separate, in-flight concern (CL-2723); this route only surfaces token counts.",
+      parameters: [
+        {
+          name: "runId",
+          in: "path",
+          required: true,
+          description: "Run id.",
+          schema: { type: "string" },
+        },
+        {
+          name: "tenantId",
+          in: "query",
+          required: false,
+          description: "Target workbench tenant id.",
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Per-run token totals, or an honest unavailable gap",
+          content: {
+            "application/json": { schema: resolver(WorkflowRunTokensResponse) },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Run not found",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const { context, forbidden } = await resolveContext(
+        deps.db,
+        userId,
+        c.req.query("tenantId"),
+      );
+      if (forbidden) return c.json({ error: "Forbidden" }, 403);
+      if (!context) return c.json({ error: "User context not found" }, 403);
+
+      const runId = c.req.param("runId");
+      const state = await loadRunRecord(deps.db, runId);
+      if (!state) return c.json({ error: "run not found" }, 404);
+
+      const chain = await getAncestorChain(deps.db, context.tenantId);
+      const gate = assertRunOwnership(chain, context, state);
+      if (gate) return c.json({ error: gate.error }, gate.status);
+
+      const totals = await getWorkflowRunTokenTotals({
+        db: deps.db,
+        tenantId: state.tenantId,
+        runId,
+      });
+      if (totals === null) return c.json({ runId, available: false });
+      return c.json({
+        runId,
+        available: true,
+        totals: {
+          turnCount: totals.turnCount,
+          toolCallCount: totals.toolCallCount,
+          inputTokens: totals.inputTokens,
+          outputTokens: totals.outputTokens,
+          cacheReadTokens: totals.cacheReadTokens,
+          cacheWriteTokens: totals.cacheWriteTokens,
+          thinkingTokens: totals.thinkingTokens,
+        },
+      });
     },
   );
 

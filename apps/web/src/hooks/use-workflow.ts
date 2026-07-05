@@ -194,6 +194,54 @@ export function useWorkflowDeployments(
 
 export { isRecordTerminal };
 
+// CL-2809: per-run token totals, read-side attribution over the existing
+// analytics rollup (no new sink, no sidecar/schema change — see
+// `getWorkflowRunTokenTotals` in the hub). `available: false` is an honest gap
+// (no per-run instance attributable yet, or a legacy run collapsed into a
+// later serial run on a shared deployment) — callers must render it as a gap,
+// never as zero usage.
+const workflowRunTokensSchema = type({
+  runId: "string",
+  available: "boolean",
+  "totals?": {
+    turnCount: "number",
+    toolCallCount: "number",
+    inputTokens: "number",
+    outputTokens: "number",
+    cacheReadTokens: "number",
+    cacheWriteTokens: "number",
+    thinkingTokens: "number",
+  },
+});
+export type WorkflowRunTokens = typeof workflowRunTokensSchema.infer;
+
+export function useWorkflowRunTokens(
+  runId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<WorkflowRunTokens>({
+    queryKey: ["workflow-run-tokens", runId, tenantId ?? null],
+    enabled: !!runId,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-exec/records/${runId as string}/tokens`,
+          tenantId,
+        ),
+      );
+      const parsed = workflowRunTokensSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow run-tokens response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
 // Read a thin-executor run record and poll while it is advancing. The hub runs
 // each non-gate step synchronously, so the record only changes between reads
 // while `status === 'running'` (a step is executing): we poll then, and stop
