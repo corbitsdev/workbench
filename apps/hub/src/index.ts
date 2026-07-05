@@ -82,15 +82,15 @@ import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
-  relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
   registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
 } from "./services/agent-provisioning";
+import { assessPersonalAgentSync } from "./services/grant-reconcile";
 import {
-  refreshInstanceGrantsFromDefinition,
-  assessPersonalAgentSync,
-} from "./services/grant-reconcile";
+  myraInstanceIdForMember,
+  syncPersonalAgentForUser,
+} from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
@@ -127,7 +127,6 @@ import {
   ensureMember,
   lookupMember,
   provisionMemberInstances,
-  getMyraInstanceId,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
 import { AGENT_TEMPLATES } from "@workbench/agents";
@@ -524,7 +523,8 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
 // CL-2790: idle chat-session reaper. Sleeps a user-facing chat session (Myra,
 // Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
 // marking its session ended, leaving the instance relaunchable so the next
-// interaction (POST /v1/me) brings it back cold. Gated behind a kill switch
+// chat-surface open cold-relaunches it via POST /v1/instances/:id/sessions
+// (CL-2793 removed the former eager /v1/me relaunch). Gated behind a kill switch
 // (default OFF) — it evicts LIVE sessions. Fed by the agent-event stream and the
 // send-mail route (recordActivityForInstance, mounted below) so a
 // mid-conversation agent is never slept.
@@ -777,159 +777,6 @@ const MePostBody = type({
   "syncPersonalAgent?": "boolean",
 });
 
-async function myraInstanceIdForMember(
-  workingTenantId: string,
-  memberPrincipalId: string,
-): Promise<string | null> {
-  const { memberAgentInstance } = schema;
-  const mapping = await db.query.memberAgentInstance.findFirst({
-    where: and(
-      eq(memberAgentInstance.tenantId, workingTenantId),
-      eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
-      eq(memberAgentInstance.templateKey, "myra"),
-    ),
-  });
-  return mapping?.instanceId ?? null;
-}
-
-async function syncPersonalAgentForUser(
-  userId: string,
-  syncPersonalAgent: boolean,
-): Promise<{
-  workingTenantId: string | null;
-  memberPrincipalId: string | null;
-  paInstanceId: string | null;
-  provisionedMyra: boolean;
-  grantsRefreshed: boolean;
-  grantsPushedLive: boolean;
-}> {
-  let workingTenantId: string | null = null;
-  let memberPrincipalId: string | null = null;
-  try {
-    const { tenantId, principalId } = await ensureMember(db, {
-      tenantId: rootTenantId,
-      userId,
-    });
-    workingTenantId = tenantId;
-    memberPrincipalId = principalId;
-  } catch (err) {
-    log.error("Failed to ensure global member on POST /v1/me", {
-      userId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-    return {
-      workingTenantId: null,
-      memberPrincipalId: null,
-      paInstanceId: null,
-      provisionedMyra: false,
-      grantsRefreshed: false,
-      grantsPushedLive: false,
-    };
-  }
-
-  let paInstanceId: string | null = null;
-  let provisionedMyra = false;
-  let grantsRefreshed = false;
-  let grantsPushedLive = false;
-  if (workingTenantId && memberPrincipalId) {
-    paInstanceId = await myraInstanceIdForMember(
-      workingTenantId,
-      memberPrincipalId,
-    );
-
-    if (!paInstanceId) {
-      try {
-        const instances = await provisionMemberInstances(db, {
-          tenantId: rootTenantId,
-          userId,
-          memberPrincipalId,
-        });
-        paInstanceId = getMyraInstanceId(instances);
-        provisionedMyra = paInstanceId !== null;
-        if (provisionedMyra) {
-          meLog.info("Provisioned Myra instance on POST /v1/me", {
-            userId,
-            instanceId: paInstanceId,
-          });
-        }
-      } catch (err) {
-        log.warn("Failed to re-provision Myra on POST /v1/me", {
-          userId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (paInstanceId && syncPersonalAgent) {
-      try {
-        await relaunchInstanceIfNeeded(
-          db,
-          sessionService,
-          grantStore,
-          eventCollectors,
-          paInstanceId,
-          sidecarRouter,
-        );
-      } catch (err) {
-        log.warn("Auto-relaunch of Myra session failed", {
-          userId,
-          instanceId: paInstanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (paInstanceId) {
-      try {
-        const paForGrants = await db.query.agentInstance.findFirst({
-          where: eq(intxSchema.agentInstance.id, paInstanceId),
-        });
-        if (paForGrants) {
-          const routable = sidecarRouter
-            .getRoutableAddresses()
-            .includes(paForGrants.address);
-          const grantResult = await refreshInstanceGrantsFromDefinition(
-            db,
-            {
-              agentId: paForGrants.agentId,
-              tenantId: paForGrants.tenantId,
-              principalId: paForGrants.principalId,
-              address: paForGrants.address,
-            },
-            routable ? { sidecarRouter, grantStore } : undefined,
-          );
-          grantsRefreshed = grantResult.refreshed;
-          grantsPushedLive = grantResult.pushed;
-          if (grantResult.refreshed) {
-            meLog.info("Myra grant reconcile on POST /v1/me", {
-              userId,
-              instanceId: paInstanceId,
-              address: paForGrants.address,
-              pushedLive: grantResult.pushed,
-              routable,
-            });
-          }
-        }
-      } catch (err) {
-        log.warn("Failed to refresh live Myra grants on POST /v1/me", {
-          userId,
-          instanceId: paInstanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-  }
-
-  return {
-    workingTenantId,
-    memberPrincipalId,
-    paInstanceId,
-    provisionedMyra,
-    grantsRefreshed,
-    grantsPushedLive,
-  };
-}
-
 v1.get("/me", async (c) => {
   const userId = c.get("userId");
   const userName = c.get("userName");
@@ -944,6 +791,7 @@ v1.get("/me", async (c) => {
   let paInstanceId: string | null = null;
   if (workingTenantId && memberPrincipalId) {
     paInstanceId = await myraInstanceIdForMember(
+      db,
       workingTenantId,
       memberPrincipalId,
     );
@@ -1057,7 +905,10 @@ v1.post("/me", async (c) => {
     syncPersonalAgent,
   });
 
-  const syncOutcome = await syncPersonalAgentForUser(userId, syncPersonalAgent);
+  const syncOutcome = await syncPersonalAgentForUser(
+    { db, rootTenantId, grantStore, sidecarRouter },
+    userId,
+  );
   const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
 
   let credentialResolved = false;

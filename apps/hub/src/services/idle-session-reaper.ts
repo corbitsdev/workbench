@@ -18,7 +18,13 @@ const { agent, agentInstance, agentSession } = intxSchema;
 // harness, long after the human stopped talking. This sweep sleeps a chat
 // session that has seen no activity for `reapAfterMs` by undeploying it and
 // marking its `agent_session` ended, leaving the `agent_instance` relaunchable
-// so the next interaction (POST /v1/me) brings the agent back cold.
+// so the next interaction brings the agent back cold. The WAKE is launch-on-
+// demand at the chat surface: every Myra surface (`useMyraSession` — the
+// full-page thread and the bottom-right popup) unconditionally calls
+// `POST /v1/instances/:id/sessions` before opening its stream, which
+// cold-relaunches a slept instance (it is undeployed → not routable → falls
+// through to `launchAgentSession`). CL-2793 removed the former eager relaunch on
+// `POST /v1/me`; the reaper no longer depends on it as its wake path.
 //
 // SAFETY — this EVICTS LIVE sessions, so over-eviction is the hazard. Every gate
 // below is a positive check that the address is a genuinely-idle user chat
