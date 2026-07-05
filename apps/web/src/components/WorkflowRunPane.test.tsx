@@ -778,7 +778,8 @@ describe("WorkflowRunPane", () => {
     );
     // Motion is the hard requirement — an animated spinner must be present.
     expect(container.querySelector(".animate-spin")).not.toBeNull();
-    expect(indicator.textContent).toContain("Starting");
+    // CL-2786: honest present-progress copy from the shared runStartLabel.
+    expect(indicator.textContent).toContain("Getting the run ready");
     // The workflow's own panel is NOT rendered while provisioning.
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
@@ -816,6 +817,46 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
     expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
     expect(screen.queryByText("Workflow run")).toBeNull();
+  });
+
+  it("keeps ONE continuously-mounted spinner node across provisioning→loading-workflow (CL-2786 — no remount, no rotation reset)", async () => {
+    // The provisioning frame and the module-loading frame share one stable
+    // AnimatePresence key ("starting"), so the spinner is the SAME DOM node
+    // before and after the transition — never unmounted and re-mounted (which
+    // would restart the CSS animate-spin from 0° and flash a blank beat). Only
+    // the label text swaps.
+    record = makeRecord({ kind: "slow-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    const spinnerBefore = await waitFor(() =>
+      screen.getByTestId("workflow-starting-spinner"),
+    );
+    const indicatorBefore = screen.getByTestId("workflow-starting-indicator");
+    expect(indicatorBefore.textContent).toContain("Getting the run ready");
+
+    // Run flips provisioning→running while the Panel module is STILL pending —
+    // the exact provisioning→loading-workflow boundary this fix covers.
+    record = makeRecord({ kind: "slow-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    // The label swapped to the module-loading copy…
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("workflow-starting-indicator").textContent,
+      ).toContain("Loading workflow…"),
+    );
+    // …but it is the SAME spinner node — proving continuity (no exit/enter, no
+    // rotation reset). Node identity is preserved only when the key is stable.
+    expect(screen.getByTestId("workflow-starting-spinner")).toBe(spinnerBefore);
+    resolveSlowPanel?.();
   });
 
   it("keeps the Starting… indicator up while provisioning and the log is still pending (CL-2785)", async () => {

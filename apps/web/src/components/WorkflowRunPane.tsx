@@ -10,7 +10,7 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
-import { toHumanLabel } from "@workbench/ui";
+import { runStartLabel, toHumanLabel } from "@workbench/ui";
 import { RunConsole } from "./RunConsole";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -304,11 +304,21 @@ function WorkflowRunPaneInner({
 
     // CL-2755: a run still cold-starting its per-run deployment shows a live
     // "Starting…" state WITH motion — never a frozen empty panel — until the
-    // projection advances it to `running`.
+    // projection advances it to `running`. CL-2786: this and the
+    // module-loading sub-state below share ONE stable AnimatePresence key
+    // ("starting"), so the WorkflowStartingIndicator node stays continuously
+    // mounted across provisioning→loading-workflow. Since `mode="wait"` never
+    // fires an exit/enter at a same-key boundary, the CSS `animate-spin` never
+    // restarts from 0° and there is no blank beat — only the label text swaps.
     if (record.status === "provisioning" && !started) {
       return {
-        key: "provisioning",
-        node: <WorkflowStartingIndicator variant="pane" />,
+        key: "starting",
+        node: (
+          <WorkflowStartingIndicator
+            variant="pane"
+            label={runStartLabel(state)}
+          />
+        ),
       };
     }
 
@@ -316,10 +326,11 @@ function WorkflowRunPaneInner({
     // don't yet know whether this kind ships a custom Panel — the module is
     // still loading. Keep showing the animated loading state so a panel workflow
     // goes Starting → Panel directly, WITHOUT a flash of the generic RunConsole
-    // shell in between. The spinner is continuous with the provisioning frame.
+    // shell in between. Shares the "starting" key with the provisioning frame so
+    // the spinner node persists (no remount) — only the label changes.
     if (uiModulePending) {
       return {
-        key: "loading-workflow",
+        key: "starting",
         node: (
           <WorkflowStartingIndicator variant="pane" label="Loading workflow…" />
         ),
