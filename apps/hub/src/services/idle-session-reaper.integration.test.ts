@@ -14,6 +14,21 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 
 import { createIdleSessionReaper } from "./idle-session-reaper";
 
+// In-flight-turn signal stub (CL-2795). The reaper consults this before every
+// eviction; the default reports every address idle (no open turn, no status),
+// so it never spares a candidate — the guard tests below override it to report a
+// busy/open-turn/waiting-approval address and assert the eviction is skipped.
+type CollectorStub = Parameters<
+  typeof createIdleSessionReaper
+>[0]["eventCollectors"];
+
+function idleCollectors(): CollectorStub {
+  return {
+    getCurrentTurnId: () => null,
+    getStatus: () => undefined,
+  };
+}
+
 // CL-2790: the idle chat-session reaper over a real (PGlite) Postgres so the
 // candidate join (agent_instance ⋈ agent_session ⋈ agent) and the
 // end-the-session write round-trip for real. This EVICTS LIVE sessions, so the
@@ -153,7 +168,7 @@ describe("createIdleSessionReaper", () => {
         ended.push({ address: a, reason });
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -189,7 +204,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -221,7 +236,7 @@ describe("createIdleSessionReaper", () => {
         evictions += 1;
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -250,7 +265,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -284,7 +299,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -317,7 +332,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -347,7 +362,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [], // unroutable
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -361,10 +376,61 @@ describe("createIdleSessionReaper", () => {
     expect(await sessionStatusOf(sessionId)).toBe("active");
   });
 
-  test("kill switch OFF makes the reaper a no-op", async () => {
+  test("does not sleep an idle agent with an open turn, then sleeps it once the turn finalizes", async () => {
+    // CL-2795 in-flight-turn guard: recency aged past the threshold (a long
+    // blocking tool call emits no persisted agent.events), but the live
+    // collector reports an open turn — the agent is mid-work and must be spared.
+    // Once the turn finalizes (getCurrentTurnId null, status idle) and it is
+    // still idle, the next sweep sleeps it.
     const address = `ins_myra5@${DOMAIN}`;
     const { sessionId } = await seedChatAgent({
       instanceId: "ins_myra5",
+      agentName: "Myra",
+      address,
+    });
+
+    let currentTurnId: string | null = "trn_open";
+    let status: "idle" | "busy" | "waiting_approval" = "busy";
+    const ended: string[] = [];
+    let clock = 1_000_000;
+    const reaper = createIdleSessionReaper({
+      db,
+      endSession: async (a) => {
+        ended.push(a);
+      },
+      getRoutableAddresses: () => [address],
+      eventCollectors: {
+        getCurrentTurnId: () => currentTurnId,
+        getStatus: () => ({ status }),
+      },
+      reapAfterMs: REAP_AFTER,
+      now: () => clock,
+    });
+
+    await reaper.sweepOnce(); // seed
+    clock += REAP_AFTER + 1;
+
+    // Idle-past-threshold BUT mid-turn → spared.
+    expect((await reaper.sweepOnce()).evicted).toBe(0);
+    expect(ended).toHaveLength(0);
+    expect(await sessionStatusOf(sessionId)).toBe("active");
+
+    // Turn finalizes; still idle → the next sweep sleeps it.
+    currentTurnId = null;
+    status = "idle";
+    const result = await reaper.sweepOnce();
+
+    expect(result.evicted).toBe(1);
+    expect(ended).toEqual([address]);
+    expect(await sessionStatusOf(sessionId)).toBe("ended");
+  });
+
+  test("does not sleep an idle agent whose status is busy even with no open turn id", async () => {
+    // A busy status alone (no currentTurnId) is enough to spare — the guard is
+    // an OR over the two signals.
+    const address = `ins_myra8@${DOMAIN}`;
+    const { sessionId } = await seedChatAgent({
+      instanceId: "ins_myra8",
       agentName: "Myra",
       address,
     });
@@ -377,16 +443,54 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: false,
+      eventCollectors: {
+        getCurrentTurnId: () => null,
+        getStatus: () => ({ status: "busy" }),
+      },
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
 
     await reaper.sweepOnce();
-    clock += REAP_AFTER * 10;
+    clock += REAP_AFTER + 1;
     const result = await reaper.sweepOnce();
 
-    expect(result).toEqual({ scanned: 0, evicted: 0 });
+    expect(result.evicted).toBe(0);
+    expect(ended).toHaveLength(0);
+    expect(await sessionStatusOf(sessionId)).toBe("active");
+  });
+
+  test("does not sleep an idle agent that is waiting_approval", async () => {
+    // A tool call blocked on an interactive approval is genuinely in-flight —
+    // sleeping it would drop the pending approval.
+    const address = `ins_myra9@${DOMAIN}`;
+    const { sessionId } = await seedChatAgent({
+      instanceId: "ins_myra9",
+      agentName: "Myra",
+      address,
+    });
+
+    const ended: string[] = [];
+    let clock = 1_000_000;
+    const reaper = createIdleSessionReaper({
+      db,
+      endSession: async (a) => {
+        ended.push(a);
+      },
+      getRoutableAddresses: () => [address],
+      eventCollectors: {
+        getCurrentTurnId: () => null,
+        getStatus: () => ({ status: "waiting_approval" }),
+      },
+      reapAfterMs: REAP_AFTER,
+      now: () => clock,
+    });
+
+    await reaper.sweepOnce();
+    clock += REAP_AFTER + 1;
+    const result = await reaper.sweepOnce();
+
+    expect(result.evicted).toBe(0);
     expect(ended).toHaveLength(0);
     expect(await sessionStatusOf(sessionId)).toBe("active");
   });
@@ -407,7 +511,7 @@ describe("createIdleSessionReaper", () => {
         evictions += 1;
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });
@@ -439,7 +543,7 @@ describe("createIdleSessionReaper", () => {
         ended.push(a);
       },
       getRoutableAddresses: () => [address],
-      enabled: true,
+      eventCollectors: idleCollectors(),
       reapAfterMs: REAP_AFTER,
       now: () => clock,
     });

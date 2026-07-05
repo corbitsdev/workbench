@@ -29,7 +29,6 @@ const MANAGED_KEYS = [
   "RUN_LIVENESS_STALL_GRACE_MS",
   "RUN_LIVENESS_START_HARD_DEADLINE_MS",
   "RUN_LIVENESS_INTERVAL_MS",
-  "IDLE_SESSION_REAP_ENABLED",
   "IDLE_SESSION_REAP_AFTER_MS",
   "IDLE_SESSION_REAP_INTERVAL_MS",
   "HUB_AGENT_GC_PACK_THRESHOLD",
@@ -191,20 +190,17 @@ describe("loadConfig", () => {
     expect(overridden.intervalMs).toBe(30_000);
   });
 
-  it("defaults the idle session reaper OFF with conservative knobs and honors overrides", () => {
+  it("defaults the idle session reaper to a 5-minute threshold swept every minute and honors overrides", () => {
     setRequiredEnv();
     const reaper = loadConfig().idleSessionReaper;
-    expect(reaper.enabled).toBe(false);
-    expect(reaper.reapAfterMs).toBe(60 * 60 * 1000);
-    expect(reaper.intervalMs).toBe(5 * 60 * 1000);
+    expect(reaper.reapAfterMs).toBe(5 * 60 * 1000);
+    expect(reaper.intervalMs).toBe(60 * 1000);
 
-    process.env["IDLE_SESSION_REAP_ENABLED"] = "true";
     process.env["IDLE_SESSION_REAP_AFTER_MS"] = "1800000";
-    process.env["IDLE_SESSION_REAP_INTERVAL_MS"] = "60000";
+    process.env["IDLE_SESSION_REAP_INTERVAL_MS"] = "120000";
     const overridden = loadConfig().idleSessionReaper;
-    expect(overridden.enabled).toBe(true);
     expect(overridden.reapAfterMs).toBe(1_800_000);
-    expect(overridden.intervalMs).toBe(60_000);
+    expect(overridden.intervalMs).toBe(120_000);
   });
 
   it("rejects a non-positive-integer idle session reaper knob", () => {

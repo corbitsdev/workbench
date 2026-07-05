@@ -72,12 +72,12 @@ const DEFAULT_RUN_LIVENESS_INTERVAL_MS = 60 * 1000;
 
 // CL-2790 idle chat-session reaper. `reapAfterMs`: a live chat session with no
 // activity for this long is slept (undeployed, session ended, instance left
-// relaunchable). `intervalMs`: how often the sweep runs. Conservative defaults —
-// a full idle hour before sleeping, swept every 5 minutes. The reaper EVICTS
-// LIVE sessions, so it is gated behind `IDLE_SESSION_REAP_ENABLED` (default OFF)
-// until validated on staging.
-const DEFAULT_IDLE_SESSION_REAP_AFTER_MS = 60 * 60 * 1000;
-const DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS = 5 * 60 * 1000;
+// relaunchable). `intervalMs`: how often the sweep runs. CL-2795 made the reaper
+// always-on (the former `IDLE_SESSION_REAP_ENABLED` kill switch is gone) and
+// dropped the threshold to 5 minutes, swept every minute; an in-flight-turn
+// guard spares any agent mid-work. Both knobs stay env-tunable.
+const DEFAULT_IDLE_SESSION_REAP_AFTER_MS = 5 * 60 * 1000;
+const DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS = 60 * 1000;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -311,11 +311,10 @@ export function loadConfig() {
         "milliseconds",
       ),
     },
-    // CL-2790 idle chat-session reaper. `enabled` is a kill switch, default OFF:
-    // this evicts LIVE sessions, so it stays dark until validated on staging.
-    // Override with IDLE_SESSION_REAP_*.
+    // CL-2790/CL-2795 idle chat-session reaper. Always-on; an in-flight-turn
+    // guard spares any agent mid-work. Override thresholds with
+    // IDLE_SESSION_REAP_AFTER_MS / IDLE_SESSION_REAP_INTERVAL_MS.
     idleSessionReaper: {
-      enabled: parseBooleanEnv("IDLE_SESSION_REAP_ENABLED"),
       reapAfterMs: parsePositiveIntEnv(
         "IDLE_SESSION_REAP_AFTER_MS",
         DEFAULT_IDLE_SESSION_REAP_AFTER_MS,

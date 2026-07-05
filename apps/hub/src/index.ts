@@ -524,24 +524,23 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
 // Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
 // marking its session ended, leaving the instance relaunchable so the next
 // chat-surface open cold-relaunches it via POST /v1/instances/:id/sessions
-// (CL-2793 removed the former eager /v1/me relaunch). Gated behind a kill switch
-// (default OFF) — it evicts LIVE sessions. Fed by the agent-event stream and the
-// send-mail route (recordActivityForInstance, mounted below) so a
+// (CL-2793 removed the former eager /v1/me relaunch). CL-2795 made it always-on:
+// an in-flight-turn guard (the injected eventCollectors registry) spares any
+// agent mid-work, so the kill switch is gone. Fed by the agent-event stream and
+// the send-mail route (recordActivityForInstance, mounted below) so a
 // mid-conversation agent is never slept.
 const idleSessionReaper = createIdleSessionReaper({
   db,
   endSession: sessionService.endSession,
   getRoutableAddresses: sidecarRouter.getRoutableAddresses,
-  enabled: config.idleSessionReaper.enabled,
+  eventCollectors,
   reapAfterMs: config.idleSessionReaper.reapAfterMs,
   intervalMs: config.idleSessionReaper.intervalMs,
 });
-if (config.idleSessionReaper.enabled) {
-  idleSessionReaper.start();
-  sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
-    idleSessionReaper.recordActivity(agentAddress);
-  });
-}
+idleSessionReaper.start();
+sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
+  idleSessionReaper.recordActivity(agentAddress);
+});
 
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
 // (terminal teardown), the deploy service (provision-failure rollback), and the
@@ -742,17 +741,15 @@ app.use(
 // clock for the target instance so a user mid-conversation is never slept.
 // Best-effort and non-blocking: the resolve is fire-and-forget inside the
 // reaper, and we always fall through to the mail route.
-if (config.idleSessionReaper.enabled) {
-  app.use(
-    "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
-    async (c, next) => {
-      const instanceId = c.req.param("instanceId");
-      if (instanceId)
-        void idleSessionReaper.recordActivityForInstance(instanceId);
-      await next();
-    },
-  );
-}
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  async (c, next) => {
+    const instanceId = c.req.param("instanceId");
+    if (instanceId)
+      void idleSessionReaper.recordActivityForInstance(instanceId);
+    await next();
+  },
+);
 
 // Mount hub app
 app.route("/", hubApp);

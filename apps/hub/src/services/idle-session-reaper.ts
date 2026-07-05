@@ -5,6 +5,7 @@ import type { SessionService, SidecarRouter } from "@intx/hub-sessions";
 import { isWorkflowDerivedAddress } from "@intx/workflow-deploy";
 import { getLogger } from "@intx/log";
 import { isReapableChatAgent } from "@workbench/agents";
+import type { EventCollectorRegistry } from "@workbench/event-collector";
 
 const log = getLogger(["services", "idle-session-reaper"]);
 
@@ -53,6 +54,24 @@ const { agent, agentInstance, agentSession } = intxSchema;
 //      instance status untouched (relaunchable). Once ended, the wedge sweep
 //      (which requires an `active` session) ignores the address — the two sweeps
 //      never fight.
+//   7. IN-FLIGHT TURN (CL-2795): recency alone can go stale during a long
+//      blocking tool call — the `tool.start`→`tool.done` window emits no
+//      persisted `agent.event`s, so `lastActive` can age past the threshold while
+//      the agent is genuinely mid-turn. Before sleeping a candidate we consult the
+//      live event-collector: an open turn (`getCurrentTurnId != null`) or a
+//      `busy`/`waiting_approval` status means the agent is working, so it is
+//      spared (counted `skippedBusy`). `currentTurnId` is set on `inference.start`
+//      and cleared only on turn finalization, so it stays non-null across the
+//      whole tool loop — exactly the window recency cannot see. Recency and this
+//      guard are COMPLEMENTARY, not redundant: recency covers every other window
+//      (streaming inference, between turns, and the launch→first-`inference.start`
+//      gap where the collector has no turn yet); the turn guard covers only the
+//      silent intra-turn tool window. Neither alone spares every working agent —
+//      keep both if either signal path is ever changed.
+//
+// CL-2795 flipped this reaper always-on (the former `IDLE_SESSION_REAP_ENABLED`
+// kill switch is gone); it actively evicts on staging, defaulting to a 5-minute
+// idle threshold swept every minute.
 export interface IdleSessionReaper {
   // Record activity for an agent address (an agent event, or an inbound user
   // message). Bumps the address's last-active clock so the next sweep spares it.
@@ -71,14 +90,20 @@ export interface IdleSessionReaper {
 
 const RELAUNCHABLE_STATUSES = ["running", "deployed", "updating"] as const;
 
-const DEFAULT_REAP_AFTER_MS = 60 * 60 * 1000;
-const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
+const DEFAULT_REAP_AFTER_MS = 5 * 60 * 1000;
+const DEFAULT_INTERVAL_MS = 60 * 1000;
 
 export function createIdleSessionReaper(deps: {
   db: DB["db"];
   endSession: SessionService["endSession"];
   getRoutableAddresses: SidecarRouter["getRoutableAddresses"];
-  enabled: boolean;
+  // Live in-flight-turn signal (CL-2795): consulted before every eviction so an
+  // agent mid-turn (open turn, or busy/waiting_approval status) is never slept,
+  // even when a long blocking tool call has aged its recency clock.
+  eventCollectors: Pick<
+    EventCollectorRegistry,
+    "getCurrentTurnId" | "getStatus"
+  >;
   reapAfterMs?: number;
   intervalMs?: number;
   now?: () => number;
@@ -125,7 +150,6 @@ export function createIdleSessionReaper(deps: {
   }
 
   async function sweepOnce(): Promise<{ scanned: number; evicted: number }> {
-    if (!deps.enabled) return { scanned: 0, evicted: 0 };
     if (sweeping) return { scanned: 0, evicted: 0 };
     sweeping = true;
     try {
@@ -154,6 +178,7 @@ export function createIdleSessionReaper(deps: {
       let skippedNonChat = 0;
       let skippedUnroutable = 0;
       let skippedRecent = 0;
+      let skippedBusy = 0;
       let failedEvictions = 0;
 
       for (const cand of candidates) {
@@ -177,6 +202,20 @@ export function createIdleSessionReaper(deps: {
         const idleMs = nowMs - last;
         if (idleMs < reapAfterMs) {
           skippedRecent += 1;
+          continue;
+        }
+
+        // In-flight-turn guard (CL-2795): an open turn or a busy/
+        // waiting-approval status means the agent is mid-work — spare it even
+        // though its recency clock aged out during a silent blocking tool call.
+        const turnId = deps.eventCollectors.getCurrentTurnId(cand.address);
+        const status = deps.eventCollectors.getStatus(cand.address)?.status;
+        if (
+          turnId != null ||
+          status === "busy" ||
+          status === "waiting_approval"
+        ) {
+          skippedBusy += 1;
           continue;
         }
 
@@ -215,6 +254,7 @@ export function createIdleSessionReaper(deps: {
         skippedNonChat,
         skippedUnroutable,
         skippedRecent,
+        skippedBusy,
         failedEvictions,
         tracked: lastActive.size,
       });
