@@ -81,7 +81,7 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
         id stays as a secondary reference. Whether each was actually exercised
         is the gap.
       </FacetDesc>
-      <GapBanner ticket="CL-2722">
+      <GapBanner>
         Interchange computes which grant authorized each action but does not
         persist it yet, so a &ldquo;used&rdquo; count cannot be shown here
         without fabricating it.
@@ -203,7 +203,7 @@ export function ToolsFacetView({
   return (
     <div data-testid="facet-tools">
       <FacetDesc>{description}</FacetDesc>
-      <GapBanner ticket="CL-2724">
+      <GapBanner>
         We record that a tool ran — not its inputs, its output, or <b>which</b>{" "}
         records it touched.
       </GapBanner>
@@ -426,7 +426,7 @@ export function CostFacet({ label }: { label: string }) {
         {label} keeps token classes separate — fresh input, cache read, cache
         write, output are never summed — then prices each independently.
       </FacetDesc>
-      <GapBanner ticket="CL-2723">
+      <GapBanner>
         Token counts are recorded per model and per day, not attributed to this
         principal or moment; and the dollar layer isn&rsquo;t wired into
         analytics yet. Rather than show a fabricated total, this trace surfaces

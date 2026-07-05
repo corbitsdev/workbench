@@ -14,11 +14,9 @@ import {
   ToolsFacet,
 } from "./principal-facets";
 import {
-  BottomNav,
   CompactHeader,
   FacetTabs,
   StatStrip,
-  useFacetKeyboard,
   type FacetDef,
   type Stat,
   type StatusPill,
@@ -69,7 +67,6 @@ export function ActorDetailPage() {
   const location = useLocation();
   const { activeTenantId, loading } = useActiveWorkbench();
   const [facetIndex, setFacetIndex] = useState(0);
-  useFacetKeyboard(facetIndex, FACETS.length, setFacetIndex);
 
   const principalId = id ?? "";
   const stateActor =
@@ -206,15 +203,6 @@ export function ActorDetailPage() {
               </div>
             )}
           </section>
-
-          <BottomNav
-            index={facetIndex}
-            total={FACETS.length}
-            onPrev={() => setFacetIndex(Math.max(0, facetIndex - 1))}
-            onNext={() =>
-              setFacetIndex(Math.min(FACETS.length - 1, facetIndex + 1))
-            }
-          />
         </main>
       </div>
     </PagePanel>

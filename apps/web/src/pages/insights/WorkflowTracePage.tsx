@@ -30,7 +30,6 @@ import {
 import { ToolsFacetView, type ToolRow } from "./principal-facets";
 import { humanizeToken } from "./activity-naming";
 import {
-  BottomNav,
   CompactHeader,
   FacetCard,
   FacetDesc,
@@ -38,7 +37,6 @@ import {
   GapBanner,
   NodeGrid,
   StatStrip,
-  useFacetKeyboard,
   type FacetDef,
   type Stat,
   type StatusPill,
@@ -422,7 +420,6 @@ export function WorkflowTracePage() {
   const reduceMotion = useReducedMotion();
   const safeId = runId ?? null;
   const [facetIndex, setFacetIndex] = useState(0);
-  useFacetKeyboard(facetIndex, FACETS.length, setFacetIndex);
 
   const recordQuery = useWorkflowRecord(safeId, activeTenantId);
   const runStateQuery = useWorkflowRunState(safeId, activeTenantId);
@@ -592,7 +589,7 @@ export function WorkflowTracePage() {
                   Token classes for this run are kept separate and priced
                   independently.
                 </FacetDesc>
-                <GapBanner ticket="CL-2723">
+                <GapBanner>
                   Per-run token counts aren&rsquo;t attributed to this trace
                   yet, and the dollar layer isn&rsquo;t wired into analytics —
                   so no cost is shown rather than a fabricated one.
@@ -605,7 +602,7 @@ export function WorkflowTracePage() {
                 <FacetDesc>
                   Permissions this run exercised, and whether each was allowed.
                 </FacetDesc>
-                <GapBanner ticket="CL-2722">
+                <GapBanner>
                   Which grant authorized each step isn&rsquo;t persisted yet, so
                   a per-run permission table would be fabricated. The
                   run&rsquo;s steps and their outcomes are the honest record
@@ -641,15 +638,6 @@ export function WorkflowTracePage() {
                 </div>
               )}
           </section>
-
-          <BottomNav
-            index={facetIndex}
-            total={FACETS.length}
-            onPrev={() => setFacetIndex(Math.max(0, facetIndex - 1))}
-            onNext={() =>
-              setFacetIndex(Math.min(FACETS.length - 1, facetIndex + 1))
-            }
-          />
         </main>
       </div>
     </PagePanel>

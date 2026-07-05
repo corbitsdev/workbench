@@ -188,7 +188,7 @@ describe("ActorDetailPage", () => {
     expect(screen.getAllByTestId("grant-used-gap").length).toBe(1);
   });
 
-  it("steps facets forward with the Next-step action", async () => {
+  it("switches the active facet when a tab is clicked", async () => {
     actorResult = {
       id: "prn_u1",
       kind: "user",
@@ -199,13 +199,12 @@ describe("ActorDetailPage", () => {
     renderAt("prn_u1");
 
     await waitFor(() => screen.getByRole("listbox"));
-    // Next steps from Timeline (01) → Agents & workflows (02) → Grants (03).
-    fireEvent.click(screen.getByRole("button", { name: /Next step/ }));
+    fireEvent.click(screen.getByRole("tab", { name: /Agents & workflows/ }));
     await waitFor(() => screen.getByTestId("facet-roster"));
-    fireEvent.click(screen.getByRole("button", { name: /Next step/ }));
-    await waitFor(() => screen.getByTestId("facet-grants"));
     expect(
-      screen.getByRole("tab", { name: /Grants/ }).getAttribute("aria-selected"),
+      screen
+        .getByRole("tab", { name: /Agents & workflows/ })
+        .getAttribute("aria-selected"),
     ).toBe("true");
   });
 
@@ -340,22 +339,5 @@ describe("ActorDetailPage", () => {
     fireEvent.click(screen.getByRole("tab", { name: /Connections/ }));
     const node = await waitFor(() => screen.getByTestId("connection-node"));
     expect(node.getAttribute("href")).toBe("/insights/trace/run_9");
-  });
-
-  it("steps facets with the Right arrow key", async () => {
-    actorResult = {
-      id: "prn_u1",
-      kind: "user",
-      displayName: "Myra Ops",
-      status: "active",
-    };
-    activityEntries = [GRANT_ENTRY];
-    renderAt("prn_u1");
-
-    await waitFor(() => screen.getByRole("listbox"));
-    fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    await waitFor(() => screen.getByTestId("facet-roster"));
-    fireEvent.keyDown(document.body, { key: "ArrowRight" });
-    await waitFor(() => screen.getByTestId("facet-grants"));
   });
 });

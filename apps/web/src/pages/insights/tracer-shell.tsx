@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { Link } from "react-router";
 import { ArrowLeft, ArrowRight, Info } from "lucide-react";
 import { statusToneClass, type StatusTone } from "./status-tone";
@@ -6,8 +5,8 @@ import { statusToneClass, type StatusTone } from "./status-tone";
 /**
  * Shared presentational shell for the two tracer surfaces (principal trace and
  * execution trace): a compact identity header, an underlined facet tab bar
- * (with a gap dot on facets that expose a "not recorded yet" gap), a subtle
- * inline stat strip, and a Back / Next-step bottom nav. App-native chrome —
+ * (with a gap dot on facets that expose a "not recorded yet" gap), and a subtle
+ * inline stat strip. App-native chrome —
  * corbits-light surfaces, orange (`accent`) accent, standard card/label
  * language — matching the Insights dashboard, not a distinct artifact.
  *
@@ -207,16 +206,9 @@ export function FacetDesc({ children }: { children: React.ReactNode }) {
 
 /**
  * Honest "not recorded yet" banner — the artifact's gap-banner, in the gold
- * attention hue. The tracking ticket lives in the code tag, never in prose the
- * user reads as an error.
+ * attention hue, with an Info icon and plain-language message.
  */
-export function GapBanner({
-  ticket,
-  children,
-}: {
-  ticket: string;
-  children: React.ReactNode;
-}) {
+export function GapBanner({ children }: { children: React.ReactNode }) {
   return (
     <div
       data-testid="facet-gap-banner"
@@ -224,9 +216,6 @@ export function GapBanner({
     >
       <Info className="mt-px h-3.5 w-3.5 shrink-0 text-gold" />
       <span className="min-w-0 flex-1">{children}</span>
-      <span className="shrink-0 rounded-[4px] border border-cream-deep px-1.5 py-px font-mono text-[10.5px] text-gold">
-        {ticket}
-      </span>
     </div>
   );
 }
@@ -312,90 +301,4 @@ export function NodeGrid({ nodes }: { nodes: TraceNode[] }) {
       })}
     </div>
   );
-}
-
-/** Back / Next-step (orange) bottom nav stepping through facets. */
-export function BottomNav({
-  index,
-  total,
-  onPrev,
-  onNext,
-}: {
-  index: number;
-  total: number;
-  onPrev: () => void;
-  onNext: () => void;
-}) {
-  return (
-    <div className="mt-4 flex items-center gap-3">
-      <button
-        type="button"
-        onClick={onPrev}
-        disabled={index === 0}
-        className="inline-flex min-h-[40px] items-center gap-1 rounded-sm border border-border-strong bg-surface px-3.5 py-2 text-[12.5px] font-semibold text-text outline-none transition-[box-shadow,transform] hover:shadow-[var(--shadow-card)] focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back
-      </button>
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={index === total - 1}
-        className="inline-flex min-h-[40px] items-center gap-1 rounded-sm border border-accent bg-accent px-3.5 py-2 text-[12.5px] font-semibold text-white outline-none transition-[color,background-color,transform] hover:bg-accent-deep focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:opacity-40 disabled:active:scale-100"
-      >
-        Next step
-        <ArrowRight className="h-3.5 w-3.5" />
-      </button>
-      <span className="ml-auto flex items-center gap-1.5 font-mono text-[10.5px] text-text-3">
-        <span className="tabular-nums">
-          {index + 1}/{total}
-        </span>
-        <Kbd>←</Kbd>
-        <Kbd>→</Kbd>
-        <span>facets</span>
-      </span>
-    </div>
-  );
-}
-
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="rounded-[4px] border border-border-strong px-1 py-px font-mono text-[9.5px] text-text-3">
-      {children}
-    </span>
-  );
-}
-
-/**
- * Left/Right arrow keys step the facet tabs, mirroring the artifact's keyboard
- * flow. Ignored while focus is in a text field or the moment listbox (which
- * owns Up/Down/Left/Right for its own walk). This is event wiring, not data
- * fetching — a keydown listener is the correct tool.
- */
-export function useFacetKeyboard(
-  index: number,
-  total: number,
-  setIndex: (i: number) => void,
-) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      const target = event.target as HTMLElement | null;
-      if (target !== null) {
-        const tag = target.tagName;
-        if (
-          tag === "INPUT" ||
-          tag === "TEXTAREA" ||
-          target.isContentEditable ||
-          target.getAttribute("role") === "listbox"
-        ) {
-          return;
-        }
-      }
-      if (event.key === "ArrowRight" && index < total - 1) setIndex(index + 1);
-      else if (event.key === "ArrowLeft" && index > 0) setIndex(index - 1);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [index, total, setIndex]);
 }
