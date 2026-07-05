@@ -1,9 +1,28 @@
 import { Link } from "react-router";
-import { Badge, DataTable, type DataTableColumn } from "@workbench/ui";
+import {
+  Badge,
+  DataTable,
+  Pagination,
+  inputFieldClass,
+  type DataTableColumn,
+} from "@workbench/ui";
 import type { BadgeTone } from "@workbench/ui";
-import type { AdminAuditAction, AuditRecord } from "@workbench/shared";
+import {
+  adminAuditActions,
+  type AdminAuditAction,
+  type AuditRecord,
+} from "@workbench/shared";
 import { useAuditLog } from "../../hooks/use-admin";
-import { QueryStates, adminTableCard } from "./admin-ui";
+import {
+  AdminSearchInput,
+  AdminSelect,
+  FilterBar,
+  ListStates,
+  adminTableCard,
+  useAdminFilters,
+} from "./admin-ui";
+
+const PAGE_SIZE = 25;
 
 const ACTION_LABEL: Record<AdminAuditAction, string> = {
   activity_read: "Viewed activity",
@@ -20,6 +39,11 @@ const ACTION_TONE: Record<AdminAuditAction, BadgeTone> = {
   role_assigned: "accent",
   role_removed: "neutral",
 };
+
+const ACTION_OPTIONS = adminAuditActions.map((a) => ({
+  value: a,
+  label: ACTION_LABEL[a],
+}));
 
 const columns: DataTableColumn<AuditRecord>[] = [
   {
@@ -64,7 +88,24 @@ const columns: DataTableColumn<AuditRecord>[] = [
 ];
 
 export function AdminAudit() {
-  const query = useAuditLog(true);
+  const { get, page, setFilter, setPage } = useAdminFilters();
+
+  const actor = get("actor");
+  const action = get("action");
+  const from = get("from");
+  const to = get("to");
+
+  const query = useAuditLog({
+    page,
+    limit: PAGE_SIZE,
+    actor: actor || undefined,
+    action: action ? (action as AdminAuditAction) : undefined,
+    from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
+    to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
+  });
+
+  const records = query.data?.records ?? [];
+  const pageInfo = query.data?.pageInfo;
 
   return (
     <div>
@@ -73,20 +114,61 @@ export function AdminAudit() {
         timeline) and every admin role change. Newest first.
       </p>
 
+      <FilterBar>
+        <AdminSearchInput
+          value={actor}
+          onChange={(v) => setFilter("actor", v)}
+          placeholder="Actor principal id…"
+        />
+        <AdminSelect
+          ariaLabel="Filter by action"
+          value={action}
+          onChange={(v) => setFilter("action", v)}
+          options={ACTION_OPTIONS}
+          allLabel="All actions"
+        />
+        <label className="flex items-center gap-1 text-xs text-text-3">
+          From
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => setFilter("from", e.target.value)}
+            className={inputFieldClass}
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-text-3">
+          To
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => setFilter("to", e.target.value)}
+            className={inputFieldClass}
+          />
+        </label>
+      </FilterBar>
+
       <div className={adminTableCard}>
-        <QueryStates
-          query={query}
-          emptyLabel="No audit records yet. Cross-principal reads and role changes will appear here."
+        <ListStates
+          isLoading={query.isLoading}
+          isError={query.isError}
+          rowCount={records.length}
+          emptyLabel="No audit records match these filters."
         >
-          {(rows) => (
-            <DataTable
-              columns={columns}
-              rows={rows}
-              getRowKey={(r) => r.id}
-              caption="Admin audit log"
+          <DataTable
+            columns={columns}
+            rows={records}
+            getRowKey={(r) => r.id}
+            caption="Admin audit log"
+          />
+          {pageInfo && (
+            <Pagination
+              page={pageInfo.page}
+              totalPages={pageInfo.totalPages}
+              total={pageInfo.total}
+              onPageChange={setPage}
             />
           )}
-        </QueryStates>
+        </ListStates>
       </div>
     </div>
   );

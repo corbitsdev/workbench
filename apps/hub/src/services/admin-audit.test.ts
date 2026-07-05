@@ -26,14 +26,43 @@ function insertingDb(sink: Record<string, unknown>[], throwOnInsert = false) {
   } as unknown as HubDb;
 }
 
-function selectingDb(rows: unknown[]) {
-  const chain = {
-    from: () => chain,
-    where: () => chain,
-    orderBy: () => chain,
-    limit: () => Promise.resolve(rows),
+// A db whose sequential `select()` calls resolve to `results[0]`, `results[1]`,
+// … in call order. `listAuditRecords` issues the count query first, then the
+// rows query, so `results = [ [{ total }], rows ]`. Every chain method returns
+// the thenable builder so `await` resolves to the queued result regardless of
+// which of from/where/orderBy/limit/offset the query calls.
+interface QueueCapture {
+  wheres: unknown[];
+  limits: number[];
+  offsets: number[];
+}
+
+function queueDb(results: unknown[]): { db: HubDb; capture: QueueCapture } {
+  let i = 0;
+  const capture: QueueCapture = { wheres: [], limits: [], offsets: [] };
+  const select = () => {
+    const value = results[i++];
+    const chain: Record<string, unknown> = {
+      from: () => chain,
+      where: (w: unknown) => {
+        capture.wheres.push(w);
+        return chain;
+      },
+      orderBy: () => chain,
+      limit: (n: number) => {
+        capture.limits.push(n);
+        return chain;
+      },
+      offset: (n: number) => {
+        capture.offsets.push(n);
+        return chain;
+      },
+      then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve(value).then(res, rej),
+    };
+    return chain;
   };
-  return { select: () => chain } as unknown as HubDb;
+  return { db: { select } as unknown as HubDb, capture };
 }
 
 describe("recordAudit", () => {
@@ -69,20 +98,29 @@ describe("recordAudit", () => {
 });
 
 describe("listAuditRecords", () => {
-  it("resolves actor/target names and serializes detail + timestamps", async () => {
+  it("resolves actor/target names, serializes detail, returns filtered total", async () => {
     const now = new Date("2026-07-05T00:00:00.000Z");
-    const db = selectingDb([
-      {
-        id: "aud_1",
-        action: "activity_read",
-        actorPrincipalId: "prn_actor",
-        targetPrincipalId: "prn_target",
-        resource: "activity:principal/read",
-        detail: { foo: "bar" },
-        createdAt: now,
-      },
+    const { db, capture } = queueDb([
+      [{ total: 1 }],
+      [
+        {
+          id: "aud_1",
+          action: "activity_read",
+          actorPrincipalId: "prn_actor",
+          targetPrincipalId: "prn_target",
+          resource: "activity:principal/read",
+          detail: { foo: "bar" },
+          createdAt: now,
+        },
+      ],
     ]);
-    const records = await listAuditRecords(db, "ten_1");
+    const { records, total } = await listAuditRecords(db, "ten_1", {
+      page: 1,
+      limit: 25,
+    });
+    expect(total).toBe(1);
+    expect(capture.limits).toEqual([25]);
+    expect(capture.offsets).toEqual([0]);
     expect(records[0]).toMatchObject({
       id: "aud_1",
       actorName: "Alice",
@@ -91,5 +129,21 @@ describe("listAuditRecords", () => {
       detail: JSON.stringify({ foo: "bar" }),
       createdAt: now.toISOString(),
     });
+  });
+
+  it("offsets by (page-1)*limit for a later page", async () => {
+    const { db, capture } = queueDb([[{ total: 0 }], []]);
+    await listAuditRecords(db, "ten_1", {
+      page: 3,
+      limit: 10,
+      actor: "prn_actor",
+      action: "role_assigned",
+      from: new Date("2026-01-01T00:00:00.000Z"),
+      to: new Date("2026-12-31T00:00:00.000Z"),
+    });
+    expect(capture.limits).toEqual([10]);
+    expect(capture.offsets).toEqual([20]);
+    // Count query + rows query each built one where clause.
+    expect(capture.wheres.length).toBe(2);
   });
 });

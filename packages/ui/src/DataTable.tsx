@@ -53,23 +53,33 @@ export function DataTable<T>({
         {rows.map((row) => {
           const interactive = onRowClick !== undefined;
           return (
-            <tr key={getRowKey(row)} className="border-b border-border/60">
-              {columns.map((col, colIndex) => (
+            <tr
+              key={getRowKey(row)}
+              onClick={interactive ? () => onRowClick(row) : undefined}
+              onKeyDown={
+                interactive
+                  ? (e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onRowClick(row);
+                      }
+                    }
+                  : undefined
+              }
+              tabIndex={interactive ? 0 : undefined}
+              role={interactive ? "button" : undefined}
+              className={
+                interactive
+                  ? "border-b border-border/60 cursor-pointer transition-[background-color,transform] hover:bg-surface-2 active:scale-[0.997] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent"
+                  : "border-b border-border/60"
+              }
+            >
+              {columns.map((col) => (
                 <td
                   key={col.key}
                   className={`px-3 py-2.5 align-middle text-text-2 ${col.className ?? ""}`}
                 >
-                  {interactive && colIndex === 0 ? (
-                    <button
-                      type="button"
-                      onClick={() => onRowClick(row)}
-                      className="block w-full cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    >
-                      {col.render(row)}
-                    </button>
-                  ) : (
-                    col.render(row)
-                  )}
+                  {col.render(row)}
                 </td>
               ))}
             </tr>

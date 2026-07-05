@@ -1,20 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
 import {
-  AgentDefinitionsResponse,
   AuditListResponse,
-  type AgentDefinitionSummary,
-  type AuditRecord,
+  DefinitionDetailResponse,
+  DefinitionListResponse,
+  type AdminAuditAction,
+  type AuditListResponse as AuditListResponseType,
+  type DefinitionDetailResponse as DefinitionDetailResponseType,
+  type DefinitionKind,
+  type DefinitionListResponse as DefinitionListResponseType,
   type PrincipalGrantsResponse as PrincipalGrantsResponseType,
+  type PrincipalListResponse as PrincipalListResponseType,
   type PrincipalSummary,
   type RoleSummary,
-  type ToolDefinitionSummary,
-  type WorkflowDefinitionSummary,
+  PrincipalDetailResponse,
   PrincipalGrantsResponse,
   PrincipalListResponse,
   RoleListResponse,
-  ToolDefinitionsResponse,
-  WorkflowDefinitionsResponse,
 } from "@workbench/shared";
 import { api } from "../lib/api";
 
@@ -28,52 +30,91 @@ function parse<T>(schema: (v: unknown) => T | type.errors, raw: unknown): T {
   return parsed;
 }
 
-export function useWorkflowDefinitions(enabled: boolean) {
-  return useQuery<WorkflowDefinitionSummary[]>({
-    queryKey: ["admin", "definitions", "workflows"],
-    enabled,
+/** Build a `?a=b&...` query string, dropping empty/undefined values. */
+function queryString(
+  params: Record<string, string | number | undefined>,
+): string {
+  const usp = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") continue;
+    usp.set(key, String(value));
+  }
+  const s = usp.toString();
+  return s ? `?${s}` : "";
+}
+
+// ─── Definitions ───────────────────────────────────────────────────
+
+export interface DefinitionFilters {
+  page: number;
+  limit: number;
+  kind?: DefinitionKind;
+  status?: string;
+  search?: string;
+}
+
+export function useAdminDefinitions(filters: DefinitionFilters) {
+  return useQuery<DefinitionListResponseType>({
+    queryKey: ["admin", "definitions", filters],
     staleTime: CATALOG_STALE,
     queryFn: async () =>
       parse(
-        WorkflowDefinitionsResponse,
-        await api("GET", "admin/definitions/workflows"),
-      ).definitions,
+        DefinitionListResponse,
+        await api("GET", `admin/definitions${queryString({ ...filters })}`),
+      ),
   });
 }
 
-export function useAgentDefinitions(enabled: boolean) {
-  return useQuery<AgentDefinitionSummary[]>({
-    queryKey: ["admin", "definitions", "agents"],
-    enabled,
+export function useDefinitionDetail(
+  kind: DefinitionKind | null,
+  key: string | null,
+) {
+  return useQuery<DefinitionDetailResponseType>({
+    queryKey: ["admin", "definitions", kind, key],
+    enabled: kind !== null && key !== null,
     staleTime: CATALOG_STALE,
     queryFn: async () =>
       parse(
-        AgentDefinitionsResponse,
-        await api("GET", "admin/definitions/agents"),
-      ).definitions,
+        DefinitionDetailResponse,
+        await api(
+          "GET",
+          `admin/definitions/${encodeURIComponent(key ?? "")}${queryString({
+            kind: kind ?? undefined,
+          })}`,
+        ),
+      ),
   });
 }
 
-export function useToolDefinitions(enabled: boolean) {
-  return useQuery<ToolDefinitionSummary[]>({
-    queryKey: ["admin", "definitions", "tools"],
-    enabled,
-    staleTime: CATALOG_STALE,
+// ─── Principals ────────────────────────────────────────────────────
+
+export interface PrincipalFilters {
+  page: number;
+  limit: number;
+  type?: "user" | "agent";
+  search?: string;
+}
+
+export function useAdminPrincipals(filters: PrincipalFilters) {
+  return useQuery<PrincipalListResponseType>({
+    queryKey: ["admin", "principals", filters],
     queryFn: async () =>
       parse(
-        ToolDefinitionsResponse,
-        await api("GET", "admin/definitions/tools"),
-      ).definitions,
+        PrincipalListResponse,
+        await api("GET", `admin/principals${queryString({ ...filters })}`),
+      ),
   });
 }
 
-export function useAdminPrincipals(enabled: boolean) {
-  return useQuery<PrincipalSummary[]>({
-    queryKey: ["admin", "principals"],
-    enabled,
+export function usePrincipalDetail(principalId: string | null) {
+  return useQuery<PrincipalSummary>({
+    queryKey: ["admin", "principals", principalId, "detail"],
+    enabled: principalId !== null,
     queryFn: async () =>
-      parse(PrincipalListResponse, await api("GET", "admin/principals"))
-        .principals,
+      parse(
+        PrincipalDetailResponse,
+        await api("GET", `admin/principals/${principalId}`),
+      ).principal,
   });
 }
 
@@ -99,12 +140,25 @@ export function useAdminRoles(enabled: boolean) {
   });
 }
 
-export function useAuditLog(enabled: boolean) {
-  return useQuery<AuditRecord[]>({
-    queryKey: ["admin", "audit"],
-    enabled,
+// ─── Audit ─────────────────────────────────────────────────────────
+
+export interface AuditFilters {
+  page: number;
+  limit: number;
+  actor?: string;
+  action?: AdminAuditAction;
+  from?: string;
+  to?: string;
+}
+
+export function useAuditLog(filters: AuditFilters) {
+  return useQuery<AuditListResponseType>({
+    queryKey: ["admin", "audit", filters],
     queryFn: async () =>
-      parse(AuditListResponse, await api("GET", "admin/audit")).records,
+      parse(
+        AuditListResponse,
+        await api("GET", `admin/audit${queryString({ ...filters })}`),
+      ),
   });
 }
 
@@ -116,10 +170,7 @@ export function useAuditLog(enabled: boolean) {
 
 function useInvalidatePrincipal() {
   const qc = useQueryClient();
-  return (principalId: string) => {
-    void qc.invalidateQueries({
-      queryKey: ["admin", "principals", principalId, "grants"],
-    });
+  return () => {
     void qc.invalidateQueries({ queryKey: ["admin", "principals"] });
     void qc.invalidateQueries({ queryKey: ["admin", "audit"] });
     // The caller's own nav gate keys off /me.isAdmin — refresh it in case they
@@ -133,7 +184,7 @@ export function useElevateToAdmin() {
   return useMutation({
     mutationFn: async (vars: { principalId: string }) =>
       api("POST", `admin/principals/${vars.principalId}/elevate`),
-    onSuccess: (_data, vars) => invalidate(vars.principalId),
+    onSuccess: () => invalidate(),
   });
 }
 
@@ -142,6 +193,6 @@ export function useDemoteFromAdmin() {
   return useMutation({
     mutationFn: async (vars: { principalId: string }) =>
       api("POST", `admin/principals/${vars.principalId}/demote`),
-    onSuccess: (_data, vars) => invalidate(vars.principalId),
+    onSuccess: () => invalidate(),
   });
 }

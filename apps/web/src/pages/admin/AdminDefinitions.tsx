@@ -1,28 +1,53 @@
-import { useState } from "react";
-import { Link } from "react-router";
-import { Badge, DataTable, type DataTableColumn } from "@workbench/ui";
-import type {
-  AgentDefinitionSummary,
-  ToolDefinitionSummary,
-  WorkflowDefinitionSummary,
-} from "@workbench/shared";
+import { useNavigate } from "react-router";
 import {
-  useAgentDefinitions,
-  useToolDefinitions,
-  useWorkflowDefinitions,
-} from "../../hooks/use-admin";
-import { QueryStates, adminTableCard, tabButtonClass } from "./admin-ui";
+  Badge,
+  DataTable,
+  Pagination,
+  type DataTableColumn,
+} from "@workbench/ui";
+import {
+  definitionStatuses,
+  type DefinitionKind,
+  type DefinitionSummary,
+} from "@workbench/shared";
+import { useAdminDefinitions } from "../../hooks/use-admin";
+import {
+  AdminSearchInput,
+  AdminSelect,
+  FilterBar,
+  ListStates,
+  adminTableCard,
+  encodeBackParam,
+  useAdminFilters,
+} from "./admin-ui";
 
-type Tab = "workflows" | "agents" | "tools";
+const PAGE_SIZE = 25;
 
-const TABS: { id: Tab; label: string }[] = [
-  { id: "workflows", label: "Workflows" },
-  { id: "agents", label: "Agents" },
-  { id: "tools", label: "Tools" },
+const KIND_OPTIONS = [
+  { value: "workflow", label: "Workflow" },
+  { value: "agent", label: "Agent" },
+  { value: "tool", label: "Tool" },
 ];
 
-const workflowColumns: DataTableColumn<WorkflowDefinitionSummary>[] = [
-  { key: "kind", header: "Kind", render: (d) => d.kind },
+const STATUS_OPTIONS = definitionStatuses.map((s) => ({ value: s, label: s }));
+
+const KIND_TONE: Record<DefinitionKind, "accent" | "identity" | "neutral"> = {
+  workflow: "accent",
+  agent: "identity",
+  tool: "neutral",
+};
+
+const columns: DataTableColumn<DefinitionSummary>[] = [
+  {
+    key: "name",
+    header: "Name",
+    render: (d) => <span className="font-medium text-text">{d.name}</span>,
+  },
+  {
+    key: "kind",
+    header: "Kind",
+    render: (d) => <Badge tone={KIND_TONE[d.kind]}>{d.kind}</Badge>,
+  },
   {
     key: "status",
     header: "Status",
@@ -33,117 +58,94 @@ const workflowColumns: DataTableColumn<WorkflowDefinitionSummary>[] = [
     ),
   },
   { key: "version", header: "Version", render: (d) => d.version ?? "—" },
-  { key: "label", header: "Label", render: (d) => d.label ?? "—" },
   {
-    key: "deployed",
-    header: "Deployed",
-    render: (d) => new Date(d.createdAt).toLocaleDateString(),
+    key: "deployments",
+    header: "Deployments",
+    render: (d) => (d.kind === "workflow" ? d.deploymentCount : "—"),
   },
-  {
-    key: "runs",
-    header: "",
-    render: () => (
-      <Link to="/workflows" className="text-orange hover:underline">
-        Runs
-      </Link>
-    ),
-  },
-];
-
-const agentColumns: DataTableColumn<AgentDefinitionSummary>[] = [
-  { key: "name", header: "Name", render: (a) => a.name },
-  { key: "version", header: "Version", render: (a) => a.version },
-  {
-    key: "status",
-    header: "Status",
-    render: (a) => (
-      <Badge tone={a.status === "deployed" ? "positive" : "neutral"}>
-        {a.status}
-      </Badge>
-    ),
-  },
-  {
-    key: "description",
-    header: "Description",
-    render: (a) => a.description ?? "—",
-  },
-];
-
-const toolColumns: DataTableColumn<ToolDefinitionSummary>[] = [
-  { key: "name", header: "Name", render: (t) => t.name },
-  { key: "provider", header: "Provider", render: (t) => t.providerName },
-  { key: "version", header: "Version", render: (t) => t.version ?? "—" },
-  { key: "description", header: "Description", render: (t) => t.description },
 ];
 
 export function AdminDefinitions() {
-  const [tab, setTab] = useState<Tab>("workflows");
-  const workflows = useWorkflowDefinitions(tab === "workflows");
-  const agents = useAgentDefinitions(tab === "agents");
-  const tools = useToolDefinitions(tab === "tools");
+  const navigate = useNavigate();
+  const { get, page, setFilter, setPage, searchParams } = useAdminFilters();
+
+  const kind = get("kind");
+  const status = get("status");
+  const search = get("search");
+
+  const query = useAdminDefinitions({
+    page,
+    limit: PAGE_SIZE,
+    kind: kind ? (kind as DefinitionKind) : undefined,
+    status: status || undefined,
+    search: search || undefined,
+  });
+
+  const definitions = query.data?.definitions ?? [];
+  const pageInfo = query.data?.pageInfo;
+
+  const openDetail = (d: DefinitionSummary) => {
+    const back = encodeBackParam(searchParams);
+    const backSuffix = back ? `&back=${back}` : "";
+    navigate(
+      `/admin/definitions/${encodeURIComponent(d.key)}?kind=${d.kind}${backSuffix}`,
+    );
+  };
 
   return (
     <div>
       <p className="mb-4 text-sm text-text-2">
-        Read-only view of the definitions that back the workbench. Editing and
-        publishing stay in the admin CLI.
+        The distinct workflow, agent, and tool definitions the workbench can
+        run. Workflows are grouped by kind with a deployment count; ephemeral
+        per-run deployments are excluded. Read-only — editing stays in the admin
+        CLI.
       </p>
 
-      <div className="mb-3 flex gap-1 border-b border-border">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setTab(t.id)}
-            className={tabButtonClass(tab === t.id)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <FilterBar>
+        <AdminSearchInput
+          value={search}
+          onChange={(v) => setFilter("search", v)}
+          placeholder="Search name or key…"
+        />
+        <AdminSelect
+          ariaLabel="Filter by kind"
+          value={kind}
+          onChange={(v) => setFilter("kind", v)}
+          options={KIND_OPTIONS}
+          allLabel="All kinds"
+        />
+        <AdminSelect
+          ariaLabel="Filter by status"
+          value={status}
+          onChange={(v) => setFilter("status", v)}
+          options={STATUS_OPTIONS}
+          allLabel="All statuses"
+        />
+      </FilterBar>
 
       <div className={adminTableCard}>
-        {tab === "workflows" && (
-          <QueryStates
-            query={workflows}
-            emptyLabel="No active workflow deployments."
-          >
-            {(rows) => (
-              <DataTable
-                columns={workflowColumns}
-                rows={rows}
-                getRowKey={(d) => d.deploymentId ?? `${d.kind}-${d.createdAt}`}
-                caption="Workflow deployments"
-              />
-            )}
-          </QueryStates>
-        )}
-
-        {tab === "agents" && (
-          <QueryStates query={agents} emptyLabel="No agent definitions.">
-            {(rows) => (
-              <DataTable
-                columns={agentColumns}
-                rows={rows}
-                getRowKey={(a) => a.id}
-                caption="Agent definitions"
-              />
-            )}
-          </QueryStates>
-        )}
-
-        {tab === "tools" && (
-          <QueryStates query={tools} emptyLabel="No tools available.">
-            {(rows) => (
-              <DataTable
-                columns={toolColumns}
-                rows={rows}
-                getRowKey={(t) => t.name}
-                caption="Tool definitions"
-              />
-            )}
-          </QueryStates>
-        )}
+        <ListStates
+          isLoading={query.isLoading}
+          isError={query.isError}
+          rowCount={definitions.length}
+          emptyLabel="No definitions match these filters."
+        >
+          <DataTable
+            columns={columns}
+            rows={definitions}
+            getRowKey={(d) => `${d.kind}:${d.key}`}
+            onRowClick={openDetail}
+            caption="Definitions"
+          />
+          {pageInfo && (
+            <Pagination
+              page={pageInfo.page}
+              totalPages={pageInfo.totalPages}
+              total={pageInfo.total}
+              onPageChange={setPage}
+            />
+          )}
+        </ListStates>
       </div>
     </div>
   );

@@ -84,6 +84,12 @@ export {
 export { useViewMode, type ViewMode } from "./use-view-mode";
 export { ViewToggle } from "./ViewToggle";
 export { DataTable, type DataTableColumn } from "./DataTable";
+export { Pagination, type PaginationProps } from "./Pagination";
+export {
+  Breadcrumbs,
+  type BreadcrumbItem,
+  type BreadcrumbsProps,
+} from "./Breadcrumbs";
 export { SortableTable, type SortableColumn } from "./SortableTable";
 export {
   sortRows,

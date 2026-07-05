@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, lte, type SQL } from "drizzle-orm";
 import { getLogger } from "@intx/log";
 import type { AdminAuditAction, AuditRecord } from "@workbench/shared";
 import type { HubDb } from "../db";
@@ -42,21 +42,62 @@ export async function recordAudit(args: RecordAuditArgs): Promise<void> {
   }
 }
 
-const DEFAULT_AUDIT_LIMIT = 100;
-const MAX_AUDIT_LIMIT = 500;
+export const MAX_AUDIT_LIMIT = 500;
 
+export interface AuditListFilter {
+  /** Case-insensitive substring match on the actor principal id. */
+  actor?: string | undefined;
+  /** Exact audit action. */
+  action?: AdminAuditAction | undefined;
+  /** Inclusive lower bound on `createdAt`. */
+  from?: Date | undefined;
+  /** Inclusive upper bound on `createdAt`. */
+  to?: Date | undefined;
+  page: number;
+  limit: number;
+}
+
+export interface AuditListPage {
+  records: AuditRecord[];
+  total: number;
+}
+
+/**
+ * Newest-first compliance audit records, filtered (actor / action / date range)
+ * and paginated (CL-2807). Every filter is applied in SQL so the `total` used
+ * for pagination reflects the filtered set, not the whole log. Actor/target
+ * display names are resolved for the returned page only.
+ */
 export async function listAuditRecords(
   db: HubDb,
   tenantId: string,
-  limit = DEFAULT_AUDIT_LIMIT,
-): Promise<AuditRecord[]> {
-  const capped = Math.min(Math.max(1, limit), MAX_AUDIT_LIMIT);
+  filter: AuditListFilter,
+): Promise<AuditListPage> {
+  const limit = Math.min(Math.max(1, filter.limit), MAX_AUDIT_LIMIT);
+  const page = Math.max(1, filter.page);
+
+  const conditions: SQL[] = [eq(adminAudit.tenantId, tenantId)];
+  if (filter.actor && filter.actor.trim() !== "") {
+    conditions.push(ilike(adminAudit.actorPrincipalId, `%${filter.actor}%`));
+  }
+  if (filter.action) conditions.push(eq(adminAudit.action, filter.action));
+  if (filter.from) conditions.push(gte(adminAudit.createdAt, filter.from));
+  if (filter.to) conditions.push(lte(adminAudit.createdAt, filter.to));
+  const where = and(...conditions);
+
+  const totalRows = await db
+    .select({ total: count() })
+    .from(adminAudit)
+    .where(where);
+  const total = totalRows[0]?.total ?? 0;
+
   const rows = await db
     .select()
     .from(adminAudit)
-    .where(eq(adminAudit.tenantId, tenantId))
+    .where(where)
     .orderBy(desc(adminAudit.createdAt))
-    .limit(capped);
+    .limit(limit)
+    .offset((page - 1) * limit);
 
   const ids = rows.flatMap((r) =>
     r.targetPrincipalId
@@ -65,7 +106,7 @@ export async function listAuditRecords(
   );
   const names = await resolvePrincipalNames(db, tenantId, ids);
 
-  return rows.map((r) => ({
+  const records = rows.map((r) => ({
     id: r.id,
     action: r.action,
     actorPrincipalId: r.actorPrincipalId,
@@ -78,4 +119,5 @@ export async function listAuditRecords(
     detail: r.detail ? JSON.stringify(r.detail) : null,
     createdAt: r.createdAt.toISOString(),
   }));
+  return { records, total };
 }

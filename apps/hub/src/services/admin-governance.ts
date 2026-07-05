@@ -1,14 +1,14 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { type GrantStore } from "@intx/authz";
 import {
   ADMIN_ROLE_NAME,
-  type AgentDefinitionSummary,
+  type DefinitionSummary,
   type PrincipalGrantsResponse,
   type PrincipalSummary,
   type ResolvedGrant,
   type RoleSummary,
-  type WorkflowDefinitionSummary,
+  type WorkflowDeploymentHistoryEntry,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
@@ -44,12 +44,65 @@ async function rolesByPrincipal(
   return map;
 }
 
+export interface PrincipalListFilter {
+  /** Narrow to human members (`user`) or agent-instance synthetics (`agent`). */
+  type?: "user" | "agent" | undefined;
+  /** Case-insensitive substring match on display name or principal id. */
+  search?: string | undefined;
+  page: number;
+  limit: number;
+}
+
+export interface PrincipalListPage {
+  principals: PrincipalSummary[];
+  total: number;
+}
+
 /**
- * Every principal in a tenant — human members plus agent-instance synthetic
- * principals — with each one's role assignments. Mirrors actor-search's two
- * tenant-scoped joins but without the name filter (list, not search).
+ * A tenant's principals — human members plus agent-instance synthetic
+ * principals — with each one's role assignments, filtered (type + search) and
+ * paginated (CL-2807). Mirrors actor-search's two tenant-scoped joins. The full
+ * roster is gathered once, then filtered/sliced in memory: a tenant's principal
+ * count is bounded (members + agent instances), so a page query is cheap and
+ * the type/name filter reads identically across both principal kinds without a
+ * per-kind SQL branch.
  */
 export async function listTenantPrincipals(
+  db: HubDb,
+  tenantId: string,
+  filter: PrincipalListFilter,
+): Promise<PrincipalListPage> {
+  const all = await gatherTenantPrincipals(db, tenantId);
+
+  const search = filter.search?.trim().toLowerCase();
+  const filtered = all.filter((p) => {
+    if (filter.type && p.kind !== filter.type) return false;
+    if (search) {
+      const hay = `${p.displayName} ${p.id} ${p.refId}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  const total = filtered.length;
+  const start = (filter.page - 1) * filter.limit;
+  const principals = filtered.slice(start, start + filter.limit);
+  return { principals, total };
+}
+
+/** One principal (human or agent) in a tenant, or null if absent. Backs the
+ * principal detail page (CL-2807). */
+export async function getTenantPrincipal(
+  db: HubDb,
+  tenantId: string,
+  principalId: string,
+): Promise<PrincipalSummary | null> {
+  const all = await gatherTenantPrincipals(db, tenantId);
+  return all.find((p) => p.id === principalId) ?? null;
+}
+
+/** Every principal in a tenant with its roles, unfiltered and unpaginated. */
+async function gatherTenantPrincipals(
   db: HubDb,
   tenantId: string,
 ): Promise<PrincipalSummary[]> {
@@ -213,15 +266,15 @@ export async function getPrincipalGrants(
   };
 }
 
-export async function listAgentDefinitions(
+/** The tenant's agent definitions as normalized definition summaries. */
+export async function listAgentDefinitionSummaries(
   db: HubDb,
   tenantId: string,
-): Promise<AgentDefinitionSummary[]> {
+): Promise<DefinitionSummary[]> {
   const rows = await db
     .select({
       id: agent.id,
       name: agent.name,
-      tenantId: agent.tenantId,
       version: agent.currentVersion,
       status: agent.status,
       description: agent.description,
@@ -231,43 +284,95 @@ export async function listAgentDefinitions(
     .where(eq(agent.tenantId, tenantId))
     .orderBy(agent.name);
   return rows.map((r) => ({
-    id: r.id,
+    kind: "agent" as const,
+    key: r.id,
     name: r.name,
-    tenantId: r.tenantId,
     version: r.version,
     status: r.status,
     description: r.description ?? null,
+    deploymentCount: 1,
     createdAt: r.createdAt.toISOString(),
   }));
 }
 
 /**
- * Active workflow deployments in a tenant, read from the hub-local deployment
- * index (`workflow_run`). One row per live deployment (deletedAt IS NULL) with
- * the deploy-time provenance (`meta`) surfaced for the browser.
+ * The tenant's REAL workflow definitions (CL-2807), read from the hub-local
+ * deployment index (`workflow_run`) but reduced to genuine definitions:
+ *
+ *  - Only rows whose `kind` is in the build-time embedded catalog allowlist
+ *    (`allowedKinds`) survive. This excludes the junk the previous browser
+ *    dumped — a bare workflow STEP (`skipWriteBack`, `source`), a per-run
+ *    supervisor (`supervisor-ses_…`) — that unvalidated direct deploys wrote
+ *    into the index as if each were its own workflow.
+ *  - Rows are grouped by `kind` into one summary per definition. Every
+ *    deployment of that kind (including superseded/deleted redeploys) counts
+ *    toward `deploymentCount`; the newest live-or-latest row supplies the
+ *    representative status/version/label.
  */
-export async function listWorkflowDefinitions(
+export async function listWorkflowDefinitionSummaries(
   db: HubDb,
   tenantId: string,
-): Promise<WorkflowDefinitionSummary[]> {
+  allowedKinds: Set<string>,
+): Promise<DefinitionSummary[]> {
+  const rows = await db
+    .select({
+      kind: workflowRun.kind,
+      status: workflowRun.status,
+      meta: workflowRun.meta,
+      deletedAt: workflowRun.deletedAt,
+      createdAt: workflowRun.createdAt,
+    })
+    .from(workflowRun)
+    .where(eq(workflowRun.tenantId, tenantId))
+    .orderBy(desc(workflowRun.createdAt));
+
+  const byKind = new Map<string, DefinitionSummary>();
+  for (const r of rows) {
+    if (!allowedKinds.has(r.kind)) continue;
+    const existing = byKind.get(r.kind);
+    if (existing) {
+      existing.deploymentCount += 1;
+      continue;
+    }
+    // Rows are newest-first, so the first row seen for a kind is its
+    // representative (latest) deployment.
+    byKind.set(r.kind, {
+      kind: "workflow",
+      key: r.kind,
+      name: r.meta?.label ?? r.kind,
+      version: r.meta?.version ?? null,
+      status: r.status,
+      description: r.meta?.description ?? null,
+      deploymentCount: 1,
+      createdAt: r.createdAt.toISOString(),
+    });
+  }
+  return [...byKind.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The deployment history for one workflow kind: every `workflow_run` row for
+ * that (kind, tenant), newest first, with its deploy-time provenance. Backs the
+ * workflow definition detail page — the per-run/redeploy rows grouped under the
+ * definition, which the list view only counts.
+ */
+export async function getWorkflowDeploymentHistory(
+  db: HubDb,
+  tenantId: string,
+  kind: string,
+): Promise<WorkflowDeploymentHistoryEntry[]> {
   const rows = await db
     .select({
       deploymentId: workflowRun.deploymentId,
-      kind: workflowRun.kind,
-      tenantId: workflowRun.tenantId,
       status: workflowRun.status,
       meta: workflowRun.meta,
       createdAt: workflowRun.createdAt,
     })
     .from(workflowRun)
-    .where(
-      and(eq(workflowRun.tenantId, tenantId), isNull(workflowRun.deletedAt)),
-    )
+    .where(and(eq(workflowRun.tenantId, tenantId), eq(workflowRun.kind, kind)))
     .orderBy(desc(workflowRun.createdAt));
   return rows.map((r) => ({
     deploymentId: r.deploymentId ?? null,
-    kind: r.kind,
-    tenantId: r.tenantId,
     status: r.status,
     version: r.meta?.version ?? null,
     sha: r.meta?.sha ?? null,

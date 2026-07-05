@@ -33,7 +33,9 @@ import { ActorDetailPage } from "./pages/insights/ActorDetailPage";
 import { WorkflowTracePage } from "./pages/insights/WorkflowTracePage";
 import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminPrincipals } from "./pages/admin/AdminPrincipals";
+import { PrincipalDetail } from "./pages/admin/PrincipalDetail";
 import { AdminDefinitions } from "./pages/admin/AdminDefinitions";
+import { DefinitionDetail } from "./pages/admin/DefinitionDetail";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { RequireAdmin } from "./pages/admin/RequireAdmin";
 
@@ -227,7 +229,9 @@ export const router = createBrowserRouter([
                 element: <Navigate to="/admin/principals" replace />,
               },
               { path: "principals", element: <AdminPrincipals /> },
+              { path: "principals/:id", element: <PrincipalDetail /> },
               { path: "definitions", element: <AdminDefinitions /> },
+              { path: "definitions/:key", element: <DefinitionDetail /> },
               { path: "audit", element: <AdminAudit /> },
             ],
           },

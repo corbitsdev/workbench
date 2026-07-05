@@ -39,6 +39,35 @@ export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 // the sharing UI + audit retention that go with it) is deferred to CL-2799. The
 // enforced management surface today is role assignment: elevate/demote admin.
 
+// ─── Pagination (CL-2807) ──────────────────────────────────────────
+//
+// Every Admin list is server-side paginated: raw ephemeral/per-run data was
+// unusable at volume (dozens-to-hundreds of rows dumped with no way to narrow
+// them). `PageInfoSchema` is the uniform envelope every paginated admin list
+// response carries alongside its rows.
+
+export const PageInfoSchema = type({
+  page: "number",
+  limit: "number",
+  total: "number",
+  totalPages: "number",
+});
+export type PageInfo = typeof PageInfoSchema.infer;
+
+/** Compute the `PageInfoSchema` envelope for a page of `total` rows. */
+export function buildPageInfo(
+  page: number,
+  limit: number,
+  total: number,
+): PageInfo {
+  return {
+    page,
+    limit,
+    total,
+    totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+  };
+}
+
 // ─── Shared wire schemas ───────────────────────────────────────────
 
 /** One principal in the admin roster (humans + agent-instance synthetics). */
@@ -55,8 +84,14 @@ export type PrincipalSummary = typeof PrincipalSummarySchema.infer;
 
 export const PrincipalListResponse = type({
   principals: PrincipalSummarySchema.array(),
+  pageInfo: PageInfoSchema,
 });
 export type PrincipalListResponse = typeof PrincipalListResponse.infer;
+
+export const PrincipalDetailResponse = type({
+  principal: PrincipalSummarySchema,
+});
+export type PrincipalDetailResponse = typeof PrincipalDetailResponse.infer;
 
 /** A single resolved grant (direct or role-expanded) from `collectGrants`. */
 export const ResolvedGrantSchema = type({
@@ -137,6 +172,74 @@ export const ToolDefinitionsResponse = type({
   definitions: ToolDefinitionSummarySchema.array(),
 });
 
+// ─── Combined definitions browser (CL-2807) ────────────────────────
+//
+// The Definitions tab surfaces the actual distinct workflow/agent/tool
+// DEFINITIONS the workbench can run — never per-run ephemeral deploy-per-run
+// artifacts (a workflow step, a per-run supervisor). A workflow definition row
+// carries `deploymentCount`: how many live+superseded deployments exist for
+// that (kind, tenant) — the raw per-run dump is grouped under its parent
+// definition rather than listed as its own row.
+
+export const definitionKinds = ["workflow", "agent", "tool"] as const;
+export type DefinitionKind = (typeof definitionKinds)[number];
+
+// The real status vocabulary a `DefinitionSummary.status` can take, by source:
+//   workflow — the `workflow_run` deployment index (`running` on deploy,
+//     `superseded` on redeploy, `deleted` on delete)
+//   agent    — Interchange's `agentVersionStatuses` (active/inactive/failed)
+//   tool     — always `available` (a tool is not a versioned deployment)
+// This is the source of truth the admin Definitions status filter enumerates —
+// never a free-text guess.
+export const definitionStatuses = [
+  "running",
+  "superseded",
+  "deleted",
+  "active",
+  "inactive",
+  "failed",
+  "available",
+] as const;
+export type DefinitionStatus = (typeof definitionStatuses)[number];
+
+export const DefinitionSummarySchema = type({
+  kind: "'workflow' | 'agent' | 'tool'",
+  key: "string",
+  name: "string",
+  version: "string | null",
+  status: "string",
+  description: "string | null",
+  deploymentCount: "number",
+  createdAt: "string | null",
+});
+export type DefinitionSummary = typeof DefinitionSummarySchema.infer;
+
+export const DefinitionListResponse = type({
+  definitions: DefinitionSummarySchema.array(),
+  pageInfo: PageInfoSchema,
+});
+export type DefinitionListResponse = typeof DefinitionListResponse.infer;
+
+/** One workflow definition's deployment history — the per-run/redeploy rows
+ * grouped under it, newest first. Detail-page-only; the list view only needs
+ * the count. */
+export const WorkflowDeploymentHistoryEntrySchema = type({
+  deploymentId: "string | null",
+  status: "string",
+  version: "string | null",
+  sha: "string | null",
+  label: "string | null",
+  createdAt: "string",
+});
+export type WorkflowDeploymentHistoryEntry =
+  typeof WorkflowDeploymentHistoryEntrySchema.infer;
+
+export const DefinitionDetailResponse = type({
+  definition: DefinitionSummarySchema,
+  deployments: WorkflowDeploymentHistoryEntrySchema.array(),
+});
+export type DefinitionDetailResponse = typeof DefinitionDetailResponse.infer;
+
 // ─── Audit (CL-2735) ───────────────────────────────────────────────
 //
 // Cross-principal activity reads and every grant/role mutation are recorded in
@@ -168,5 +271,8 @@ export const AuditRecordSchema = type({
 });
 export type AuditRecord = typeof AuditRecordSchema.infer;
 
-export const AuditListResponse = type({ records: AuditRecordSchema.array() });
+export const AuditListResponse = type({
+  records: AuditRecordSchema.array(),
+  pageInfo: PageInfoSchema,
+});
 export type AuditListResponse = typeof AuditListResponse.infer;

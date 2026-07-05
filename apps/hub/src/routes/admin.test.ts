@@ -28,28 +28,51 @@ const findAdminRoleId = mock(async () => "rol_admin" as string | null);
 const listTenantRoles = mock(async () => [
   { id: "rol_admin", name: "admin", description: null, isSystem: true },
 ]);
+const listTenantPrincipals = mock(
+  async (): Promise<{ principals: unknown[]; total: number }> => ({
+    principals: [],
+    total: 0,
+  }),
+);
+const listWorkflowDefinitionSummaries = mock(
+  async (): Promise<unknown[]> => [],
+);
+const listAgentDefinitionSummaries = mock(async (): Promise<unknown[]> => []);
 mock.module("../services/admin-governance", () => ({
   assignRole,
   removeRole,
   principalExistsInTenant,
   findAdminRoleId,
   listTenantRoles,
-  listTenantPrincipals: mock(async () => []),
+  listTenantPrincipals,
+  getTenantPrincipal: mock(async () => null),
   getPrincipalGrants: mock(async () => ({
     principalId: "prn_x",
     isAdmin: false,
     roles: [],
     grants: [],
   })),
-  listAgentDefinitions: mock(async () => []),
-  listWorkflowDefinitions: mock(async () => []),
+  listAgentDefinitionSummaries,
+  listWorkflowDefinitionSummaries,
+  getWorkflowDeploymentHistory: mock(async () => []),
   RoleNotFoundError: class extends Error {},
+}));
+
+mock.module("../lib/workflow-catalog", () => ({
+  loadWorkflowCatalogKinds: mock(
+    async () => new Set<string>(["brief-builder"]),
+  ),
+}));
+
+mock.module("../lib/tenant-tools", () => ({
+  listAvailableToolSummaries: mock(async () => []),
+  resolveToolVersions: mock(async () => new Map<string, string>()),
 }));
 
 const recordAudit = mock(async () => {});
 mock.module("../services/admin-audit", () => ({
   recordAudit,
-  listAuditRecords: mock(async () => []),
+  listAuditRecords: mock(async () => ({ records: [], total: 0 })),
 }));
 
 const { createAdminRouter } = await import("./admin");
@@ -172,5 +195,97 @@ describe("admin role management", () => {
     expect(res.status).toBe(404);
     expect(assignRole).not.toHaveBeenCalled();
     principalExists = true;
+  });
+});
+
+describe("definitions browser pagination + filters", () => {
+  function seedDefinitions() {
+    listWorkflowDefinitionSummaries.mockResolvedValue([
+      {
+        kind: "workflow",
+        key: "brief-builder",
+        name: "Brief Builder",
+        version: "1",
+        status: "running",
+        description: null,
+        deploymentCount: 3,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    listAgentDefinitionSummaries.mockResolvedValue([
+      {
+        kind: "agent",
+        key: "agt_a",
+        name: "Myra",
+        version: "2",
+        status: "deployed",
+        description: null,
+        deploymentCount: 1,
+        createdAt: "2026-01-02T00:00:00.000Z",
+      },
+      {
+        kind: "agent",
+        key: "agt_b",
+        name: "Oat",
+        version: "1",
+        status: "deployed",
+        description: null,
+        deploymentCount: 1,
+        createdAt: "2026-01-03T00:00:00.000Z",
+      },
+    ]);
+  }
+
+  it("returns the requested page/limit with correct pageInfo", async () => {
+    callerPrincipalId = "prn_admin";
+    seedDefinitions();
+    const res = await buildApp().request("/admin/definitions?page=1&limit=2");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      definitions: { key: string }[];
+      pageInfo: {
+        page: number;
+        limit: number;
+        total: number;
+        totalPages: number;
+      };
+    };
+    // 3 total definitions across workflow+agent, page size 2 → 2 rows, 2 pages.
+    expect(body.definitions).toHaveLength(2);
+    expect(body.pageInfo).toMatchObject({
+      page: 1,
+      limit: 2,
+      total: 3,
+      totalPages: 2,
+    });
+  });
+
+  it("second page returns the remaining row", async () => {
+    callerPrincipalId = "prn_admin";
+    seedDefinitions();
+    const res = await buildApp().request("/admin/definitions?page=2&limit=2");
+    const body = (await res.json()) as { definitions: unknown[] };
+    expect(body.definitions).toHaveLength(1);
+  });
+
+  it("kind filter narrows to a single kind", async () => {
+    callerPrincipalId = "prn_admin";
+    seedDefinitions();
+    const res = await buildApp().request("/admin/definitions?kind=agent");
+    const body = (await res.json()) as {
+      definitions: { kind: string }[];
+      pageInfo: { total: number };
+    };
+    expect(body.pageInfo.total).toBe(2);
+    expect(body.definitions.every((d) => d.kind === "agent")).toBe(true);
+  });
+
+  it("search filter narrows by name", async () => {
+    callerPrincipalId = "prn_admin";
+    seedDefinitions();
+    const res = await buildApp().request("/admin/definitions?search=brief");
+    const body = (await res.json()) as { definitions: { key: string }[] };
+    expect(body.definitions).toHaveLength(1);
+    expect(body.definitions[0]?.key).toBe("brief-builder");
   });
 });
