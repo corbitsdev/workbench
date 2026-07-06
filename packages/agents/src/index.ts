@@ -50,6 +50,15 @@ export {
 } from "./personal-agent/definition";
 export { createPersonalAgentDirector } from "./personal-agent/director";
 export {
+  DYNAMIC_TOOLS_DIRECTOR_ID,
+  MYRA_TOOL_CATALOG,
+  PERSONAL_AGENT_DYNAMIC_TOOLS,
+  resolveDynamicToolConfig,
+  createDynamicToolsDirector,
+  dynamicToolsDirector,
+  type DynamicToolConfig,
+} from "./dynamic-tools";
+export {
   PERSONAL_AGENT_SEED_FILES,
   buildSeedMarker,
   parseSeedMarker,

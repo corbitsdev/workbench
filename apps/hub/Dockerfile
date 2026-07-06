@@ -46,6 +46,7 @@ COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
+COPY packages/tools-catalog/package.json packages/tools-catalog/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
@@ -102,6 +103,7 @@ COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/
 COPY packages/tools-vercel/ packages/tools-vercel/
 COPY packages/tools-attio/ packages/tools-attio/
+COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/tools-github/ packages/tools-github/
 COPY packages/tools-granola/ packages/tools-granola/
 COPY packages/tools-hackernews/ packages/tools-hackernews/

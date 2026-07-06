@@ -43,6 +43,7 @@ COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
+COPY packages/tools-catalog/package.json packages/tools-catalog/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/

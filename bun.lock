@@ -119,6 +119,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tools-catalog": "workspace:*",
         "@workbench/workflow-host": "workspace:*",
       },
       "devDependencies": {
@@ -575,6 +576,7 @@
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/tools-catalog": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
       },
@@ -943,6 +945,18 @@
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-catalog": {
+      "name": "@workbench/tools-catalog",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
@@ -2411,6 +2425,8 @@
     "@workbench/tools-attio": ["@workbench/tools-attio@workspace:packages/tools-attio"],
 
     "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
+
+    "@workbench/tools-catalog": ["@workbench/tools-catalog@workspace:packages/tools-catalog"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 

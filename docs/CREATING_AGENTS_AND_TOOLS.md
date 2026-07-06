@@ -349,7 +349,18 @@ Tools are pinned as packages on each agent (and on each native workflow step). N
 
 This is the key property: the tool package and the agent's `toolPackages` pin are the only things that need to change. The sidecar, the credential system, and the inference layer are all tool-agnostic.
 
----
+### Dynamic tool exposure (advertise on demand, CL-2808)
+
+Pinning controls what an agent _has_; dynamic exposure controls what the model _sees_. An agent that opts in advertises only a base tool set plus two catalog tools on turn one; the long-tail packages stay loaded and dispatchable but hidden until the model asks for them:
+
+- `search_tools({ query, package?, tags? })` — deterministic keyword search over a hand-maintained catalog (`MYRA_TOOL_CATALOG` in `packages/agents/src/dynamic-tools/catalog.ts`), grouped by package.
+- `load_tools({ names?, package? })` — adds tools (individually or a whole package) to the session's sticky exposure set; they appear in the model's function list on the next inference call of the same turn.
+
+Mechanics: the harness (`apps/sidecar/src/default-harness.ts`) builds one mutable `ToolExposureState`, hands it to the catalog runner (`createCatalogTools` in `@workbench/tools-catalog`) and to the `@workbench/agents/dynamic-tools` director via `env[DYNAMIC_TOOLS_ENV_KEY]`. The director wraps `createDefaultDirector` and rewrites each `infer` to advertise `base ∪ catalog-tools ∪ exposed`. Only advertisement changes — `allowedNames`, grants, and credentials are untouched, so a hidden tool called after `load_tools` executes through the normal rails.
+
+Opt-in is via `resolveDynamicToolConfig(systemPrompt)` (prompt-marker match, like `resolveMailOutboundLimit`); only Myra opts in today. `@workbench/tools-catalog` is a **local in-process runner, not a tarball tool package** — it needs direct access to the exposure state, so it is not registered in the package build, not published to the registry, and not pinned in `toolPackages`. It is keyless (no seed-credentials entry).
+
+When adding a tool to a catalog-managed package, add its catalog entry in `catalog.ts` too — a tool missing from the catalog is always advertised (falls into the base set), silently defeating the hiding for that tool.
 
 ---
 

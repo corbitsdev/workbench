@@ -5,7 +5,14 @@ import { createToolRunner, defineTool } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
   toLlmToolName,
+  resolveDynamicToolConfig,
+  DYNAMIC_TOOLS_DIRECTOR_ID,
 } from "@workbench/agents";
+import {
+  createCatalogTools,
+  DYNAMIC_TOOLS_ENV_KEY,
+  type ToolExposureState,
+} from "@workbench/tools-catalog";
 import {
   HUB_RPC_ENV_KEY,
   providerFromEnvKey,
@@ -176,6 +183,23 @@ export function createDefaultHarnessBuilder({
         now: new Date(),
       });
 
+      // Dynamic tool exposure (CL-2808): opt-in agents advertise only a base
+      // set plus the catalog tools on turn one; the rest are discoverable via
+      // search_tools and enabled on demand by load_tools. The exposure set is
+      // the shared in-process channel between the catalog tools (which mutate
+      // it) and the dynamic-tools director (which reads it per infer). Every
+      // tool stays loaded and dispatchable regardless — only advertisement
+      // changes. Non-opt-in agents get `undefined` here and are untouched.
+      const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
+      const exposureState: ToolExposureState = { exposed: new Set<string>() };
+      const catalogRunner =
+        dynamicToolConfig !== undefined
+          ? (createCatalogTools({
+              catalog: dynamicToolConfig.catalog,
+              exposure: exposureState,
+            }) as DefinedRunner)
+          : undefined;
+
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;
       const authorize = async (resource: string, action: string) =>
@@ -316,6 +340,14 @@ export function createDefaultHarnessBuilder({
         onConnectorStateChanged,
         ...credentialEnv,
         [HUB_RPC_ENV_KEY]: hubRpcContext,
+        ...(dynamicToolConfig !== undefined
+          ? {
+              [DYNAMIC_TOOLS_ENV_KEY]: {
+                catalog: dynamicToolConfig.catalog,
+                exposure: exposureState,
+              },
+            }
+          : {}),
       };
 
       const loadedRunners: DefinedRunner[] = [];
@@ -386,6 +418,7 @@ export function createDefaultHarnessBuilder({
         posixTools,
         guardedMailTools,
         askPrincipalRunner as DefinedRunner,
+        ...(catalogRunner !== undefined ? [catalogRunner] : []),
         ...loadedRunners,
       ]);
       // Enforce human approval for irreversible tools at the composition seam
@@ -403,6 +436,9 @@ export function createDefaultHarnessBuilder({
       const allowedNames = new Set([
         ...agentConfig.tools.map((t) => t.name),
         ...loadedToolNames,
+        ...(catalogRunner !== undefined
+          ? catalogRunner.definitions.map((d) => d.name)
+          : []),
       ]);
       const tools = filterToolRunner(gatedTools as DefinedRunner, allowedNames);
 
@@ -421,6 +457,9 @@ export function createDefaultHarnessBuilder({
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
+          ...(dynamicToolConfig !== undefined
+            ? { director: { id: DYNAMIC_TOOLS_DIRECTOR_ID, config: {} } }
+            : {}),
         };
 
         const harness = await createHarness(def, env);

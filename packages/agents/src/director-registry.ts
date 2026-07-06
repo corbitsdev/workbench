@@ -8,6 +8,7 @@ import {
 import { createPersonalAgentDirector } from "./personal-agent/director";
 import { createGranolaDirector } from "./granola/director";
 import { createFirecrawlDirector } from "./firecrawl/director";
+import { dynamicToolsDirector } from "./dynamic-tools";
 
 const SenderFilterConfig = type({ allowedSenders: "string[]" });
 
@@ -59,6 +60,7 @@ export function createWorkbenchDirectorRegistry(): DirectorRegistry {
       personalAgentDirector.factory,
       granolaDirector.factory,
       firecrawlDirector.factory,
+      dynamicToolsDirector.factory,
     ],
     defaultId: defaultDirectorFactory.id,
   });
