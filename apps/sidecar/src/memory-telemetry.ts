@@ -5,6 +5,7 @@ import { getLogger } from "@intx/log";
 const log = getLogger(["sidecar", "memory"]);
 
 const DEFAULT_INTERVAL_MS = 60_000;
+const DEFAULT_GC_INTERVAL_MS = 300_000;
 
 /**
  * Resolve the memory-usage log interval from `SIDECAR_MEMORY_LOG_INTERVAL_MS`.
@@ -89,4 +90,54 @@ export function startMemoryTelemetry(dataDir: string): () => void {
     clearInterval(timer);
     process.off("SIGUSR2", onSignal);
   };
+}
+
+/**
+ * Resolve the forced-GC interval from `SIDECAR_FORCE_GC_INTERVAL_MS`. `0`
+ * disables. Falls back to 5min for a missing/invalid/negative value.
+ */
+export function resolveGcIntervalMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULT_GC_INTERVAL_MS;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT_GC_INTERVAL_MS;
+  return n;
+}
+
+/**
+ * Force a synchronous GC and log rss/heapUsed before and after. Bun (mimalloc)
+ * does not return freed heap to the OS on its own, so a slept agent's turn
+ * memory becomes GC-eligible but RSS stays at the high-water-mark until a GC is
+ * forced. This both RECLAIMS that memory and instruments whether the drop is
+ * real (sticky heap → rss falls) or the references are still held (real leak →
+ * rss flat, heapUsed flat).
+ */
+export function runForcedGc(): void {
+  const before = toMemoryMb(process.memoryUsage());
+  Bun.gc(true);
+  const after = toMemoryMb(process.memoryUsage());
+  log.info(
+    "forced gc rssBefore={rssBefore}MB rssAfter={rssAfter}MB rssReclaimed={rssReclaimed}MB heapUsedBefore={heapUsedBefore}MB heapUsedAfter={heapUsedAfter}MB",
+    {
+      rssBefore: before.rss,
+      rssAfter: after.rss,
+      rssReclaimed: before.rss - after.rss,
+      heapUsedBefore: before.heapUsed,
+      heapUsedAfter: after.heapUsed,
+    },
+  );
+}
+
+/**
+ * Start a periodic forced GC so the sidecar returns freed heap to the OS
+ * instead of climbing monotonically to its peak concurrent load. Returns a stop
+ * function; a `0` interval disables it (returns a no-op).
+ */
+export function startPeriodicGc(): () => void {
+  const intervalMs = resolveGcIntervalMs(
+    process.env["SIDECAR_FORCE_GC_INTERVAL_MS"],
+  );
+  if (intervalMs === 0) return () => {};
+  const timer = setInterval(runForcedGc, intervalMs);
+  timer.unref?.();
+  return () => clearInterval(timer);
 }

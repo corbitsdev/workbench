@@ -30,7 +30,7 @@ import {
 import { createSidecarDeployRouter } from "./workflow-host-wiring";
 import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
 import { getLogger } from "@intx/log";
-import { startMemoryTelemetry } from "./memory-telemetry";
+import { startMemoryTelemetry, startPeriodicGc } from "./memory-telemetry";
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
@@ -359,3 +359,8 @@ orchestrator.start();
 // via SIGUSR2 → dataDir, so the sidecar's resident-heap composition is
 // measurable in prod without a redeploy.
 startMemoryTelemetry(dataDir);
+
+// Bun/mimalloc does not return freed heap to the OS on its own, so a slept
+// agent's turn memory stays in RSS until a GC is forced. Periodically force one
+// so memory tracks live load instead of the peak high-water-mark (CL-2813).
+startPeriodicGc();

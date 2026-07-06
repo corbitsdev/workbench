@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { resolveMemoryLogIntervalMs, toMemoryMb } from "./memory-telemetry";
+import {
+  resolveGcIntervalMs,
+  resolveMemoryLogIntervalMs,
+  toMemoryMb,
+} from "./memory-telemetry";
 
 describe("resolveMemoryLogIntervalMs", () => {
   test("defaults to 60s when unset", () => {
@@ -14,6 +18,25 @@ describe("resolveMemoryLogIntervalMs", () => {
     expect(resolveMemoryLogIntervalMs("0")).toBe(60_000);
     expect(resolveMemoryLogIntervalMs("-1")).toBe(60_000);
     expect(resolveMemoryLogIntervalMs("nonsense")).toBe(60_000);
+  });
+});
+
+describe("resolveGcIntervalMs", () => {
+  test("defaults to 5min when unset", () => {
+    expect(resolveGcIntervalMs(undefined)).toBe(300_000);
+  });
+
+  test("honors a positive override", () => {
+    expect(resolveGcIntervalMs("120000")).toBe(120_000);
+  });
+
+  test("0 disables (passes through)", () => {
+    expect(resolveGcIntervalMs("0")).toBe(0);
+  });
+
+  test("falls back to default for invalid or negative values", () => {
+    expect(resolveGcIntervalMs("-5")).toBe(300_000);
+    expect(resolveGcIntervalMs("nonsense")).toBe(300_000);
   });
 });
 
