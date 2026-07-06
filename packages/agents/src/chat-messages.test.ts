@@ -286,6 +286,32 @@ describe("composeChatMessages", () => {
     expect(settledBubble?.feedbackId ?? settledBubble?.id).toBe(savedSubjectId);
   });
 
+  it("collapses a text-only turn with its assistant mail despite whitespace drift", () => {
+    const turn: InstanceEvent = {
+      kind: "turn",
+      turnId: "t1",
+      content: "Just one new record yesterday:\n\nCompany: Leland",
+      timestamp: "2024-01-01T00:00:30.000Z",
+    };
+
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "what changed yesterday?"),
+        turn,
+        assistantMail(
+          "a1",
+          "Just one new record yesterday:\n\n\nCompany: Leland",
+        ),
+      ],
+      streaming: "",
+    });
+
+    const agentMessages = messages.filter((m) => m.role === "agent");
+    expect(agentMessages).toHaveLength(1);
+    expect(agentMessages[0]?.id).toBe("a1");
+    expect(agentMessages[0]?.feedbackId).toBe("t1");
+  });
+
   it("keeps a tool-call turn and drops the assistant mail that echoes it", () => {
     const toolTurn: InstanceEvent = {
       kind: "turn",

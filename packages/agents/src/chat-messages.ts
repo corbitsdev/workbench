@@ -20,6 +20,10 @@ export interface ComposeChatResult {
   messages: ChatMessage[];
 }
 
+function normalizeAssistantText(content: string): string {
+  return content.replace(/\s+/gu, " ").trim();
+}
+
 /**
  * Build the chat message list from session events plus the live streaming
  * buffer.
@@ -54,12 +58,12 @@ export function composeChatMessages(
   const assistantMailContent = new Set(
     events
       .filter((e) => e.kind === "mail" && e.role === "assistant")
-      .map((e) => e.content.trim()),
+      .map((e) => normalizeAssistantText(e.content)),
   );
   const toolTurnContent = new Set(
     events
       .filter((e) => e.kind === "turn" && (e.toolCalls?.length ?? 0) > 0)
-      .map((e) => e.content.trim()),
+      .map((e) => normalizeAssistantText(e.content)),
   );
   // Assistant mails grouped by content, in arrival order. A text-only turn is
   // matched to the next not-yet-hoisted mail of the same content so distinct
@@ -67,7 +71,7 @@ export function composeChatMessages(
   const assistantMailsByContent = new Map<string, InstanceEvent[]>();
   for (const e of events) {
     if (e.kind === "mail" && e.role === "assistant") {
-      const content = e.content.trim();
+      const content = normalizeAssistantText(e.content);
       const group = assistantMailsByContent.get(content);
       if (group) group.push(e);
       else assistantMailsByContent.set(content, [e]);
@@ -90,13 +94,13 @@ export function composeChatMessages(
     if (
       e.kind === "turn" &&
       (e.toolCalls?.length ?? 0) === 0 &&
-      assistantMailContent.has(e.content.trim())
+      assistantMailContent.has(normalizeAssistantText(e.content))
     ) {
       // If every same-content mail is already hoisted (two identical text-only
       // turns share one mail), the turn collapses with no replacement — matching
       // the prior filter's content-collapse behaviour.
       const mail = assistantMailsByContent
-        .get(e.content.trim())
+        .get(normalizeAssistantText(e.content))
         ?.find((m) => m.kind === "mail" && !hoistedMailIds.has(m.id));
       if (mail !== undefined && mail.kind === "mail") {
         hoistedMailIds.add(mail.id);
@@ -108,7 +112,7 @@ export function composeChatMessages(
     if (e.kind === "mail" && e.role === "assistant") {
       // An assistant mail echoed by a tool-call turn is redundant: keep the turn
       // (it carries the tool narrative).
-      if (toolTurnContent.has(e.content.trim())) continue;
+      if (toolTurnContent.has(normalizeAssistantText(e.content))) continue;
       // Already hoisted into an earlier turn's slot — skip this late occurrence.
       if (hoistedMailIds.has(e.id)) continue;
     }

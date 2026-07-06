@@ -51,7 +51,10 @@ export function ChatThreadPage() {
 
   // Auto-title a still-default thread from its first message (best-effort; the
   // hub no-ops if the label is already custom).
-  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(active);
+  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
+    active,
+    session.messages,
+  );
 
   // HITL signal routing (CL-2681): derive whether free text in the prompt box
   // should reach a pending workflow gate, and the resume mutation that delivers

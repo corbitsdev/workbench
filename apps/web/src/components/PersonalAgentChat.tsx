@@ -69,7 +69,10 @@ export function PersonalAgentChat() {
 
   // Auto-title a still-default thread from its first message, exactly as the
   // full-page chat does — the dock is the surface most new threads start from.
-  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(activeThread);
+  const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
+    activeThread,
+    session.messages,
+  );
 
   const {
     hidden: launcherHidden,
