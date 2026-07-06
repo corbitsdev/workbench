@@ -535,6 +535,27 @@ export function createDefaultHarnessBuilder({
             { msg },
           );
         }
+        // CL-2813: honor the harness-builder disposal contract
+        // (packages/hub-agent/src/harness-builder.ts:71) — a mid-build failure
+        // (e.g. the address is deregistered during `createHarness` on a
+        // reconnect storm) must dispose the materialized tool packages too, not
+        // just mail/posix. Those hold connections/watchers the GC cannot
+        // reclaim; leaving them undisposed leaks a full tool-package graph on
+        // every failed restore. Mirrors the success-path disposers below.
+        for (const dispose of loadedDisposers) {
+          try {
+            await dispose();
+          } catch (disposeErr) {
+            const msg =
+              disposeErr instanceof Error
+                ? disposeErr.message
+                : String(disposeErr);
+            logger.warn(
+              "loaded tool disposer failed during harness rollback: {msg}",
+              { msg },
+            );
+          }
+        }
         throw err;
       }
     },
