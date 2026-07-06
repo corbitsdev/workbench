@@ -30,6 +30,7 @@ import {
 import { createSidecarDeployRouter } from "./workflow-host-wiring";
 import { reconcileOrphanedDeploymentDirs } from "./boot-reconciler";
 import { getLogger } from "@intx/log";
+import { startMemoryTelemetry } from "./memory-telemetry";
 import {
   createDeploymentAddressRegistry,
   createMultistepDrainRouter,
@@ -353,3 +354,8 @@ try {
 }
 
 orchestrator.start();
+
+// Always-on memory observability (rss/heap/external) + on-demand heap snapshot
+// via SIGUSR2 → dataDir, so the sidecar's resident-heap composition is
+// measurable in prod without a redeploy.
+startMemoryTelemetry(dataDir);
