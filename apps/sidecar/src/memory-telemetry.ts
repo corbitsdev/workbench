@@ -78,8 +78,11 @@ export function startMemoryTelemetry(dataDir: string): () => void {
     process.env["SIDECAR_MEMORY_LOG_INTERVAL_MS"],
   );
   logMemoryUsage();
+  // No `.unref()`: an unref'd interval does not set the event-loop poll
+  // timeout, so on a quiet sidecar (little WS traffic) the loop blocks on I/O
+  // and the timer never fires. The sidecar is a long-running daemon, so a
+  // ref'd timer is correct.
   const timer = setInterval(logMemoryUsage, intervalMs);
-  timer.unref?.();
 
   const onSignal = (): void => {
     void writeHeapSnapshot(dataDir);
@@ -138,6 +141,5 @@ export function startPeriodicGc(): () => void {
   );
   if (intervalMs === 0) return () => {};
   const timer = setInterval(runForcedGc, intervalMs);
-  timer.unref?.();
   return () => clearInterval(timer);
 }
