@@ -164,13 +164,67 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
   });
 
-  it("falls back to RunConsole when the module has no Panel", async () => {
+  it("falls back to the generic WorkflowRunBlocks view when the module has no Panel", async () => {
     record = makeRecord({ kind: "no-panel" });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
     await waitFor(() => screen.getByText("Workflow run"));
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("resumes with the gate's signal name when a block gate is approved in the fallback view", async () => {
+    record = makeRecord({ kind: "no-panel", status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "select",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    };
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Continue"));
+    fireEvent.click(screen.getByText("Continue"));
+    await waitFor(() => expect(resumeMutateAsync).toHaveBeenCalledTimes(1));
+    expect(resumeMutateAsync.mock.calls[0]?.[0]?.signalName).toBe(
+      "note-selection",
+    );
+  });
+
+  it("does NOT fire a resume from a block gate once the run is terminal", async () => {
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "select",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    };
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Continue"));
+    fireEvent.click(screen.getByText("Continue"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resumeMutateAsync).not.toHaveBeenCalled();
   });
 
   it("falls back to a legible run state when the log query errors, instead of hanging on Loading workflow…", async () => {
@@ -779,7 +833,7 @@ describe("WorkflowRunPane", () => {
     // Motion is the hard requirement — an animated spinner must be present.
     expect(container.querySelector(".animate-spin")).not.toBeNull();
     // CL-2786: honest present-progress copy from the shared runStartLabel.
-    expect(indicator.textContent).toContain("Getting the run ready");
+    expect(indicator.textContent).toContain("Preparing your workflow…");
     // The workflow's own panel is NOT rendered while provisioning.
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
@@ -807,7 +861,7 @@ describe("WorkflowRunPane", () => {
     );
 
     // While the module loads, the animated loading state stays up — the generic
-    // RunConsole shell ("Workflow run" header) must NEVER flash in between.
+    // WorkflowRunBlocks shell ("Workflow run" header) must NEVER flash in between.
     await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
     expect(screen.queryByText("Workflow run")).toBeNull();
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
@@ -836,7 +890,7 @@ describe("WorkflowRunPane", () => {
       screen.getByTestId("workflow-starting-spinner"),
     );
     const indicatorBefore = screen.getByTestId("workflow-starting-indicator");
-    expect(indicatorBefore.textContent).toContain("Getting the run ready");
+    expect(indicatorBefore.textContent).toContain("Preparing your workflow…");
 
     // Run flips provisioning→running while the Panel module is STILL pending —
     // the exact provisioning→loading-workflow boundary this fix covers.

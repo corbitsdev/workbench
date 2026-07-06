@@ -196,7 +196,7 @@ Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kin
 
 #### Web run console
 
-The web client subscribes to the run-state SSE stream via `use-workflow.ts` (`apps/web/src/hooks/use-workflow.ts:298` builds the `/workflow-exec/runs/:runId/state/stream` URL; consumer in `apps/web/src/lib/workflow-run-state-stream.ts`) and receives the server-folded `RunState` directly. A run renders as UIBlocks in the chat dock: `WorkflowDock` (`apps/web/src/components/WorkflowDock.tsx:366`) renders `UIBlockView` over blocks built by `apps/web/src/lib/dock-block-builders.ts` — each migrated workflow package supplies its own builder; unmigrated kinds fall through to the generic `dockRunBlocks` synthesis (`packages/blocks/src/run-dock-blocks.ts`, the strangler fallback). The per-kind run-page panel (`apps/web/src/components/WorkflowRunPane.tsx`, generic `RunConsole` fallback) POSTs the same resume shapes as the dock blocks, so gates migrate between them without a protocol change. Gate block kinds (`choice` / `form` / `multiSelect` / `reviewList`) are defined in `packages/blocks/src/ui-block.ts` (`reviewList` at `:257-282`, CL-2759).
+The web client subscribes to the run-state SSE stream via `use-workflow.ts` (`apps/web/src/hooks/use-workflow.ts:298` builds the `/workflow-exec/runs/:runId/state/stream` URL; consumer in `apps/web/src/lib/workflow-run-state-stream.ts`) and receives the server-folded `RunState` directly. A run renders as UIBlocks in the chat dock: `WorkflowDock` (`apps/web/src/components/WorkflowDock.tsx:366`) renders `UIBlockView` over blocks built by `apps/web/src/lib/dock-block-builders.ts` — each migrated workflow package supplies its own builder; unmigrated kinds fall through to the generic `dockRunBlocks` synthesis (`packages/blocks/src/run-dock-blocks.ts`, the strangler fallback). The run page renders the same blocks: `WorkflowRunPane` (`apps/web/src/components/WorkflowRunPane.tsx`) loads a per-kind `Panel` when the package ships one, else falls through to `WorkflowRunBlocks` — which builds blocks with the same `buildDockBlocks` registry and POSTs the same resume shapes as the dock, so a gate renders and resumes identically on both surfaces. Gate block kinds (`choice` / `form` / `multiSelect` / `reviewList`) are defined in `packages/blocks/src/ui-block.ts` (`reviewList` at `:257-282`, CL-2759).
 
 #### Sidecar workflow-host
 
@@ -659,16 +659,15 @@ When configured with `GRANOLA_API_KEY`, Oat ingests recent sales calls from Gran
 
 ## UI Components
 
-### Run Console (`RunConsole`)
+### Generic run view (`WorkflowRunBlocks`)
 
-Located in `apps/web/src/components/RunConsole.tsx`. A single generic console that renders any workflow run from its native event stream — there is no per-kind page or step registry (the bespoke `StepSidebar` + `buildSteps` step model was removed in the native-runtime cutover).
+Located in `apps/web/src/components/WorkflowRunBlocks.tsx`. The generic run-page fallback used by `WorkflowRunPane` when a workflow ships no bespoke `Panel`. It renders the run as **UIBlocks** — the same block substrate the chat dock renders — so the standalone Workflows page and the dock stay consistent. It replaced the former raw `RunConsole`, which dumped a step's `outputRef` as a raw `Output: inline:{…}` string.
 
 **Behavior:**
 
-- Subscribes to the run's SSE event stream via `useWorkflowRunState(deploymentId)` and reduces it into a `RunState` with `resumeFromLog`
-- Renders the step timeline with phase indicators (running / completed / failed / awaiting-signal) derived from the reduced `RunState`
-- Shows step outputs as they arrive
-- Renders an Approve button on any step whose phase is `awaiting-signal`, wired to `useSignalWorkflow` (HITL approval = a signal)
+- Builds blocks via `buildDockBlocks(kind, …)` (`apps/web/src/lib/dock-block-builders.ts`) over the folded `RunState` + decoded step outputs — a migrated kind supplies its own builder, every other kind falls through to the generic `dockRunBlocks` synthesis (`packages/blocks/src/run-dock-blocks.ts`). Renders them with `UIBlockView`.
+- Shows a progress timeline (phase per step) and a typed gate `choice` block for any `awaiting-signal` step; selecting it resumes via `WorkflowRunPane`'s `onBlockRespond` → `resolveResumePayload` → the run's `/resume` (the same contract the dock uses).
+- Renders a legible terminal-failure affordance (interrupted vs failed copy + "Start a new run") for a failed run, since the block substrate alone leaves an interrupted run — one with no per-step error — blank.
 
 ### Command Palette
 

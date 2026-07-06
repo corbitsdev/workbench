@@ -204,7 +204,8 @@ to the full run page (`packages/blocks/src/run-dock-blocks.ts:1-8`,
 `dock-block-builders.ts:16`, described in-code as the "strangler fallback").
 
 The dedicated **run-page panel** (`apps/web/src/components/WorkflowRunPane.tsx`,
-per-kind panel via `loadWorkflowUI`, generic `RunConsole` fallback) is the
+per-kind panel via `loadWorkflowUI`, generic `WorkflowRunBlocks` UIBlocks
+fallback that reuses the same `buildDockBlocks` registry as the dock) is the
 strangler's other half: the dock blocks and the run-page panel POST the **same
 resume shapes**, and gates migrate to the dock kind by kind (a few steps are
 still "kept on the run-page panel" mid-migration — see

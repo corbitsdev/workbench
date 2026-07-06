@@ -10,17 +10,20 @@ import { createPortal } from "react-dom";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
+import type { UIResponse } from "@workbench/chat";
 import { runStartLabel, toHumanLabel } from "@workbench/ui";
-import { RunConsole } from "./RunConsole";
+import { WorkflowRunBlocks } from "./WorkflowRunBlocks";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { loadWorkflowUI } from "../lib/workflow-ui";
+import { resolveResumePayload } from "../lib/resume-payload";
 import { usePublishActiveContext } from "../lib/active-context-store";
 import {
   isRecordTerminal,
   reconcileRunState,
   runStateFromLog,
   runStateFromRecord,
+  runWasInterrupted,
   useResumeWorkflow,
   useWorkflowCredentials,
   useWorkflowDeployments,
@@ -40,7 +43,8 @@ interface WorkflowRunPaneProps {
 }
 
 // Selects the run's own custom Panel when its workflow package ships one, and
-// falls back to the generic RunConsole otherwise. The kind comes from the loaded
+// falls back to the generic UIBlocks view (WorkflowRunBlocks) otherwise — the
+// same block substrate the chat dock renders. The kind comes from the loaded
 // run record — never from navigation props. Step outputs are read from the run's
 // native event log (CL-2669) and handed to the panel as `stepOutputs`.
 export function WorkflowRunPane({
@@ -221,7 +225,7 @@ function WorkflowRunPaneInner({
 
   const Panel = uiModule?.Panel;
 
-  // Hoisted above the Panel/RunConsole branch point — it depends only on
+  // Hoisted above the Panel/blocks branch point — it depends only on
   // deploymentMeta, so both render paths can share one element.
   const metaBadge = deploymentMeta ? (
     <WorkflowMetaBadge
@@ -232,6 +236,13 @@ function WorkflowRunPaneInner({
   ) : null;
 
   const terminal = record ? isRecordTerminal(record.status) : false;
+  // Index says failed but the log is still non-terminal — the run was killed
+  // externally (redeploy/abort), not a genuine step failure. Drives the
+  // interrupted-vs-failed copy in the generic blocks fallback.
+  const interrupted =
+    record !== undefined &&
+    logState !== undefined &&
+    runWasInterrupted(record, logState.phase);
 
   // CL-2785: the fast SSE log state (`logState.phase`) flips off `pending` a beat
   // before the slower `record.status` projection reports `running`. Derive
@@ -272,6 +283,26 @@ function WorkflowRunPaneInner({
       .finally(() => {
         setRedeploying(false);
       });
+  };
+
+  // Resume from a UIBlock response (the generic WorkflowRunBlocks fallback). A
+  // gate choice/form carries its `awaitSignal` name; the block awaits the
+  // returned mutation promise and shows its own inline pending/error, so the
+  // user's input survives a failed resume (CL-2684). A non-gate response (no
+  // signalName) is ignored. Mirrors the WorkflowDock card's onRespond so a block
+  // resumes identically on both surfaces.
+  const onBlockRespond = (response: UIResponse): void | Promise<void> => {
+    if (response.signalName === undefined) return;
+    if (terminal || resume.isPending) return;
+    setRedeploying(false);
+    return resume
+      .mutateAsync({
+        signalName: response.signalName,
+        payload: resolveResumePayload(response),
+        onRedeploying: () => setRedeploying(true),
+      })
+      .then(() => undefined)
+      .finally(() => setRedeploying(false));
   };
 
   // Resolve the current pane view as a keyed node so the top-level transition
@@ -325,7 +356,7 @@ function WorkflowRunPaneInner({
     // CL-2755 (handoff flicker): once the run flips provisioning→running we
     // don't yet know whether this kind ships a custom Panel — the module is
     // still loading. Keep showing the animated loading state so a panel workflow
-    // goes Starting → Panel directly, WITHOUT a flash of the generic RunConsole
+    // goes Starting → Panel directly, WITHOUT a flash of the generic blocks
     // shell in between. Shares the "starting" key with the provisioning frame so
     // the spinner node persists (no remount) — only the label changes.
     if (uiModulePending) {
@@ -342,9 +373,20 @@ function WorkflowRunPaneInner({
         key: "console",
         node: (
           <div className="relative h-full">
-            <RunConsole
-              deploymentId={runId}
-              tenantId={tenantId}
+            {redeploying && (
+              <div className="absolute inset-x-0 top-0 z-20 border-b border-border bg-surface px-3 py-2 text-center text-[13px] text-text-2">
+                Finishing an update — retrying…
+              </div>
+            )}
+            <WorkflowRunBlocks
+              runId={runId}
+              kind={record.kind}
+              state={state}
+              logState={logState}
+              stepOutputs={stepOutputs}
+              terminal={terminal}
+              interrupted={interrupted}
+              onRespond={onBlockRespond}
               onClose={onClose}
             />
             {metaBadge}
@@ -530,7 +572,7 @@ function WorkflowMetaBadge({
               tabIndex={-1}
               onKeyDown={(e) => {
                 // Read-only content: trap Tab/Shift+Tab on the panel container so
-                // focus can't escape into the Panel/RunConsole behind the overlay.
+                // focus can't escape into the Panel/blocks view behind the overlay.
                 if (e.key === "Tab") {
                   e.preventDefault();
                   panelRef.current?.focus();

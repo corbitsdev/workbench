@@ -141,7 +141,7 @@ The workbench product app contains no **org** management UI — no credential se
 
 - **Dashboard**: Entry point. Start a workflow run, resume session, artifact browser.
 - **Workflow dock + chat**: A run surfaces as UIBlocks in the chat dock (`WorkflowDock`) — progress, results, and interactive gate blocks — alongside chat with Myra or workspace agents via `@workbench/chat` components.
-- **Run-page panel**: A per-kind panel (`WorkflowRunPane`, with a generic `RunConsole` fallback) that renders a run from its folded state — step timeline, outputs, and gate affordances. It is the strangler fallback as gates migrate to dock blocks.
+- **Run-page panel**: A per-kind panel (`WorkflowRunPane`, with a generic `WorkflowRunBlocks` UIBlocks fallback) that renders a run from its folded state — step timeline, outputs, and gate affordances. The generic fallback renders the same blocks as the chat dock (`buildDockBlocks` + `UIBlockView`), so unmigrated kinds render cleanly instead of dumping raw output; per-kind panels remain the strangler fallback as gates migrate to dock blocks.
 
 **State Management**: The frontend uses TanStack Query for all server state. It subscribes to the run-state SSE stream (`GET /workflow-exec/runs/:runId/state/stream`), which delivers the server-folded `RunState` directly; signals (approvals) are sent via the signal route. No local session state is held in React context.
 
