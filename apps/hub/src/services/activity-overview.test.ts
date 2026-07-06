@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { PriceCatalog } from "@workbench/pricing";
 
 import {
   computePreviousRange,
@@ -7,13 +8,38 @@ import {
   getUsageByWorkflowType,
 } from "./activity-overview";
 
+/** Fabricated rate catalog for cost-computation tests (CL-2723). */
+function testCatalog(): PriceCatalog {
+  return {
+    source: "test",
+    generatedAt: "2026-07-05T00:00:00.000Z",
+    models: {
+      "model-a": {
+        modelId: "model-a",
+        provider: "test",
+        providerName: "Test",
+        input: 1,
+        output: 2,
+        cacheRead: null,
+        cacheWrite: null,
+      },
+    },
+    qualified: {},
+    ambiguous: [],
+  };
+}
+
 type PersonRow = {
   principalId: string;
   name: string | null;
+  model?: string | null;
   turnCount: number;
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  thinkingTokens?: number;
 };
 
 function makePersonDb(rows: PersonRow[], capture: { groupByCols?: unknown[] }) {
@@ -28,7 +54,15 @@ function makePersonDb(rows: PersonRow[], capture: { groupByCols?: unknown[] }) {
     as: mock(() => ({})),
     groupBy: mock((...cols: unknown[]) => {
       capture.groupByCols = cols;
-      return Promise.resolve(rows);
+      return Promise.resolve(
+        rows.map((r) => ({
+          model: null,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+          ...r,
+        })),
+      );
     }),
   };
   return chain as never;
@@ -96,6 +130,9 @@ describe("getUsageByPerson", () => {
           toolCallCount: 2,
           inputTokens: 100,
           outputTokens: 40,
+          cacheReadTokens: 900,
+          cacheWriteTokens: 60,
+          thinkingTokens: 15,
         },
         {
           principalId: "pri_other",
@@ -115,16 +152,122 @@ describe("getUsageByPerson", () => {
       callerPrincipalId: "pri_me",
     });
 
-    // Grouping happens on (memberPrincipalId, user.name).
-    expect(capture.groupByCols).toHaveLength(2);
+    // Grouping happens on (memberPrincipalId, user.name, model) — CL-2723
+    // added `model` so cost can be priced per model, never blended.
+    expect(capture.groupByCols).toHaveLength(3);
     // Sorted by total tokens desc: Dana (1100) before Sawyer (140).
     expect(result.map((r) => r.principalId)).toEqual(["pri_other", "pri_me"]);
     const me = result.find((r) => r.principalId === "pri_me");
     expect(me?.isSelf).toBe(true);
     expect(me?.toolCallCount).toBe(2);
+    // Every token class flows through separately for per-actor cost (CL-2714).
+    expect(me?.cacheReadTokens).toBe(900);
+    expect(me?.cacheWriteTokens).toBe(60);
+    expect(me?.thinkingTokens).toBe(15);
     expect(result.find((r) => r.principalId === "pri_other")?.isSelf).toBe(
       false,
     );
+  });
+
+  it("computes cost per person from a supplied price catalog (CL-2723)", async () => {
+    const capture: { groupByCols?: unknown[] } = {};
+    const db = makePersonDb(
+      [
+        {
+          principalId: "pri_me",
+          name: "Sawyer",
+          model: "model-a",
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+        },
+        {
+          principalId: "pri_me",
+          name: "Sawyer",
+          model: "unknown-model",
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 0,
+          outputTokens: 1_000_000,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByPerson({
+      db,
+      tenantId: "tnt_1",
+      callerPrincipalId: "pri_me",
+      priceCatalog: testCatalog(),
+    });
+
+    const me = result.find((r) => r.principalId === "pri_me");
+    // model-a costs 1M input tokens * $1/M = $1; unknown-model is unpriced.
+    expect(me?.cost?.cost.total).toBeCloseTo(1, 6);
+    expect(me?.cost?.hasUnpriced).toBe(true);
+    expect(me?.cost?.unpricedModels).toEqual(["unknown-model"]);
+    // Token totals still sum across both models regardless of pricing.
+    expect(me?.inputTokens).toBe(1_000_000);
+    expect(me?.outputTokens).toBe(1_000_000);
+  });
+
+  it("prices null-model usage as unpriced, never a silent $0 (CL-2723)", async () => {
+    const capture: { groupByCols?: unknown[] } = {};
+    const db = makePersonDb(
+      [
+        {
+          principalId: "pri_me",
+          name: "Sawyer",
+          model: null,
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 2_000_000,
+          outputTokens: 0,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByPerson({
+      db,
+      tenantId: "tnt_1",
+      callerPrincipalId: "pri_me",
+      priceCatalog: testCatalog(),
+    });
+
+    const me = result.find((r) => r.principalId === "pri_me");
+    // Real usage with no model name must be flagged unpriced — not scored $0.
+    expect(me?.cost?.hasUnpriced).toBe(true);
+    expect(me?.cost?.unpricedModels).toEqual(["(unknown model)"]);
+    expect(me?.cost?.cost.total).toBe(0);
+    expect(me?.inputTokens).toBe(2_000_000);
+  });
+
+  it("leaves cost null when the caller supplies no price catalog", async () => {
+    const capture: { groupByCols?: unknown[] } = {};
+    const db = makePersonDb(
+      [
+        {
+          principalId: "pri_me",
+          name: "Sawyer",
+          model: "model-a",
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByPerson({
+      db,
+      tenantId: "tnt_1",
+      callerPrincipalId: "pri_me",
+    });
+
+    expect(result[0]?.cost).toBeNull();
   });
 
   it("falls back to a null name and never self-marks without a caller", async () => {
@@ -157,10 +300,14 @@ describe("getUsageByPerson", () => {
 function makeWorkflowTypeDb(
   rows: {
     kind: string;
+    model?: string | null;
     turnCount: number;
     toolCallCount: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    thinkingTokens?: number;
   }[],
   capture: { groupByCols?: unknown[]; distinctOnCount?: number },
 ) {
@@ -180,7 +327,15 @@ function makeWorkflowTypeDb(
     as: mock(() => ({})),
     groupBy: mock((...cols: unknown[]) => {
       capture.groupByCols = cols;
-      return Promise.resolve(rows);
+      return Promise.resolve(
+        rows.map((r) => ({
+          model: null,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
+          ...r,
+        })),
+      );
     }),
   };
   return chain as never;
@@ -218,7 +373,8 @@ describe("getUsageByWorkflowType", () => {
     // hub suite has no live-DB harness); they are validated on staging per
     // docs/ANALYTICS.md.
     expect(capture.distinctOnCount).toBe(1);
-    expect(capture.groupByCols).toHaveLength(1);
+    // CL-2723 added `model` to the group key so cost prices per model.
+    expect(capture.groupByCols).toHaveLength(2);
     // Real behavior: mapping + sort by total tokens desc — last30days (590)
     // before mvt-landing-page (150), with turn counts passed through.
     expect(result.map((r) => r.kind)).toEqual([
@@ -226,5 +382,53 @@ describe("getUsageByWorkflowType", () => {
       "mvt-landing-page",
     ]);
     expect(result[0]?.turnCount).toBe(6);
+  });
+
+  it("computes cost per workflow kind from a supplied price catalog (CL-2723)", async () => {
+    const capture: { groupByCols?: unknown[]; distinctOnCount?: number } = {};
+    const db = makeWorkflowTypeDb(
+      [
+        {
+          kind: "last30days",
+          model: "model-a",
+          turnCount: 2,
+          toolCallCount: 1,
+          inputTokens: 2_000_000,
+          outputTokens: 0,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByWorkflowType({
+      db,
+      tenantId: "tnt_1",
+      priceCatalog: testCatalog(),
+    });
+
+    // 2M input tokens * $1/M = $2.
+    expect(result[0]?.cost?.cost.total).toBeCloseTo(2, 6);
+    expect(result[0]?.cost?.hasUnpriced).toBe(false);
+  });
+
+  it("leaves cost null when the caller supplies no price catalog", async () => {
+    const capture: { groupByCols?: unknown[]; distinctOnCount?: number } = {};
+    const db = makeWorkflowTypeDb(
+      [
+        {
+          kind: "last30days",
+          model: "model-a",
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+        },
+      ],
+      capture,
+    );
+
+    const result = await getUsageByWorkflowType({ db, tenantId: "tnt_1" });
+
+    expect(result[0]?.cost).toBeNull();
   });
 });

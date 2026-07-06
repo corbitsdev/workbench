@@ -20,8 +20,10 @@ import {
 
 import { schema } from "../db";
 import type { HubDb } from "../db";
-import { insertRunRecord, loadRunRecord } from "./run-store";
+import { workflowRunRecord } from "../db/schema";
+import { insertRunRecord, listRunSteps, loadRunRecord } from "./run-store";
 import { projectWorkflowRunRepo } from "./projection-bridge";
+import { createRunLivenessSweep } from "../services/run-liveness-sweep";
 
 // Integration coverage for the on-disk -> DB projection seam
 // `projectWorkflowRunRepo` self-declares as NOT UNIT-TESTED (projection-bridge.ts
@@ -69,11 +71,30 @@ const WORKFLOW_RUN_RECORD_DDL = `
     principal_id text NOT NULL,
     status text NOT NULL DEFAULT 'running',
     input jsonb,
+    origin_conversation_id text,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
     updated_at timestamp NOT NULL DEFAULT now(),
     deleted_at timestamp
+  );
+`;
+
+// CL-2727: the per-step projection table the bridge upserts alongside the
+// run-level status. No foreign keys — the projection upserts steps for whatever
+// run its log names.
+const WORKFLOW_RUN_STEP_DDL = `
+  CREATE TABLE workflow_run_step (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    run_id text NOT NULL,
+    step_id text NOT NULL,
+    phase text NOT NULL,
+    attempts integer NOT NULL DEFAULT 0,
+    started_at timestamp,
+    ended_at timestamp,
+    created_at timestamp NOT NULL DEFAULT now(),
+    updated_at timestamp NOT NULL DEFAULT now(),
+    CONSTRAINT workflow_run_step_run_step_uniq UNIQUE (run_id, step_id)
   );
 `;
 
@@ -104,6 +125,7 @@ async function seedRun(runId: string): Promise<void> {
     tenantId: "tn-it",
     principalId: "prn-it",
     input: { topic: "seam" },
+    originConversationId: null,
   });
 }
 
@@ -123,6 +145,7 @@ beforeEach(async () => {
 
   client = new PGlite();
   await client.exec(WORKFLOW_RUN_RECORD_DDL);
+  await client.exec(WORKFLOW_RUN_STEP_DDL);
   db = drizzle(client, { schema }) as unknown as HubDb;
 });
 
@@ -216,5 +239,163 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     await projectWorkflowRunRepo(repoStore, db, REPO_ID);
 
     expect(await loadRunRecord(db, runId)).toBeNull();
+  });
+
+  // CL-2727: the per-step projection derived from the SAME native fold. Asserts
+  // each step's phase, attempt count, and wall-clock timing land in
+  // workflow_run_step over the real on-disk log → DB seam.
+  test("per-step phases, attempts, and timing project into workflow_run_step", async () => {
+    const runId = "wfr-steps";
+    await seedRun(runId);
+    // A retried-then-completed step, a gate parked awaiting a signal, and a
+    // freshly-started in-flight step.
+    await commitEvent(runId, 1, {
+      type: "RunStarted",
+      at: "2026-02-01T00:00:00.000Z",
+    });
+    await commitEvent(runId, 2, {
+      type: "StepStarted",
+      stepId: "fetch",
+      at: "2026-02-01T00:00:01.000Z",
+      attempt: 1,
+    });
+    await commitEvent(runId, 3, {
+      type: "StepFailed",
+      stepId: "fetch",
+      at: "2026-02-01T00:00:02.000Z",
+      attempt: 1,
+      error: { message: "transient" },
+      retriesExhausted: false,
+    });
+    await commitEvent(runId, 4, {
+      type: "TimerSet",
+      timerId: "tmr-1",
+      at: "2026-02-01T00:00:02.500Z",
+      fireAt: "2026-02-01T00:00:03.000Z",
+      stepId: "fetch",
+    });
+    await commitEvent(runId, 5, {
+      type: "AttemptScheduled",
+      stepId: "fetch",
+      at: "2026-02-01T00:00:03.000Z",
+      nextAttempt: 2,
+      timerId: "tmr-1",
+      fireAt: "2026-02-01T00:00:03.000Z",
+    });
+    await commitEvent(runId, 6, {
+      type: "TimerFired",
+      timerId: "tmr-1",
+      at: "2026-02-01T00:00:03.500Z",
+    });
+    await commitEvent(runId, 7, {
+      type: "StepCompleted",
+      stepId: "fetch",
+      at: "2026-02-01T00:00:05.000Z",
+      attempt: 2,
+      output: { ref: "r-fetch" },
+    });
+    await commitEvent(runId, 8, {
+      type: "StepStarted",
+      stepId: "gate",
+      at: "2026-02-01T00:00:06.000Z",
+      attempt: 1,
+    });
+    await commitEvent(runId, 9, {
+      type: "SignalAwaited",
+      stepId: "gate",
+      at: "2026-02-01T00:00:07.000Z",
+      signalName: "approval",
+    });
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+
+    const steps = await listRunSteps(db, runId);
+    const byId = new Map(steps.map((s) => [s.stepId, s]));
+
+    const fetch = byId.get("fetch");
+    expect(fetch?.phase).toBe("completed");
+    expect(fetch?.attempts).toBe(2);
+    expect(fetch?.startedAt?.toISOString()).toBe("2026-02-01T00:00:01.000Z");
+    expect(fetch?.endedAt?.toISOString()).toBe("2026-02-01T00:00:05.000Z");
+
+    const gate = byId.get("gate");
+    expect(gate?.phase).toBe("awaiting-signal");
+    expect(gate?.endedAt).toBeNull();
+  });
+
+  // CL-2727 SWEEP → PACK RESURRECTION: the liveness sweep's terminal write is
+  // best-effort. A stale no-progress run is failed by the sweep, then a real pack
+  // arrives (RunStarted / StepStarted). `applyRunProjection` overwrites the
+  // status UNCONDITIONALLY (the intentional self-heal path), so the run returns
+  // to `running`. Because the run was `failed` (terminal) before this projection,
+  // `becameTerminal(failed → running)` is false — neither the reclaim nor the
+  // facts callback fires. This is the seam the sweep + bridge share: sweep-fail
+  // must never strand a run that is actually alive.
+  test("a sweep-failed run resurrects to running on the next pack, firing no reclaim/facts callback", async () => {
+    const runId = "wfr-resurrect";
+    await seedRun(runId);
+    // Backdate updatedAt so the sweep treats it as a stale candidate (INSERT does
+    // not trip the $onUpdate clock, so the write persists).
+    await db
+      .update(workflowRunRecord)
+      .set({ updatedAt: new Date(Date.now() - 10 * 60 * 1000) })
+      .where(eq(workflowRunRecord.id, runId));
+
+    // GONE supervisor + no progress (no RunStarted, no steps) → the sweep fails it.
+    const sweep = createRunLivenessSweep({
+      db,
+      getRoutableAddresses: () => [],
+      deploymentDomain: "wf.localhost",
+      stallGraceMs: 60 * 1000,
+    });
+    const swept = await sweep.sweepOnce();
+    expect(swept.failed).toBe(1);
+    expect((await loadRunRecord(db, runId))?.status).toBe("failed");
+
+    // A real pack now lands: the supervisor DID start and ran a step.
+    await commitEvent(runId, 1, { type: "RunStarted" });
+    await commitEvent(runId, 2, { type: "StepStarted", stepId: "fetch" });
+
+    let reclaimCalls = 0;
+    let factsCalls = 0;
+    await projectWorkflowRunRepo(
+      repoStore,
+      db,
+      REPO_ID,
+      () => {
+        reclaimCalls += 1;
+      },
+      () => {
+        factsCalls += 1;
+      },
+    );
+
+    // Self-heal: the log fold's real state wins.
+    expect((await loadRunRecord(db, runId))?.status).toBe("running");
+    // No spurious terminal-transition side effects (failed → running is not a
+    // non-terminal → terminal edge).
+    expect(reclaimCalls).toBe(0);
+    expect(factsCalls).toBe(0);
+  });
+
+  test("re-projection updates a step's phase in place (idempotent upsert)", async () => {
+    const runId = "wfr-step-reproject";
+    await seedRun(runId);
+    await commitEvent(runId, 1, { type: "RunStarted" });
+    await commitEvent(runId, 2, { type: "StepStarted", stepId: "only" });
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+    expect((await listRunSteps(db, runId))[0]?.phase).toBe("in-flight");
+
+    await commitEvent(runId, 3, {
+      type: "StepCompleted",
+      stepId: "only",
+      output: { ref: "r" },
+    });
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+
+    const steps = await listRunSteps(db, runId);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]?.phase).toBe("completed");
   });
 });

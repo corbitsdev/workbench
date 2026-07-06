@@ -48,9 +48,11 @@
         "@workbench/event-collector": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
+        "@workbench/pricing": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
+        "@workbench/timeline": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-artifact": "workspace:*",
@@ -70,6 +72,7 @@
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-skills": "workspace:*",
+        "@workbench/tools-workflows": "workspace:*",
         "@workbench/tools-x": "workspace:*",
         "@workbench/tools-youtube": "workspace:*",
         "arktype": "catalog:",
@@ -116,6 +119,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tools-catalog": "workspace:*",
         "@workbench/workflow-host": "workspace:*",
       },
       "devDependencies": {
@@ -134,6 +138,7 @@
         "@workbench/chat": "workspace:*",
         "@workbench/client": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/pricing": "workspace:*",
         "@workbench/settings": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/test-utils": "workspace:*",
@@ -142,14 +147,12 @@
         "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
-        "@workbench/workflow-ab-compare": "workspace:*",
         "@workbench/workflow-ab-compare-hitl": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
-        "@workbench/workflow-seo-enrichment-from-image": "workspace:*",
         "arktype": "^2.2.0",
         "better-auth": "^1.1.43",
         "class-variance-authority": "^0.7.1",
@@ -572,6 +575,7 @@
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/tools-catalog": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
       },
@@ -630,6 +634,25 @@
         "react": "*",
       },
     },
+    "packages/blocks": {
+      "name": "@workbench/blocks",
+      "dependencies": {
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@happy-dom/global-registrator": "^20.9.0",
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
     "packages/catalog": {
       "name": "@workbench/catalog",
       "dependencies": {
@@ -644,6 +667,7 @@
     "packages/chat": {
       "name": "@workbench/chat",
       "dependencies": {
+        "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
@@ -668,6 +692,7 @@
       "name": "@workbench/client",
       "dependencies": {
         "@workbench/shared": "workspace:*",
+        "@workbench/timeline": "workspace:*",
         "arktype": "^2.2.0",
       },
       "devDependencies": {
@@ -755,6 +780,16 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/pricing": {
+      "name": "@workbench/pricing",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/prompts": {
       "name": "@workbench/prompts",
       "dependencies": {
@@ -819,6 +854,17 @@
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
         "react": "^19.0.0",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/timeline": {
+      "name": "@workbench/timeline",
+      "dependencies": {
+        "arktype": "catalog:",
+        "drizzle-orm": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
     },
@@ -898,6 +944,18 @@
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-catalog": {
+      "name": "@workbench/tools-catalog",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",
@@ -1145,6 +1203,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-workflows": {
+      "name": "@workbench/tools-workflows",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/types": "workspace:*",
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-x": {
       "name": "@workbench/tools-x",
       "version": "0.1.0",
@@ -1251,29 +1322,6 @@
         "arktype": "catalog:",
       },
     },
-    "workflows/ab-compare": {
-      "name": "@workbench/workflow-ab-compare",
-      "version": "0.1.0",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/tools-ab-compare": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "*",
-      },
-    },
     "workflows/ab-compare-hitl": {
       "name": "@workbench/workflow-ab-compare-hitl",
       "version": "0.1.0",
@@ -1281,6 +1329,8 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/tools-ab-compare": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
@@ -1304,6 +1354,7 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
@@ -1325,6 +1376,8 @@
         "@intx/workflow": "workspace:*",
         "@tanstack/react-query": "5.100.14",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1347,6 +1400,7 @@
       "dependencies": {
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
@@ -1370,7 +1424,9 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1394,6 +1450,7 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -1402,33 +1459,13 @@
         "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
         "@types/react": "^19.0.0",
+        "@workbench/shared": "workspace:*",
         "@workbench/test-utils": "workspace:*",
+        "@workbench/tools-reddit": "workspace:*",
         "typescript": "catalog:",
       },
       "peerDependencies": {
         "react": "^19.0.0",
-      },
-    },
-    "workflows/seo-enrichment-from-image": {
-      "name": "@workbench/workflow-seo-enrichment-from-image",
-      "version": "0.1.0",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "*",
       },
     },
     "workflows/smoke-test": {
@@ -2315,6 +2352,8 @@
 
     "@workbench/artifact": ["@workbench/artifact@workspace:packages/artifact"],
 
+    "@workbench/blocks": ["@workbench/blocks@workspace:packages/blocks"],
+
     "@workbench/catalog": ["@workbench/catalog@workspace:packages/catalog"],
 
     "@workbench/chat": ["@workbench/chat@workspace:packages/chat"],
@@ -2333,6 +2372,8 @@
 
     "@workbench/openapi-arktype": ["@workbench/openapi-arktype@workspace:packages/openapi-arktype"],
 
+    "@workbench/pricing": ["@workbench/pricing@workspace:packages/pricing"],
+
     "@workbench/prompts": ["@workbench/prompts@workspace:packages/prompts"],
 
     "@workbench/sentry": ["@workbench/sentry@workspace:packages/sentry"],
@@ -2347,6 +2388,8 @@
 
     "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
 
+    "@workbench/timeline": ["@workbench/timeline@workspace:packages/timeline"],
+
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
 
     "@workbench/tools-ab-compare": ["@workbench/tools-ab-compare@workspace:packages/tools-ab-compare"],
@@ -2358,6 +2401,8 @@
     "@workbench/tools-attio": ["@workbench/tools-attio@workspace:packages/tools-attio"],
 
     "@workbench/tools-bluesky": ["@workbench/tools-bluesky@workspace:packages/tools-bluesky"],
+
+    "@workbench/tools-catalog": ["@workbench/tools-catalog@workspace:packages/tools-catalog"],
 
     "@workbench/tools-dispatch": ["@workbench/tools-dispatch@workspace:packages/tools-dispatch"],
 
@@ -2391,6 +2436,8 @@
 
     "@workbench/tools-vercel": ["@workbench/tools-vercel@workspace:packages/tools-vercel"],
 
+    "@workbench/tools-workflows": ["@workbench/tools-workflows@workspace:packages/tools-workflows"],
+
     "@workbench/tools-x": ["@workbench/tools-x@workspace:packages/tools-x"],
 
     "@workbench/tools-youtube": ["@workbench/tools-youtube@workspace:packages/tools-youtube"],
@@ -2400,8 +2447,6 @@
     "@workbench/ui": ["@workbench/ui@workspace:packages/ui"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
-
-    "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
 
     "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
 
@@ -2416,8 +2461,6 @@
     "@workbench/workflow-pain-point-collateral": ["@workbench/workflow-pain-point-collateral@workspace:workflows/pain-point-collateral"],
 
     "@workbench/workflow-reddit-opportunity-scanner": ["@workbench/workflow-reddit-opportunity-scanner@workspace:workflows/reddit-opportunity-scanner"],
-
-    "@workbench/workflow-seo-enrichment-from-image": ["@workbench/workflow-seo-enrichment-from-image@workspace:workflows/seo-enrichment-from-image"],
 
     "@workbench/workflow-smoke-test": ["@workbench/workflow-smoke-test@workspace:workflows/smoke-test"],
 

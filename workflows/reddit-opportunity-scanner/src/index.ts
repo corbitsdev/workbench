@@ -32,18 +32,31 @@ export const kind = "reddit-opportunity-scanner";
 // (review) and before saving (selection).
 // -------------------------------------------------------------------------
 
+// The collect step's per-row tool-arg mapping — exported so the fidelity
+// integration test asserts against the REAL field names (a typo here fails the
+// map trap the test guards, not a hand-rolled copy).
+export const COLLECT_ARG_MAP = {
+  subreddit: { from: "subreddit" },
+  query: { from: "query" },
+  sort: { from: "sort" },
+  timeframe: { from: "timeframe" },
+  limit: { from: "limit" },
+} as const;
+
+// The persist step's per-opportunity tool-arg mapping — exported for the same
+// reason: the fidelity test reads `title`/`content` from here, not a copy.
+export const PERSIST_ARG_MAP = {
+  title: { from: "title" },
+  kind: { literal: "reddit-opportunity-scan" },
+  content: { from: "content" },
+} as const;
+
 const collectStep = deterministicToolStep({
   id: "reddit-opp-collect-search",
   tool: "reddit_subreddit_search",
   // map passes each approved search as trigger.payload.
   input: { from: "trigger.payload" },
-  argMap: {
-    subreddit: { from: "subreddit" },
-    query: { from: "query" },
-    sort: { from: "sort" },
-    timeframe: { from: "timeframe" },
-    limit: { from: "limit" },
-  },
+  argMap: COLLECT_ARG_MAP,
   nonFatal: true,
 });
 
@@ -52,11 +65,7 @@ const persistStep = deterministicToolStep({
   tool: "artifact_create",
   // map passes each selected opportunity as trigger.payload.
   input: { from: "trigger.payload" },
-  argMap: {
-    title: { from: "title" },
-    kind: { literal: "reddit-opportunity-scan" },
-    content: { from: "content" },
-  },
+  argMap: PERSIST_ARG_MAP,
 });
 
 export const workflow = defineWorkflow({

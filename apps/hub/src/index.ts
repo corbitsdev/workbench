@@ -73,28 +73,40 @@ import {
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import { createRunLivenessSweep } from "./services/run-liveness-sweep";
+import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
+import { createAdminRouter } from "./routes/admin";
+import { isAdmin } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
-  relaunchInstanceIfNeeded,
   registerDisconnectReconciler,
   registerWedgeSweepReconciler,
   resolveInstanceSourcesFromDefinition,
 } from "./services/agent-provisioning";
+import { assessPersonalAgentSync } from "./services/grant-reconcile";
 import {
-  refreshInstanceGrantsFromDefinition,
-  assessPersonalAgentSync,
-} from "./services/grant-reconcile";
+  myraInstanceIdForMember,
+  syncPersonalAgentForUser,
+} from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
+import { createActorSearchRouter } from "./routes/actor-search";
+import { createActorDetailRouter } from "./routes/actor-detail";
 import { createActivityRouter } from "./routes/activity";
+import { createTenantActivityRouter } from "./routes/tenant-activity";
+import { createPricingRouter } from "./routes/pricing";
+import { prewarmPriceCatalog } from "./lib/pricing";
+import { createPrincipalActivityRouter } from "./routes/principal-activity";
+import { createPrincipalRosterRouter } from "./routes/principal-roster";
+import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
   createApprovalsRouter,
@@ -118,7 +130,6 @@ import {
   ensureMember,
   lookupMember,
   provisionMemberInstances,
-  getMyraInstanceId,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
 import { AGENT_TEMPLATES } from "@workbench/agents";
@@ -512,6 +523,30 @@ const stopWedgeSweepReconciler = registerWedgeSweepReconciler({
   graceMs: config.wedgeUnroutableGraceMs,
 });
 
+// CL-2790: idle chat-session reaper. Sleeps a user-facing chat session (Myra,
+// Oat, …) that has seen no activity for `reapAfterMs` by undeploying it and
+// marking its session ended, leaving the instance relaunchable so the next
+// chat-surface open cold-relaunches it via POST /v1/instances/:id/sessions
+// (CL-2793 removed the former eager /v1/me relaunch). CL-2795 made it always-on:
+// an in-flight-turn guard (the injected eventCollectors registry) spares any
+// agent mid-work, so the kill switch is gone. Fed by the agent-event stream and
+// the send-mail route (recordActivityForInstance, mounted below) so a
+// mid-conversation agent is never slept.
+const idleSessionReaper = createIdleSessionReaper({
+  db,
+  endSession: sessionService.endSession,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  eventCollectors,
+  reapAfterMs: config.idleSessionReaper.reapAfterMs,
+  intervalMs: config.idleSessionReaper.intervalMs,
+});
+// TEMPORARILY DISABLED: CL-2790/CL-2795 idle reaper breaks chat-history reload
+// and causes session_asset unique-constraint launch failures on relaunch.
+// idleSessionReaper.start();
+sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
+  idleSessionReaper.recordActivity(agentAddress);
+});
+
 // Per-run deployment teardown (CL-2582), shared by the projection bridge
 // (terminal teardown), the deploy service (provision-failure rollback), and the
 // reconciler janitor (crash-orphan reclaim). All run state needed for history is
@@ -621,7 +656,35 @@ const hubApp = createApp({
 // /api/tenants/:tenantId/* (org members have no role grants).
 hubApp.route("/api/tenants/:tenantId/analytics", createAnalyticsRoutes({ db }));
 hubApp.route("/api/tenants/:tenantId/activity", createActivityRouter({ db }));
+hubApp.route(
+  "/api/tenants/:tenantId/activity",
+  createTenantActivityRouter({ db }),
+);
+hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
+
+// CL-2749: pre-warm the shared models.dev pricing cache on boot so the first
+// post-deploy Insights pricing request is served warm instead of eating the
+// fetch latency (or a 503). Detached and fail-safe — prewarmPriceCatalog owns
+// its errors, so this never blocks or fails startup if models.dev is down.
+void prewarmPriceCatalog();
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/activity",
+  createPrincipalActivityRouter({ db }),
+);
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/roster",
+  createPrincipalRosterRouter({ db }),
+);
+hubApp.route("/api/tenants/:tenantId/roster", createTenantRosterRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
+hubApp.route(
+  "/api/tenants/:tenantId/actors/search",
+  createActorSearchRouter({ db }),
+);
+hubApp.route(
+  "/api/tenants/:tenantId/actors/:principalId",
+  createActorDetailRouter({ db }),
+);
 
 // ─── Parent Hono ────────────────────────────────────────────────────
 
@@ -680,6 +743,20 @@ app.use(
   createAttachmentCapabilityGuard(db),
 );
 
+// CL-2790: an inbound user message is fresh activity — bump the idle-reaper
+// clock for the target instance so a user mid-conversation is never slept.
+// Best-effort and non-blocking: the resolve is fire-and-forget inside the
+// reaper, and we always fall through to the mail route.
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  async (c, next) => {
+    const instanceId = c.req.param("instanceId");
+    if (instanceId)
+      void idleSessionReaper.recordActivityForInstance(instanceId);
+    await next();
+  },
+);
+
 // Mount hub app
 app.route("/", hubApp);
 
@@ -703,159 +780,6 @@ const MePostBody = type({
   "syncPersonalAgent?": "boolean",
 });
 
-async function myraInstanceIdForMember(
-  workingTenantId: string,
-  memberPrincipalId: string,
-): Promise<string | null> {
-  const { memberAgentInstance } = schema;
-  const mapping = await db.query.memberAgentInstance.findFirst({
-    where: and(
-      eq(memberAgentInstance.tenantId, workingTenantId),
-      eq(memberAgentInstance.memberPrincipalId, memberPrincipalId),
-      eq(memberAgentInstance.templateKey, "myra"),
-    ),
-  });
-  return mapping?.instanceId ?? null;
-}
-
-async function syncPersonalAgentForUser(
-  userId: string,
-  syncPersonalAgent: boolean,
-): Promise<{
-  workingTenantId: string | null;
-  memberPrincipalId: string | null;
-  paInstanceId: string | null;
-  provisionedMyra: boolean;
-  grantsRefreshed: boolean;
-  grantsPushedLive: boolean;
-}> {
-  let workingTenantId: string | null = null;
-  let memberPrincipalId: string | null = null;
-  try {
-    const { tenantId, principalId } = await ensureMember(db, {
-      tenantId: rootTenantId,
-      userId,
-    });
-    workingTenantId = tenantId;
-    memberPrincipalId = principalId;
-  } catch (err) {
-    log.error("Failed to ensure global member on POST /v1/me", {
-      userId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-    return {
-      workingTenantId: null,
-      memberPrincipalId: null,
-      paInstanceId: null,
-      provisionedMyra: false,
-      grantsRefreshed: false,
-      grantsPushedLive: false,
-    };
-  }
-
-  let paInstanceId: string | null = null;
-  let provisionedMyra = false;
-  let grantsRefreshed = false;
-  let grantsPushedLive = false;
-  if (workingTenantId && memberPrincipalId) {
-    paInstanceId = await myraInstanceIdForMember(
-      workingTenantId,
-      memberPrincipalId,
-    );
-
-    if (!paInstanceId) {
-      try {
-        const instances = await provisionMemberInstances(db, {
-          tenantId: rootTenantId,
-          userId,
-          memberPrincipalId,
-        });
-        paInstanceId = getMyraInstanceId(instances);
-        provisionedMyra = paInstanceId !== null;
-        if (provisionedMyra) {
-          meLog.info("Provisioned Myra instance on POST /v1/me", {
-            userId,
-            instanceId: paInstanceId,
-          });
-        }
-      } catch (err) {
-        log.warn("Failed to re-provision Myra on POST /v1/me", {
-          userId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (paInstanceId && syncPersonalAgent) {
-      try {
-        await relaunchInstanceIfNeeded(
-          db,
-          sessionService,
-          grantStore,
-          eventCollectors,
-          paInstanceId,
-          sidecarRouter,
-        );
-      } catch (err) {
-        log.warn("Auto-relaunch of Myra session failed", {
-          userId,
-          instanceId: paInstanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-
-    if (paInstanceId) {
-      try {
-        const paForGrants = await db.query.agentInstance.findFirst({
-          where: eq(intxSchema.agentInstance.id, paInstanceId),
-        });
-        if (paForGrants) {
-          const routable = sidecarRouter
-            .getRoutableAddresses()
-            .includes(paForGrants.address);
-          const grantResult = await refreshInstanceGrantsFromDefinition(
-            db,
-            {
-              agentId: paForGrants.agentId,
-              tenantId: paForGrants.tenantId,
-              principalId: paForGrants.principalId,
-              address: paForGrants.address,
-            },
-            routable ? { sidecarRouter, grantStore } : undefined,
-          );
-          grantsRefreshed = grantResult.refreshed;
-          grantsPushedLive = grantResult.pushed;
-          if (grantResult.refreshed) {
-            meLog.info("Myra grant reconcile on POST /v1/me", {
-              userId,
-              instanceId: paInstanceId,
-              address: paForGrants.address,
-              pushedLive: grantResult.pushed,
-              routable,
-            });
-          }
-        }
-      } catch (err) {
-        log.warn("Failed to refresh live Myra grants on POST /v1/me", {
-          userId,
-          instanceId: paInstanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
-      }
-    }
-  }
-
-  return {
-    workingTenantId,
-    memberPrincipalId,
-    paInstanceId,
-    provisionedMyra,
-    grantsRefreshed,
-    grantsPushedLive,
-  };
-}
-
 v1.get("/me", async (c) => {
   const userId = c.get("userId");
   const userName = c.get("userName");
@@ -870,6 +794,7 @@ v1.get("/me", async (c) => {
   let paInstanceId: string | null = null;
   if (workingTenantId && memberPrincipalId) {
     paInstanceId = await myraInstanceIdForMember(
+      db,
       workingTenantId,
       memberPrincipalId,
     );
@@ -952,6 +877,17 @@ v1.get("/me", async (c) => {
     );
   }
 
+  // Whether the caller can see the Admin area, resolved through Interchange's
+  // native grant model (owner/admin roles hold the wildcard grants the admin
+  // gate probes). Cosmetic only — the hub admin routes re-check server-side.
+  // `workingTenantId` is the caller's membership in `rootTenantId` (the global
+  // org tenant), so this authorizes over the SAME tenant the admin route guard
+  // uses (`rootTenantId`) — the nav gate and the real gate cannot diverge.
+  let admin = false;
+  if (memberPrincipalId && workingTenantId) {
+    admin = await isAdmin(grantStore, memberPrincipalId, workingTenantId);
+  }
+
   return c.json({
     userId,
     userName,
@@ -963,6 +899,7 @@ v1.get("/me", async (c) => {
     provisioned: workingTenantId !== null,
     credentialResolved,
     personalAgentSyncAvailable,
+    isAdmin: admin,
     preferences,
   });
 });
@@ -983,7 +920,10 @@ v1.post("/me", async (c) => {
     syncPersonalAgent,
   });
 
-  const syncOutcome = await syncPersonalAgentForUser(userId, syncPersonalAgent);
+  const syncOutcome = await syncPersonalAgentForUser(
+    { db, rootTenantId, grantStore, sidecarRouter },
+    userId,
+  );
   const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
 
   let credentialResolved = false;
@@ -1086,10 +1026,7 @@ v1.route(
   ),
 );
 v1.route("/", createMembersRouter(db));
-v1.route(
-  "/",
-  createMyraThreadsRouter(db, sessionService, grantStore, eventCollectors),
-);
+v1.route("/", createMyraThreadsRouter(db, sessionService));
 v1.route("/", createArtifactsRouter(db));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
@@ -1100,6 +1037,10 @@ v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
 v1.route("/", createToolsRouter(db, assetService));
+v1.route(
+  "/",
+  createAdminRouter({ db, grantStore, assetService, rootTenantId }),
+);
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.
@@ -1164,6 +1105,12 @@ v1.route(
     ensureDeploymentRoutable,
     provisionRunDeployment,
     reclaimDeployment,
+    // CL-2707: bounded wait for the sidecar during the deploy window so a
+    // start/resume that lands before the sidecar reconnects gets an honest 503
+    // (auto-retryable) instead of an instant raw 500/503. Single-shared-sidecar
+    // invariant: this deployment runs exactly one sidecar, so any connected
+    // sidecar IS the sidecar — a non-empty getConnectedSidecars() means ready.
+    isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
   }),
 );
 
@@ -1180,6 +1127,19 @@ const workflowReconciler = createWorkflowReconciler({
   reclaimDeployment,
 });
 workflowReconciler.start();
+// CL-2727: continuous liveness sweep. Where failOrphanedRuns runs ONCE at boot,
+// this marks runs whose supervisor dies while the hub stays up (lost pack / dead
+// child) — via a compare-and-set that can only ever flip a STILL-`running` run,
+// never an `awaiting` one (the CL-2575 invariant).
+const runLivenessSweep = createRunLivenessSweep({
+  db,
+  getRoutableAddresses: sidecarRouter.getRoutableAddresses,
+  deploymentDomain: config.rootTenant.domain,
+  stallGraceMs: config.runLivenessSweep.stallGraceMs,
+  startHardDeadlineMs: config.runLivenessSweep.startHardDeadlineMs,
+  intervalMs: config.runLivenessSweep.intervalMs,
+});
+runLivenessSweep.start();
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
@@ -1334,8 +1294,15 @@ app.route(
     sessionService,
     eventCollectors,
     sidecarRouter,
+    analytics: analyticsSubscriber,
     repoStore: repoStore.repoStore,
     buildToolDefinitions,
+    // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
+    // start/resume wiring.
+    cryptoProvider: createEd25519Crypto(registry.active),
+    deploymentDomain: config.rootTenant.domain,
+    provisionRunDeployment,
+    ensureDeploymentRoutable,
   }),
 );
 app.route(

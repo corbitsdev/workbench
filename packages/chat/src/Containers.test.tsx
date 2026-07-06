@@ -23,8 +23,7 @@ mock.module("framer-motion", () => ({
   ),
 }));
 
-import { DockedChat } from "./DockedChat";
-import { DockedChatBar, DOCKED_BAR_HEIGHT } from "./DockedChatBar";
+import { DockedChatBar } from "./DockedChatBar";
 import { FloatingChat } from "./FloatingChat";
 import { TypingIndicator } from "./TypingIndicator";
 import { QuickReplyChips } from "./QuickReplyChips";
@@ -34,41 +33,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("DockedChat", () => {
-  it("renders children and defaults to the right side at 360px", () => {
-    render(
-      <DockedChat>
-        <div>panel</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("panel").parentElement as HTMLElement;
-    expect(aside.getAttribute("data-side")).toBe("right");
-    expect(aside.style.width).toBe("360px");
-  });
-
-  it("docks to the left when side is left", () => {
-    render(
-      <DockedChat side="left">
-        <div>left panel</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("left panel").parentElement as HTMLElement;
-    expect(aside.getAttribute("data-side")).toBe("left");
-  });
-
-  it("accepts a string width verbatim", () => {
-    render(
-      <DockedChat width="50%">
-        <div>wide</div>
-      </DockedChat>,
-    );
-    const aside = screen.getByText("wide").parentElement as HTMLElement;
-    expect(aside.style.width).toBe("50%");
-  });
-});
-
 describe("DockedChatBar", () => {
-  it("renders children inside a labeled complementary region at the fixed height", () => {
+  it("renders children inside a labeled complementary region", () => {
     render(
       <DockedChatBar>
         <div>bar content</div>
@@ -77,7 +43,6 @@ describe("DockedChatBar", () => {
     const region = screen.getByRole("complementary", { name: "Chat" });
     expect(region).toBeDefined();
     expect(screen.getByText("bar content")).toBeDefined();
-    expect(DOCKED_BAR_HEIGHT).toBe(340);
   });
 });
 

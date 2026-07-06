@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
-import { api } from "../lib/api";
+import { api, buildEventSourceUrl, withDeployRetry } from "../lib/api";
+import { subscribeWorkflowRunStateStream } from "../lib/workflow-run-state-stream";
 import {
   isLogStateTerminal,
   isRecordTerminal,
@@ -29,7 +30,7 @@ function withTenant(path: string, tenantId?: string | null): string {
 const runRecordSchema = type({
   runId: "string",
   kind: "string",
-  status: "'running'|'awaiting'|'completed'|'failed'",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
 });
 
@@ -106,6 +107,69 @@ export function useWorkflowRuns(tenantId?: string | null) {
   });
 }
 
+// A run row as returned by the conversation-scoped list (CL-2680). The list
+// projection keeps `originConversationId` raw (string | null), unlike the
+// single-record response which omits it when null.
+const conversationRunSchema = type({
+  runId: "string",
+  kind: "string",
+  status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
+  createdAt: "string",
+  originConversationId: "string|null",
+});
+export type ConversationWorkflowRun = typeof conversationRunSchema.infer;
+const conversationRunListSchema = conversationRunSchema.array();
+
+export const CONVERSATION_RUN_POLL_MS = 5000;
+export const CONVERSATION_RUN_IDLE_POLL_MS = 60_000;
+
+// Poll cadence for the conversation run list: 5s while any listed run is still
+// advancing; backed off to a slow idle tick when the list is empty or fully
+// terminal. Discovery can't stop entirely — runs are started by producers the
+// client never sees as a mutation (the workflow_start Myra tool stamps the
+// thread id as originConversationId server-side), so the idle tick is what
+// eventually surfaces a run started mid-conversation.
+export function conversationRunPollInterval(
+  runs: readonly { status: string }[] | undefined,
+): number {
+  if (runs === undefined || runListIsActive(runs)) {
+    return CONVERSATION_RUN_POLL_MS;
+  }
+  return CONVERSATION_RUN_IDLE_POLL_MS;
+}
+
+// Runs surfaced in the chat workflow dock (CL-2680): every run whose
+// originConversationId matches the open conversation (the Myra thread id).
+// Gated off entirely when no conversation is open. Polls on the shared 5s list
+// cadence while a run is live, backing off once the list goes quiescent; the
+// per-run 2s state poll lives in `useWorkflowRunState` on each mounted card.
+export function useConversationWorkflowRuns(
+  conversationId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<ConversationWorkflowRun[]>({
+    queryKey: ["conversation-workflow-runs", conversationId, tenantId ?? null],
+    enabled: conversationId !== null && conversationId !== "",
+    refetchInterval: (query) => conversationRunPollInterval(query.state.data),
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-exec/records?originConversationId=${encodeURIComponent(conversationId as string)}`,
+          tenantId,
+        ),
+      );
+      const parsed = conversationRunListSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected conversation workflow-records response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
 export function useWorkflowDeployments(
   tenantId?: string | null,
   options?: { enabled?: boolean },
@@ -130,6 +194,54 @@ export function useWorkflowDeployments(
 
 export { isRecordTerminal };
 
+// CL-2809: per-run token totals, read-side attribution over the existing
+// analytics rollup (no new sink, no sidecar/schema change — see
+// `getWorkflowRunTokenTotals` in the hub). `available: false` is an honest gap
+// (no per-run instance attributable yet, or a legacy run collapsed into a
+// later serial run on a shared deployment) — callers must render it as a gap,
+// never as zero usage.
+const workflowRunTokensSchema = type({
+  runId: "string",
+  available: "boolean",
+  "totals?": {
+    turnCount: "number",
+    toolCallCount: "number",
+    inputTokens: "number",
+    outputTokens: "number",
+    cacheReadTokens: "number",
+    cacheWriteTokens: "number",
+    thinkingTokens: "number",
+  },
+});
+export type WorkflowRunTokens = typeof workflowRunTokensSchema.infer;
+
+export function useWorkflowRunTokens(
+  runId: string | null,
+  tenantId?: string | null,
+) {
+  return useQuery<WorkflowRunTokens>({
+    queryKey: ["workflow-run-tokens", runId, tenantId ?? null],
+    enabled: !!runId,
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        withTenant(
+          `/workflow-exec/records/${runId as string}/tokens`,
+          tenantId,
+        ),
+      );
+      const parsed = workflowRunTokensSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(
+          `Unexpected workflow run-tokens response: ${parsed.summary}`,
+        );
+      }
+      return parsed;
+    },
+  });
+}
+
 // Read a thin-executor run record and poll while it is advancing. The hub runs
 // each non-gate step synchronously, so the record only changes between reads
 // while `status === 'running'` (a step is executing): we poll then, and stop
@@ -147,8 +259,12 @@ export function useWorkflowRecord(
     // A forbidden/missing record is not transient — don't retry it on the poll
     // cadence (that turned a single 403 into a steady stream against one record).
     retry: false,
-    refetchInterval: (query) =>
-      query.state.data?.status === "running" ? 2000 : false,
+    // Poll while the run is still starting (`provisioning`, CL-2755) or a step is
+    // executing (`running`); stop once it parks on a gate or settles.
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "running" || status === "provisioning" ? 2000 : false;
+    },
     queryFn: async () => {
       const raw = await api<unknown>(
         "GET",
@@ -167,33 +283,149 @@ export function useWorkflowRecord(
 // since the log phase (not a separate record status) tells us the run is live.
 // staleTime 0 so a resume's fresh state is never served stale. SSE is a later
 // ticket; this poll is the interim cadence.
+// Shared query key + fetcher for a run's log-derived state, so the per-card
+// `useWorkflowRunState` and the conversation-wide gate scan (`useQueries` in
+// use-conversation-gates.ts) hit the SAME cache entry — one poll, not two.
+export function workflowRunStateQueryKey(
+  runId: string,
+  tenantId?: string | null,
+): readonly [string, string, string | null] {
+  return ["workflow-run-state", runId, tenantId ?? null];
+}
+
+export async function fetchWorkflowRunState(
+  runId: string,
+  tenantId?: string | null,
+): Promise<LogRunState> {
+  const raw = await api<unknown>(
+    "GET",
+    withTenant(`/workflow-exec/runs/${runId}/state`, tenantId),
+  );
+  const parsed = logRunStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Unexpected workflow run-state response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+// Fall back to a degraded /state read every Nth consecutive SSE reconnect
+// failure (CL-2779). N > 1 so a normal provisioning-window blip (the stream 400s
+// until the deployment log exists) is ridden out by backoff rather than
+// re-fetching /state on every error. Because the reconnect delay itself backs
+// off (1s → capped 30s), re-reading every Nth error is a SLOW, error-gated
+// cadence (~90s between reads once the backoff is capped), never the old fixed
+// 2s poll. It re-fires — not once — so a persistently blocked stream (SSE
+// dropped by a proxy, where a live run's `onState` never arrives to reset the
+// count) still keeps pulling the run's progress and its eventual completion,
+// which a fire-once guard would freeze on the first snapshot forever.
+const STREAM_FALLBACK_EVERY_ERRORS = 3;
+
+// Live run-state SSE subscription (CL-2779). Opens the shared EventSource for a
+// run and pushes each authoritative, validated RunState straight into the SAME
+// TanStack Query cache entry `useWorkflowRunState` reads — so every consumer of
+// that entry (the pane, the dock card, the conversation gate scan) updates live
+// as the run executes, instead of lagging behind a fixed-interval poll. Gated
+// with `enabled` so it connects only for a present, non-terminal run.
+//
+// EventSource is the one sanctioned use of a subscription effect here (a stream,
+// not a data fetch). The one-shot `queryFn` in `useWorkflowRunState` remains the
+// initial snapshot and the fallback target; this only layers live updates on top.
+export function useWorkflowRunStateStream(
+  runId: string | null,
+  tenantId?: string | null,
+  options?: { enabled?: boolean },
+): void {
+  const queryClient = useQueryClient();
+  const enabled = (options?.enabled ?? true) && !!runId;
+
+  useEffect(() => {
+    if (!enabled || runId === null) return;
+    const url = buildEventSourceUrl(
+      withTenant(`/workflow-exec/runs/${runId}/state/stream`, tenantId),
+    );
+    const key = workflowRunStateQueryKey(runId, tenantId);
+
+    return subscribeWorkflowRunStateStream(url, {
+      onState: (state) => {
+        queryClient.setQueryData<LogRunState>(key, state);
+      },
+      onError: (consecutiveErrors) => {
+        // A persistently unreachable stream (SSE blocked by a proxy) never fires
+        // `onState`, so the module's error count keeps climbing. Re-read /state
+        // once every Nth error so a still-running run keeps advancing and its
+        // completion is eventually fetched — degraded but self-healing, not a
+        // frozen snapshot. The stream is disabled the moment the run goes
+        // terminal (see `useWorkflowRunState`), which tears this subscription
+        // down and stops the re-reads. A successful frame resets the count in
+        // the module, so this only fires while the stream is genuinely down.
+        if (
+          consecutiveErrors < STREAM_FALLBACK_EVERY_ERRORS ||
+          consecutiveErrors % STREAM_FALLBACK_EVERY_ERRORS !== 0
+        ) {
+          return;
+        }
+        void queryClient
+          .fetchQuery<LogRunState>({
+            queryKey: key,
+            queryFn: () => fetchWorkflowRunState(runId, tenantId),
+            staleTime: 0,
+            retry: false,
+          })
+          .catch(() => undefined);
+      },
+    });
+  }, [enabled, runId, tenantId, queryClient]);
+}
+
 export function useWorkflowRunState(
   runId: string | null,
   tenantId?: string | null,
 ) {
-  return useQuery<LogRunState>({
+  const queryClient = useQueryClient();
+  // The per-step state now arrives live over SSE (CL-2779), pushed into this
+  // cache entry by `useWorkflowRunStateStream` below — so there is no longer a
+  // fixed-interval `refetchInterval` poll of /state (the source of the ~90s
+  // "frozen while running" lag and the provisioning 400-loop, CL-2777). This
+  // one-shot `queryFn` is the initial snapshot (and the stream-error fallback
+  // target); a genuine parse/read error still surfaces via `isError` — during
+  // the provisioning window /state 400s here exactly as before, so the panes'
+  // record-derived "Starting…" fallback is unchanged.
+  const query = useQuery<LogRunState>({
     queryKey: ["workflow-run-state", runId, tenantId ?? null],
     enabled: !!runId,
     staleTime: 0,
     retry: false,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      return data && !isLogStateTerminal(data.phase) ? 2000 : false;
-    },
-    queryFn: async () => {
-      const raw = await api<unknown>(
-        "GET",
-        withTenant(`/workflow-exec/runs/${runId as string}/state`, tenantId),
-      );
-      const parsed = logRunStateSchema(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(
-          `Unexpected workflow run-state response: ${parsed.summary}`,
-        );
-      }
-      return parsed;
-    },
+    queryFn: () => fetchWorkflowRunState(runId as string, tenantId),
   });
+
+  // Stop streaming once the run can no longer advance, so a finished run holds no
+  // idle EventSource open. Terminal is read from the log phase (reactive via this
+  // query) and, when a record is mounted alongside, from the INDEX status — which
+  // is authoritative for run-level terminal (CL-2727): an operator abort or the
+  // liveness sweep writes `failed` only to the index, never the log.
+  //
+  // NOTE: the record read below is a NON-reactive cache peek. It self-heals in
+  // every current consumer because they all mount `useWorkflowRecord` for the
+  // same key alongside this hook — so when the index flips terminal that record
+  // query re-renders the component, re-running this hook to read the fresh cache
+  // and disable the stream. A FUTURE standalone consumer that calls
+  // `useWorkflowRunState` WITHOUT a co-located `useWorkflowRecord` would not get
+  // that re-render on an index-only abort (log stays non-terminal), leaving the
+  // stream open until unmount; such a consumer must also observe the record (or
+  // this should be upgraded to `useWorkflowRecord` here).
+  const record = queryClient.getQueryData<RunRecord>([
+    "workflow-record",
+    runId,
+    tenantId ?? null,
+  ]);
+  const terminal =
+    (record !== undefined && isRecordTerminal(record.status)) ||
+    (query.data !== undefined && isLogStateTerminal(query.data.phase));
+  useWorkflowRunStateStream(runId, tenantId, { enabled: !terminal });
+
+  return query;
 }
 
 export {
@@ -222,17 +454,34 @@ export function useWorkflowStepOutputs(
   return { ...state, data };
 }
 
+// A start/resume that lands during the deploy window (hub up, sidecar
+// reconnecting) gets a 503 { code: "deploy_in_progress" } (CL-2707). Rather than
+// flash an error, the mutation auto-retries with bounded backoff and calls
+// `onRedeploying` before each wait so the caller can show an honest transient
+// state; any other failure surfaces immediately.
 export function useStartWorkflow(tenantId?: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ kind, input }: { kind: string; input: unknown }) => {
-      const raw = await api<unknown>(
-        "POST",
-        withTenant(
-          `/workflow-exec/${encodeURIComponent(kind)}/start`,
-          tenantId,
-        ),
-        { input },
+    mutationFn: async ({
+      kind,
+      input,
+      onRedeploying,
+    }: {
+      kind: string;
+      input: unknown;
+      onRedeploying?: () => void;
+    }) => {
+      const raw = await withDeployRetry(
+        () =>
+          api<unknown>(
+            "POST",
+            withTenant(
+              `/workflow-exec/${encodeURIComponent(kind)}/start`,
+              tenantId,
+            ),
+            { input },
+          ),
+        onRedeploying ? { onRetrying: onRedeploying } : undefined,
       );
       return parseRunRecord(raw);
     },
@@ -260,17 +509,23 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
     mutationFn: async ({
       signalName,
       payload,
+      onRedeploying,
     }: {
       signalName: string;
       payload?: unknown;
+      onRedeploying?: () => void;
     }) => {
-      const raw = await api<unknown>(
-        "POST",
-        withTenant(
-          `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
-          tenantId,
-        ),
-        { signalName, payload },
+      const raw = await withDeployRetry(
+        () =>
+          api<unknown>(
+            "POST",
+            withTenant(
+              `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
+              tenantId,
+            ),
+            { signalName, payload },
+          ),
+        onRedeploying ? { onRetrying: onRedeploying } : undefined,
       );
       return parseRunRecord(raw);
     },
@@ -292,6 +547,53 @@ export function useResumeWorkflow(runId: string, tenantId?: string | null) {
     },
     onSuccess: (record) => {
       queryClient.setQueryData(queryKey, record);
+    },
+  });
+}
+
+// Resume a conversation's pending gate by runId (CL-2681). Unlike
+// `useResumeWorkflow`, which binds a single runId at hook-call, this is a
+// generic resume whose target run is chosen at submit time — the runId a free
+// text reply routes to (single-gate) or a dock card button names (multi-gate)
+// is only known at runtime. On success it invalidates both the run's index
+// record and its log-state so the dock advances off the gate immediately.
+//
+// This mutation does NOT swallow failures — its promise rejects with the
+// sanitized ApiError so callers can surface the reason (e.g. a stale-gate 409)
+// and recover the user's text. Its `isPending` is only an effective double-fire
+// guard when the caller gates on it: both the dock card (`onRespond`) and the
+// chat surface (`resumeInFlight`) skip a second submit while a resume is in
+// flight, so at most one resume fires per gate.
+export function useResumeConversationGate(tenantId?: string | null) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      runId,
+      signalName,
+      payload,
+    }: {
+      runId: string;
+      signalName: string;
+      payload?: unknown;
+    }) => {
+      const raw = await api<unknown>(
+        "POST",
+        withTenant(
+          `/workflow-exec/records/${encodeURIComponent(runId)}/resume`,
+          tenantId,
+        ),
+        { signalName, payload },
+      );
+      return parseRunRecord(raw);
+    },
+    onSuccess: (record) => {
+      queryClient.setQueryData(
+        ["workflow-record", record.runId, tenantId ?? null],
+        record,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: workflowRunStateQueryKey(record.runId, tenantId),
+      });
     },
   });
 }

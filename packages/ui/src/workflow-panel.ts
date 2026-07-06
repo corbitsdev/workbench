@@ -17,6 +17,15 @@ export interface WorkflowSkill {
 export interface WorkflowPanelProps {
   deploymentId: string;
   state: RunState | null;
+  /**
+   * True when `state` was folded from an event log that was actually READ, false
+   * when it was synthesized from the run index because the log was unavailable
+   * (a legacy deployment-less run or a read error). A failed run with an empty
+   * step map is genuinely never-started only when `logRead` is true; otherwise
+   * we don't know whether it started, so panels must not claim it didn't
+   * (CL-2729). Passed straight to `FailedRunNotice`.
+   */
+  logRead: boolean;
   connected: boolean;
   /**
    * Resolved outputs for completed steps, keyed by stepId. The host

@@ -3,6 +3,7 @@ import { getLogger } from "@intx/log";
 import { type } from "arktype";
 import { Hono, type Env } from "hono";
 
+import { loadPriceCatalog } from "../lib/pricing";
 import { getActivityOverview } from "../services/activity-overview";
 
 const log = getLogger(["hub", "activity"]);
@@ -66,10 +67,22 @@ export function createActivityRouter({
         : undefined;
 
     try {
+      // Best-effort: a cold/failed models.dev fetch must never fail the whole
+      // overview — usage-by-person/workflow-type simply carry `cost: null`
+      // (the honest "not priced" state), same as the shared cache's own
+      // failure mode (CL-2749).
+      const priceCatalog = await loadPriceCatalog().catch((error: unknown) => {
+        log.warn("Activity overview: pricing catalog unavailable: {error}", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+
       const overview = await getActivityOverview({
         db: c.get("db"),
         tenantId: tenant.id,
         callerPrincipalId,
+        priceCatalog,
         ...(range !== undefined ? { range } : {}),
       });
       return c.json(overview);

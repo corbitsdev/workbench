@@ -5,7 +5,14 @@ import { createToolRunner, defineTool } from "@intx/agent";
 import {
   createWorkbenchDirectorRegistry,
   toLlmToolName,
+  resolveDynamicToolConfig,
+  DYNAMIC_TOOLS_DIRECTOR_ID,
 } from "@workbench/agents";
+import {
+  createCatalogTools,
+  DYNAMIC_TOOLS_ENV_KEY,
+  type ToolExposureState,
+} from "@workbench/tools-catalog";
 import {
   HUB_RPC_ENV_KEY,
   providerFromEnvKey,
@@ -176,6 +183,23 @@ export function createDefaultHarnessBuilder({
         now: new Date(),
       });
 
+      // Dynamic tool exposure (CL-2808): opt-in agents advertise only a base
+      // set plus the catalog tools on turn one; the rest are discoverable via
+      // search_tools and enabled on demand by load_tools. The exposure set is
+      // the shared in-process channel between the catalog tools (which mutate
+      // it) and the dynamic-tools director (which reads it per infer). Every
+      // tool stays loaded and dispatchable regardless — only advertisement
+      // changes. Non-opt-in agents get `undefined` here and are untouched.
+      const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
+      const exposureState: ToolExposureState = { exposed: new Set<string>() };
+      const catalogRunner =
+        dynamicToolConfig !== undefined
+          ? (createCatalogTools({
+              catalog: dynamicToolConfig.catalog,
+              exposure: exposureState,
+            }) as DefinedRunner)
+          : undefined;
+
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;
       const authorize = async (resource: string, action: string) =>
@@ -227,186 +251,223 @@ export function createDefaultHarnessBuilder({
         },
       );
 
-      const blobReader = createBlobReader(storage);
-      const posixTools = createPosixTools({
-        cwd: workDir,
-        blobReader,
-      });
+      // Reverse-order disposal stack: each resource pushes its own disposer
+      // right after it is allocated, so both the failure path (below) and the
+      // success-path `disposers` return value walk the same list — a resource
+      // can never be "forgotten" by a hand-maintained parallel list again
+      // (CL-2814; CL-2813 had to add the tool-package disposers after the fact
+      // because the failure catch hand-listed only mail/posix).
+      const cleanup: (() => Promise<void>)[] = [];
 
-      const capabilities = createHarnessRuntimeCapabilities({
-        transport: agentTransport,
-      });
-      const mailTools = createMailTools({ capabilities });
-      const guardedMailTools = createGuardedMailRunner(
-        mailTools as DefinedRunner,
-        {
-          maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
-        },
-      );
-
-      const askPrincipalRunner = createToolRunner([
-        createAskPrincipalTool({
-          hubHttpUrl,
-          sidecarToken,
-          tenantId,
-          agentId: agentConfig.agentId,
-          principalId,
-        }),
-      ]);
-
-      // Materialize the agent's pinned tool packages, then resolve the
-      // credentials they declare via `requires: [workbench.cred.<provider>]`
-      // and inject them into env before instantiating each factory. A
-      // factory that throws is skipped (fail-soft); only the names that
-      // actually load are shadowed away from the proxy.
-      const loadedPackages = await loadToolPackages({
-        rawManifestBytes: deployTree.toolPackageManifestRaw,
-        assetMounts: deployTree.assetMounts,
-        storeDir,
-        agentAddress,
-        cacheRoot,
-        cacheMaxBytes,
-        registryMaxTarballBytes,
-      });
-
-      const requiredProviders = new Set<string>();
-      for (const pkg of loadedPackages) {
-        for (const factory of pkg.factories) {
-          for (const key of factory.requires) {
-            const provider = providerFromEnvKey(key);
-            if (provider !== undefined) requiredProviders.add(provider);
-          }
-        }
-      }
-      const credentialEnv = await fetchToolCredentials({
-        hubHttpUrl,
-        sidecarToken,
-        tenantId,
-        agentId: agentConfig.agentId,
-        providerNames: [...requiredProviders],
-        agentAddress,
-      });
-
-      // Hub-RPC context for hub-backed native tool packages (artifact,
-      // agents, dispatch). Their factory declares `requires: [HUB_RPC_ENV_KEY]`
-      // and forwards each call to the hub's scoped endpoint with this identity.
-      const hubRpcContext = {
-        baseURL: hubHttpUrl,
-        token: sidecarToken,
-        tenantId,
-        agentId: agentConfig.agentId,
-        principalId,
-        sessionId: agentConfig.sessionId,
-      };
-
-      const env = {
-        sources,
-        defaultSource,
-        storage,
-        workdir: workDir,
-        audit: storage,
-        authorize,
-        directors: createWorkbenchDirectorRegistry(),
-        // Resolve inference adapters through the boot-edge registry so the
-        // agent uses the same (gemini-patched) provider set `canBuildSource`
-        // admitted, not `createAgent`'s built-ins-only default.
-        deps: createDependencies(adapters),
-        transport: agentTransport,
-        address: agentAddress,
-        onConnectorStateChanged,
-        ...credentialEnv,
-        [HUB_RPC_ENV_KEY]: hubRpcContext,
-      };
-
-      const loadedRunners: DefinedRunner[] = [];
-      const loadedDisposers: (() => Promise<void>)[] = [];
-      const loadedToolNames = new Set<string>();
-      for (const pkg of loadedPackages) {
-        for (const factory of pkg.factories) {
-          // Fail-soft per-package: construction depends on runtime resources
-          // (e.g. a credential the hub fetched fail-soft — fetchToolCredentials
-          // returns {} on a transient blip), so a throw here drops THIS
-          // package's tools and logs, rather than bricking the whole agent
-          // launch (including its local tools + inference). Manifest integrity
-          // is the hard gate — that lives in loadToolPackages, not here.
-          let bundle: ReturnType<typeof factory>;
-          try {
-            bundle = factory(env);
-          } catch (err) {
-            logger.warn(
-              "Tool-package factory {id} failed to construct for {address}: {msg}",
-              {
-                id: factory.id,
-                address: agentAddress,
-                msg: err instanceof Error ? err.message : String(err),
-              },
-            );
-            continue;
-          }
-          // The loader prefixes every tool with `<factoryId>:<name>`
-          // (e.g. `@workbench/tools-exa/exa:exa_search`). That string carries
-          // `@`, `/`, and `:`, which violate LLM function-name constraints and do
-          // not round-trip (kimi truncates at the `:`), so the model's tool call
-          // never matches its grant or the loader's dispatch entry. Present an
-          // LLM-safe alias to the model and translate it back to the canonical
-          // name before delegating to the bundle's run() (CL-2306).
-          const aliasToCanonical = new Map<string, string>();
-          const safeDefinitions = bundle.definitions.map((def) => {
-            const safe = toLlmToolName(def.name);
-            aliasToCanonical.set(safe, def.name);
-            return { ...def, name: safe };
-          });
-          loadedRunners.push({
-            definitions: safeDefinitions,
-            run: (call, signal) =>
-              bundle.run(
-                { ...call, name: aliasToCanonical.get(call.name) ?? call.name },
-                signal,
-              ),
-          });
-          for (const def of safeDefinitions) loadedToolNames.add(def.name);
-          if (bundle.dispose !== undefined) {
-            loadedDisposers.push(async () => {
-              await bundle.dispose?.();
-            });
-          }
-        }
-      }
-      if (loadedToolNames.size > 0) {
-        logger.info("Loaded {count} native tool(s) for {address}: {names}", {
-          count: loadedToolNames.size,
-          address: agentAddress,
-          names: [...loadedToolNames].join(", "),
-        });
-      }
-
-      // Agent tools come from local runners (posix/mail/ask-principal) plus
-      // the materialized native packages — there is no hub-side tool proxy.
-      const allTools = mergeToolRunners([
-        posixTools,
-        guardedMailTools,
-        askPrincipalRunner as DefinedRunner,
-        ...loadedRunners,
-      ]);
-      // Enforce human approval for irreversible tools at the composition seam
-      // (the harness-side stand-in for an `ask` grant; see approval-gate.ts).
-      const gatedTools = createApprovalGatedRunner(allTools as DefinedRunner, {
-        gatedTools: APPROVAL_GATED_TOOLS,
-        approve: createApprovalClient({
-          hubHttpUrl,
-          sidecarToken,
-          tenantId,
-          agentId: agentConfig.agentId,
-          principalId,
-        }),
-      });
-      const allowedNames = new Set([
-        ...agentConfig.tools.map((t) => t.name),
-        ...loadedToolNames,
-      ]);
-      const tools = filterToolRunner(gatedTools as DefinedRunner, allowedNames);
-
+      // Open the guarded region immediately: posixTools/mailTools are pushed to
+      // `cleanup` below, and loadToolPackages (a documented HARD-throw gate),
+      // fetchToolCredentials, and the factory loop all run before createHarness.
+      // A throw from any of them must still walk `cleanup` and dispose what was
+      // already allocated (CL-2814) — otherwise a loadToolPackages failure leaks
+      // posix+mail, the exact CL-2813 bug class relocated upstream.
       try {
+        const blobReader = createBlobReader(storage);
+        const posixTools = createPosixTools({
+          cwd: workDir,
+          blobReader,
+        });
+        cleanup.push(() => posixTools.dispose());
+
+        const capabilities = createHarnessRuntimeCapabilities({
+          transport: agentTransport,
+        });
+        const mailTools = createMailTools({ capabilities });
+        cleanup.push(() => mailTools.dispose());
+        const guardedMailTools = createGuardedMailRunner(
+          mailTools as DefinedRunner,
+          {
+            maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+          },
+        );
+
+        const askPrincipalRunner = createToolRunner([
+          createAskPrincipalTool({
+            hubHttpUrl,
+            sidecarToken,
+            tenantId,
+            agentId: agentConfig.agentId,
+            principalId,
+          }),
+        ]);
+
+        // Materialize the agent's pinned tool packages, then resolve the
+        // credentials they declare via `requires: [workbench.cred.<provider>]`
+        // and inject them into env before instantiating each factory. A
+        // factory that throws is skipped (fail-soft); only the names that
+        // actually load are shadowed away from the proxy.
+        const loadedPackages = await loadToolPackages({
+          rawManifestBytes: deployTree.toolPackageManifestRaw,
+          assetMounts: deployTree.assetMounts,
+          storeDir,
+          agentAddress,
+          cacheRoot,
+          cacheMaxBytes,
+          registryMaxTarballBytes,
+        });
+
+        const requiredProviders = new Set<string>();
+        for (const pkg of loadedPackages) {
+          for (const factory of pkg.factories) {
+            for (const key of factory.requires) {
+              const provider = providerFromEnvKey(key);
+              if (provider !== undefined) requiredProviders.add(provider);
+            }
+          }
+        }
+        const credentialEnv = await fetchToolCredentials({
+          hubHttpUrl,
+          sidecarToken,
+          tenantId,
+          agentId: agentConfig.agentId,
+          providerNames: [...requiredProviders],
+          agentAddress,
+        });
+
+        // Hub-RPC context for hub-backed native tool packages (artifact,
+        // agents, dispatch). Their factory declares `requires: [HUB_RPC_ENV_KEY]`
+        // and forwards each call to the hub's scoped endpoint with this identity.
+        const hubRpcContext = {
+          baseURL: hubHttpUrl,
+          token: sidecarToken,
+          tenantId,
+          agentId: agentConfig.agentId,
+          principalId,
+          sessionId: agentConfig.sessionId,
+        };
+
+        const env = {
+          sources,
+          defaultSource,
+          storage,
+          workdir: workDir,
+          audit: storage,
+          authorize,
+          directors: createWorkbenchDirectorRegistry(),
+          // Resolve inference adapters through the boot-edge registry so the
+          // agent uses the same (gemini-patched) provider set `canBuildSource`
+          // admitted, not `createAgent`'s built-ins-only default.
+          deps: createDependencies(adapters),
+          transport: agentTransport,
+          address: agentAddress,
+          onConnectorStateChanged,
+          ...credentialEnv,
+          [HUB_RPC_ENV_KEY]: hubRpcContext,
+          ...(dynamicToolConfig !== undefined
+            ? {
+                [DYNAMIC_TOOLS_ENV_KEY]: {
+                  catalog: dynamicToolConfig.catalog,
+                  exposure: exposureState,
+                },
+              }
+            : {}),
+        };
+
+        const loadedRunners: DefinedRunner[] = [];
+        const loadedToolNames = new Set<string>();
+        for (const pkg of loadedPackages) {
+          for (const factory of pkg.factories) {
+            // Fail-soft per-package: construction depends on runtime resources
+            // (e.g. a credential the hub fetched fail-soft — fetchToolCredentials
+            // returns {} on a transient blip), so a throw here drops THIS
+            // package's tools and logs, rather than bricking the whole agent
+            // launch (including its local tools + inference). Manifest integrity
+            // is the hard gate — that lives in loadToolPackages, not here.
+            let bundle: ReturnType<typeof factory>;
+            try {
+              bundle = factory(env);
+            } catch (err) {
+              logger.warn(
+                "Tool-package factory {id} failed to construct for {address}: {msg}",
+                {
+                  id: factory.id,
+                  address: agentAddress,
+                  msg: err instanceof Error ? err.message : String(err),
+                },
+              );
+              continue;
+            }
+            // The loader prefixes every tool with `<factoryId>:<name>`
+            // (e.g. `@workbench/tools-exa/exa:exa_search`). That string carries
+            // `@`, `/`, and `:`, which violate LLM function-name constraints and do
+            // not round-trip (kimi truncates at the `:`), so the model's tool call
+            // never matches its grant or the loader's dispatch entry. Present an
+            // LLM-safe alias to the model and translate it back to the canonical
+            // name before delegating to the bundle's run() (CL-2306).
+            const aliasToCanonical = new Map<string, string>();
+            const safeDefinitions = bundle.definitions.map((def) => {
+              const safe = toLlmToolName(def.name);
+              aliasToCanonical.set(safe, def.name);
+              return { ...def, name: safe };
+            });
+            loadedRunners.push({
+              definitions: safeDefinitions,
+              run: (call, signal) =>
+                bundle.run(
+                  {
+                    ...call,
+                    name: aliasToCanonical.get(call.name) ?? call.name,
+                  },
+                  signal,
+                ),
+            });
+            for (const def of safeDefinitions) loadedToolNames.add(def.name);
+            if (bundle.dispose !== undefined) {
+              cleanup.push(async () => {
+                await bundle.dispose?.();
+              });
+            }
+          }
+        }
+        if (loadedToolNames.size > 0) {
+          logger.info("Loaded {count} native tool(s) for {address}: {names}", {
+            count: loadedToolNames.size,
+            address: agentAddress,
+            names: [...loadedToolNames].join(", "),
+          });
+        }
+
+        // Agent tools come from local runners (posix/mail/ask-principal) plus
+        // the materialized native packages — there is no hub-side tool proxy.
+        const allTools = mergeToolRunners([
+          posixTools,
+          guardedMailTools,
+          askPrincipalRunner as DefinedRunner,
+          ...(catalogRunner !== undefined ? [catalogRunner] : []),
+          ...loadedRunners,
+        ]);
+        // Enforce human approval for irreversible tools at the composition
+        // seam (the harness-side stand-in for an `ask` grant; see
+        // approval-gate.ts).
+        const gatedTools = createApprovalGatedRunner(
+          allTools as DefinedRunner,
+          {
+            gatedTools: APPROVAL_GATED_TOOLS,
+            approve: createApprovalClient({
+              hubHttpUrl,
+              sidecarToken,
+              tenantId,
+              agentId: agentConfig.agentId,
+              principalId,
+            }),
+          },
+        );
+        const allowedNames = new Set([
+          ...agentConfig.tools.map((t) => t.name),
+          ...loadedToolNames,
+          ...(catalogRunner !== undefined
+            ? catalogRunner.definitions.map((d) => d.name)
+            : []),
+        ]);
+        const tools = filterToolRunner(
+          gatedTools as DefinedRunner,
+          allowedNames,
+        );
+
         const toolsFactory = defineTool({
           id: "@workbench/sidecar/tools",
           factory: () => ({
@@ -421,6 +482,9 @@ export function createDefaultHarnessBuilder({
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
+          ...(dynamicToolConfig !== undefined
+            ? { director: { id: DYNAMIC_TOOLS_DIRECTOR_ID, config: {} } }
+            : {}),
         };
 
         const harness = await createHarness(def, env);
@@ -464,37 +528,38 @@ export function createDefaultHarnessBuilder({
           updateGrants(grants) {
             grantsRef.current = grants;
           },
-          disposers: [
-            () => mailTools.dispose(),
-            () => posixTools.dispose(),
-            ...loadedDisposers,
-            () => eventForwarding,
-          ],
+          // `eventForwarding` is only started once createHarness has
+          // succeeded, so it belongs on the success-path disposer list only —
+          // never on `cleanup`, which the failure catch below also walks.
+          disposers: [...cleanup, () => eventForwarding],
         };
       } catch (err) {
-        try {
-          await mailTools.dispose();
-        } catch (disposeErr) {
-          const msg =
-            disposeErr instanceof Error
-              ? disposeErr.message
-              : String(disposeErr);
-          logger.warn(
-            "mailTools.dispose failed during harness rollback: {msg}",
-            { msg },
-          );
-        }
-        try {
-          await posixTools.dispose();
-        } catch (disposeErr) {
-          const msg =
-            disposeErr instanceof Error
-              ? disposeErr.message
-              : String(disposeErr);
-          logger.warn(
-            "posixTools.dispose failed during harness rollback: {msg}",
-            { msg },
-          );
+        // Honor the harness-builder disposal contract
+        // (packages/hub-agent/src/harness-builder.ts:71) — a mid-build
+        // failure (e.g. the address is deregistered during `createHarness` on
+        // a reconnect storm) must dispose every resource allocated so far,
+        // not just some hand-picked subset. Walk `cleanup` in reverse
+        // allocation order (CL-2814) — standard teardown, tearing down
+        // later-allocated resources first. This is the OPPOSITE of the success
+        // path, which returns `cleanup` forward for session-manager to consume
+        // in allocation order; ordering is immaterial here (the disposers are
+        // independent), so the two directions are equally safe. Each disposal
+        // is independently guarded so one failure cannot abort the rest, and
+        // the ORIGINAL build error is rethrown below — never a disposer error.
+        for (let i = cleanup.length - 1; i >= 0; i--) {
+          const dispose = cleanup[i];
+          if (dispose === undefined) continue;
+          try {
+            await dispose();
+          } catch (disposeErr) {
+            const msg =
+              disposeErr instanceof Error
+                ? disposeErr.message
+                : String(disposeErr);
+            logger.warn("disposer failed during harness rollback: {msg}", {
+              msg,
+            });
+          }
         }
         throw err;
       }

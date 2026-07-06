@@ -7,10 +7,12 @@ import {
   Button,
   ComparisonView,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
   parseComparisonResult,
+  runStartLabel,
   type ComparisonResult,
   type WorkflowCredential,
   type WorkflowPanelProps,
@@ -114,11 +116,7 @@ function activeStep(state: RunState | null): StepKey {
 // ── Shared layout ────────────────────────────────────────────────────────────
 
 function Card({ children }: { children: ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
-  );
+  return <section className="bg-surface p-6">{children}</section>;
 }
 
 function CardTitle({ children }: { children: ReactNode }) {
@@ -169,6 +167,7 @@ function emptySlot(): SlotState {
 
 function ConfigScreen({
   phase,
+  startLabel,
   connected,
   signalPending,
   credentials,
@@ -176,6 +175,7 @@ function ConfigScreen({
   onSubmit,
 }: {
   phase: StepPhase | undefined;
+  startLabel: string;
   connected: boolean;
   signalPending: boolean;
   credentials: WorkflowCredential[] | undefined;
@@ -296,7 +296,7 @@ function ConfigScreen({
   };
 
   if (phase !== "awaiting-signal") {
-    return <LoadingState label="Waiting for the run to start…" />;
+    return <LoadingState label={startLabel} />;
   }
 
   return (
@@ -813,14 +813,15 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <div className="rounded-panel border border-orange bg-orange-soft p-4">
-            <p className="text-sm text-orange-deep">
-              This run failed. Review the run log and try again.
-            </p>
-          </div>
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         ) : current === "config" ? (
           <ConfigScreen
             phase={phaseFor(state, "config")}
+            startLabel={runStartLabel(state)}
             connected={connected}
             signalPending={signalPending}
             credentials={credentials}

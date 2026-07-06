@@ -63,7 +63,7 @@ const RECONCILE_ONLY_DEPS = {
 type RunRow = {
   id: string;
   deploymentId: string | null;
-  status: "running" | "awaiting" | "completed" | "failed";
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
 };
 
 // Stateful db for failOrphanedRuns. The select serves the stuck-run candidates;
@@ -380,6 +380,32 @@ describe("failOrphanedRuns", () => {
     await reconciler.failOrphanedRuns();
 
     expect(rows.get("run_parked")!.status).toBe("awaiting");
+  });
+
+  it("fails a run stranded in `provisioning` (deploymentless) by a crash mid-provision (CL-2755)", async () => {
+    // A run seeded `provisioning` (async start, CL-2755) whose hub crashed before
+    // the deployment was minted has a null deployment and no live supervisor — it
+    // can never resume, so the boot sweep must fail it (never leave it stuck
+    // provisioning forever), exactly like an interrupted `running` run.
+    const runs: RunRow[] = [
+      { id: "run_prov", deploymentId: null, status: "provisioning" },
+      // Cross-run isolation: a routable running run alongside it is untouched.
+      { id: "run_live", deploymentId: "ses_live", status: "running" },
+    ];
+    const { db, rows } = makeFailDb(runs);
+    const reconciler = createWorkflowReconciler({
+      db,
+      events: makeEvents().events,
+      ensureDeploymentRoutable: noopEnsure,
+      getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
+      deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
+    });
+
+    await reconciler.failOrphanedRuns();
+
+    expect(rows.get("run_prov")!.status).toBe("failed");
+    expect(rows.get("run_live")!.status).toBe("running");
   });
 
   it("is idempotent: a second pass with no in-flight rows fails nothing", async () => {

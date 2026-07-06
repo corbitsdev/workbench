@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+mock.module("../../lib/hub-api", () => ({
+  getMe: () => Promise.resolve({ isAdmin: false }),
+}));
 
 mock.module("../AuthProvider", () => ({
   useAuth: () => ({
@@ -45,9 +50,13 @@ describe("AppSidebar environment badge", () => {
   it("renders the environment label as a distinct badge beside the product name", () => {
     render(
       React.createElement(
-        MemoryRouter,
-        { initialEntries: ["/"] },
-        React.createElement(AppSidebar),
+        QueryClientProvider,
+        { client: new QueryClient() },
+        React.createElement(
+          MemoryRouter,
+          { initialEntries: ["/"] },
+          React.createElement(AppSidebar),
+        ),
       ),
     );
     const product = screen.getByText("Workbench");

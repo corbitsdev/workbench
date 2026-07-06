@@ -116,6 +116,26 @@ describe("analytics subscriber (mocked db)", () => {
     );
   });
 
+  test("persists the exact token breakdown from a known usage payload", async () => {
+    const inserts: unknown[] = [];
+    const { db } = makeDb({ onInsert: (v) => inserts.push(v) });
+    const subscriber = createAnalyticsSubscriber({ db: db as never });
+
+    await subscriber.onAgentEvent({
+      agentAddress: supervisorInstance.address,
+      event: inferenceDone,
+    });
+
+    const fact = inserts[0] as Record<string, unknown>;
+    expect(fact["inputTokens"]).toBe(100);
+    expect(fact["outputTokens"]).toBe(40);
+    expect(fact["cacheReadTokens"]).toBe(1);
+    expect(fact["cacheWriteTokens"]).toBe(2);
+    expect(fact["thinkingTokens"]).toBe(3);
+    expect(fact["eventType"]).toBe("inference_done");
+    expect(fact["sessionId"]).toBe("ses_supervisor");
+  });
+
   test("supervisor message.run.ended increments turn rollup", async () => {
     const { db } = makeDb();
     const subscriber = createAnalyticsSubscriber({ db: db as never });
@@ -237,6 +257,51 @@ describe("createAnalyticsSubscriber (unit)", () => {
     expect(String(factInsert["eventKey"])).toBe(
       "ses_test:agent@example.test:1:inference.usage",
     );
+  });
+
+  test("onLocalInferenceEvent attributes to the caller instance and namespaces the key by eventAddress", async () => {
+    const inserts: unknown[] = [];
+    const { db } = makeDb({
+      instance: baseInstance,
+      onInsert: (v) => inserts.push(v),
+    });
+    const subscriber = createAnalyticsSubscriber({ db: db as never });
+
+    await subscriber.onLocalInferenceEvent({
+      tenantId: "tnt_test",
+      attributionPrincipalId: "prn_test",
+      eventAddress: "file-parser-abc",
+      event: inferenceDone,
+    });
+
+    // Resolves the caller instance by principal, not by address.
+    expect(db.query.agentInstance.findFirst).toHaveBeenCalledTimes(1);
+    const fact = inserts[0] as Record<string, unknown>;
+    expect(fact["instanceId"]).toBe("ins_test");
+    expect(fact["principalId"]).toBe("prn_test");
+    expect(fact["inputTokens"]).toBe(100);
+    expect(fact["outputTokens"]).toBe(40);
+    // Key is namespaced by the one-shot's OWN address (not the caller's), so its
+    // seq space cannot collide with the caller's sidecar events under the shared
+    // session prefix — no double-counting.
+    expect(String(fact["eventKey"])).toBe(
+      "ses_test:file-parser-abc:10:inference.done",
+    );
+  });
+
+  test("onLocalInferenceEvent writes NO row when the caller has no active instance", async () => {
+    const { db } = makeDb({ instance: null });
+    const subscriber = createAnalyticsSubscriber({ db: db as never });
+
+    await subscriber.onLocalInferenceEvent({
+      tenantId: "tnt_test",
+      attributionPrincipalId: "prn_missing",
+      eventAddress: "file-parser-xyz",
+      event: inferenceDone,
+    });
+
+    // Honest attribution: no instance → no orphaned row.
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   test("skips rollup upsert when event key already exists (onConflictDoNothing)", async () => {

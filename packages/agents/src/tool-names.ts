@@ -118,6 +118,11 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "search_skills",
     "load_skill",
   ],
+  "@workbench/tools-workflows/workflows": [
+    "workflow_start",
+    "workflow_list_runs",
+    "workflow_signal",
+  ],
   "@workbench/tools-x/x": ["x_search"],
   "@workbench/tools-youtube/youtube": ["youtube_search"],
 };

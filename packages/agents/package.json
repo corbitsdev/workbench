@@ -34,6 +34,7 @@
     "@intx/workflow": "workspace:*",
     "@workbench/catalog": "workspace:*",
     "@workbench/chat": "workspace:*",
+    "@workbench/tools-catalog": "workspace:*",
     "@workbench/prompts": "workspace:*",
     "@workbench/ui": "workspace:*"
   },

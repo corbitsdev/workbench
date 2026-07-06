@@ -16,6 +16,7 @@ const {
   useRenameMyraThread,
   useDeleteMyraThread,
   useGenerateMyraThreadTitle,
+  useAutoTitleFirstMessage,
 } = await import("./use-myra-threads");
 
 type Call = { url: string; method: string; body: unknown };
@@ -237,5 +238,29 @@ describe("Myra thread mutations (tenant scoping)", () => {
       "/api/v1/tenants/tnt_child/me/myra/threads/map-1/title",
     );
     expect(calls[0]?.body).toEqual({ firstMessage: "Hi there" });
+  });
+
+  it("auto-titles default threads from existing first user messages", async () => {
+    stubFetch({ thread: { ...thread, label: "Titled" } });
+    const { Wrapper } = wrapper();
+    renderHook(
+      () =>
+        useAutoTitleFirstMessage(thread, [
+          {
+            role: "user",
+            content: "Summarize yesterday's Attio changes",
+          },
+        ]),
+      { wrapper: Wrapper },
+    );
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads/map-1/title",
+    );
+    expect(calls[0]?.body).toEqual({
+      firstMessage: "Summarize yesterday's Attio changes",
+    });
   });
 });

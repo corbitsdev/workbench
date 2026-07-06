@@ -7,6 +7,15 @@
 import { type } from "arktype";
 import { Artifact, SessionStatusSchema } from "@workbench/shared";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
+import { MomentDetailSchema, TimelineEntrySchema } from "@workbench/timeline";
+import type {
+  MomentDetail,
+  TimelineEntry,
+  TimelineEntryKind,
+} from "@workbench/timeline";
+
+export { MomentDetailSchema, TimelineEntrySchema };
+export type { MomentDetail, TimelineEntry, TimelineEntryKind };
 
 /**
  * Serializable subset of {@link ClientOptions}. `fetch` and `init` carry
@@ -29,9 +38,38 @@ export type ClientOptions = typeof ClientOptionsSchema.infer & {
   init?: RequestInit;
 };
 
-const API_PREFIX = "api/v1";
+/**
+ * Error thrown by {@link request} for any non-2xx hub response. Carries the HTTP
+ * `status` alongside the hub's human message so callers (e.g. the Insights UI)
+ * can branch a permission denial (403) from a transient failure (5xx/network)
+ * without parsing the message string. Subclasses `Error`, so existing catch
+ * sites that only read `.message` are unaffected.
+ */
+export class HttpError extends Error {
+  readonly status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HttpError";
+    this.status = status;
+  }
+}
 
-function resolveUrl(path: string, baseUrl?: string): string {
+/** True when `error` is an {@link HttpError} carrying HTTP 403 (permission denied). */
+export function isForbiddenError(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 403;
+}
+
+const API_PREFIX = "api/v1";
+// Tenant-scoped insight routes (actor search, per-principal activity) mount
+// under `/api/tenants/:tenantId/...` behind Interchange's resolveTenant — not
+// under the `/api/v1` prefix the rest of the client uses.
+const TENANT_API_PREFIX = "api";
+
+function resolveUrl(
+  path: string,
+  baseUrl?: string,
+  apiPrefix: string = API_PREFIX,
+): string {
   const cleanPath = path.replace(/^\//, "");
   const origin =
     baseUrl ??
@@ -43,12 +81,16 @@ function resolveUrl(path: string, baseUrl?: string): string {
       "Cannot resolve request URL: no baseUrl provided and no global location available.",
     );
   }
-  return new URL(`/${API_PREFIX}/${cleanPath}`, origin).toString();
+  return new URL(`/${apiPrefix}/${cleanPath}`, origin).toString();
 }
 
-async function request<T>(path: string, options: ClientOptions): Promise<T> {
+async function request<T>(
+  path: string,
+  options: ClientOptions,
+  apiPrefix: string = API_PREFIX,
+): Promise<T> {
   const doFetch = options.fetch ?? fetch;
-  const url = resolveUrl(path, options.baseUrl);
+  const url = resolveUrl(path, options.baseUrl, apiPrefix);
   const init: RequestInit = {
     method: "GET",
     credentials: "include",
@@ -58,7 +100,7 @@ async function request<T>(path: string, options: ClientOptions): Promise<T> {
   const res = await doFetch(url, init);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    throw new HttpError(res.status, body.error ?? `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
@@ -448,4 +490,364 @@ export async function uploadArtifacts(
     );
   }
   return parsed.artifacts;
+}
+
+// ─── Actor search + per-principal activity (Insights) ───────────────
+
+export const ActorSchema = type({
+  id: "string",
+  kind: "'user' | 'agent'",
+  displayName: "string",
+  "email?": "string",
+  /** Lifecycle status (e.g. `active`, `deactivated`); non-active actors remain findable. */
+  status: "string",
+});
+export type Actor = typeof ActorSchema.infer;
+
+export const ActorSearchResponseSchema = type({ actors: ActorSchema.array() });
+export type ActorSearchResponse = typeof ActorSearchResponseSchema.infer;
+
+export const SearchActorsParamsSchema = type({
+  tenantId: "string",
+  /** Free-text query; the hub requires at least 2 characters. */
+  query: "string",
+  "limit?": "number",
+});
+export type SearchActorsParams = typeof SearchActorsParamsSchema.infer;
+
+/**
+ * Search user and agent principals in a tenant
+ * (`GET /api/tenants/:tenantId/actors/search`). Callers must debounce
+ * (>= 300ms) and gate on a 2+ character query.
+ */
+export async function searchActors(
+  options: ClientOptions = {},
+  params: SearchActorsParams,
+): Promise<Actor[]> {
+  // The hub route reads `q`, not `query` (apps/hub/src/routes/actor-search.ts).
+  const qs = new URLSearchParams({ q: params.query });
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/actors/search?${qs.toString()}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActorSearchResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /actors/search response: ${parsed.summary}`);
+  }
+  return parsed.actors;
+}
+
+export const GetActorParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+});
+export type GetActorParams = typeof GetActorParamsSchema.infer;
+
+/**
+ * Resolve a single principal's actor identity
+ * (`GET /api/tenants/:tenantId/actors/:principalId`). Returns `null` when the
+ * principal does not exist in the tenant (hub 404), so the deep-linkable actor
+ * page can distinguish "unknown actor" from a transport error.
+ */
+export async function getActor(
+  options: ClientOptions = {},
+  params: GetActorParams,
+): Promise<Actor | null> {
+  const doFetch = options.fetch ?? fetch;
+  const url = resolveUrl(
+    `tenants/${encodeURIComponent(params.tenantId)}/actors/${encodeURIComponent(params.principalId)}`,
+    options.baseUrl,
+    TENANT_API_PREFIX,
+  );
+  const res = await doFetch(url, {
+    method: "GET",
+    credentials: "include",
+    ...options.init,
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    // The hub returns `{ error: { code, message } }` (an object). Reach into
+    // `.message` so a 500 surfaces the human string, not `[object Object]`.
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: { message?: string } | string;
+    };
+    const message =
+      typeof body.error === "string" ? body.error : body.error?.message;
+    throw new Error(message ?? `HTTP ${res.status}`);
+  }
+  const raw = (await res.json()) as unknown;
+  const parsed = ActorSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /actors/:id response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// ─── Cache-baseline cost rollup (Insights cost view, CL-2687) ────────
+
+/**
+ * Per-agent prompt-caching + token rollup over the raw `inference_done` facts
+ * (hub `getCacheBaseline`, CL-2686). Carries the full cache split — input,
+ * output, cache-read, cache-write — plus the derived miss/absorption ratios the
+ * cost view reads. `agentName` is null for an orphaned/renamed agent.
+ */
+export const CacheBaselineRowSchema = type({
+  agentId: "string",
+  agentName: "string | null",
+  inferenceCalls: "number",
+  cacheMissCalls: "number",
+  cacheHitCalls: "number",
+  sessionCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  cacheMissRate: "number",
+  cacheAbsorptionRatio: "number",
+});
+export type CacheBaselineRow = typeof CacheBaselineRowSchema.infer;
+
+export const CacheBaselineResponseSchema = type({
+  tenantId: "string",
+  agents: CacheBaselineRowSchema.array(),
+});
+export type CacheBaselineResponse = typeof CacheBaselineResponseSchema.infer;
+
+export const GetCacheBaselineParamsSchema = type({
+  tenantId: "string",
+  /** Inclusive `yyyy-mm-dd` lower bound on `occurred_at`. */
+  "startDate?": "string",
+  /** Inclusive `yyyy-mm-dd` upper bound (end-of-day). */
+  "endDate?": "string",
+  /** Scope to a single agent definition. */
+  "agentId?": "string",
+  /** Scope to a single agent instance. */
+  "instanceId?": "string",
+});
+export type GetCacheBaselineParams = typeof GetCacheBaselineParamsSchema.infer;
+
+/**
+ * Fetch the per-agent cache/token baseline
+ * (`GET /api/tenants/:tenantId/analytics/cache-baseline`). Rows are sorted by
+ * inference-call count descending by the hub. Powers the Insights cost view's
+ * per-agent rollup and cache-read/write/output split.
+ */
+export async function getCacheBaseline(
+  options: ClientOptions = {},
+  params: GetCacheBaselineParams,
+): Promise<CacheBaselineRow[]> {
+  const qs = new URLSearchParams();
+  if (params.startDate !== undefined) qs.set("startDate", params.startDate);
+  if (params.endDate !== undefined) qs.set("endDate", params.endDate);
+  if (params.agentId !== undefined) qs.set("agentId", params.agentId);
+  if (params.instanceId !== undefined) qs.set("instanceId", params.instanceId);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/analytics/cache-baseline${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = CacheBaselineResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /cache-baseline response: ${parsed.summary}`);
+  }
+  return parsed.agents;
+}
+
+export const ActivityPageSchema = type({
+  entries: TimelineEntrySchema.array(),
+  nextCursor: "string | null",
+});
+export type ActivityPage = typeof ActivityPageSchema.infer;
+
+export const GetPrincipalActivityParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+  /** Page size, 1-100 (hub default 50). */
+  "limit?": "number",
+  /** Opaque keyset cursor from a previous page's `nextCursor`. */
+  "cursor?": "string",
+});
+export type GetPrincipalActivityParams =
+  typeof GetPrincipalActivityParamsSchema.infer;
+
+/**
+ * Fetch one page of a principal's activity timeline, newest first
+ * (`GET /api/tenants/:tenantId/principals/:principalId/activity`). Entries are
+ * the kind-discriminated union from `@workbench/timeline`.
+ */
+export async function getPrincipalActivity(
+  options: ClientOptions = {},
+  params: GetPrincipalActivityParams,
+): Promise<ActivityPage> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.cursor !== undefined) qs.set("cursor", params.cursor);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/activity${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActivityPageSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /activity response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+export const GetTenantActivityParamsSchema = type({
+  tenantId: "string",
+  /** Page size, 1-100 (hub default 50). */
+  "limit?": "number",
+  /** Opaque keyset cursor from a previous page's `nextCursor`. */
+  "cursor?": "string",
+});
+export type GetTenantActivityParams =
+  typeof GetTenantActivityParamsSchema.infer;
+
+/**
+ * Fetch one page of the TENANT-WIDE activity timeline, newest first
+ * (`GET /api/tenants/:tenantId/activity/timeline`). This is the default
+ * Insights feed (CL-2743): activity merged across every principal in the
+ * tenant. Gated by tenant membership only; cross-tenant rows never resolve.
+ */
+export async function getTenantActivity(
+  options: ClientOptions = {},
+  params: GetTenantActivityParams,
+): Promise<ActivityPage> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.cursor !== undefined) qs.set("cursor", params.cursor);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/activity/timeline${search}`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = ActivityPageSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /activity/timeline response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// ─── Principal roster (Agents & workflows facet, CL-2737) ────────────
+
+export const RosterInstanceSchema = type({
+  instanceId: "string",
+  principalId: "string",
+  name: "string",
+  status: "string",
+  sessionCount: "number",
+});
+export type RosterInstance = typeof RosterInstanceSchema.infer;
+
+export const RosterRunSchema = type({
+  runId: "string",
+  kind: "string",
+  status: "string",
+});
+export type RosterRun = typeof RosterRunSchema.infer;
+
+export const PrincipalRosterSchema = type({
+  instances: RosterInstanceSchema.array(),
+  runs: RosterRunSchema.array(),
+});
+export type PrincipalRoster = typeof PrincipalRosterSchema.infer;
+
+export const GetPrincipalRosterParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+});
+export type GetPrincipalRosterParams =
+  typeof GetPrincipalRosterParamsSchema.infer;
+
+/**
+ * Fetch a principal's owned agent instances and workflow runs
+ * (`GET /api/tenants/:tenantId/principals/:principalId/roster`). Powers the
+ * principal trace's "Agents & workflows" facet: each instance/run deep-links to
+ * its own trace surface.
+ */
+export async function getPrincipalRoster(
+  options: ClientOptions = {},
+  params: GetPrincipalRosterParams,
+): Promise<PrincipalRoster> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/roster`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = PrincipalRosterSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /roster response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// ─── Tenant roster (dashboard-level clickable Agents + runs, CL-2798) ──
+
+export const TenantRosterSchema = type({
+  instances: RosterInstanceSchema.array(),
+  runs: RosterRunSchema.array(),
+});
+export type TenantRoster = typeof TenantRosterSchema.infer;
+
+export const GetTenantRosterParamsSchema = type({
+  tenantId: "string",
+});
+export type GetTenantRosterParams = typeof GetTenantRosterParamsSchema.infer;
+
+/**
+ * Fetch a tenant's agent instances and most recent workflow runs
+ * (`GET /api/tenants/:tenantId/roster`). Powers the Insights dashboard's
+ * first-class, clickable Agents and Recent-runs surfaces: each instance
+ * deep-links to its trace (`/insights/users/:principalId`) and each run to its
+ * execution trace (`/insights/trace/:runId`).
+ */
+export async function getTenantRoster(
+  options: ClientOptions = {},
+  params: GetTenantRosterParams,
+): Promise<TenantRoster> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/roster`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = TenantRosterSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /roster response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+export const GetMomentDetailParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+  kind: "string",
+  id: "string",
+});
+export type GetMomentDetailParams = typeof GetMomentDetailParamsSchema.infer;
+
+/**
+ * Expand one opened activity moment into its rich detail
+ * (`GET /api/tenants/:tenantId/principals/:principalId/activity/:kind/:id/detail`).
+ * The paginated timeline stays lean; this fires only when a moment is opened.
+ */
+export async function getMomentDetail(
+  options: ClientOptions = {},
+  params: GetMomentDetailParams,
+): Promise<MomentDetail> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/activity/${encodeURIComponent(params.kind)}/${encodeURIComponent(params.id)}/detail`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = MomentDetailSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid moment detail response: ${parsed.summary}`);
+  }
+  return parsed;
 }

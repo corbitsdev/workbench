@@ -39,8 +39,23 @@ export {
   parseToolResult,
   extractUIBlockFromText,
   isUIBlock,
-} from "./ui-block";
-export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";
+  UIBlockView,
+  type UIBlockViewProps,
+  DockRunInputSchema,
+  DockRunPhaseSchema,
+  DockStepPhaseSchema,
+  dockRunBlocks,
+  progressStateForStepPhase,
+  type DockRunInput,
+  type DockRunPhase,
+  type DockRunStep,
+  type DockStepPhase,
+  pendingGateForRun,
+  routeConversationSignal,
+  type GateStepInput,
+  type PendingGate,
+  type SignalRouting,
+} from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 export { TypingIndicator, type TypingIndicatorProps } from "./TypingIndicator";
@@ -53,7 +68,11 @@ export {
   type PendingAttachment,
   type ValidateResult,
 } from "./attachments";
-export { ChatThread, type ChatThreadProps } from "./ChatThread";
+export {
+  ChatThread,
+  type ChatThreadProps,
+  type ThreadInsert,
+} from "./ChatThread";
 export { ChatPanel, type ChatPanelProps } from "./ChatPanel";
 export { ChatLauncher, type ChatLauncherProps } from "./ChatLauncher";
 export { FloatingChat, type FloatingChatProps } from "./FloatingChat";
@@ -61,6 +80,8 @@ export {
   DockedChatBar,
   type DockedChatBarProps,
   DOCKED_BAR_HEIGHT,
+  DOCKED_BAR_BOTTOM,
+  DOCKED_BAR_TOTAL_HEIGHT,
 } from "./DockedChatBar";
 export { UrlImageCard, type UrlImageCardProps } from "./UrlImageCard";
 export { MessageFeedback, type MessageFeedbackProps } from "./MessageFeedback";

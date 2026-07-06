@@ -1,4 +1,7 @@
 export { Button, buttonVariants } from "./Button";
+export { ConfirmButton, type ConfirmButtonProps } from "./ConfirmButton";
+export { Badge, badgeVariants, type BadgeTone } from "./Badge";
+export { Skeleton } from "./Skeleton";
 export {
   Menu,
   MenuTrigger,
@@ -81,6 +84,39 @@ export {
 export { useViewMode, type ViewMode } from "./use-view-mode";
 export { ViewToggle } from "./ViewToggle";
 export { DataTable, type DataTableColumn } from "./DataTable";
+export { Pagination, type PaginationProps } from "./Pagination";
+export {
+  Breadcrumbs,
+  type BreadcrumbItem,
+  type BreadcrumbsProps,
+} from "./Breadcrumbs";
+export { SortableTable, type SortableColumn } from "./SortableTable";
+export {
+  sortRows,
+  pageSlice,
+  pageCount,
+  clampPage,
+  toggleSortDir,
+  type SortDir,
+} from "./table-utils";
+export {
+  CHART_SERIES,
+  seriesColor,
+  type ChartSeriesColor,
+} from "./chart-palette";
+export {
+  seriesToCoords,
+  buildLinePath,
+  buildAreaPath,
+  niceMax,
+  type ChartPoint,
+} from "./chart-geometry";
+export {
+  TimeSeriesChart,
+  type TimeSeries,
+  type TimeSeriesPoint,
+} from "./TimeSeriesChart";
+export { CategoryBarChart, type CategoryDatum } from "./CategoryBarChart";
 export { useResizableRail, type ResizableRail } from "./use-resizable-rail";
 export { default as HorizontalStepper } from "./HorizontalStepper";
 export {
@@ -109,7 +145,17 @@ export {
   activeDisplayStepIndex,
   activeDisplayStep,
   buildStepperSteps as buildRunStepperSteps,
+  failedDisplayStepLabel,
   failedRunErrorMessage,
+  FailedRunNotice,
   liveStatusLabel,
   LiveStatusSlot,
+  runNeverStarted,
+  runStartLabel,
 } from "./workflow-run-state";
+export {
+  type RunErrorKind,
+  type ClassifiedRunError,
+  classifyRunError,
+  failedRunError,
+} from "./workflow-run-error";

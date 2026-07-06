@@ -12,8 +12,16 @@ import {
   getTokenDataStartDate,
   type AnalyticsDailyPoint,
   type AnalyticsDateRange,
+  type AnalyticsModelRow,
   type AnalyticsSummary,
 } from "@workbench/analytics";
+import {
+  priceUsageRows,
+  UNKNOWN_MODEL_LABEL,
+  type ModelUsageRow,
+  type PriceCatalog,
+  type PricedUsage,
+} from "@workbench/pricing";
 import {
   and,
   count,
@@ -48,6 +56,17 @@ export type UsageByPersonRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+  /**
+   * Dollar cost (CL-2723), priced per model then summed — never a blended
+   * cross-model rate. `null` when the caller supplied no price catalog (see
+   * `getUsageByPerson`'s `priceCatalog` param); this is the honest "not
+   * computed" state, distinct from `hasUnpriced` on a present `cost`, which
+   * means "computed, but some of this person's models had no models.dev rate."
+   */
+  cost: PricedUsage | null;
 };
 
 export type ActivityCountRow = { key: string; count: number };
@@ -59,6 +78,20 @@ export type UsageByWorkflowTypeRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  /** Dollar cost (CL-2723) — see {@link UsageByPersonRow.cost}. */
+  cost: PricedUsage | null;
+};
+
+export type WorkflowRunTokenTotalsRow = {
+  /** `workflow_run_record.id` — the run this row's tokens are attributed to. */
+  runId: string;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
 };
 
 export type ActivityOverview = {
@@ -99,6 +132,13 @@ export type ActivityOverview = {
   dailySeries: AnalyticsDailyPoint[];
   models: ActivityCountRow[];
   /**
+   * Per-model usage with every token class separated (CL-2714). Drives the
+   * cost-by-model view: dollar cost is computed FE-side per class from
+   * models.dev rates, with tokens shown as the secondary detail. `models`
+   * (turn counts) is kept for the legacy distribution bars.
+   */
+  byModel: AnalyticsModelRow[];
+  /**
    * Earliest date real token counts exist (null when none). Token and tool-error
    * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
    * range starting before this date. See `backfill-analytics-rollups.ts`.
@@ -109,8 +149,12 @@ export type ActivityOverview = {
    * hub-owned `member_agent_instance` link (instance → owning member). The
    * analytics principal on raw events is the per-instance synthetic principal,
    * NOT the user, so attribution goes through this link rather than a naive
-   * principal==user assumption. Instances with no member link (e.g. shared
-   * agents) are excluded — their usage cannot be attributed to one person.
+   * principal==user assumption. Per-run workflow instances carry no such link
+   * (CL-2705), so they are additionally resolved through
+   * `workflow_run_record.principalId` — the human who started the run — keyed on
+   * the `ins_<deploymentId>` address convention. Instances with neither a member
+   * link nor a workflow run record (e.g. shared/system agents) are excluded —
+   * their usage cannot be attributed to one person.
    */
   byPerson: UsageByPersonRow[];
   /**
@@ -203,8 +247,15 @@ export async function getUsageByPerson(args: {
   tenantId: string;
   callerPrincipalId: string | null;
   range?: AnalyticsDateRange;
+  /**
+   * models.dev rate catalog (CL-2723). Optional — the caller may not have one
+   * warm (see `activity.ts`'s best-effort fetch) — in which case `cost` on
+   * every row is `null`, never a fabricated `$0`.
+   */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<UsageByPersonRow[]> {
   const { db, tenantId, callerPrincipalId, range } = args;
+  const priceCatalog = args.priceCatalog ?? null;
 
   // `member_agent_instance` has no DB-level uniqueness on `instanceId`, so a
   // reassigned or re-provisioned instance can have more than one link row.
@@ -225,27 +276,96 @@ export async function getUsageByPerson(args: {
     )
     .as("owner_by_instance");
 
+  // Per-run workflow instances (CL-2582/CL-2705) carry the workflow
+  // DEFINITION's synthetic principal and never get a `member_agent_instance`
+  // mapping — the human who started the run exists only on
+  // `workflow_run_record.principalId`. Resolve those instances THROUGH the run
+  // record: a workflow instance's `address` is `ins_<deploymentId>…` (the same
+  // LIKE convention `getUsageByWorkflowType` uses) and
+  // `workflow_run_record.deploymentId` names the same per-run deployment, so the
+  // record's `principalId` — the tenant `kind:"user"` member principal, exactly
+  // the type `member_agent_instance` stores — is the owning member. Collapse to
+  // one owner per instance (most recent run record) so the LIKE join can't fan
+  // out and multiply counts. We resolve through the record rather than minting a
+  // mapping per ephemeral instance because those instances (supervisor + every
+  // deployed step) are torn down per run, so a mapping row each would accumulate
+  // junk the deployment reclaim never sweeps; resolving here keeps attribution
+  // stateless and touches nothing on the workflow-stability-critical run path.
+  //
+  // KNOWN CAVEAT (CL-2711): for a LEGACY deployment with multiple run records by
+  // different principals (pre-CL-2582, when one deployment served many serial
+  // runs), the `DISTINCT ON (agent_instance.id)` + `ORDER BY … created_at DESC`
+  // collapse attributes ALL of that instance's usage to the MOST-RECENT runner —
+  // the earlier runners' share is silently folded into the latest. This mirrors
+  // the sibling `deployment_id`-not-unique constraint documented on
+  // `getUsageByWorkflowType`. The current per-run-deployment model is 1 run : 1
+  // deployment, so a live deployment only ever has one runner; this only skews
+  // historical analytics buckets that still hold pre-CL-2582 rows.
+  const workflowOwnerByInstance = db
+    .selectDistinctOn([agentInstance.id], {
+      instanceId: agentInstance.id,
+      memberPrincipalId: workflowRunRecord.principalId,
+    })
+    .from(agentInstance)
+    .innerJoin(
+      workflowRunRecord,
+      and(
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+        like(
+          agentInstance.address,
+          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+        ),
+      ),
+    )
+    .where(eq(agentInstance.tenantId, tenantId))
+    .orderBy(agentInstance.id, desc(workflowRunRecord.createdAt))
+    .as("workflow_owner_by_instance");
+
+  // One owning member per instance, preferring the explicit
+  // `member_agent_instance` mapping and falling back to the workflow run
+  // record's principal. The two instance sets are disjoint (a workflow per-run
+  // instance has no mapping row and vice versa), so left-joining both and
+  // `coalesce`-ing picks whichever is present — mapping first when, defensively,
+  // both are. Instances in neither set (e.g. shared/system agents) coalesce to
+  // NULL and are dropped by the `IS NOT NULL` filter below, staying unattributed
+  // rather than being force-assigned.
+  const resolvedMemberPrincipalId = sql<string>`coalesce(${ownerByInstance.memberPrincipalId}, ${workflowOwnerByInstance.memberPrincipalId})`;
+
   // `principalId` here is the owning member's tenant `kind: "user"` principal
   // (the column `ensureMember` writes and the route's `c.get("principal")`
   // reads), NOT the per-instance synthetic principal on raw analytics events —
   // so comparing it to `callerPrincipalId` for `isSelf` is like-for-like.
   const rows = await db
     .select({
-      principalId: ownerByInstance.memberPrincipalId,
+      principalId: sql<string>`${resolvedMemberPrincipalId}`,
       name: intxSchema.user.name,
+      // Grouped in ALSO by model (CL-2723) so cost can be priced per model,
+      // then summed — a person using two models never gets a blended,
+      // fabricated rate. This fans out to one row per (person, model); the
+      // per-person totals below re-aggregate across that fan-out.
+      model: analyticsRollupDaily.model,
       turnCount: sumInt(analyticsRollupDaily.turnCount),
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
       inputTokens: sumInt(analyticsRollupDaily.inputTokens),
       outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
-    .innerJoin(
+    .leftJoin(
       ownerByInstance,
       eq(ownerByInstance.instanceId, analyticsRollupDaily.instanceId),
     )
     .leftJoin(
+      workflowOwnerByInstance,
+      eq(workflowOwnerByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .leftJoin(
       intxSchema.principal,
-      eq(intxSchema.principal.id, ownerByInstance.memberPrincipalId),
+      eq(intxSchema.principal.id, resolvedMemberPrincipalId),
     )
     .leftJoin(
       intxSchema.user,
@@ -254,6 +374,7 @@ export async function getUsageByPerson(args: {
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
+        isNotNull(resolvedMemberPrincipalId),
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
@@ -262,18 +383,68 @@ export async function getUsageByPerson(args: {
           : undefined,
       ),
     )
-    .groupBy(ownerByInstance.memberPrincipalId, intxSchema.user.name);
+    .groupBy(
+      resolvedMemberPrincipalId,
+      intxSchema.user.name,
+      analyticsRollupDaily.model,
+    );
 
-  return rows
-    .map((row) => ({
-      principalId: row.principalId,
+  const byPrincipal = new Map<
+    string,
+    { name: string | null; modelRows: ModelUsageRow[] } & Omit<
+      UsageByPersonRow,
+      "principalId" | "name" | "isSelf" | "cost"
+    >
+  >();
+  for (const row of rows) {
+    const existing = byPrincipal.get(row.principalId) ?? {
       name: row.name ?? null,
-      isSelf:
-        callerPrincipalId !== null && row.principalId === callerPrincipalId,
-      turnCount: row.turnCount,
-      toolCallCount: row.toolCallCount,
+      turnCount: 0,
+      toolCallCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+      modelRows: [],
+    };
+    existing.turnCount += row.turnCount;
+    existing.toolCallCount += row.toolCallCount;
+    existing.inputTokens += row.inputTokens;
+    existing.outputTokens += row.outputTokens;
+    existing.cacheReadTokens += row.cacheReadTokens;
+    existing.cacheWriteTokens += row.cacheWriteTokens;
+    existing.thinkingTokens += row.thinkingTokens;
+    // A null model with real tokens is genuine usage that cannot be priced —
+    // route it through `priceUsageRows` under UNKNOWN_MODEL_LABEL so it lands
+    // in `unpricedModels`/`hasUnpriced`, never as a silent $0 (CL-2723).
+    existing.modelRows.push({
+      model: row.model ?? UNKNOWN_MODEL_LABEL,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      thinkingTokens: row.thinkingTokens,
+    });
+    byPrincipal.set(row.principalId, existing);
+  }
+
+  return [...byPrincipal.entries()]
+    .map(([principalId, agg]) => ({
+      principalId,
+      name: agg.name,
+      isSelf: callerPrincipalId !== null && principalId === callerPrincipalId,
+      turnCount: agg.turnCount,
+      toolCallCount: agg.toolCallCount,
+      inputTokens: agg.inputTokens,
+      outputTokens: agg.outputTokens,
+      cacheReadTokens: agg.cacheReadTokens,
+      cacheWriteTokens: agg.cacheWriteTokens,
+      thinkingTokens: agg.thinkingTokens,
+      cost:
+        priceCatalog !== null
+          ? priceUsageRows(agg.modelRows, priceCatalog)
+          : null,
     }))
     .sort(
       (a, b) =>
@@ -285,8 +456,11 @@ export async function getUsageByWorkflowType(args: {
   db: DB["db"];
   tenantId: string;
   range?: AnalyticsDateRange;
+  /** models.dev rate catalog (CL-2723) — see {@link getUsageByPerson}. */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<UsageByWorkflowTypeRow[]> {
   const { db, tenantId, range } = args;
+  const priceCatalog = args.priceCatalog ?? null;
 
   // Workflow-run inference is recorded against per-deployment agent instances
   // whose `address` is `ins_<deploymentId>@…` (or `ins_<deploymentId>-<stepId>@…`
@@ -320,10 +494,16 @@ export async function getUsageByWorkflowType(args: {
   const rows = await db
     .select({
       kind: runByDeployment.kind,
+      // Grouped in ALSO by model (CL-2723) — see the identical rationale on
+      // `getUsageByPerson`.
+      model: analyticsRollupDaily.model,
       turnCount: sumInt(analyticsRollupDaily.turnCount),
       toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
       inputTokens: sumInt(analyticsRollupDaily.inputTokens),
       outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
     })
     .from(analyticsRollupDaily)
     .innerJoin(
@@ -351,15 +531,51 @@ export async function getUsageByWorkflowType(args: {
           : undefined,
       ),
     )
-    .groupBy(runByDeployment.kind);
+    .groupBy(runByDeployment.kind, analyticsRollupDaily.model);
 
-  return rows
-    .map((row) => ({
-      kind: row.kind,
-      turnCount: row.turnCount,
-      toolCallCount: row.toolCallCount,
+  const byKind = new Map<
+    string,
+    { modelRows: ModelUsageRow[] } & Omit<
+      UsageByWorkflowTypeRow,
+      "kind" | "cost"
+    >
+  >();
+  for (const row of rows) {
+    const existing = byKind.get(row.kind) ?? {
+      turnCount: 0,
+      toolCallCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      modelRows: [],
+    };
+    existing.turnCount += row.turnCount;
+    existing.toolCallCount += row.toolCallCount;
+    existing.inputTokens += row.inputTokens;
+    existing.outputTokens += row.outputTokens;
+    // Null-model usage is priced as unpriced under UNKNOWN_MODEL_LABEL rather
+    // than dropped — never a silent $0 (CL-2723); see getUsageByPerson.
+    existing.modelRows.push({
+      model: row.model ?? UNKNOWN_MODEL_LABEL,
       inputTokens: row.inputTokens,
       outputTokens: row.outputTokens,
+      cacheReadTokens: row.cacheReadTokens,
+      cacheWriteTokens: row.cacheWriteTokens,
+      thinkingTokens: row.thinkingTokens,
+    });
+    byKind.set(row.kind, existing);
+  }
+
+  return [...byKind.entries()]
+    .map(([kind, agg]) => ({
+      kind,
+      turnCount: agg.turnCount,
+      toolCallCount: agg.toolCallCount,
+      inputTokens: agg.inputTokens,
+      outputTokens: agg.outputTokens,
+      cost:
+        priceCatalog !== null
+          ? priceUsageRows(agg.modelRows, priceCatalog)
+          : null,
     }))
     .sort(
       (a, b) =>
@@ -367,15 +583,137 @@ export async function getUsageByWorkflowType(args: {
     );
 }
 
+// CL-2809: per-RUN token attribution, read-side only. Workflow-run inference is
+// recorded against a per-deployment agent instance whose `address` embeds the
+// deploymentId (`ins_<deploymentId>…`, the same LIKE convention
+// `getUsageByWorkflowType` and `getUsageByPerson`'s `workflowOwnerByInstance`
+// use), and the per-run-deploy model (CL-2582) is 1 run : 1 deployment — so
+// resolving instance -> deploymentId -> workflow_run_record.id recovers the
+// per-run identity that raw analytics rows never carried.
+//
+// KNOWN CAVEAT (mirrors CL-2711 on `getUsageByPerson`): a LEGACY deployment
+// (pre-CL-2582) could serve several serial runs. `DISTINCT ON (agent_instance.id)`
+// + `ORDER BY workflow_run_record.created_at DESC` collapses those to the
+// MOST-RECENT run — the earlier runs on that shared deployment are NOT
+// separately attributable and are silently absent from the result (never
+// duplicated across rows). New/live per-run deployments only ever have one
+// runner, so this only skews historical buckets that still hold pre-CL-2582
+// rows.
+function runByInstanceJoin(db: DB["db"], tenantId: string) {
+  // Both projected columns are an underlying `id` (`agent_instance.id` and
+  // `workflow_run_record.id`). Left as plain columns they'd both emit the SQL
+  // name `"id"`, so the outer `group by "run_by_instance"."id"` is ambiguous.
+  // Keep `instanceId` a plain column (drizzle qualifies it as
+  // `"run_by_instance"."id"` in the join, so it stays unambiguous against
+  // `analytics_rollup_daily.instance_id`) and SQL-alias only the run id to the
+  // unique name `run_id` (no other joined table has that column, so the
+  // unqualified references drizzle emits for a `sql`-aliased field are safe).
+  return db
+    .selectDistinctOn([agentInstance.id], {
+      instanceId: agentInstance.id,
+      runId: sql<string>`${workflowRunRecord.id}`.as("run_id"),
+    })
+    .from(agentInstance)
+    .innerJoin(
+      workflowRunRecord,
+      and(
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+        like(
+          agentInstance.address,
+          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+        ),
+      ),
+    )
+    .where(eq(agentInstance.tenantId, tenantId))
+    .orderBy(agentInstance.id, desc(workflowRunRecord.createdAt))
+    .as("run_by_instance");
+}
+
+export async function getUsageByWorkflowRun(args: {
+  db: DB["db"];
+  tenantId: string;
+  range?: AnalyticsDateRange;
+}): Promise<WorkflowRunTokenTotalsRow[]> {
+  const { db, tenantId, range } = args;
+
+  const runByInstance = runByInstanceJoin(db, tenantId);
+
+  const rows = await db
+    .select({
+      runId: runByInstance.runId,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      runByInstance,
+      eq(runByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        range?.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range?.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(runByInstance.runId);
+
+  return rows.map((row) => ({
+    runId: row.runId,
+    turnCount: row.turnCount,
+    toolCallCount: row.toolCallCount,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens,
+    cacheWriteTokens: row.cacheWriteTokens,
+    thinkingTokens: row.thinkingTokens,
+  }));
+}
+
+/**
+ * Single-run token totals for a run detail surface (e.g. the WorkflowTracePage
+ * cost facet). Returns `null` when the run has no attributable per-run
+ * instance — either it predates the per-run-deploy model, its deployment was
+ * never indexed, no inference has landed for it yet, or (the legacy caveat
+ * documented on `getUsageByWorkflowRun`) it was an earlier serial run on a
+ * shared deployment whose usage collapsed into a later run's row instead.
+ * Callers must render this as an honest gap, never as zero usage.
+ */
+export async function getWorkflowRunTokenTotals(args: {
+  db: DB["db"];
+  tenantId: string;
+  runId: string;
+}): Promise<WorkflowRunTokenTotalsRow | null> {
+  const rows = await getUsageByWorkflowRun({
+    db: args.db,
+    tenantId: args.tenantId,
+  });
+  return rows.find((row) => row.runId === args.runId) ?? null;
+}
+
 export async function getActivityOverview(args: {
   db: DB["db"];
   tenantId: string;
   callerPrincipalId?: string | null;
   range?: AnalyticsDateRange;
+  /** models.dev rate catalog (CL-2723) — see {@link getUsageByPerson}. */
+  priceCatalog?: PriceCatalog | null;
 }): Promise<ActivityOverview> {
   const { db, tenantId } = args;
   const callerPrincipalId = args.callerPrincipalId ?? null;
   const range = args.range ?? {};
+  const priceCatalog = args.priceCatalog ?? null;
 
   const tenantArtifacts = and(
     eq(artifact.tenantId, tenantId),
@@ -431,7 +769,13 @@ export async function getActivityOverview(args: {
       .where(
         and(
           runBase,
-          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          // CL-2755: a `provisioning` run is actively executing (its deployment
+          // is cold-starting) — count it as an active execution too.
+          inArray(workflowRunRecord.status, [
+            "provisioning",
+            "running",
+            "awaiting",
+          ]),
         ),
       ),
     db
@@ -508,8 +852,8 @@ export async function getActivityOverview(args: {
       ? getAnalyticsSummary({ db, tenantId, range: previousRange })
       : Promise.resolve(null),
     getTokenDataStartDate({ db, tenantId }),
-    getUsageByPerson({ db, tenantId, callerPrincipalId, range }),
-    getUsageByWorkflowType({ db, tenantId, range }),
+    getUsageByPerson({ db, tenantId, callerPrincipalId, range, priceCatalog }),
+    getUsageByWorkflowType({ db, tenantId, range, priceCatalog }),
   ]);
 
   return {
@@ -555,6 +899,7 @@ export async function getActivityOverview(args: {
       key: row.model,
       count: row.turnCount,
     })),
+    byModel: modelRows,
     tokensRecordedFrom,
     byPerson,
     byWorkflowType,

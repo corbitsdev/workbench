@@ -1,0 +1,275 @@
+import { describe, expect, mock, test } from "bun:test";
+import type { CryptoProvider } from "@intx/types/runtime";
+import type { SessionService } from "@intx/hub-sessions";
+import type { HubDb } from "../db";
+import type { RunState } from "./run-store";
+
+// CL-2755: the async-start contract of `startWorkflowRun`. The run row is seeded
+// `provisioning` and returned BEFORE the per-run deployment cold-start; the
+// provision + trigger run on a detached `backgroundTask` the caller can await for
+// deterministic assertions. An in-memory run-store makes the row observable
+// without a DB; the provision + session deps are injected fakes.
+
+const rows = new Map<string, RunState>();
+mock.module("./run-store", () => ({
+  insertRunRecord: async (
+    _db: unknown,
+    args: {
+      runId: string;
+      deploymentId: string | null;
+      kind: string;
+      tenantId: string;
+      principalId: string;
+      input: unknown;
+      originConversationId: string | null;
+      status?: RunState["status"];
+    },
+  ) => {
+    const state: RunState = {
+      runId: args.runId,
+      kind: args.kind,
+      tenantId: args.tenantId,
+      principalId: args.principalId,
+      status: args.status ?? "running",
+      ...(args.deploymentId !== null
+        ? { deploymentId: args.deploymentId }
+        : {}),
+    };
+    rows.set(state.runId, structuredClone(state));
+    return state;
+  },
+  setRunStatus: async (
+    _db: unknown,
+    runId: string,
+    status: RunState["status"],
+  ) => {
+    const found = rows.get(runId);
+    if (found) rows.set(runId, structuredClone({ ...found, status }));
+  },
+  // CAS: fail only if still provisioning (mirrors the real predicate).
+  failRunIfStillProvisioning: async (_db: unknown, runId: string) => {
+    const found = rows.get(runId);
+    if (found && found.status === "provisioning") {
+      rows.set(runId, structuredClone({ ...found, status: "failed" }));
+      return true;
+    }
+    return false;
+  },
+  setRunDeployment: async (
+    _db: unknown,
+    runId: string,
+    deploymentId: string,
+  ) => {
+    const found = rows.get(runId);
+    if (found) rows.set(runId, structuredClone({ ...found, deploymentId }));
+  },
+  loadRunRecord: async (_db: unknown, runId: string) => {
+    const found = rows.get(runId);
+    return found ? structuredClone(found) : null;
+  },
+}));
+
+const { startWorkflowRun } = await import("./run-exec");
+
+const DEFINITION = {
+  kind: "pain-point-collateral",
+  tenantId: "tn-1",
+  deploymentId: "ses_dep1",
+  principalId: "prn-deployer",
+  createdAt: new Date(),
+};
+
+function makeDb(): HubDb {
+  // biome-ignore lint/suspicious/noExplicitAny: structural test mock
+  const db: any = {
+    query: { workflowRun: { findMany: async () => [DEFINITION] } },
+  };
+  return db as HubDb;
+}
+
+const sent: { agentAddress: string; messageId: string; content: string }[] = [];
+const sessionService = {
+  sendUserMessage: async (args: {
+    agentAddress: string;
+    messageId: string;
+    content: string;
+  }) => {
+    sent.push({
+      agentAddress: args.agentAddress,
+      messageId: args.messageId,
+      content: args.content,
+    });
+  },
+} as unknown as SessionService;
+
+const reclaimCalls: {
+  deploymentId: string;
+  tenantId: string;
+  reason: string;
+}[] = [];
+
+function baseDeps(provision: typeof provisionOk) {
+  return {
+    db: makeDb(),
+    sessionService,
+    cryptoProvider: {} as CryptoProvider,
+    deploymentDomain: "wf.localhost",
+    provisionRunDeployment: provision,
+    reclaimDeployment: async (args: {
+      deploymentId: string;
+      tenantId: string;
+      reason: string;
+    }) => {
+      reclaimCalls.push(args);
+    },
+  };
+}
+
+const provisionOk = async () => ({ deploymentId: "ses_run_1" });
+
+function reset(): void {
+  rows.clear();
+  sent.length = 0;
+  reclaimCalls.length = 0;
+}
+
+const startOpts = {
+  kind: "pain-point-collateral",
+  chain: ["tn-1"] as const,
+  principalId: "prn-1",
+  input: { topic: "Acme" },
+  originConversationId: null,
+};
+
+describe("startWorkflowRun async-start contract (CL-2755)", () => {
+  test("returns 'provisioning' BEFORE the (still-pending) provision resolves, with the row already durable and no trigger yet", async () => {
+    reset();
+    let resolveProvision: (v: { deploymentId: string }) => void = () => {};
+    const pending = new Promise<{ deploymentId: string }>((res) => {
+      resolveProvision = res;
+    });
+    let provisionCalled = false;
+    const provision = async () => {
+      provisionCalled = true;
+      return pending;
+    };
+
+    const result = await startWorkflowRun(baseDeps(provision), startOpts);
+
+    // The response resolved while the deploy is still in flight.
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.state.status).toBe("provisioning");
+    expect(result.state.deploymentId).toBeUndefined();
+    // The row exists and is durable the instant we return.
+    expect(rows.get(result.state.runId)?.status).toBe("provisioning");
+    // Provision was kicked off but has NOT resolved; the trigger has not fired.
+    expect(provisionCalled).toBe(true);
+    expect(sent).toHaveLength(0);
+
+    // Let the tail finish and confirm it then proceeds.
+    resolveProvision({ deploymentId: "ses_run_1" });
+    await result.backgroundTask;
+    expect(sent).toHaveLength(1);
+  });
+
+  test("on success the background tail fires the trigger AFTER provisioning, addressed to the provisioned deployment", async () => {
+    reset();
+    const order: string[] = [];
+    const provision = async () => {
+      order.push("provision");
+      return { deploymentId: "ses_run_1" };
+    };
+    const service = {
+      sendUserMessage: async (args: { agentAddress: string }) => {
+        order.push("trigger");
+        sent.push({
+          agentAddress: args.agentAddress,
+          messageId: "",
+          content: "",
+        });
+      },
+    } as unknown as SessionService;
+
+    const result = await startWorkflowRun(
+      { ...baseDeps(provision), sessionService: service },
+      startOpts,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    expect(order).toEqual(["provision", "trigger"]);
+    // Addressed to the freshly-provisioned per-run deployment.
+    expect(sent[0]?.agentAddress).toBe("ins_ses_run_1@wf.localhost");
+    // The deployment was attached to the run before the trigger.
+    expect(rows.get(result.state.runId)?.deploymentId).toBe("ses_run_1");
+  });
+
+  test("a provision failure flips the run to failed and fires NO trigger", async () => {
+    reset();
+    const provision = async () => {
+      throw new Error("deploy failed");
+    };
+
+    const result = await startWorkflowRun(baseDeps(provision), startOpts);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    // The response still acked provisioning — the failure is asynchronous.
+    expect(result.state.status).toBe("provisioning");
+
+    await result.backgroundTask;
+
+    // Loud, terminal failure surfaced on the record; never stuck provisioning.
+    expect(rows.get(result.state.runId)?.status).toBe("failed");
+    expect(sent).toHaveLength(0);
+  });
+
+  test("a provision that resolves AFTER the run was already failed (deadline race) does NOT attach a deployment, does NOT fire the trigger, and reclaims the orphaned deployment (CL-2755 MAJOR-1)", async () => {
+    reset();
+    let resolveProvision: (v: { deploymentId: string }) => void = () => {};
+    const pending = new Promise<{ deploymentId: string }>((res) => {
+      resolveProvision = res;
+    });
+    const provision = async () => pending;
+
+    const deps = baseDeps(provision);
+    const result = await startWorkflowRun(deps, startOpts);
+    if (!result.ok) throw new Error("unreachable");
+    const runId = result.state.runId;
+
+    // Simulate the hard deadline / a concurrent fail winning the race while the
+    // provision is still in flight: the run is already `failed`.
+    rows.set(runId, structuredClone({ ...rows.get(runId)!, status: "failed" }));
+
+    // NOW the slow provision finally resolves — the abandoned tail must bail.
+    resolveProvision({ deploymentId: "ses_run_1" });
+    await result.backgroundTask;
+
+    // No deployment attached behind the failed record, and no trigger fired.
+    expect(rows.get(runId)?.deploymentId).toBeUndefined();
+    expect(rows.get(runId)?.status).toBe("failed");
+    expect(sent).toHaveLength(0);
+    // The minted-but-abandoned deployment is reclaimed so it never runs behind
+    // the failed record (a phantom run).
+    expect(reclaimCalls).toHaveLength(1);
+    expect(reclaimCalls[0]?.deploymentId).toBe("ses_run_1");
+    expect(reclaimCalls[0]?.tenantId).toBe("tn-1");
+  });
+
+  test("returns 404 without seeding a row when no workflow of the kind is deployed", async () => {
+    reset();
+    // biome-ignore lint/suspicious/noExplicitAny: structural test mock
+    const db: any = {
+      query: { workflowRun: { findMany: async () => [] } },
+    };
+    const result = await startWorkflowRun(
+      { ...baseDeps(provisionOk), db: db as HubDb },
+      startOpts,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.status).toBe(404);
+    expect(rows.size).toBe(0);
+  });
+});

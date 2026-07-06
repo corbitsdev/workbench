@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   customType,
+  index,
   integer,
   jsonb,
   pgTable,
@@ -13,7 +14,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { feedbackSubjectKinds } from "@workbench/shared";
+import { adminAuditActions, feedbackSubjectKinds } from "@workbench/shared";
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -149,6 +150,11 @@ export const workflowRun = pgTable("workflow_run", {
 // from the `workflow_run` deployment-index table, which the native-deploy path
 // still owns.
 export const workflowRunStateStatus = [
+  // CL-2755: the initial state of a run whose per-run deployment is still being
+  // provisioned off the /start critical path. Non-terminal; the projection
+  // bridge folds it to `running` on the first RunStarted event, or the start
+  // tail flips it to `failed` if provisioning/trigger fails.
+  "provisioning",
   "running",
   "awaiting",
   "completed",
@@ -165,6 +171,9 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
     .notNull()
     .default("running"),
   input: jsonb("input").$type<unknown>(),
+  // The conversation the run was started from (CL-2677); null for
+  // direct-started runs with no chat context.
+  originConversationId: text("origin_conversation_id"),
   // Run-level wall-clock timing, written by the projection bridge from the
   // log's RunStarted / terminal events (CL-2669). Not the per-step timing —
   // that stays in the log.
@@ -179,6 +188,55 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
 });
 
 export type WorkflowRunRecordRow = typeof workflowRunRecord.$inferSelect;
+
+// CL-2727: per-step run state PROJECTION. Where `workflow_run_record` carries a
+// run's coarse run-level status, this table mirrors the AUTHORITATIVE per-step
+// state the native `@intx/workflow` state machine computes as it folds the run's
+// event log (`run-state-from-log.ts` → `resumeFromLog`): one row per (run, step)
+// with the step's phase, attempt count, and wall-clock timing. Written UPDATE-OR-
+// INSERT by the projection bridge on every pack (idempotent — the full log folds
+// to the same state), so the hub can serve per-step state + aggregate stats
+// without re-reading the git log on every request. NOT a re-invented fold: the
+// values come straight from the native RunState. Workbench-owned; distinct from
+// both `workflow_run` (deployment index) and `workflow_run_record` (run index).
+export const workflowRunStepPhases = [
+  "in-flight",
+  "awaiting-signal",
+  "awaiting-timer",
+  "completed",
+  "failed",
+  "cancelled",
+] as const;
+
+export const workflowRunStep = pgTable(
+  "workflow_run_step",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    // The owning run (`workflow_run_record.id`, a text run id). Not a DB foreign
+    // key — the projection bridge upserts steps for whatever run its log names,
+    // and the record row is seeded independently at /start.
+    runId: text("run_id").notNull(),
+    stepId: text("step_id").notNull(),
+    phase: text("phase", { enum: workflowRunStepPhases }).notNull(),
+    // The native StepState.currentAttempt (1-based once a step has started).
+    attempts: integer("attempts").notNull().default(0),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    runStepUniq: unique("workflow_run_step_run_step_uniq").on(
+      t.runId,
+      t.stepId,
+    ),
+  }),
+);
+
+export type WorkflowRunStepRow = typeof workflowRunStep.$inferSelect;
 
 // A first-class output of any workflow or agent. `kind` is free-form text
 // (validated at the application edge, not a pg enum, so kinds can grow without
@@ -427,6 +485,32 @@ export const outputFeedback = pgTable(
 );
 
 export type OutputFeedbackRow = typeof outputFeedback.$inferSelect;
+
+// ─── Admin audit (CL-2735) ─────────────────────────────────────────
+//
+// Compliance record of cross-principal activity reads and admin grant/role
+// mutations. Workbench-owned; principal ids referenced by value only.
+export const adminAudit = pgTable(
+  "admin_audit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    action: text("action", { enum: adminAuditActions }).notNull(),
+    actorPrincipalId: text("actor_principal_id").notNull(),
+    targetPrincipalId: text("target_principal_id"),
+    resource: text("resource"),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    adminAuditTenantCreatedIdx: index("admin_audit_tenant_created_idx").on(
+      t.tenantId,
+      t.createdAt,
+    ),
+  }),
+);
+
+export type AdminAuditRow = typeof adminAudit.$inferSelect;
 
 export {
   analyticsEvent,

@@ -21,7 +21,6 @@ let runsResult: {
 let lastRunsTenantId: string | null | undefined;
 let activeTenantId: string | null = "ten-1";
 
-let lastStartKind: string | null = null;
 let lastArchivedRunId: string | null = null;
 let archiveShouldReject = false;
 mock.module("../hooks/use-workflow", () => ({
@@ -32,10 +31,8 @@ mock.module("../hooks/use-workflow", () => ({
   useStartWorkflow: () => ({
     isPending: false,
     variables: undefined,
-    mutateAsync: (vars: { kind: string }) => {
-      lastStartKind = vars.kind;
-      return Promise.resolve({ runId: "run-started" });
-    },
+    mutateAsync: (_vars: { kind: string }) =>
+      Promise.resolve({ runId: "run-started" }),
   }),
   useArchiveWorkflowRun: () => ({
     isPending: false,
@@ -138,7 +135,6 @@ afterEach(() => {
   lastPaneTenantId = undefined;
   lastCatalogProps = null;
   lastCatalogSurfaceProps = null;
-  lastStartKind = null;
   lastArchivedRunId = null;
   archiveShouldReject = false;
 });
@@ -612,7 +608,7 @@ describe("WorkflowsPage", () => {
     expect(router.state.location.pathname).toBe("/workflows/run-active");
   });
 
-  it("renders the workflows launcher sidebar (not a second run list) + a view-all-runs link", () => {
+  it("renders a view-all-runs link on the dashboard", () => {
     runsResult = {
       data: [
         {
@@ -627,34 +623,7 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
-    // The rail owns the run list; the dashboard sidebar is a kind launcher.
-    screen.getByText("Your workflows");
     screen.getByRole("button", { name: "View all runs" });
-  });
-
-  it("starts a kind directly from the launcher Run button (no catalog dialog)", async () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    const { router } = renderWorkflowsPage();
-
-    fireEvent.click(screen.getByRole("button", { name: "Run" }));
-    expect(lastStartKind).toBe("deck-build");
-    // It started directly — the catalog dialog did not open.
-    expect(lastCatalogProps?.open).toBe(false);
-
-    await Promise.resolve();
-    expect(router.state.location.pathname).toBe("/workflows/run-started");
   });
 
   it("pivots to a New-run empty state when there are zero runs", () => {
@@ -670,33 +639,5 @@ describe("WorkflowsPage", () => {
     // Exactly one visible New-run CTA (the welcome button); the collapsed rail's
     // New-run is aria-hidden, so the landing has no competing/duplicate button.
     screen.getByRole("button", { name: /new run/i });
-  });
-
-  it("favoriting a kind persists to localStorage and toggles aria-pressed", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    const star = screen.getByLabelText("Favorite Deck build");
-    expect(star.getAttribute("aria-pressed")).toBe("false");
-
-    fireEvent.click(star);
-
-    expect(localStorage.getItem("workflow-favorite-kinds")).toBe(
-      JSON.stringify(["deck-build"]),
-    );
-    expect(
-      screen.getAllByLabelText("Remove from favorites").length,
-    ).toBeGreaterThan(0);
   });
 });

@@ -20,9 +20,13 @@ import {
   type ChatMessage,
   type ChatActivity,
   type ToolCall,
+  type UIBlock,
+  type UIResponse,
 } from "@workbench/chat";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
+import { createArtifact } from "@workbench/client";
 import { type AgentActivity } from "@intx/hub-client";
+import { clientOptions } from "../lib/client-options";
 import {
   getOutputFeedback,
   launchInstanceSession,
@@ -46,6 +50,21 @@ import {
 // eventually surfaces a retryable error instead of spinning forever.
 const DEFAULT_RETRY_DELAY_MS = 4000;
 const MAX_TRANSIENT_RETRIES = 8;
+
+type DocumentBlock = Extract<UIBlock, { kind: "document" }>;
+
+function downloadMarkdown(title: string, source: string): void {
+  const safeName = title.trim().replace(/[\\/:*?"<>|]/gu, "-");
+  const blob = new Blob([source], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${safeName === "" ? "document" : safeName}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
 
 type SessionState =
   | { phase: "loading" }
@@ -130,6 +149,60 @@ export function AgentChat({
         (prev) => upsertRating(prev, { subjectId, subjectKind, rating }),
       );
     },
+  });
+
+  // Feedback line for document block actions (copy / save-artifact).
+  // Successes auto-dismiss; failures stay until the user dismisses them or a
+  // subsequent action replaces them — an auto-dismissing error can vanish
+  // before the user has read it.
+  const [actionNotice, setActionNotice] = useState<{
+    text: string;
+    variant: "success" | "failure";
+  } | null>(null);
+  const noticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashActionNotice = useCallback(
+    (text: string, variant: "success" | "failure" = "success") => {
+      setActionNotice({ text, variant });
+      if (noticeTimerRef.current !== null) {
+        clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = null;
+      }
+      if (variant === "success") {
+        noticeTimerRef.current = setTimeout(() => setActionNotice(null), 4000);
+      }
+    },
+    [],
+  );
+  const dismissActionNotice = useCallback(() => {
+    if (noticeTimerRef.current !== null) {
+      clearTimeout(noticeTimerRef.current);
+      noticeTimerRef.current = null;
+    }
+    setActionNotice(null);
+  }, []);
+  useEffect(
+    () => () => {
+      if (noticeTimerRef.current !== null) clearTimeout(noticeTimerRef.current);
+    },
+    [],
+  );
+
+  const { mutate: saveDocumentArtifact } = useMutation({
+    mutationFn: (block: DocumentBlock) =>
+      createArtifact(clientOptions, {
+        tenantId,
+        mode: "text",
+        title: block.title,
+        content: block.source,
+        generatedBy: agentName,
+      }),
+    onSuccess: (artifact) =>
+      flashActionNotice(`Saved "${artifact.title}" to artifacts.`),
+    onError: () =>
+      flashActionNotice(
+        "Couldn't save to artifacts. Please try again.",
+        "failure",
+      ),
   });
 
   const { mutate: launch, status: launchStatus } = useMutation({
@@ -405,16 +478,59 @@ export function AgentChat({
 
   const activity: ChatActivity | null = toChatActivity(session.activity);
 
+  const sendText = (text: string) => {
+    void session.sendMail(text).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setSessionState({ phase: "error", message });
+    });
+  };
+
+  const handleBlockAction = (
+    action: "copy" | "download" | "save-artifact",
+    block: UIBlock,
+  ) => {
+    if (block.kind !== "document") return;
+    if (action === "copy") {
+      void navigator.clipboard
+        .writeText(block.source)
+        .then(() => flashActionNotice("Copied to clipboard."))
+        .catch(() =>
+          flashActionNotice("Couldn't copy to clipboard.", "failure"),
+        );
+      return;
+    }
+    if (action === "download") {
+      downloadMarkdown(block.title, block.source);
+      return;
+    }
+    saveDocumentArtifact(block);
+  };
+
   return (
     <ChatPanel
       agent={identity}
       messages={messages}
-      onSend={(text) => {
-        void session.sendMail(text).catch((err: unknown) => {
-          const message = err instanceof Error ? err.message : String(err);
-          setSessionState({ phase: "error", message });
-        });
-      }}
+      onSend={sendText}
+      onRespond={(response: UIResponse) => sendText(response.value)}
+      onAction={handleBlockAction}
+      {...(actionNotice !== null
+        ? {
+            notice: (
+              <span className="flex items-center gap-2 text-[13px] text-text-2">
+                <span className="min-w-0 flex-1">{actionNotice.text}</span>
+                {actionNotice.variant === "failure" && (
+                  <button
+                    type="button"
+                    onClick={dismissActionNotice}
+                    className="shrink-0 rounded-md px-2 py-0.5 text-xs text-text-2 underline hover:text-text cursor-pointer"
+                  >
+                    Dismiss
+                  </button>
+                )}
+              </span>
+            ),
+          }
+        : {})}
       activity={activity}
       onClose={onClose}
       onRate={(subjectId, subjectKind, rating) =>

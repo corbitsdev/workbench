@@ -8,6 +8,7 @@ import {
   dateFilter,
   dedupe,
   entityExtract,
+  normalizeIntake,
   qualityFilter,
   ResearchItem,
   SkippedSource,
@@ -391,12 +392,6 @@ function parseGroundedQueries(
   return queries;
 }
 
-function readNonEmptyString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : undefined;
-}
-
 // Returns object `content` (not a JSON string) so each source step can select
 // its tailored query by field: `steps.groundQueries.output.content.<source>`.
 function createGroundQueriesTool(): AgentTool {
@@ -405,13 +400,14 @@ function createGroundQueriesTool(): AgentTool {
     definition: LAST30DAYS_GROUND_QUERIES_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
-      const baseQuery =
-        readNonEmptyString(args.query) ?? readNonEmptyString(args.topic);
-      if (baseQuery === undefined) {
-        throw new Error(
-          "last30days_ground_queries requires a non-empty query or topic",
-        );
-      }
+      // The block form emits `{ topic, focus }` verbatim (CL-2765); normalizeIntake
+      // is the single place that derives `query = query || focus || topic`, so the
+      // per-source fallback query still honors the human's focus rather than
+      // collapsing to the bare topic.
+      const baseQuery = readBaseQuery(
+        args,
+        "last30days_ground_queries requires a non-empty query or topic",
+      );
       return {
         callId: call.id,
         content: parseGroundedQueries(args.reply, baseQuery),
@@ -427,6 +423,20 @@ interface CollectedItems {
   skippedSources: SkippedSource[];
 }
 
+// Derive the per-source fallback query from a step's merged args (intake fields
+// + the grounding/entity reply), routing through the ONE normalizeIntake
+// derivation so `query = query || focus || topic` (CL-2765).
+function readBaseQuery(
+  args: Record<string, unknown>,
+  emptyMessage: string,
+): string {
+  try {
+    return normalizeIntake(args).query;
+  } catch {
+    throw new Error(emptyMessage);
+  }
+}
+
 function readIntakeTopicDays(steps: Record<string, unknown>): {
   topic: string;
   days: number;
@@ -435,17 +445,7 @@ function readIntakeTopicDays(steps: Record<string, unknown>): {
     isRecord(steps.intake) && isRecord(steps.intake.output)
       ? steps.intake.output
       : {};
-  const topic =
-    typeof intake.topic === "string" && intake.topic.trim().length > 0
-      ? intake.topic
-      : undefined;
-  if (topic === undefined) {
-    throw new Error("workflow intake output must include topic");
-  }
-  const days =
-    typeof intake.days === "number" && Number.isFinite(intake.days)
-      ? intake.days
-      : 30;
+  const { topic, days } = normalizeIntake(intake);
   return { topic, days };
 }
 
@@ -515,13 +515,10 @@ function createEntityQueriesTool(): AgentTool {
     definition: LAST30DAYS_ENTITY_QUERIES_DEFINITION,
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
-      const baseQuery =
-        readNonEmptyString(args.query) ?? readNonEmptyString(args.topic);
-      if (baseQuery === undefined) {
-        throw new Error(
-          "last30days_entity_queries requires a non-empty query or topic",
-        );
-      }
+      const baseQuery = readBaseQuery(
+        args,
+        "last30days_entity_queries requires a non-empty query or topic",
+      );
       return {
         callId: call.id,
         content: parseEntityQueries(args.reply, baseQuery),

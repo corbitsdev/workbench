@@ -5,6 +5,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   liveStatusLabel,
@@ -13,6 +14,16 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
+import {
+  parseAnalyze,
+  parseFetchedNote,
+  parseGeneratedPieces,
+  parseNoteList,
+  parsePersistOutput,
+  PpSelectionOutput,
+  type GeneratedPiece,
+  type PainPoint,
+} from "./parse";
 
 // -------------------------------------------------------------------------
 // Step configuration
@@ -56,195 +67,6 @@ const DISPLAY_STEPS: DisplayStep[] = [
 ];
 
 type StepPhase = NonNullable<ReturnType<RunState["steps"]["get"]>>["phase"];
-
-// -------------------------------------------------------------------------
-// Arktype schemas — parse every untrusted stepOutput
-// -------------------------------------------------------------------------
-
-const ToolResultEnvelope = type({ content: "string" });
-
-const GranolaNote = type({
-  id: "string",
-  "title?": "string | null",
-  "created_at?": "string",
-  "summary?": "string",
-});
-type GranolaNote = typeof GranolaNote.infer;
-
-const GranolaListContent = type({ notes: GranolaNote.array() });
-
-const GranolaNoteDetail = type({
-  "id?": "string",
-  "title?": "string | null",
-  "summary?": "string",
-  "transcript?": "string",
-});
-
-const PainPoint = type({
-  id: "string",
-  title: "string",
-  detail: "string",
-  "severity?": "'low' | 'medium' | 'high' | 'critical'",
-});
-type PainPoint = typeof PainPoint.infer;
-
-const AnalyzeOutput = type({ painPoints: PainPoint.array() });
-
-const GeneratedPiece = type({
-  format: "string",
-  title: "string",
-  content: "string",
-});
-type GeneratedPiece = typeof GeneratedPiece.infer;
-
-const AgentReplyEnvelope = type({ reply: "string" });
-
-const ReviewDecision = type({
-  format: "string",
-  title: "string",
-  content: "string",
-  approved: "boolean",
-});
-
-const ApprovedPiece = type({
-  format: "string",
-  title: "string",
-  content: "string",
-});
-
-const PersistOutput = type({
-  decisions: ReviewDecision.array(),
-  "approvedPieces?": ApprovedPiece.array(),
-});
-
-const PpSelectionOutput = type({ selectedIds: "string[]" });
-
-// -------------------------------------------------------------------------
-// Output parsing helpers
-// -------------------------------------------------------------------------
-
-type Decoded<T> =
-  | { status: "pending" }
-  | { status: "malformed" }
-  | { status: "ok"; value: T };
-
-function decodeToolEnvelope(
-  raw: unknown,
-):
-  | { status: "pending" }
-  | { status: "malformed" }
-  | { status: "ok"; value: unknown } {
-  const envelope = ToolResultEnvelope(raw);
-  if (envelope instanceof type.errors) return { status: "pending" };
-  try {
-    return { status: "ok", value: JSON.parse(envelope.content) };
-  } catch {
-    return { status: "malformed" };
-  }
-}
-
-function parseNoteList(raw: unknown): Decoded<GranolaNote[]> {
-  const decoded = decodeToolEnvelope(raw);
-  if (decoded.status !== "ok") return decoded;
-  const parsed = GranolaListContent(decoded.value);
-  if (parsed instanceof type.errors) return { status: "malformed" };
-  return { status: "ok", value: parsed.notes };
-}
-
-function parseFetchedNote(
-  raw: unknown,
-): Decoded<typeof GranolaNoteDetail.infer> {
-  const decoded = decodeToolEnvelope(raw);
-  if (decoded.status !== "ok") return decoded;
-  const parsed = GranolaNoteDetail(decoded.value);
-  if (parsed instanceof type.errors) return { status: "malformed" };
-  return { status: "ok", value: parsed };
-}
-
-function stripCodeFence(text: string): string {
-  const fenced = text.match(/^(```|~~~)[^\n]*\n([\s\S]*?)\n?\1\s*$/);
-  return fenced?.[2]?.trim() ?? text;
-}
-
-function extractFirstJsonValue(text: string): string | null {
-  const start = text.search(/[{[]/);
-  if (start === -1) return null;
-  const open = text[start]!;
-  const close = open === "{" ? "}" : "]";
-  let depth = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = start; i < text.length; i += 1) {
-    const ch = text[i]!;
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === "\\") escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === open) depth += 1;
-    else if (ch === close) {
-      depth -= 1;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-  }
-  return null;
-}
-
-function parseAgentJson(
-  reply: string,
-):
-  | { status: "pending" }
-  | { status: "malformed" }
-  | { status: "ok"; value: unknown } {
-  const trimmed = reply.trim();
-  if (trimmed === "") return { status: "pending" };
-
-  const unfenced = stripCodeFence(trimmed);
-  const jsonText = extractFirstJsonValue(unfenced) ?? unfenced;
-
-  try {
-    return { status: "ok", value: JSON.parse(jsonText) };
-  } catch {
-    return { status: "malformed" };
-  }
-}
-
-function parseAnalyze(raw: unknown): Decoded<PainPoint[]> {
-  // Agent step: output is { reply: string } — parse JSON from reply
-  const envelope = AgentReplyEnvelope(raw);
-  if (envelope instanceof type.errors) return { status: "pending" };
-  const decoded = parseAgentJson(envelope.reply);
-  if (decoded.status !== "ok") return decoded;
-  const parsed = AnalyzeOutput(decoded.value);
-  if (parsed instanceof type.errors) return { status: "malformed" };
-  return { status: "ok", value: parsed.painPoints };
-}
-
-function parseGeneratedPieces(raw: unknown): Decoded<GeneratedPiece[]> {
-  // map step output is Array<{reply: string, turn: unknown}>, one entry per (pain point × format) item
-  if (!Array.isArray(raw)) return { status: "pending" };
-  if (raw.length === 0) return { status: "pending" };
-  const pieces: GeneratedPiece[] = [];
-  for (const item of raw) {
-    const envelope = AgentReplyEnvelope(item);
-    if (envelope instanceof type.errors) continue;
-    const decoded = parseAgentJson(envelope.reply);
-    if (decoded.status !== "ok") continue;
-    const parsed = GeneratedPiece(decoded.value);
-    if (parsed instanceof type.errors) continue;
-    pieces.push(parsed);
-  }
-  if (pieces.length === 0) return { status: "malformed" };
-  return { status: "ok", value: pieces };
-}
-
-function parsePersistOutput(raw: unknown): Decoded<typeof PersistOutput.infer> {
-  const parsed = PersistOutput(raw);
-  if (parsed instanceof type.errors) return { status: "pending" };
-  return { status: "ok", value: parsed };
-}
 
 // -------------------------------------------------------------------------
 // Phase / stepper helpers
@@ -1078,7 +900,7 @@ export function Panel(props: WorkflowPanelProps) {
   const liveLabel = failed ? null : liveStatusLabel(state, DISPLAY_STEPS);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-panel border border-border bg-bg">
+    <div className="flex h-full flex-col overflow-hidden bg-bg">
       {/* Header */}
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
         <div className="min-w-0">
@@ -1113,14 +935,11 @@ export function Panel(props: WorkflowPanelProps) {
       {/* Body — renders ONLY the active display group */}
       <div className="flex-1 space-y-4 overflow-y-auto p-5">
         {failed && (
-          <div className="rounded-[10px] border border-orange/40 bg-orange/5 px-4 py-3">
-            <p className="text-[13px] font-medium text-orange">
-              This run failed.
-            </p>
-            <p className="mt-1 text-[12px] text-text-3">
-              Review the step details and start a new run.
-            </p>
-          </div>
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         )}
 
         {/* Group 0 — Transcript: intake → select (note-selection signal) → fetch */}

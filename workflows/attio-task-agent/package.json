@@ -11,6 +11,10 @@
     "./ui": {
       "types": "./src/ui.tsx",
       "default": "./src/ui.tsx"
+    },
+    "./blocks": {
+      "types": "./src/blocks.ts",
+      "default": "./src/blocks.ts"
     }
   },
   "scripts": {
@@ -22,6 +26,7 @@
     "@intx/agent": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@workbench/agents": "workspace:*",
+    "@workbench/blocks": "workspace:*",
     "@workbench/shared": "workspace:*",
     "@workbench/ui": "workspace:*",
     "arktype": "catalog:"

@@ -236,14 +236,42 @@ export type ProposedTaskUpdate = typeof ProposedTaskUpdateSchema.infer;
 // HITL signal payloads (resume-boundary contracts)
 // ---------------------------------------------------------------------------
 
-// The sync-approval gate confirms (or skips) the Attio write-back. `confirm` is
-// required; the record/task locators and note are present only on a confirm.
+// The member-selection gate picks whose Attio tasks to work. The resume payload
+// carries the chosen assignee (an email or workspace_member_id); both the
+// fallback panel and the dock choice block POST this exact shape (CL-2731).
+export const MemberSelectionPayloadSchema = type({ assignee: "string > 0" });
+export type MemberSelectionPayload = typeof MemberSelectionPayloadSchema.infer;
+
+// The task-selection gate picks the task to work. Resume payload carries the
+// selected Attio task id — the panel and the dock choice block agree on it.
+export const TaskSelectionPayloadSchema = type({ taskId: "string > 0" });
+export type TaskSelectionPayload = typeof TaskSelectionPayloadSchema.infer;
+
+// The clarification gate folds the human's free-text answer into `answers`
+// (optional — an empty continue is valid; the planner proceeds best-effort). The
+// dock prompt-box folds its text under this key; the panel posts the same shape.
+export const ClarificationPayloadSchema = type({ "answers?": "string" });
+export type ClarificationPayload = typeof ClarificationPayloadSchema.infer;
+
+// The sync-approval gate confirms (or skips) the DESTRUCTIVE Attio write-back.
+// This is a two-branch contract so a confirm can never fire a hollow write
+// (CL-2684): a SKIP is `{ confirm: false }` and nothing else is needed; a
+// CONFIRM (`confirm: true`) REQUIRES the full write locators — the record the
+// note attaches to (`parentObject` + `parentRecordId`), the `taskId` to
+// complete, and a non-empty `note` — so a confirm with any locator or the note
+// missing is rejected at the /resume boundary rather than reaching
+// attio_create_note / attio_update_task and writing nothing (or the wrong
+// thing). The run-page panel assembles the locators from prior step state and
+// gates the note; the dock's block path carries the same locators in the
+// confirm option's payload and gates the note with a required prompt-box.
 export const SyncApprovalPayloadSchema = type({
-  confirm: "boolean",
-  "taskId?": "string",
-  "parentObject?": "string",
-  "parentRecordId?": "string",
-  "note?": "string",
+  confirm: "false",
+}).or({
+  confirm: "true",
+  taskId: "string > 0",
+  parentObject: "string > 0",
+  parentRecordId: "string > 0",
+  note: "string >= 1",
 });
 export type SyncApprovalPayload = typeof SyncApprovalPayloadSchema.infer;
 

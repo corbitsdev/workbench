@@ -231,4 +231,21 @@ describe("SyncApprovalPayloadSchema", () => {
     const out = SyncApprovalPayloadSchema({ confirm: "yes" });
     expect(out instanceof type.errors).toBe(true);
   });
+
+  it("rejects a confirm=true missing the write locators (CL-2684)", () => {
+    // A destructive confirm must carry the full locators; a bare confirm would
+    // fire attio_create_note against nothing.
+    expect(
+      SyncApprovalPayloadSchema({ confirm: true }) instanceof type.errors,
+    ).toBe(true);
+    expect(
+      SyncApprovalPayloadSchema({
+        confirm: true,
+        taskId: "task_1",
+        parentObject: "companies",
+        parentRecordId: "rec_1",
+        note: "",
+      }) instanceof type.errors,
+    ).toBe(true);
+  });
 });

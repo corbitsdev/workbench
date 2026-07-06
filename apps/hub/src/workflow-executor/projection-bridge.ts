@@ -10,7 +10,8 @@ import type {
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
-import { applyRunProjection, loadRunRecord } from "./run-store";
+import { applyRunProjection, loadRunRecord, upsertRunSteps } from "./run-store";
+import { projectRunStateFromLog } from "./run-state-from-log";
 import { becameTerminal } from "./run-status";
 import { WorkflowMeta } from "../lib/workflow-meta";
 
@@ -96,7 +97,15 @@ function describeFailure(
   return runMessage ?? "workflow run failed";
 }
 
-type RunRecordStatus = "running" | "awaiting" | "completed" | "failed";
+// The fold never PRODUCES `provisioning` (it is the pre-deployment seed status,
+// CL-2755) — but a run's EXISTING status can be `provisioning` when the first
+// pack arrives, so the previous-status parameters below must admit it.
+type RunRecordStatus =
+  | "provisioning"
+  | "running"
+  | "awaiting"
+  | "completed"
+  | "failed";
 
 export function isNewWorkflowRunFailure(
   previousStatus: RunRecordStatus,
@@ -393,6 +402,22 @@ export async function projectWorkflowRunRepo(
         ? { endedAt: projected.endedAt }
         : {}),
     });
+
+    // Per-step projection (CL-2727): fold the SAME log through the native
+    // `@intx/workflow` state machine and mirror the per-step phase/attempts/
+    // timing into `workflow_run_step`. Additive to the run-level status write
+    // above — the coarse `status` fold is unchanged. Best-effort per run: a
+    // per-step projection failure must not block the run-level index write or
+    // the terminal-transition callbacks below.
+    try {
+      const stepState = await projectRunStateFromLog(repoStore, repoId, runId);
+      await upsertRunSteps(db, runId, stepState.steps);
+    } catch (err) {
+      log.warn("per-step projection failed", {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     // Project the run's analytics facts on the first non-terminal → terminal
     // transition (CL-2670), decoupled from reclaim: it fires whether or not the

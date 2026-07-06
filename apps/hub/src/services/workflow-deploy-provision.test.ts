@@ -79,6 +79,17 @@ mock.module("./workflow-deploy-config", () => ({
   },
 }));
 
+// readWorkflowDefinition reads its cache TTL from getConfig(); apps/hub tests do
+// not preload test-setup/loadConfig, so stub the one field it touches.
+mock.module("../config", () => ({
+  getConfig: () => ({
+    workflowDeploy: {
+      modelSourceCacheTtlMs: 45_000,
+      definitionCacheTtlMs: 45_000,
+    },
+  }),
+}));
+
 const { createWorkflowDeployService } = await import("./workflow-deploy");
 
 describe("provisionRunDeployment (per-run deployment, CL-2582)", () => {

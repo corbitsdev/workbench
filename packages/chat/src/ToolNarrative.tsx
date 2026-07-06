@@ -2,8 +2,12 @@ import { useState, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ToolCall } from "./types";
-import { parseToolResult, type UIBlock, type UIResponse } from "./ui-block";
-import { UIBlockView } from "./UIBlockView";
+import {
+  parseToolResult,
+  UIBlockView,
+  type UIBlock,
+  type UIResponse,
+} from "@workbench/blocks";
 
 function DoneIcon({ isError }: { isError?: boolean }) {
   return (

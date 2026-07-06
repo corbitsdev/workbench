@@ -9,7 +9,6 @@ import { WorkflowsDashboard } from "../components/WorkflowsDashboard";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import {
   useArchiveWorkflowRun,
-  useStartWorkflow,
   useWorkflowRuns,
   type WorkflowRun,
 } from "../hooks/use-workflow";
@@ -29,6 +28,7 @@ const HOVER_CLOSE_DELAY_MS = 260;
 
 const STATUS_FILTER_OPTIONS: { value: RunStatusFilter; label: string }[] = [
   { value: "all", label: "All" },
+  { value: "provisioning", label: "Starting" },
   { value: "running", label: "Running" },
   { value: "awaiting", label: "Awaiting" },
   { value: "completed", label: "Completed" },
@@ -339,18 +339,6 @@ export function WorkflowsPage() {
     }
   };
 
-  const startWorkflow = useStartWorkflow(activeTenantId);
-  const startingKind = startWorkflow.isPending
-    ? (startWorkflow.variables?.kind ?? null)
-    : null;
-  const handleRunKind = (kind: string) => {
-    if (startWorkflow.isPending) return;
-    startWorkflow
-      .mutateAsync({ kind, input: {} })
-      .then((res) => navigate(`/workflows/${res.runId}`))
-      .catch(() => setCatalogOpen(true));
-  };
-
   const allRuns = runs ?? [];
   const selectedRunMissing =
     selectedRunId !== null &&
@@ -633,8 +621,6 @@ export function WorkflowsPage() {
             selectedRunMissing={selectedRunMissing}
             onSelectRun={(runId) => navigate(`/workflows/${runId}`)}
             onNewRun={() => setCatalogOpen(true)}
-            onRunKind={handleRunKind}
-            startingKind={startingKind}
             onFilterStatus={(status) => {
               setFilters((f) => ({ ...f, status }));
               setPinned(true);

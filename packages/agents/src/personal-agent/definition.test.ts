@@ -44,6 +44,11 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
   });
 
+  it("grants the dynamic catalog tools", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("search_tools");
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("load_tools");
+  });
+
   it("no longer carries POSIX filesystem tools", () => {
     for (const posix of [
       "read_file",

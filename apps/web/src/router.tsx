@@ -4,6 +4,7 @@ import {
   Navigate,
   Outlet,
   useLocation,
+  useParams,
 } from "react-router";
 import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
@@ -28,6 +29,22 @@ import { ToolsLibrary } from "./pages/ToolsLibrary";
 import { ToolDetail } from "./pages/ToolDetail";
 import { SettingsToolDetail } from "./pages/SettingsToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
+import { ActorDetailPage } from "./pages/insights/ActorDetailPage";
+import { WorkflowTracePage } from "./pages/insights/WorkflowTracePage";
+import { AdminLayout } from "./pages/admin/AdminLayout";
+import { AdminPrincipals } from "./pages/admin/AdminPrincipals";
+import { PrincipalDetail } from "./pages/admin/PrincipalDetail";
+import { AdminDefinitions } from "./pages/admin/AdminDefinitions";
+import { DefinitionDetail } from "./pages/admin/DefinitionDetail";
+import { AdminAudit } from "./pages/admin/AdminAudit";
+import { RequireAdmin } from "./pages/admin/RequireAdmin";
+
+// Preserves the tool name when redirecting the legacy /tools/:name path to its
+// new home under /admin.
+function RedirectToAdminTool() {
+  const { name } = useParams();
+  return <Navigate to={`/admin/tools/${name ?? ""}`} replace />;
+}
 
 // Static navigation commands for the command palette, kept beside the route
 // table so a new top-level route adds its palette entry in the same place. Each
@@ -65,8 +82,15 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     id: "nav:tools",
     category: "navigation",
     title: "Tools",
-    to: "/tools",
-    keywords: ["integrations", "providers", "library"],
+    to: "/admin/tools",
+    keywords: ["integrations", "providers", "library", "admin"],
+  },
+  {
+    id: "nav:admin",
+    category: "navigation",
+    title: "Admin",
+    to: "/admin",
+    keywords: ["governance", "grants", "roles", "principals", "audit"],
   },
   {
     id: "nav:insights",
@@ -177,9 +201,46 @@ export const router = createBrowserRouter([
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
           { path: "/skills/:id", element: <SkillDetail /> },
-          { path: "/tools", element: <ToolsLibrary /> },
-          { path: "/tools/:name", element: <ToolDetail /> },
+          // Tools moved under Admin (CL-2719). Old paths redirect.
+          { path: "/tools", element: <Navigate to="/admin/tools" replace /> },
+          { path: "/tools/:name", element: <RedirectToAdminTool /> },
+          {
+            path: "/admin/tools",
+            element: (
+              <RequireAdmin>
+                <ToolsLibrary />
+              </RequireAdmin>
+            ),
+          },
+          {
+            path: "/admin/tools/:name",
+            element: (
+              <RequireAdmin>
+                <ToolDetail />
+              </RequireAdmin>
+            ),
+          },
+          {
+            path: "/admin",
+            element: <AdminLayout />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/admin/principals" replace />,
+              },
+              { path: "principals", element: <AdminPrincipals /> },
+              { path: "principals/:id", element: <PrincipalDetail /> },
+              { path: "definitions", element: <AdminDefinitions /> },
+              { path: "definitions/:key", element: <DefinitionDetail /> },
+              { path: "audit", element: <AdminAudit /> },
+            ],
+          },
           { path: "/insights", element: <InsightsDashboard /> },
+          { path: "/insights/users/:id", element: <ActorDetailPage /> },
+          {
+            path: "/insights/trace/:runId",
+            element: <WorkflowTracePage />,
+          },
         ],
       },
     ],

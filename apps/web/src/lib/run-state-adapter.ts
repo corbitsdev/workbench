@@ -8,7 +8,10 @@ import type { RunPhase, RunState, StepState } from "@intx/workflow";
 export interface RunRecord {
   runId: string;
   kind: string;
-  status: "running" | "awaiting" | "completed" | "failed";
+  // `provisioning` (CL-2755): the run's per-run deployment is still cold-starting
+  // off the /start critical path. Non-terminal — the FE shows a live "Starting…"
+  // state until the projection advances it to `running`.
+  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
   // The deployment that produced this run (CL-2321) — used to resolve the exact
   // deployed version and to read the run's event log / step outputs. Absent on
   // runs created before the record began persisting it.
@@ -125,7 +128,17 @@ export function stepOutputsFromLog(log: LogRunState): Record<string, unknown> {
   for (const s of log.steps) {
     if (s.outputRef === undefined) continue;
     if (!s.outputRef.startsWith(INLINE_REF_PREFIX)) continue;
-    outputs[s.stepId] = JSON.parse(s.outputRef.slice(INLINE_REF_PREFIX.length));
+    // Per-step catch: a single malformed inline blob must poison only its own
+    // step. A whole-run catch discards every decoded sibling and mislabels valid
+    // steps as "stored out of line". A step that fails to decode is simply
+    // omitted — its raw `outputRef` still renders the honest note.
+    try {
+      outputs[s.stepId] = JSON.parse(
+        s.outputRef.slice(INLINE_REF_PREFIX.length),
+      );
+    } catch {
+      continue;
+    }
   }
   return outputs;
 }

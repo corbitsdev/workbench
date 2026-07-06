@@ -17,11 +17,13 @@ COPY apps/web/package.json apps/web/
 COPY packages/agents/package.json packages/agents/
 COPY packages/approvals/package.json packages/approvals/
 COPY packages/artifact/package.json packages/artifact/
+COPY packages/blocks/package.json packages/blocks/
 COPY packages/chat/package.json packages/chat/
 COPY packages/catalog/package.json packages/catalog/
 COPY packages/client/package.json packages/client/
 COPY packages/context-repair/package.json packages/context-repair/
 COPY packages/analytics/package.json packages/analytics/
+COPY packages/pricing/package.json packages/pricing/
 COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
@@ -41,6 +43,7 @@ COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
+COPY packages/tools-catalog/package.json packages/tools-catalog/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
 COPY packages/tools-hackernews/package.json packages/tools-hackernews/
@@ -48,6 +51,7 @@ COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-skills/package.json packages/tools-skills/
+COPY packages/tools-workflows/package.json packages/tools-workflows/
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
 COPY packages/test-utils/package.json packages/test-utils/
@@ -56,15 +60,14 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
-COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
-COPY workflows/seo-enrichment-from-image/package.json workflows/seo-enrichment-from-image/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
+COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-last30days/package.json packages/tools-last30days/

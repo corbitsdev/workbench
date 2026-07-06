@@ -5,6 +5,7 @@ import { Panel } from "./ui";
 
 const baseProps = {
   deploymentId: "run-1",
+  logRead: true,
   state: null,
   connected: true,
   stepOutputs: {},
@@ -109,6 +110,26 @@ describe("last30days Panel", () => {
     );
     screen.getByText(/setting up workflow/i);
     expect(screen.queryByText(/^Working/)).toBeNull();
+  });
+
+  test("after intake submit (signal pending) shows a live working state, not the dead 'Setting up workflow' copy (CL-2787)", () => {
+    // The user submitted the topic: the intake gate has left awaiting-signal but
+    // research has not produced steps yet. This transition window must read as
+    // live/working, not the pre-gate "Setting up workflow" placeholder.
+    render(
+      <Panel
+        {...baseProps}
+        signalPending
+        state={
+          {
+            phase: "running",
+            steps: new Map([["intake", { phase: "in-flight" as const }]]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    screen.getByText(/starting research/i);
+    expect(screen.queryByText(/setting up workflow/i)).toBeNull();
   });
 
   test("intake copy no longer mentions the disabled Bluesky source", () => {
@@ -309,12 +330,79 @@ describe("last30days Panel", () => {
         }}
       />,
     );
-    const synthesisCard = screen
-      .getByText("Synthesis")
-      .closest(".rounded-panel");
+    const synthesisCard = screen.getByText("Synthesis").closest("section.p-6");
     expect(synthesisCard).not.toBeNull();
     expect(
-      synthesisCard?.parentElement?.closest(".rounded-panel") ?? null,
+      synthesisCard?.parentElement?.closest("section.p-6") ?? null,
     ).toBeNull();
+  });
+
+  test("names the failed step and shows the sanitized error, never raw internals (CL-2659)", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={
+          {
+            phase: "failed",
+            steps: new Map([
+              ["intake", { phase: "completed" }],
+              ["ground", { phase: "completed" }],
+              ["brief", { phase: "completed" }],
+              [
+                "write",
+                {
+                  phase: "failed",
+                  lastError: {
+                    message:
+                      "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/write.ts:42:7",
+                  },
+                },
+              ],
+            ]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    screen.getByText("Run failed at Report");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
+  });
+
+  test("falls back to an honest no-details message on a failed run with no step error", () => {
+    // A step ran and failed (so the run DID start) but carries no error — heading
+    // stays "Run failed", message degrades to the honest no-details line. Uses a
+    // step id outside DISPLAY_STEPS so no display label is resolved.
+    render(
+      <Panel
+        {...baseProps}
+        state={
+          {
+            phase: "failed",
+            steps: new Map([["ghost", { phase: "failed" }]]),
+          } as unknown as RunState
+        }
+      />,
+    );
+    screen.getByText("Run failed");
+    screen.getByText(/No error details are available/);
+  });
+
+  test("does NOT claim didn't-start when the log was unavailable on a failed run", () => {
+    // Same empty-step shape, but the log was unavailable (logRead false) so the
+    // run state was synthesized from the index — we don't know whether it
+    // started, so show the generic couldn't-load copy, never "This run didn't
+    // start" (CL-2729).
+    render(
+      <Panel
+        {...baseProps}
+        logRead={false}
+        state={{ phase: "failed", steps: new Map() } as unknown as RunState}
+      />,
+    );
+    screen.getByText("Run failed");
+    screen.getByText(/couldn't load this run's details/);
+    expect(screen.queryByText("This run didn't start")).toBeNull();
   });
 });

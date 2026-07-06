@@ -27,6 +27,9 @@ mock.module("../config", () => ({
       name: "Global Org",
       domain: "global.example.com",
     },
+    // launchAgentSession resolves sources through the CL-2760 catalog cache
+    // (CL-2804), which reads this TTL from config.
+    workflowDeploy: { modelSourceCacheTtlMs: 45_000 },
   }),
 }));
 
@@ -62,13 +65,19 @@ import {
   registerWedgeSweepReconciler,
 } from "../services/agent-provisioning";
 import { resetRelaunchBreaker } from "../services/relaunch-breaker";
+import { resetWorkflowModelSourceCache } from "../services/workflow-model-source-cache";
 
 // The relaunch breaker is process-global module state (in-flight dedup +
 // failure cooldowns keyed by instance id). A failing launch in one test arms a
 // cooldown that suppresses a later test's relaunch of the same instance id,
 // so the suite must clear it between tests to stay order-independent.
+//
+// The launch path also memoizes catalog resolution (CL-2804); clear it too so a
+// resolution cached under one test's sourcesImpl can't leak into a later test
+// that varies sourcesImpl for the same tenant.
 beforeEach(() => {
   resetRelaunchBreaker();
+  resetWorkflowModelSourceCache();
 });
 
 const {
@@ -466,6 +475,135 @@ describe("POST /instances/:instanceId/sessions", () => {
     const json = (await res.json()) as ResBody;
     expect(json.launched).toBe(true);
     expect(sessionService.launchSession).toHaveBeenCalled();
+  });
+
+  // CL-2793: this route is now the SOLE wake path for a reaper-slept Myra (the
+  // eager /v1/me relaunch was removed). The idle reaper leaves an exact output
+  // state — the `agent_session` marked `ended`, the `agent_instance` left
+  // `running` (relaunchable), and the address undeployed (NOT routable). Assert
+  // that state drives a genuine cold relaunch: because the address is not
+  // routable the route skips the idempotent live-refresh branch and calls
+  // launchSession, and because the pointed-at session is `ended` a FRESH session
+  // is minted rather than the dead one resumed.
+  it("wakes a reaper-slept instance (session ended + instance running + unroutable) via a cold relaunch", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ ...INSTANCE, status: "running", sessionId: "ses-old" }),
+    );
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+    // The reaper ended this session; the instance still points at it.
+    db.query.agentSession.findFirst = mock(() =>
+      Promise.resolve({ id: "ses-old", status: "ended" }),
+    );
+
+    const insertedSessionIds: string[] = [];
+    db.insert = mock((table: unknown) => ({
+      values: mock((row: { id?: string }) => {
+        if (table === agentSessionTable && typeof row.id === "string") {
+          insertedSessionIds.push(row.id);
+        }
+        return { returning: mock(() => Promise.resolve([])) };
+      }),
+    }));
+
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock(() => Promise.resolve()),
+    };
+    // Not routable — mirrors the reaper's undeployed output.
+    const sidecarRouter = makeSidecarRouter([]);
+    const app = buildApp(db, sessionService, "user-1", sidecarRouter);
+    const res = await app.fetch(
+      makeRequest("http://localhost/instances/ins-1/sessions", {
+        method: "POST",
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as ResBody;
+    expect(json.launched).toBe(true);
+    // The wake contract: a cold, unroutable instance is relaunched.
+    expect(sessionService.launchSession).toHaveBeenCalled();
+    // A fresh session was minted (the ended one was not resumed).
+    expect(insertedSessionIds.length).toBe(1);
+    expect(insertedSessionIds[0]).not.toBe("ses-old");
+  });
+
+  // CL-2793: on a cold wake nothing is pushed live beforehand — the sidecar is
+  // not connected for this address — so the DEFINITION's tool grants must ride
+  // the launch config (`config.grants`), not a live sendGrantsUpdate push. This
+  // guards the "skip live push when cold" contract: the grants collected for the
+  // instance principal (persisted from the definition's capabilities) reach the
+  // sidecar through launchSession, and no out-of-band grant push is attempted.
+  it("carries the collected definition tool grants in the cold launch config without a live grants push", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ ...INSTANCE, status: "deployed" }),
+    );
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() =>
+      Promise.resolve({
+        ...AGENT_ROW,
+        capabilities: { tools: ["granola:granola_list_notes"] },
+      }),
+    );
+
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // collectGrants is the @intx boundary: it returns the grants persisted for
+    // the instance principal from the definition's capabilities. A non-empty set
+    // here stands in for a real definition's tool grants (default tests use []).
+    const definitionGrants = [
+      {
+        id: "grant-1",
+        resource: "tool:granola:granola_list_notes",
+        action: "invoke",
+        effect: "allow",
+        origin: "system",
+        conditions: null,
+        expiresAt: null,
+        roleId: null,
+        principalId: "prn-agent-1",
+      },
+    ];
+    const originalCollect = mockGrantStore.collectGrants;
+    mockGrantStore.collectGrants = mock(() =>
+      Promise.resolve(definitionGrants),
+    ) as GrantStore["collectGrants"];
+
+    let capturedConfig: { config?: { grants?: unknown } } | undefined;
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock((cfg: { config?: { grants?: unknown } }) => {
+        capturedConfig = cfg;
+        return Promise.resolve();
+      }),
+    };
+    const sendGrantsUpdate = mock(() => Promise.resolve());
+    const sidecarRouter = makeSidecarRouter([], { sendGrantsUpdate });
+
+    try {
+      const app = buildApp(db, sessionService, "user-1", sidecarRouter);
+      const res = await app.fetch(
+        makeRequest("http://localhost/instances/ins-1/sessions", {
+          method: "POST",
+        }),
+      );
+      expect(res.status).toBe(200);
+      // The definition's grants reached the sidecar via the launch config.
+      expect(capturedConfig?.config?.grants).toEqual(definitionGrants);
+      // No out-of-band live push on the cold path (grants ride the launch).
+      expect(sendGrantsUpdate).not.toHaveBeenCalled();
+    } finally {
+      mockGrantStore.collectGrants = originalCollect;
+    }
   });
 
   it("returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar", async () => {

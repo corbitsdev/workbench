@@ -16,6 +16,12 @@ import type {
   SidecarRouter,
   RepoStore,
 } from "@intx/hub-sessions";
+import type { CryptoProvider } from "@intx/types/runtime";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
+import type {
+  EnsureDeploymentRoutableFn,
+  ProvisionRunDeploymentFn,
+} from "./workflow-runs";
 import { requestBodySchema } from "../lib/openapi";
 
 const log = getLogger(["api", "hub-tools"]);
@@ -51,8 +57,14 @@ export function createHubToolsRouter(
     sessionService: SessionService;
     eventCollectors: EventCollectorRegistry;
     sidecarRouter: SidecarRouter;
+    analytics: AnalyticsSubscriber;
     repoStore: RepoStore;
     buildToolDefinitions: typeof buildToolDefinitions;
+    // Workflow-exec wiring for the workflow-run tools (CL-2678).
+    cryptoProvider?: CryptoProvider;
+    deploymentDomain?: string;
+    provisionRunDeployment?: ProvisionRunDeploymentFn;
+    ensureDeploymentRoutable?: EnsureDeploymentRoutableFn;
   },
 ): Hono {
   const router = new Hono();

@@ -4,6 +4,7 @@ import {
   createWorkflowRunReader,
   type AgentRepoStore,
   type RepoId,
+  type RepoStore,
   type WorkflowRunEvent,
 } from "@intx/hub-sessions";
 import { resumeFromLog, type WorkflowEvent } from "@intx/workflow";
@@ -241,6 +242,66 @@ async function resolveStepKinds(
     });
     return new Map();
   }
+}
+
+// The per-step projection the bridge persists (CL-2727). One entry per step
+// with the native phase, attempt count, and derived wall-clock timing — the same
+// values `getWorkflowRunStateForRepo` returns, minus the definition-derived
+// `stepType` (the projection table indexes state, not classification, so it does
+// not need to read the definition repo).
+export interface NativeRunStepProjection {
+  stepId: string;
+  phase: LogStepState["phase"];
+  attempts: number;
+  startedAt?: string;
+  endedAt?: string;
+}
+
+export interface NativeRunStateProjection {
+  runId: string;
+  phase: LogRunState["phase"];
+  startedAt?: string;
+  endedAt?: string;
+  steps: NativeRunStepProjection[];
+}
+
+// Fold a run's event log through the native `@intx/workflow` state machine into
+// the per-step projection the bridge persists (CL-2727). Takes the plain
+// `RepoStore` the projection bridge already holds (no `AgentRepoStore`, no
+// definition read) so it can run inside the pack-receipt path. The fold itself
+// is the native `resumeFromLog` — NOT re-invented — with timing derived from the
+// raw event stream exactly as `getWorkflowRunStateForRepo` does.
+export async function projectRunStateFromLog(
+  repoStore: RepoStore,
+  repoId: RepoId,
+  runId: string,
+): Promise<NativeRunStateProjection> {
+  const reader = createWorkflowRunReader(repoStore);
+  const events = await reader.readRunEvents(repoId, RUN_EVENT_REF, runId);
+  const state = resumeFromLog(runId, toNativeEvents(events));
+  const timing = deriveTiming(events);
+
+  const steps: NativeRunStepProjection[] = [];
+  for (const [stepId, step] of state.steps) {
+    const t = timing.steps.get(stepId);
+    steps.push({
+      stepId,
+      phase: step.phase,
+      attempts: step.currentAttempt,
+      ...(t?.startedAt !== undefined ? { startedAt: t.startedAt } : {}),
+      ...(t?.endedAt !== undefined ? { endedAt: t.endedAt } : {}),
+    });
+  }
+
+  return {
+    runId,
+    phase: state.phase,
+    ...(timing.runStartedAt !== undefined
+      ? { startedAt: timing.runStartedAt }
+      : {}),
+    ...(timing.runEndedAt !== undefined ? { endedAt: timing.runEndedAt } : {}),
+    steps,
+  };
 }
 
 // Read a run's event log from the hub's repo store (layout-aware) and fold it

@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { PriceCatalogSchema, type PriceCatalog } from "@workbench/pricing";
 import {
   FeedbackListResponse,
   type FeedbackSubjectKind,
@@ -107,6 +108,10 @@ export type MeResponse = {
   paInstanceId: string | null;
   provisioned: boolean;
   credentialResolved: boolean;
+  /** Whether the caller may see the Admin area (holds owner/admin grants,
+   * resolved server-side via Interchange's native grant model). The hub admin
+   * routes re-check this — the flag only drives nav visibility. */
+  isAdmin?: boolean;
   /** When true, call postMe() to provision or push template/grant updates. */
   personalAgentSyncAvailable?: boolean;
   /** Server-persisted UI preferences, folded into the bootstrap to avoid an extra round-trip. */
@@ -519,6 +524,27 @@ const ActivityCountRowSchema = type({
   count: "number",
 });
 
+/**
+ * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
+ * `null` means the hub had no price catalog warm when it computed this row
+ * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
+ * some of the underlying models had no models.dev rate.
+ */
+export const PricedUsageSchema = type({
+  cost: {
+    input: "number",
+    output: "number",
+    cacheRead: "number",
+    cacheWrite: "number",
+    thinking: "number",
+    total: "number",
+  },
+  unpricedModels: "string[]",
+  hasUnpriced: "boolean",
+}).or("null");
+
+export type PricedUsageValue = typeof PricedUsageSchema.infer;
+
 export const UsageByPersonRowSchema = type({
   principalId: "string",
   name: "string | null",
@@ -527,9 +553,26 @@ export const UsageByPersonRowSchema = type({
   toolCallCount: "number",
   inputTokens: "number",
   outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+  cost: PricedUsageSchema,
 });
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
+
+/** Per-model usage with every token class separated, for cost-by-model (CL-2714). */
+export const UsageByModelRowSchema = type({
+  model: "string",
+  turnCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+});
+
+export type UsageByModelRow = typeof UsageByModelRowSchema.infer;
 
 export const UsageByWorkflowTypeRowSchema = type({
   kind: "string",
@@ -537,6 +580,7 @@ export const UsageByWorkflowTypeRowSchema = type({
   toolCallCount: "number",
   inputTokens: "number",
   outputTokens: "number",
+  cost: PricedUsageSchema,
 });
 
 export type UsageByWorkflowTypeRow = typeof UsageByWorkflowTypeRowSchema.infer;
@@ -592,6 +636,7 @@ const ActivityOverviewSchema = type({
     thinkingTokens: "number",
   }).array(),
   models: ActivityCountRowSchema.array(),
+  byModel: UsageByModelRowSchema.array(),
   tokensRecordedFrom: "string.date | null",
   byPerson: UsageByPersonRowSchema.array(),
   byWorkflowType: UsageByWorkflowTypeRowSchema.array(),
@@ -617,6 +662,32 @@ const ActivityOverviewSchema = type({
 });
 
 export type ActivityOverview = typeof ActivityOverviewSchema.infer;
+
+/**
+ * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
+ * never hits models.dev directly (CSP); the hub proxies + caches it. Parsed at
+ * the boundary through the shared `PriceCatalogSchema`.
+ */
+export async function getModelPricing(tenantId: string): Promise<PriceCatalog> {
+  const path = `tenants/${encodeURIComponent(tenantId)}/pricing`;
+  const raw = await hubFetch<unknown>("GET", path);
+  const result = PriceCatalogSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid pricing catalog response: ${result.summary}`);
+  }
+  return result;
+}
+
+/**
+ * Same-origin hub URL for a provider logo SVG (proxied from models.dev). Safe as
+ * an `<img src>` — it stays within CSP because it targets the hub, not
+ * models.dev. Falls back to the current origin when no API base is configured,
+ * so it always returns a usable same-origin URL.
+ */
+export function providerLogoUrl(tenantId: string, provider: string): string {
+  const base = apiBase || window.location.origin;
+  return `${base}/api/tenants/${encodeURIComponent(tenantId)}/pricing/logos/${encodeURIComponent(provider)}`;
+}
 
 export async function getActivityOverview(
   tenantId: string,

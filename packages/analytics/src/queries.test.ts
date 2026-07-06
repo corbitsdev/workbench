@@ -4,6 +4,7 @@ import type { SQL } from "drizzle-orm";
 
 import {
   getAnalyticsModelDistribution,
+  getCacheBaseline,
   getTokenDataStartDate,
 } from "./queries";
 
@@ -29,6 +30,9 @@ function makeModelDb(
     turnCount: number;
     inputTokens: number;
     outputTokens: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    thinkingTokens?: number;
   }[],
 ) {
   const captured: { where?: SQL } = {};
@@ -79,6 +83,127 @@ describe("getTokenDataStartDate", () => {
   });
 });
 
+function makeCacheBaselineDb(
+  rows: {
+    agentId: string | null;
+    agentName: string | null;
+    inferenceCalls: number;
+    cacheMissCalls: number;
+    sessionCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  }[],
+) {
+  const captured: { where?: SQL } = {};
+  const groupBy = mock(async () => rows);
+  const where = mock((predicate: SQL) => {
+    captured.where = predicate;
+    return { groupBy };
+  });
+  const leftJoin = mock(() => ({ where }));
+  const from = mock(() => ({ leftJoin }));
+  const select = mock(() => ({ from }));
+  return { db: { select } as never, captured };
+}
+
+describe("getCacheBaseline", () => {
+  it("derives cache-miss rate and prefix-absorption ratio per agent", async () => {
+    const { db } = makeCacheBaselineDb([
+      {
+        agentId: "agt_myra",
+        agentName: "Myra",
+        inferenceCalls: 10,
+        cacheMissCalls: 2,
+        sessionCount: 4,
+        inputTokens: 2000,
+        outputTokens: 500,
+        cacheReadTokens: 8000,
+        cacheWriteTokens: 1200,
+      },
+    ]);
+
+    const rows = await getCacheBaseline({ db, tenantId: "tnt_1" });
+
+    expect(rows).toEqual([
+      {
+        agentId: "agt_myra",
+        agentName: "Myra",
+        inferenceCalls: 10,
+        cacheMissCalls: 2,
+        cacheHitCalls: 8,
+        sessionCount: 4,
+        inputTokens: 2000,
+        outputTokens: 500,
+        cacheReadTokens: 8000,
+        cacheWriteTokens: 1200,
+        cacheMissRate: 0.2,
+        cacheAbsorptionRatio: 0.8,
+      },
+    ]);
+  });
+
+  it("omits agents with no completed inference calls and null agentId", async () => {
+    const { db } = makeCacheBaselineDb([
+      {
+        agentId: "agt_idle",
+        agentName: "Idle",
+        inferenceCalls: 0,
+        cacheMissCalls: 0,
+        sessionCount: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        agentId: null,
+        agentName: null,
+        inferenceCalls: 3,
+        cacheMissCalls: 0,
+        sessionCount: 1,
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 90,
+        cacheWriteTokens: 0,
+      },
+    ]);
+
+    expect(await getCacheBaseline({ db, tenantId: "tnt_1" })).toEqual([]);
+  });
+
+  it("reports a zero absorption ratio when no prompt tokens were seen", async () => {
+    const { db } = makeCacheBaselineDb([
+      {
+        agentId: "agt_myra",
+        agentName: "Myra",
+        inferenceCalls: 1,
+        cacheMissCalls: 1,
+        sessionCount: 1,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+    ]);
+
+    const rows = await getCacheBaseline({ db, tenantId: "tnt_1" });
+    expect(rows[0]?.cacheAbsorptionRatio).toBe(0);
+    expect(rows[0]?.cacheMissRate).toBe(1);
+  });
+
+  it("filters on tenant and only completed inference calls", async () => {
+    const { db, captured } = makeCacheBaselineDb([]);
+    await getCacheBaseline({ db, tenantId: "tnt_1", agentId: "agt_myra" });
+
+    const sql = renderWhere(captured.where);
+    expect(sql).toContain('"tenant_id"');
+    expect(sql).toContain('"event_type"');
+    expect(sql).toContain('"agent_id"');
+  });
+});
+
 describe("getAnalyticsModelDistribution", () => {
   it("omits grouped model totals with zero turns after aggregation", async () => {
     const { db } = makeModelDb([
@@ -89,8 +214,32 @@ describe("getAnalyticsModelDistribution", () => {
 
     const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
 
-    expect(rows).toEqual([
-      { model: "deepseek", turnCount: 3, inputTokens: 125, outputTokens: 50 },
+    expect(rows.map((r) => r.model)).toEqual(["deepseek"]);
+  });
+
+  it("carries every token class separately for per-model cost (CL-2714)", async () => {
+    const { db } = makeModelDb([
+      {
+        model: "claude-opus-4-5",
+        turnCount: 2,
+        inputTokens: 100,
+        outputTokens: 40,
+        cacheReadTokens: 500,
+        cacheWriteTokens: 30,
+        thinkingTokens: 12,
+      },
     ]);
+
+    const rows = await getAnalyticsModelDistribution({ db, tenantId: "tnt_1" });
+
+    expect(rows[0]).toEqual({
+      model: "claude-opus-4-5",
+      turnCount: 2,
+      inputTokens: 100,
+      outputTokens: 40,
+      cacheReadTokens: 500,
+      cacheWriteTokens: 30,
+      thinkingTokens: 12,
+    });
   });
 });

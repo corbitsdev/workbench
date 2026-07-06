@@ -50,6 +50,15 @@ export {
 } from "./personal-agent/definition";
 export { createPersonalAgentDirector } from "./personal-agent/director";
 export {
+  DYNAMIC_TOOLS_DIRECTOR_ID,
+  MYRA_TOOL_CATALOG,
+  PERSONAL_AGENT_DYNAMIC_TOOLS,
+  resolveDynamicToolConfig,
+  createDynamicToolsDirector,
+  dynamicToolsDirector,
+  type DynamicToolConfig,
+} from "./dynamic-tools";
+export {
   PERSONAL_AGENT_SEED_FILES,
   buildSeedMarker,
   parseSeedMarker,
@@ -116,7 +125,11 @@ export {
 } from "./hammy-the-humanizer/definition";
 
 // Agent templates registry
-export { AGENT_TEMPLATES, type AgentTemplate } from "./templates";
+export {
+  AGENT_TEMPLATES,
+  type AgentTemplate,
+  isReapableChatAgent,
+} from "./templates";
 
 // Model catalog derived from the agent templates (single source of truth)
 export {

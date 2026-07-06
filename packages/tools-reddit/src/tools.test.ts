@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { REDDIT_HUB_TOOLS, createRedditTools } from "./tools";
+import {
+  REDDIT_HUB_TOOLS,
+  createRedditTools,
+  normalizeSubredditSearchArgs,
+} from "./tools";
 
 // /v1/reddit/search shape: epoch created_utc, string subreddit, ups.
 const SEARCH_RESPONSE = {
@@ -208,6 +212,66 @@ describe("reddit_subreddit_search", () => {
         new AbortController().signal,
       ),
     ).rejects.toThrow(/reddit_subreddit_search:.*subreddit/i);
+  });
+
+  // The relocated per-row normalization (CL-2769): a block-form search row that
+  // carries an "r/"-prefixed subreddit and no sort/timeframe/limit still reaches
+  // the API with a bare subreddit and the panel's former defaults.
+  it("strips a leading r/ from the subreddit and defaults sort/timeframe", async () => {
+    const captured: CapturedRequest[] = [];
+    const tools = createRedditTools({
+      apiKey: "sc-key",
+      fetcher: makeCapturingFetcher(SUBREDDIT_RESPONSE, captured),
+    });
+    await getHandler(tools, "reddit_subreddit_search")(
+      { subreddit: "r/rust", query: "async" },
+      new AbortController().signal,
+    );
+
+    const url = new URL(captured[0]!.url);
+    expect(url.searchParams.get("subreddit")).toBe("rust");
+    expect(url.searchParams.get("sort")).toBe("relevance");
+    expect(url.searchParams.get("timeframe")).toBe("month");
+  });
+});
+
+describe("normalizeSubredditSearchArgs (CL-2769)", () => {
+  it("strips r/, trims, and fills defaults for a bare block-form row", () => {
+    const norm = normalizeSubredditSearchArgs({
+      subreddit: "  r/DevOps ",
+      query: "  ci pain  ",
+    });
+    expect(norm.subreddit).toBe("DevOps");
+    expect(norm.query).toBe("ci pain");
+    expect(norm.sort).toBe("relevance");
+    expect(norm.timeframe).toBe("month");
+    expect(norm.limit).toBeGreaterThan(0);
+  });
+
+  it("passes through valid explicit sort/timeframe/limit", () => {
+    const norm = normalizeSubredditSearchArgs({
+      subreddit: "rust",
+      query: "async",
+      sort: "top",
+      timeframe: "week",
+      limit: 25,
+    });
+    expect(norm.sort).toBe("top");
+    expect(norm.timeframe).toBe("week");
+    expect(norm.limit).toBe(25);
+  });
+
+  it("coerces an out-of-range or non-enum value back to a default", () => {
+    const norm = normalizeSubredditSearchArgs({
+      subreddit: "rust",
+      query: "async",
+      sort: "",
+      timeframe: "decade",
+      limit: -3,
+    });
+    expect(norm.sort).toBe("relevance");
+    expect(norm.timeframe).toBe("month");
+    expect(norm.limit).toBeGreaterThan(0);
   });
 });
 

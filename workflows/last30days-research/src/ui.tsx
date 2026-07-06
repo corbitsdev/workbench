@@ -6,6 +6,7 @@ import {
   buildRunStepperSteps,
   Button,
   type DisplayStep,
+  FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
   Markdown,
@@ -129,11 +130,7 @@ function parseWriteReply(raw: unknown): string | "pending" {
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <section className="rounded-panel border border-border bg-surface p-6">
-      {children}
-    </section>
-  );
+  return <section className="bg-surface p-6">{children}</section>;
 }
 
 function Spinner({ label }: { label?: string }) {
@@ -297,11 +294,13 @@ function IntakeScreen({
   phase,
   connected,
   signalPending,
+  intakeDone,
   onSubmit,
 }: {
   phase: StepPhase | undefined;
   connected: boolean;
   signalPending: boolean;
+  intakeDone: boolean;
   onSubmit: (payload: IntakePayload) => void;
 }) {
   const [topic, setTopic] = useState("");
@@ -310,9 +309,17 @@ function IntakeScreen({
   const canSubmit = connected && !signalPending && topic.trim().length > 0;
 
   if (phase !== "awaiting-signal") {
+    // The gate has either been submitted (signalPending) or already cleared and
+    // the run is advancing (intakeDone) — show an honest live working state, not
+    // the "Setting up workflow" pre-gate copy that reads as dead mid-run. Only a
+    // genuinely pre-gate run (still provisioning, nothing submitted) sees "Setting
+    // up workflow".
+    const advancing = signalPending || intakeDone;
     return (
       <Card>
-        <Spinner label="Setting up workflow…" />
+        <Spinner
+          label={advancing ? "Starting research…" : "Setting up workflow…"}
+        />
       </Card>
     );
   }
@@ -506,17 +513,17 @@ export function Panel(props: WorkflowPanelProps) {
 
       <div className="flex-1 overflow-y-auto p-6">
         {failed ? (
-          <Card>
-            <p className="text-sm font-medium text-text">Run failed</p>
-            <p className="mt-1 text-sm text-text-3">
-              Start a new run to try again.
-            </p>
-          </Card>
+          <FailedRunNotice
+            state={state}
+            steps={DISPLAY_STEPS}
+            logRead={props.logRead}
+          />
         ) : current === "intake" ? (
           <IntakeScreen
             phase={phaseFor(state, "intake")}
             connected={connected}
             signalPending={signalPending}
+            intakeDone={intakeIsDone(state)}
             onSubmit={(payload) => onSignal(INTAKE_SIGNAL, payload)}
           />
         ) : current === "research" ? (

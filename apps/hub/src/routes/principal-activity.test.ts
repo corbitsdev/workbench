@@ -1,0 +1,193 @@
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { Hono } from "hono";
+
+type RouteEnv = {
+  Variables: {
+    tenant: { id: string };
+    principal: { id: string };
+  };
+};
+
+const sampleEntry = {
+  id: "run-1",
+  kind: "workflow_run",
+  sourceTable: "workflow_run_record",
+  timestamp: "2026-07-01T10:00:00.000Z",
+  summary: "last30days completed",
+};
+
+let serviceCalls: unknown[] = [];
+let serviceResult: unknown = { entries: [sampleEntry], nextCursor: null };
+let serviceError: Error | null = null;
+mock.module("../services/principal-activity", () => ({
+  getPrincipalActivityPage: mock(async (args: unknown) => {
+    serviceCalls.push(args);
+    if (serviceError) throw serviceError;
+    return serviceResult;
+  }),
+}));
+
+let detailCalls: unknown[] = [];
+let detailResult: unknown = { kind: "tool_call", id: "evt-1" };
+mock.module("../services/moment-detail", () => ({
+  getMomentDetail: mock(async (args: unknown) => {
+    detailCalls.push(args);
+    return detailResult;
+  }),
+}));
+
+import { encodeTimelineCursor } from "@workbench/timeline";
+
+import { createPrincipalActivityRouter } from "./principal-activity";
+
+function buildApp(callerPrincipalId: string) {
+  const hub = new Hono<RouteEnv>();
+  hub.use(
+    "/api/tenants/:tenantId/principals/:principalId/activity/*",
+    async (c, next) => {
+      c.set("tenant", { id: "tnt_test" });
+      c.set("principal", { id: callerPrincipalId });
+      await next();
+    },
+  );
+  hub.route(
+    "/api/tenants/:tenantId/principals/:principalId/activity",
+    createPrincipalActivityRouter({ db: {} as never }),
+  );
+  return hub;
+}
+
+function url(principalId: string, query = "") {
+  return `http://localhost/api/tenants/tnt_test/principals/${principalId}/activity${query}`;
+}
+
+beforeEach(() => {
+  serviceCalls = [];
+  serviceResult = { entries: [sampleEntry], nextCursor: null };
+  serviceError = null;
+  detailCalls = [];
+  detailResult = { kind: "tool_call", id: "evt-1" };
+});
+
+describe("GET /api/tenants/:tenantId/principals/:principalId/activity", () => {
+  it("lets a principal read their own timeline without a grant", async () => {
+    const res = await buildApp("prn-self").request(url("prn-self"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      entries: (typeof sampleEntry)[];
+      nextCursor: string | null;
+    };
+    expect(body.entries[0]?.id).toBe("run-1");
+    expect(body.nextCursor).toBeNull();
+    expect(serviceCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-self",
+      limit: 50,
+    });
+  });
+
+  it("lets any tenant member read another principal's timeline (open intra-tenant)", async () => {
+    const res = await buildApp("prn-caller").request(url("prn-target"));
+    expect(res.status).toBe(200);
+    expect(serviceCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-target",
+    });
+  });
+
+  it("bounds the limit parameter", async () => {
+    const app = buildApp("prn-self");
+    expect((await app.request(url("prn-self", "?limit=0"))).status).toBe(400);
+    expect((await app.request(url("prn-self", "?limit=101"))).status).toBe(400);
+    expect((await app.request(url("prn-self", "?limit=abc"))).status).toBe(400);
+    expect(serviceCalls).toHaveLength(0);
+
+    const ok = await app.request(url("prn-self", "?limit=100"));
+    expect(ok.status).toBe(200);
+    expect(serviceCalls[0]).toMatchObject({ limit: 100 });
+  });
+
+  it("passes a valid opaque cursor through and rejects a malformed one with 400", async () => {
+    const app = buildApp("prn-self");
+    const token = encodeTimelineCursor({
+      timestamp: "2026-07-01T10:00:00.000Z",
+      sourceTable: "workflow_run_record",
+      id: "run-1",
+    });
+    const ok = await app.request(url("prn-self", `?cursor=${token}`));
+    expect(ok.status).toBe(200);
+    // Decoded once at the route boundary; the service receives the object.
+    expect(serviceCalls[0]).toMatchObject({
+      cursor: {
+        timestamp: "2026-07-01T10:00:00.000Z",
+        sourceTable: "workflow_run_record",
+        id: "run-1",
+      },
+    });
+
+    const bad = await app.request(url("prn-self", "?cursor=%7Bnope"));
+    expect(bad.status).toBe(400);
+    expect(serviceCalls).toHaveLength(1);
+  });
+
+  it("maps unexpected service failures to 500", async () => {
+    serviceError = new Error("connection refused");
+    const res = await buildApp("prn-self").request(url("prn-self"));
+    expect(res.status).toBe(500);
+  });
+});
+
+describe("GET /api/tenants/:tenantId/principals/:principalId/activity/:kind/:id/detail", () => {
+  function detailUrl(principalId: string, kind: string, id: string) {
+    return `http://localhost/api/tenants/tnt_test/principals/${principalId}/activity/${kind}/${id}/detail`;
+  }
+
+  it("returns the expanded detail for the caller's own moment", async () => {
+    detailResult = {
+      kind: "tool_call",
+      id: "evt-1",
+      toolCall: {
+        toolName: "search",
+        input: { q: "x" },
+        output: "ok",
+        isError: false,
+      },
+    };
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "tool_call", "evt-1"),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { toolCall?: { toolName: string } };
+    expect(body.toolCall?.toolName).toBe("search");
+    expect(detailCalls[0]).toMatchObject({
+      tenantId: "tnt_test",
+      principalId: "prn-self",
+      kind: "tool_call",
+      id: "evt-1",
+    });
+  });
+
+  it("rejects an unknown moment kind with 400 before touching the service", async () => {
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "mystery", "evt-1"),
+    );
+    expect(res.status).toBe(400);
+    expect(detailCalls).toHaveLength(0);
+  });
+
+  it("lets any tenant member expand another principal's moment (open intra-tenant)", async () => {
+    const allowed = await buildApp("prn-caller").request(
+      detailUrl("prn-target", "tool_call", "evt-1"),
+    );
+    expect(allowed.status).toBe(200);
+    expect(detailCalls[0]).toMatchObject({ principalId: "prn-target" });
+  });
+
+  it("maps a null service result (out-of-scope or missing moment) to 404", async () => {
+    detailResult = null;
+    const res = await buildApp("prn-self").request(
+      detailUrl("prn-self", "tool_call", "missing"),
+    );
+    expect(res.status).toBe(404);
+  });
+});

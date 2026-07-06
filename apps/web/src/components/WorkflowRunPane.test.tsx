@@ -2,6 +2,7 @@
 import "../test-setup";
 import { afterEach, describe, it, expect, mock } from "bun:test";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -17,6 +18,7 @@ function CustomPanel({
   deploymentId,
   stepOutputs,
   signalPending,
+  connected,
   skills,
   onSignal,
 }: WorkflowPanelProps) {
@@ -24,6 +26,7 @@ function CustomPanel({
     <div>
       <span>custom-panel-for-{deploymentId}</span>
       <span>signal-pending:{String(signalPending)}</span>
+      <span>connected:{String(connected)}</span>
       <span>
         skills:
         {(skills ?? [])
@@ -35,16 +38,29 @@ function CustomPanel({
           out-{stepId}:{JSON.stringify(output)}
         </span>
       ))}
-      <button onClick={() => onSignal("approve", { ok: true })}>
+      <button
+        disabled={signalPending}
+        onClick={() => onSignal("approve", { ok: true })}
+      >
         fire-signal
       </button>
     </div>
   );
 }
 
+// A controllable deferred so a test can hold the custom-Panel module in a
+// PENDING state at the provisioning→running flip and assert no generic-shell
+// flash (CL-2755 handoff flicker).
+let resolveSlowPanel: (() => void) | null = null;
 mock.module("../lib/workflow-ui", () => ({
   loadWorkflowUI: async (kind: string) => {
     if (kind === "with-panel") return { Panel: CustomPanel };
+    if (kind === "slow-panel") {
+      await new Promise<void>((resolve) => {
+        resolveSlowPanel = resolve;
+      });
+      return { Panel: CustomPanel };
+    }
     return {};
   },
 }));
@@ -68,7 +84,13 @@ let stepOutputsData: Record<string, unknown> = {};
 // record's ses_ deploymentId (which 404s under per-run deployments, CL-2704).
 let stepOutputsRequestedId: string | null | undefined;
 
-const resumeMutateAsync = mock(async () => undefined);
+const resumeMutateAsync = mock(
+  async (_vars?: {
+    signalName?: string;
+    payload?: unknown;
+    onRedeploying?: () => void;
+  }): Promise<undefined> => undefined,
+);
 
 mock.module("../hooks/use-workflow", () => ({
   ...workflowHooks,
@@ -131,6 +153,7 @@ describe("WorkflowRunPane", () => {
     stepOutputsRequestedId = undefined;
     resumeMutateAsync.mockReset();
     resumeMutateAsync.mockImplementation(async () => undefined);
+    resolveSlowPanel = null;
   });
 
   it("renders the workflow kind own Panel when its module exports one", async () => {
@@ -141,7 +164,7 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
   });
 
-  it("falls back to RunConsole when the module has no Panel", async () => {
+  it("falls back to the generic WorkflowRunBlocks view when the module has no Panel", async () => {
     record = makeRecord({ kind: "no-panel" });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
@@ -150,10 +173,64 @@ describe("WorkflowRunPane", () => {
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
 
-  it("falls back to a legible run state when the log query errors, instead of hanging on Loading run…", async () => {
+  it("resumes with the gate's signal name when a block gate is approved in the fallback view", async () => {
+    record = makeRecord({ kind: "no-panel", status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "select",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    };
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Continue"));
+    fireEvent.click(screen.getByText("Continue"));
+    await waitFor(() => expect(resumeMutateAsync).toHaveBeenCalledTimes(1));
+    expect(resumeMutateAsync.mock.calls[0]?.[0]?.signalName).toBe(
+      "note-selection",
+    );
+  });
+
+  it("does NOT fire a resume from a block gate once the run is terminal", async () => {
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "select",
+          phase: "awaiting-signal",
+          stepType: "human",
+          currentAttempt: 1,
+          awaitingSignalName: "note-selection",
+        },
+      ],
+    };
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Continue"));
+    fireEvent.click(screen.getByText("Continue"));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(resumeMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a legible run state when the log query errors, instead of hanging on Loading workflow…", async () => {
     // Repro of Finding B: a legacy run (no deploymentId) 400s on /state, so the
     // log query errors and logState is undefined. The pane used to sit on
-    // "Loading run…" forever. It must fall back to the record-derived run-level
+    // "Loading workflow…" forever. It must fall back to the record-derived run-level
     // state and render the terminal failure copy.
     record = makeRecord({ kind: "no-panel", status: "failed" });
     logStateData = undefined;
@@ -164,10 +241,10 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("Workflow run"));
     // Legible terminal copy, not a permanent loading placeholder.
     screen.getByText(/this run failed\. start a new run to try again\./i);
-    expect(screen.queryByText("Loading run…")).toBeNull();
+    expect(screen.queryByText("Loading workflow…")).toBeNull();
   });
 
-  it("keeps showing Loading run… while the log is genuinely still loading (no error, deployment present)", () => {
+  it("keeps showing Loading workflow… while the log is genuinely still loading (no error, deployment present)", () => {
     // The fallback must NOT fire while the log is merely in flight — only on a
     // real error / missing deployment. A run with a deploymentId and no error is
     // still loading and should show the placeholder.
@@ -181,7 +258,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    screen.getByText("Loading run…");
+    screen.getByText("Loading workflow…");
   });
 
   it("shows the loading placeholder while the record query is loading", () => {
@@ -190,7 +267,7 @@ describe("WorkflowRunPane", () => {
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
-    screen.getByText("Loading run…");
+    screen.getByText("Loading workflow…");
     expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
   });
 
@@ -239,14 +316,31 @@ describe("WorkflowRunPane", () => {
     await waitFor(() => screen.getByText("fire-signal"));
     screen.getByText("fire-signal").click();
     await waitFor(() => expect(resumeMutateAsync).toHaveBeenCalledTimes(1));
-    expect(resumeMutateAsync).toHaveBeenCalledWith({
-      signalName: "approve",
-      payload: { ok: true },
-    });
+    const call = resumeMutateAsync.mock.calls[0]?.[0];
+    expect(call?.signalName).toBe("approve");
+    expect(call?.payload).toEqual({ ok: true });
+    expect(typeof call?.onRedeploying).toBe("function");
   });
 
-  it("passes signalPending to the Panel and raises it while the resume is in flight", async () => {
+  it("latches signalPending after the resume resolves and clears it only once the signalled gate is consumed", async () => {
+    // CL-2764: the /resume POST only DELIVERS the signal; the run advances past
+    // the gate seconds later on the next poll. The pending latch must survive the
+    // POST resolving so the gate button stays disabled + "Working…" until the
+    // signal we submitted leaves the awaiting-signal set — never re-enabling on
+    // the still-parked gate.
     record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
     let resolveResume: (() => void) | undefined;
     resumeMutateAsync.mockImplementation(
       () =>
@@ -254,16 +348,256 @@ describe("WorkflowRunPane", () => {
           resolveResume = () => resolve(undefined);
         }),
     );
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    const button = screen.getByText("fire-signal") as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    // Shared live "Working…" indicator is present during the latch.
+    screen.getByText("Working…");
+
+    // POST resolves — signal delivered — but the run is still on the same gate.
+    await act(async () => {
+      resolveResume?.();
+      await Promise.resolve();
+    });
+    // Latch must remain: disabled + pending, no premature re-enable.
+    expect(screen.getByText("signal-pending:true")).toBeTruthy();
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+
+    // The run now advances past the gate: our signal leaves the awaiting set.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        { stepId: "gate", phase: "completed" },
+        { stepId: "next", phase: "in-flight" },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    // Indicator gone once the gate advanced.
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
+  it("re-enables when a NON-FIRST concurrent gate is signalled and only that gate advances (wrong-step-key regression)", async () => {
+    // Two gates awaiting concurrently. The user signals gateB (the second, whose
+    // signal is "approve"). Only gateB completes; gateA stays parked. Keying the
+    // latch on the FIRST active step would stick the button disabled forever
+    // because gateA is still awaiting — keying on the submitted signal clears it.
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "hold",
+        },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // gateB advances; gateA (the FIRST active step) stays awaiting.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "hold",
+        },
+        { stepId: "gateB", phase: "completed" },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("clears the latch when the same-stepId gate is consumed even if the step later re-awaits", async () => {
+    // A map/loop step re-awaits under the same stepId. The latch must clear the
+    // moment our signal is consumed (leaves the awaiting set) — it must not stay
+    // stuck because the same stepId is present again.
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "loop",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // The signal is consumed: same stepId, no longer awaiting our signal.
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [{ stepId: "loop", phase: "in-flight" }],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("does not release the latch on a transient poll gap where the log momentarily reads undefined", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    // Poll gap: the log query momentarily has no data. The latch must hold.
+    logStateData = undefined;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.getByText("signal-pending:true")).toBeTruthy();
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("clears the pending latch on resume error so the user can retry", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    resumeMutateAsync.mockImplementation(async () => {
+      throw new Error("resume failed");
+    });
     render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
       wrapper,
     });
     await waitFor(() => screen.getByText("signal-pending:false"));
 
     screen.getByText("fire-signal").click();
-    await waitFor(() => screen.getByText("signal-pending:true"));
-
-    resolveResume?.();
+    // The error releases the latch even though the gate never advanced.
     await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(screen.queryByText("Working…")).toBeNull();
+    expect(resumeMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a transient redeploying banner while a resume auto-retries the deploy window", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gate",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    let resolveResume: (() => void) | undefined;
+    resumeMutateAsync.mockImplementation(
+      (vars?: { onRedeploying?: () => void }) => {
+        vars?.onRedeploying?.();
+        return new Promise<undefined>((resolve) => {
+          resolveResume = () => resolve(undefined);
+        });
+      },
+    );
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("fire-signal"));
+    screen.getByText("fire-signal").click();
+
+    await waitFor(() => screen.getByText("Finishing an update — retrying…"));
+
+    // Flush the resume resolution (its `.finally` clears the redeploying flag)
+    // inside act so the state update applies deterministically, not on an
+    // unbatched microtask that races the assertion.
+    await act(async () => {
+      resolveResume?.();
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Finishing an update — retrying…")).toBeNull();
   });
 
   it("onSignal is a no-op once the run is terminal", async () => {
@@ -482,5 +816,160 @@ describe("WorkflowRunPane", () => {
     expect(
       screen.queryByRole("button", { name: /Workflow version/i }),
     ).toBeNull();
+  });
+
+  it("renders a live animated Starting… state for a provisioning run, never the frozen panel (CL-2755)", async () => {
+    // The run's per-run deployment is still cold-starting: no deployment, no log.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { container } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    const indicator = await waitFor(() =>
+      screen.getByTestId("workflow-starting-indicator"),
+    );
+    // Motion is the hard requirement — an animated spinner must be present.
+    expect(container.querySelector(".animate-spin")).not.toBeNull();
+    // CL-2786: honest present-progress copy from the shared runStartLabel.
+    expect(indicator.textContent).toContain("Preparing your workflow…");
+    // The workflow's own panel is NOT rendered while provisioning.
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("transitions Starting → custom Panel with NO generic-shell flash while the Panel module is still loading (CL-2755 handoff flicker)", async () => {
+    // The Panel module is held PENDING (slow-panel, reset to null by afterEach)
+    // so the running flip lands while `uiModule` is still loading — the exact
+    // window the flicker fix covers.
+    record = makeRecord({ kind: "slow-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+
+    // The projection advances the run to running while the Panel module has NOT
+    // resolved yet.
+    record = makeRecord({ kind: "slow-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    // While the module loads, the animated loading state stays up — the generic
+    // WorkflowRunBlocks shell ("Workflow run" header) must NEVER flash in between.
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+    expect(screen.queryByText("Workflow run")).toBeNull();
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+
+    // Resolve the module → straight to the custom Panel, no shell in between.
+    resolveSlowPanel?.();
+    await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+    expect(screen.queryByText("Workflow run")).toBeNull();
+  });
+
+  it("keeps ONE continuously-mounted spinner node across provisioning→loading-workflow (CL-2786 — no remount, no rotation reset)", async () => {
+    // The provisioning frame and the module-loading frame share one stable
+    // AnimatePresence key ("starting"), so the spinner is the SAME DOM node
+    // before and after the transition — never unmounted and re-mounted (which
+    // would restart the CSS animate-spin from 0° and flash a blank beat). Only
+    // the label text swaps.
+    record = makeRecord({ kind: "slow-panel", status: "provisioning" });
+    logStateData = undefined;
+    logStateError = true;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    const spinnerBefore = await waitFor(() =>
+      screen.getByTestId("workflow-starting-spinner"),
+    );
+    const indicatorBefore = screen.getByTestId("workflow-starting-indicator");
+    expect(indicatorBefore.textContent).toContain("Preparing your workflow…");
+
+    // Run flips provisioning→running while the Panel module is STILL pending —
+    // the exact provisioning→loading-workflow boundary this fix covers.
+    record = makeRecord({ kind: "slow-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    // The label swapped to the module-loading copy…
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("workflow-starting-indicator").textContent,
+      ).toContain("Loading workflow…"),
+    );
+    // …but it is the SAME spinner node — proving continuity (no exit/enter, no
+    // rotation reset). Node identity is preserved only when the key is stable.
+    expect(screen.getByTestId("workflow-starting-spinner")).toBe(spinnerBefore);
+    resolveSlowPanel?.();
+  });
+
+  it("keeps the Starting… indicator up while provisioning and the log is still pending (CL-2785)", async () => {
+    // record projection reports provisioning; the fast log has NOT started yet
+    // (phase pending). The coarse gate must still show the animated indicator.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = { runId: "wfr_1", phase: "pending", lastSeq: 0, steps: [] };
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByTestId("workflow-starting-indicator"));
+    expect(screen.queryByText("custom-panel-for-wfr_1")).toBeNull();
+  });
+
+  it("lifts the Starting… gate the moment the fast log reads running, even while the record still says provisioning (CL-2785, the ~2s win)", async () => {
+    // The record projection lags at provisioning, but the SSE log has already
+    // flipped to running. `started` must derive from the log and advance the pane
+    // to the live view immediately instead of dwelling on the coarse gate.
+    record = makeRecord({ kind: "with-panel", status: "provisioning" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    logStateError = false;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("custom-panel-for-wfr_1"));
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+  });
+
+  it("falls through to the failure UI when a run fails during provisioning and never went live (CL-2785 regression — the provisioning guard is load-bearing)", async () => {
+    // A run that flipped provisioning→failed WITHOUT ever reaching running: the
+    // log never materialized (started = false). A naive `if (!started)` gate that
+    // drops the `record.status === "provisioning"` guard would STICK on the
+    // Starting… indicator here. The `provisioning && !started` form stops matching
+    // once status is failed, so the pane must render the legible failure UI.
+    record = makeRecord({ kind: "no-panel", status: "failed" });
+    logStateData = undefined;
+    logStateError = true;
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() => screen.getByText("Workflow run"));
+    screen.getByText(/this run failed\. start a new run to try again\./i);
+    expect(screen.queryByTestId("workflow-starting-indicator")).toBeNull();
+  });
+
+  it("passes connected=true to the Panel for a live running run and connected=false once terminal (CL-2785)", async () => {
+    record = makeRecord({ kind: "with-panel", status: "running" });
+    logStateData = { runId: "wfr_1", phase: "running", lastSeq: 1, steps: [] };
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("connected:true"));
+
+    record = makeRecord({ kind: "with-panel", status: "completed" });
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+    await waitFor(() => screen.getByText("connected:false"));
   });
 });

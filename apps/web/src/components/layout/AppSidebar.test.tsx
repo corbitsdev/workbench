@@ -1,9 +1,15 @@
 /// <reference types="bun" />
 import "../../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+let sidebarIsAdmin = false;
+mock.module("../../lib/hub-api", () => ({
+  getMe: () => Promise.resolve({ isAdmin: sidebarIsAdmin }),
+}));
 
 mock.module("../AuthProvider", () => ({
   useAuth: () => ({
@@ -54,9 +60,13 @@ afterEach(() => {
 function renderSidebar(path = "/", props: Record<string, unknown> = {}) {
   render(
     React.createElement(
-      MemoryRouter,
-      { initialEntries: [path] },
-      React.createElement(AppSidebar, props),
+      QueryClientProvider,
+      { client: new QueryClient() },
+      React.createElement(
+        MemoryRouter,
+        { initialEntries: [path] },
+        React.createElement(AppSidebar, props),
+      ),
     ),
   );
 }
@@ -147,5 +157,27 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Workbench").textContent).toBe("Workbench");
     expect(screen.queryByText("Staging")).toBeNull();
     expect(screen.queryByText("Spike")).toBeNull();
+  });
+
+  it("does not show a top-level Tools nav item (moved under Admin)", () => {
+    sidebarIsAdmin = false;
+    renderSidebar();
+    expect(screen.queryByRole("link", { name: /^tools$/i })).toBeNull();
+  });
+
+  it("shows the Admin nav item only for an admin", async () => {
+    sidebarIsAdmin = false;
+    renderSidebar();
+    expect(screen.queryByRole("link", { name: /admin/i })).toBeNull();
+
+    cleanup();
+    sidebarIsAdmin = true;
+    renderSidebar();
+    await waitFor(() => {
+      const admin = screen.getByRole("link", {
+        name: /admin/i,
+      }) as HTMLAnchorElement;
+      expect(admin.getAttribute("href")).toBe("/admin");
+    });
   });
 });

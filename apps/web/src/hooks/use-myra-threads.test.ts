@@ -151,11 +151,7 @@ describe("useAutoTitleFirstMessage", () => {
     expect(titleCalls()).toHaveLength(1);
   });
 
-  it("retries on a later message when the hub returns a no-op (thread null)", async () => {
-    // The hub best-effort-swallows a failed title inference to a logged warning
-    // and returns `{ thread: null }`. The thread keeps its default label, so the
-    // user's next message must get another shot — the optimistic latch must not
-    // bar the thread from ever being titled again (CL-2449).
+  it("does not retry when the hub accepts async titling (thread null)", async () => {
     const noopFetch = mock(
       async (_url: string, _init?: RequestInit) =>
         new Response(JSON.stringify({ thread: null }), {
@@ -171,7 +167,51 @@ describe("useAutoTitleFirstMessage", () => {
     act(() => result.current("first"));
     await waitFor(() => expect(noopTitleCalls()).toHaveLength(1));
     act(() => result.current("second"));
-    await waitFor(() => expect(noopTitleCalls()).toHaveLength(2));
+    await Promise.resolve();
+    expect(noopTitleCalls()).toHaveLength(1);
+  });
+
+  it("optimistically updates the sidebar label before the title request completes", async () => {
+    let resolveFetch!: () => void;
+    const fetchGate = new Promise<void>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const gatedFetch = mock(async (_url: string, _init?: RequestInit) => {
+      await fetchGate;
+      return new Response(JSON.stringify({ thread: null }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    globalThis.fetch = gatedFetch as unknown as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    client.setQueryData(["myra-threads", "tnt_child"], [defaultThread]);
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(
+      () => useAutoTitleFirstMessage(defaultThread),
+      {
+        wrapper,
+      },
+    );
+
+    act(() => result.current("How should we price Q3?"));
+    await waitFor(() => {
+      const threads = client.getQueryData<MyraThread[]>([
+        "myra-threads",
+        "tnt_child",
+      ]);
+      expect(threads?.[0]?.label).toBe("How should we price Q3");
+    });
+
+    resolveFetch();
+    await waitFor(() => expect(gatedFetch).toHaveBeenCalled());
   });
 
   it("retries on a later message when the title request errors", async () => {

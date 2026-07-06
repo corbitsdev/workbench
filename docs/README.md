@@ -7,19 +7,20 @@ here rather than duplicated — duplicated detail drifts.
 
 ## Read first
 
-| If you are…                                            | Read                                                                                                                      |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                                   |
-| Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary     |
-| Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                              |
-| Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                        |
-| Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                            |
-| Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                            |
-| Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                          |
-| Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                           |
-| Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added |
-| Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                            |
-| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                            |
+| If you are…                                            | Read                                                                                                                        |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| New to the product                                     | [`PRODUCT.md`](PRODUCT.md) — the product model and user-facing features                                                     |
+| Designing a change                                     | [`ARCHITECTURE.md`](ARCHITECTURE.md) — system design, the generic workflow-run + artifact model, Interchange boundary       |
+| Understanding how a workflow runs                      | [`WORKFLOWS.md`](WORKFLOWS.md) — the execution model, divergences from Interchange + why, the vendored surface, convergence |
+| Implementing in the hub/sidecar                        | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) — technical details and conventions                                                |
+| Calling or extending the HTTP API                      | [`API.md`](API.md)                                                                                                          |
+| Insights / usage analytics                             | [`ANALYTICS.md`](ANALYTICS.md)                                                                                              |
+| Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                              |
+| Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                            |
+| Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                             |
+| Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added   |
+| Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                              |
+| Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                              |
 
 ## Scope: root docs vs. package docs
 
@@ -40,6 +41,9 @@ here rather than duplicated — duplicated detail drifts.
 - `workflows/<kind>/` — native `@intx/workflow` definition packages
   (`@workbench/workflow-<kind>`), one per workflow kind; deployed via the admin
   CLI's **Local actions → Push a workflow** (see `ADMIN_CLI.md`)
+- [`WORKFLOWS.md`](WORKFLOWS.md) — the authoritative workflow execution model
+  (single-supervisor + in-process child, launch no-op, hub-RPC tool rail),
+  divergences from Interchange, the vendored surface, and upstream convergence
 - [`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) — how a workflow is authored,
   pushed, deployed, and run on the native runtime
 - `packages/tools-*/README.md` — individual hub tool packages (Gamma, Granola,

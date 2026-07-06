@@ -18,8 +18,38 @@ import type { WorkflowDeployService } from "../services/workflow-deploy";
 import { resolveWorkflowDeployConfig } from "../services/workflow-deploy-config";
 import { requestBodySchema } from "../lib/openapi";
 import { WorkflowMeta } from "../lib/workflow-meta";
+import { loadWorkflowCatalogKinds } from "../lib/workflow-catalog";
 
 const log = getLogger(["api", "workflow-deploy"]);
+
+// A deploy whose `kind` (the definition id) is not one of the real workflow
+// kinds in the build-time embedded catalog. Every `workflow_run` deployment
+// index row is written with `kind: definition.id` (the ONLY writer is
+// `publishWorkflowDefinition`), and redeploy-supersede only supersedes the same
+// `(kind, tenant)`. A junk/unique kind therefore never supersedes, never
+// soft-deletes, and its on-disk isogit repos + resident sidecar supervisor are
+// never reclaimed — the sidecar-OOM + hub-disk root cause (CL-2811). Rejecting
+// the write at the source is what stops the bleed. The autopublish bootstrap
+// only ever deploys catalog kinds, so it always passes this guard.
+export class NonCatalogWorkflowKindError extends Error {
+  constructor(readonly kind: string) {
+    super(
+      `Refusing to deploy workflow kind "${kind}": it is not in the embedded ` +
+        `workflow catalog. Only build-time catalog workflows are deployable ` +
+        `(add the definition to apps/hub/generated/workflow-defs to deploy it).`,
+    );
+    this.name = "NonCatalogWorkflowKindError";
+  }
+}
+
+// Throw unless `kind` is a real catalog workflow kind. Kept as a small pure
+// helper so the boundary is unit-testable without standing up a full deploy.
+export function assertDeployableKind(
+  kind: string,
+  catalogKinds: ReadonlySet<string>,
+): void {
+  if (!catalogKinds.has(kind)) throw new NonCatalogWorkflowKindError(kind);
+}
 
 // The capability grant a caller must hold to deploy a workflow over the
 // session path, mirroring Interchange's native admin grammar (`agent:*` /
@@ -249,6 +279,12 @@ export async function publishWorkflowDefinition(
   result: Awaited<ReturnType<WorkflowDeployService["deployWorkflow"]>>;
 }> {
   const { definition, targetTenantId, deployMeta } = args;
+
+  // Reject junk kinds at the source (CL-2811). Do this before any sidecar work
+  // so a non-catalog deploy leaves no `workflow_run` row, no on-disk repo, and
+  // no resident supervisor to leak.
+  assertDeployableKind(definition.id, await loadWorkflowCatalogKinds());
+
   const owner = await deps.db.query.principal.findFirst({
     where: and(
       eq(intxSchema.principal.tenantId, targetTenantId),

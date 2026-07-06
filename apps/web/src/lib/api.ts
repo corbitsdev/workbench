@@ -21,6 +21,22 @@ export function buildRootUrl(path: string): string {
   return new URL(`/${path.replace(/^\//, "")}`, resolveBase()).toString();
 }
 
+// EventSource URL for an /api/v1 SSE route. ALWAYS same-origin — never apiBase —
+// because a credentialed cross-origin EventSource is silently dropped by Safari
+// ITP and Brave shields (the connection opens but frames never surface). The
+// same-origin /api/v1 path is proxied to the hub in every environment: the Vite
+// dev proxy locally, and the Vercel `/api/(.*)` → `${HUB_UPSTREAM_URL}` rewrite
+// in prod (see vercel.json) — the same path the normal API client already rides
+// in prod, where VITE_API_BASE_URL is empty so resolveBase() is same-origin too.
+// The auth cookie is same-origin, so the proxied stream authenticates. (Regular
+// fetch is unaffected and may still use apiBase directly in a split-origin dev.)
+export function buildEventSourceUrl(path: string): string {
+  return new URL(
+    `/api/v1/${path.replace(/^\//, "")}`,
+    window.location.origin,
+  ).toString();
+}
+
 const VersionResponse = type({
   buildSha: "string | null",
 });
@@ -42,9 +58,94 @@ export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    // Machine-readable failure code from a nested { error: { code } } body
+    // (e.g. the deploy-window 503 "deploy_in_progress", CL-2707). Undefined for
+    // the flat { error: string } shape.
+    public readonly code?: string,
+    // Seconds the caller should wait before retrying, taken from the Retry-After
+    // header (else a numeric body field). Undefined when no hint is present.
+    public readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "ApiError";
+  }
+}
+
+function retryAfterFromHeader(res: Response): number | undefined {
+  const header = res.headers.get("Retry-After");
+  if (header === null || header.trim() === "") return undefined;
+  const seconds = Number(header);
+  return Number.isFinite(seconds) ? seconds : undefined;
+}
+
+// Build an ApiError from a failed response + parsed body. Handles BOTH error
+// shapes: the flat { error: string } every legacy failure returns, and the
+// nested { error: { code, message } } the deploy-window 503 returns (CL-2707).
+// A flat string stays the message with no code; a nested object surfaces its
+// message plus the machine `code` and any retry hint so callers can auto-retry.
+export function toApiError(res: Response, body: unknown): ApiError {
+  const retryHeader = retryAfterFromHeader(res);
+  if (body !== null && typeof body === "object" && "error" in body) {
+    const err = (body as Record<string, unknown>).error;
+    if (typeof err === "string") {
+      return new ApiError(err, res.status, undefined, retryHeader);
+    }
+    if (err !== null && typeof err === "object") {
+      const nested = err as Record<string, unknown>;
+      const message =
+        typeof nested.message === "string"
+          ? nested.message
+          : `HTTP ${res.status}`;
+      const code = typeof nested.code === "string" ? nested.code : undefined;
+      const retryBody =
+        typeof nested.retryAfterSeconds === "number"
+          ? nested.retryAfterSeconds
+          : undefined;
+      return new ApiError(message, res.status, code, retryHeader ?? retryBody);
+    }
+  }
+  return new ApiError(`HTTP ${res.status}`, res.status, undefined, retryHeader);
+}
+
+// True for the deploy-window 503 the hub returns while the sidecar reconnects
+// after a redeploy (CL-2707). The FE auto-retries these rather than flashing an
+// error, since the run resumes the moment the sidecar is back.
+export function isDeployInProgress(err: unknown): err is ApiError {
+  return (
+    err instanceof ApiError &&
+    err.status === 503 &&
+    err.code === "deploy_in_progress"
+  );
+}
+
+const DEPLOY_RETRY_MAX_ATTEMPTS = 4;
+const DEPLOY_RETRY_FALLBACK_SECONDS = 10;
+
+// Run `fn`, auto-retrying only the deploy-window 503 with bounded backoff
+// (respect Retry-After, else ~10s; capped attempts). `onRetrying` fires before
+// each wait so the UI can show an honest transient "finishing an update" state.
+// Any other error — or exhausting the attempts — rejects with the original
+// error so normal failures surface their message and never silently spin.
+export async function withDeployRetry<T>(
+  fn: () => Promise<T>,
+  opts?: {
+    onRetrying?: () => void;
+    sleep?: (ms: number) => Promise<void>;
+  },
+): Promise<T> {
+  const sleep =
+    opts?.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= DEPLOY_RETRY_MAX_ATTEMPTS || !isDeployInProgress(err)) {
+        throw err;
+      }
+      opts?.onRetrying?.();
+      const seconds = err.retryAfterSeconds ?? DEPLOY_RETRY_FALLBACK_SECONDS;
+      await sleep(seconds * 1000);
+    }
   }
 }
 
@@ -65,20 +166,14 @@ export async function api<T>(
   const res = await fetch(url, init);
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
-    const message =
-      body !== null &&
-      typeof body === "object" &&
-      "error" in body &&
-      typeof (body as Record<string, unknown>).error === "string"
-        ? (body as { error: string }).error
-        : `HTTP ${res.status}`;
+    const apiError = toApiError(res, body);
     logger.error("API request failed", {
       method,
       url,
       status: res.status,
-      error: message,
+      error: apiError.message,
     });
-    throw new ApiError(message, res.status);
+    throw apiError;
   }
 
   const data = (await res.json()) as T;
@@ -115,19 +210,13 @@ export async function uploadFile<T>(
   });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
-    const message =
-      body !== null &&
-      typeof body === "object" &&
-      "error" in body &&
-      typeof (body as Record<string, unknown>).error === "string"
-        ? (body as { error: string }).error
-        : `HTTP ${res.status}`;
+    const apiError = toApiError(res, body);
     logger.error("API upload failed", {
       url: urlString,
       status: res.status,
-      error: message,
+      error: apiError.message,
     });
-    throw new ApiError(message, res.status);
+    throw apiError;
   }
 
   return (await res.json()) as T;
@@ -152,19 +241,13 @@ export async function uploadForm<T>(
   });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
-    const message =
-      body !== null &&
-      typeof body === "object" &&
-      "error" in body &&
-      typeof (body as Record<string, unknown>).error === "string"
-        ? (body as { error: string }).error
-        : `HTTP ${res.status}`;
+    const apiError = toApiError(res, body);
     logger.error("API form upload failed", {
       url: urlString,
       status: res.status,
-      error: message,
+      error: apiError.message,
     });
-    throw new ApiError(message, res.status);
+    throw apiError;
   }
 
   return (await res.json()) as T;

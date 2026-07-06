@@ -137,6 +137,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -174,6 +175,7 @@ describe("artifact → gamma deck Panel", () => {
     // this is the one case that proves the fat real payload parses.
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -206,6 +208,7 @@ describe("artifact → gamma deck Panel", () => {
   it("cannot advance past the deck-fields page without a deck title", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -230,6 +233,7 @@ describe("artifact → gamma deck Panel", () => {
   it("requires a chosen source before reaching review", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -250,6 +254,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -278,6 +283,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -306,6 +312,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -339,6 +346,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "render-1": "completed",
@@ -369,6 +377,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "render-1": "completed",
@@ -402,6 +411,7 @@ describe("artifact → gamma deck Panel", () => {
   it("offers no refine on the final round", () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "render-3": "completed",
@@ -428,6 +438,7 @@ describe("artifact → gamma deck Panel", () => {
   it("disables approval while a signal is pending", () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "render-1": "completed",
@@ -455,6 +466,7 @@ describe("artifact → gamma deck Panel", () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "render-1": "completed",
@@ -489,6 +501,7 @@ describe("artifact → gamma deck Panel", () => {
     // the highest completed persist (a skipped 3 with no rendered deck).
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState(
           {
@@ -536,6 +549,7 @@ describe("artifact → gamma deck Panel", () => {
     // mistake that for a finished run and show the done screen mid-refine.
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({
           "persist-1": "completed",
@@ -569,6 +583,7 @@ describe("artifact → gamma deck Panel", () => {
   it("distinguishes a failed source load from an empty list", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -592,6 +607,7 @@ describe("artifact → gamma deck Panel", () => {
   it("shows a calm empty state (not a load error) when there are no artifacts", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -617,6 +633,7 @@ describe("artifact → gamma deck Panel", () => {
     }));
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -649,6 +666,7 @@ describe("artifact → gamma deck Panel", () => {
     }));
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -677,6 +695,7 @@ describe("artifact → gamma deck Panel", () => {
     }));
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -697,6 +716,7 @@ describe("artifact → gamma deck Panel", () => {
   it("does not warn about a cap when the artifact list is below the ceiling", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -718,6 +738,7 @@ describe("artifact → gamma deck Panel", () => {
     }));
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -743,6 +764,7 @@ describe("artifact → gamma deck Panel", () => {
   it("marks the chosen pick-list row with aria-pressed", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -767,6 +789,7 @@ describe("artifact → gamma deck Panel", () => {
   it("offers no search box on the Granola tab", async () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -787,6 +810,7 @@ describe("artifact → gamma deck Panel", () => {
   it("shows the saved-to-workbench done screen once a round is persisted", () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState(
           { "render-1": "completed", "persist-1": "completed" },
@@ -822,6 +846,7 @@ describe("artifact → gamma deck Panel", () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch;
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -859,6 +884,7 @@ describe("artifact → gamma deck Panel", () => {
     }) as unknown as typeof fetch;
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -883,6 +909,7 @@ describe("artifact → gamma deck Panel", () => {
     ) as unknown as typeof fetch;
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ intake: "awaiting-signal" })}
         connected
@@ -902,6 +929,7 @@ describe("artifact → gamma deck Panel", () => {
   it("shows the generation-failed banner when the run failed", () => {
     renderPanel(
       <Panel
+        logRead={true}
         deploymentId="dep_1"
         state={makeState({ "generate-1": "failed" }, "failed")}
         connected
@@ -912,6 +940,46 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    screen.getByText("Generation failed");
+    screen.getByText("Run failed at Draft");
+    screen.getByText(/No error details are available/);
+  });
+
+  it("shows the sanitized step error, never raw internals (CL-2659)", () => {
+    const state = {
+      phase: "failed",
+      steps: new Map([
+        ["intake", { stepId: "intake", phase: "completed", currentAttempt: 1 }],
+        [
+          "generate-1",
+          {
+            stepId: "generate-1",
+            phase: "failed",
+            currentAttempt: 1,
+            lastError: {
+              message:
+                "TypeError: boom at run (ins_01abc/ses_01def) /app/steps/generate.ts:42:7",
+            },
+          },
+        ],
+      ]),
+    } as unknown as RunState;
+    renderPanel(
+      <Panel
+        logRead={true}
+        deploymentId="dep_1"
+        state={state}
+        connected
+        signalPending={false}
+        stepOutputs={{}}
+        onSignal={noop}
+        onClose={noop}
+      />,
+    );
+
+    screen.getByText("Run failed at Draft");
+    screen.getByText(/Something went wrong inside this workflow run/);
+    expect(screen.queryByText(/ins_/)).toBeNull();
+    expect(screen.queryByText(/ses_/)).toBeNull();
+    expect(screen.queryByText(/TypeError/)).toBeNull();
   });
 });

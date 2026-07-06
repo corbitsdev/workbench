@@ -6,8 +6,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { createElement } from "react";
 import {
+  CONVERSATION_RUN_IDLE_POLL_MS,
+  CONVERSATION_RUN_POLL_MS,
+  conversationRunPollInterval,
   isRecordTerminal,
   runListIsActive,
+  useConversationWorkflowRuns,
   useArchiveWorkflowRun,
   useResumeWorkflow,
   useStartWorkflow,
@@ -64,6 +68,78 @@ describe("runListIsActive", () => {
       runListIsActive([{ status: "completed" }, { status: "running" }]),
     ).toBe(true);
     expect(runListIsActive([{ status: "awaiting" }])).toBe(true);
+  });
+});
+
+describe("conversationRunPollInterval", () => {
+  it("backs off to the idle tick when the list is empty or fully terminal", () => {
+    expect(conversationRunPollInterval([])).toBe(CONVERSATION_RUN_IDLE_POLL_MS);
+    expect(
+      conversationRunPollInterval([
+        { status: "completed" },
+        { status: "failed" },
+      ]),
+    ).toBe(CONVERSATION_RUN_IDLE_POLL_MS);
+  });
+
+  it("keeps the 5s cadence while any run is non-terminal, and before first data", () => {
+    expect(conversationRunPollInterval(undefined)).toBe(
+      CONVERSATION_RUN_POLL_MS,
+    );
+    expect(
+      conversationRunPollInterval([
+        { status: "completed" },
+        { status: "running" },
+      ]),
+    ).toBe(CONVERSATION_RUN_POLL_MS);
+    expect(conversationRunPollInterval([{ status: "awaiting" }])).toBe(
+      CONVERSATION_RUN_POLL_MS,
+    );
+  });
+});
+
+describe("useConversationWorkflowRuns", () => {
+  // conversationId == Myra thread id; producers stamp the same id as
+  // originConversationId — the hook filters by exactly that id.
+  it("filters records by the conversation (Myra thread) id and parses the rows", async () => {
+    let requested = "";
+    globalThis.fetch = ((url: Parameters<typeof fetch>[0]) => {
+      requested = String(url);
+      return Promise.resolve(
+        jsonResponse(200, [
+          {
+            runId: "wfr_1",
+            kind: "pain-point-collateral",
+            status: "running",
+            createdAt: "now",
+            originConversationId: "thread-1",
+          },
+        ]),
+      );
+    }) as typeof fetch;
+
+    const { result } = renderHook(
+      () => useConversationWorkflowRuns("thread-1", "tn-x"),
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(requested).toContain("originConversationId=thread-1");
+    expect(requested).toContain("tenantId=tn-x");
+    expect(result.current.data?.[0]?.runId).toBe("wfr_1");
+  });
+
+  it("is disabled without a conversation id", () => {
+    let called = false;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      called = true;
+      return Promise.resolve(jsonResponse(200, []));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useConversationWorkflowRuns(null), {
+      wrapper: wrapper(),
+    });
+    expect(result.current.fetchStatus).toBe("idle");
+    expect(called).toBe(false);
   });
 });
 
@@ -324,6 +400,60 @@ describe("useStartWorkflow", () => {
     await expect(
       result.current.mutateAsync({ kind: "pain-point-collateral", input: {} }),
     ).rejects.toThrow(/run-record response/);
+  });
+
+  it("auto-retries a deploy-window 503, fires onRedeploying, then resolves (CL-2707)", async () => {
+    let calls = 0;
+    // Retry-After: 0 keeps the backoff at 0ms so the retry loop runs fast.
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { code: "deploy_in_progress", message: "updating" },
+            }),
+            {
+              status: 503,
+              headers: {
+                "Content-Type": "application/json",
+                "Retry-After": "0",
+              },
+            },
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(200, { ...runningRecord }));
+    }) as typeof fetch;
+
+    let redeployNotices = 0;
+    const { result } = renderHook(() => useStartWorkflow("tn-x"), {
+      wrapper: wrapper(),
+    });
+    const record = await result.current.mutateAsync({
+      kind: "pain-point-collateral",
+      input: {},
+      onRedeploying: () => (redeployNotices += 1),
+    });
+    expect(record.runId).toBe("wfr_1");
+    expect(calls).toBe(2);
+    expect(redeployNotices).toBe(1);
+  });
+
+  it("does not retry a normal failure and surfaces its message", async () => {
+    let calls = 0;
+    globalThis.fetch = ((..._args: Parameters<typeof fetch>) => {
+      calls += 1;
+      return Promise.resolve(jsonResponse(500, { error: "no capacity" }));
+    }) as typeof fetch;
+
+    const { result } = renderHook(() => useStartWorkflow("tn-x"), {
+      wrapper: wrapper(),
+    });
+    await expect(
+      result.current.mutateAsync({ kind: "pain-point-collateral", input: {} }),
+    ).rejects.toThrow("no capacity");
+    expect(calls).toBe(1);
   });
 });
 

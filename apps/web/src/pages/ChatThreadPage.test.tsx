@@ -81,9 +81,38 @@ mock.module("../components/MyraChatSurface", () => ({
     ),
 }));
 
+// The dock owns its data fetching and has dedicated tests (WorkflowDock.test.tsx);
+// stub it here so the page test needs no QueryClientProvider or api mock.
+mock.module("../components/WorkflowDock", () => ({
+  WorkflowDock: (props: { conversationId: string | null }) =>
+    React.createElement("div", {
+      "data-testid": "workflow-dock",
+      "data-conversation-id": props.conversationId ?? "",
+    }),
+}));
+
+// Run-addressed workflow events derive from the shared conversation-runs query
+// (WorkflowDock's hook); stub the derivation so the page test needs no
+// QueryClientProvider — the derivation has its own tests (use-workflow-run-events).
+mock.module("../hooks/use-workflow-run-events", () => ({
+  useWorkflowRunEvents: () => [],
+}));
+
 mock.module("../components/ErrorBoundary", () => ({
   ErrorBoundary: ({ children }: { children: React.ReactNode }) =>
     React.createElement(React.Fragment, null, children),
+}));
+
+// HITL gate routing (CL-2681) has its own tests (use-conversation-gates.test.tsx,
+// MyraChatSurface.test.tsx); stub here so the page test needs no QueryClient.
+mock.module("../hooks/use-conversation-gates", () => ({
+  useConversationGates: () => ({ mode: "none" }),
+}));
+
+mock.module("../hooks/use-workflow", () => ({
+  useResumeConversationGate: () => ({
+    mutateAsync: () => Promise.resolve(),
+  }),
 }));
 
 const { ChatThreadPage } = require("./ChatThreadPage");
@@ -143,9 +172,15 @@ describe("ChatThreadPage", () => {
     screen.getByText(/loading your chats/i);
   });
 
-  it("renders the chat surface for a valid thread", () => {
+  it("renders the chat surface and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
     expect(screen.getByTestId("label").textContent).toBe("First");
+    // conversationId == Myra thread id; producers (workflow_start tool,
+    // chat-initiated starts) stamp the same id as originConversationId — never
+    // the instance id.
+    expect(
+      screen.getByTestId("workflow-dock").getAttribute("data-conversation-id"),
+    ).toBe("t1");
   });
 
   it("canonicalizes an unknown thread id to the resolved thread", () => {

@@ -3,9 +3,11 @@ import { describe, expect, it } from "bun:test";
 import {
   isLogStateTerminal,
   isRecordTerminal,
+  reconcileRunState,
   runStateFromLog,
   stepOutputsFromLog,
   type LogRunState,
+  type RunRecord,
 } from "./run-state-adapter";
 
 describe("isRecordTerminal", () => {
@@ -26,6 +28,39 @@ function logState(over: Partial<LogRunState>): LogRunState {
     ...over,
   };
 }
+
+describe("reconcileRunState — index status is authoritative for run-level terminal", () => {
+  const record = (status: RunRecord["status"]): RunRecord => ({
+    runId: "wfr_1",
+    kind: "brief",
+    status,
+  });
+
+  it("surfaces the index `failed` over a still-pending log phase (swept/aborted run)", () => {
+    // The empty-log hang: the sweep (or an operator abort) writes `failed` only
+    // to the index; the log fold never saw a terminal event, so it stays
+    // `pending`. The reconciled state must read terminal-`failed`, not the log's
+    // live-looking `pending`, so the pane stops and shows failed.
+    const log = runStateFromLog(logState({ phase: "pending" }));
+    const reconciled = reconcileRunState(record("failed"), log);
+    expect(reconciled.phase).toBe("failed");
+  });
+
+  it("surfaces the index `failed` over a running log phase", () => {
+    const log = runStateFromLog(logState({ phase: "running" }));
+    expect(reconcileRunState(record("failed"), log).phase).toBe("failed");
+  });
+
+  it("leaves a non-terminal index status alone (running run passes the log through)", () => {
+    const log = runStateFromLog(logState({ phase: "running" }));
+    expect(reconcileRunState(record("running"), log).phase).toBe("running");
+  });
+
+  it("does not downgrade a log that is already terminal", () => {
+    const log = runStateFromLog(logState({ phase: "completed" }));
+    expect(reconcileRunState(record("failed"), log).phase).toBe("completed");
+  });
+});
 
 describe("isLogStateTerminal", () => {
   it("treats completed, failed, and cancelled as terminal — not running/pending/awaiting", () => {
@@ -98,6 +133,40 @@ describe("stepOutputsFromLog", () => {
 
   it("returns an empty map for a run with no steps", () => {
     expect(stepOutputsFromLog(logState({}))).toEqual({});
+  });
+
+  it("lets sibling steps decode when one step's inline blob is malformed JSON", () => {
+    const outputs = stepOutputsFromLog(
+      logState({
+        steps: [
+          {
+            stepId: "good",
+            phase: "completed",
+            stepType: "deterministic",
+            currentAttempt: 1,
+            outputRef: 'inline:{"ok":true}',
+          },
+          {
+            stepId: "broken",
+            phase: "completed",
+            stepType: "agent",
+            currentAttempt: 1,
+            outputRef: "inline:{not json",
+          },
+          {
+            stepId: "also-good",
+            phase: "completed",
+            stepType: "inline",
+            currentAttempt: 1,
+            outputRef: `inline:${JSON.stringify({ n: 2 })}`,
+          },
+        ],
+      }),
+    );
+    // The malformed step is simply omitted (its raw ref renders the honest
+    // note); its siblings still decode. A whole-run catch would drop all three.
+    expect(outputs).toEqual({ good: { ok: true }, "also-good": { n: 2 } });
+    expect("broken" in outputs).toBe(false);
   });
 });
 

@@ -6,8 +6,10 @@ import {
   ChatPanel,
   type ChatAgentIdentity,
   type ChatDockState,
+  type ThreadInsert,
   type UIResponse,
   type PendingAttachment,
+  type SignalRouting,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
@@ -24,6 +26,7 @@ import {
 } from "@workbench/shared";
 import type { MyraSession } from "../hooks/use-myra-session";
 import { useActiveContext } from "../lib/active-context-store";
+import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { ActiveContextPills } from "./ActiveContextPills";
 
@@ -115,24 +118,66 @@ type MyraChatSurfaceProps = {
   session: MyraSession;
   /** Optional thread label shown as the agent tagline (multi-thread chat). */
   threadLabel?: string;
+  /**
+   * Content for the left of the panel's single header bar (e.g. the thread
+   * switcher), collapsing what used to be a separate switcher row into the one
+   * ChatPanel header.
+   */
+  headerLeft?: ReactNode;
   /** Notified with the text whenever the user sends a message (for auto-title). */
   onUserSend?: (text: string) => void;
+  /** Run-addressed workflow-event bubbles interleaved into the thread (CL-2682). */
+  inserts?: ThreadInsert[];
   dockState?: ChatDockState;
   onToggleDock?: () => void;
   expanded?: boolean;
   onToggleExpand?: () => void;
   onClose?: () => void;
+  /**
+   * HITL signal routing for this conversation's pending workflow gates
+   * (CL-2681). When exactly one gate is pending (`mode: "single"`), free text
+   * typed here is delivered to that gate via `onResumeSignal` instead of a chat
+   * turn; with more than one pending gate (`mode: "multi"`), free text stays a
+   * normal chat turn and a hint tells the user to use a run's card button.
+   */
+  signalRouting?: SignalRouting;
+  /**
+   * Resume a pending gate with a resolved payload (CL-2684). The caller passes
+   * the verbatim resume payload — a block response's structured payload, or a
+   * free-text `{ instruction }` — so a form/choice block resumes through the
+   * same contract as the WorkflowDock card, not a `value`-only `{ instruction }`
+   * that would drop a form's field map. Must reject on failure (it returns the
+   * resume mutation's promise, NOT a pre-swallowed one) so this surface can
+   * surface the reason and — for the free-text path — fall back to posting the
+   * text as a normal chat turn rather than silently losing the message (CL-2681).
+   */
+  onResumeSignal?: (
+    runId: string,
+    signalName: string,
+    payload: unknown,
+  ) => Promise<void>;
+  /**
+   * The resume mutation's `isPending`. Threaded in as the double-fire guard: a
+   * rapid second Enter/click while a resume is in flight is ignored, so at most
+   * one resume fires per gate (CL-2681).
+   */
+  resumeInFlight?: boolean;
 };
 
 export function MyraChatSurface({
   session,
   threadLabel,
+  headerLeft,
   onUserSend,
+  inserts,
   dockState,
   onToggleDock,
   expanded,
   onToggleExpand,
   onClose,
+  signalRouting,
+  onResumeSignal,
+  resumeInFlight,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity = threadLabel
     ? { ...MYRA, tagline: threadLabel }
@@ -144,6 +189,8 @@ export function MyraChatSurface({
 
   const activeContext = useActiveContext();
   const [attached, setAttached] = useState<ActiveContext[]>([]);
+  // Sanitized reason for a failed gate resume (CL-2681), shown above the prompt.
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const attachCurrent = useCallback((): boolean => {
     if (!activeContext) return false;
@@ -170,6 +217,11 @@ export function MyraChatSurface({
     expanded,
     onToggleExpand,
     onClose,
+    // Docked context aligns the composer to the message column; the wide
+    // full-page/expanded surfaces keep the centered prompt. A docked panel that
+    // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
+    composerFullWidth: dockState === "docked" && expanded !== true,
+    ...(headerLeft !== undefined ? { headerLeft } : {}),
   };
 
   const { state } = session;
@@ -242,7 +294,42 @@ export function MyraChatSurface({
   // message. Inline (not a first-class Interchange attachment) because Myra's
   // DeepSeek/openai-compatible harness does not ingest document attachment
   // ContentBlocks (CL-2495 spike). Cleared once the send is dispatched.
+  const resumeFailureMessage = (err: unknown): string =>
+    err instanceof Error && err.message.trim().length > 0
+      ? err.message
+      : "Couldn't send your response to the workflow. Please try again.";
+
   const handleSend = (text: string, attachments?: PendingAttachment[]) => {
+    setResumeError(null);
+    // Single pending gate: free text is the gate's answer, not a chat turn
+    // (CL-2681). Routed only when there are NO attachments AND no active-context
+    // pills — both are conversation acts, not gate payloads (FIX 4). With >1 gate
+    // pending we do NOT auto-route (the hint below tells the user to use a card).
+    const noAttachments =
+      (attachments === undefined || attachments.length === 0) &&
+      attached.length === 0;
+    if (
+      signalRouting?.mode === "single" &&
+      onResumeSignal !== undefined &&
+      noAttachments &&
+      text.trim().length > 0
+    ) {
+      // Double-fire guard: ignore a second Enter while a resume is in flight.
+      if (resumeInFlight) return;
+      const { runId, signalName } = signalRouting.gate;
+      onUserSend?.(text);
+      // Free text is the gate's answer wrapped as an instruction (the pre-block
+      // HITL path) — no block payload here.
+      void onResumeSignal(runId, signalName, { instruction: text }).catch(
+        (err: unknown) => {
+          // The resume failed (e.g. a stale-gate 409) — never lose the user's
+          // text: post it as a normal chat turn and surface the reason.
+          setResumeError(resumeFailureMessage(err));
+          void session.send(text);
+        },
+      );
+      return;
+    }
     onUserSend?.(text);
     const composed =
       attached.length === 0
@@ -253,9 +340,46 @@ export function MyraChatSurface({
     if (attached.length > 0) setAttached([]);
     return session.send(composed, attachments);
   };
-  const handleRespond = (response: UIResponse) => session.send(response.value);
 
-  const inputAccessory =
+  // A gate block (choice/form/multiSelect) carries its `awaitSignal` name; route
+  // it through the resume path with its RESOLVED payload — the same shared
+  // contract as the dock card (CL-2684) — instead of posting the value as a chat
+  // turn. A form emits `value: ""` with its field map in `payload`, so we must
+  // forward the resolved payload verbatim, never the bare value (FIX 3). The
+  // target run is the conversation's sole pending gate. On failure surface the
+  // reason (a block response, unlike free text, is not re-posted as a turn).
+  const handleRespond = (response: UIResponse): void | Promise<void> => {
+    setResumeError(null);
+    if (
+      response.signalName !== undefined &&
+      onResumeSignal !== undefined &&
+      signalRouting?.mode === "single"
+    ) {
+      if (resumeInFlight) return;
+      // Return the resume promise so the interactive block awaits it and shows
+      // its own inline pending/error, keeping the user's typed input on failure
+      // (CL-2684). A block response is not re-posted as a chat turn, so the
+      // rejection propagates to the block instead of the accessory notice.
+      return onResumeSignal(
+        signalRouting.gate.runId,
+        response.signalName,
+        resolveResumePayload(response),
+      ).then(() => undefined);
+    }
+    session.send(response.value);
+  };
+
+  // With more than one workflow gate pending, free text cannot pick a run for
+  // the user (CL-2681) — tell them to answer from a run's card in the dock.
+  const multiGateHint =
+    signalRouting?.mode === "multi" ? (
+      <p className="text-xs text-text-3" role="note">
+        {signalRouting.gates.length} runs are waiting on you. Use a run's card
+        in the workflow dock to answer the one you mean.
+      </p>
+    ) : null;
+
+  const attachedPills =
     attached.length > 0 ? (
       <ActiveContextPills
         attached={attached.map(activeContextToRef)}
@@ -263,10 +387,29 @@ export function MyraChatSurface({
       />
     ) : null;
 
+  const resumeErrorNotice =
+    resumeError !== null ? (
+      <p className="text-xs text-red" role="alert">
+        {resumeError}
+      </p>
+    ) : null;
+
+  const inputAccessory =
+    multiGateHint !== null ||
+    attachedPills !== null ||
+    resumeErrorNotice !== null ? (
+      <div className="space-y-1.5">
+        {resumeErrorNotice}
+        {multiGateHint}
+        {attachedPills}
+      </div>
+    ) : null;
+
   return (
     <ChatPanel
       {...chrome}
       messages={session.messages}
+      {...(inserts !== undefined ? { inserts } : {})}
       onSend={handleSend}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}

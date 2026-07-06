@@ -61,6 +61,24 @@ const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
+// CL-2727 run liveness sweep. Generous defaults so a healthy-but-slow run is
+// never failed: a GONE supervisor with no progress is orphaned past the grace,
+// while a ROUTABLE supervisor with no progress (a slow first step) is left alone
+// until the far longer hard deadline. See run-liveness-sweep.ts for the full
+// predicate.
+const DEFAULT_RUN_LIVENESS_STALL_GRACE_MS = 5 * 60 * 1000;
+const DEFAULT_RUN_LIVENESS_START_HARD_DEADLINE_MS = 20 * 60 * 1000;
+const DEFAULT_RUN_LIVENESS_INTERVAL_MS = 60 * 1000;
+
+// CL-2790 idle chat-session reaper. `reapAfterMs`: a live chat session with no
+// activity for this long is slept (undeployed, session ended, instance left
+// relaunchable). `intervalMs`: how often the sweep runs. CL-2795 made the reaper
+// always-on (the former `IDLE_SESSION_REAP_ENABLED` kill switch is gone) and
+// dropped the threshold to 5 minutes, swept every minute; an in-flight-turn
+// guard spares any agent mid-work. Both knobs stay env-tunable.
+const DEFAULT_IDLE_SESSION_REAP_AFTER_MS = 5 * 60 * 1000;
+const DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS = 60 * 1000;
+
 function requireEnv(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`Missing required environment variable: ${name}`);
@@ -156,6 +174,51 @@ export function loadConfig() {
     granola: {
       baseUrl: "https://public-api.granola.ai/v1",
     },
+    // models.dev open pricing database (CL-2714). Fetched + cached hub-side and
+    // exposed via /api/tenants/:tenantId/pricing so the browser never hits
+    // models.dev directly (CSP). URLs are contract-guaranteed defaults;
+    // overridable for tests/mirrors. TTL defaults to 6 hours — prices change
+    // rarely and the shared hub should not refetch a 3MB payload per request.
+    pricing: {
+      apiUrl:
+        optionalEnv("MODELS_DEV_API_URL") ?? "https://models.dev/api.json",
+      logosBaseUrl:
+        optionalEnv("MODELS_DEV_LOGOS_URL") ?? "https://models.dev/logos",
+      ttlMs: parsePositiveIntEnv("MODELS_DEV_TTL_MS", 6 * 60 * 60 * 1000),
+      // Abort a hung models.dev fetch so it cannot wedge every pricing request
+      // behind a never-resolving in-flight promise.
+      fetchTimeoutMs: parsePositiveIntEnv("MODELS_DEV_TIMEOUT_MS", 10_000),
+    },
+    // Insights (CL-2753). The tenant-wide activity feed runs the heaviest
+    // Insights query — a per-row UNION across un-indexable interchange tables.
+    // A short in-process TTL memoizes the tenant-wide FIRST page so N members
+    // opening the feed within the window collapse to one DB union instead of
+    // one per open. Only the redacted tenant-wide first page is cached; deep
+    // (cursor) pages and per-principal drill-downs are never memoized.
+    insights: {
+      tenantActivityCacheTtlMs: parsePositiveIntEnv(
+        "INSIGHTS_TENANT_ACTIVITY_CACHE_TTL_MS",
+        45_000,
+      ),
+    },
+    // Workflow deploy caches (CL-2760). Model-source catalog resolution and the
+    // parsed+validated workflow definition are both recomputed on every provision
+    // AND every re-establish. Short in-process TTLs collapse that redundant work.
+    // The TTLs are deliberately short — long enough to absorb a burst of
+    // run-starts, short enough that an operator catalog change is picked up within
+    // the window rather than masked. The definition cache is keyed on (kind,
+    // mtime) but ALSO carries a TTL backstop: a checkout/restore that preserves
+    // mtime while changing content cannot serve a stale definition past the TTL.
+    workflowDeploy: {
+      modelSourceCacheTtlMs: parsePositiveIntEnv(
+        "WORKFLOW_MODEL_SOURCE_CACHE_TTL_MS",
+        45_000,
+      ),
+      definitionCacheTtlMs: parsePositiveIntEnv(
+        "WORKFLOW_DEFINITION_CACHE_TTL_MS",
+        45_000,
+      ),
+    },
     // Error reporting. Optional: when SENTRY_DSN is unset, Sentry and its log
     // sink are a no-op (see setupObservability). Read directly by initSentry at
     // startup; mirrored here for visibility. Default environment is 'production'.
@@ -225,6 +288,44 @@ export function loadConfig() {
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
       "milliseconds",
     ),
+    // CL-2727 continuous run liveness sweep. `stallGraceMs`: a GONE-supervisor
+    // run must be idle at least this long before it is orphan-failed (also the
+    // candidate-scan cutoff). `startHardDeadlineMs`: a ROUTABLE-supervisor run
+    // that has made NO progress is only failed past this far longer deadline —
+    // a slow first step under it is left alone (the false-positive fix).
+    // `intervalMs`: how often the loop runs. Override with RUN_LIVENESS_*.
+    runLivenessSweep: {
+      stallGraceMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_STALL_GRACE_MS",
+        DEFAULT_RUN_LIVENESS_STALL_GRACE_MS,
+        "milliseconds",
+      ),
+      startHardDeadlineMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_START_HARD_DEADLINE_MS",
+        DEFAULT_RUN_LIVENESS_START_HARD_DEADLINE_MS,
+        "milliseconds",
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "RUN_LIVENESS_INTERVAL_MS",
+        DEFAULT_RUN_LIVENESS_INTERVAL_MS,
+        "milliseconds",
+      ),
+    },
+    // CL-2790/CL-2795 idle chat-session reaper. Always-on; an in-flight-turn
+    // guard spares any agent mid-work. Override thresholds with
+    // IDLE_SESSION_REAP_AFTER_MS / IDLE_SESSION_REAP_INTERVAL_MS.
+    idleSessionReaper: {
+      reapAfterMs: parsePositiveIntEnv(
+        "IDLE_SESSION_REAP_AFTER_MS",
+        DEFAULT_IDLE_SESSION_REAP_AFTER_MS,
+        "milliseconds",
+      ),
+      intervalMs: parsePositiveIntEnv(
+        "IDLE_SESSION_REAP_INTERVAL_MS",
+        DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS,
+        "milliseconds",
+      ),
+    },
   };
 
   log.info("Configuration loaded", {

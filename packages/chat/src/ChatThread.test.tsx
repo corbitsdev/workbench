@@ -208,4 +208,25 @@ describe("ChatThread", () => {
     screen.getByText("Hello");
     screen.getByText("Hi back");
   });
+
+  it("interleaves host inserts into the thread by timestamp", () => {
+    render(
+      <ChatThread
+        messages={messages}
+        inserts={[
+          {
+            id: "evt-1",
+            at: "2026-06-04T00:00:30Z",
+            node: <div data-testid="evt">between</div>,
+          },
+        ]}
+      />,
+    );
+    const log = screen.getByRole("log", { name: "Chat messages" });
+    // The insert sits after "Hello" (00:00:00) and before "Hi back" (00:01:00).
+    const order = log.textContent ?? "";
+    expect(screen.getByTestId("evt")).toBeDefined();
+    expect(order.indexOf("Hello")).toBeLessThan(order.indexOf("between"));
+    expect(order.indexOf("between")).toBeLessThan(order.indexOf("Hi back"));
+  });
 });

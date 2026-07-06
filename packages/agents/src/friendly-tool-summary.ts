@@ -109,6 +109,16 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   firecrawl_monitor_run: "Running a page monitor",
   firecrawl_monitor_check: "Checking a page monitor",
 
+  // Workflow runs
+  workflow_start: (args) => {
+    const kind = firstStringArg(args, ["kind"]);
+    return kind === null
+      ? "Starting a workflow"
+      : `Starting the ${kind} workflow`;
+  },
+  workflow_list_runs: "Checking workflow runs",
+  workflow_signal: "Resuming a workflow run",
+
   // Gamma — presentations
   gamma_create_from_template: "Building a presentation",
   gamma_duplicate_presentation: "Duplicating a presentation",

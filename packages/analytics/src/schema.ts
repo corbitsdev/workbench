@@ -135,8 +135,13 @@ export const analyticsEvent = pgTable(
   (t) => [
     unique("analytics_event_event_key").on(t.eventKey),
     // Secondary indexes deferred: analytics_event is append-only and high-write.
-    // Add (tenant_id, occurred_at) and (instance_id, occurred_at) only when a
-    // raw-fact query needs them — the rollup table serves all current reads.
+    // getCacheBaseline (queries.ts, CL-2686) is the FIRST raw-fact reader
+    // (tenant_id + event_type filter, occurred_at range, group by agent_id) —
+    // today a low-frequency operator/diagnostic endpoint, so a seq-scan is
+    // acceptable at current scale. Before CL-2687's cost dashboard drives real
+    // traffic, add a (tenant_id, occurred_at) index — but analytics_event is
+    // write-hot, so build it off-peak / non-blocking (a plain CREATE INDEX
+    // locks writes; cf. the CL-2490 hot-table lesson). Tracked as a follow-up.
   ],
 );
 

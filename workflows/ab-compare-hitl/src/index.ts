@@ -38,7 +38,21 @@ export const ARTIFACT_KIND = "ab-comparison";
 const executeStep = inlineInferenceStep({
   id: "hitl-ab-execute",
   systemPrompt: AB_EXECUTE_SYSTEM_PROMPT,
-  input: { from: "trigger.payload" },
+  // Inside the `execute` map the runtime rebinds `trigger.payload` to the CURRENT
+  // variant record, which the execute agent reads as its JSON input. A variant
+  // record carries provider/model but NOT the prompt to run — the shared prompt
+  // is the top-level `config.output.input`. Merge it onto every variant so each
+  // model runs on the shared prompt (CL-2684): the block-driven dock form submits
+  // one shared `input` and per-variant records without their own `input`, so
+  // without this thread each variant would run prompt-less. Merge order puts the
+  // shared prompt last so it is authoritative even if a variant carries its own
+  // (the run-page panel copies the shared prompt into each variant — same result).
+  input: {
+    merge: [
+      { from: "trigger.payload" },
+      { project: { from: "steps.config.output" }, fields: ["input"] },
+    ],
+  },
 });
 
 export const workflow = defineWorkflow({

@@ -48,16 +48,19 @@ mock.module("@workbench/chat", () => ({
     React.createElement("div", { "data-testid": "docked" }, children),
   FloatingChat: ({ children }: { children: React.ReactNode }) =>
     React.createElement("div", { "data-testid": "floating" }, children),
-  DOCKED_BAR_HEIGHT: 340,
+  DOCKED_BAR_TOTAL_HEIGHT: "calc(clamp(360px, 58vh, 760px) + 18px)",
 }));
 mock.module("./MyraChatSurface", () => ({
   MyraChatSurface: (props: {
     onUserSend?: (t: string) => void;
     onToggleExpand?: () => void;
+    headerLeft?: React.ReactNode;
   }) =>
     React.createElement(
       "div",
       { "data-testid": "surface" },
+      // The switcher now rides in the panel header via headerLeft.
+      props.headerLeft,
       React.createElement(
         "button",
         { onClick: () => props.onUserSend?.("typed in dock") },
@@ -90,6 +93,17 @@ mock.module("./MyraChatSurface", () => ({
 mock.module("./ThreadSwitcher", () => ({
   ThreadSwitcher: () =>
     React.createElement("div", { "data-testid": "thread-switcher" }),
+}));
+// The popup workflow strip owns its data fetching and has dedicated tests
+// (WorkflowDock.popup.test.tsx); stub it here so this test needs no
+// QueryClientProvider or api mock, and assert the wiring it receives.
+mock.module("./WorkflowDock", () => ({
+  WorkflowDock: (props: { conversationId: string | null; variant?: string }) =>
+    React.createElement("div", {
+      "data-testid": "popup-workflow-dock",
+      "data-conversation-id": props.conversationId ?? "",
+      "data-variant": props.variant ?? "",
+    }),
 }));
 
 const { PersonalAgentChat } = require("./PersonalAgentChat");
@@ -159,6 +173,23 @@ describe("PersonalAgentChat dock", () => {
     fireEvent.click(screen.getByRole("button", { name: "minimize" }));
     expect(screen.queryByTestId("expanded-overlay")).toBeNull();
     screen.getByTestId("surface");
+  });
+
+  it("mounts the popup workflow strip wired to the active thread's conversation id", () => {
+    renderAt("/artifacts/art-1");
+    const dock = screen.getByTestId("popup-workflow-dock");
+    expect(dock.getAttribute("data-variant")).toBe("popup");
+    // Active thread defaults to the first thread when none is selected.
+    expect(dock.getAttribute("data-conversation-id")).toBe("thr-other");
+  });
+
+  it("carries the workflow strip into the expanded overlay layout", () => {
+    renderAt("/artifacts/art-1");
+    fireEvent.click(screen.getByRole("button", { name: "expand" }));
+    const overlay = screen.getByTestId("expanded-overlay");
+    expect(
+      overlay.querySelector('[data-testid="popup-workflow-dock"]'),
+    ).not.toBeNull();
   });
 
   it("renders nothing on the full-page chat route", () => {

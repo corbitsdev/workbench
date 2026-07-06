@@ -28,6 +28,15 @@ mock.module("../workflow-executor/run-store", () => ({
     const found = runs.get(runId);
     if (found) runs.set(runId, structuredClone({ ...found, status }));
   },
+  // CL-2755 CAS: fail only if still provisioning.
+  failRunIfStillProvisioning: async (_db: unknown, runId: string) => {
+    const found = runs.get(runId);
+    if (found && found.status === "provisioning") {
+      runs.set(runId, structuredClone({ ...found, status: "failed" }));
+      return true;
+    }
+    return false;
+  },
   insertRunRecord: async (
     _db: unknown,
     args: {
@@ -37,6 +46,8 @@ mock.module("../workflow-executor/run-store", () => ({
       tenantId: string;
       principalId: string;
       input: unknown;
+      originConversationId: string | null;
+      status?: RunState["status"];
     },
   ) => {
     const state: RunState = {
@@ -44,13 +55,25 @@ mock.module("../workflow-executor/run-store", () => ({
       kind: args.kind,
       tenantId: args.tenantId,
       principalId: args.principalId,
-      status: "running",
+      status: args.status ?? "running",
       ...(args.deploymentId !== null
         ? { deploymentId: args.deploymentId }
+        : {}),
+      ...(args.originConversationId !== null
+        ? { originConversationId: args.originConversationId }
         : {}),
     };
     runs.set(state.runId, structuredClone(state));
     return state;
+  },
+  // CL-2755: the async start tail attaches the deployment once provisioned.
+  setRunDeployment: async (
+    _db: unknown,
+    runId: string,
+    deploymentId: string,
+  ) => {
+    const found = runs.get(runId);
+    if (found) runs.set(runId, structuredClone({ ...found, deploymentId }));
   },
   loadRunRecord: async (_db: unknown, runId: string) => {
     const found = runs.get(runId);
@@ -67,16 +90,58 @@ mock.module("../workflow-executor/run-store", () => ({
     _tenantIds: readonly string[],
     principalId: string,
     kind?: string,
+    filters?: { originConversationId?: string },
   ) =>
     [...runs.values()]
       .filter((r) => r.principalId === principalId)
       .filter((r) => kind === undefined || r.kind === kind)
+      .filter(
+        (r) =>
+          filters?.originConversationId === undefined ||
+          r.originConversationId === filters.originConversationId,
+      )
       .map((r) => ({
         runId: r.runId,
         kind: r.kind,
         status: r.status,
         createdAt: new Date(),
+        originConversationId: r.originConversationId ?? null,
       })),
+  // CL-2727 stats reads. The aggregation logic is exercised over a real DB in
+  // run-stats.integration.test.ts; here the route gating is what matters, so
+  // canned shapes suffice.
+  getRunKindStats: async (
+    _db: unknown,
+    _tenantIds: readonly string[],
+    _principalId: string,
+    kind?: string,
+  ) => [
+    {
+      kind: kind ?? "brief",
+      runs: {
+        provisioning: 0,
+        running: 1,
+        awaiting: 0,
+        completed: 2,
+        failed: 0,
+        total: 3,
+      },
+      steps: { total: 4, byPhase: { completed: 4 }, avgDurationMs: 1500 },
+    },
+  ],
+  listRunSteps: async (_db: unknown, runId: string) => {
+    const found = runs.get(runId);
+    if (!found) return [];
+    return [
+      {
+        stepId: "s1",
+        phase: "completed",
+        attempts: 1,
+        startedAt: new Date("2026-04-01T00:00:00.000Z"),
+        endedAt: new Date("2026-04-01T00:00:02.000Z"),
+      },
+    ];
+  },
 }));
 
 // Preserve LogRunStateSchema (the route validates its output through it) and
@@ -122,6 +187,17 @@ mock.module("../workflow-executor/run-state-from-log", () => ({
   },
 }));
 
+// The live-gate the resume guard reads (CL-2681). `null` simulates an unreadable
+// log (the guard falls back to the coarse index status); an array is the set of
+// open awaitSignal names the run is currently parked on.
+let cannedAwaitingSignals: string[] | null = null;
+mock.module("../workflow-executor/run-awaiting-signals", () => ({
+  getAwaitingSignalNames: async (): Promise<Set<string>> => {
+    if (cannedAwaitingSignals === null) throw new Error("log unreadable");
+    return new Set(cannedAwaitingSignals);
+  },
+}));
+
 const { createWorkflowRunRecordsRouter } = await import(
   "./workflow-run-records"
 );
@@ -149,6 +225,17 @@ let provisionShouldThrow = false;
 const reclaimCalls: { deploymentId: string; tenantId: string }[] = [];
 let reclaimShouldThrow = false;
 
+// CL-2707 deploy-window probe. The probe reports "connected" once the call
+// count reaches `sidecarConnectsAtProbe` (1 = connected on the first check =
+// the fast path with no wait; a large number = a bounded wait that eventually
+// succeeds; Infinity = never connects, forcing the timeout 503).
+let sidecarProbeCalls = 0;
+let sidecarConnectsAtProbe = 1;
+const isSidecarConnected = (): boolean => {
+  sidecarProbeCalls += 1;
+  return sidecarProbeCalls >= sidecarConnectsAtProbe;
+};
+
 function resetCaptures(): void {
   runs.clear();
   sentMessages.length = 0;
@@ -161,6 +248,9 @@ function resetCaptures(): void {
   provisionShouldThrow = false;
   reclaimShouldThrow = false;
   runStateShouldThrow = false;
+  cannedAwaitingSignals = null;
+  sidecarProbeCalls = 0;
+  sidecarConnectsAtProbe = 1;
 }
 
 const reclaimDeployment = async (args: {
@@ -253,6 +343,10 @@ function makeDb(
         findMany: async () => deployments,
         findFirst: async () => deployments[0],
       },
+      // CL-2727: the solo stats read fetches run-level timing.
+      workflowRunRecord: {
+        findFirst: async () => ({ startedAt: null, endedAt: null }),
+      },
     },
   };
   return db as HubDb;
@@ -281,6 +375,10 @@ function routerWith(opts: {
       ensureDeploymentRoutable,
       provisionRunDeployment,
       reclaimDeployment,
+      isSidecarConnected,
+      // Tiny bounds keep the deploy-window wait sub-second in tests.
+      sidecarWaitTimeoutMs: 200,
+      sidecarPollIntervalMs: 5,
       resolveContext: async () => ({
         context: opts.context ?? { tenantId: "tn-1", principalId: "prn-1" },
         forbidden: false,
@@ -325,8 +423,21 @@ async function get(
   return { status: res.status, json: await res.json() };
 }
 
+// CL-2755: the start route responds BEFORE the deploy completes; the provision
+// + trigger run on a detached background task. Poll the in-memory row until that
+// tail settles (the run failed, or the trigger mail for this run went out) so the
+// assertions below observe a deterministic end state, not a race.
+async function settleStart(runId: string): Promise<void> {
+  for (let i = 0; i < 400; i++) {
+    const row = runs.get(runId);
+    const triggered = sentMessages.some((m) => m.messageId === runId);
+    if (row?.status === "failed" || triggered) return;
+    await new Promise((res) => setTimeout(res, 5));
+  }
+}
+
 describe("workflow runs on the sidecar (records router)", () => {
-  test("start provisions a FRESH per-run deployment from the definition and triggers IT, not the shared registry deployment (CL-2582)", async () => {
+  test("start returns 'provisioning' immediately then provisions a FRESH per-run deployment and triggers IT, not the shared registry deployment (CL-2582 / CL-2755)", async () => {
     resetCaptures();
     const a = app();
     const { status, json } = await post(
@@ -337,11 +448,14 @@ describe("workflow runs on the sidecar (records router)", () => {
       },
     );
 
+    // CL-2755: instant ack — the run is seeded `provisioning` with NO deployment
+    // yet, and the response lands without waiting for the cold deploy.
     expect(status).toBe(200);
-    expect(json.status).toBe("running");
-    expect(json.currentStepId).toBeUndefined();
-    expect(json.outputs).toBeUndefined();
+    expect(json.status).toBe("provisioning");
+    expect(json.deploymentId).toBeUndefined();
     expect(typeof json.runId).toBe("string");
+
+    await settleStart(json.runId);
 
     // Provisioned once, into the DEFINITION's tenant + deploy principal (the
     // shared registry row), NOT the caller's principal.
@@ -353,8 +467,9 @@ describe("workflow runs on the sidecar (records router)", () => {
     });
 
     // The run runs on its OWN fresh deployment, never the shared `ses_dep1`.
-    expect(json.deploymentId).toBe("ses_run_1");
-    expect(json.deploymentId).not.toBe("ses_dep1");
+    const settled = runs.get(json.runId);
+    expect(settled?.deploymentId).toBe("ses_run_1");
+    expect(settled?.deploymentId).not.toBe("ses_dep1");
 
     // The linchpin of the projection bridge: the trigger mail's messageId IS the
     // run record id, and it targets the fresh per-run deployment's address.
@@ -381,7 +496,7 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentMessages).toHaveLength(0);
   });
 
-  test("start 500s and seeds no run record when per-run provision fails", async () => {
+  test("start acks 'provisioning' then flips the run to failed when per-run provision fails, and fires no trigger (CL-2755)", async () => {
     resetCaptures();
     provisionShouldThrow = true;
     const a = app();
@@ -390,14 +505,20 @@ describe("workflow runs on the sidecar (records router)", () => {
       "/workflow-exec/pain-point-collateral/start",
       { input: {} },
     );
-    expect(status).toBe(500);
-    expect(json.error).toMatch(/failed to provision/);
-    // No row seeded and no trigger sent — the run never came into being.
-    expect([...runs.values()]).toHaveLength(0);
+    // The ack is instant and optimistic; the failure surfaces on the run record.
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The seeded row is flipped to a visible terminal `failed` — never left stuck
+    // provisioning — and no trigger mail ever fires.
+    const seeded = runs.get(json.runId);
+    expect(seeded?.status).toBe("failed");
     expect(sentMessages).toHaveLength(0);
   });
 
-  test("start marks the run failed and 500s when the sidecar trigger send throws", async () => {
+  test("start acks 'provisioning' then flips the run to failed when the sidecar trigger send throws (CL-2755)", async () => {
     resetCaptures();
     sendShouldThrow = true;
     const a = app();
@@ -408,13 +529,16 @@ describe("workflow runs on the sidecar (records router)", () => {
         input: {},
       },
     );
-    expect(status).toBe(500);
-    expect(json.error).toMatch(/failed to start/);
-    // The run was provisioned and the row seeded before the trigger failed; the
-    // row is flipped to failed so the UI doesn't poll a phantom run (its orphaned
-    // deployment is reclaimed by the terminal-teardown + janitor sweep).
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The run was provisioned before the trigger failed; the row is flipped to
+    // failed so the UI doesn't poll a phantom run (its orphaned deployment is
+    // reclaimed by the terminal-teardown + janitor sweep).
     expect(provisionCalls).toHaveLength(1);
-    const seeded = [...runs.values()][0];
+    const seeded = runs.get(json.runId);
     expect(seeded?.status).toBe("failed");
   });
 
@@ -425,6 +549,8 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    // CL-2755: let the async start tail attach the deployment before parking.
+    await settleStart(runId);
     // Simulate the bridge having parked the row at a gate.
     const parked = runs.get(runId);
     if (parked)
@@ -474,6 +600,7 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     const parked = runs.get(runId);
     if (parked)
       runs.set(runId, {
@@ -497,6 +624,7 @@ describe("workflow runs on the sidecar (records router)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     const parked = runs.get(runId);
     if (parked)
       runs.set(runId, {
@@ -559,8 +687,11 @@ describe("workflow runs on the sidecar (records router)", () => {
     const a = app();
     const runId = await parkedAttioRun(a);
 
+    // A signal with NO registered schema for this kind passes through unvalidated.
+    // (`task-selection` became registered in CL-2731, so it is no longer a valid
+    // stand-in for "unregistered" — use a genuinely-unregistered signal name.)
     const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
-      signalName: "task-selection",
+      signalName: "freeform-note",
       payload: { anything: "goes" },
     });
 
@@ -585,12 +716,15 @@ describe("workflow runs on the sidecar (records router)", () => {
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
     expect(read.status).toBe(200);
     expect(read.json.runId).toBe(start.json.runId);
-    expect(read.json.status).toBe("running");
-    // The fresh per-run deploymentId persisted at start round-trips through the
-    // read DTO.
+    // CL-2755: the record stays `provisioning` until the projection bridge folds
+    // the first RunStarted (not exercised here); the read round-trips it.
+    expect(read.json.status).toBe("provisioning");
+    // The fresh per-run deploymentId the async tail attached round-trips through
+    // the read DTO.
     expect(read.json.deploymentId).toBe("ses_run_1");
   });
 
@@ -651,6 +785,88 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(sentSignals).toHaveLength(0);
   });
 
+  test("start threads originConversationId from the body into the record, and read exposes it (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: { topic: "Acme" },
+      originConversationId: "conv-42",
+    });
+    expect(start.status).toBe(200);
+    expect(start.json.originConversationId).toBe("conv-42");
+    // The stored record carries it — not just the echo.
+    expect(runs.get(start.json.runId)?.originConversationId).toBe("conv-42");
+
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.json.originConversationId).toBe("conv-42");
+  });
+
+  test("a direct start with no chat context stores no origin and the read omits it (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    expect(start.status).toBe(200);
+    expect(start.json.originConversationId).toBeUndefined();
+    expect(runs.get(start.json.runId)?.originConversationId).toBeUndefined();
+
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.json.originConversationId).toBeUndefined();
+  });
+
+  test("a schema-invalid start body 400s instead of silently starting with empty input (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const wrongType = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {}, originConversationId: 123 },
+    );
+    expect(wrongType.status).toBe(400);
+
+    const overlong = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {}, originConversationId: "c".repeat(257) },
+    );
+    expect(overlong.status).toBe(400);
+
+    // Neither invalid body may have started a run.
+    expect(runs.size).toBe(0);
+  });
+
+  test("GET /records exposes each run's origin and ?originConversationId= filters to that chat's runs (CL-2677)", async () => {
+    resetCaptures();
+    const a = app();
+    const inChat = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+      originConversationId: "conv-42",
+    });
+    const direct = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+
+    const all = await get(a, "/workflow-exec/records");
+    expect(all.json).toHaveLength(2);
+    const byId = new Map(
+      all.json.map((r: { runId: string; originConversationId: unknown }) => [
+        r.runId,
+        r.originConversationId,
+      ]),
+    );
+    expect(byId.get(inChat.json.runId)).toBe("conv-42");
+    expect(byId.get(direct.json.runId)).toBeNull();
+
+    const filtered = await get(
+      a,
+      "/workflow-exec/records?originConversationId=conv-42",
+    );
+    expect(filtered.json.map((r: { runId: string }) => r.runId)).toEqual([
+      inChat.json.runId,
+    ]);
+  });
+
   test("a run in a tenant outside the callers chain reads as 404", async () => {
     resetCaptures();
     const owner = app();
@@ -669,6 +885,94 @@ describe("workflow runs on the sidecar (records router)", () => {
     } finally {
       ancestorChain = ["tn-1"];
     }
+  });
+});
+
+describe("resume gate-guard: stale/mismatched resume is a 409 (CL-2681)", () => {
+  // Seed a run at a given coarse status without going through /start (which
+  // always seeds 'running'); the guard must consult the live gate, not trust an
+  // optimistic caller.
+  function seedRun(status: RunState["status"]): string {
+    const runId = "wfr_guard";
+    runs.set(runId, {
+      runId,
+      kind: "pain-point-collateral",
+      tenantId: "tn-1",
+      principalId: "prn-1",
+      status,
+      deploymentId: "ses_run_1",
+      originConversationId: "conv-1",
+    });
+    return runId;
+  }
+
+  test("resume against a run whose log shows no open gate is 409 — no signal, no status flip", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = []; // readable log, but nothing is awaiting
+    const a = app();
+    const runId = seedRun("running");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+
+    expect(r.status).toBe(409);
+    expect(sentSignals).toHaveLength(0);
+    expect(ensureCalls).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("running"); // not resurrected
+  });
+
+  test.each(["completed", "failed", "running"] as const)(
+    "resume against a %s run (log unreadable, coarse status not awaiting) is 409 and fires no signal",
+    async (status) => {
+      resetCaptures();
+      cannedAwaitingSignals = null; // unreadable → falls back to index status
+      const a = app();
+      const runId = seedRun(status);
+
+      const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+        signalName: "note-selection",
+        payload: {},
+      });
+
+      expect(r.status).toBe(409);
+      expect(sentSignals).toHaveLength(0);
+      expect(runs.get(runId)?.status).toBe(status); // status unchanged
+    },
+  );
+
+  test("resume with a signalName that does not match the open gate is 409", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = ["review"]; // the run is parked on 'review'
+    const a = app();
+    const runId = seedRun("awaiting");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection", // wrong gate
+      payload: {},
+    });
+
+    expect(r.status).toBe(409);
+    expect(sentSignals).toHaveLength(0);
+    expect(runs.get(runId)?.status).toBe("awaiting"); // not flipped
+  });
+
+  test("resume whose signalName matches the open gate is delivered and flips to running", async () => {
+    resetCaptures();
+    cannedAwaitingSignals = ["review"];
+    const a = app();
+    const runId = seedRun("awaiting");
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "review",
+      payload: { ok: true },
+    });
+
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe("running");
+    expect(sentSignals).toHaveLength(1);
+    expect(sentSignals[0]?.signalName).toBe("review");
   });
 });
 
@@ -694,6 +998,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const read = await get(a, `/workflow-exec/runs/${runId}/state`);
     expect(read.status).toBe(200);
@@ -723,6 +1028,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
     expect(read.status).toBe(500);
     expect(read.json.error).toBe("failed to read run state");
@@ -735,6 +1041,7 @@ describe("GET /workflow-exec/runs/:runId/state — log-derived RunState (CL-2669
     const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
       input: {},
     });
+    await settleStart(start.json.runId);
     const read = await get(a, `/workflow-exec/runs/${start.json.runId}/state`);
     expect(read.status).toBe(200);
     expect(read.json.phase).toBe("pending");
@@ -809,6 +1116,7 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const r = await archive(a, runId);
     expect(r.status).toBe(200);
@@ -831,6 +1139,7 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
     // Park the run at a gate, as the projection bridge would.
     const parked = runs.get(runId);
     if (parked)
@@ -899,10 +1208,183 @@ describe("archive workflow run (CL-2629)", () => {
       input: {},
     });
     const runId = start.json.runId;
+    await settleStart(runId);
 
     const r = await archive(a, runId);
     expect(r.status).toBe(200);
     const list = await get(a, "/workflow-exec/records");
     expect(list.json).toHaveLength(0);
+  });
+});
+
+// Seed a parked (awaiting) run without exercising the deploy-window probe, then
+// reset the probe counter so the resume-side assertions start from zero.
+async function seedParkedRun(a: AppHono): Promise<string> {
+  const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+    input: {},
+  });
+  const runId = start.json.runId;
+  // CL-2755: wait for the async start tail to attach the deployment (resume
+  // needs it), THEN park the run at a gate.
+  await settleStart(runId);
+  const parked = runs.get(runId);
+  if (parked) runs.set(runId, { ...parked, status: "awaiting" });
+  sidecarProbeCalls = 0;
+  return runId;
+}
+
+describe("deploy-window: bounded wait for the sidecar (CL-2707)", () => {
+  test("resume takes the fast path (one probe, no wait, signal delivered) when the sidecar is already connected", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    // sidecarConnectsAtProbe stays 1: connected on the first probe.
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+    expect(r.status).toBe(200);
+    expect(sentSignals).toHaveLength(1);
+    // Exactly one probe and never entered the poll loop.
+    expect(sidecarProbeCalls).toBe(1);
+  });
+
+  test("resume waits then succeeds when the sidecar connects after a few polls", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    sidecarConnectsAtProbe = 3; // false, false, then connected
+
+    const r = await post(a, `/workflow-exec/records/${runId}/resume`, {
+      signalName: "note-selection",
+      payload: {},
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe("running");
+    // It waited (multiple probes) before delivering the gate signal.
+    expect(sidecarProbeCalls).toBeGreaterThanOrEqual(3);
+    expect(sentSignals).toHaveLength(1);
+    expect(ensureCalls).toHaveLength(1);
+  });
+
+  test("resume times out to a sanitized 503 with Retry-After (never a raw 500) and delivers no signal", async () => {
+    resetCaptures();
+    const a = app();
+    const runId = await seedParkedRun(a);
+    sidecarConnectsAtProbe = Number.POSITIVE_INFINITY; // never connects
+
+    const res = await a.request(`/workflow-exec/records/${runId}/resume`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ signalName: "note-selection", payload: {} }),
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("10");
+    const json = (await res.json()) as {
+      error: { code: string; message: string };
+    };
+    expect(json.error.code).toBe("deploy_in_progress");
+    expect(typeof json.error.message).toBe("string");
+    // The raw signal-failure 500 must never leak here.
+    expect(res.status).not.toBe(500);
+    // Nothing was attempted against the sidecar.
+    expect(ensureCalls).toHaveLength(0);
+    expect(sentSignals).toHaveLength(0);
+  });
+
+  test("start's background tail takes the fast path and provisions when the sidecar is already connected (CL-2755)", async () => {
+    resetCaptures();
+    const a = app();
+    const r = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    // Instant ack; the sidecar probe + provision happen on the background tail.
+    expect(r.status).toBe(200);
+    expect(r.json.status).toBe("provisioning");
+    await settleStart(r.json.runId);
+    expect(provisionCalls).toHaveLength(1);
+    expect(sidecarProbeCalls).toBe(1);
+  });
+
+  test("start's background tail waits then provisions when the sidecar connects after a few polls (CL-2755)", async () => {
+    resetCaptures();
+    sidecarConnectsAtProbe = 3;
+    const a = app();
+    const r = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    expect(r.status).toBe(200);
+    await settleStart(r.json.runId);
+    expect(sidecarProbeCalls).toBeGreaterThanOrEqual(3);
+    expect(provisionCalls).toHaveLength(1);
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  test("start still acks instantly but the background tail flips the run failed (provisioning nothing) when the sidecar never reconnects (CL-2755)", async () => {
+    resetCaptures();
+    sidecarConnectsAtProbe = Number.POSITIVE_INFINITY;
+    const a = app();
+    const { status, json } = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    // The move off the critical path (CL-2755): start no longer blocks or 503s
+    // on the deploy window — it acks `provisioning` immediately.
+    expect(status).toBe(200);
+    expect(json.status).toBe("provisioning");
+
+    await settleStart(json.runId);
+
+    // The tail waited for a sidecar, timed out, and marked the run failed loudly
+    // — provisioning nothing and firing no trigger.
+    expect(runs.get(json.runId)?.status).toBe("failed");
+    expect(provisionCalls).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+  });
+});
+
+describe("GET /workflow-exec/stats (CL-2727)", () => {
+  test("aggregate mode returns the by-kind stats for the caller", async () => {
+    const { status, json } = await get(app(), "/workflow-exec/stats");
+    expect(status).toBe(200);
+    expect(Array.isArray(json)).toBe(true);
+    expect(json[0].kind).toBe("brief");
+    expect(json[0].runs.total).toBe(3);
+    expect(json[0].steps.avgDurationMs).toBe(1500);
+  });
+
+  test("kind filter is passed through to the aggregate", async () => {
+    const { status, json } = await get(app(), "/workflow-exec/stats?kind=deck");
+    expect(status).toBe(200);
+    expect(json[0].kind).toBe("deck");
+  });
+
+  test("solo mode returns a seeded run's per-step breakdown with durations", async () => {
+    resetCaptures();
+    const a = app();
+    // Seed a run via /start so loadRunRecord (the in-memory mock) finds it.
+    const started = await post(
+      a,
+      "/workflow-exec/pain-point-collateral/start",
+      { input: {} },
+    );
+    expect(started.status).toBe(200);
+    const runId = started.json.runId as string;
+
+    const { status, json } = await get(
+      a,
+      `/workflow-exec/stats?runId=${runId}`,
+    );
+    expect(status).toBe(200);
+    expect(json.runId).toBe(runId);
+    expect(json.steps).toHaveLength(1);
+    expect(json.steps[0].stepId).toBe("s1");
+    expect(json.steps[0].durationMs).toBe(2000);
+  });
+
+  test("solo mode 404s for an unknown run", async () => {
+    const { status } = await get(app(), "/workflow-exec/stats?runId=nope");
+    expect(status).toBe(404);
   });
 });

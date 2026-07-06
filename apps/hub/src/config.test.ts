@@ -26,6 +26,11 @@ const MANAGED_KEYS = [
   "WORKFLOW_AUTOPUBLISH_MAP",
   "WEDGE_SWEEP_INTERVAL_MS",
   "WEDGE_UNROUTABLE_GRACE_MS",
+  "RUN_LIVENESS_STALL_GRACE_MS",
+  "RUN_LIVENESS_START_HARD_DEADLINE_MS",
+  "RUN_LIVENESS_INTERVAL_MS",
+  "IDLE_SESSION_REAP_AFTER_MS",
+  "IDLE_SESSION_REAP_INTERVAL_MS",
   "HUB_AGENT_GC_PACK_THRESHOLD",
   "HUB_AGENT_GC_LOOSE_THRESHOLD",
   "HUB_AGENT_GC_WARN_BYTES",
@@ -166,6 +171,69 @@ describe("loadConfig", () => {
       expect(() => loadConfig()).toThrow(
         `WEDGE_UNROUTABLE_GRACE_MS must be a positive integer (milliseconds); got "${bad}"`,
       );
+    }
+  });
+
+  it("defaults the run liveness sweep knobs to generous values and honors overrides", () => {
+    setRequiredEnv();
+    const sweep = loadConfig().runLivenessSweep;
+    expect(sweep.stallGraceMs).toBe(5 * 60 * 1000);
+    expect(sweep.startHardDeadlineMs).toBe(20 * 60 * 1000);
+    expect(sweep.intervalMs).toBe(60 * 1000);
+
+    process.env["RUN_LIVENESS_STALL_GRACE_MS"] = "120000";
+    process.env["RUN_LIVENESS_START_HARD_DEADLINE_MS"] = "600000";
+    process.env["RUN_LIVENESS_INTERVAL_MS"] = "30000";
+    const overridden = loadConfig().runLivenessSweep;
+    expect(overridden.stallGraceMs).toBe(120_000);
+    expect(overridden.startHardDeadlineMs).toBe(600_000);
+    expect(overridden.intervalMs).toBe(30_000);
+  });
+
+  it("defaults the idle session reaper to a 5-minute threshold swept every minute and honors overrides", () => {
+    setRequiredEnv();
+    const reaper = loadConfig().idleSessionReaper;
+    expect(reaper.reapAfterMs).toBe(5 * 60 * 1000);
+    expect(reaper.intervalMs).toBe(60 * 1000);
+
+    process.env["IDLE_SESSION_REAP_AFTER_MS"] = "1800000";
+    process.env["IDLE_SESSION_REAP_INTERVAL_MS"] = "120000";
+    const overridden = loadConfig().idleSessionReaper;
+    expect(overridden.reapAfterMs).toBe(1_800_000);
+    expect(overridden.intervalMs).toBe(120_000);
+  });
+
+  it("rejects a non-positive-integer idle session reaper knob", () => {
+    for (const key of [
+      "IDLE_SESSION_REAP_AFTER_MS",
+      "IDLE_SESSION_REAP_INTERVAL_MS",
+    ]) {
+      for (const bad of ["0", "-5", "1.5", "abc"]) {
+        setRequiredEnv();
+        process.env[key] = bad;
+        expect(() => loadConfig()).toThrow(
+          `${key} must be a positive integer (milliseconds); got "${bad}"`,
+        );
+        delete process.env[key];
+      }
+    }
+  });
+
+  it("rejects a non-positive-integer run liveness sweep knob", () => {
+    setRequiredEnv();
+    for (const key of [
+      "RUN_LIVENESS_STALL_GRACE_MS",
+      "RUN_LIVENESS_START_HARD_DEADLINE_MS",
+      "RUN_LIVENESS_INTERVAL_MS",
+    ]) {
+      for (const bad of ["0", "-5", "1.5", "abc"]) {
+        setRequiredEnv();
+        process.env[key] = bad;
+        expect(() => loadConfig()).toThrow(
+          `${key} must be a positive integer (milliseconds); got "${bad}"`,
+        );
+        delete process.env[key];
+      }
     }
   });
 

@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as intxDb from "@intx/db";
 import { LLM_DEFAULT_MODEL, LLM_WRITER_MODEL } from "@workbench/agents";
 import type { InferenceSource } from "@intx/types/runtime";
@@ -23,12 +23,29 @@ const resolveModelSources = mock(
 );
 mock.module("@intx/db", () => ({ ...intxDb, resolveModelSources }));
 
+// The catalog cache reads its TTL from getConfig(); apps/hub tests do not
+// preload test-setup/loadConfig, so stub the one field the cache touches.
+mock.module("../config", () => ({
+  getConfig: () => ({ workflowDeploy: { modelSourceCacheTtlMs: 45_000 } }),
+}));
+
 const {
   collectDeclaredStepModels,
   collectDeclaredStepModelMaxTokens,
   resolveWorkflowDeployConfig,
   assembleWorkflowDeployConfig,
 } = await import("./workflow-deploy-config");
+
+const { resetWorkflowModelSourceCache } = await import(
+  "./workflow-model-source-cache"
+);
+
+// Catalog resolution is now memoized per (tenant, model-set) (CL-2760); clear it
+// between cases so each test's resolveModelSources call-count and returned chain
+// reflect a fresh resolve rather than a prior test's cached entry.
+beforeEach(() => {
+  resetWorkflowModelSourceCache();
+});
 
 afterAll(() => {
   mock.restore();
@@ -225,6 +242,31 @@ describe("resolveWorkflowDeployConfig", () => {
     await expect(resolveWorkflowDeployConfig(args)).rejects.toThrow(
       /no model requirement/,
     );
+  });
+
+  test("memoizes the catalog resolution across provisions within the TTL (CL-2760)", async () => {
+    resolution = { ok: true, sources: [HEAD, FAILOVER] };
+    resolveModelSources.mockClear();
+
+    const first = await resolveWorkflowDeployConfig(args);
+    const second = await resolveWorkflowDeployConfig(args);
+
+    // Both provisions produce the resolved chain, but the DB resolver ran only
+    // once — the second read served from the (tenant, model-set) memo.
+    expect(first.config.sources).toEqual([HEAD, FAILOVER]);
+    expect(second.config.sources).toEqual([HEAD, FAILOVER]);
+    expect(resolveModelSources.mock.calls.length).toBe(1);
+  });
+
+  test("re-resolves for a different tenant even within the TTL (CL-2760)", async () => {
+    resolution = { ok: true, sources: [HEAD] };
+    resolveModelSources.mockClear();
+
+    await resolveWorkflowDeployConfig({ ...args, tenantId: "ten-a" });
+    await resolveWorkflowDeployConfig({ ...args, tenantId: "ten-b" });
+
+    // A distinct tenant is a distinct cache key, so the resolver runs per tenant.
+    expect(resolveModelSources.mock.calls.length).toBe(2);
   });
 });
 

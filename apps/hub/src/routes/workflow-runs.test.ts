@@ -680,89 +680,28 @@ describe("GET /workflow-runs/:deploymentId/steps (batched step outputs)", () => 
   });
 });
 
-describe("PATCH /workflow-runs/:deploymentId/status", () => {
-  function patchStatus(
-    app: ReturnType<typeof buildApp>,
-    dep: string,
-    body: unknown,
-  ) {
-    return app.request(
-      new Request(`http://local/workflow-runs/${dep}/status`, {
+// CL-2727: the FE-driven optimistic status write is GONE. The projection bridge
+// (and the hub liveness sweep) are the sole writers of run status. The former
+// PATCH /workflow-runs/:deploymentId/status route — which the FE called on a
+// terminal SSE event to write workflow_run.status directly — must no longer
+// exist, so the FE can no longer write status. An unmatched route 404s.
+describe("PATCH /workflow-runs/:deploymentId/status is removed (CL-2727)", () => {
+  it("404s — the client can no longer write run status", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: "tenant-1", principalId: "p-1" },
+        forbidden: false,
+      });
+    updateCapture.length = 0;
+    const res = await buildApp(makeDb(true)).request(
+      new Request("http://local/workflow-runs/dep-1/status", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ status: "completed" }),
       }),
     );
-  }
-
-  it("updates the status to completed and returns the deployment + status", async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: "tenant-1", principalId: "p-1" },
-        forbidden: false,
-      });
-    updateCapture.length = 0;
-
-    const res = await patchStatus(buildApp(makeDb(true)), "dep-1", {
-      status: "completed",
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { deploymentId: string; status: string };
-    expect(body.deploymentId).toBe("dep-1");
-    expect(body.status).toBe("completed");
-    expect(updateCapture).toEqual([
-      { deploymentId: "dep-1", status: "completed" },
-    ]);
-  });
-
-  it("accepts failed and cancelled as valid terminal statuses", async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: "tenant-1", principalId: "p-1" },
-        forbidden: false,
-      });
-    updateCapture.length = 0;
-
-    const res1 = await patchStatus(buildApp(makeDb(true)), "dep-1", {
-      status: "failed",
-    });
-    expect(res1.status).toBe(200);
-    const res2 = await patchStatus(buildApp(makeDb(true)), "dep-1", {
-      status: "cancelled",
-    });
-    expect(res2.status).toBe(200);
-  });
-
-  it("400s for an invalid status value", async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: "tenant-1", principalId: "p-1" },
-        forbidden: false,
-      });
-    const res = await patchStatus(buildApp(makeDb(true)), "dep-1", {
-      status: "running",
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it("404s for a deployment the caller does not own", async () => {
-    userContextImpl = () =>
-      Promise.resolve({
-        context: { tenantId: "tenant-1", principalId: "p-1" },
-        forbidden: false,
-      });
-    const res = await patchStatus(buildApp(makeDb(false)), "dep-x", {
-      status: "completed",
-    });
     expect(res.status).toBe(404);
-  });
-
-  it("403s when there is no user context", async () => {
-    userContextImpl = () =>
-      Promise.resolve({ context: null, forbidden: false });
-    const res = await patchStatus(buildApp(makeDb(true)), "dep-1", {
-      status: "completed",
-    });
-    expect(res.status).toBe(403);
+    // And nothing was written.
+    expect(updateCapture).toEqual([]);
   });
 });

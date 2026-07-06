@@ -175,6 +175,61 @@ Fetches recent calls from Granola API (if configured).
 
 ---
 
+## Admin API (governance)
+
+The Admin area (CL-2719/2720/2721/2735/2736) is a thin surface over
+Interchange's **native** grant and role system — there is no custom permission
+model. Every route is under `/api/v1/admin/*` and gated server-side by an admin
+grant guard (`createAdminGrantGuard`): the caller's root-tenant principal is
+authorized via `authorize(grantStore, principalId, tenantId, "admin:*", "manage")`,
+which only the `owner` (`*:*`) and `admin` (`*`/`manage`) system roles satisfy.
+The web nav gate (`/me` now returns `isAdmin`) is cosmetic; the hub is
+authoritative. All governance is scoped to the root (global org) tenant.
+
+Read-only browsers:
+
+```
+GET /api/v1/admin/definitions/workflows   # active workflow deployments
+GET /api/v1/admin/definitions/agents      # agent definitions
+GET /api/v1/admin/definitions/tools       # runnable tool definitions
+GET /api/v1/admin/principals              # humans + agent-instance principals + roles
+GET /api/v1/admin/principals/:id/grants   # resolved grants via collectGrants (direct + role)
+GET /api/v1/admin/roles                   # tenant roles
+GET /api/v1/admin/audit                   # compliance audit log (newest first)
+```
+
+Admin role management (each mutation validates the target principal and is
+audit-logged):
+
+```
+POST /api/v1/admin/principals/:id/elevate   # assign the admin role (elevate)
+POST /api/v1/admin/principals/:id/demote    # remove the admin role (demote)
+```
+
+Role writes go to Interchange's own `principal_role` table using its schema —
+the evaluation engine (`authorize` / `collectGrants`), schema, and semantics
+stay 100% native. Elevating a principal assigns the `admin` role, which inherits
+every lesser capability via its wildcard grants (native role→grant expansion),
+so admin is a superset with no per-grant copying; demote removes it.
+
+**Deferred — per-capability grant sharing (CL-2799).** Sharing an individual
+capability (e.g. `activity:principal`/`read`) with a principal WITHOUT full
+admin was intentionally not shipped: every `/admin/*` route currently gates on
+full admin, so such a grant would gate nothing in-product. Real per-capability
+enforcement — and the sharing UI + audit retention that go with it — is deferred
+to CL-2799. The enforced management surface today is admin role assignment only.
+
+### Audit storage decision (CL-2735)
+
+Cross-principal activity reads (a member viewing another principal's timeline —
+open intra-tenant since CL-2743) and every admin role change (elevate/demote)
+are recorded in a **dedicated workbench-owned `admin_audit` table**, not
+`analytics_event`. The
+analytics pipeline is written only from the sidecar (`agent.event`), so hub-side
+one-shots like an admin read are invisible there; a compliance surface needs a
+hub-owned durable record. Own-principal reads are not logged (noise). The table
+touches no Interchange-owned table.
+
 ## Health Check
 
 ```

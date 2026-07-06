@@ -45,6 +45,12 @@ export interface ChatInputProps {
    * can consume (see @workbench/agents `attachmentCapabilityForAgent`).
    */
   attachmentPolicy?: AttachmentPolicy;
+  /**
+   * Run the input row edge-to-edge, left-aligned, instead of the default
+   * centered, capped (`lg:max-w-[60vw]`) width. Used in the docked context so
+   * the composer's left edge lines up with the message column.
+   */
+  fullWidth?: boolean;
 }
 
 /**
@@ -59,6 +65,7 @@ export function ChatInput({
   busy,
   className,
   attachmentPolicy,
+  fullWidth,
 }: ChatInputProps) {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingAttachment[]>([]);
@@ -73,6 +80,10 @@ export function ChatInput({
   const attachmentsEnabled =
     attachmentPolicy !== undefined &&
     attachmentPolicy.acceptedMimeTypes.length > 0;
+  // Docked context lines the composer up with the message column; the wide
+  // full-page/expanded surfaces keep the centered, capped prompt.
+  const rowWidth =
+    fullWidth === true ? "w-full" : "mx-auto w-full lg:max-w-[60vw]";
 
   useLayoutEffect(() => {
     if (textareaRef.current === null) return;
@@ -165,7 +176,7 @@ export function ChatInput({
   return (
     <div
       className={cn(
-        "border-t border-border p-3",
+        "shrink-0 border-t border-border px-4 py-3",
         dragActive && "ring-2 ring-inset ring-orange",
         className,
       )}
@@ -174,7 +185,12 @@ export function ChatInput({
       onDrop={handleDrop}
     >
       {pending.length > 0 && (
-        <div className="mx-auto mb-2 flex max-h-28 w-full flex-wrap gap-2 overflow-y-auto lg:max-w-[60vw]">
+        <div
+          className={cn(
+            "mb-2 flex max-h-28 flex-wrap gap-2 overflow-y-auto",
+            rowWidth,
+          )}
+        >
           {pending.map((attachment) => (
             <AttachmentChip
               key={attachment.id}
@@ -186,7 +202,7 @@ export function ChatInput({
       )}
 
       {errors.length > 0 && (
-        <div className="mx-auto mb-2 w-full space-y-0.5 lg:max-w-[60vw]">
+        <div className={cn("mb-2 space-y-0.5", rowWidth)}>
           {errors.map((message, index) => (
             <p key={index} role="alert" className="text-xs text-red-500">
               {message}
@@ -195,9 +211,10 @@ export function ChatInput({
         </div>
       )}
 
-      {/* Cap the input row to ~60vw and center it on large screens so the prompt
-          box does not stretch edge-to-edge across a wide/expanded panel. */}
-      <div className="mx-auto flex w-full items-end gap-2 lg:max-w-[60vw]">
+      {/* Centered + capped by default so the prompt box does not stretch
+          edge-to-edge across a wide/expanded panel; `fullWidth` lines it up with
+          the message column in the docked context. */}
+      <div className={cn("flex items-end gap-2", rowWidth)}>
         {attachmentsEnabled && (
           <>
             <input

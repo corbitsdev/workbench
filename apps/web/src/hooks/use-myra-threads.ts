@@ -1,5 +1,9 @@
-import { useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  isDefaultMyraThreadLabel,
+  myraThreadTitleFromFirstMessage,
+} from "@workbench/shared";
 import {
   createMyraThread,
   deleteMyraThread,
@@ -13,7 +17,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 /** Matches the hub's default labels ('Chat', 'Chat 2', …) — i.e. not user-set. */
 export function isDefaultThreadLabel(label: string): boolean {
-  return /^Chat( \d+)?$/.test(label.trim());
+  return isDefaultMyraThreadLabel(label);
 }
 
 const MYRA_THREADS_KEY = "myra-threads";
@@ -154,11 +158,29 @@ export function useGenerateMyraThreadTitle() {
         id,
         firstMessage,
       ),
+    onMutate: ({ id, firstMessage }) => {
+      const tenantId = requireActiveTenant(activeTenantId);
+      const label = myraThreadTitleFromFirstMessage(firstMessage);
+      queryClient.setQueryData<MyraThreadListItem[]>(
+        myraThreadsKey(tenantId),
+        (existing) => {
+          if (!existing) return existing;
+          return existing.map((item) =>
+            item.id === id ? { ...item, label } : item,
+          );
+        },
+      );
+    },
     onSuccess: (thread) => {
       if (thread)
         void queryClient.invalidateQueries({
           queryKey: myraThreadsKey(activeTenantId),
         });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
     },
   });
 }
@@ -173,8 +195,18 @@ export function useGenerateMyraThreadTitle() {
  * the default-label guard under a per-principal lock, so a redundant call from
  * another surface is a safe no-op, not an overwrite.
  */
+function firstUserMessage(
+  messages: { role: string; content: string }[],
+): string | null {
+  const first = messages.find(
+    (message) => message.role === "user" && message.content.trim().length > 0,
+  );
+  return first?.content ?? null;
+}
+
 export function useAutoTitleFirstMessage(
   active: MyraThread | null,
+  messages: { role: string; content: string }[] = [],
 ): (text: string) => void {
   const generateTitle = useGenerateMyraThreadTitle();
   const titledRef = useRef<Set<string>>(new Set());
@@ -183,23 +215,33 @@ export function useAutoTitleFirstMessage(
   // effect that captured an earlier instance, or if a caller memoizes it.
   const activeRef = useRef(active);
   activeRef.current = active;
-  return (text: string) => {
-    const thread = activeRef.current;
-    if (!thread || !isDefaultThreadLabel(thread.label)) return;
-    if (titledRef.current.has(thread.id)) return;
-    // Latch up front to block a concurrent double-fire, then release on a hub
-    // no-op (`thread: null`) or error so the next message can retry (CL-2449).
-    titledRef.current.add(thread.id);
-    generateTitle.mutate(
-      { id: thread.id, firstMessage: text },
-      {
-        onSuccess: (updated) => {
-          if (!updated) titledRef.current.delete(thread.id);
+
+  const titleFromText = useCallback(
+    (text: string) => {
+      const thread = activeRef.current;
+      if (!thread || !isDefaultThreadLabel(thread.label)) return;
+      if (titledRef.current.has(thread.id)) return;
+      // Latch up front to block a concurrent double-fire. The hub accepts titling
+      // asynchronously (`thread: null`); only release the latch on request error.
+      titledRef.current.add(thread.id);
+      generateTitle.mutate(
+        { id: thread.id, firstMessage: text },
+        {
+          onError: () => {
+            titledRef.current.delete(thread.id);
+          },
         },
-        onError: () => {
-          titledRef.current.delete(thread.id);
-        },
-      },
-    );
-  };
+      );
+    },
+    [generateTitle],
+  );
+
+  useEffect(() => {
+    if (!active || !isDefaultThreadLabel(active.label)) return;
+    const firstMessage = firstUserMessage(messages);
+    if (firstMessage === null) return;
+    titleFromText(firstMessage);
+  }, [active, messages, titleFromText]);
+
+  return titleFromText;
 }

@@ -522,6 +522,16 @@ export function createSessionManager(
     return errors;
   }
 
+  // WORKBENCH-LOCAL (CL-2813): Bun/mimalloc does not return a torn-down agent's
+  // freed heap to the OS on its own, so sidecar RSS climbs to peak concurrent
+  // load and holds (measured: fresh 422MB → 6.4GB, flat). Force a GC after each
+  // full session teardown (reaper eviction, instance delete, redeploy) so memory
+  // tracks live agents. Guarded for any non-Bun import context.
+  function reclaimHeap(): void {
+    const bun = (globalThis as { Bun?: { gc?: (force: boolean) => void } }).Bun;
+    bun?.gc?.(true);
+  }
+
   async function destroySession(agentAddress: string): Promise<void> {
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
@@ -542,6 +552,7 @@ export function createSessionManager(
     } else {
       logger.info`Stopped session for ${agentAddress}`;
     }
+    reclaimHeap();
   }
 
   async function abortSession(
@@ -567,6 +578,7 @@ export function createSessionManager(
     } else {
       logger.info`Aborted agent ${agentAddress}: ${reason}`;
     }
+    reclaimHeap();
   }
 
   function deliverMessage(agentAddress: string, message: InboundMessage): void {
