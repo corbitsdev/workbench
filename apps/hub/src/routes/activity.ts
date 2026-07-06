@@ -19,6 +19,7 @@ type ActivityRouteEnv = Env & {
 const OverviewQuery = type({
   "startDate?": "string",
   "endDate?": "string",
+  "bucket?": "'day' | 'week' | 'month'",
 });
 
 function optionalQuery(value: string | undefined): string | undefined {
@@ -42,11 +43,17 @@ export function createActivityRouter({
   app.get("/overview", async (c) => {
     const tenant = c.get("tenant");
     const callerPrincipalId = c.get("principal")?.id ?? null;
-    const queryInput: { startDate?: string; endDate?: string } = {};
+    const queryInput: {
+      startDate?: string;
+      endDate?: string;
+      bucket?: string;
+    } = {};
     const startDate = optionalQuery(c.req.query("startDate"));
     const endDate = optionalQuery(c.req.query("endDate"));
+    const bucket = optionalQuery(c.req.query("bucket"));
     if (startDate !== undefined) queryInput.startDate = startDate;
     if (endDate !== undefined) queryInput.endDate = endDate;
+    if (bucket !== undefined) queryInput.bucket = bucket;
 
     const query = OverviewQuery(queryInput);
     if (query instanceof type.errors) {
@@ -84,6 +91,7 @@ export function createActivityRouter({
         callerPrincipalId,
         priceCatalog,
         ...(range !== undefined ? { range } : {}),
+        ...(query.bucket !== undefined ? { bucket: query.bucket } : {}),
       });
       return c.json(overview);
     } catch (error) {

@@ -120,6 +120,23 @@ const mockOverview = {
       thinkingTokens: 0,
     },
   ],
+  metricsBucket: "day",
+  metricsSeries: [
+    {
+      bucketStart: DAY_A,
+      agentsDeployed: 1,
+      agentsActive: 2,
+      tokensSpent: 480,
+      artifactsCreated: 1,
+    },
+    {
+      bucketStart: DAY_B,
+      agentsDeployed: 0,
+      agentsActive: 2,
+      tokensSpent: 720,
+      artifactsCreated: 0,
+    },
+  ],
   models: [
     { key: "deepseek-v4-flash", count: 9 },
     { key: "kimi", count: 3 },
@@ -617,6 +634,67 @@ describe("InsightsDashboard", () => {
     screen.getByText("Agents deployed");
     expect(screen.queryByText("Agent instances")).toBeNull();
     expect(screen.queryByText("Deployments")).toBeNull();
+  });
+
+  it("exports the daily metrics as a CSV when Export CSV is clicked", async () => {
+    renderPage();
+    const button = (await screen.findByRole("button", {
+      name: /export csv/i,
+    })) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    const createObjectURL = mock(() => "blob:mock-url");
+    const revokeObjectURL = mock(() => {});
+    const origCreate = URL.createObjectURL;
+    const origRevoke = URL.revokeObjectURL;
+    URL.createObjectURL =
+      createObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL =
+      revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+
+    const clickSpy = mock(() => {});
+    const realCreateElement = document.createElement.bind(document);
+    let anchor: HTMLAnchorElement | null = null;
+    document.createElement = ((tag: string) => {
+      const el = realCreateElement(tag);
+      if (tag === "a") {
+        el.click = clickSpy;
+        anchor = el as HTMLAnchorElement;
+      }
+      return el;
+    }) as unknown as typeof document.createElement;
+
+    try {
+      fireEvent.click(button);
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      expect(clickSpy).toHaveBeenCalledTimes(1);
+      expect((anchor as HTMLAnchorElement | null)?.download).toMatch(
+        /^insights-daily-.*\.csv$/,
+      );
+      expect(revokeObjectURL).toHaveBeenCalledTimes(1);
+    } finally {
+      document.createElement =
+        realCreateElement as unknown as typeof document.createElement;
+      URL.createObjectURL = origCreate;
+      URL.revokeObjectURL = origRevoke;
+    }
+  });
+
+  it("disables Export CSV and explains why when there is no metrics data", async () => {
+    const original = mockOverview.metricsSeries;
+    mockOverview.metricsSeries = [];
+    try {
+      renderPage();
+      const button = (await screen.findByRole("button", {
+        name: /export csv/i,
+      })) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute("title")).toBe(
+        "No metrics to export for this range",
+      );
+    } finally {
+      mockOverview.metricsSeries = original;
+    }
   });
 
   it("lets the operational-ledger tables size to their content rather than stretching", async () => {

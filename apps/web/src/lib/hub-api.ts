@@ -525,6 +525,19 @@ const ActivityCountRowSchema = type({
 });
 
 /**
+ * One bucket of the Insights daily-metrics series (CL-2836) — the source for
+ * the CSV export. `bucketStart` is the row's date label (`YYYY-MM-DD`).
+ */
+export const MetricsPointSchema = type({
+  bucketStart: "string",
+  agentsDeployed: "number",
+  agentsActive: "number",
+  tokensSpent: "number",
+  artifactsCreated: "number",
+});
+export type MetricsPoint = typeof MetricsPointSchema.infer;
+
+/**
  * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
  * `null` means the hub had no price catalog warm when it computed this row
  * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
@@ -635,6 +648,8 @@ const ActivityOverviewSchema = type({
     cacheWriteTokens: "number",
     thinkingTokens: "number",
   }).array(),
+  metricsBucket: "'day' | 'week' | 'month'",
+  metricsSeries: MetricsPointSchema.array(),
   models: ActivityCountRowSchema.array(),
   byModel: UsageByModelRowSchema.array(),
   tokensRecordedFrom: "string.date | null",

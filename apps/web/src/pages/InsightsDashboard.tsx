@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Link } from "react-router";
-import { AlertTriangle, BarChart2 } from "lucide-react";
+import { AlertTriangle, BarChart2, Download } from "lucide-react";
 import { priceUsageRows } from "@workbench/pricing";
 import { actorHref } from "./insights/ActorActivity";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
@@ -35,6 +35,7 @@ import { CostInsights } from "./insights/CostInsights";
 import { DeferredActivitySection } from "./insights/DeferredActivitySection";
 import { TenantRoster } from "./insights/TenantRoster";
 import { SectionLabel } from "./insights/section-label";
+import { buildMetricsCsv, metricsCsvFilename } from "./insights/csv-export";
 import {
   cacheHitRate,
   computeDelta,
@@ -1111,6 +1112,22 @@ export function InsightsDashboard() {
     pricingQuery.isError ||
     (pricingQuery.isSuccess && Object.keys(catalog?.models ?? {}).length === 0);
 
+  const canExport = (overview?.metricsSeries.length ?? 0) > 0;
+  const exportCsv = () => {
+    if (!overview || overview.metricsSeries.length === 0) return;
+    const blob = new Blob([buildMetricsCsv(overview.metricsSeries)], {
+      type: "text/csv",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = metricsCsvFilename(dates);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <PagePanel scroll={false} flat>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 max-md:px-3">
@@ -1172,6 +1189,20 @@ export function InsightsDashboard() {
               />
             </div>
           )}
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!canExport}
+            title={
+              canExport
+                ? "Download daily metrics as CSV"
+                : "No metrics to export for this range"
+            }
+            className="flex min-h-[40px] items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-medium text-text-3 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-3"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Export CSV
+          </button>
         </div>
       </div>
 
