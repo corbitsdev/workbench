@@ -772,8 +772,6 @@ export async function provisionMemberInstances(
     memberPrincipalId: string;
   },
 ): Promise<MemberInstance[]> {
-  // Domain is deployment-wide (the mail domain), not tenant-specific.
-  const { domain } = getConfig().rootTenant;
   let { tenantId } = opts;
   if (!tenantId) {
     const root = await getRootTenantId(db as never);
@@ -782,6 +780,21 @@ export async function provisionMemberInstances(
     }
     tenantId = root;
   }
+
+  // The instance address MUST be stamped with the domain of the tenant the
+  // instance actually lives in. Interchange derives every launch and mail
+  // address from `tenant.domain` (`formatAgentAddress` in instances.ts), so a
+  // member instance in a SUBTENANT has to carry that subtenant's own domain.
+  // Using the deployment-root domain only coincides when the member tenant IS
+  // the root (staging: `abklabs`=`abklabs.com`); for a subtenant (prod:
+  // `abk-labs`=`abk-labs.localhost`) it stamps the wrong domain and orphans the
+  // agent — registered/looked-up at `@root`, but launched + routed at
+  // `@subtenant` → deploy-ack "no active instance" and mail 502 (CL-2832).
+  const tenantRow = await db.query.tenant.findFirst({
+    where: eq(tenant.id, tenantId),
+    columns: { domain: true },
+  });
+  const domain = tenantRow?.domain ?? getConfig().rootTenant.domain;
 
   const templates = await getEnabledTemplateKeys(db, tenantId);
 

@@ -795,9 +795,13 @@ export async function deleteMyraThread(
 /**
  * Resolve the thread context for a user acting in a specific (active) tenant.
  * Returns null when the user is not a member of that tenant — the route turns
- * that into a 403. The mail domain is deployment-wide (mirrors
- * `provisionMemberInstances`), not tenant-specific, so it comes from config; the
- * instance/session/analytics land in the active tenant via `tenantId`.
+ * that into a 403. The mail domain MUST be the domain of the tenant the thread's
+ * instance lives in: Interchange derives every launch + mail address from
+ * `tenant.domain`, so a thread instance in a subtenant has to be stamped with
+ * that subtenant's own domain. Sourcing it from the deployment-root config only
+ * coincides when the member tenant IS the root (staging); for a subtenant (prod
+ * `abk-labs`) it orphans the instance — registered/looked-up at `@root`, routed
+ * at `@subtenant` → deploy-ack "no active instance" and mail 502 (CL-2832).
  */
 export async function resolveMyraThreadContext(
   db: HubDb,
@@ -808,12 +812,15 @@ export async function resolveMyraThreadContext(
   tenantDomain: string;
   memberPrincipalId: string;
 } | null> {
-  const { domain } = getConfig().rootTenant;
   const member = await lookupMember(db as never, { tenantId, userId });
   if (!member) return null;
+  const tenantRow = await db.query.tenant.findFirst({
+    where: eq(intxSchema.tenant.id, member.tenantId),
+    columns: { domain: true },
+  });
   return {
     tenantId: member.tenantId,
-    tenantDomain: domain,
+    tenantDomain: tenantRow?.domain ?? getConfig().rootTenant.domain,
     memberPrincipalId: member.principalId,
   };
 }
