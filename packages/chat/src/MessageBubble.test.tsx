@@ -7,6 +7,7 @@ import {
   screen,
   fireEvent,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import React from "react";
 
 import { MessageBubble } from "./MessageBubble";
@@ -230,8 +231,9 @@ describe("MessageBubble", () => {
     expect(screen.getByRole("button", { name: "ABK Demo" })).not.toBeNull();
   });
 
-  it("forwards onRespond from an embedded choice block to the caller", () => {
+  it("forwards onRespond from an embedded choice block to the caller", async () => {
     const onRespond = mock(() => undefined);
+    const user = userEvent.setup();
     const message: ChatMessage = {
       id: "ui2",
       role: "agent",
@@ -243,14 +245,15 @@ describe("MessageBubble", () => {
       createdAt: "2026-06-04T00:08:00Z",
     };
     render(<MessageBubble message={message} onRespond={onRespond} />);
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    await user.click(screen.getByRole("button", { name: "Yes" }));
     expect(onRespond).toHaveBeenCalledWith({
       blockKind: "choice",
       value: "yes",
     });
   });
 
-  it("stays a safe no-op when a choice is clicked without an onRespond prop", () => {
+  it("stays a safe no-op when a choice is clicked without an onRespond prop", async () => {
+    const user = userEvent.setup();
     const message: ChatMessage = {
       id: "ui2b",
       role: "agent",
@@ -262,7 +265,7 @@ describe("MessageBubble", () => {
       createdAt: "2026-06-04T00:08:00Z",
     };
     render(<MessageBubble message={message} />);
-    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    await user.click(screen.getByRole("button", { name: "Yes" }));
     // The block still settles into its answered state; nothing throws.
     expect(screen.getByText(/You chose: Yes/)).not.toBeNull();
   });

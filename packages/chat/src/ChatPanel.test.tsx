@@ -330,7 +330,7 @@ describe("ChatPanel busy state", () => {
         activity={{ type: "tool_running", name: "draft_email" }}
       />,
     );
-    expect(screen.getByText("Ada is running Draft Email")).toBeDefined();
+    expect(screen.getByText("Ada is running Draft email")).toBeDefined();
   });
 
   it("does not block Send after activity clears", () => {

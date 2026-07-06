@@ -22,7 +22,7 @@ describe("ToolNarrative", () => {
       },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    screen.getByText("Exa Search");
+    screen.getByText("Exa search");
     screen.getByText("· minimax m3");
   });
 
@@ -59,7 +59,7 @@ describe("ToolNarrative", () => {
     ];
     render(<ToolNarrative toolCalls={calls} />);
     expect(screen.queryByText("the full result body")).toBeNull();
-    fireEvent.click(screen.getByText("Exa Search"));
+    fireEvent.click(screen.getByText("Exa search"));
     screen.getByText("the full result body");
   });
 
@@ -74,7 +74,7 @@ describe("ToolNarrative", () => {
       },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    fireEvent.click(screen.getByText("Exa Search"));
+    fireEvent.click(screen.getByText("Exa search"));
     screen.getByText("No matching grants for tool:exa_search/invoke");
   });
 
