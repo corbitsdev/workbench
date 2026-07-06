@@ -4,9 +4,68 @@ import type { PriceCatalog } from "@workbench/pricing";
 import {
   computePreviousRange,
   deriveAgentActivity,
+  fetchActiveInstanceDays,
+  fetchArtifactCreatedDates,
+  fetchInstanceCreatedDates,
   getUsageByPerson,
   getUsageByWorkflowType,
 } from "./activity-overview";
+import type { DB } from "@intx/db";
+
+/**
+ * Minimal Drizzle chain whose every builder method returns itself and which
+ * resolves (when awaited) to `rows`. Lets the fetch helpers run their real
+ * row→date mapping without a database.
+ */
+function makeChainDb(rows: unknown[]): DB["db"] {
+  const chain = {
+    select: () => chain,
+    from: () => chain,
+    where: () => chain,
+    groupBy: () => chain,
+    having: () => chain,
+    then: (resolve: (value: unknown) => unknown) => resolve(rows),
+  };
+  return chain as unknown as DB["db"];
+}
+
+describe("fetchArtifactCreatedDates", () => {
+  it("truncates each createdAt timestamp to its UTC calendar date", async () => {
+    const db = makeChainDb([
+      { createdAt: new Date("2026-07-01T23:30:00.000Z") },
+      { createdAt: new Date("2026-07-02T00:05:00.000Z") },
+    ]);
+    expect(await fetchArtifactCreatedDates(db, "t1", {})).toEqual([
+      "2026-07-01",
+      "2026-07-02",
+    ]);
+  });
+});
+
+describe("fetchInstanceCreatedDates", () => {
+  it("truncates each createdAt timestamp to its UTC calendar date", async () => {
+    const db = makeChainDb([
+      { createdAt: new Date("2026-07-05T12:00:00.000Z") },
+    ]);
+    expect(await fetchInstanceCreatedDates(db, "t1", {})).toEqual([
+      "2026-07-05",
+    ]);
+  });
+});
+
+describe("fetchActiveInstanceDays", () => {
+  it("passes through instance/day rows and drops null instance ids", async () => {
+    const db = makeChainDb([
+      { instanceId: "ins_a", date: "2026-07-01" },
+      { instanceId: null, date: "2026-07-01" },
+      { instanceId: "ins_b", date: "2026-07-02" },
+    ]);
+    expect(await fetchActiveInstanceDays(db, "t1", {})).toEqual([
+      { instanceId: "ins_a", date: "2026-07-01" },
+      { instanceId: "ins_b", date: "2026-07-02" },
+    ]);
+  });
+});
 
 /** Fabricated rate catalog for cost-computation tests (CL-2723). */
 function testCatalog(): PriceCatalog {

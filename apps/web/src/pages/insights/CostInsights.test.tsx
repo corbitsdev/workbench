@@ -67,6 +67,8 @@ function overview(overrides: Partial<ActivityOverview> = {}): ActivityOverview {
     conversations: { total: 0, createdInRange: 0 },
     messages: { total: 0, createdInRange: 0 },
     dailySeries: [],
+    metricsBucket: "day",
+    metricsSeries: [],
     models: [],
     byModel: [],
     tokensRecordedFrom: "2000-01-01",

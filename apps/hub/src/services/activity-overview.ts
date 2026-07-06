@@ -44,6 +44,13 @@ import {
   workflowRun,
   workflowRunRecord,
 } from "../db/schema";
+import {
+  buildMetricsSeries,
+  sumTokenClasses,
+  type ActiveInstanceDay,
+  type MetricsBucket,
+  type MetricsPoint,
+} from "./metrics-series";
 
 export type UsageByPersonRow = {
   /** Owning member's user-principal id (from `member_agent_instance`). */
@@ -130,6 +137,19 @@ export type ActivityOverview = {
     createdInRange: number;
   };
   dailySeries: AnalyticsDailyPoint[];
+  /**
+   * Bucket granularity of {@link metricsSeries} (CL-2836). `day` unless the
+   * caller requested a coarser roll-up.
+   */
+  metricsBucket: MetricsBucket;
+  /**
+   * Continuous, gap-filled per-bucket series of agents deployed (new), agents
+   * active (did work that bucket), tokens spent, and artifacts created — the
+   * source for the Insights daily CSV export. Distinct from `dailySeries`
+   * (inference turns/tokens only); this joins deployment and artifact facts on
+   * the same bucket spine so all four metrics align per row.
+   */
+  metricsSeries: MetricsPoint[];
   models: ActivityCountRow[];
   /**
    * Per-model usage with every token class separated (CL-2714). Drives the
@@ -240,6 +260,86 @@ function rangeEndedFilters(range?: AnalyticsDateRange) {
 
 function sumInt(column: AnyColumn) {
   return sql<number>`coalesce(sum(${column}), 0)`.mapWith(Number);
+}
+
+function toDateStr(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+/** Created-at dates of non-rejected artifacts in range (for the metrics spine). */
+export async function fetchArtifactCreatedDates(
+  db: DB["db"],
+  tenantId: string,
+  range: AnalyticsDateRange,
+): Promise<string[]> {
+  const rows = await db
+    .select({ createdAt: artifact.createdAt })
+    .from(artifact)
+    .where(
+      and(
+        eq(artifact.tenantId, tenantId),
+        ne(artifact.status, "rejected"),
+        createdInRange(artifact.createdAt, range),
+      ),
+    );
+  return rows.map((row) => toDateStr(row.createdAt));
+}
+
+/** Created-at dates of agent instances in range (new deployments per bucket). */
+export async function fetchInstanceCreatedDates(
+  db: DB["db"],
+  tenantId: string,
+  range: AnalyticsDateRange,
+): Promise<string[]> {
+  const rows = await db
+    .select({ createdAt: agentInstance.createdAt })
+    .from(agentInstance)
+    .where(
+      and(
+        eq(agentInstance.tenantId, tenantId),
+        createdInRange(agentInstance.createdAt, range),
+      ),
+    );
+  return rows.map((row) => toDateStr(row.createdAt));
+}
+
+/**
+ * Per-instance activity days from the analytics rollup — one row per instance
+ * per bucket-date on which it recorded at least one turn. This is the honest
+ * "did work" signal for `agentsActive`: instance existence (`agent_instance`
+ * rows) never expires in this system, so counting live instances would report a
+ * monotonic total, not who actually ran on a given day.
+ */
+export async function fetchActiveInstanceDays(
+  db: DB["db"],
+  tenantId: string,
+  range: AnalyticsDateRange,
+): Promise<ActiveInstanceDay[]> {
+  const rows = await db
+    .select({
+      instanceId: analyticsRollupDaily.instanceId,
+      date: analyticsRollupDaily.bucketDate,
+    })
+    .from(analyticsRollupDaily)
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        isNotNull(analyticsRollupDaily.instanceId),
+        range.startDate !== undefined
+          ? gte(analyticsRollupDaily.bucketDate, range.startDate)
+          : undefined,
+        range.endDate !== undefined
+          ? lte(analyticsRollupDaily.bucketDate, range.endDate)
+          : undefined,
+      ),
+    )
+    .groupBy(analyticsRollupDaily.instanceId, analyticsRollupDaily.bucketDate)
+    .having(sql`sum(${analyticsRollupDaily.turnCount}) > 0`);
+  return rows.flatMap((row) =>
+    row.instanceId === null
+      ? []
+      : [{ instanceId: row.instanceId, date: row.date }],
+  );
 }
 
 export async function getUsageByPerson(args: {
@@ -707,12 +807,15 @@ export async function getActivityOverview(args: {
   tenantId: string;
   callerPrincipalId?: string | null;
   range?: AnalyticsDateRange;
+  /** Bucket granularity for `metricsSeries` (CL-2836). Defaults to `day`. */
+  bucket?: MetricsBucket;
   /** models.dev rate catalog (CL-2723) — see {@link getUsageByPerson}. */
   priceCatalog?: PriceCatalog | null;
 }): Promise<ActivityOverview> {
   const { db, tenantId } = args;
   const callerPrincipalId = args.callerPrincipalId ?? null;
   const range = args.range ?? {};
+  const bucket = args.bucket ?? "day";
   const priceCatalog = args.priceCatalog ?? null;
 
   const tenantArtifacts = and(
@@ -725,6 +828,7 @@ export async function getActivityOverview(args: {
     artifactInRangeRow,
     artifactByStatus,
     artifactByKind,
+    artifactCreatedDates,
   ] = await Promise.all([
     db.select({ count: count() }).from(artifact).where(tenantArtifacts),
     db
@@ -743,6 +847,7 @@ export async function getActivityOverview(args: {
       .groupBy(artifact.kind)
       .orderBy(sql`count(*) desc`)
       .limit(25),
+    fetchArtifactCreatedDates(db, tenantId, range),
   ]);
 
   const runBase = and(
@@ -809,6 +914,8 @@ export async function getActivityOverview(args: {
     instanceStartedRow,
     instanceEndedRow,
     instanceTotalRow,
+    instanceCreatedDates,
+    activeInstanceDays,
   ] = await Promise.all([
     db
       .select({ count: count() })
@@ -825,6 +932,8 @@ export async function getActivityOverview(args: {
       .from(agentInstance)
       .where(and(instanceTenant, rangeEndedFilters(range))),
     db.select({ count: count() }).from(agentInstance).where(instanceTenant),
+    fetchInstanceCreatedDates(db, tenantId, range),
+    fetchActiveInstanceDays(db, tenantId, range),
   ]);
 
   const inferenceFilter = { db, tenantId, range };
@@ -855,6 +964,19 @@ export async function getActivityOverview(args: {
     getUsageByPerson({ db, tenantId, callerPrincipalId, range, priceCatalog }),
     getUsageByWorkflowType({ db, tenantId, range, priceCatalog }),
   ]);
+
+  const metricsSeries = buildMetricsSeries({
+    bucket,
+    range,
+    today,
+    artifactDates: artifactCreatedDates,
+    deployedDates: instanceCreatedDates,
+    activeInstanceDays,
+    tokenDaily: dailySeries.map((point) => ({
+      date: point.date,
+      tokens: sumTokenClasses(point),
+    })),
+  });
 
   return {
     tenantId,
@@ -895,6 +1017,8 @@ export async function getActivityOverview(args: {
     conversations: conversationActivity.conversations,
     messages: conversationActivity.messages,
     dailySeries,
+    metricsBucket: bucket,
+    metricsSeries,
     models: modelRows.map((row) => ({
       key: row.model,
       count: row.turnCount,
