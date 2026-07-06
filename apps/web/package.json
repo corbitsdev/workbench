@@ -28,7 +28,6 @@
     "@workbench/tools-granola": "workspace:*",
     "@workbench/transcript": "workspace:*",
     "@workbench/ui": "workspace:*",
-    "@workbench/workflow-ab-compare": "workspace:*",
     "@workbench/workflow-ab-compare-hitl": "workspace:*",
     "@workbench/workflow-attio-task-agent": "workspace:*",
     "@workbench/workflow-gamma-presentation-creator": "workspace:*",

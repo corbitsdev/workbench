@@ -311,7 +311,7 @@ and there is **no `map` + deterministic-dispatch** path. So a step whose tool ar
 must be reshaped from an agent's free-text output, or that must write one artifact
 per item, cannot be deterministic yet and remains an agent that bridges the reshape:
 **gamma `render`** (`gamma_create_from_template` needs a `prompt` built from the
-generate agent's output) and **ab-compare `persist`** (one artifact per variant,
+generate agent's output) and **ab-compare-hitl `persist`** (one artifact per variant,
 and `content` must be a string rendered from structured output). A reshaping/templating
 selector or a `map`-aware deterministic dispatch would let both become deterministic.
 

@@ -69,7 +69,6 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
-COPY workflows/ab-compare/package.json workflows/ab-compare/
 COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/

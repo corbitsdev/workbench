@@ -192,7 +192,7 @@ Run-start is `POST /workflow-exec/:kind/start` (`workflow-run-records.ts:228` �
 
 #### Workflow definition packages
 
-Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with deployed `defineAgent` / `inlineInferenceStep` / `deterministicToolStep` steps and `awaitSignal` HITL gates; the step classes live in `packages/agents/src/deterministic-step.ts`). Shipped kinds (the `workflows/` directory): `ab-compare`, `ab-compare-hitl`, `attio-task-agent`, `gamma-presentation-creator`, `last30days-research`, `pain-point-collateral`, `reddit-opportunity-scanner`, `smoke-test`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` _type_ from `@intx/workflow`. Adding a kind is a new package + a push.
+Each kind is a package under `workflows/<kind>/` named `@workbench/workflow-<kind>`, exporting `kind` + `workflow` (`defineWorkflow` with deployed `defineAgent` / `inlineInferenceStep` / `deterministicToolStep` steps and `awaitSignal` HITL gates; the step classes live in `packages/agents/src/deterministic-step.ts`). Shipped kinds (the `workflows/` directory): `ab-compare-hitl`, `attio-task-agent`, `gamma-presentation-creator`, `last30days-research`, `pain-point-collateral`, `reddit-opportunity-scanner`, `smoke-test`. The hub imports none of them — its only workflow imports are `@intx/workflow-deploy` (the orchestrator) and the `WorkflowDefinition` _type_ from `@intx/workflow`. Adding a kind is a new package + a push.
 
 #### Web run console
 
@@ -208,7 +208,7 @@ The sidecar drives runs via the vendored workflow-host wiring plus the vendored 
 - `apps/sidecar/src/workflow-substrate-factory.ts` — builds the per-child substrate and `createSidecarStepInvoker` (`:888`). It dispatches by the step agent's `workbench.stepKind` tag: `deterministic-tool` → `runDeterministicToolStep` (`:1020-1026`, tool called directly, no reactor/inference), `inline-inference` → a bare `createAgent` inference (`:1035`), and every other (deployed) step → the real tool-capable agent harness.
 - `apps/sidecar/src/workflow-run-pack-client.ts` — pushes the workflow-run event pack to the hub after each supervisor write (carries the CL-2340 delta-cursor/size-ceiling WORKBENCH-LOCAL block).
 
-See `docs/DEPLOYING_WORKFLOWS.md` § Deterministic (non-inference) steps for the authoring patterns, step-output shapes, and current selector-DSL limitations (no rename/templating selector, no `map`+deterministic dispatch) that keep gamma `render` and ab-compare `persist` as agents.
+See `docs/DEPLOYING_WORKFLOWS.md` § Deterministic (non-inference) steps for the authoring patterns, step-output shapes, and current selector-DSL limitations (no rename/templating selector, no `map`+deterministic dispatch) that keep gamma `render` and ab-compare-hitl `persist` as agents.
 
 #### Supervisor restart re-establishment (CL-2221/2224/2225)
 

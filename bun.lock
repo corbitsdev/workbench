@@ -147,7 +147,6 @@
         "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
-        "@workbench/workflow-ab-compare": "workspace:*",
         "@workbench/workflow-ab-compare-hitl": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
@@ -1323,29 +1322,6 @@
         "arktype": "catalog:",
       },
     },
-    "workflows/ab-compare": {
-      "name": "@workbench/workflow-ab-compare",
-      "version": "0.1.0",
-      "dependencies": {
-        "@intx/agent": "workspace:*",
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/tools-ab-compare": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "*",
-      },
-    },
     "workflows/ab-compare-hitl": {
       "name": "@workbench/workflow-ab-compare-hitl",
       "version": "0.1.0",
@@ -2471,8 +2447,6 @@
     "@workbench/ui": ["@workbench/ui@workspace:packages/ui"],
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
-
-    "@workbench/workflow-ab-compare": ["@workbench/workflow-ab-compare@workspace:workflows/ab-compare"],
 
     "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
 
