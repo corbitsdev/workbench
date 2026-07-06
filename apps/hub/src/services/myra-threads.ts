@@ -20,6 +20,10 @@ import {
   LLM_DEFAULT_MODEL,
   PERSONAL_AGENT_NAME,
 } from "@workbench/agents";
+import {
+  isDefaultMyraThreadLabel,
+  myraThreadTitleFromFirstMessage,
+} from "@workbench/shared";
 import type { SessionService } from "@intx/hub-sessions";
 import {
   createEventCollector,
@@ -336,39 +340,18 @@ const TITLE_MODEL = LLM_DEFAULT_MODEL;
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
-const DEFAULT_LABEL_PATTERN = /^Chat( \d+)?$/;
-
-// Upper bound for the first-message fallback title (CL-2805). Within the
-// "25-50 chars" the label should read as a title, not a truncated sentence.
-const TITLE_FALLBACK_MAX_CHARS = 48;
+const TITLE_TURN_TIMEOUT_MS = 45_000;
 
 function isDefaultLabel(label: string | null | undefined): boolean {
   const trimmed = label?.trim() ?? "";
   if (trimmed === "") return true;
-  return DEFAULT_LABEL_PATTERN.test(trimmed);
+  return isDefaultMyraThreadLabel(trimmed);
 }
 
-/**
- * Deterministic fallback title derived from the user's first message, used when
- * the LLM title turn is unavailable, fails, or returns unusable text (CL-2805).
- * Collapses whitespace, truncates on a word boundary, strips trailing
- * punctuation. The caller guarantees a non-empty (trimmed) firstMessage, so this
- * always returns a non-empty label — a chat is never left as the default "Chat".
- */
-function titleFromFirstMessage(firstMessage: string): string {
-  const collapsed = firstMessage.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= TITLE_FALLBACK_MAX_CHARS) {
-    return collapsed.replace(/[.!?,;:]+$/u, "").trim() || collapsed;
-  }
-  const slice = collapsed.slice(0, TITLE_FALLBACK_MAX_CHARS);
-  const lastSpace = slice.lastIndexOf(" ");
-  // Only break on a word boundary when it keeps at least half the budget;
-  // otherwise a single very long token would collapse the title to nothing.
-  const cut =
-    lastSpace >= TITLE_FALLBACK_MAX_CHARS / 2
-      ? slice.slice(0, lastSpace)
-      : slice;
-  return cut.replace(/[.!?,;:]+$/u, "").trim() || cut;
+function titleTurnDeadline(ms: number): Promise<never> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("Myra title turn timed out")), ms);
+  });
 }
 
 function sanitizeTitle(raw: string): string | null {
@@ -621,10 +604,9 @@ async function runTitleTurn(
 }
 
 /**
- * Best-effort auto-title for a Myra thread from its first user message via a
- * single recorded @intx/agent inference turn. Never throws to the caller —
- * titling must never break chat. Returns the updated row, or null on no-op /
- * failure (leaving the default label intact).
+ * Best-effort auto-title for a Myra thread. Persists a first-message fallback
+ * immediately, then optionally upgrades via a bounded LLM turn. Never throws —
+ * titling must never break chat.
  */
 export async function generateMyraThreadTitle(
   db: HubDb,
@@ -648,75 +630,16 @@ export async function generateMyraThreadTitle(
     ),
   });
   if (!mapping) return null;
-  // Never overwrite a real title.
   if (!isDefaultLabel(mapping.label)) return null;
 
-  // Deterministic safety net: whenever the LLM title turn is unavailable or
-  // unusable we still name the thread from its first message rather than leave
-  // it as the default "Chat" (CL-2805). Failures are logged at ERROR (the hub
-  // Sentry sink drops WARN) so a persistently-failing title turn is visible.
-  const fallback = () =>
-    renameMyraThread(db, {
-      tenantId: opts.tenantId,
-      memberPrincipalId: opts.memberPrincipalId,
-      threadId: opts.threadId,
-      label: titleFromFirstMessage(firstMessage),
-    });
-
-  try {
-    const source = await resolveTitleSource(db, opts.tenantId);
-    if (!source) {
-      log.error("Myra title generation: no inference source; using fallback", {
-        tenantId: opts.tenantId,
-        threadId: opts.threadId,
-      });
-      return await fallback();
-    }
-
-    const raw = await runSerializedPerPrincipal(opts.memberPrincipalId, () =>
-      runTitleTurn(db, {
+  const persistFallback = async (): Promise<MyraThreadRow | null> => {
+    try {
+      return await renameMyraThread(db, {
         tenantId: opts.tenantId,
         memberPrincipalId: opts.memberPrincipalId,
-        instanceId: mapping.instanceId,
-        source,
-        firstMessage,
-      }),
-    );
-    // The title inference turn producing no usable text is a real-world cause of
-    // "new chats never get a title" (CL-2449): a model/config fault leaves chat
-    // working but the title turn empty. Fall back to the first-message title.
-    if (raw === null) {
-      log.error("Myra title generation produced no text; using fallback", {
-        tenantId: opts.tenantId,
         threadId: opts.threadId,
+        label: myraThreadTitleFromFirstMessage(firstMessage),
       });
-      return await fallback();
-    }
-
-    const title = sanitizeTitle(raw);
-    if (title === null) {
-      log.error(
-        "Myra title generation produced unusable text; using fallback",
-        { tenantId: opts.tenantId, threadId: opts.threadId, raw },
-      );
-      return await fallback();
-    }
-
-    return await renameMyraThread(db, {
-      tenantId: opts.tenantId,
-      memberPrincipalId: opts.memberPrincipalId,
-      threadId: opts.threadId,
-      label: title,
-    });
-  } catch (err) {
-    log.error("Myra title generation failed; using fallback", {
-      threadId: opts.threadId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
-    // Best-effort: even the fallback rename must never throw over chat. If the
-    // DB write itself fails, log and leave the default label.
-    try {
-      return await fallback();
     } catch (fallbackErr) {
       log.error("Myra title fallback rename failed; leaving default label", {
         threadId: opts.threadId,
@@ -727,7 +650,84 @@ export async function generateMyraThreadTitle(
       });
       return null;
     }
+  };
+
+  const persisted = await persistFallback();
+  if (!persisted) return null;
+
+  try {
+    const source = await resolveTitleSource(db, opts.tenantId);
+    if (!source) {
+      log.error(
+        "Myra title generation: no inference source; leaving fallback label",
+        { tenantId: opts.tenantId, threadId: opts.threadId },
+      );
+      return persisted;
+    }
+
+    const raw = await Promise.race([
+      runSerializedPerPrincipal(opts.memberPrincipalId, () =>
+        runTitleTurn(db, {
+          tenantId: opts.tenantId,
+          memberPrincipalId: opts.memberPrincipalId,
+          instanceId: mapping.instanceId,
+          source,
+          firstMessage,
+        }),
+      ),
+      titleTurnDeadline(TITLE_TURN_TIMEOUT_MS),
+    ]);
+
+    if (raw === null) {
+      log.error(
+        "Myra title generation produced no text; leaving fallback label",
+        { tenantId: opts.tenantId, threadId: opts.threadId },
+      );
+      return persisted;
+    }
+
+    const title = sanitizeTitle(raw);
+    if (title === null) {
+      log.error(
+        "Myra title generation produced unusable text; leaving fallback label",
+        { tenantId: opts.tenantId, threadId: opts.threadId, raw },
+      );
+      return persisted;
+    }
+
+    return (
+      (await renameMyraThread(db, {
+        tenantId: opts.tenantId,
+        memberPrincipalId: opts.memberPrincipalId,
+        threadId: opts.threadId,
+        label: title,
+      })) ?? persisted
+    );
+  } catch (err) {
+    log.error("Myra title generation failed; leaving fallback label", {
+      threadId: opts.threadId,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+    return persisted;
   }
+}
+
+/** Fire-and-forget titling so the HTTP handler never blocks on inference. */
+export function scheduleMyraThreadTitle(
+  db: HubDb,
+  opts: {
+    tenantId: string;
+    memberPrincipalId: string;
+    threadId: string;
+    firstMessage: string;
+  },
+): void {
+  void generateMyraThreadTitle(db, {}, opts).catch((err) => {
+    log.error("Myra thread title job failed unexpectedly", {
+      threadId: opts.threadId,
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
 }
 
 export async function deleteMyraThread(

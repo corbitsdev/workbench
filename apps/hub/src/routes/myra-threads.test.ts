@@ -17,9 +17,7 @@ const deleteMyraThread = mock<(...args: any[]) => Promise<boolean>>(() =>
   Promise.resolve(false),
 );
 // biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
-const generateMyraThreadTitle = mock<(...args: any[]) => Promise<any>>(() =>
-  Promise.resolve(null),
-);
+const scheduleMyraThreadTitle = mock<(...args: any[]) => void>(() => {});
 const resolveMyraThreadContext = mock(() =>
   Promise.resolve<{
     tenantId: string;
@@ -37,7 +35,7 @@ mock.module("../services/myra-threads", () => ({
   createMyraThread,
   renameMyraThread,
   deleteMyraThread,
-  generateMyraThreadTitle,
+  scheduleMyraThreadTitle,
   resolveMyraThreadContext,
 }));
 
@@ -64,7 +62,7 @@ describe("Myra threads router", () => {
     createMyraThread.mockClear();
     renameMyraThread.mockClear();
     deleteMyraThread.mockClear();
-    generateMyraThreadTitle.mockClear();
+    scheduleMyraThreadTitle.mockClear();
     resolveMyraThreadContext.mockClear();
     resolveMyraThreadContext.mockResolvedValue({
       tenantId: "tn-global",
@@ -242,13 +240,7 @@ describe("Myra threads router", () => {
     expect(res.status).toBe(404);
   });
 
-  it("titles a thread and returns 200 with the titled thread", async () => {
-    generateMyraThreadTitle.mockResolvedValueOnce({
-      id: "map-1",
-      instanceId: "inst-1",
-      label: "Pricing Deep Dive",
-      createdAt: "2026-01-01T00:00:00.000Z",
-    });
+  it("accepts titling and returns 200 with thread null immediately", async () => {
     const app = wrapWithAuth(buildRouter());
     const res = await app.request(
       "/tenants/tn-global/me/myra/threads/map-1/title",
@@ -261,10 +253,9 @@ describe("Myra threads router", () => {
       },
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { thread: { label: string } | null };
-    expect(body.thread?.label).toBe("Pricing Deep Dive");
-    expect(generateMyraThreadTitle).toHaveBeenCalledWith(
-      expect.anything(),
+    const body = (await res.json()) as { thread: unknown };
+    expect(body.thread).toBeNull();
+    expect(scheduleMyraThreadTitle).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         threadId: "map-1",
@@ -273,22 +264,6 @@ describe("Myra threads router", () => {
         memberPrincipalId: "prn-member",
       }),
     );
-  });
-
-  it("returns 200 with thread null when titling is a no-op", async () => {
-    generateMyraThreadTitle.mockResolvedValueOnce(null);
-    const app = wrapWithAuth(buildRouter());
-    const res = await app.request(
-      "/tenants/tn-global/me/myra/threads/map-1/title",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ firstMessage: "Hi" }),
-      },
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { thread: unknown };
-    expect(body.thread).toBeNull();
   });
 
   it("returns 400 on title when firstMessage is empty", async () => {
@@ -302,7 +277,7 @@ describe("Myra threads router", () => {
       },
     );
     expect(res.status).toBe(400);
-    expect(generateMyraThreadTitle).not.toHaveBeenCalled();
+    expect(scheduleMyraThreadTitle).not.toHaveBeenCalled();
   });
 
   it("returns 403 on title when the user is not a member of the tenant", async () => {
@@ -317,7 +292,7 @@ describe("Myra threads router", () => {
       },
     );
     expect(res.status).toBe(403);
-    expect(generateMyraThreadTitle).not.toHaveBeenCalled();
+    expect(scheduleMyraThreadTitle).not.toHaveBeenCalled();
   });
 
   it("returns 403 on delete when the user is not a member of the tenant", async () => {

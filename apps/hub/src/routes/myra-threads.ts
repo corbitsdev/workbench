@@ -8,7 +8,7 @@ import type { HubDb } from "../db";
 import {
   createMyraThread,
   deleteMyraThread,
-  generateMyraThreadTitle,
+  scheduleMyraThreadTitle,
   listMyraThreads,
   renameMyraThread,
   resolveMyraThreadContext,
@@ -225,7 +225,7 @@ export function createMyraThreadsRouter(
       responses: {
         200: {
           description:
-            "Thread titled, or no-op (thread null) when titling was skipped or failed",
+            "Titling accepted (thread null); rename runs asynchronously in the hub",
           content: {
             "application/json": {
               schema: resolver(type({ thread: MyraThread.or("null") })),
@@ -246,17 +246,13 @@ export function createMyraThreadsRouter(
       if (!ctx) {
         return c.json({ error: "Not a member of this tenant" }, 403);
       }
-      const thread = await generateMyraThreadTitle(
-        hubDb,
-        {},
-        {
-          tenantId: ctx.tenantId,
-          memberPrincipalId: ctx.memberPrincipalId,
-          threadId,
-          firstMessage: parsed.firstMessage,
-        },
-      );
-      return c.json({ thread });
+      scheduleMyraThreadTitle(hubDb, {
+        tenantId: ctx.tenantId,
+        memberPrincipalId: ctx.memberPrincipalId,
+        threadId,
+        firstMessage: parsed.firstMessage,
+      });
+      return c.json({ thread: null });
     },
   );
 

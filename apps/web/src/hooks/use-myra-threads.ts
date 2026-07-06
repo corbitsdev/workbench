@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  isDefaultMyraThreadLabel,
+  myraThreadTitleFromFirstMessage,
+} from "@workbench/shared";
+import {
   createMyraThread,
   deleteMyraThread,
   generateMyraThreadTitle,
@@ -13,7 +17,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 /** Matches the hub's default labels ('Chat', 'Chat 2', …) — i.e. not user-set. */
 export function isDefaultThreadLabel(label: string): boolean {
-  return /^Chat( \d+)?$/.test(label.trim());
+  return isDefaultMyraThreadLabel(label);
 }
 
 const MYRA_THREADS_KEY = "myra-threads";
@@ -154,11 +158,29 @@ export function useGenerateMyraThreadTitle() {
         id,
         firstMessage,
       ),
+    onMutate: ({ id, firstMessage }) => {
+      const tenantId = requireActiveTenant(activeTenantId);
+      const label = myraThreadTitleFromFirstMessage(firstMessage);
+      queryClient.setQueryData<MyraThreadListItem[]>(
+        myraThreadsKey(tenantId),
+        (existing) => {
+          if (!existing) return existing;
+          return existing.map((item) =>
+            item.id === id ? { ...item, label } : item,
+          );
+        },
+      );
+    },
     onSuccess: (thread) => {
       if (thread)
         void queryClient.invalidateQueries({
           queryKey: myraThreadsKey(activeTenantId),
         });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: myraThreadsKey(activeTenantId),
+      });
     },
   });
 }
@@ -199,15 +221,12 @@ export function useAutoTitleFirstMessage(
       const thread = activeRef.current;
       if (!thread || !isDefaultThreadLabel(thread.label)) return;
       if (titledRef.current.has(thread.id)) return;
-      // Latch up front to block a concurrent double-fire, then release on a hub
-      // no-op (`thread: null`) or error so the next message can retry (CL-2449).
+      // Latch up front to block a concurrent double-fire. The hub accepts titling
+      // asynchronously (`thread: null`); only release the latch on request error.
       titledRef.current.add(thread.id);
       generateTitle.mutate(
         { id: thread.id, firstMessage: text },
         {
-          onSuccess: (updated) => {
-            if (!updated) titledRef.current.delete(thread.id);
-          },
           onError: () => {
             titledRef.current.delete(thread.id);
           },
