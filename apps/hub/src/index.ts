@@ -540,7 +540,9 @@ const idleSessionReaper = createIdleSessionReaper({
   reapAfterMs: config.idleSessionReaper.reapAfterMs,
   intervalMs: config.idleSessionReaper.intervalMs,
 });
-idleSessionReaper.start();
+// TEMPORARILY DISABLED: CL-2790/CL-2795 idle reaper breaks chat-history reload
+// and causes session_asset unique-constraint launch failures on relaunch.
+// idleSessionReaper.start();
 sidecarRouter.events.on("agent.event", ({ agentAddress }) => {
   idleSessionReaper.recordActivity(agentAddress);
 });
