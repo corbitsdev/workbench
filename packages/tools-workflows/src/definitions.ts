@@ -30,7 +30,7 @@ export const WORKFLOW_START_DEFINITION: ToolDefinition = {
 export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
   name: "workflow_list_runs",
   description:
-    "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, and originConversationId for each run.",
+    "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, originConversationId, and for runs with status 'awaiting' a pendingGates array (signalName plus optional payloadSchema describing the gate's expected fields).",
   inputSchema: {
     type: "object",
     properties: {
@@ -51,7 +51,7 @@ export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
 export const WORKFLOW_SIGNAL_DEFINITION: ToolDefinition = {
   name: "workflow_signal",
   description:
-    "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Pass the runId, the signalName the gate expects, and an optional payload object with the gate's fields. Returns the run's state after the signal.",
+    "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Read the run's pendingGates from workflow_list_runs first and pass that exact signalName — never invent one. Pass the runId, signalName, and an optional payload object matching the gate's fields. On a wrong signalName returns { ok: false, error, pendingGates } instead of succeeding. Returns the run's state after a successful signal.",
   inputSchema: {
     type: "object",
     properties: {

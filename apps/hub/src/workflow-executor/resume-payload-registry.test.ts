@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { validateResumePayload } from "./resume-payload-registry";
+import {
+  describeResumePayload,
+  validateResumePayload,
+} from "./resume-payload-registry";
 
 describe("validateResumePayload", () => {
   test("passes through an unregistered workflow kind", () => {
@@ -558,5 +561,30 @@ describe("validateResumePayload", () => {
         decisions: [],
       }),
     ).toEqual({ ok: true });
+  });
+});
+
+describe("describeResumePayload", () => {
+  test("describes the expected fields of a registered gate", () => {
+    // The description is what Myra reads to fill the payload instead of guessing.
+    const desc = describeResumePayload("last30days-research", "intake");
+    expect(desc).toBeDefined();
+    expect(desc).toContain("topic");
+  });
+
+  test("describes a nested registered gate schema", () => {
+    const desc = describeResumePayload("attio-task-agent", "member-selection");
+    expect(desc).toContain("assignee");
+  });
+
+  test("returns undefined for an unregistered signal on a registered kind", () => {
+    // The attio review gate is deferred (pass-through) — no schema to describe.
+    expect(describeResumePayload("attio-task-agent", "review")).toBeUndefined();
+  });
+
+  test("returns undefined for an unregistered workflow kind", () => {
+    expect(
+      describeResumePayload("some-other-workflow", "intake"),
+    ).toBeUndefined();
   });
 });

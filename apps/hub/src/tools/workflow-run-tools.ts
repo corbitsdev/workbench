@@ -20,7 +20,8 @@ import {
   resumeWorkflowRun,
   startWorkflowRun,
 } from "../workflow-executor/run-exec";
-import { listRunRecords } from "../workflow-executor/run-store";
+import { describePendingGates } from "../workflow-executor/pending-gate-info";
+import { listRunRecords, loadRunRecord } from "../workflow-executor/run-store";
 import type { ContextToolEntry } from "../lib/tool-registry";
 
 export type WorkflowRunToolsContext = {
@@ -170,12 +171,17 @@ export function createWorkflowRunTools(
           },
         );
         if (!result.ok) throw new Error(result.error);
+        if (result.backgroundTask !== undefined) {
+          await result.backgroundTask;
+        }
+        const state =
+          (await loadRunRecord(context.db, result.state.runId)) ?? result.state;
         return JSON.stringify(
           {
-            runId: result.state.runId,
-            kind: result.state.kind,
-            status: result.state.status,
-            originConversationId: result.state.originConversationId,
+            runId: state.runId,
+            kind: state.kind,
+            status: state.status,
+            originConversationId: state.originConversationId,
           },
           null,
           2,
@@ -205,7 +211,40 @@ export function createWorkflowRunTools(
             ? undefined
             : { originConversationId: caller.conversationId },
         );
-        return JSON.stringify({ runs: rows }, null, 2);
+        const runs = await Promise.all(
+          rows.map(async (row) => {
+            if (row.status !== "awaiting") {
+              return { ...row, pendingGates: [] as const };
+            }
+            // Listing only needs the run's repo to fold its gate — not the full
+            // start/resume wiring. Degrade to no gates rather than coupling the
+            // list path to launch deps it never uses (or throwing when a run has
+            // no deployment / the enrichment deps are absent).
+            const record = await loadRunRecord(context.db, row.runId);
+            if (
+              record === null ||
+              record.deploymentId === undefined ||
+              record.deploymentId === null ||
+              context.repoStore === undefined ||
+              context.deploymentDomain === undefined
+            ) {
+              return { ...row, pendingGates: [] as const };
+            }
+            const pendingGates = await describePendingGates(
+              {
+                repoStore: context.repoStore,
+                deploymentDomain: context.deploymentDomain,
+              },
+              {
+                runId: record.runId,
+                kind: record.kind,
+                deploymentId: record.deploymentId,
+              },
+            );
+            return { ...row, pendingGates };
+          }),
+        );
+        return JSON.stringify({ runs }, null, 2);
       },
     },
     {
@@ -237,7 +276,37 @@ export function createWorkflowRunTools(
             payload,
           },
         );
-        if (!result.ok) throw new Error(result.error);
+        if (!result.ok) {
+          // A wrong signal name (409, not parked on it) or a malformed payload
+          // (400) is recoverable: return the run's real pending gate(s) + their
+          // expected payload so the agent retries correctly instead of guessing
+          // (CL-2870). Other failures (not found / not owner / delivery) throw.
+          if (result.status === 409 || result.status === 400) {
+            const record = await loadRunRecord(context.db, runId);
+            const pendingGates =
+              record !== null &&
+              record.deploymentId !== undefined &&
+              record.deploymentId !== null
+                ? await describePendingGates(
+                    {
+                      repoStore: deps.repoStore,
+                      deploymentDomain: deps.deploymentDomain,
+                    },
+                    {
+                      runId: record.runId,
+                      kind: record.kind,
+                      deploymentId: record.deploymentId,
+                    },
+                  )
+                : [];
+            return JSON.stringify(
+              { ok: false, error: result.error, pendingGates },
+              null,
+              2,
+            );
+          }
+          throw new Error(result.error);
+        }
         return JSON.stringify(
           {
             runId: result.state.runId,

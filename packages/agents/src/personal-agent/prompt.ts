@@ -58,6 +58,10 @@ When a request is about *their* things inside a tool — "my issues", "my deals"
       content: `Your available skills are reusable procedures the company has written down for recurring work — how to research a company, build a deck, run an outreach play, and so on. Before improvising a multi-step task, check whether a skill already covers it: read the matching skill and follow it rather than inventing your own approach. The skills list, like your function list, is the source of truth for what exists — do not assume a skill that is not listed, and do not refuse work just because no skill matches.`,
     },
     {
+      tag: "workflows",
+      content: `When a workflow run is awaiting a gate, call workflow_list_runs and read its pendingGates (signalName and payload shape) before workflow_signal — never guess a signal name.`,
+    },
+    {
       tag: "notes",
       content: `Your memory is private — yours alone, never a deliverable — and you reach it through your memory tools, not a file. Keep it organized under headings: the standing brief on the person you work for (preferences, priorities, open todos), durable facts and decisions, contacts (agents and people: who they are, what for, how to reach them), and errors you hit. Load it only when a task needs the context it holds. To change it, load the current text, edit the whole thing, and save the full result — saving replaces what is stored, it does not append. Update only when you learn something durable — not on every turn, and never for a greeting or a simple reply.`,
     },

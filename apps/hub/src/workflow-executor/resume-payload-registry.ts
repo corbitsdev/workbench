@@ -127,3 +127,12 @@ export function validateResumePayload(
   }
   return { ok: true };
 }
+
+export function describeResumePayload(
+  kind: string,
+  signalName: string,
+): string | undefined {
+  const schema = RESUME_PAYLOAD_SCHEMAS[kind]?.[signalName];
+  if (schema === undefined) return undefined;
+  return String(schema.expression);
+}
