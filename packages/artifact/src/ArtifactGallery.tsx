@@ -73,6 +73,12 @@ export interface ArtifactGalleryProps {
   experimentalArtifactCards?: boolean;
   /** Called when the user toggles between grid and rows. When omitted, the toggle is hidden. */
   onViewModeChange?: (mode: ViewMode) => void;
+  /** When true, show a control to load the next cursor page of artifacts. */
+  hasMore?: boolean;
+  /** Load the next page; paired with `hasMore`. */
+  onLoadMore?: () => void;
+  /** True while a subsequent page is being fetched. */
+  isLoadingMore?: boolean;
 }
 
 /** Date-range + provenance facet selection driven by the gallery filter bar. */
@@ -141,6 +147,9 @@ export function ArtifactGallery({
   viewMode = "grid",
   onViewModeChange,
   experimentalArtifactCards = false,
+  hasMore = false,
+  onLoadMore,
+  isLoadingMore = false,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
@@ -211,7 +220,7 @@ export function ArtifactGallery({
           Artifacts
         </h1>
         <span className="rounded-[7px] bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-          {tiles.length} items
+          {hasMore ? `${tiles.length}+` : tiles.length} items
         </span>
         <div className="flex-1" />
         {owners && owners.length > 1 && onOwnerFilterChange && (
@@ -426,6 +435,18 @@ export function ArtifactGallery({
                 {...(onOpen ? { onOpen } : {})}
               />
             ))}
+          </div>
+        )}
+        {hasMore && onLoadMore && (
+          <div className="flex justify-center pt-6">
+            <button
+              type="button"
+              onClick={onLoadMore}
+              disabled={isLoadingMore}
+              className="rounded-[9px] border border-border px-[18px] py-[9px] text-[12.5px] font-semibold text-text-2 transition-colors hover:border-border-strong hover:bg-[var(--row-hover)] disabled:opacity-50"
+            >
+              {isLoadingMore ? "Loading…" : "Load more"}
+            </button>
           </div>
         )}
       </div>

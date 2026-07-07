@@ -5,7 +5,10 @@
 
 import { useRef, useState } from "react";
 import { useExperimentalArtifactCards, useViewMode } from "@workbench/ui";
-import { useArtifacts, useTenantMembers } from "@workbench/client/react";
+import {
+  useArtifactsInfinite,
+  useTenantMembers,
+} from "@workbench/client/react";
 import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
@@ -65,10 +68,13 @@ export function ArtifactGallery({
   const { enabled: experimentalArtifactCards } = useExperimentalArtifactCards();
 
   const {
-    data: artifacts,
+    artifacts,
     isLoading,
     isError,
-  } = useArtifacts(clientOptions, {
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useArtifactsInfinite(clientOptions, {
     tenantId,
     query: debouncedQuery || undefined,
     sort,
@@ -151,6 +157,11 @@ export function ArtifactGallery({
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         experimentalArtifactCards={experimentalArtifactCards}
+        hasMore={hasNextPage}
+        onLoadMore={() => {
+          void fetchNextPage().catch(() => {});
+        }}
+        isLoadingMore={isFetchingNextPage}
       />
       <ArtifactModal
         open={selected !== null}
