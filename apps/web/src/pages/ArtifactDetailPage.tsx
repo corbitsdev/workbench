@@ -1,8 +1,8 @@
 import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Button } from "@workbench/ui";
-import { useArtifacts } from "@workbench/client/react";
-import type { ArtifactWithSession } from "@workbench/artifact";
+import { useArtifact } from "@workbench/client/react";
+
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -33,16 +33,14 @@ export function ArtifactDetailPage() {
   const { openWithMessage } = useChatLauncher();
 
   const {
-    data: artifacts,
+    data: artifact,
     isLoading,
     isError,
-  } = useArtifacts(clientOptions, {
+  } = useArtifact(clientOptions, {
     tenantId: activeTenantId,
-    enabled: !!activeTenantId,
+    artifactId,
+    enabled: !!activeTenantId && !!artifactId,
   });
-
-  const artifact: ArtifactWithSession | null =
-    (artifacts ?? []).find((a) => a.id === artifactId) ?? null;
 
   usePublishActiveContext(
     artifact
@@ -59,7 +57,7 @@ export function ArtifactDetailPage() {
 
   if (isLoading) return <CenteredNotice>Loading artifact…</CenteredNotice>;
 
-  if (isError || !artifact) {
+  if (isError || artifact === undefined) {
     return (
       <CenteredNotice>
         <div className="flex flex-col items-center gap-2">

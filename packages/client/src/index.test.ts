@@ -7,6 +7,7 @@ import "./test-setup";
 import {
   createArtifact,
   getActor,
+  getArtifact,
   listArtifacts,
   listWorkflows,
   uploadArtifacts,
@@ -259,6 +260,43 @@ describe("@workbench/client request construction", () => {
     expect(spy.mock.calls[0]?.[0]).toBe(
       "http://localhost:4000/api/v1/artifacts?creatorKind=agent",
     );
+  });
+});
+
+describe("getArtifact", () => {
+  const artifactRow = {
+    id: "art-9",
+    parentId: null,
+    kind: "one-pager",
+    title: "Deep link",
+    content: "body",
+    source: { origin: "unknown" },
+    status: "draft",
+    version: 1,
+    ownerPrincipalId: null,
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    sessionName: null,
+    sessionStatus: null,
+    ownerName: null,
+  };
+
+  it("GETs /artifacts/:id and returns the parsed artifact", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: artifactRow })),
+    );
+
+    const result = await getArtifact(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      "art-9",
+      { tenantId: "tenant-1" },
+    );
+
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts/art-9?tenantId=tenant-1",
+    );
+    expect(result.id).toBe("art-9");
+    expect(result.title).toBe("Deep link");
   });
 });
 
