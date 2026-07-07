@@ -1,4 +1,4 @@
-import { FileText, GitBranch, MessagesSquare, X } from "lucide-react";
+import { FileText, GitBranch, MessagesSquare, User, X } from "lucide-react";
 import type { ActiveContextKind, ActiveContextRef } from "@workbench/shared";
 
 // `MessagesSquare` (stacked) for a thread, distinct from the single
@@ -10,12 +10,14 @@ const KIND_ICON: Record<
   artifact: FileText,
   "workflow-run": GitBranch,
   thread: MessagesSquare,
+  principal: User,
 };
 
 const KIND_LABEL: Record<ActiveContextKind, string> = {
   artifact: "Artifact",
   "workflow-run": "Workflow run",
   thread: "Thread",
+  principal: "Principal",
 };
 
 /**

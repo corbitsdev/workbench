@@ -17,6 +17,8 @@ import {
   toHumanLabel,
 } from "@workbench/ui";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
+import { usePublishActiveContext } from "../../lib/active-context-store";
+import { WORKFLOW_STEP_OUTPUT_MAX_CHARS } from "@workbench/shared";
 import {
   reconcileRunState,
   runStateFromLog,
@@ -407,6 +409,29 @@ function runStatusPill(phase: string | undefined): StatusPill {
 }
 
 /**
+ * Coerce a raw step output (unknown from the log) into a short string for the
+ * active-context projection. Bounds both the string and object forms and guards
+ * against the JSON.stringify throw (circular refs, Symbol, BigInt). The
+ * projector bounds it further; this only ensures a readable scalar and never
+ * dumps a large value verbatim.
+ */
+function truncateStepOutput(raw: unknown): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  if (typeof raw === "string") {
+    return raw.length > 0
+      ? raw.slice(0, WORKFLOW_STEP_OUTPUT_MAX_CHARS)
+      : undefined;
+  }
+  try {
+    const text =
+      JSON.stringify(raw)?.slice(0, WORKFLOW_STEP_OUTPUT_MAX_CHARS) ?? "";
+    return text.length > 0 ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Execution trace (`/insights/trace/:runId`), rebuilt to the approved Tracer
  * artifact: a Trace-root rail + legend, a compact run header with a status
  * pill, an underlined facet tab bar over a subtle stat strip, and a
@@ -487,6 +512,37 @@ export function WorkflowTracePage() {
   }
 
   const activeFacet = FACETS[facetIndex]!.id;
+
+  // Publish the traced run as the active surface (CL-2726) so the Myra popup can
+  // attach it as context. Reuses the workflow-run kind — this IS a workflow run,
+  // viewed from the tracer. Published only once the record AND the run-state log
+  // resolve, so the projection carries real identity and steps, not a loading
+  // placeholder with an empty step list.
+  usePublishActiveContext(
+    record !== undefined && logState !== undefined && safeId !== null
+      ? {
+          kind: "workflow-run",
+          id: safeId,
+          label: toHumanLabel(record.kind),
+          runKind: record.kind,
+          status: logState.phase ?? record.status,
+          steps: steps.map((s) => ({
+            name: s.stepId,
+            status: s.phase,
+            output: truncateStepOutput(stepOutputs[s.stepId]),
+          })),
+        }
+      : null,
+    record !== undefined && logState !== undefined
+      ? // Fold the run phase and each step's phase into the freshness token so a
+        // live run re-publishes as steps transition (running → completed/failed)
+        // and outputs fill in — keying on `steps.length` alone kept the first,
+        // stale snapshot for the whole run (CL-2726 review).
+        `${safeId}:${logState.phase ?? ""}:${steps
+          .map((s) => `${s.stepId}=${s.phase}`)
+          .join(",")}`
+      : undefined,
+  );
 
   return (
     <PagePanel scroll flat>

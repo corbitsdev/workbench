@@ -13,7 +13,7 @@ import { type } from "arktype";
 // until the bound model reads document blocks.
 
 export const ActiveContextKindSchema = type(
-  "'artifact' | 'workflow-run' | 'thread'",
+  "'artifact' | 'workflow-run' | 'thread' | 'principal'",
 );
 export type ActiveContextKind = typeof ActiveContextKindSchema.infer;
 
@@ -67,9 +67,21 @@ export const ThreadContextSchema = type({
 });
 export type ThreadContext = typeof ThreadContextSchema.infer;
 
+export const PrincipalContextSchema = type({
+  kind: "'principal'",
+  id: "string",
+  label: "string",
+  actorKind: "'user' | 'agent'",
+  status: "string",
+  summary: "string",
+});
+export type PrincipalContext = typeof PrincipalContextSchema.infer;
+
 export const ActiveContextSchema = ArtifactContextSchema.or(
   WorkflowRunContextSchema,
-).or(ThreadContextSchema);
+)
+  .or(ThreadContextSchema)
+  .or(PrincipalContextSchema);
 export type ActiveContext = typeof ActiveContextSchema.infer;
 
 /**
@@ -100,6 +112,7 @@ export const WORKFLOW_STEP_OUTPUT_MAX_CHARS = 400;
 export const WORKFLOW_MAX_STEPS = 12;
 export const THREAD_TURN_MAX_CHARS = 280;
 export const THREAD_MAX_TURNS = 8;
+export const PRINCIPAL_SUMMARY_MAX_CHARS = 800;
 
 const TRUNCATION_MARKER = "…";
 
@@ -177,16 +190,30 @@ function projectThreadContext(ctx: ThreadContext): string {
   return lines.join("\n");
 }
 
+function projectPrincipalContext(ctx: PrincipalContext): string {
+  return [
+    `Active context — principal "${ctx.label}"`,
+    `- id: ${ctx.id}`,
+    `- type: ${ctx.actorKind}`,
+    `- status: ${ctx.status}`,
+    "",
+    "Activity summary:",
+    truncate(ctx.summary.trim(), PRINCIPAL_SUMMARY_MAX_CHARS),
+  ].join("\n");
+}
+
 // The per-kind registry. Adding a fourth surface kind is a new entry here plus a
 // schema above — never a change in the consuming app.
 const projectors: {
   artifact: (ctx: ArtifactContext) => string;
   "workflow-run": (ctx: WorkflowRunContext) => string;
   thread: (ctx: ThreadContext) => string;
+  principal: (ctx: PrincipalContext) => string;
 } = {
   artifact: projectArtifactContext,
   "workflow-run": projectWorkflowRunContext,
   thread: projectThreadContext,
+  principal: projectPrincipalContext,
 };
 
 function buildLeadIn(ctx: ActiveContext): string {
@@ -197,6 +224,8 @@ function buildLeadIn(ctx: ActiveContext): string {
       return projectors["workflow-run"](ctx);
     case "thread":
       return projectors.thread(ctx);
+    case "principal":
+      return projectors.principal(ctx);
   }
 }
 
