@@ -79,6 +79,8 @@ export interface ArtifactGalleryProps {
   onLoadMore?: () => void;
   /** True while a subsequent page is being fetched. */
   isLoadingMore?: boolean;
+  /** Shown under the load-more control when the next page request failed. */
+  loadMoreError?: string | null;
 }
 
 /** Date-range + provenance facet selection driven by the gallery filter bar. */
@@ -150,6 +152,7 @@ export function ArtifactGallery({
   hasMore = false,
   onLoadMore,
   isLoadingMore = false,
+  loadMoreError = null,
 }: ArtifactGalleryProps) {
   const [internalSort, setInternalSort] = useState<"newest" | "oldest">(
     "newest",
@@ -438,7 +441,12 @@ export function ArtifactGallery({
           </div>
         )}
         {hasMore && onLoadMore && (
-          <div className="flex justify-center pt-6">
+          <div className="flex flex-col items-center gap-2 pt-6">
+            {loadMoreError ? (
+              <p className="text-center text-[13px] text-text-3">
+                {loadMoreError}
+              </p>
+            ) : null}
             <button
               type="button"
               onClick={onLoadMore}

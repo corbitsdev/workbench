@@ -74,6 +74,8 @@ export function ArtifactGallery({
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
+    isFetchNextPageError,
+    error: artifactsQueryError,
   } = useArtifactsInfinite(clientOptions, {
     tenantId,
     query: debouncedQuery || undefined,
@@ -157,11 +159,16 @@ export function ArtifactGallery({
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         experimentalArtifactCards={experimentalArtifactCards}
-        hasMore={hasNextPage}
+        hasMore={hasNextPage === true}
         onLoadMore={() => {
-          void fetchNextPage().catch(() => {});
+          void fetchNextPage();
         }}
         isLoadingMore={isFetchingNextPage}
+        loadMoreError={
+          isFetchNextPageError
+            ? (artifactsQueryError?.message ?? "Could not load more artifacts.")
+            : null
+        }
       />
       <ArtifactModal
         open={selected !== null}

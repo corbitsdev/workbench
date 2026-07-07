@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
 import {
+  artifactsInfiniteQueryKey,
   artifactsListQueryKey,
   useArtifacts,
   useArtifactsInfinite,
@@ -251,10 +252,45 @@ describe("useArtifactsInfinite", () => {
     expect(spy.mock.calls[1]?.[0]).toContain("cursor=");
   });
 
-  it("shares the artifacts list query key with useArtifacts", () => {
-    const key = artifactsListQueryKey({ tenantId: "tn-9", sort: "oldest" });
-    expect(key[0]).toBe("artifacts");
-    expect(key[1]).toBe("tn-9");
-    expect(key[3]).toBe("oldest");
+  it("uses a distinct infinite query key with the same filter segments", () => {
+    const list = artifactsListQueryKey({ tenantId: "tn-9", sort: "oldest" });
+    const infinite = artifactsInfiniteQueryKey({
+      tenantId: "tn-9",
+      sort: "oldest",
+    });
+    expect(infinite.slice(0, list.length)).toEqual([...list]);
+    expect(infinite[infinite.length - 1]).toBe("infinite");
+  });
+
+  it("does not share a TanStack cache entry with useArtifacts", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ artifacts: [fakeArtifact], nextCursor: null }),
+      ),
+    );
+    const client = newClient();
+
+    renderHook(
+      () =>
+        useArtifacts(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+    renderHook(
+      () =>
+        useArtifactsInfinite(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => {
+      expect(
+        client.getQueryCache().findAll({ queryKey: ["artifacts", "tn-1"] }),
+      ).toHaveLength(2);
+    });
   });
 });

@@ -86,7 +86,7 @@ export interface UseArtifactsParams {
   enabled?: boolean;
 }
 
-/** TanStack query key for artifact list / infinite list (filters only; no cursor). */
+/** TanStack query key for single-page `useArtifacts` (filters only; no cursor). */
 export function artifactsListQueryKey(
   params: Omit<UseArtifactsParams, "enabled"> = {},
 ): readonly unknown[] {
@@ -102,6 +102,13 @@ export function artifactsListQueryKey(
     params.createdAfter ?? "",
     params.createdBefore ?? "",
   ] as const;
+}
+
+/** Query key for `useArtifactsInfinite` — same filters as `artifactsListQueryKey` plus scope. */
+export function artifactsInfiniteQueryKey(
+  params: Omit<UseArtifactsParams, "enabled"> = {},
+): readonly unknown[] {
+  return [...artifactsListQueryKey(params), "infinite"] as const;
 }
 
 function listArtifactsParams(
@@ -160,17 +167,14 @@ export function useArtifactsInfinite(
     ArtifactsPage,
     Error,
     InfiniteData<ArtifactsPage, string | null>,
-    ReturnType<typeof artifactsListQueryKey>,
+    ReturnType<typeof artifactsInfiniteQueryKey>,
     string | null
   >({
-    queryKey: artifactsListQueryKey(params),
+    queryKey: artifactsInfiniteQueryKey(params),
     queryFn: ({ pageParam }) =>
       listArtifacts(
         options,
-        listArtifactsParams(
-          params,
-          pageParam === null ? undefined : pageParam,
-        ),
+        listArtifactsParams(params, pageParam === null ? undefined : pageParam),
       ),
     initialPageParam: null,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,

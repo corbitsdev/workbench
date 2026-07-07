@@ -67,7 +67,7 @@ function renderWithSeededArtifacts(
     },
   });
   client.setQueryData(
-    ["artifacts", tenantId, "", "newest", "", "", "", "", "", ""],
+    ["artifacts", tenantId, "", "newest", "", "", "", "", "", "", "infinite"],
     {
       pages: [{ artifacts, nextCursor: null }],
       pageParams: [null],
