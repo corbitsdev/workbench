@@ -57,6 +57,10 @@ function parseWorkflowAutopublishMap(): WorkflowAutopublishMap | null {
 const DEFAULT_HUB_AGENT_GC_PACK_THRESHOLD = 64;
 const DEFAULT_HUB_AGENT_GC_LOOSE_THRESHOLD = 2048;
 const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
+// Hard ceiling on a single Myra auto-title turn. On expiry the turn is aborted
+// (reactor torn down, workdir lock released) so a wedged post-inference teardown
+// cannot pin the per-principal title repo — see CL-2866.
+const DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS = 45_000;
 
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
@@ -264,6 +268,11 @@ export function loadConfig() {
           DEFAULT_HUB_AGENT_GC_WARN_BYTES,
         ),
       },
+      myraTitleTurnTimeoutMs: parsePositiveIntEnv(
+        "HUB_MYRA_TITLE_TURN_TIMEOUT_MS",
+        DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS,
+        "milliseconds",
+      ),
     },
     // The deployment's root tenant — the default home every user lands in.
     // Name/slug/domain are deployment-specific and never hardcoded; a different

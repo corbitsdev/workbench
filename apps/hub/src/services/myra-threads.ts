@@ -340,18 +340,10 @@ const TITLE_MODEL = LLM_DEFAULT_MODEL;
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
-const TITLE_TURN_TIMEOUT_MS = 45_000;
-
 function isDefaultLabel(label: string | null | undefined): boolean {
   const trimmed = label?.trim() ?? "";
   if (trimmed === "") return true;
   return isDefaultMyraThreadLabel(trimmed);
-}
-
-function titleTurnDeadline(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => reject(new Error("Myra title turn timed out")), ms);
-  });
 }
 
 function sanitizeTitle(raw: string): string | null {
@@ -501,6 +493,7 @@ async function runTitleTurn(
     instanceId: string;
     source: InferenceSource;
     firstMessage: string;
+    signal: AbortSignal;
   },
 ): Promise<string | null> {
   // Durable per-(tenant, principal) audit repo on the hub's persistent volume
@@ -579,6 +572,15 @@ async function runTitleTurn(
 
   const agentInst = await createAgent(def, env);
 
+  // On deadline (CL-2866) close() releases the agent workdir lock so a wedged
+  // turn cannot pin the per-principal title repo. It is idempotent, so the
+  // success/catch paths below may safely close again.
+  const onAbort = () => {
+    void agentInst.close().catch(logTeardownError("abort close agent"));
+  };
+  if (opts.signal.aborted) onAbort();
+  else opts.signal.addEventListener("abort", onAbort, { once: true });
+
   async function pumpStream(): Promise<void> {
     for await (const event of agentInst.stream()) {
       if (event.type === "message.received") continue;
@@ -600,6 +602,48 @@ async function runTitleTurn(
     await pumpDone.catch(logTeardownError("pump stream"));
     await collector.abandon().catch(logTeardownError("abandon collector"));
     throw err;
+  } finally {
+    opts.signal.removeEventListener("abort", onAbort);
+  }
+}
+
+/**
+ * Run {@link runTitleTurn} under a hard deadline. The deadline both (a) aborts
+ * the turn — firing agentInst.close(), which releases the agent workdir lock
+ * within its own closeTimeoutMs regardless of what is wedged — and (b) settles
+ * the caller so the per-principal serialization chain advances. We must NOT just
+ * await the aborted turn: the observed hang (CL-2866) is in post-inference
+ * teardown (close / collector.abandon / isogit audit-commit), and abort cannot
+ * unblock a hang *inside* an already-running close() or a DB write. Racing the
+ * whole turn caps the caller no matter where it wedges; the orphaned turn's late
+ * rejection is swallowed so it does not surface as an unhandled rejection.
+ */
+async function runTitleTurnBounded(
+  db: HubDb,
+  opts: {
+    tenantId: string;
+    memberPrincipalId: string;
+    instanceId: string;
+    source: InferenceSource;
+    firstMessage: string;
+  },
+  timeoutMs: number,
+): Promise<string | null> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error("Myra title turn timed out");
+      controller.abort(err);
+      reject(err);
+    }, timeoutMs);
+  });
+  const turn = runTitleTurn(db, { ...opts, signal: controller.signal });
+  void turn.catch(() => undefined);
+  try {
+    return await Promise.race([turn, deadline]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -665,18 +709,24 @@ export async function generateMyraThreadTitle(
       return persisted;
     }
 
-    const raw = await Promise.race([
-      runSerializedPerPrincipal(opts.memberPrincipalId, () =>
-        runTitleTurn(db, {
+    // The deadline lives INSIDE the per-principal serialized region so it
+    // clocks the turn's own execution, not the time spent queued behind another
+    // member turn. On expiry the deadline caps this turn (CL-2866) so the
+    // serialization tail advances instead of staying pinned to a wedged turn;
+    // the aborted turn's workdir lock still frees within close()'s own bound.
+    const raw = await runSerializedPerPrincipal(opts.memberPrincipalId, () =>
+      runTitleTurnBounded(
+        db,
+        {
           tenantId: opts.tenantId,
           memberPrincipalId: opts.memberPrincipalId,
           instanceId: mapping.instanceId,
           source,
           firstMessage,
-        }),
+        },
+        getConfig().hub.myraTitleTurnTimeoutMs,
       ),
-      titleTurnDeadline(TITLE_TURN_TIMEOUT_MS),
-    ]);
+    );
 
     if (raw === null) {
       log.error(

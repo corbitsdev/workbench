@@ -10,6 +10,14 @@ let lastCreateEventCollectorConfig: {
 let collectorEvents: { type: string }[] = [];
 let agentReply = "Pricing Deep Dive";
 let agentShouldThrow = false;
+// When true, the agent's send() never resolves on its own; it settles only when
+// close() is invoked — models a turn wedged in the reactor/send path (CL-2866).
+let agentSendHangs = false;
+// When true, close() never resolves — models the reported wedge, a hang in
+// post-inference teardown (close / audit-commit) that abort cannot unblock.
+let agentCloseHangs = false;
+let agentCloseCalls = 0;
+let titleTurnTimeoutMs = 45_000;
 let lastIsogitDir: string | null = null;
 let lastIsogitGcPolicy: unknown = null;
 
@@ -18,6 +26,10 @@ function resetTitleMocks() {
   collectorEvents = [];
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
+  agentSendHangs = false;
+  agentCloseHangs = false;
+  agentCloseCalls = 0;
+  titleTurnTimeoutMs = 45_000;
   lastIsogitDir = null;
   lastIsogitGcPolicy = null;
   ancestorChainResult = ["tn-global"];
@@ -68,8 +80,9 @@ mock.module("@workbench/event-collector", () => ({
 mock.module("@intx/agent", () => ({
   defineAgent: mock((def: unknown) => def),
   createDefaultDirectorRegistry: mock(() => ({})),
-  createAgent: mock(() =>
-    Promise.resolve({
+  createAgent: mock(() => {
+    let rejectHungSend: ((err: unknown) => void) | null = null;
+    return Promise.resolve({
       async *stream() {
         yield { type: "inference.start", data: { model: "m" } };
         yield { type: "inference.done", data: { turn: { content: [] } } };
@@ -78,11 +91,25 @@ mock.module("@intx/agent", () => ({
       send: mock(() => {
         if (agentShouldThrow)
           return Promise.reject(new Error("inference boom"));
+        if (agentSendHangs)
+          return new Promise((_, reject) => {
+            rejectHungSend = reject;
+          });
         return Promise.resolve({ reply: agentReply });
       }),
-      close: mock(() => Promise.resolve()),
-    }),
-  ),
+      close: mock(() => {
+        agentCloseCalls += 1;
+        // close() drains the send queue with AgentClosedError in the real agent;
+        // mirror that so a hung send() rejects when the turn is aborted.
+        rejectHungSend?.(new Error("AgentClosedError"));
+        // Real close() releases the workdir lock only after its own bounded
+        // shutdown wait; model a wedge in that teardown as a never-settling
+        // close so the deadline — not close — must bound the caller (CL-2866).
+        if (agentCloseHangs) return new Promise<void>(() => {});
+        return Promise.resolve();
+      }),
+    });
+  }),
 }));
 
 const resolveCredentialRequirementMock = mock(() => Promise.resolve(null));
@@ -111,6 +138,7 @@ mock.module("../config", () => ({
     hub: {
       dataDir: "/tmp/myra-title-test",
       agentGc: { packThreshold: 16, looseThreshold: 512, warnBytes: 1024 },
+      myraTitleTurnTimeoutMs: titleTurnTimeoutMs,
     },
     rootTenant: { slug: "global", domain: "global.test" },
   }),
@@ -552,6 +580,96 @@ describe("generateMyraThreadTitle", () => {
       "inference.start",
       "inference.done",
     ]);
+  });
+
+  it("aborts a wedged turn on timeout, closing the agent and returning the fallback (CL-2866)", async () => {
+    resetTitleMocks();
+    // The turn hangs after inference; only close() can settle it.
+    agentSendHangs = true;
+    titleTurnTimeoutMs = 20;
+    const fallback = {
+      id: "map-1",
+      instanceId: "inst-1",
+      label: "How should we price the enterprise tier",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+      renamed: fallback,
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(db as any, {}, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+
+    // The deadline must not hang the caller; it returns the persisted fallback.
+    expect(result?.label).toBe("How should we price the enterprise tier");
+    // The abort tore the agent down — close() ran, releasing the workdir lock.
+    // Pre-CL-2866 the Promise.race abandoned the turn and close() was never hit.
+    // The exact count is timing-dependent (onAbort + the orphaned catch both
+    // close, idempotently), so we only assert close was invoked at all.
+    expect(agentCloseCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not wedge subsequent turns when the first turn hangs in teardown (CL-2866)", async () => {
+    resetTitleMocks();
+    // The reported wedge: inference completes but close()/audit-commit never
+    // settles. Abort cannot unblock an in-flight close, so only the deadline
+    // racing the whole turn keeps the per-principal chain from pinning.
+    agentCloseHangs = true;
+    titleTurnTimeoutMs = 20;
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+      renamed: {
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "First fallback",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const first = await generateMyraThreadTitle(db as any, {}, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "First message",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+    // The wedged first turn still returns (its fallback) and fired the abort's
+    // close() attempt rather than hanging the caller.
+    expect(first?.label).toBe("First fallback");
+    expect(agentCloseCalls).toBeGreaterThanOrEqual(1);
+
+    // A second, healthy turn for the same principal must proceed rather than
+    // queue forever behind the wedged first turn's serialization tail.
+    agentCloseHangs = false;
+    titleTurnTimeoutMs = 45_000;
+    const db2 = buildTitleDb({
+      mappingRow: { id: "map-2", instanceId: "inst-2", label: "Chat" },
+      renamed: {
+        id: "map-2",
+        instanceId: "inst-2",
+        label: "Pricing Deep Dive",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const second = await generateMyraThreadTitle(db2 as any, {}, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-2",
+      firstMessage: "Second message about pricing",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+
+    expect(second?.label).toBe("Pricing Deep Dive");
   });
 
   it("resolves the title source via the tenant hierarchy for a sub-tenant", async () => {
