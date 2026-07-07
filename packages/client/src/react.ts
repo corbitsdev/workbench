@@ -134,6 +134,14 @@ function listArtifactsParams(
   return out;
 }
 
+function getArtifactParams(
+  params: Pick<UseArtifactParams, "tenantId">,
+): { tenantId?: string | null } {
+  const out: { tenantId?: string | null } = {};
+  if (params.tenantId !== undefined) out.tenantId = params.tenantId;
+  return out;
+}
+
 export type UseArtifactParams = {
   tenantId?: string | null;
   artifactId?: string;
@@ -149,7 +157,7 @@ export function useArtifact(
   return useQuery({
     queryKey: ["artifacts", "detail", params.tenantId ?? null, artifactId],
     queryFn: () =>
-      getArtifact(options, artifactId, { tenantId: params.tenantId }),
+      getArtifact(options, artifactId, getArtifactParams(params)),
     enabled:
       params.tenantId != null &&
       artifactId.length > 0 &&

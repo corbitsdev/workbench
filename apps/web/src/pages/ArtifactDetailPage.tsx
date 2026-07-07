@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { Button } from "@workbench/ui";
 import { useArtifact } from "@workbench/client/react";
-import type { ArtifactWithSession } from "@workbench/artifact";
+
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
