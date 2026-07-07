@@ -331,14 +331,16 @@ describe("validateResumePayload", () => {
     ).toEqual({ ok: true });
   });
 
-  test("rejects a last30days intake payload with an empty topic", () => {
+  test("rejects a last30days intake payload with a blank topic", () => {
     // Every source query and the report title derive from the topic; a blank
     // topic would ground the whole scan on nothing, so it is rejected here.
-    const result = validateResumePayload("last30days-research", "intake", {
-      topic: "",
-      focus: "some angle",
-    });
-    expect(result.ok).toBe(false);
+    for (const topic of ["", "   "]) {
+      const result = validateResumePayload("last30days-research", "intake", {
+        topic,
+        focus: "some angle",
+      });
+      expect(result.ok).toBe(false);
+    }
   });
 
   test("accepts a reddit intake with an http(s) URL and optional hints", () => {

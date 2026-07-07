@@ -32,4 +32,9 @@ After changing this package or `workflows/last30days-research`, ship to staging:
    refreshes tool pins on step agents, and re-establishes the supervisor.
 3. Start a **new** run in the UI (in-flight runs keep the old definition).
 
+If only the hub-backed handler in `src/tools.ts` changes while the tool package
+entrypoint and input schemas stay unchanged, ship it to staging/prod by
+redeploying the hub image (plus apps/web when UI code changed). Do not republish
+the tool tarball or redeploy the workflow definition for a handler-only change.
+
 See `docs/DEPLOYING_WORKFLOWS.md` for the workflow deploy model.
