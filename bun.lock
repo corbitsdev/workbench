@@ -783,6 +783,7 @@
     "packages/pricing": {
       "name": "@workbench/pricing",
       "dependencies": {
+        "@workbench/catalog": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {

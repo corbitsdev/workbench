@@ -1,7 +1,9 @@
+import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { Hono, type Env } from "hono";
 
 import { getProviderLogo, loadPriceCatalog } from "../lib/pricing";
+import { getOfferingProvidersByModel } from "../services/offering-providers-by-model";
 
 const log = getLogger(["hub", "pricing"]);
 
@@ -20,13 +22,24 @@ const PROVIDER_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
  * tenant reads. The browser consumes these (never models.dev directly) so the
  * catalog stays same-origin and inside CSP.
  */
-export function createPricingRouter(): Hono<PricingRouteEnv> {
+export type CreatePricingRouterDeps = {
+  db: DB["db"];
+};
+
+export function createPricingRouter({
+  db,
+}: CreatePricingRouterDeps): Hono<PricingRouteEnv> {
   const app = new Hono<PricingRouteEnv>();
 
   app.get("/", async (c) => {
     try {
+      const tenant = c.get("tenant");
       const catalog = await loadPriceCatalog();
-      return c.json(catalog);
+      const offeringProvidersByModel = await getOfferingProvidersByModel(
+        db,
+        tenant.id,
+      );
+      return c.json({ ...catalog, offeringProvidersByModel });
     } catch (error) {
       log.error("Pricing catalog load failed: {error}", {
         error: error instanceof Error ? error.message : String(error),

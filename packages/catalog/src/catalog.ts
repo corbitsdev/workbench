@@ -20,6 +20,8 @@ export type CatalogProviderSpec = {
   name: string;
   plugin: ModelPlugin;
   credentialName: string;
+  /** models.dev provider id used for Insights pricing when telemetry is a bare model id. */
+  modelsDevProviderId?: string;
 };
 
 export type CatalogModelSpec = { canonicalName: string };

@@ -643,7 +643,7 @@ hubApp.route(
   "/api/tenants/:tenantId/activity",
   createTenantActivityRouter({ db }),
 );
-hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
+hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter({ db }));
 
 // CL-2749: pre-warm the shared models.dev pricing cache on boot so the first
 // post-deploy Insights pricing request is served warm instead of eating the

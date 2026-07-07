@@ -4,6 +4,8 @@ import { Hono } from "hono";
 let catalogImpl: () => Promise<unknown> = async () => ({
   source: "test",
   generatedAt: "2026-07-03T00:00:00.000Z",
+  qualified: {},
+  ambiguous: [],
   models: {
     "claude-opus-4-5": {
       modelId: "claude-opus-4-5",
@@ -23,6 +25,14 @@ mock.module("../lib/pricing", () => ({
   getProviderLogo: (p: string) => logoImpl(p),
 }));
 
+const getOfferingProvidersByModel = mock(async () => ({
+  "deepseek-v4-flash": ["opencode-zen"],
+}));
+
+mock.module("../services/offering-providers-by-model", () => ({
+  getOfferingProvidersByModel,
+}));
+
 const { createPricingRouter } = await import("./pricing");
 
 type Env = { Variables: { tenant: { id: string }; principal: { id: string } } };
@@ -34,7 +44,10 @@ function harness() {
     c.set("principal", { id: "pri_1" });
     await next();
   });
-  hub.route("/api/tenants/:tenantId/pricing", createPricingRouter());
+  hub.route(
+    "/api/tenants/:tenantId/pricing",
+    createPricingRouter({ db: {} as never }),
+  );
   return hub;
 }
 
@@ -46,8 +59,12 @@ describe("GET /pricing", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       models: Record<string, { input: number }>;
+      offeringProvidersByModel?: Record<string, string[]>;
     };
     expect(body.models["claude-opus-4-5"]?.input).toBe(5);
+    expect(body.offeringProvidersByModel?.["deepseek-v4-flash"]).toEqual([
+      "opencode-zen",
+    ]);
   });
 
   it("returns 503 when the catalog is unavailable", async () => {
@@ -61,6 +78,8 @@ describe("GET /pricing", () => {
     catalogImpl = async () => ({
       source: "test",
       generatedAt: "x",
+      qualified: {},
+      ambiguous: [],
       models: {},
     });
   });

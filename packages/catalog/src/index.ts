@@ -23,3 +23,4 @@ export {
 export { CATALOG_PROVIDERS } from "./providers";
 export { CATALOG_MODELS } from "./models";
 export { CATALOG_OFFERINGS } from "./offerings";
+export { modelsDevProviderIdsForCatalogProvider } from "./models-dev";
