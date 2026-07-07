@@ -28,6 +28,41 @@ export const ADMIN_ACTION = "manage";
  * wildcard match — "admins inherit other grants" with no per-grant copying. */
 export const ADMIN_ROLE_NAME = "admin";
 
+/** The actions the `admin` system role is seeded with (`*`/{read,create,manage},
+ * see `seedSystemRolesAndGrants`). Exported so the seed AND the owner-gate probe
+ * test consume ONE definition and cannot silently diverge — the owner gate's
+ * correctness depends on the relationship between this set and `OWNER_ACTION`
+ * (below). */
+export const ADMIN_GRANT_ACTIONS = ["read", "create", "manage"] as const;
+
+/** Resource probed by the OWNER gate. As with the admin gate, any string works
+ * (the owner role's wildcard is what grants access); a dedicated `owner:*`
+ * keeps the intent legible in logs and the evaluate debugger. */
+export const OWNER_RESOURCE = "owner:*";
+/** Action probed by the OWNER gate — the crux of owner-vs-admin. `admin` bears
+ * `*` for the specific actions in `ADMIN_GRANT_ACTIONS`, while `owner` bears
+ * `*`/`*`. The gate is safe as long as NO non-owner principal holds an action
+ * *pattern* that globs to `OWNER_ACTION` on a resource globbing to
+ * `OWNER_RESOURCE`. The authz matcher globs on the grant (pattern) side, so this
+ * is broader than "a literal outside `ADMIN_GRANT_ACTIONS`": an action pattern
+ * like `o*` would also match. Today only the owner role's `*`/`*` does — the
+ * seeded admin literals (`read`/`create`/`manage`) do not, and no operator path
+ * mints a wildcard/`o*` action grant to a non-owner. `owner-grant-probe.test.ts`
+ * pins this against the real authz engine using `ADMIN_GRANT_ACTIONS`; do NOT
+ * add a wildcard or `o*`-shaped action to a non-owner grant without revisiting
+ * it. */
+export const OWNER_ACTION = "own";
+
+// ─── Owner area wire schemas (CL-2874) ─────────────────────────────
+
+/** `GET /owner/context` — owner identity + the root tenant the owner governs.
+ * The `/owner` web shell parses the response through this schema (never casts). */
+export const OwnerContextResponse = type({
+  tenantId: "string",
+  ownerPrincipalId: "string",
+});
+export type OwnerContext = typeof OwnerContextResponse.infer;
+
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 

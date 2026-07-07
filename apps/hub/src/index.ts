@@ -84,7 +84,8 @@ import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
-import { isAdmin } from "./lib/admin-grant";
+import { createOwnerRouter } from "./routes/owner";
+import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   registerDisconnectReconciler,
@@ -870,8 +871,13 @@ v1.get("/me", async (c) => {
   // org tenant), so this authorizes over the SAME tenant the admin route guard
   // uses (`rootTenantId`) — the nav gate and the real gate cannot diverge.
   let admin = false;
+  let owner = false;
   if (memberPrincipalId && workingTenantId) {
     admin = await isAdmin(grantStore, memberPrincipalId, workingTenantId);
+    // Owner is a strict superset of admin (see isOwner): ABK Labs owners hold
+    // the `owner` role (`*`/`*`); customer-side admins do not. Drives the
+    // `/owner` nav gate — the owner routes re-check server-side.
+    owner = await isOwner(grantStore, memberPrincipalId, workingTenantId);
   }
 
   return c.json({
@@ -886,6 +892,7 @@ v1.get("/me", async (c) => {
     credentialResolved,
     personalAgentSyncAvailable,
     isAdmin: admin,
+    isOwner: owner,
     preferences,
   });
 });
@@ -1027,6 +1034,7 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
+v1.route("/", createOwnerRouter({ db, grantStore, rootTenantId }));
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.

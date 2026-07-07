@@ -8,6 +8,7 @@ import {
   templateModelRequirements,
   type AgentTemplate,
 } from "@workbench/agents";
+import { ADMIN_GRANT_ACTIONS } from "@workbench/shared";
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import { memberAgentInstance, enabledWorkflow } from "../db/schema";
@@ -120,7 +121,7 @@ export async function seedSystemRolesAndGrants(
     updatedAt: now,
   });
 
-  for (const action of ["read", "create", "manage"] as const) {
+  for (const action of ADMIN_GRANT_ACTIONS) {
     await tx.insert(grant).values({
       id: generateId("grant"),
       tenantId,

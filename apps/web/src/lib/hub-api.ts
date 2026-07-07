@@ -112,6 +112,11 @@ export type MeResponse = {
    * resolved server-side via Interchange's native grant model). The hub admin
    * routes re-check this — the flag only drives nav visibility. */
   isAdmin?: boolean;
+  /** Whether the caller may see the Owner area (holds the `owner` role's `*`/`*`
+   * grant — ABK Labs staff, a strict superset of admin). Resolved server-side
+   * via Interchange's native grant model; the hub owner routes re-check it, so
+   * this flag only drives nav visibility. */
+  isOwner?: boolean;
   /** When true, call postMe() to provision or push template/grant updates. */
   personalAgentSyncAvailable?: boolean;
   /** Server-persisted UI preferences, folded into the bootstrap to avoid an extra round-trip. */
