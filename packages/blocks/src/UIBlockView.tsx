@@ -473,7 +473,11 @@ type FieldValue = LeafValue | Record<string, LeafValue>[];
 type LeafField = Exclude<FormField, { kind: "group" }>;
 
 function leafInitialValue(field: LeafField): LeafValue {
-  if (field.kind === "multiSelect") return [];
+  if (field.kind === "multiSelect") {
+    return (field.options || [])
+      .filter((o) => o.defaultChecked === true)
+      .map((o) => o.value);
+  }
   if (field.kind === "number") {
     return field.defaultValue === undefined ? "" : String(field.defaultValue);
   }
@@ -487,6 +491,11 @@ function effectiveGroupMin(min: number | undefined): number {
 
 function initialValue(field: FormField): FieldValue {
   if (field.kind === "group") {
+    if (Array.isArray(field.defaultRows) && field.defaultRows.length > 0) {
+      return field.defaultRows.map((seed) =>
+        seededRow(field.fields, seed as Record<string, unknown>),
+      );
+    }
     const rowCount = effectiveGroupMin(field.min);
     return Array.from({ length: rowCount }, () => emptyRow(field.fields));
   }
@@ -496,6 +505,31 @@ function initialValue(field: FormField): FieldValue {
 function emptyRow(fields: LeafField[]): Record<string, LeafValue> {
   const row: Record<string, LeafValue> = {};
   for (const field of fields) row[field.name] = leafInitialValue(field);
+  return row;
+}
+
+// Coerce a pre-seeded `defaultRows` row (which may carry raw typed values from a
+// prior step — e.g. a number for a `number` cell) into the string / string[]
+// state shape every cell renderer and `leafToPayload` assume. A missing cell
+// falls back to its own default; without this a numeric cell reaches
+// `leafToPayload` as a number and throws on `.trim()` (CL-2773 review).
+function seededRow(
+  fields: LeafField[],
+  seed: Record<string, unknown>,
+): Record<string, LeafValue> {
+  const row: Record<string, LeafValue> = {};
+  for (const field of fields) {
+    const value = seed[field.name];
+    if (value === undefined || value === null) {
+      row[field.name] = leafInitialValue(field);
+    } else if (field.kind === "multiSelect") {
+      row[field.name] = Array.isArray(value)
+        ? value.map((entry) => String(entry))
+        : leafInitialValue(field);
+    } else {
+      row[field.name] = String(value);
+    }
+  }
   return row;
 }
 
@@ -857,7 +891,11 @@ function MultiSelectBlock({
   block: Extract<UIBlock, { kind: "multiSelect" }>;
   onRespond?: (response: UIResponse) => void | Promise<void>;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    block.options
+      .filter((o) => o.defaultChecked === true)
+      .map((o) => o.value ?? o.label),
+  );
   const [submitted, setSubmitted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

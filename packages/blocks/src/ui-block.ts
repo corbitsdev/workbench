@@ -66,6 +66,7 @@ export type FormFieldOption = {
   value: string;
   label: string;
   description?: string;
+  defaultChecked?: boolean;
 };
 
 /**
@@ -160,6 +161,7 @@ export type FormField =
       addLabel?: string;
       min?: number;
       max?: number;
+      defaultRows?: Record<string, unknown>[];
       fields: Exclude<FormField, { kind: "group" }>[];
     };
 
@@ -252,6 +254,7 @@ export type UIBlock =
         label: string;
         value?: string;
         description?: string;
+        defaultChecked?: boolean;
       }[];
     }
   | {
@@ -316,7 +319,12 @@ const FORM_FIELD_KINDS = new Set<FormField["kind"]>([
 function isFormFieldOption(value: unknown): value is FormFieldOption {
   if (typeof value !== "object" || value === null) return false;
   const opt = value as Record<string, unknown>;
-  return typeof opt.value === "string" && typeof opt.label === "string";
+  return (
+    typeof opt.value === "string" &&
+    typeof opt.label === "string" &&
+    (opt.defaultChecked === undefined ||
+      typeof opt.defaultChecked === "boolean")
+  );
 }
 
 /**
@@ -349,6 +357,11 @@ export function isFormField(
     return (
       Array.isArray(field.fields) &&
       field.fields.length > 0 &&
+      (field.defaultRows === undefined ||
+        (Array.isArray(field.defaultRows) &&
+          field.defaultRows.every(
+            (r: unknown) => typeof r === "object" && r !== null,
+          ))) &&
       field.fields.every((sub) => isFormField(sub, false))
     );
   }
