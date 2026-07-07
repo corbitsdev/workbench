@@ -97,6 +97,20 @@ function parseOrigins(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function parseAutoJoinTenantSlugs(): string[] {
+  const raw = process.env["AUTO_JOIN_TENANT_SLUGS"];
+  if (!raw || raw.trim() === "") return [];
+  const seen = new Set<string>();
+  const slugs: string[] = [];
+  for (const part of raw.split(",")) {
+    const slug = part.trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    slugs.push(slug);
+  }
+  return slugs;
+}
+
 function parseBooleanEnv(name: string): boolean {
   const value = process.env[name];
   return value === "true" || value === "1";
@@ -259,6 +273,10 @@ export function loadConfig() {
     get globalTenant() {
       return this.rootTenant;
     },
+    // Tenants to auto-join on signup/login (comma-separated slugs). Default empty
+    // — no implicit org membership. Set to the global slug to preserve legacy
+    // "everyone joins root" behavior until admin invite rules land (CL-2855).
+    autoJoinTenantSlugs: parseAutoJoinTenantSlugs(),
     // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
     // Absent in local dev — null is the correct value there.
     buildSha: optionalEnv("RAILWAY_GIT_COMMIT_SHA") ?? null,

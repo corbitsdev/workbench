@@ -34,6 +34,7 @@ const MANAGED_KEYS = [
   "HUB_AGENT_GC_PACK_THRESHOLD",
   "HUB_AGENT_GC_LOOSE_THRESHOLD",
   "HUB_AGENT_GC_WARN_BYTES",
+  "AUTO_JOIN_TENANT_SLUGS",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -81,6 +82,13 @@ describe("loadConfig", () => {
       domain: "acme.example.com",
     });
     expect(config.granola.baseUrl).toBe("https://public-api.granola.ai/v1");
+    expect(config.autoJoinTenantSlugs).toEqual([]);
+  });
+
+  it("parses AUTO_JOIN_TENANT_SLUGS as a deduped slug list", () => {
+    setRequiredEnv();
+    process.env["AUTO_JOIN_TENANT_SLUGS"] = " abklabs, gtm ,abklabs,";
+    expect(loadConfig().autoJoinTenantSlugs).toEqual(["abklabs", "gtm"]);
   });
 
   it("defaults workflowAutopublishOnBoot to false and enables it only for true/1", () => {
