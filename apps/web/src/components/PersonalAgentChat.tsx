@@ -72,6 +72,7 @@ export function PersonalAgentChat() {
   const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
     activeThread,
     session.messages,
+    session.instanceId,
   );
 
   const {

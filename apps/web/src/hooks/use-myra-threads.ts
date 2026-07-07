@@ -278,6 +278,7 @@ function firstUserMessage(
 export function useAutoTitleFirstMessage(
   active: MyraThread | null,
   messages: { role: string; content: string }[] = [],
+  messagesInstanceId: string | null = null,
 ): (text: string) => void {
   const generateTitle = useGenerateMyraThreadTitle();
   const titledRef = useRef<Set<string>>(new Set());
@@ -309,10 +310,17 @@ export function useAutoTitleFirstMessage(
 
   useEffect(() => {
     if (!active || !isDefaultThreadLabel(active.label)) return;
+    // `messages` come from the live session, which reconnects to a switched
+    // thread in a post-commit effect — so on the render right after "+ New
+    // chat", `active` is already the new thread while `messages` still hold the
+    // previous thread's transcript. Titling then would name the new thread from
+    // the old thread's first message (CL-2882). Only trust the transcript once
+    // the session has resolved to the active thread's own instance.
+    if (messagesInstanceId !== active.instanceId) return;
     const firstMessage = firstUserMessage(messages);
     if (firstMessage === null) return;
     titleFromText(firstMessage);
-  }, [active, messages, titleFromText]);
+  }, [active, messages, messagesInstanceId, titleFromText]);
 
   return titleFromText;
 }

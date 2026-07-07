@@ -265,7 +265,11 @@ describe("useAutoTitleFirstMessage", () => {
   );
   const originalFetch = globalThis.fetch;
 
-  function renderTitleHook(active: MyraThread | null) {
+  function renderTitleHook(
+    active: MyraThread | null,
+    messages: { role: string; content: string }[] = [],
+    messagesInstanceId: string | null = null,
+  ) {
     const client = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -274,9 +278,10 @@ describe("useAutoTitleFirstMessage", () => {
     });
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children);
-    return renderHook(() => useAutoTitleFirstMessage(active), {
-      wrapper,
-    });
+    return renderHook(
+      () => useAutoTitleFirstMessage(active, messages, messagesInstanceId),
+      { wrapper },
+    );
   }
 
   function titleCalls(): [string, RequestInit?][] {
@@ -312,6 +317,37 @@ describe("useAutoTitleFirstMessage", () => {
       label: "Renamed by user",
     });
     act(() => result.current("hello"));
+    await Promise.resolve();
+    expect(titleCalls()).toHaveLength(0);
+  });
+
+  it("auto-titles from the transcript only when the session resolved to the active thread's instance", async () => {
+    // Effect path: active thread's own instance, its own messages.
+    renderTitleHook(
+      defaultThread,
+      [{ role: "user", content: "How should we price Q3?" }],
+      defaultThread.instanceId,
+    );
+    await waitFor(() => expect(titleCalls()).toHaveLength(1));
+    const [, init] = titleCalls()[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      firstMessage: "How should we price Q3?",
+    });
+  });
+
+  it("does NOT auto-title a new thread from a previous thread's stale messages (CL-2882)", async () => {
+    // The "+ New chat" race: active is the new default thread (instance B) but
+    // the session still holds the previous thread's transcript (instance A), so
+    // the messages' instance id does not match the active thread's.
+    renderTitleHook(
+      { ...defaultThread, id: "thr-new", instanceId: "inst-B" },
+      [{ role: "user", content: "the previous thread's first message" }],
+      "inst-A",
+    );
+    // The guard is a synchronous early-return inside the effect (which runs on
+    // commit), so flushing a couple of microtasks is enough to prove it never
+    // fired — there is no deferred/debounced path that could title on a later tick.
+    await Promise.resolve();
     await Promise.resolve();
     expect(titleCalls()).toHaveLength(0);
   });
