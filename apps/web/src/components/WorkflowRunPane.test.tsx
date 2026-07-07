@@ -451,6 +451,56 @@ describe("WorkflowRunPane", () => {
     ).toBe(false);
   });
 
+  it("re-enables when a concurrent gate with the same signal name is still awaiting", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        { stepId: "gateA", phase: "completed" },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
   it("clears the latch when the same-stepId gate is consumed even if the step later re-awaits", async () => {
     // A map/loop step re-awaits under the same stepId. The latch must clear the
     // moment our signal is consumed (leaves the awaiting set) — it must not stay

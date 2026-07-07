@@ -95,14 +95,14 @@ function WorkflowRunPaneInner({
   const { data: skills } = useSkillLibrary(tenantId);
   const { data: deployments } = useWorkflowDeployments(tenantId);
   const signalInFlightRef = useRef(false);
-  // The specific awaitSignal name we submitted, captured at click. The pending
-  // latch clears only once THIS signal leaves the run's awaiting-signal set (the
-  // gate we acted on was consumed / advanced) — never merely because the /resume
-  // POST resolved, which only delivers the signal seconds before the run moves.
-  // Keying on the signal (not the first active step) is what makes concurrent
-  // gates and same-stepId re-awaits clear correctly: the first active step can
-  // stay parked on a DIFFERENT gate while ours advances.
-  const pendingSignalRef = useRef<string | null>(null);
+  // The specific gate we submitted: stepId + signalName at click. Clears when
+  // THAT step is no longer awaiting that signal (or the run goes terminal) —
+  // not when /resume returns. Signal-only latching wrongly sticks when two
+  // concurrent gates share a signal name; step identity fixes that.
+  const pendingGateRef = useRef<{
+    stepId: string;
+    signalName: string;
+  } | null>(null);
   const [signalPending, setSignalPending] = useState(false);
   // True while a resume is auto-retrying through the deploy window (CL-2707), so
   // the pane shows an honest transient banner instead of flashing an error.
@@ -183,15 +183,23 @@ function WorkflowRunPaneInner({
     if (!signalPending) return;
     const terminalNow = record ? isRecordTerminal(record.status) : false;
     if (terminalNow) {
-      pendingSignalRef.current = null;
+      pendingGateRef.current = null;
       signalInFlightRef.current = false;
       setSignalPending(false);
       return;
     }
     if (!logState) return;
-    const submitted = pendingSignalRef.current;
-    if (submitted !== null && !awaitingSignalNames.has(submitted)) {
-      pendingSignalRef.current = null;
+    const submitted = pendingGateRef.current;
+    if (submitted === null) return;
+    const step = logState.steps.find((s) => s.stepId === submitted.stepId);
+    const gateConsumed =
+      submitted.stepId === ""
+        ? !awaitingSignalNames.has(submitted.signalName)
+        : step === undefined ||
+          step.phase !== "awaiting-signal" ||
+          step.awaitingSignalName !== submitted.signalName;
+    if (gateConsumed) {
+      pendingGateRef.current = null;
       signalInFlightRef.current = false;
       setSignalPending(false);
     }
@@ -264,7 +272,15 @@ function WorkflowRunPaneInner({
     // only delivers the signal, it doesn't advance the run. So the button stays
     // disabled and "Working…" shows until the gate we acted on actually advances,
     // never re-enabling on the same still-parked gate.
-    pendingSignalRef.current = signalName;
+    const latchStep =
+      logState?.steps.find(
+        (s) =>
+          s.phase === "awaiting-signal" && s.awaitingSignalName === signalName,
+      ) ?? null;
+    pendingGateRef.current =
+      latchStep !== null
+        ? { stepId: latchStep.stepId, signalName }
+        : { stepId: "", signalName };
     setSignalPending(true);
     setRedeploying(false);
     resume
@@ -276,7 +292,7 @@ function WorkflowRunPaneInner({
       .catch(() => {
         // On failure, release the latch and the in-flight guard so the user can
         // retry, and let the resume hook's error surface through the failure path.
-        pendingSignalRef.current = null;
+        pendingGateRef.current = null;
         signalInFlightRef.current = false;
         setSignalPending(false);
       })
