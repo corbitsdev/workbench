@@ -9,7 +9,12 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
-import { useArtifacts, useLibraryResources } from "./react";
+import {
+  artifactsListQueryKey,
+  useArtifacts,
+  useArtifactsInfinite,
+  useLibraryResources,
+} from "./react";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -206,5 +211,50 @@ describe("useArtifacts", () => {
     expect(spy.mock.calls[0]?.[0]).toBe(
       "http://localhost:4000/api/v1/artifacts?tenantId=tn-1",
     );
+  });
+});
+
+describe("useArtifactsInfinite", () => {
+  it("loads the next cursor page when fetchNextPage is called", async () => {
+    const page1 = {
+      artifacts: [{ ...fakeArtifact, id: "a-1" }],
+      nextCursor: "2024-01-02T00:00:00.000Z__a-1",
+    };
+    const page2 = {
+      artifacts: [{ ...fakeArtifact, id: "a-2", title: "Second page" }],
+      nextCursor: null,
+    };
+    let call = 0;
+    const { spy, fetcher } = makeFetch(() => {
+      call += 1;
+      return Promise.resolve(jsonResponse(call === 1 ? page1 : page2));
+    });
+
+    const { result } = renderHook(
+      () =>
+        useArtifactsInfinite(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(newClient()) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.artifacts).toHaveLength(1);
+    expect(result.current.hasNextPage).toBe(true);
+
+    await result.current.fetchNextPage();
+
+    await waitFor(() => expect(result.current.artifacts).toHaveLength(2));
+    expect(result.current.artifacts[1]?.title).toBe("Second page");
+    expect(result.current.hasNextPage).toBe(false);
+    expect(spy.mock.calls[1]?.[0]).toContain("cursor=");
+  });
+
+  it("shares the artifacts list query key with useArtifacts", () => {
+    const key = artifactsListQueryKey({ tenantId: "tn-9", sort: "oldest" });
+    expect(key[0]).toBe("artifacts");
+    expect(key[1]).toBe("tn-9");
+    expect(key[3]).toBe("oldest");
   });
 });
