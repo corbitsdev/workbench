@@ -12,6 +12,7 @@ import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
 import {
   artifactsInfiniteQueryKey,
   artifactsListQueryKey,
+  useArtifact,
   useArtifacts,
   useArtifactsInfinite,
   useLibraryResources,
@@ -292,5 +293,52 @@ describe("useArtifactsInfinite", () => {
         client.getQueryCache().findAll({ queryKey: ["artifacts", "tn-1"] }),
       ).toHaveLength(2);
     });
+  });
+});
+
+describe("useArtifact", () => {
+  it("loads one artifact by id under the detail query key", async () => {
+    const { fetcher } = makeFetch((input) => {
+      const url = String(input);
+      if (url.includes("/artifacts/art-detail")) {
+        return Promise.resolve(
+          jsonResponse({
+            artifact: {
+              id: "art-detail",
+              parentId: null,
+              kind: "one-pager",
+              title: "Detail",
+              content: "x",
+              source: { origin: "unknown" },
+              status: "draft",
+              version: 1,
+              ownerPrincipalId: null,
+              createdAt: "2026-06-20T00:00:00.000Z",
+              updatedAt: "2026-06-20T00:00:00.000Z",
+              sessionName: null,
+              sessionStatus: null,
+              ownerName: null,
+            },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "not found" }), { status: 404 }),
+      );
+    });
+    const client = newClient();
+
+    const { result } = renderHook(
+      () =>
+        useArtifact(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tenant-1", artifactId: "art-detail" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.title).toBe("Detail");
+    expect(result.current.data?.id).toBe("art-detail");
   });
 });

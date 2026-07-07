@@ -21,6 +21,7 @@ import type {
 } from "@workbench/shared";
 import {
   createArtifact,
+  getArtifact,
   listArtifacts,
   listWorkflows,
   listMembers,
@@ -131,6 +132,29 @@ function listArtifactsParams(
   }
   if (cursor !== undefined) out.cursor = cursor;
   return out;
+}
+
+export type UseArtifactParams = {
+  tenantId?: string | null;
+  artifactId?: string;
+  enabled?: boolean;
+};
+
+/** Load one artifact by id for detail views and deep links. */
+export function useArtifact(
+  options: ClientOptions = {},
+  params: UseArtifactParams = {},
+): UseQueryResult<ArtifactWithSession> {
+  const artifactId = params.artifactId ?? "";
+  return useQuery({
+    queryKey: ["artifacts", "detail", params.tenantId ?? null, artifactId],
+    queryFn: () =>
+      getArtifact(options, artifactId, { tenantId: params.tenantId }),
+    enabled:
+      params.tenantId != null &&
+      artifactId.length > 0 &&
+      (params.enabled ?? true),
+  });
 }
 
 /** Query the current user's artifacts across all jobs for the gallery. */

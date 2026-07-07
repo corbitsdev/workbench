@@ -220,6 +220,56 @@ function csvDownloadFilename(title: string): string {
   return `${cleaned.length > 0 ? cleaned : "export"}.csv`;
 }
 
+type OwnerNameRow = {
+  ownerPrincipalId: string | null;
+  ownerName: string | null;
+};
+
+async function attachOwnerNames(
+  db: HubDb,
+  tenantId: string,
+  rows: OwnerNameRow[],
+): Promise<void> {
+  const ownerIds = [
+    ...new Set(
+      rows
+        .map((r) => r.ownerPrincipalId)
+        .filter((id): id is string => id !== null),
+    ),
+  ];
+  if (ownerIds.length === 0) return;
+
+  const ownerPrincipals = await db
+    .select({
+      id: intxSchema.principal.id,
+      refId: intxSchema.principal.refId,
+    })
+    .from(intxSchema.principal)
+    .where(
+      and(
+        eq(intxSchema.principal.tenantId, tenantId),
+        inArray(intxSchema.principal.id, ownerIds),
+      ),
+    );
+  const refIds = [...new Set(ownerPrincipals.map((p) => p.refId))];
+  const users =
+    refIds.length > 0
+      ? await db
+          .select({ id: intxSchema.user.id, name: intxSchema.user.name })
+          .from(intxSchema.user)
+          .where(inArray(intxSchema.user.id, refIds))
+      : [];
+  const nameByRefId = new Map(users.map((u) => [u.id, u.name]));
+  const nameByPrincipalId = new Map(
+    ownerPrincipals.map((p) => [p.id, nameByRefId.get(p.refId) ?? null]),
+  );
+  for (const r of rows) {
+    if (r.ownerPrincipalId !== null) {
+      r.ownerName = nameByPrincipalId.get(r.ownerPrincipalId) ?? null;
+    }
+  }
+}
+
 /**
  * Artifacts HTTP routes, restoring the surface the M6 cutover (#296) removed when
  * it deleted the old collateral/workflow router. The web `ArtifactGallery` GETs
@@ -439,42 +489,44 @@ export function createArtifactsRouter(
       ownerName: null as string | null,
     }));
 
-    // Resolve owner display names for the page (drives the gallery owner filter).
-    const ownerIds = [
-      ...new Set(
-        rows
-          .map((r) => r.ownerPrincipalId)
-          .filter((id): id is string => id !== null),
-      ),
-    ];
-    if (ownerIds.length > 0) {
-      const ownerPrincipals = await db
-        .select({
-          id: intxSchema.principal.id,
-          refId: intxSchema.principal.refId,
-        })
-        .from(intxSchema.principal)
-        .where(inArray(intxSchema.principal.id, ownerIds));
-      const refIds = [...new Set(ownerPrincipals.map((p) => p.refId))];
-      const users =
-        refIds.length > 0
-          ? await db
-              .select({ id: intxSchema.user.id, name: intxSchema.user.name })
-              .from(intxSchema.user)
-              .where(inArray(intxSchema.user.id, refIds))
-          : [];
-      const nameByRefId = new Map(users.map((u) => [u.id, u.name]));
-      const nameByPrincipalId = new Map(
-        ownerPrincipals.map((p) => [p.id, nameByRefId.get(p.refId) ?? null]),
-      );
-      for (const r of rows) {
-        if (r.ownerPrincipalId !== null) {
-          r.ownerName = nameByPrincipalId.get(r.ownerPrincipalId) ?? null;
-        }
-      }
-    }
+    await attachOwnerNames(db, userContext.tenantId, rows);
 
     return c.json({ artifacts: rows, nextCursor });
+  });
+
+  // Single artifact for deep links (`/artifacts/:id`) — not limited to the first
+  // gallery list page.
+  router.get("/artifacts/:id", async (c) => {
+    const id = c.req.param("id");
+    const userId = c.get("userId");
+    const requestedTenantId = c.req.query("tenantId");
+
+    const art = await db.query.artifact.findFirst({
+      where: eq(artifact.id, id),
+    });
+    if (!art) return c.json({ error: "Artifact not found" }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId ?? art.tenantId,
+    );
+    if (forbidden) {
+      return c.json({ error: "Tenant not accessible" }, 403);
+    }
+    if (!userContext || art.tenantId !== userContext.tenantId) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const row = {
+      ...serializeArtifact(art),
+      sessionName: null,
+      sessionStatus: null,
+      ownerName: null as string | null,
+    };
+    await attachOwnerNames(db, userContext.tenantId, [row]);
+
+    return c.json({ artifact: row });
   });
 
   // Create an artifact from an external source (link a URL or paste text).
