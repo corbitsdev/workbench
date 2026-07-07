@@ -68,6 +68,33 @@ describe("ArtifactGallery", () => {
     expect(screen.getByText("1 items")).toBeDefined();
   });
 
+  it("shows Load more when hasMore and invokes onLoadMore", () => {
+    const onLoadMore = mock(() => {});
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        hasMore: true,
+        onLoadMore,
+      }),
+    );
+    expect(screen.getByText("1+ items")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows loadMoreError above the load-more button", () => {
+    render(
+      React.createElement(ArtifactGallery, {
+        artifacts: [artifact],
+        hasMore: true,
+        onLoadMore: () => {},
+        loadMoreError: "Network failed",
+      }),
+    );
+    expect(screen.getByText("Network failed")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeDefined();
+  });
+
   it("does not declare its own panel frame (single PagePanel frame owns it)", () => {
     const { container } = render(
       React.createElement(ArtifactGallery, { artifacts: [artifact] }),

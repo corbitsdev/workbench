@@ -9,7 +9,14 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
-import { useArtifacts, useLibraryResources } from "./react";
+import {
+  artifactsInfiniteQueryKey,
+  artifactsListQueryKey,
+  useArtifact,
+  useArtifacts,
+  useArtifactsInfinite,
+  useLibraryResources,
+} from "./react";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
 
@@ -206,5 +213,132 @@ describe("useArtifacts", () => {
     expect(spy.mock.calls[0]?.[0]).toBe(
       "http://localhost:4000/api/v1/artifacts?tenantId=tn-1",
     );
+  });
+});
+
+describe("useArtifactsInfinite", () => {
+  it("loads the next cursor page when fetchNextPage is called", async () => {
+    const page1 = {
+      artifacts: [{ ...fakeArtifact, id: "a-1" }],
+      nextCursor: "2024-01-02T00:00:00.000Z__a-1",
+    };
+    const page2 = {
+      artifacts: [{ ...fakeArtifact, id: "a-2", title: "Second page" }],
+      nextCursor: null,
+    };
+    let call = 0;
+    const { spy, fetcher } = makeFetch(() => {
+      call += 1;
+      return Promise.resolve(jsonResponse(call === 1 ? page1 : page2));
+    });
+
+    const { result } = renderHook(
+      () =>
+        useArtifactsInfinite(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(newClient()) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.artifacts).toHaveLength(1);
+    expect(result.current.hasNextPage).toBe(true);
+
+    await result.current.fetchNextPage();
+
+    await waitFor(() => expect(result.current.artifacts).toHaveLength(2));
+    expect(result.current.artifacts[1]?.title).toBe("Second page");
+    expect(result.current.hasNextPage).toBe(false);
+    expect(spy.mock.calls[1]?.[0]).toContain("cursor=");
+  });
+
+  it("uses a distinct infinite query key with the same filter segments", () => {
+    const list = artifactsListQueryKey({ tenantId: "tn-9", sort: "oldest" });
+    const infinite = artifactsInfiniteQueryKey({
+      tenantId: "tn-9",
+      sort: "oldest",
+    });
+    expect(infinite.slice(0, list.length)).toEqual([...list]);
+    expect(infinite[infinite.length - 1]).toBe("infinite");
+  });
+
+  it("does not share a TanStack cache entry with useArtifacts", async () => {
+    const { fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ artifacts: [fakeArtifact], nextCursor: null }),
+      ),
+    );
+    const client = newClient();
+
+    renderHook(
+      () =>
+        useArtifacts(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+    renderHook(
+      () =>
+        useArtifactsInfinite(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tn-1" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => {
+      expect(
+        client.getQueryCache().findAll({ queryKey: ["artifacts", "tn-1"] }),
+      ).toHaveLength(2);
+    });
+  });
+});
+
+describe("useArtifact", () => {
+  it("loads one artifact by id under the detail query key", async () => {
+    const { fetcher } = makeFetch((input) => {
+      const url = String(input);
+      if (url.includes("/artifacts/art-detail")) {
+        return Promise.resolve(
+          jsonResponse({
+            artifact: {
+              id: "art-detail",
+              parentId: null,
+              kind: "one-pager",
+              title: "Detail",
+              content: "x",
+              source: { origin: "unknown" },
+              status: "draft",
+              version: 1,
+              ownerPrincipalId: null,
+              createdAt: "2026-06-20T00:00:00.000Z",
+              updatedAt: "2026-06-20T00:00:00.000Z",
+              sessionName: null,
+              sessionStatus: null,
+              ownerName: null,
+            },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: "not found" }), { status: 404 }),
+      );
+    });
+    const client = newClient();
+
+    const { result } = renderHook(
+      () =>
+        useArtifact(
+          { baseUrl: "http://localhost:4000", fetch: fetcher },
+          { tenantId: "tenant-1", artifactId: "art-detail" },
+        ),
+      { wrapper: wrapper(client) },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.title).toBe("Detail");
+    expect(result.current.data?.id).toBe("art-detail");
   });
 });

@@ -179,6 +179,15 @@ export const ArtifactsPageSchema = type({
 });
 export type ArtifactsPage = typeof ArtifactsPageSchema.infer;
 
+export const GetArtifactParamsSchema = type({
+  "tenantId?": "string | null",
+});
+export type GetArtifactParams = typeof GetArtifactParamsSchema.infer;
+
+export const GetArtifactResponseSchema = type({
+  artifact: ArtifactWithSessionSchema,
+});
+
 export const CreateArtifactParamsSchema = type({
   "tenantId?": "string | null",
   /** `url` links an external page (content is the URL); `text` stores a pasted body. */
@@ -417,6 +426,26 @@ export async function listArtifacts(
     throw new Error(`Invalid /artifacts response: ${parsed.summary}`);
   }
   return parsed;
+}
+
+/** Fetch one tenant-scoped artifact by id (`GET /artifacts/:id`). */
+export async function getArtifact(
+  options: ClientOptions = {},
+  artifactId: string,
+  params: GetArtifactParams = {},
+): Promise<ArtifactWithSession> {
+  const qs = new URLSearchParams();
+  if (params.tenantId) qs.set("tenantId", params.tenantId);
+  const search = qs.size > 0 ? `?${qs.toString()}` : "";
+  const raw = await request<unknown>(
+    `artifacts/${encodeURIComponent(artifactId)}${search}`,
+    options,
+  );
+  const parsed = GetArtifactResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid GET /artifacts/:id response: ${parsed.summary}`);
+  }
+  return parsed.artifact;
 }
 
 const CreateArtifactResponseSchema = type({ artifact: Artifact });
