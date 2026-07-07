@@ -205,3 +205,112 @@ export async function signIn(
   log(`Signed in as ${email}`);
   return res.cookies;
 }
+
+export type TenancyAuditTenant = {
+  id: string;
+  slug: string;
+  name: string;
+  parentId: string | null;
+};
+
+export function recommendTenancyCutover(
+  tenants: TenancyAuditTenant[],
+  configuredGlobalSlug: string,
+  targetRootSlug: string,
+  ownedWeight: (tenantId: string) => number,
+): {
+  strategy: string;
+  steps: string[];
+  warnings: string[];
+  roots: TenancyAuditTenant[];
+  targetRoot: TenancyAuditTenant | null;
+  legacyRoots: TenancyAuditTenant[];
+} {
+  const roots = tenants.filter((t) => t.parentId === null);
+  const targetRoot = tenants.find((t) => t.slug === targetRootSlug) ?? null;
+  const configuredGlobal =
+    tenants.find((t) => t.slug === configuredGlobalSlug) ?? null;
+  const legacyRoots = roots.filter((r) =>
+    ["interchange", "gtm"].includes(r.slug),
+  );
+  const steps: string[] = [];
+  const warnings: string[] = [];
+  let strategy = "needs-manual-review";
+
+  if (!tenants.some((t) => t.slug === configuredGlobalSlug)) {
+    warnings.push(
+      `GLOBAL_TENANT_SLUG "${configuredGlobalSlug}" is not a tenant in this database — hub boot may fail or skip global provisioning until env matches.`,
+    );
+  }
+
+  if (!targetRoot) {
+    warnings.push(`No tenant slug "${targetRootSlug}" in database.`);
+  } else if (targetRoot.parentId !== null) {
+    strategy = "reparent-sql-then-flip-env";
+    steps.push(
+      `UPDATE tenant SET parent_id = NULL WHERE id = '${targetRoot.id}';`,
+    );
+    if (
+      configuredGlobal &&
+      configuredGlobal.parentId === null &&
+      configuredGlobal.id !== targetRoot.id
+    ) {
+      const lw = ownedWeight(configuredGlobal.id);
+      const tw = ownedWeight(targetRoot.id);
+      if (lw > 0 && tw > 0) {
+        strategy = "merge-then-delete-legacy";
+        warnings.push(
+          `Both "${configuredGlobal.slug}" and "${targetRoot.slug}" have owned data.`,
+        );
+      }
+      steps.push(
+        `UPDATE tenant SET parent_id = '${targetRoot.id}' WHERE parent_id = '${configuredGlobal.id}';`,
+      );
+    }
+    steps.push(`Set GLOBAL_TENANT_SLUG=${targetRoot.slug} on hub; redeploy.`);
+  } else if (
+    targetRoot.parentId === null &&
+    (!configuredGlobal || configuredGlobal.id === targetRoot.id)
+  ) {
+    strategy =
+      configuredGlobal && configuredGlobal.id === targetRoot.id
+        ? "flip-env-only"
+        : "set-global-env-only";
+    if (!configuredGlobal || configuredGlobal.id !== targetRoot.id) {
+      steps.push(
+        `Set GLOBAL_TENANT_SLUG=${targetRoot.slug} (and NAME/DOMAIN) on hub; redeploy.`,
+      );
+    }
+    const duplicateAbkRoots = roots.filter(
+      (r) =>
+        r.id !== targetRoot.id &&
+        r.slug !== targetRoot.slug &&
+        (r.slug === "abk-labs" || r.name === targetRoot.name),
+    );
+    for (const dup of duplicateAbkRoots) {
+      const w = ownedWeight(dup.id);
+      if (w < 10) {
+        steps.push(
+          `Re-parent or delete duplicate org root "${dup.slug}" (id ${dup.id}); prefer parent_id='${targetRoot.id}' then merge principals.`,
+        );
+      } else {
+        warnings.push(
+          `Duplicate root "${dup.slug}" has material data (weight ${w}).`,
+        );
+      }
+    }
+    for (const legacy of legacyRoots) {
+      if (legacy.id === targetRoot.id) continue;
+      const w = ownedWeight(legacy.id);
+      if (w === 0) {
+        steps.push(`Delete empty legacy root "${legacy.slug}" (admin or SQL).`);
+      } else {
+        warnings.push(
+          `Legacy root "${legacy.slug}" still has data (weight ${w}).`,
+        );
+      }
+    }
+  }
+
+  return { strategy, steps, warnings, roots, targetRoot, legacyRoots };
+}
