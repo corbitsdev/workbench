@@ -61,6 +61,12 @@ const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 
+// CL-2756 awaiting-supervisor pre-warm backstop cadence (mirrors the reconciler's
+// DEFAULT_AWAITING_PREWARM_INTERVAL_MS). 30s: a gate-parked supervisor is
+// re-established well before a human returns to the gate; each tick no-ops for
+// already-routable supervisors.
+const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
+
 // CL-2727 run liveness sweep. Generous defaults so a healthy-but-slow run is
 // never failed: a GONE supervisor with no progress is orphaned past the grace,
 // while a ROUTABLE supervisor with no progress (a slow first step) is left alone
@@ -304,6 +310,16 @@ export function loadConfig() {
     wedgeUnroutableGraceMs: parsePositiveIntEnv(
       "WEDGE_UNROUTABLE_GRACE_MS",
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
+      "milliseconds",
+    ),
+    // CL-2756 awaiting-supervisor pre-warm backstop. How often the periodic
+    // sweep re-establishes gate-parked (`awaiting`) supervisors that are
+    // unroutable, so a human's gate-resume finds the supervisor already routable
+    // and pays no re-establish on the critical path. Default 30s; override with
+    // AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS (positive integer milliseconds).
+    awaitingSupervisorPrewarmIntervalMs: parsePositiveIntEnv(
+      "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
+      DEFAULT_AWAITING_PREWARM_INTERVAL_MS,
       "milliseconds",
     ),
     // CL-2727 continuous run liveness sweep. `stallGraceMs`: a GONE-supervisor

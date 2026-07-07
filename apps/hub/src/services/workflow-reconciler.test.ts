@@ -17,7 +17,8 @@ mock.module("../workflow-executor/run-store", () => ({
   },
 }));
 
-const { createWorkflowReconciler } = await import("./workflow-reconciler");
+const { createWorkflowReconciler, registerAwaitingSupervisorPrewarm } =
+  await import("./workflow-reconciler");
 
 type Row = {
   deploymentId: string | null;
@@ -496,5 +497,79 @@ describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
     await reconciler.reclaimOrphanedDeployments();
 
     expect(reclaimCount).toBe(0);
+  });
+});
+
+describe("reconcileAwaiting — batch resilience + fail-loud (CL-2756)", () => {
+  // The mock db returns the seeded record rows for the awaiting query (the real
+  // SQL awaiting-scope filter is proven in the PGlite integration test); here we
+  // exercise the batch/counting/error-surfacing logic over those candidates.
+  it("surfaces an establish failure (counts it) yet still pre-warms the rest of the batch", async () => {
+    const calls: string[] = [];
+    const ensure: EnsureDeploymentRoutableFn = (args) => {
+      calls.push(args.deploymentId);
+      if (args.deploymentId === "ses_run_bad") {
+        return Promise.reject(new Error("sidecar deploy frame rejected"));
+      }
+      return Promise.resolve({ reestablished: true });
+    };
+    const reconciler = createWorkflowReconciler({
+      db: makeDb(
+        [
+          {
+            deploymentId: "ses_op",
+            kind: "attio-task",
+            tenantId: "t1",
+            principalId: "deployer1",
+          },
+        ],
+        [
+          { deploymentId: "ses_run_bad", kind: "attio-task", tenantId: "t1" },
+          { deploymentId: "ses_run_ok", kind: "attio-task", tenantId: "t1" },
+        ],
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: ensure,
+      getRoutableAddresses: () => [],
+      deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
+    });
+
+    const summary = await reconciler.reconcileAwaiting();
+
+    // Both attempted (a failure never aborts the batch), the failure is counted
+    // (surfaced, not swallowed as success), the healthy one re-established.
+    expect(calls).toEqual(["ses_run_bad", "ses_run_ok"]);
+    expect(summary.failed).toBe(1);
+    expect(summary.reestablished).toBe(1);
+  });
+});
+
+describe("registerAwaitingSupervisorPrewarm (CL-2756 periodic backstop)", () => {
+  it("drives reconcileAwaiting on its interval and stops cleanly", async () => {
+    let ticks = 0;
+    const stop = registerAwaitingSupervisorPrewarm({
+      reconciler: {
+        reconcileAwaiting: () => {
+          ticks += 1;
+          return Promise.resolve({
+            candidates: 0,
+            reestablished: 0,
+            alreadyRoutable: 0,
+            skippedNoPrincipal: 0,
+            failed: 0,
+          });
+        },
+      },
+      intervalMs: 5,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    stop();
+    const afterStop = ticks;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(afterStop).toBeGreaterThanOrEqual(1);
+    expect(ticks).toBe(afterStop); // no ticks fire after stop()
   });
 });

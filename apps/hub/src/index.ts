@@ -72,7 +72,10 @@ import {
   type ReclaimDeploymentFn,
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
-import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import {
+  createWorkflowReconciler,
+  registerAwaitingSupervisorPrewarm,
+} from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
@@ -1123,6 +1126,19 @@ const runLivenessSweep = createRunLivenessSweep({
   intervalMs: config.runLivenessSweep.intervalMs,
 });
 runLivenessSweep.start();
+// CL-2756: periodic backstop that re-establishes gate-parked (`awaiting`)
+// supervisors that are unroutable, so a human's gate-resume finds the supervisor
+// already routable and pays no re-establish + child re-spawn on the critical
+// path. The reconnect-driven reconcileAll (above) covers the case where a
+// sidecar restart restores some session and fires `agent.reconnected`; this
+// backstop covers the case where NO reconnect event fires (an all-inline/
+// deterministic deployment restores no session, or a missed event). Strictly
+// awaiting-scoped — a running run is never resurrected here (the liveness sweep
+// owns that decision).
+const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
+  reconciler: workflowReconciler,
+  intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
+});
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
@@ -1351,6 +1367,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     try {
       log.info("Received {signal}, draining", { signal });
       stopWedgeSweepReconciler();
+      stopAwaitingSupervisorPrewarm();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });
