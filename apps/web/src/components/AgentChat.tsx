@@ -511,6 +511,8 @@ export function AgentChat({
       agent={identity}
       messages={messages}
       onSend={sendText}
+      // Structured gate blocks (form/multiSelect/choice payload) need
+      // resolveResumePayload + workflow resume — see docs/WORKFLOWS.md.
       onRespond={(response: UIResponse) => sendText(response.value)}
       onAction={handleBlockAction}
       {...(actionNotice !== null

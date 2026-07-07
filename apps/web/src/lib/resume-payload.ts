@@ -3,9 +3,11 @@ import type { UIResponse } from "@workbench/chat";
 /**
  * Resolve an interactive block's response into the resume payload delivered to
  * a workflow gate's `/resume` (CL-2684). This is the ONE contract every
- * block-driven gate resume goes through, shared by both surfaces that host
- * blocks — the WorkflowDock run card and the Myra chat dock — so a form/choice
- * block resumes identically wherever it renders.
+ * block-driven gate resume goes through, shared by every payload-aware host —
+ * WorkflowDock, run-page block hosts (`WorkflowRunPane` / `WorkflowRunBlocks`),
+ * and Myra chat (`MyraChatSurface`) — so a form/choice block resumes
+ * identically wherever it renders. Workspace `AgentChat` is not payload-aware;
+ * see `docs/WORKFLOWS.md`.
  *
  * A response that carries a structured `payload` (a form's field map, a choice's
  * typed decision, a multiSelect's array) is delivered VERBATIM — this is the

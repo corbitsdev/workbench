@@ -480,9 +480,14 @@ function leafInitialValue(field: LeafField): LeafValue {
   return field.defaultValue ?? "";
 }
 
+function effectiveGroupMin(min: number | undefined): number {
+  if (min === undefined) return 1;
+  return Math.max(min, 0);
+}
+
 function initialValue(field: FormField): FieldValue {
   if (field.kind === "group") {
-    const rowCount = Math.max(field.min ?? 1, 1);
+    const rowCount = effectiveGroupMin(field.min);
     return Array.from({ length: rowCount }, () => emptyRow(field.fields));
   }
   return leafInitialValue(field);
@@ -495,10 +500,19 @@ function emptyRow(fields: LeafField[]): Record<string, LeafValue> {
 }
 
 function leafFilled(field: LeafField, value: LeafValue): boolean {
-  if (field.required !== true) return true;
   if (field.kind === "multiSelect") {
-    return Array.isArray(value) && value.length >= Math.max(field.min ?? 1, 1);
+    const selected = Array.isArray(value) ? value : [];
+    const min =
+      field.required === true
+        ? Math.max(field.min ?? 1, 1)
+        : Math.max(field.min ?? 0, 0);
+    if (field.required !== true) {
+      if (selected.length === 0) return true;
+      return selected.length >= min;
+    }
+    return selected.length >= min;
   }
+  if (field.required !== true) return true;
   if (field.kind === "number") {
     // A required number must parse to a real number: a non-empty but
     // non-numeric entry (e.g. "abc") is NaN and must NOT satisfy the field, or
@@ -512,7 +526,7 @@ function leafFilled(field: LeafField, value: LeafValue): boolean {
 function fieldSatisfied(field: FormField, value: FieldValue): boolean {
   if (field.kind !== "group") return leafFilled(field, value as LeafValue);
   const rows = value as Record<string, LeafValue>[];
-  if (rows.length < Math.max(field.min ?? 0, 0)) return false;
+  if (rows.length < effectiveGroupMin(field.min)) return false;
   return rows.every((row) =>
     field.fields.every((sub) => leafFilled(sub, row[sub.name] ?? "")),
   );
@@ -544,6 +558,7 @@ function leafToPayload(field: LeafField, value: LeafValue): unknown {
 function fieldToPayload(field: FormField, value: FieldValue): unknown {
   if (field.kind !== "group") return leafToPayload(field, value as LeafValue);
   const rows = value as Record<string, LeafValue>[];
+  if (rows.length === 0) return undefined;
   return rows.map((row) => {
     const entry: Record<string, unknown> = {};
     for (const sub of field.fields) {
@@ -754,7 +769,7 @@ function FormBlock({
         }
         const rows = (values[field.name] as Record<string, LeafValue>[]) ?? [];
         const atMax = field.max !== undefined && rows.length >= field.max;
-        const atMin = rows.length <= Math.max(field.min ?? 1, 1);
+        const atMin = rows.length <= effectiveGroupMin(field.min);
         return (
           <fieldset key={field.name} className="space-y-2">
             {field.label !== undefined && (

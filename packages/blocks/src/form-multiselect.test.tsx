@@ -245,6 +245,106 @@ describe("form block", () => {
     });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("allows min:0 groups to start empty and omit the group from the payload", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "intake-config",
+          fields: [
+            {
+              kind: "text",
+              name: "campaign",
+              label: "Campaign",
+              required: true,
+            },
+            {
+              kind: "group",
+              name: "variants",
+              label: "Variants",
+              min: 0,
+              fields: [
+                {
+                  kind: "text",
+                  name: "providerName",
+                  label: "Provider",
+                  required: true,
+                },
+                { kind: "text", name: "model", label: "Model", required: true },
+              ],
+            },
+          ],
+        }}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    expect(screen.queryByRole("textbox", { name: /Provider/ })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: /Campaign/ }), {
+      target: { value: "Q3 push" },
+    });
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({ campaign: "Q3 push" });
+  });
+
+  it("lets a min:0 group grow to a filled row in the payload", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "intake-config",
+          fields: [
+            {
+              kind: "text",
+              name: "campaign",
+              label: "Campaign",
+              required: true,
+            },
+            {
+              kind: "group",
+              name: "variants",
+              label: "Variants",
+              addLabel: "Add variant",
+              min: 0,
+              fields: [
+                {
+                  kind: "text",
+                  name: "providerName",
+                  label: "Provider",
+                  required: true,
+                },
+                { kind: "text", name: "model", label: "Model", required: true },
+              ],
+            },
+          ],
+        }}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add variant" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Campaign/ }), {
+      target: { value: "Q3 push" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Provider/ }), {
+      target: { value: "openai" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Model/ }), {
+      target: { value: "gpt-4o" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(received?.payload).toEqual({
+      campaign: "Q3 push",
+      variants: [{ providerName: "openai", model: "gpt-4o" }],
+    });
+  });
 });
 
 describe("form block — multiSelect field", () => {
@@ -284,6 +384,102 @@ describe("form block — multiSelect field", () => {
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(submit);
     expect(received?.payload).toEqual({ channels: ["reddit", "seo"] });
+  });
+
+  it("allows an empty optional multiSelect and omits it from the payload", () => {
+    const optionalBlock: UIBlock = {
+      kind: "form",
+      signalName: "pick-channels",
+      fields: [
+        {
+          kind: "multiSelect",
+          name: "channels",
+          label: "Channels",
+          min: 2,
+          options: [
+            { value: "reddit", label: "Reddit" },
+            { value: "seo", label: "SEO" },
+          ],
+        },
+      ],
+    };
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={optionalBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({});
+  });
+
+  it("enforces min on optional multiSelect once the user picks at least one option", () => {
+    const optionalBlock: UIBlock = {
+      kind: "form",
+      signalName: "pick-channels",
+      fields: [
+        {
+          kind: "multiSelect",
+          name: "channels",
+          label: "Channels",
+          min: 2,
+          options: [
+            { value: "reddit", label: "Reddit" },
+            { value: "seo", label: "SEO" },
+            { value: "email", label: "Email" },
+          ],
+        },
+      ],
+    };
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={optionalBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Reddit/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /SEO/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({ channels: ["reddit", "seo"] });
+  });
+
+  it("still requires at least one selection when required is true even if min is 0", () => {
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "pick-channels",
+          fields: [
+            {
+              kind: "multiSelect",
+              name: "channels",
+              label: "Channels",
+              required: true,
+              min: 0,
+              options: [
+                { value: "reddit", label: "Reddit" },
+                { value: "seo", label: "SEO" },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Reddit/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
   });
 });
 
