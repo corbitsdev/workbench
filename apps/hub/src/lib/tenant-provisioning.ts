@@ -360,6 +360,56 @@ export async function lookupGlobalMember(
   return lookupMember(db, { tenantId, userId: opts.userId });
 }
 
+export type AutoJoinOutcome = {
+  tenantId: string;
+  slug: string;
+  principalId: string;
+};
+
+/**
+ * Join the user to each configured auto-join tenant (by slug) and provision
+ * template instances. Missing slugs are skipped with a warning. Idempotent.
+ */
+export async function autoJoinConfiguredTenants(
+  db: ProductionDB,
+  userId: string,
+  slugs?: string[],
+): Promise<AutoJoinOutcome[]> {
+  const configured = slugs ?? getConfig().autoJoinTenantSlugs;
+  if (configured.length === 0) return [];
+
+  const outcomes: AutoJoinOutcome[] = [];
+  for (const slug of configured) {
+    const row = await db.query.tenant.findFirst({
+      where: eq(tenant.slug, slug),
+    });
+    if (!row) {
+      log.warn("AUTO_JOIN_TENANT_SLUGS: tenant slug not found — skipping", {
+        slug,
+        userId,
+      });
+      continue;
+    }
+    const { principalId } = await ensureMember(db, {
+      tenantId: row.id,
+      userId,
+    });
+    await provisionMemberInstances(db as unknown as HubDb, {
+      tenantId: row.id,
+      userId,
+      memberPrincipalId: principalId,
+    });
+    outcomes.push({ tenantId: row.id, slug, principalId });
+    log.info("Auto-joined tenant", {
+      userId,
+      tenantId: row.id,
+      slug,
+      principalId,
+    });
+  }
+  return outcomes;
+}
+
 /**
  * Stable synthetic refId for the dedicated system principal that owns every
  * seeded agent template. Distinct from any real user refId (which are user IDs),

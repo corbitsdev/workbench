@@ -127,9 +127,8 @@ import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
   seedAgentTemplates,
-  ensureMember,
+  autoJoinConfiguredTenants,
   lookupMember,
-  provisionMemberInstances,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
 import { AGENT_TEMPLATES } from "@workbench/agents";
@@ -250,22 +249,15 @@ const auth = betterAuth({
         },
         after: async (user) => {
           try {
-            const { principalId: rootPrincipalId } = await ensureMember(db, {
-              tenantId: rootTenantId,
-              userId: user.id,
-            });
-            await provisionMemberInstances(db, {
-              tenantId: rootTenantId,
-              userId: user.id,
-              memberPrincipalId: rootPrincipalId,
-            });
-            log.info("User joined root tenant", {
-              userId: user.id,
-              rootTenantId,
-              rootPrincipalId,
-            });
+            const joined = await autoJoinConfiguredTenants(db, user.id);
+            if (joined.length > 0) {
+              log.info("User auto-joined tenants on signup", {
+                userId: user.id,
+                slugs: joined.map((j) => j.slug),
+              });
+            }
           } catch (err) {
-            log.error("Root-tenant membership failed for new user", {
+            log.error("Auto-join failed for new user", {
               userId: user.id,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -276,19 +268,10 @@ const auth = betterAuth({
     session: {
       create: {
         after: async (session) => {
-          // Repair path: ensure root-tenant membership on login in case signup hook failed.
           try {
-            const { principalId } = await ensureMember(db, {
-              tenantId: rootTenantId,
-              userId: session.userId,
-            });
-            await provisionMemberInstances(db, {
-              tenantId: rootTenantId,
-              userId: session.userId,
-              memberPrincipalId: principalId,
-            });
+            await autoJoinConfiguredTenants(db, session.userId);
           } catch (err) {
-            log.error("Session repair failed — continuing", {
+            log.error("Session auto-join repair failed — continuing", {
               userId: session.userId,
               error: err instanceof Error ? err : new Error(String(err)),
             });

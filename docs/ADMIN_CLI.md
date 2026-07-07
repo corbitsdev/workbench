@@ -12,6 +12,21 @@ Three env-scoped entrypoints, defined as scripts in `apps/hub/package.json`:
 - `bun run admin:staging` — loads `../../.env.staging`
 - `bun run admin:production` — loads `../../.env.production`
 
+Tenancy cutover inventory (read-only; uses the same env files):
+
+- `bun run audit-tenancy:staging` — `../../.env.staging`
+- `bun run audit-tenancy:production` — `../../.env.production`
+- `bun run audit-tenancy` — `../../.env`
+
+Optional `TARGET_ROOT_SLUG` (default: `GLOBAL_TENANT_SLUG`). Set `DATABASE_URL` in
+the env file for the full tenant table and workbench row counts; HTTP lists require
+`SUPERADMIN_*` or a valid `SESSION_TOKEN`. If hub auth fails but `DATABASE_URL` is
+set, `audit-tenancy` falls back to DB-only inventory and prints a cutover strategy.
+
+Hub deploy env (not admin CLI): `AUTO_JOIN_TENANT_SLUGS` — comma-separated tenant
+slugs to auto-join on signup/login. Default empty (CL-2855). Set to `abklabs` on
+deploy to preserve legacy “everyone joins the org root” until invites land.
+
 ## Flow
 
 1. **Auth** — sign in via `signIn` using `SUPERADMIN_EMAIL` / `SUPERADMIN_PASS`,

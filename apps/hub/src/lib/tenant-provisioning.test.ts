@@ -31,6 +31,7 @@ import {
   seedAgentTemplates,
   ensureSystemPrincipal,
   ensureMember,
+  autoJoinConfiguredTenants,
   lookupMember,
   getEnabledTemplateKeys,
   agentDefMatchesTemplate,
@@ -1159,4 +1160,20 @@ describe("agentDefMatchesTemplate — every template round-trips clean (CL-2517)
       expect(agentDefMatchesTemplate(stored, template)).toBe(true);
     });
   }
+});
+
+describe("autoJoinConfiguredTenants (CL-2855)", () => {
+  it("returns an empty list when no slugs are configured", async () => {
+    const db = makeMockDB();
+    const out = await autoJoinConfiguredTenants(db as never, "user-1", []);
+    expect(out).toEqual([]);
+  });
+
+  it("skips unknown slugs without throwing", async () => {
+    const db = makeMockDB();
+    const out = await autoJoinConfiguredTenants(db as never, "user-1", [
+      "missing-tenant",
+    ]);
+    expect(out).toEqual([]);
+  });
 });

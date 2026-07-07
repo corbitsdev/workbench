@@ -10,11 +10,10 @@ import type { SidecarRouter } from "@intx/hub-sessions";
 // mock precisely because the eager relaunch was removed; the behavioral proof
 // is that a COLD (unroutable) instance is reconciled without a live push.
 
-const ensureMember = mock(
+const lookupMember = mock(
   async (_db: unknown, opts: { tenantId: string; userId: string }) => ({
-    tenantId: "tenant_global",
+    tenantId: opts.tenantId,
     principalId: "prin_member",
-    userId: opts.userId,
   }),
 );
 
@@ -30,7 +29,7 @@ const getMyraInstanceId = mock(
 );
 
 mock.module("../lib/tenant-provisioning", () => ({
-  ensureMember,
+  lookupMember,
   provisionMemberInstances,
   getMyraInstanceId,
 }));
@@ -174,10 +173,8 @@ describe("syncPersonalAgentForUser", () => {
     expect(outcome.grantsPushedLive).toBe(true);
   });
 
-  it("returns an empty outcome when member bootstrap fails", async () => {
-    ensureMember.mockImplementationOnce(async () => {
-      throw new Error("db down");
-    });
+  it("returns an empty outcome when the user is not a root-tenant member", async () => {
+    lookupMember.mockImplementationOnce(async () => null as never);
     const db = makeDb({ existingMyraInstanceId: null, instanceRow: null });
 
     const outcome = await syncPersonalAgentForUser(

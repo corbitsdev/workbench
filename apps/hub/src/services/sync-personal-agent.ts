@@ -5,7 +5,7 @@ import type { SidecarRouter } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
 import { schema, type HubDb } from "../db";
 import {
-  ensureMember,
+  lookupMember,
   provisionMemberInstances,
   getMyraInstanceId,
 } from "../lib/tenant-provisioning";
@@ -60,20 +60,13 @@ export async function syncPersonalAgentForUser(
 ): Promise<SyncPersonalAgentOutcome> {
   const { db, rootTenantId, grantStore, sidecarRouter } = deps;
 
-  let workingTenantId: string | null = null;
-  let memberPrincipalId: string | null = null;
-  try {
-    const { tenantId, principalId } = await ensureMember(db, {
-      tenantId: rootTenantId,
-      userId,
-    });
-    workingTenantId = tenantId;
-    memberPrincipalId = principalId;
-  } catch (err) {
-    log.error("Failed to ensure global member on POST /v1/me", {
-      userId,
-      error: err instanceof Error ? err : new Error(String(err)),
-    });
+  const membership = await lookupMember(db, {
+    tenantId: rootTenantId,
+    userId,
+  });
+  const workingTenantId = membership?.tenantId ?? null;
+  const memberPrincipalId = membership?.principalId ?? null;
+  if (!workingTenantId || !memberPrincipalId) {
     return {
       workingTenantId: null,
       memberPrincipalId: null,
