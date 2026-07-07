@@ -65,7 +65,7 @@ export function AdminLayout() {
       <div className="flex flex-col border-b border-border px-6 pt-5">
         <h1 className="text-lg font-semibold text-text">Admin</h1>
         <p className="mt-0.5 text-sm text-text-2">
-          Governance, definitions, and compliance for the workbench.
+          Manage users, agents, and their access.
         </p>
         <nav className="mt-4 flex gap-1" aria-label="Admin sections">
           {SUB_NAV.map(({ to, label }) => (
