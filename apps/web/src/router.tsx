@@ -39,6 +39,8 @@ import { AdminDefinitions } from "./pages/admin/AdminDefinitions";
 import { DefinitionDetail } from "./pages/admin/DefinitionDetail";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { RequireAdmin } from "./pages/admin/RequireAdmin";
+import { OwnerLayout } from "./pages/admin/OwnerLayout";
+import { OwnerOverview } from "./pages/admin/OwnerOverview";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
 // new home under /admin.
@@ -92,6 +94,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Admin",
     to: "/admin",
     keywords: ["governance", "grants", "roles", "principals", "audit"],
+  },
+  {
+    id: "nav:owner",
+    category: "navigation",
+    title: "Owner",
+    to: "/owner",
+    keywords: ["owner", "workbench"],
   },
   {
     id: "nav:insights",
@@ -237,6 +246,11 @@ export const router = createBrowserRouter([
               { path: "definitions/:key", element: <DefinitionDetail /> },
               { path: "audit", element: <AdminAudit /> },
             ],
+          },
+          {
+            path: "/owner",
+            element: <OwnerLayout />,
+            children: [{ index: true, element: <OwnerOverview /> }],
           },
           { path: "/insights", element: <InsightsDashboard /> },
           { path: "/insights/users/:id", element: <ActorDetailPage /> },
