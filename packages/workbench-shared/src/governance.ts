@@ -63,6 +63,18 @@ export const OwnerContextResponse = type({
 });
 export type OwnerContext = typeof OwnerContextResponse.infer;
 
+/** `GET /owner/setup` — the workbench's underlying provisioned configuration
+ * (read-only, CL-2880): tenant identity, hierarchy position, and the workflow
+ * kinds currently deployed (runnable) in it. Parsed at the web boundary. */
+export const OwnerSetupResponse = type({
+  tenantId: "string",
+  tenantName: "string",
+  tenantSlug: "string",
+  parentTenantId: "string | null",
+  deployedWorkflowKinds: "string[]",
+});
+export type OwnerSetup = typeof OwnerSetupResponse.infer;
+
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 

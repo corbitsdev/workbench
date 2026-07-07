@@ -8,6 +8,8 @@ import {
   MemberPreferences as MemberPreferencesSchema,
   OwnerContextResponse,
   type OwnerContext,
+  OwnerSetupResponse,
+  type OwnerSetup,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -147,6 +149,17 @@ export async function getOwnerContext(): Promise<OwnerContext> {
   const parsed = OwnerContextResponse(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed /owner/context response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** The workbench's provisioned setup (owner-guarded, read-only). Parsed at the
+ * boundary rather than cast. */
+export async function getOwnerSetup(): Promise<OwnerSetup> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/setup");
+  const parsed = OwnerSetupResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/setup response: ${parsed.summary}`);
   }
   return parsed;
 }

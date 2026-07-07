@@ -41,6 +41,7 @@ import { AdminAudit } from "./pages/admin/AdminAudit";
 import { RequireAdmin } from "./pages/admin/RequireAdmin";
 import { OwnerLayout } from "./pages/admin/OwnerLayout";
 import { OwnerOverview } from "./pages/admin/OwnerOverview";
+import { OwnerSetup } from "./pages/admin/OwnerSetup";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
 // new home under /admin.
@@ -250,7 +251,10 @@ export const router = createBrowserRouter([
           {
             path: "/owner",
             element: <OwnerLayout />,
-            children: [{ index: true, element: <OwnerOverview /> }],
+            children: [
+              { index: true, element: <OwnerOverview /> },
+              { path: "setup", element: <OwnerSetup /> },
+            ],
           },
           { path: "/insights", element: <InsightsDashboard /> },
           { path: "/insights/users/:id", element: <ActorDetailPage /> },

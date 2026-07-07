@@ -6,7 +6,10 @@ import { tabButtonClass } from "./admin-ui";
 
 // Owner-area tabs. Feature tabs (Workflows, Models, Credentials, Setup,
 // Templates) append their entry here as they land; Overview is the landing.
-const SUB_NAV = [{ to: "/owner", label: "Overview", end: true }] as const;
+const SUB_NAV = [
+  { to: "/owner", label: "Overview", end: true },
+  { to: "/owner/setup", label: "Setup", end: false },
+] as const;
 
 /**
  * The Owner area shell — ABK Labs staff only. Gates on the caller's `isOwner`
