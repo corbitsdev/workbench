@@ -134,6 +134,12 @@ describe("isUIBlock", () => {
     expect(isUIBlock({ kind: "text", text: 5 })).toBe(false);
     expect(isUIBlock({ kind: "markdown", source: 5 })).toBe(false);
     expect(isUIBlock({ kind: "table", columns: "a", rows: [] })).toBe(false);
+    expect(
+      isUIBlock({ kind: "table", columns: ["a"], rows: [[{ x: 1 }]] }),
+    ).toBe(false);
+    expect(
+      isUIBlock({ kind: "table", columns: ["a"], rows: [null] }),
+    ).toBe(false);
     expect(isUIBlock({ kind: "link", url: 5 })).toBe(false);
     expect(isUIBlock({ kind: "error", message: 5 })).toBe(false);
     expect(isUIBlock({ kind: "canvas", blocks: "x" })).toBe(false);

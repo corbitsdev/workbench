@@ -18,6 +18,7 @@ export {
   parseToolResult,
   extractUIBlockFromText,
   isUIBlock,
+  MAX_UI_BLOCK_NEST_DEPTH,
   isFormField,
 } from "./ui-block";
 export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";

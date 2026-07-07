@@ -12,37 +12,21 @@ afterEach(() => {
 });
 
 describe("UIBlockView adversarial", () => {
-  it("table block with object cells passes the guard then crashes React", () => {
+  it("table block with object cells degrades to plain text", () => {
     const block = parseToolResult(
       JSON.stringify({ kind: "table", columns: ["a"], rows: [[{ x: 1 }]] }),
     );
-    expect(block.kind).toBe("table");
-    let threw = false;
-    try {
-      render(<UIBlockView block={block} />);
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(true);
+    expect(block.kind).toBe("text");
   });
 
-  it("table block with null row passes the guard then crashes React", () => {
+  it("table block with null row degrades to plain text", () => {
     const block = parseToolResult(
       JSON.stringify({ kind: "table", columns: ["a"], rows: [null] }),
     );
-    expect(block.kind).toBe("table");
-    if (block.kind === "table") {
-      let threw = false;
-      try {
-        render(<UIBlockView block={block} />);
-      } catch {
-        threw = true;
-      }
-      expect(threw).toBe(true);
-    }
+    expect(block.kind).toBe("text");
   });
 
-  it("choice option with object value posts the object through onRespond", () => {
+  it("choice option with object value posts a JSON string through onRespond", () => {
     const block = parseToolResult(
       JSON.stringify({
         kind: "choice",
@@ -54,7 +38,7 @@ describe("UIBlockView adversarial", () => {
     render(<UIBlockView block={block} onRespond={onRespond} />);
     fireEvent.click(screen.getByRole("button", { name: "A" }));
     expect(JSON.stringify(onRespond.mock.calls[0])).toBe(
-      JSON.stringify([{ blockKind: "choice", value: { evil: 1 } }]),
+      JSON.stringify([{ blockKind: "choice", value: '{"evil":1}' }]),
     );
   });
 
@@ -83,13 +67,9 @@ describe("UIBlockView adversarial", () => {
     expect(onRespond.mock.calls.length).toBe(1);
   });
 
-  it("link block renders javascript: URLs into href unsanitized", () => {
+  it("link block does not render javascript: URLs as clickable links", () => {
     const block: UIBlock = { kind: "link", url: "javascript:alert(1)" };
     const { container } = render(<UIBlockView block={block} />);
-    const anchor = container.querySelector("a");
-    // React itself neutralizes javascript: URLs; the component does not.
-    expect(anchor?.getAttribute("href")).toContain(
-      "React has blocked a javascript: URL",
-    );
+    expect(container.querySelector("a")).toBeNull();
   });
 });

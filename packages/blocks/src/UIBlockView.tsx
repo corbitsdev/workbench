@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { cn, Markdown } from "@workbench/ui";
-import type {
-  FormField,
-  ProgressStepState,
-  ReviewListDisplayField,
-  UIBlock,
-  UIResponse,
+import {
+  MAX_UI_BLOCK_NEST_DEPTH,
+  type FormField,
+  type ProgressStepState,
+  type ReviewListDisplayField,
+  type UIBlock,
+  type UIResponse,
 } from "./ui-block";
 
 /**
@@ -16,6 +17,8 @@ import type {
  */
 export interface UIBlockViewProps {
   block: UIBlock;
+  /** Canvas recursion guard; callers should not set this. */
+  depth?: number;
   /**
    * Invoked when an interactive block produces a response to send to the agent.
    * May return a promise (the host's resume mutation) — interactive blocks await
@@ -29,7 +32,23 @@ export interface UIBlockViewProps {
     | undefined;
 }
 
-export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
+function formatTableCell(cell: string | number | boolean): string {
+  return typeof cell === "string" ? cell : String(cell);
+}
+
+export function UIBlockView({
+  block,
+  onRespond,
+  onAction,
+  depth = 0,
+}: UIBlockViewProps) {
+  if (depth > MAX_UI_BLOCK_NEST_DEPTH) {
+    return (
+      <p className="text-sm text-text-3">
+        This UI block could not be displayed (nesting limit).
+      </p>
+    );
+  }
   switch (block.kind) {
     case "text":
       return (
@@ -92,6 +111,7 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
             <UIBlockView
               key={index}
               block={child}
+              depth={depth + 1}
               onRespond={onRespond}
               onAction={onAction}
             />
@@ -293,7 +313,7 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
               >
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} className="px-3 py-1.5 text-text">
-                    {cell}
+                    {formatTableCell(cell)}
                   </td>
                 ))}
               </tr>
@@ -305,7 +325,30 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
   );
 }
 
+function isSafeLinkHref(url: string): boolean {
+  const trimmed = url.trim();
+  if (/^javascript:/iu.test(trimmed)) return false;
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "mailto:"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function LinkBlock({ block }: { block: Extract<UIBlock, { kind: "link" }> }) {
+  if (!isSafeLinkHref(block.url)) {
+    return (
+      <span className="text-sm text-text-2">
+        {block.title ?? block.url}
+      </span>
+    );
+  }
   return (
     <a
       href={block.url}
@@ -1247,9 +1290,16 @@ function ChoiceBlock({
     setError(null);
     setPendingId(option.id);
     try {
+      const rawValue = option.value ?? option.label;
+      const value =
+        typeof rawValue === "string" ||
+        typeof rawValue === "number" ||
+        typeof rawValue === "boolean"
+          ? rawValue
+          : JSON.stringify(rawValue);
       await onRespond?.({
         blockKind: "choice",
-        value: option.value ?? option.label,
+        value,
         ...(block.signalName !== undefined
           ? { signalName: block.signalName }
           : {}),

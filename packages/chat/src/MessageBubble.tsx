@@ -1,4 +1,10 @@
-import { useEffect, useState } from "react";
+import {
+  Component,
+  useEffect,
+  useState,
+  type ErrorInfo,
+  type ReactNode,
+} from "react";
 import { File as FileIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
 import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
@@ -12,6 +18,30 @@ import {
 } from "@workbench/blocks";
 import { MessageFeedback } from "./MessageFeedback";
 import type { FeedbackSubjectKind } from "./feedback-types";
+
+class UIBlockErrorBoundary extends Component<
+  { children: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(_error: Error, _info: ErrorInfo): void {}
+
+  render(): ReactNode {
+    if (this.state.failed) {
+      return (
+        <p className="text-sm text-text-3">
+          This interactive block could not be displayed.
+        </p>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export interface MessageBubbleProps {
   message: ChatMessage;
@@ -268,11 +298,13 @@ export function MessageBubble({
       return (
         <div className="flex flex-col gap-2">
           {extracted.text !== "" && <Markdown>{extracted.text}</Markdown>}
-          <UIBlockView
-            block={extracted.block}
-            {...(onRespond !== undefined ? { onRespond } : {})}
-            {...(onAction !== undefined ? { onAction } : {})}
-          />
+          <UIBlockErrorBoundary>
+            <UIBlockView
+              block={extracted.block}
+              {...(onRespond !== undefined ? { onRespond } : {})}
+              {...(onAction !== undefined ? { onAction } : {})}
+            />
+          </UIBlockErrorBoundary>
         </div>
       );
     }
