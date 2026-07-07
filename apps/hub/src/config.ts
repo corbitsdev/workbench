@@ -60,6 +60,11 @@ const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
 // Hard ceiling on a single Myra auto-title turn. On expiry the turn is aborted
 // (reactor torn down, workdir lock released) so a wedged post-inference teardown
 // cannot pin the per-principal title repo — see CL-2866.
+// COUPLING: the web client polls the thread list for the generated title only
+// up to TITLE_POLL_WINDOW_MS (apps/web/src/hooks/use-myra-threads.ts). If this
+// timeout is raised past that window, a slow-but-successful title lands after
+// the client stops polling and won't show until reload (CL-2872) — raise the
+// client window to match.
 const DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS = 45_000;
 
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
