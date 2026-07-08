@@ -45,7 +45,10 @@ import {
   type EnsureDeploymentRoutableFn,
   type ProvisionRunDeploymentFn,
 } from "./workflow-runs";
-import { getWorkflowRunTokenTotals } from "../services/activity-overview";
+import {
+  getWorkflowRunStepTokenTotals,
+  getWorkflowRunTokenTotals,
+} from "../services/activity-overview";
 import { WorkflowMeta } from "../lib/workflow-meta";
 
 const log = getLogger(["api", "workflow-run-records"]);
@@ -115,18 +118,24 @@ const ArchiveResponse = type({ archived: "true" });
 // every honest gap (no per-run instance attributable yet, or a legacy run
 // whose usage collapsed into a later serial run on the same shared
 // deployment) — the FE must render that as a gap, never as zero usage.
+const WorkflowRunTokenCountsSchema = {
+  turnCount: "number",
+  toolCallCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+} as const;
+
 export const WorkflowRunTokensResponse = type({
   runId: "string",
   available: "boolean",
-  "totals?": {
-    turnCount: "number",
-    toolCallCount: "number",
-    inputTokens: "number",
-    outputTokens: "number",
-    cacheReadTokens: "number",
-    cacheWriteTokens: "number",
-    thinkingTokens: "number",
-  },
+  "totals?": WorkflowRunTokenCountsSchema,
+  "steps?": type({
+    stepId: "string",
+    ...WorkflowRunTokenCountsSchema,
+  }).array(),
 });
 export type WorkflowRunTokens = typeof WorkflowRunTokensResponse.infer;
 
@@ -690,6 +699,11 @@ export function createWorkflowRunRecordsRouter(deps: {
         runId,
       });
       if (totals === null) return c.json({ runId, available: false });
+      const stepRows = await getWorkflowRunStepTokenTotals({
+        db: deps.db,
+        tenantId: state.tenantId,
+        runId,
+      });
       return c.json({
         runId,
         available: true,
@@ -702,6 +716,20 @@ export function createWorkflowRunRecordsRouter(deps: {
           cacheWriteTokens: totals.cacheWriteTokens,
           thinkingTokens: totals.thinkingTokens,
         },
+        ...(stepRows.length > 0
+          ? {
+              steps: stepRows.map((s) => ({
+                stepId: s.stepId,
+                turnCount: s.turnCount,
+                toolCallCount: s.toolCallCount,
+                inputTokens: s.inputTokens,
+                outputTokens: s.outputTokens,
+                cacheReadTokens: s.cacheReadTokens,
+                cacheWriteTokens: s.cacheWriteTokens,
+                thinkingTokens: s.thinkingTokens,
+              })),
+            }
+          : {}),
       });
     },
   );

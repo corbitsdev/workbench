@@ -124,6 +124,17 @@ export type WorkflowRunTokenTotalsRow = {
   thinkingTokens: number;
 };
 
+export type WorkflowRunStepTokenTotalsRow = {
+  stepId: string;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+};
+
 export type ActivityOverview = {
   tenantId: string;
   range: AnalyticsDateRange;
@@ -824,6 +835,93 @@ export async function getWorkflowRunTokenTotals(args: {
     tenantId: args.tenantId,
   });
   return rows.find((row) => row.runId === args.runId) ?? null;
+}
+
+// CL-2819: per-step token attribution via step agent addresses
+// `ins_<deploymentId>-<stepId>@…`. Supervisor-only instances (`ins_<dep>@`) stay
+// in the run-level total only; they never appear in this breakdown.
+export async function getWorkflowRunStepTokenTotals(args: {
+  db: DB["db"];
+  tenantId: string;
+  runId: string;
+}): Promise<WorkflowRunStepTokenTotalsRow[]> {
+  const { db, tenantId, runId } = args;
+  const runRows = await db
+    .select({ deploymentId: workflowRunRecord.deploymentId })
+    .from(workflowRunRecord)
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+      ),
+    );
+  const deploymentId = runRows[0]?.deploymentId;
+  if (deploymentId === undefined || deploymentId === null) return [];
+
+  const stepAddressPrefix = `ins_${deploymentId}-`;
+  const stepAddressPattern = new RegExp(
+    `^${stepAddressPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^@]+)@`,
+  );
+
+  const rows = await db
+    .select({
+      address: agentInstance.address,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      agentInstance,
+      eq(agentInstance.id, analyticsRollupDaily.instanceId),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        eq(agentInstance.tenantId, tenantId),
+        sql`${agentInstance.address} like ${`${stepAddressPrefix}%`}`,
+      ),
+    )
+    .groupBy(agentInstance.address);
+
+  const byStep = new Map<string, WorkflowRunStepTokenTotalsRow>();
+  for (const row of rows) {
+    const match = stepAddressPattern.exec(row.address);
+    const stepId = match?.[1];
+    if (stepId === undefined) continue;
+    const prev = byStep.get(stepId);
+    if (prev === undefined) {
+      byStep.set(stepId, {
+        stepId,
+        turnCount: row.turnCount,
+        toolCallCount: row.toolCallCount,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        thinkingTokens: row.thinkingTokens,
+      });
+      continue;
+    }
+    byStep.set(stepId, {
+      stepId,
+      turnCount: prev.turnCount + row.turnCount,
+      toolCallCount: prev.toolCallCount + row.toolCallCount,
+      inputTokens: prev.inputTokens + row.inputTokens,
+      outputTokens: prev.outputTokens + row.outputTokens,
+      cacheReadTokens: prev.cacheReadTokens + row.cacheReadTokens,
+      cacheWriteTokens: prev.cacheWriteTokens + row.cacheWriteTokens,
+      thinkingTokens: prev.thinkingTokens + row.thinkingTokens,
+    });
+  }
+
+  return [...byStep.values()].sort((a, b) => a.stepId.localeCompare(b.stepId));
 }
 
 export async function getActivityOverview(args: {
