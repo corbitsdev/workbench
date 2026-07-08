@@ -781,6 +781,12 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     const kpi = screen.getByText("This range").closest("div")!;
     expect(within(kpi).getByText("Total activity")).toBeDefined();
     expect(within(kpi).getByText("16")).toBeDefined();
+    // Workflow runs KPI uses executionsStartedInRange (3), not all-time executionRecords (8).
+    const workflowRunsTile = within(kpi)
+      .getByText("Workflow runs")
+      .closest("div");
+    expect(workflowRunsTile).toBeDefined();
+    expect(within(workflowRunsTile!).getByText("3")).toBeDefined();
     // Active actors = attributed people (2).
     expect(within(kpi).getByText("Active actors")).toBeDefined();
   });
