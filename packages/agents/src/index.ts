@@ -27,6 +27,12 @@ export {
   type InlineInferenceStepOpts,
 } from "./deterministic-step";
 export {
+  classifyWorkflowSteps,
+  countHumanGates,
+  type FlowStepClass,
+  type ClassifiedFlowStep,
+} from "./flow-classify";
+export {
   EPHEMERAL_CHAT_TAG,
   EphemeralChatPayload,
   compactEphemeralChatInput,

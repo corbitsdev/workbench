@@ -632,7 +632,6 @@ export function WorkflowsPage() {
             catalog={
               <WorkflowCatalog
                 tenantId={activeTenantId}
-                runKinds={kindOptions}
                 onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
               />
             }

@@ -107,13 +107,11 @@ mock.module("../components/layout/UnifiedCatalogModal", () => ({
 // wires tenant, run kinds, and navigation into it.
 let lastCatalogSurfaceProps: {
   tenantId: string | null;
-  runKinds: readonly string[];
   onWorkflowStarted: (runId: string) => void;
 } | null = null;
 mock.module("../components/WorkflowCatalog", () => ({
   WorkflowCatalog: (props: {
     tenantId: string | null;
-    runKinds: readonly string[];
     onWorkflowStarted: (runId: string) => void;
   }) => {
     lastCatalogSurfaceProps = props;
@@ -206,7 +204,6 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
     screen.getByTestId("workflow-catalog-surface");
     expect(lastCatalogSurfaceProps?.tenantId).toBe("ten-1");
-    expect(lastCatalogSurfaceProps?.runKinds).toEqual([]);
   });
 
   it("renders the catalog surface on the dashboard and navigates to a started run", () => {
@@ -225,7 +222,6 @@ describe("WorkflowsPage", () => {
     };
     const { router } = renderWorkflowsPage();
     screen.getByTestId("workflow-catalog-surface");
-    expect(lastCatalogSurfaceProps?.runKinds).toEqual(["deck-build"]);
     lastCatalogSurfaceProps?.onWorkflowStarted("run-new");
     expect(router.state.location.pathname).toBe("/workflows/run-new");
   });

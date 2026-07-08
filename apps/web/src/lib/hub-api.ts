@@ -12,6 +12,8 @@ import {
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   type OwnerCredentialState,
+  WorkflowCatalogSchema,
+  type WorkflowCatalog,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -229,6 +231,23 @@ export type PostMeBody = {
 /** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
 export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
   return parseMePreferences(await hubFetch<MeResponse>("POST", "v1/me", body));
+}
+
+/**
+ * The whole Workflows-page catalog in one call: every runnable workflow with
+ * the member's favorite state and its classified step flow. Parsed at the
+ * boundary through the shared schema.
+ */
+export async function getWorkflowsCatalog(
+  tenantId?: string | null,
+): Promise<WorkflowCatalog> {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+  const raw = await hubFetch<unknown>("GET", `v1/workflows${query}`);
+  const parsed = WorkflowCatalogSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected workflows catalog response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */

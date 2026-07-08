@@ -307,3 +307,57 @@ export const MemberPreferences = type({
   "[string]": "unknown",
 });
 export type MemberPreferences = typeof MemberPreferences.infer;
+
+// A single step in a workflow's flow, classified for the catalog preview:
+// "auto" = a deterministic tool/fetch/export step, "agent" = a genuine LLM
+// reasoning step, "human" = an awaitSignal gate that pauses for the user.
+export const WorkflowFlowStepSchema = type({
+  id: "string",
+  title: "string",
+  kind: "'auto'|'agent'|'human'",
+});
+export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
+
+// One runnable workflow in the catalog, carrying everything the Workflows page
+// needs to render its row and its step-flow preview without a further call:
+// the member's favorite state, the classified step DAG, and the pause count.
+export const WorkflowCatalogEntrySchema = type({
+  kind: "string",
+  label: "string",
+  "description?": "string",
+  isFavorite: "boolean",
+  stepCount: "number",
+  pauseCount: "number",
+  steps: WorkflowFlowStepSchema.array(),
+  "lastRunAt?": "string",
+});
+export type WorkflowCatalogEntry = typeof WorkflowCatalogEntrySchema.infer;
+
+// The whole Workflows-page catalog in one response — favorites already resolved
+// and pinned first, steps already classified. Deliberately not paginated: the
+// catalog is small and the page loads it in a single call.
+export const WorkflowCatalogSchema = type({
+  entries: WorkflowCatalogEntrySchema.array(),
+});
+export type WorkflowCatalog = typeof WorkflowCatalogSchema.infer;
+
+// Maps a favorites list plus the run-history kinds onto catalog entries so the
+// hub and any consumer share one ordering rule: favorites first (in favorites
+// order), then the rest by label. Pure over its inputs.
+export function orderCatalogEntries(
+  entries: readonly WorkflowCatalogEntry[],
+  favoriteKinds: readonly string[],
+): WorkflowCatalogEntry[] {
+  const favoriteRank = new Map<string, number>();
+  favoriteKinds.forEach((kind, i) => favoriteRank.set(kind, i));
+  return [...entries].sort((a, b) => {
+    const aRank = favoriteRank.has(a.kind)
+      ? (favoriteRank.get(a.kind) as number)
+      : Infinity;
+    const bRank = favoriteRank.has(b.kind)
+      ? (favoriteRank.get(b.kind) as number)
+      : Infinity;
+    if (aRank !== bRank) return aRank - bRank;
+    return a.label.localeCompare(b.label);
+  });
+}
