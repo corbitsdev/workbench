@@ -96,6 +96,37 @@ describe("CL-2819 per-step workflow token attribution", () => {
     expect(runTotal?.inputTokens).toBe(280);
   });
 
+  test("does not attribute step usage to an older run when a newer run shares the deployment", async () => {
+    await instance("ins_shared-draft", "ins_shared-draft@wb.local");
+    await client.query(
+      `insert into workflow_run_record (id, deployment_id, kind, tenant_id, principal_id, status, created_at, updated_at)
+       values ('run-old','shared','demo-flow',$1,'prn-runner','completed','2026-06-01T00:00:00Z','2026-06-01T00:00:00Z')`,
+      [TENANT],
+    );
+    await client.query(
+      `insert into workflow_run_record (id, deployment_id, kind, tenant_id, principal_id, status, created_at, updated_at)
+       values ('run-new','shared','demo-flow',$1,'prn-runner','completed','2026-07-01T00:00:00Z','2026-07-01T00:00:00Z')`,
+      [TENANT],
+    );
+    await rollup("ins_shared-draft", 99, 11);
+
+    const olderSteps = await getWorkflowRunStepTokenTotals({
+      db,
+      tenantId: TENANT,
+      runId: "run-old",
+    });
+    expect(olderSteps).toEqual([]);
+
+    const newerSteps = await getWorkflowRunStepTokenTotals({
+      db,
+      tenantId: TENANT,
+      runId: "run-new",
+    });
+    expect(newerSteps).toEqual([
+      expect.objectContaining({ stepId: "draft", inputTokens: 99 }),
+    ]);
+  });
+
   test("returns empty when the run has no deploymentId", async () => {
     await client.query(
       `insert into workflow_run_record (id, deployment_id, kind, tenant_id, principal_id, status, created_at, updated_at)

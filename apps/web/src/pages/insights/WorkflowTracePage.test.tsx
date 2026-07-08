@@ -204,8 +204,8 @@ describe("WorkflowTracePage", () => {
     await waitFor(() => {
       expect(screen.getAllByTestId("trace-step-tokens").length).toBe(2);
     });
-    expect(screen.getByText(/100 in \/ 20 out/)).toBeDefined();
-    expect(screen.getByText(/50 in \/ 10 out/)).toBeDefined();
+    screen.getByText(/100 in \/ 20 out/);
+    screen.getByText(/50 in \/ 10 out/);
   });
 
   it("shows the decoded output payload behind the Output expander", async () => {

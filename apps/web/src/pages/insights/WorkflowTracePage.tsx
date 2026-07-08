@@ -743,7 +743,7 @@ export function WorkflowTracePage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {tokensQuery.data.steps!.map((row) => (
+                          {(tokensQuery.data.steps ?? []).map((row) => (
                             <tr key={row.stepId} className="border-t border-border">
                               <td className="py-2 text-text">
                                 {toHumanLabel(row.stepId)}

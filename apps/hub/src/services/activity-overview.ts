@@ -865,6 +865,8 @@ export async function getWorkflowRunStepTokenTotals(args: {
     `^${stepAddressPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^@]+)@`,
   );
 
+  const runByInstance = runByInstanceJoin(db, tenantId);
+
   const rows = await db
     .select({
       address: agentInstance.address,
@@ -878,6 +880,10 @@ export async function getWorkflowRunStepTokenTotals(args: {
     })
     .from(analyticsRollupDaily)
     .innerJoin(
+      runByInstance,
+      eq(runByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .innerJoin(
       agentInstance,
       eq(agentInstance.id, analyticsRollupDaily.instanceId),
     )
@@ -885,7 +891,8 @@ export async function getWorkflowRunStepTokenTotals(args: {
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
         eq(agentInstance.tenantId, tenantId),
-        sql`${agentInstance.address} like ${`${stepAddressPrefix}%`}`,
+        eq(runByInstance.runId, runId),
+        like(agentInstance.address, `${stepAddressPrefix}%`),
       ),
     )
     .groupBy(agentInstance.address);
