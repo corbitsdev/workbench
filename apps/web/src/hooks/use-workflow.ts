@@ -204,18 +204,24 @@ export { isRecordTerminal };
 // (no per-run instance attributable yet, or a legacy run collapsed into a
 // later serial run on a shared deployment) — callers must render it as a gap,
 // never as zero usage.
+const workflowRunTokenCountsSchema = {
+  turnCount: "number",
+  toolCallCount: "number",
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+} as const;
+
 const workflowRunTokensSchema = type({
   runId: "string",
   available: "boolean",
-  "totals?": {
-    turnCount: "number",
-    toolCallCount: "number",
-    inputTokens: "number",
-    outputTokens: "number",
-    cacheReadTokens: "number",
-    cacheWriteTokens: "number",
-    thinkingTokens: "number",
-  },
+  "totals?": workflowRunTokenCountsSchema,
+  "steps?": type({
+    stepId: "string",
+    ...workflowRunTokenCountsSchema,
+  }).array(),
 });
 export type WorkflowRunTokens = typeof workflowRunTokensSchema.infer;
 
