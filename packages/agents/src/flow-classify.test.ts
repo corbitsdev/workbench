@@ -4,16 +4,15 @@ import {
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   STEP_KIND_TAG,
+  STEP_TITLE_TAG,
 } from "./deterministic-step";
 import { classifyWorkflowSteps, countHumanGates } from "./flow-classify";
 
-function stepAgent(tag?: string) {
-  return {
-    agent: {
-      id: "a",
-      tags: tag === undefined ? {} : { [STEP_KIND_TAG]: tag },
-    },
-  };
+function stepAgent(tag?: string, title?: string) {
+  const tags: Record<string, string> = {};
+  if (tag !== undefined) tags[STEP_KIND_TAG] = tag;
+  if (title !== undefined) tags[STEP_TITLE_TAG] = title;
+  return { agent: { id: "a", tags } };
 }
 
 function makeDefinition(): WorkflowDefinition {
@@ -55,6 +54,44 @@ describe("classifyWorkflowSteps", () => {
       { id: "reviewDraft", title: "Review Draft", kind: "human" },
       { id: "publish", title: "Publish", kind: "auto" },
     ]);
+  });
+
+  it("prefers an authored title tag over the humanized id", () => {
+    const def = {
+      id: "wf",
+      triggers: [],
+      stepOrder: ["webB"],
+      steps: {
+        webB: {
+          kind: "step",
+          id: "webB",
+          ...stepAgent(DETERMINISTIC_TOOL_KIND, "Search the web (round 2)"),
+        },
+      },
+    } as unknown as WorkflowDefinition;
+    expect(classifyWorkflowSteps(def)[0]!.title).toBe(
+      "Search the web (round 2)",
+    );
+  });
+
+  it("reads the title tag off a map's inner step", () => {
+    const def = {
+      id: "wf",
+      triggers: [],
+      stepOrder: ["fanout"],
+      steps: {
+        fanout: {
+          kind: "map",
+          id: "fanout",
+          step: {
+            kind: "step",
+            id: "inner",
+            ...stepAgent(DETERMINISTIC_TOOL_KIND, "Fan out across sources"),
+          },
+        },
+      },
+    } as unknown as WorkflowDefinition;
+    expect(classifyWorkflowSteps(def)[0]!.title).toBe("Fan out across sources");
   });
 
   it("treats an untagged plain step as a reasoning agent step", () => {

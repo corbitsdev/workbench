@@ -37,6 +37,7 @@ export const ARTIFACT_KIND = "ab-comparison";
 
 const executeStep = inlineInferenceStep({
   id: "hitl-ab-execute",
+  title: "Run each variant",
   systemPrompt: AB_EXECUTE_SYSTEM_PROMPT,
   // Inside the `execute` map the runtime rebinds `trigger.payload` to the CURRENT
   // variant record, which the execute agent reads as its JSON input. A variant
@@ -78,6 +79,7 @@ export const workflow = defineWorkflow({
     //    comparison payload (decidedBy: "human").
     compose: deterministicToolStep({
       id: "hitl-ab-compose",
+      title: "Compile the comparison",
       tool: "ab_comparison_compose",
       input: { from: "steps" },
       after: ["decision"],
@@ -86,6 +88,7 @@ export const workflow = defineWorkflow({
     // 5. Save the structured comparison as an `ab-comparison` artifact.
     persist: deterministicToolStep({
       id: "hitl-ab-persist",
+      title: "Save the comparison",
       tool: "artifact_create",
       input: { from: "steps.compose.output" },
       argMap: {

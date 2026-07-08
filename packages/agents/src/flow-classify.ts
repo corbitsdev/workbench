@@ -1,6 +1,7 @@
 import type { WorkflowDefinition } from "@intx/workflow";
 import {
   STEP_KIND_TAG,
+  STEP_TITLE_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
 } from "./deterministic-step";
@@ -57,7 +58,18 @@ function classifyPrimitive(primitive: Primitive): FlowStepClass {
   }
 }
 
+// The step/map primitive whose agent carries the authoring tags.
+function agentTagsOf(primitive: Primitive): Record<string, string> | undefined {
+  if (primitive.kind === "step") return primitive.agent.tags;
+  if (primitive.kind === "map") return primitive.step.agent.tags;
+  return undefined;
+}
+
+// Title precedence: an authored `workbench.title` tag, then an awaitSignal's
+// signal name, then the humanized step-map key as a last resort.
 function titleForPrimitive(id: string, primitive: Primitive): string {
+  const authored = agentTagsOf(primitive)?.[STEP_TITLE_TAG];
+  if (authored !== undefined && authored.trim() !== "") return authored;
   if (primitive.kind === "awaitSignal" && primitive.name.trim() !== "") {
     return humanize(primitive.name);
   }

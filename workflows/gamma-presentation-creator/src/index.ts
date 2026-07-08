@@ -57,6 +57,7 @@ function roundSteps(round: number): Record<string, Primitive> {
   const steps: Record<string, Primitive> = {
     [gen]: inlineInferenceStep({
       id: `presentation-${gen}`,
+      title: round === 1 ? "Draft the deck" : "Revise the deck",
       systemPrompt: PRESENTATION_GENERATE_SYSTEM_PROMPT,
       after:
         round === 1 ? ["fetch-artifact", "fetch-note"] : [`check-${round - 1}`],
@@ -64,6 +65,8 @@ function roundSteps(round: number): Record<string, Primitive> {
     }),
     [rnd]: deterministicToolStep({
       id: `presentation-${rnd}`,
+      title:
+        round === 1 ? "Build the deck in Gamma" : "Rebuild the deck in Gamma",
       tool: "gamma_create_from_template",
       after: [gen],
       input: {
@@ -76,6 +79,7 @@ function roundSteps(round: number): Record<string, Primitive> {
     }),
     [dsc]: inlineInferenceStep({
       id: `presentation-${dsc}`,
+      title: "Summarize the deck",
       systemPrompt: PRESENTATION_DESCRIBE_SYSTEM_PROMPT,
       model: LLM_DEFAULT_MODEL,
       after: [gen],
@@ -84,6 +88,7 @@ function roundSteps(round: number): Record<string, Primitive> {
     [prev]: awaitSignal({ name: prev, after: [rnd] }),
     [per]: deterministicToolStep({
       id: `presentation-${per}`,
+      title: "Save the deck",
       tool: "artifact_link_gamma_presentation",
       after: isLast ? [prev, dsc] : [chk, dsc],
       input: {
@@ -125,11 +130,13 @@ const setupSteps: Record<string, Primitive> = {
   // note). The panel warns the user when a list is at its ceiling.
   "list-artifacts": deterministicToolStep({
     id: "presentation-list-artifacts",
+    title: "List your artifacts",
     tool: "artifact_list",
     argMap: { limit: { literal: 50 } },
   }),
   "list-notes": deterministicToolStep({
     id: "presentation-list-notes",
+    title: "List your call notes",
     tool: "granola_list_notes",
     argMap: { limit: { literal: 30 } },
   }),
@@ -139,6 +146,7 @@ const setupSteps: Record<string, Primitive> = {
   }),
   "fetch-artifact": deterministicToolStep({
     id: "presentation-fetch-artifact",
+    title: "Load the chosen artifact",
     tool: "artifact_read",
     after: ["intake"],
     input: { from: "steps.intake.output" },
@@ -147,6 +155,7 @@ const setupSteps: Record<string, Primitive> = {
   }),
   "fetch-note": deterministicToolStep({
     id: "presentation-fetch-note",
+    title: "Load the chosen note",
     tool: "granola_get_note",
     after: ["intake"],
     input: { from: "steps.intake.output" },

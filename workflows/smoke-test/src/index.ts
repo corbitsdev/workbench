@@ -1,6 +1,10 @@
 import { defineAgent } from "@intx/agent";
 import { defineWorkflow, step } from "@intx/workflow";
-import { LLM_CREDENTIAL_NAME, LLM_DEFAULT_MODEL } from "@workbench/agents";
+import {
+  LLM_CREDENTIAL_NAME,
+  LLM_DEFAULT_MODEL,
+  STEP_TITLE_TAG,
+} from "@workbench/agents";
 
 // Diagnostic workflow: a single agent step, no tools, no external APIs, no
 // human signal. On a manual trigger it should immediately dispatch and emit
@@ -17,7 +21,10 @@ const emitAgent = defineAgent({
   inference: {
     sources: [{ provider: "openai-compatible", model: LLM_DEFAULT_MODEL }],
   },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
+  tags: {
+    credentialName: LLM_CREDENTIAL_NAME,
+    [STEP_TITLE_TAG]: "Emit a test line",
+  },
 });
 
 export const label = "Smoke Test";

@@ -60,10 +60,12 @@ function sourceStep(opts: {
   sourceKey: string;
   limit: number;
   after: readonly string[];
+  title: string;
 }) {
   return deterministicToolStep({
     id: opts.id,
     tool: opts.tool,
+    title: opts.title,
     input: groundedQueriesInput,
     argMap: {
       query: { from: opts.sourceKey },
@@ -108,15 +110,40 @@ function sourceStep(opts: {
 // engagement sources are capped well below the web pool so launch news dominates
 // the curate pool over community chatter.
 const SOURCES = [
-  { key: "web", tool: "exa_search", limit: 25 },
-  { key: "webB", tool: "exa_search", limit: 25 },
-  { key: "webC", tool: "exa_search", limit: 25 },
-  { key: "hackernews", tool: "hackernews_search", limit: 20 },
-  { key: "github", tool: "github_activity", limit: 15 },
-  { key: "reddit", tool: "reddit_search", limit: 20 },
-  { key: "x", tool: "x_search", limit: 15 },
-  { key: "youtube", tool: "youtube_search", limit: 12 },
-  { key: "polymarket", tool: "polymarket_odds", limit: 15 },
+  { key: "web", tool: "exa_search", limit: 25, title: "Search the web" },
+  { key: "webB", tool: "exa_search", limit: 25, title: "Search the web again" },
+  {
+    key: "webC",
+    tool: "exa_search",
+    limit: 25,
+    title: "Search the web once more",
+  },
+  {
+    key: "hackernews",
+    tool: "hackernews_search",
+    limit: 20,
+    title: "Search Hacker News",
+  },
+  {
+    key: "github",
+    tool: "github_activity",
+    limit: 15,
+    title: "Scan GitHub activity",
+  },
+  { key: "reddit", tool: "reddit_search", limit: 20, title: "Search Reddit" },
+  { key: "x", tool: "x_search", limit: 15, title: "Search X" },
+  {
+    key: "youtube",
+    tool: "youtube_search",
+    limit: 12,
+    title: "Search YouTube",
+  },
+  {
+    key: "polymarket",
+    tool: "polymarket_odds",
+    limit: 15,
+    title: "Check Polymarket odds",
+  },
 ] as const;
 
 const lastSource = SOURCES.at(-1);
@@ -140,6 +167,7 @@ function buildSourceSteps(firstAfter: string): Record<string, StepPrimitive> {
       sourceKey: source.key,
       limit: source.limit,
       after: [previous],
+      title: source.title,
     });
     previous = source.key;
   }
@@ -159,10 +187,34 @@ const entityQueriesInput = {
 } as const;
 
 const ROUND2_SOURCES = [
-  { id: "web2", tool: "exa_search", mapKey: "web", limit: 30 },
-  { id: "reddit2", tool: "reddit_search", mapKey: "reddit", limit: 18 },
-  { id: "x2", tool: "x_search", mapKey: "x", limit: 15 },
-  { id: "youtube2", tool: "youtube_search", mapKey: "youtube", limit: 12 },
+  {
+    id: "web2",
+    tool: "exa_search",
+    mapKey: "web",
+    limit: 30,
+    title: "Dig deeper on the web",
+  },
+  {
+    id: "reddit2",
+    tool: "reddit_search",
+    mapKey: "reddit",
+    limit: 18,
+    title: "Dig deeper on Reddit",
+  },
+  {
+    id: "x2",
+    tool: "x_search",
+    mapKey: "x",
+    limit: 15,
+    title: "Dig deeper on X",
+  },
+  {
+    id: "youtube2",
+    tool: "youtube_search",
+    mapKey: "youtube",
+    limit: 12,
+    title: "Dig deeper on YouTube",
+  },
 ] as const;
 
 const lastRound2 = ROUND2_SOURCES.at(-1);
@@ -182,6 +234,7 @@ function buildEntityRoundSteps(
     steps[source.id] = deterministicToolStep({
       id: `last30days-fetch-${source.id}`,
       tool: source.tool,
+      title: source.title,
       input: entityQueriesInput,
       argMap: {
         query: { from: source.mapKey },
@@ -209,6 +262,7 @@ export const workflow = defineWorkflow({
     // failed grounding turn fails the run (a one-call dependency, same as those).
     ground: inlineInferenceStep({
       id: "last30days-ground",
+      title: "Ground the topic",
       systemPrompt: buildGroundingSystemPrompt(),
       input: { from: "steps.intake.output" },
       after: ["intake"],
@@ -219,6 +273,7 @@ export const workflow = defineWorkflow({
     // each source step can select its own query.
     groundQueries: deterministicToolStep({
       id: "last30days-ground-queries",
+      title: "Draft per-source queries",
       tool: "last30days_ground_queries",
       input: {
         merge: [
@@ -239,6 +294,7 @@ export const workflow = defineWorkflow({
     // parse tool falls back to the base query if the reply is malformed.
     entities: inlineInferenceStep({
       id: "last30days-entities",
+      title: "Extract key entities",
       systemPrompt: buildEntityExtractSystemPrompt(),
       input: { from: "steps" },
       after: [LAST_SOURCE_KEY],
@@ -248,6 +304,7 @@ export const workflow = defineWorkflow({
     // field (`steps.entityQueries.output.content.<source>`).
     entityQueries: deterministicToolStep({
       id: "last30days-entity-queries",
+      title: "Draft entity queries",
       tool: "last30days_entity_queries",
       input: {
         merge: [
@@ -267,6 +324,7 @@ export const workflow = defineWorkflow({
     // structural-junk-filtered) for the curate step to judge.
     collect: deterministicToolStep({
       id: "last30days-collect",
+      title: "Collect & dedupe results",
       tool: "last30days_collect",
       input: { from: "steps" },
       after: [LAST_ROUND2_ID],
@@ -279,6 +337,7 @@ export const workflow = defineWorkflow({
     // the deterministic buildReport pipeline if the curate JSON is missing or junk.
     curate: inlineInferenceStep({
       id: "last30days-curate",
+      title: "Curate themes & quotes",
       systemPrompt: buildCurateSystemPrompt(),
       model: LLM_WRITER_MODEL,
       maxTokens: CURATE_MAX_TOKENS,
@@ -290,6 +349,7 @@ export const workflow = defineWorkflow({
     // deterministic fallback over the collected pool.
     brief: deterministicToolStep({
       id: "last30days-build-brief",
+      title: "Assemble the brief",
       tool: "last30days_workflow_brief",
       input: { from: "steps" },
       after: ["curate"],
@@ -302,6 +362,7 @@ export const workflow = defineWorkflow({
     // (resolveWorkflowDeploySource resolves it optionally).
     write: inlineInferenceStep({
       id: "last30days-write-report",
+      title: "Write the report",
       systemPrompt: buildWriterSystemPrompt(),
       model: LLM_WRITER_MODEL,
       maxTokens: WRITER_MAX_TOKENS,
@@ -316,6 +377,7 @@ export const workflow = defineWorkflow({
 
     persist: deterministicToolStep({
       id: "last30days-persist-artifact",
+      title: "Save the research artifact",
       tool: "write_artifact",
       input: {
         merge: [
