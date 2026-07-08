@@ -9,7 +9,7 @@ import { tabButtonClass } from "./admin-ui";
 const SUB_NAV = [
   { to: "/owner", label: "Overview", end: true },
   { to: "/owner/setup", label: "Setup", end: false },
-  { to: "/owner/templates", label: "Templates", end: false },
+  { to: "/owner/capabilities", label: "Capabilities", end: false },
   { to: "/owner/workflows", label: "Workflows", end: false },
 ] as const;
 
