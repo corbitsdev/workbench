@@ -7,12 +7,13 @@ import { statusDotClass, statusLabel } from "../pages/WorkflowsPage";
 
 type RunStatus = WorkflowRun["status"];
 
+// Failures are deliberately absent — the dashboard never surfaces a failed
+// count. The catalog is the only launch path, so there is no New run button.
 const STAT_STATUSES: RunStatus[] = [
   "provisioning",
   "running",
   "awaiting",
   "completed",
-  "failed",
 ];
 
 // "2h" / "3d" carry "ago"; "just now" and absolute dates ("Apr 3") read wrong
@@ -31,53 +32,22 @@ export interface WorkflowsDashboardProps {
   statusFilter: RunStatusFilter;
   selectedRunMissing: boolean;
   onSelectRun: (runId: string) => void;
-  onNewRun: () => void;
   onFilterStatus: (status: RunStatus) => void;
   onShowAll: () => void;
   catalog: React.ReactNode;
 }
 
-function PlusIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 16 16"
-      fill="none"
-      aria-hidden="true"
-    >
-      <path
-        d="M8 3v10M3 8h10"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function NewRunButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex shrink-0 items-center gap-1.5 rounded-[10px] bg-accent px-3.5 py-2 text-[13px] font-semibold text-white transition-transform duration-150 ease-[var(--ease)] hover:bg-accent-deep active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong motion-reduce:active:scale-100 motion-reduce:transition-none"
-    >
-      <PlusIcon />
-      New run
-    </button>
-  );
-}
-
-function StatTile({
+function StatusMetric({
   status,
   count,
   active,
+  first,
   onClick,
 }: {
   status: RunStatus;
   count: number;
   active: boolean;
+  first: boolean;
   onClick: () => void;
 }) {
   const label = statusLabel(status);
@@ -87,30 +57,56 @@ function StatTile({
       aria-pressed={active}
       aria-label={`Show ${String(count)} ${label.toLowerCase()} runs`}
       onClick={onClick}
-      className={`flex min-h-[92px] flex-col justify-between rounded-[12px] border bg-surface p-3.5 text-left transition-colors duration-150 ease-[var(--ease)] hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
-        active ? "border-border-strong" : "border-border"
-      }`}
+      className={`flex flex-1 items-center gap-2.5 px-4 py-3 text-left transition-colors duration-150 ease-[var(--ease)] hover:bg-row-hover focus:outline-none focus-visible:relative focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-border-strong ${
+        first ? "rounded-l-[10px]" : "border-l border-border"
+      } ${active ? "bg-row-hover" : ""}`}
     >
-      <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.04em] text-text-3">
+      <span
+        aria-hidden="true"
+        className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(status)} ${count === 0 ? "opacity-30" : ""}`}
+      />
+      <span className="flex flex-col gap-0.5 leading-none">
         <span
-          aria-hidden="true"
-          className={`h-1.5 w-1.5 rounded-full ${statusDotClass(status)} ${count === 0 ? "opacity-40" : ""}`}
-        />
-        {label}
-      </span>
-      <span className="text-[28px] font-semibold leading-none text-text tabular-nums">
-        {count}
+          className={`text-[20px] font-semibold tabular-nums ${count === 0 ? "text-text-3" : "text-text"}`}
+        >
+          {count}
+        </span>
+        <span className="text-[11px] uppercase tracking-[0.04em] text-text-3">
+          {label}
+        </span>
       </span>
     </button>
   );
 }
 
-function StatTileSkeleton() {
+function StatusSummary({
+  counts,
+  statusFilter,
+  onFilterStatus,
+}: {
+  counts: Record<RunStatus, number>;
+  statusFilter: RunStatusFilter;
+  onFilterStatus: (status: RunStatus) => void;
+}) {
   return (
-    <div className="flex min-h-[92px] flex-col justify-between rounded-[12px] border border-border bg-surface p-3.5">
-      <span className="h-[11px] w-16 rounded bg-row-hover" />
-      <span className="h-[26px] w-10 rounded bg-row-hover" />
+    <div className="flex items-stretch rounded-[12px] border border-border bg-surface">
+      {STAT_STATUSES.map((status, i) => (
+        <StatusMetric
+          key={status}
+          status={status}
+          count={counts[status]}
+          active={statusFilter === status}
+          first={i === 0}
+          onClick={() => onFilterStatus(status)}
+        />
+      ))}
     </div>
+  );
+}
+
+function StatusSummarySkeleton() {
+  return (
+    <div className="flex h-[66px] items-center rounded-[12px] border border-border bg-surface" />
   );
 }
 
@@ -152,7 +148,6 @@ export function WorkflowsDashboard({
   statusFilter,
   selectedRunMissing,
   onSelectRun,
-  onNewRun,
   onFilterStatus,
   onShowAll,
   catalog,
@@ -204,12 +199,7 @@ export function WorkflowsDashboard({
     return wrap(
       <div className="mx-auto max-w-[1180px] px-6 py-8">
         {missingNote}
-        <div className="grid grid-cols-2 gap-3 @[640px]:grid-cols-4">
-          <StatTileSkeleton />
-          <StatTileSkeleton />
-          <StatTileSkeleton />
-          <StatTileSkeleton />
-        </div>
+        <StatusSummarySkeleton />
       </div>,
     );
   }
@@ -228,17 +218,14 @@ export function WorkflowsDashboard({
   if (runs.length === 0) {
     return wrap(
       <div className="mx-auto max-w-[1180px] px-6 py-8">
-        <div className="flex flex-col items-center gap-4 py-8 text-center">
+        <div className="flex flex-col items-center gap-2 py-8 text-center">
           {missingNote}
-          <div className="flex flex-col gap-1.5">
-            <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-              No workflows yet
-            </h1>
-            <p className="text-[13px] text-text-2">
-              Start a workflow from the catalog and it will show up here.
-            </p>
-          </div>
-          <NewRunButton onClick={onNewRun} />
+          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
+            No workflows yet
+          </h1>
+          <p className="text-[13px] text-text-2">
+            Start a workflow from the catalog below and it will show up here.
+          </p>
         </div>
         {catalog}
       </div>,
@@ -249,55 +236,38 @@ export function WorkflowsDashboard({
     <div className="mx-auto max-w-[1180px] px-6 py-8">
       {missingNote}
 
-      <div className="mb-6 flex items-center justify-between gap-4">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
-            Workflows
-          </h1>
-          <button
-            type="button"
-            onClick={onShowAll}
-            className="text-[12px] text-text-3 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-          >
-            View all runs
-          </button>
-        </div>
-        <NewRunButton onClick={onNewRun} />
+      <div className="mb-6 flex items-baseline gap-3">
+        <h1 className="text-[20px] font-semibold tracking-[-0.01em] text-text">
+          Workflows
+        </h1>
+        <button
+          type="button"
+          onClick={onShowAll}
+          className="text-[12px] text-text-3 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
+        >
+          View all runs
+        </button>
       </div>
 
       <div className="flex flex-col gap-8">
-        <div className="grid grid-cols-2 gap-3 @[640px]:grid-cols-4">
-          {STAT_STATUSES.map((status) => (
-            <StatTile
-              key={status}
-              status={status}
-              count={counts[status]}
-              active={statusFilter === status}
-              onClick={() => onFilterStatus(status)}
-            />
-          ))}
-        </div>
+        <StatusSummary
+          counts={counts}
+          statusFilter={statusFilter}
+          onFilterStatus={onFilterStatus}
+        />
 
-        <section>
-          <div className="mb-3 flex items-baseline gap-2">
-            <h2 className="text-[13px] font-semibold text-text">Active</h2>
-            <span className="text-[12px] text-text-3 tabular-nums">
-              {activeRuns.length}
-            </span>
-          </div>
-          {activeRuns.length === 0 ? (
-            <p className="text-[13px] text-text-2">
-              No active workflows.{" "}
-              <button
-                type="button"
-                onClick={onNewRun}
-                className="font-medium text-text-2 underline hover:text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
-              >
-                Start one
-              </button>
-              .
-            </p>
-          ) : (
+        {activeRuns.length === 0 ? (
+          <p className="text-[13px] text-text-3">
+            No active runs. Start one from the catalog below.
+          </p>
+        ) : (
+          <section>
+            <div className="mb-3 flex items-baseline gap-2">
+              <h2 className="text-[13px] font-semibold text-text">Active</h2>
+              <span className="text-[12px] text-text-3 tabular-nums">
+                {activeRuns.length}
+              </span>
+            </div>
             <div className="grid gap-3 @[640px]:grid-cols-2 @[980px]:grid-cols-3">
               {activeRuns.map((run) => (
                 <ActiveCard
@@ -307,8 +277,8 @@ export function WorkflowsDashboard({
                 />
               ))}
             </div>
-          )}
-        </section>
+          </section>
+        )}
 
         {catalog}
       </div>

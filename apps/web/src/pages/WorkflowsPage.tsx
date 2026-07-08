@@ -620,7 +620,6 @@ export function WorkflowsPage() {
             statusFilter={filters.status}
             selectedRunMissing={selectedRunMissing}
             onSelectRun={(runId) => navigate(`/workflows/${runId}`)}
-            onNewRun={() => setCatalogOpen(true)}
             onFilterStatus={(status) => {
               setFilters((f) => ({ ...f, status }));
               setPinned(true);

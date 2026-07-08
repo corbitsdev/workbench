@@ -482,7 +482,7 @@ describe("WorkflowsPage", () => {
     rail().getByText("Last30days", { selector: "span" });
   });
 
-  it("opens the catalog on New run, and starting a run selects it", () => {
+  it("opens the catalog from the rail New run, and starting a run selects it", () => {
     activeTenantId = "ten-7";
     runsResult = {
       data: [],
@@ -493,9 +493,12 @@ describe("WorkflowsPage", () => {
     const { router } = renderWorkflowsPage();
 
     expect(screen.queryByTestId("stub-start")).toBeNull();
-    // With zero runs the rail and the dashboard empty-state each expose a
-    // New-run button; either opens the catalog.
-    fireEvent.click(screen.getAllByRole("button", { name: /new run/i })[0]);
+    // The dashboard no longer carries a New-run button; the run-history rail is
+    // the only modal-catalog entry point (aria-hidden while the rail is
+    // collapsed, so query it including hidden elements).
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /new run/i, hidden: true })[0]!,
+    );
     expect(lastCatalogProps?.open).toBe(true);
     expect(lastCatalogProps?.tenantId).toBe("ten-7");
 
@@ -545,10 +548,12 @@ describe("WorkflowsPage", () => {
     screen.getByLabelText("Show 1 running runs");
     screen.getByLabelText("Show 1 awaiting runs");
     screen.getByLabelText("Show 1 completed runs");
-    screen.getByLabelText("Show 2 failed runs");
+    // Failures are never surfaced — there is no failed metric despite two
+    // failed runs in the data.
+    expect(screen.queryByLabelText(/failed runs/i)).toBeNull();
   });
 
-  it("clicking a stat tile applies the status filter and pins the rail", () => {
+  it("clicking a status metric applies the status filter and pins the rail", () => {
     runsResult = {
       data: [
         {
@@ -560,7 +565,7 @@ describe("WorkflowsPage", () => {
         {
           runId: "run-2",
           kind: "last30days",
-          status: "failed",
+          status: "running",
           createdAt: "2026-01-02T00:00:00Z",
         },
       ],
@@ -569,13 +574,15 @@ describe("WorkflowsPage", () => {
       refetch: () => {},
     };
     renderWorkflowsPage();
-    const failedTile = screen.getByLabelText("Show 1 failed runs");
-    expect(failedTile.getAttribute("aria-pressed")).toBe("false");
+    const completedMetric = screen.getByLabelText("Show 1 completed runs");
+    expect(completedMetric.getAttribute("aria-pressed")).toBe("false");
 
-    fireEvent.click(failedTile);
+    fireEvent.click(completedMetric);
 
     expect(
-      screen.getByLabelText("Show 1 failed runs").getAttribute("aria-pressed"),
+      screen
+        .getByLabelText("Show 1 completed runs")
+        .getAttribute("aria-pressed"),
     ).toBe("true");
     // The rail opens (transient, no longer persisted): its overlay un-hides.
     expect(
@@ -622,7 +629,7 @@ describe("WorkflowsPage", () => {
     screen.getByRole("button", { name: "View all runs" });
   });
 
-  it("pivots to a New-run empty state when there are zero runs", () => {
+  it("pivots to a catalog-first empty state when there are zero runs", () => {
     runsResult = {
       data: [],
       isLoading: false,
@@ -632,8 +639,8 @@ describe("WorkflowsPage", () => {
     renderWorkflowsPage();
     screen.getByText(/no workflows yet/i);
     screen.getByText(/start a workflow from the catalog/i);
-    // Exactly one visible New-run CTA (the welcome button); the collapsed rail's
-    // New-run is aria-hidden, so the landing has no competing/duplicate button.
-    screen.getByRole("button", { name: /new run/i });
+    // The empty state carries no New-run button — the catalog below is the only
+    // launch path. The collapsed rail's New-run stays aria-hidden.
+    expect(screen.queryByRole("button", { name: /new run/i })).toBeNull();
   });
 });
