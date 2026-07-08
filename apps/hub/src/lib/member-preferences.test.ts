@@ -46,6 +46,18 @@ describe("readMemberPreferences", () => {
     const db = makeDb({ stored: { compactToolActivity: "yes" } });
     expect(await readMemberPreferences(db, "ten-1", "pri-1")).toEqual({});
   });
+
+  it("returns stored favoriteWorkflows unchanged", async () => {
+    const db = makeDb({ stored: { favoriteWorkflows: ["a", "b"] } });
+    expect(await readMemberPreferences(db, "ten-1", "pri-1")).toEqual({
+      favoriteWorkflows: ["a", "b"],
+    });
+  });
+
+  it("drops a favoriteWorkflows blob with non-string elements", async () => {
+    const db = makeDb({ stored: { favoriteWorkflows: ["ok", 3] } });
+    expect(await readMemberPreferences(db, "ten-1", "pri-1")).toEqual({});
+  });
 });
 
 describe("mergeMemberPreferences", () => {
@@ -84,5 +96,13 @@ describe("mergeMemberPreferences", () => {
       theme: "tkww",
     });
     expect(merged).toEqual({ theme: "tkww" });
+  });
+
+  it("replaces the whole favoriteWorkflows array rather than unioning it", async () => {
+    const db = makeDb({ stored: { favoriteWorkflows: ["a", "b"] } });
+    const merged = await mergeMemberPreferences(db, "ten-1", "pri-1", {
+      favoriteWorkflows: ["c"],
+    });
+    expect(merged).toEqual({ favoriteWorkflows: ["c"] });
   });
 });

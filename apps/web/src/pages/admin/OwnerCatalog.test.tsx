@@ -1,7 +1,13 @@
 /// <reference types="bun" />
 import "../../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 type Outcome =
@@ -43,7 +49,9 @@ mock.module("../../lib/active-workbench-context", () => ({
   }),
 }));
 
+import type { OwnerCredentialState } from "@workbench/shared";
 import { OwnerCatalog } from "./OwnerCatalog";
+import { CredentialRow } from "./CredentialRow";
 
 function renderModels() {
   return render(
@@ -135,6 +143,14 @@ describe("OwnerCatalog", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
         {
+          providerName: "bifrost",
+          label: "Bifrost",
+          kind: "inference",
+          configured: false,
+          updatedAt: null,
+          baseURL: "https://bifrost.example.com/v1",
+        },
+        {
           providerName: "granola",
           label: "Granola",
           kind: "tool",
@@ -146,6 +162,7 @@ describe("OwnerCatalog", () => {
     renderModels();
     await waitFor(() => expect(screen.getByText("Anthropic")));
     expect(screen.queryByText("Granola")).toBeNull();
+    expect(screen.getByText("Bifrost")).toBeDefined();
     expect(document.body.innerHTML).not.toContain("sk-super-secret");
   });
 
@@ -167,5 +184,34 @@ describe("OwnerCatalog", () => {
     renderModels();
     await waitFor(() => expect(screen.getByText("Anthropic")));
     expect(screen.getByText(/updated/i));
+  });
+
+  it("shows base URL field for bifrost when opening the set form", () => {
+    const bifrostCred: OwnerCredentialState = {
+      providerName: "bifrost",
+      label: "Bifrost",
+      kind: "inference",
+      configured: false,
+      updatedAt: null,
+      baseURL: "https://bifrost.test/v1",
+    };
+    const view = render(
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CredentialRow credential={bifrostCred} />
+      </QueryClientProvider>,
+    );
+    // "Set key" button present
+    const setBtn = view.getByRole("button", { name: /set key/i });
+    fireEvent.click(setBtn);
+    // base url input appears with prefilled value from credential
+    const baseInput = view.getByPlaceholderText(
+      "https://your-bifrost.example.com/v1",
+    ) as HTMLInputElement;
+    expect(baseInput).toBeDefined();
+    expect(baseInput.value).toBe("https://bifrost.test/v1");
   });
 });

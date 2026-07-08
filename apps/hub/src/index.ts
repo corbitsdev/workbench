@@ -52,6 +52,7 @@ import {
   type ProvisionRunDeploymentFn,
 } from "./routes/workflow-runs";
 import { createWorkflowRunRecordsRouter } from "./routes/workflow-run-records";
+import { createWorkflowsCatalogRouter } from "./routes/workflows-catalog";
 import {
   abortRunHandler,
   abortActiveRunsHandler,
@@ -1107,6 +1108,8 @@ v1.route(
     isSidecarConnected: () => sidecarRouter.getConnectedSidecars().length > 0,
   }),
 );
+
+v1.route("/", createWorkflowsCatalogRouter({ db, repoStore }));
 
 // Hub-as-control-plane reconciler (CL-2224): re-establish workflow supervisors
 // from DB + workflow-repo state on startup and on every sidecar reconnect, so

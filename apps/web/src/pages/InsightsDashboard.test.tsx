@@ -253,6 +253,9 @@ const mockOverview = {
 };
 
 let lastRange: { startDate?: string; endDate?: string } | undefined;
+let lastExportOpts:
+  | { startDate?: string; endDate?: string; bucket?: string }
+  | undefined;
 let overviewReject: Error | null = null;
 
 mock.module("../lib/hub-api", () => ({
@@ -264,6 +267,17 @@ mock.module("../lib/hub-api", () => ({
     lastRange = opts;
     if (overviewReject) return Promise.reject(overviewReject);
     return Promise.resolve(mockOverview);
+  },
+  downloadActivityExportCsv: (
+    tenantId: string,
+    opts?: { startDate?: string; endDate?: string; bucket?: string },
+  ) => {
+    lastTenantId = tenantId;
+    lastExportOpts = opts;
+    return Promise.resolve({
+      csv: "[metrics_series]\nbucket_start,agents_deployed\n2026-01-01,1\n",
+      filename: "insights-day-2026-01-01_2026-01-31.csv",
+    });
   },
   describeHubApiFailure: (e: unknown) => String(e),
 }));
@@ -636,7 +650,7 @@ describe("InsightsDashboard", () => {
     expect(screen.queryByText("Deployments")).toBeNull();
   });
 
-  it("exports the daily metrics as a CSV when Export CSV is clicked", async () => {
+  it("downloads server-side export CSV when Export CSV is clicked", async () => {
     renderPage();
     const button = (await screen.findByRole("button", {
       name: /export csv/i,
@@ -666,10 +680,13 @@ describe("InsightsDashboard", () => {
 
     try {
       fireEvent.click(button);
-      expect(createObjectURL).toHaveBeenCalledTimes(1);
+      await waitFor(() => {
+        expect(createObjectURL).toHaveBeenCalledTimes(1);
+      });
       expect(clickSpy).toHaveBeenCalledTimes(1);
-      expect((anchor as HTMLAnchorElement | null)?.download).toMatch(
-        /^insights-daily-.*\.csv$/,
+      expect(lastExportOpts?.bucket).toBe("day");
+      expect((anchor as HTMLAnchorElement | null)?.download).toBe(
+        "insights-day-2026-01-01_2026-01-31.csv",
       );
       expect(revokeObjectURL).toHaveBeenCalledTimes(1);
     } finally {
@@ -781,6 +798,12 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     const kpi = screen.getByText("This range").closest("div")!;
     expect(within(kpi).getByText("Total activity")).toBeDefined();
     expect(within(kpi).getByText("16")).toBeDefined();
+    // Workflow runs KPI uses executionsStartedInRange (3), not all-time executionRecords (8).
+    const workflowRunsTile = within(kpi)
+      .getByText("Workflow runs")
+      .closest("div");
+    expect(workflowRunsTile).toBeDefined();
+    expect(within(workflowRunsTile!).getByText("3")).toBeDefined();
     // Active actors = attributed people (2).
     expect(within(kpi).getByText("Active actors")).toBeDefined();
   });

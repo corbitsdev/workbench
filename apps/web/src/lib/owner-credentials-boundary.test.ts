@@ -6,14 +6,14 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 // that a well-formed payload never surfaces a raw secret value even if a
 // misbehaving server were to include one — the schema strips unknown fields,
 // but this test asserts the parsed shape itself carries no secret key.
-function fakeFetch(payload: unknown, status = 200) {
+function fakeFetch(payload: unknown, status = 200): typeof fetch {
   return mock(
     async () =>
       new Response(JSON.stringify(payload), {
         status,
         headers: { "content-type": "application/json" },
       }),
-  );
+  ) as unknown as typeof fetch;
 }
 
 const originalFetch = globalThis.fetch;
@@ -29,14 +29,14 @@ const validList = {
     {
       providerName: "anthropic",
       label: "Anthropic",
-      kind: "inference",
+      kind: "inference" as const,
       configured: true,
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
     {
       providerName: "exa",
       label: "Exa",
-      kind: "tool",
+      kind: "tool" as const,
       configured: false,
       updatedAt: null,
     },
@@ -46,7 +46,7 @@ const validList = {
 const validState = {
   providerName: "anthropic",
   label: "Anthropic",
-  kind: "inference",
+  kind: "inference" as const,
   configured: true,
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -95,6 +95,23 @@ describe("setOwnerCredential / clearOwnerCredential boundary", () => {
   it("throws when the set response is malformed", async () => {
     globalThis.fetch = fakeFetch({ providerName: "anthropic" }) as typeof fetch;
     await expect(setOwnerCredential("anthropic", "sk-test")).rejects.toThrow();
+  });
+
+  it("accepts optional baseURL on set and echoes it in the masked response (bifrost)", async () => {
+    const bifrostState = {
+      ...validState,
+      providerName: "bifrost",
+      label: "Bifrost",
+      baseURL: "https://bifrost.example.com/v1",
+    };
+    globalThis.fetch = fakeFetch(bifrostState) as typeof fetch;
+    const result = await setOwnerCredential(
+      "bifrost",
+      "vk-abc123",
+      "https://bifrost.example.com/v1",
+    );
+    expect(result).toEqual(bifrostState);
+    expect(result.baseURL).toBe("https://bifrost.example.com/v1");
   });
 
   it("resolves a well-formed clear response", async () => {

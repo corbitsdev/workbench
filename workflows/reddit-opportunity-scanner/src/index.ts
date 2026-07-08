@@ -53,6 +53,7 @@ export const PERSIST_ARG_MAP = {
 
 const collectStep = deterministicToolStep({
   id: "reddit-opp-collect-search",
+  title: "Search each subreddit",
   tool: "reddit_subreddit_search",
   // map passes each approved search as trigger.payload.
   input: { from: "trigger.payload" },
@@ -62,6 +63,7 @@ const collectStep = deterministicToolStep({
 
 const persistStep = deterministicToolStep({
   id: "reddit-opp-persist-item",
+  title: "Save each opportunity",
   tool: "artifact_create",
   // map passes each selected opportunity as trigger.payload.
   input: { from: "trigger.payload" },
@@ -78,6 +80,7 @@ export const workflow = defineWorkflow({
     // 2. Scrape the site deterministically (was a firecrawl_scrape tool call).
     scrape: deterministicToolStep({
       id: "reddit-opp-scrape",
+      title: "Scan the website",
       tool: "firecrawl_scrape",
       input: { from: "steps.intake.output" },
       argMap: { url: { from: "inputUrl" } },
@@ -88,6 +91,7 @@ export const workflow = defineWorkflow({
     //    Pure reasoning over the scraped content + intake hints — no tool.
     analyze: inlineInferenceStep({
       id: "reddit-opp-analyze",
+      title: "Recommend subreddits & keywords",
       systemPrompt: buildAnalyzeSystemPrompt(),
       input: {
         merge: [
@@ -115,6 +119,7 @@ export const workflow = defineWorkflow({
     //    context (token cost + distraction), and the prompt only reads these two.
     curate: inlineInferenceStep({
       id: "reddit-opp-curate",
+      title: "Rank the opportunities",
       systemPrompt: buildCurateSystemPrompt(),
       input: { project: { from: "steps" }, fields: ["review", "collect"] },
       model: LLM_WRITER_MODEL,

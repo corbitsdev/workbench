@@ -264,9 +264,11 @@ export function createOwnerRouter(
     async (c) => {
       const providerRows = await db.query.provider.findMany({
         where: eq(provider.tenantId, rootTenantId),
-        columns: { id: true, name: true },
+        columns: { id: true, name: true, metadata: true },
       });
-      const providerByName = new Map(providerRows.map((p) => [p.name, p.id]));
+      const providerByName = new Map(
+        providerRows.map((p) => [p.name, { id: p.id, metadata: p.metadata }]),
+      );
 
       const credentialRows = await db.query.credential.findMany({
         where: eq(credential.tenantId, rootTenantId),
@@ -277,16 +279,24 @@ export function createOwnerRouter(
       );
 
       const credentials = CREDENTIAL_PROVIDER_CATALOG.map((entry) => {
-        const providerId = providerByName.get(entry.providerName);
+        const prov = providerByName.get(entry.providerName);
+        const providerId = prov?.id ?? null;
         const updatedAt = providerId
           ? (credentialByProviderId.get(providerId) ?? null)
           : null;
+        const baseURL =
+          prov && typeof prov.metadata === "object" && prov.metadata !== null
+            ? ((prov.metadata as Record<string, unknown>).baseURL as
+                | string
+                | undefined)
+            : undefined;
         return {
           providerName: entry.providerName,
           label: entry.label,
           kind: entry.kind,
           configured: updatedAt !== null,
           updatedAt: updatedAt ? updatedAt.toISOString() : null,
+          ...(baseURL ? { baseURL } : {}),
         };
       });
 
@@ -340,10 +350,14 @@ export function createOwnerRouter(
           eq(provider.tenantId, rootTenantId),
           eq(provider.name, entry.providerName),
         ),
-        columns: { id: true },
+        columns: { id: true, metadata: true },
       });
 
       if (!providerRow) {
+        const initialMetadata = {
+          ...(entry.defaultMetadata ?? {}),
+          ...(parsed.baseURL ? { baseURL: parsed.baseURL } : {}),
+        };
         const [created] = await db
           .insert(provider)
           .values({
@@ -351,15 +365,31 @@ export function createOwnerRouter(
             tenantId: rootTenantId,
             name: entry.providerName,
             plugin: entry.providerPlugin,
-            metadata: entry.defaultMetadata ?? null,
+            metadata:
+              Object.keys(initialMetadata).length > 0 ? initialMetadata : null,
             createdAt: now,
             updatedAt: now,
           })
-          .returning({ id: provider.id });
+          .returning({ id: provider.id, metadata: provider.metadata });
         providerRow = created;
       }
       if (!providerRow) {
         return c.json({ error: "Could not resolve provider" }, 500);
+      }
+
+      // If owner supplied a baseURL (e.g. for bifrost), merge it into provider metadata.
+      if (parsed.baseURL) {
+        const currentMeta = (providerRow.metadata ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const nextMeta = { ...currentMeta, baseURL: parsed.baseURL };
+        await db
+          .update(provider)
+          .set({ metadata: nextMeta, updatedAt: now })
+          .where(eq(provider.id, providerRow.id));
+        // keep our local copy in sync for any downstream use in this request
+        providerRow.metadata = nextMeta;
       }
 
       const existingCredential = await db.query.credential.findFirst({
@@ -413,12 +443,22 @@ export function createOwnerRouter(
         });
       }
 
+      const responseBaseURL =
+        providerRow &&
+        typeof providerRow.metadata === "object" &&
+        providerRow.metadata !== null
+          ? ((providerRow.metadata as Record<string, unknown>).baseURL as
+              | string
+              | undefined)
+          : undefined;
+
       return c.json({
         providerName: entry.providerName,
         label: entry.label,
         kind: entry.kind,
         configured: true,
         updatedAt: updatedAt.toISOString(),
+        ...(responseBaseURL ? { baseURL: responseBaseURL } : {}),
       });
     },
   );
@@ -454,7 +494,7 @@ export function createOwnerRouter(
           eq(provider.tenantId, rootTenantId),
           eq(provider.name, entry.providerName),
         ),
-        columns: { id: true },
+        columns: { id: true, metadata: true },
       });
 
       if (providerRow) {
@@ -479,12 +519,22 @@ export function createOwnerRouter(
         }
       }
 
+      const responseBaseURL =
+        providerRow &&
+        typeof providerRow.metadata === "object" &&
+        providerRow.metadata !== null
+          ? ((providerRow.metadata as Record<string, unknown>).baseURL as
+              | string
+              | undefined)
+          : undefined;
+
       return c.json({
         providerName: entry.providerName,
         label: entry.label,
         kind: entry.kind,
         configured: false,
         updatedAt: null,
+        ...(responseBaseURL ? { baseURL: responseBaseURL } : {}),
       });
     },
   );

@@ -223,17 +223,21 @@ credentials via admin-ui or via script.
 1. Navigate to `https://<admin-ui domain>` and sign in with the superadmin account
 2. Go to Tenants → select your org tenant → Credentials
 3. Click "Add credential":
-   - Provider: `openai-compatible` (or the provider you are using)
+   - Provider: `openai-compatible` or `bifrost` (or the provider you are using)
    - Name: `Myra LLM` (this name must match the agent definition's credential requirement)
    - API key: your LLM API key
    - Model: e.g. `gpt-4o`
    - Base URL: e.g. `https://api.openai.com/v1`
 4. Credentials are stored tenant-owned and resolve to all agents automatically
 
+**Bifrost virtual keys**
+
+Bifrost virtual keys (`vk-...`) are supported. In the owner UI (Admin → Catalog) under "Provider credentials", choose Bifrost, paste the `vk-...` value as the API key, and supply your Bifrost base URL (e.g. `https://your-bifrost:8080/v1`). The owner form sends the key as `Authorization: Bearer` exactly as the openai-compatible adapter expects. No special headers are sent.
+
 ### Via script (single or primary LLM credential)
 
 `add-llm-credential.ts` upserts the primary agent LLM credential (Anthropic, OpenAI,
-or openai-compatible depending on env vars). When `GOOGLE_GEMINI_API_KEY` or
+Bifrost, or openai-compatible depending on env vars / LLM_PROVIDER_NAME). When `GOOGLE_GEMINI_API_KEY` or
 `GEMINI_API_KEY` is also set, it upserts the SEO enrichment credential in the same
 run. Prefer `seed-credentials.ts` for Google (see below) — it reconciles stale
 provider metadata that `add-llm-credential` does not patch.

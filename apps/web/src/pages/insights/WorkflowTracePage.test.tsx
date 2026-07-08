@@ -51,14 +51,31 @@ const RECORD = {
   deploymentId: "dep-1",
 };
 
+const TOKEN_COUNTS = {
+  turnCount: 1,
+  toolCallCount: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0,
+  thinkingTokens: 0,
+};
+
 let apiError: Error | null = null;
 let logStateResponse: unknown = LOG_STATE;
+let tokensResponse: {
+  runId: string;
+  available: boolean;
+  totals?: typeof TOKEN_COUNTS & { inputTokens: number; outputTokens: number };
+  steps?: Array<{ stepId: string } & typeof TOKEN_COUNTS>;
+} = { runId: "run-1", available: false };
 
 mock.module("../../lib/api", () => ({
   ApiError: class ApiError extends Error {},
   api: (_method: string, path: string) => {
     if (apiError) return Promise.reject(apiError);
     if (path.includes("/state")) return Promise.resolve(logStateResponse);
+    if (path.includes("/tokens")) return Promise.resolve(tokensResponse);
     if (path.includes("/records/")) return Promise.resolve(RECORD);
     return Promise.reject(new Error(`unexpected path ${path}`));
   },
@@ -102,6 +119,7 @@ function renderTrace(runId = "run-1") {
 beforeEach(() => {
   apiError = null;
   logStateResponse = LOG_STATE;
+  tokensResponse = { runId: "run-1", available: false };
 });
 
 afterEach(() => {
@@ -156,6 +174,38 @@ describe("WorkflowTracePage", () => {
     // completed intake ran 2s; only steps with both timestamps show a duration.
     const durations = screen.getAllByTestId("trace-step-duration");
     expect(durations.map((d) => d.textContent)).toContain("2.0s");
+  });
+
+  it("shows per-step token counts on the timeline when the tokens API returns step rows", async () => {
+    tokensResponse = {
+      runId: "run-1",
+      available: true,
+      totals: {
+        ...TOKEN_COUNTS,
+        inputTokens: 150,
+        outputTokens: 30,
+      },
+      steps: [
+        {
+          stepId: "intake",
+          ...TOKEN_COUNTS,
+          inputTokens: 100,
+          outputTokens: 20,
+        },
+        {
+          stepId: "curate",
+          ...TOKEN_COUNTS,
+          inputTokens: 50,
+          outputTokens: 10,
+        },
+      ],
+    };
+    renderTrace();
+    await waitFor(() => {
+      expect(screen.getAllByTestId("trace-step-tokens").length).toBe(2);
+    });
+    screen.getByText(/100 in \/ 20 out/);
+    screen.getByText(/50 in \/ 10 out/);
   });
 
   it("shows the decoded output payload behind the Output expander", async () => {

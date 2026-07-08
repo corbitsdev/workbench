@@ -53,7 +53,7 @@ The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTo
 
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, …) into the global tenant — re-boot is a no-op.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, …) into the root tenant — re-boot is a no-op.
 
 ```
 src/
@@ -332,7 +332,7 @@ Tracks which workflow kinds a principal has enabled in a tenant.
 - `tenantId` (text)
 - `principalId` (text, NOT NULL) — the enabling member's principal
 - `kind` (text) — workflow kind
-- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement cannot overwrite another's in the shared global tenant.
+- Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement cannot overwrite another's in the shared root tenant.
 
 ### Migration Sequence
 
@@ -348,7 +348,7 @@ Tracks which workflow kinds a principal has enabled in a tenant.
 
 #### Credential sources by agent
 
-- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved down the global org tenant's ancestor chain (org-level or per-workbench). The credential is stored tenant-owned (`principalId: null`) and created during onboarding. Each user has their own Myra agent definition in the global tenant, keyed on `(tenantId, creatorPrincipalId)`.
+- **Personal agent (Myra)**: `source: 'tenant'`, `name: 'Myra LLM'` for openai-compatible inference — resolved down the root tenant's ancestor chain (org-level or per-workbench). The credential is stored tenant-owned (`principalId: null`) and created during onboarding. Each user has their own Myra agent definition in the root tenant, keyed on `(tenantId, creatorPrincipalId)`.
 - **Granola agent (Oat)**: `source: 'tenant'` for both `granola` and `openai-compatible` — resolved against the workspace tenant
 
 #### Creating credentials
@@ -457,11 +457,15 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 
 | Variable                    | Required | Purpose                                                                                                                                                                                                        |
 | --------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GLOBAL_TENANT_SLUG`        | Yes      | Slug of the shared global org tenant, seeded at hub boot. Deployment-specific, never hardcoded.                                                                                                                |
-| `GLOBAL_TENANT_NAME`        | Yes      | Display name of the global org tenant (e.g. the org's name for this deployment).                                                                                                                               |
-| `GLOBAL_TENANT_DOMAIN`      | Yes      | Domain of the global org tenant; Myra instance addresses are `instanceId@<domain>`.                                                                                                                            |
+| `GLOBAL_TENANT_SLUG`        | Yes      | Slug of the root tenant (the deployment's org, `config.rootTenant`), seeded at hub boot. Deployment-specific, never hardcoded. Env key retains the `GLOBAL_` prefix for wire-compatibility.                    |
+| `GLOBAL_TENANT_NAME`        | Yes      | Display name of the root tenant (e.g. the org's name for this deployment).                                                                                                                                     |
+| `GLOBAL_TENANT_DOMAIN`      | Yes      | Domain of the root tenant; Myra instance addresses are `instanceId@<domain>`.                                                                                                                                  |
 | `WEDGE_SWEEP_INTERVAL_MS`   | No       | Cadence (ms) of the wedge-sweep reconciler that relaunches active-but-unroutable instances after a sidecar restart. Positive integer; defaults to 30000.                                                       |
 | `WEDGE_UNROUTABLE_GRACE_MS` | No       | How long (ms) an address must stay continuously unroutable before the wedge sweep relaunches it. Must exceed the 90s disconnect grace and sidecar reconnect-settle time. Positive integer; defaults to 120000. |
+
+### Client deployment
+
+Each client runs as an **isolated Railway stack** (hub + sidecar + web + Postgres + volumes) — same code image, made a distinct org by its environment. Base config for a client is a committed, **non-secret** manifest at `clients/<slug>.toml`: tenant identity (`GLOBAL_TENANT_*`), public URLs, and branding, one block per Railway environment (`production`, `staging`). `scripts/provision-client.ts` reads the manifest (`Bun.TOML.parse`, validated with arktype in `scripts/provision-client/plan.ts`), generates the secrets (`BETTER_AUTH_SECRET`, `HUB_SIGNING_KEYS`, the shared hub↔sidecar `SIDECAR_TOKEN`), resolves the auth/CORS/websocket wiring graph from the manifest URLs, and sets every per-service variable on the target Railway environment (`railway variables --set`), creating the environment if needed and preserving already-present secrets on re-run. Build/deploy config is **not** managed by the script — it stays in the committed `apps/*/railway.toml` (Railway Config-as-Code). Secrets live only in Railway; credentials live only in the Owner UI. Full runbook: [`CLIENT_STANDUP.md`](./CLIENT_STANDUP.md).
 
 ## Authentication
 

@@ -12,6 +12,8 @@ import {
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   type OwnerCredentialState,
+  WorkflowCatalogSchema,
+  type WorkflowCatalog,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -184,15 +186,21 @@ export async function getOwnerCredentials(): Promise<OwnerCredentialState[]> {
 }
 
 /** Set or replace a provider's credential secret (write-only; owner-guarded).
- * The response is masked state only — the secret is never echoed back. */
+ * The response is masked state only — the secret is never echoed back.
+ *
+ * For gateways (e.g. bifrost), an optional baseURL can be supplied so the
+ * owner can configure the endpoint in the same flow. */
 export async function setOwnerCredential(
   providerName: string,
   secret: string,
+  baseURL?: string,
 ): Promise<OwnerCredentialState> {
+  const body: { secret: string; baseURL?: string } = { secret };
+  if (baseURL) body.baseURL = baseURL;
   const raw = await hubFetch<unknown>(
     "PUT",
     `v1/owner/credentials/${encodeURIComponent(providerName)}`,
-    { secret },
+    body,
   );
   const parsed = OwnerCredentialStateSchema(raw);
   if (parsed instanceof type.errors) {
@@ -223,6 +231,23 @@ export type PostMeBody = {
 /** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
 export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
   return parseMePreferences(await hubFetch<MeResponse>("POST", "v1/me", body));
+}
+
+/**
+ * The whole Workflows-page catalog in one call: every runnable workflow with
+ * the member's favorite state and its classified step flow. Parsed at the
+ * boundary through the shared schema.
+ */
+export async function getWorkflowsCatalog(
+  tenantId?: string | null,
+): Promise<WorkflowCatalog> {
+  const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+  const raw = await hubFetch<unknown>("GET", `v1/workflows${query}`);
+  const parsed = WorkflowCatalogSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected workflows catalog response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */
@@ -863,13 +888,16 @@ export async function getTenantModels(
   return parsed;
 }
 
+export type ActivityExportBucket = "day" | "week" | "month";
+
 export async function getActivityOverview(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string },
+  opts?: { startDate?: string; endDate?: string; bucket?: ActivityExportBucket },
 ): Promise<ActivityOverview> {
   const params = new URLSearchParams();
   if (opts?.startDate) params.set("startDate", opts.startDate);
   if (opts?.endDate) params.set("endDate", opts.endDate);
+  if (opts?.bucket) params.set("bucket", opts.bucket);
   const qs = params.toString();
   const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ""}`;
   const raw = await hubFetch<unknown>("GET", path);
@@ -878,4 +906,36 @@ export async function getActivityOverview(
     throw new Error(`Invalid activity overview response: ${result.summary}`);
   }
   return result;
+}
+
+/** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */
+export async function downloadActivityExportCsv(
+  tenantId: string,
+  opts?: {
+    startDate?: string;
+    endDate?: string;
+    bucket?: ActivityExportBucket;
+  },
+): Promise<{ csv: string; filename: string }> {
+  const params = new URLSearchParams();
+  if (opts?.startDate) params.set("startDate", opts.startDate);
+  if (opts?.endDate) params.set("endDate", opts.endDate);
+  if (opts?.bucket) params.set("bucket", opts.bucket);
+  const qs = params.toString();
+  const url = new URL(
+    `/api/tenants/${encodeURIComponent(tenantId)}/activity/export.csv${qs ? `?${qs}` : ""}`,
+    apiBase || window.location.origin,
+  );
+  const res = await fetch(url.toString(), { method: "GET", credentials: "include" });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {
+      status: res.status,
+    });
+  }
+  const csv = await res.text();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "insights-export.csv";
+  return { csv, filename };
 }

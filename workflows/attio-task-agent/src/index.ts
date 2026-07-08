@@ -15,6 +15,7 @@ import {
   canonicalizeToolNames,
   deterministicToolStep,
   inlineInferenceStep,
+  STEP_TITLE_TAG,
 } from "@workbench/agents";
 import {
   buildAnalyzeSystemPrompt,
@@ -63,7 +64,10 @@ const analyzeAgent = defineAgent({
   inference: {
     sources: [{ provider: LLM_PROVIDER, model: LLM_DEFAULT_MODEL }],
   },
-  tags: { credentialName: LLM_CREDENTIAL_NAME },
+  tags: {
+    credentialName: LLM_CREDENTIAL_NAME,
+    [STEP_TITLE_TAG]: "Plan the work",
+  },
 });
 
 // -------------------------------------------------------------------------
@@ -103,6 +107,7 @@ const analyzeAgent = defineAgent({
 
 const persistStep = deterministicToolStep({
   id: "attio-task-agent-persist",
+  title: "Save each piece",
   tool: "artifact_create",
   input: { from: "trigger.payload" },
   // The artifact `kind` is the planner's action `type`. This is INTENTIONALLY
@@ -134,6 +139,7 @@ const persistStep = deterministicToolStep({
 // brief, so the reviewer judges against the exact instruction with no join.
 const executeStep = inlineInferenceStep({
   id: "attio-task-agent-execute",
+  title: "Do the work",
   systemPrompt: buildExecutorSystemPrompt(),
   model: LLM_WRITER_MODEL,
   maxTokens: 16384,
@@ -149,6 +155,7 @@ const executeStep = inlineInferenceStep({
 
 const reviewStep = inlineInferenceStep({
   id: "attio-task-agent-review-artifacts",
+  title: "Check the drafts",
   systemPrompt: buildReviewSystemPrompt(),
   input: { from: "steps.execute.output" },
   // Bounded so a long batch can't run the judge unboundedly; a truncated review
@@ -168,6 +175,7 @@ export const workflow = defineWorkflow({
     //    it; it stays switchable to work another member's tasks.
     listMembers: deterministicToolStep({
       id: "attio-task-agent-list-members",
+      title: "List workspace members",
       tool: "attio_list_workspace_members",
       // First step with no `input` selector: the sidecar supervisor otherwise
       // hands it the run's (string) trigger payload as tool args, which the
@@ -184,6 +192,7 @@ export const workflow = defineWorkflow({
     // 1. List the selected member's open tasks.
     listTasks: deterministicToolStep({
       id: "attio-task-agent-list-tasks",
+      title: "List open tasks",
       tool: "attio_list_tasks",
       input: { from: "steps.selectMember.output" },
       argMap: {
@@ -197,6 +206,7 @@ export const workflow = defineWorkflow({
 
     fetchTask: deterministicToolStep({
       id: "attio-task-agent-fetch-task",
+      title: "Load the task",
       tool: "attio_get_task",
       input: { from: "steps.selectTask.output" },
       argMap: { taskId: { from: "taskId" } },
@@ -235,6 +245,7 @@ export const workflow = defineWorkflow({
 
     suggest: inlineInferenceStep({
       id: "attio-task-agent-suggest",
+      title: "Suggest follow-ups",
       systemPrompt: buildSuggestSystemPrompt(),
       input: {
         merge: [
@@ -263,6 +274,7 @@ export const workflow = defineWorkflow({
 
     writeNote: deterministicToolStep({
       id: "attio-task-agent-write-note",
+      title: "Post the note to Attio",
       tool: "attio_create_note",
       input: { from: "steps.approveSync.output" },
       argMap: {
@@ -278,6 +290,7 @@ export const workflow = defineWorkflow({
 
     writeComplete: deterministicToolStep({
       id: "attio-task-agent-write-complete",
+      title: "Mark the task complete",
       tool: "attio_update_task",
       input: { from: "steps.approveSync.output" },
       argMap: {

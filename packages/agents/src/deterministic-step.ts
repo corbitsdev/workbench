@@ -15,6 +15,14 @@ export const STEP_TOOL_TAG = "workbench.tool";
 export const DETERMINISTIC_TOOL_KIND = "deterministic-tool";
 
 /**
+ * Optional short, human-readable step title the catalog preview shows in place
+ * of the humanized step-map key. Interchange primitives carry no title field,
+ * so authors set this tag (via the `title` opt below) to name a step "Search
+ * Hacker News" instead of "Web B". Read by `classifyWorkflowSteps`.
+ */
+export const STEP_TITLE_TAG = "workbench.title";
+
+/**
  * Marker the sidecar's step invoker reads to dispatch a step as an
  * in-process single-turn inference (CL-2251) instead of a full deployed
  * session. An inline-inference step is a pure reasoning turn: it carries a
@@ -83,6 +91,11 @@ export interface DeterministicToolStepOpts {
    * run genuinely depends on.
    */
   nonFatal?: boolean;
+  /**
+   * Optional short human title shown in the catalog preview instead of the
+   * humanized step id (e.g. "Search Hacker News" for a `hackernews` step).
+   */
+  title?: string;
 }
 
 /**
@@ -116,6 +129,7 @@ export function deterministicToolStep(
         ? { [STEP_ARGMAP_TAG]: JSON.stringify(opts.argMap) }
         : {}),
       ...(opts.nonFatal === true ? { [STEP_NONFATAL_TAG]: "true" } : {}),
+      ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
     },
   });
   return step({
@@ -163,6 +177,11 @@ export interface InlineInferenceStepOpts {
    * preferred source, so there is nothing to carry the ceiling and it is ignored.
    */
   maxTokens?: number;
+  /**
+   * Optional short human title shown in the catalog preview instead of the
+   * humanized step id (e.g. "Draft the deck" for a `generate1` step).
+   */
+  title?: string;
 }
 
 /**
@@ -213,6 +232,7 @@ export function inlineInferenceStep(
       ...(opts.ephemeralChat !== undefined
         ? { [EPHEMERAL_CHAT_TAG]: opts.ephemeralChat }
         : {}),
+      ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
     },
   });
   return step({

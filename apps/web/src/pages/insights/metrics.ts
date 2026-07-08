@@ -82,9 +82,9 @@ export function fillDailySeries(
 }
 
 /**
- * Token and tool-error counts are zero for pre-subscriber HISTORY buckets (see
- * `apps/hub/bin/backfill-analytics-rollups.ts`). Any selected range that starts
- * before `tokensRecordedFrom` mixes real token/error data with zeros, so a
+ * Token and tool-error counts are zero for pre-subscriber HISTORY buckets. Any
+ * selected range that starts before `tokensRecordedFrom` mixes real token/error
+ * data with zeros, so a
  * token-cost or error-rate value over it understates reality. Returns a plain
  * caveat sentence for such ranges, or null when the whole range is trustworthy.
  *

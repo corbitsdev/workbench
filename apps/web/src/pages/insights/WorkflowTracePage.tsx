@@ -255,10 +255,12 @@ function TraceStepMoment({
   step,
   index,
   output,
+  stepTokens,
 }: {
   step: LogStepState;
   index: number;
   output: { value: unknown } | null;
+  stepTokens?: { inputTokens: number; outputTokens: number } | null;
 }) {
   const [outputOpen, setOutputOpen] = useState(false);
   const [operatorOpen, setOperatorOpen] = useState(false);
@@ -304,6 +306,15 @@ function TraceStepMoment({
           {step.currentAttempt > 1 && (
             <span className="text-[10px] uppercase tracking-[0.08em] text-text-3">
               Attempt {step.currentAttempt}
+            </span>
+          )}
+          {stepTokens !== undefined && stepTokens !== null && (
+            <span
+              data-testid="trace-step-tokens"
+              className="font-mono text-[10px] tabular-nums text-text-3"
+            >
+              {stepTokens.inputTokens.toLocaleString()} in /{" "}
+              {stepTokens.outputTokens.toLocaleString()} out
             </span>
           )}
         </div>
@@ -466,6 +477,20 @@ export function WorkflowTracePage() {
 
   const loading = recordQuery.isLoading || runStateQuery.isLoading;
   const steps = logState?.steps ?? [];
+
+  const stepTokenMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { inputTokens: number; outputTokens: number }
+    >();
+    for (const row of tokensQuery.data?.steps ?? []) {
+      map.set(row.stepId, {
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+      });
+    }
+    return map;
+  }, [tokensQuery.data?.steps]);
 
   const root: TraceRoot = {
     kindChip: "workflow",
@@ -633,6 +658,7 @@ export function WorkflowTracePage() {
                               ? { value: stepOutputs[step.stepId] }
                               : null
                           }
+                          stepTokens={stepTokenMap.get(step.stepId) ?? null}
                         />
                       ))}
                     </motion.ol>
@@ -697,6 +723,43 @@ export function WorkflowTracePage() {
                         ))}
                       </dl>
                     </FacetCard>
+                  )}
+                {!tokensQuery.isLoading &&
+                  !tokensQuery.isError &&
+                  tokensQuery.data?.available === true &&
+                  (tokensQuery.data.steps?.length ?? 0) > 0 && (
+                    <div className="mt-3">
+                    <FacetCard title="By step">
+                      <table className="w-full text-left text-[12px]">
+                        <thead>
+                          <tr className="font-mono text-[9px] uppercase tracking-[0.09em] text-text-3">
+                            <th className="pb-2 font-normal">Step</th>
+                            <th className="pb-2 text-right font-normal">
+                              Input
+                            </th>
+                            <th className="pb-2 text-right font-normal">
+                              Output
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(tokensQuery.data.steps ?? []).map((row) => (
+                            <tr key={row.stepId} className="border-t border-border">
+                              <td className="py-2 text-text">
+                                {toHumanLabel(row.stepId)}
+                              </td>
+                              <td className="py-2 text-right tabular-nums text-text-2">
+                                {row.inputTokens.toLocaleString()}
+                              </td>
+                              <td className="py-2 text-right tabular-nums text-text-2">
+                                {row.outputTokens.toLocaleString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </FacetCard>
+                    </div>
                   )}
               </div>
             )}

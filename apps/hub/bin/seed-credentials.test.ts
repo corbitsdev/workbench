@@ -194,6 +194,33 @@ describe("seed-credentials buildEntries", () => {
     ).toBeUndefined();
   });
 
+  it("includes bifrost entry with baseURL and model when BIFROST_API_KEY is set", () => {
+    process.env["BIFROST_API_KEY"] = "vk-test123";
+    process.env["BIFROST_BASE_URL"] = "http://bifrost.example:8080/v1";
+    process.env["BIFROST_MODEL"] = "openai/gpt-4o-mini";
+    process.env["BIFROST_CREDENTIAL_NAME"] = "Bifrost LLM";
+
+    const entries = buildEntries();
+
+    const bifrost = entries.find((e) => e.providerName === "bifrost");
+    expect(bifrost).toBeDefined();
+    expect(bifrost?.secret).toBe("vk-test123");
+    expect(bifrost?.providerPlugin).toBe("openai-compatible");
+    expect(bifrost?.credentialName).toBe("Bifrost LLM");
+    expect(bifrost?.metadata).toEqual({
+      model: "openai/gpt-4o-mini",
+      baseURL: "http://bifrost.example:8080/v1",
+    });
+  });
+
+  it("omits bifrost entry when BIFROST_API_KEY is not set", () => {
+    delete process.env["BIFROST_API_KEY"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "bifrost")).toBeUndefined();
+  });
+
   it("keeps the unnumbered openai-compatible entry on the canonical provider", () => {
     process.env["OPENAI_COMPATIBLE_API_KEY"] = "sk-canonical";
     process.env["OPENAI_COMPATIBLE_CREDENTIAL_NAME"] = "opencode-zen";

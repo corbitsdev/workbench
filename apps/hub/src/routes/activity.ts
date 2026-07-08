@@ -5,6 +5,10 @@ import { Hono, type Env } from "hono";
 
 import { loadPriceCatalog } from "../lib/pricing";
 import { getActivityOverview } from "../services/activity-overview";
+import {
+  buildInsightsExportCsv,
+  insightsExportFilename,
+} from "../services/insights-csv-export";
 import { getOfferingProvidersByModel } from "../services/offering-providers-by-model";
 
 const log = getLogger(["hub", "activity"]);
@@ -115,6 +119,103 @@ export function createActivityRouter({
           error: {
             code: "internal_error",
             message: "Failed to load activity overview",
+          },
+        },
+        500,
+      );
+    }
+  });
+
+  app.get("/export.csv", async (c) => {
+    const tenant = c.get("tenant");
+    const callerPrincipalId = c.get("principal")?.id ?? null;
+    const queryInput: {
+      startDate?: string;
+      endDate?: string;
+      bucket?: string;
+    } = {};
+    const startDate = optionalQuery(c.req.query("startDate"));
+    const endDate = optionalQuery(c.req.query("endDate"));
+    const bucket = optionalQuery(c.req.query("bucket"));
+    if (startDate !== undefined) queryInput.startDate = startDate;
+    if (endDate !== undefined) queryInput.endDate = endDate;
+    if (bucket !== undefined) queryInput.bucket = bucket;
+
+    const query = OverviewQuery(queryInput);
+    if (query instanceof type.errors) {
+      return c.json(
+        { error: { code: "bad_request", message: query.summary } },
+        400,
+      );
+    }
+
+    const range =
+      query.startDate !== undefined || query.endDate !== undefined
+        ? {
+            ...(query.startDate !== undefined
+              ? { startDate: query.startDate }
+              : {}),
+            ...(query.endDate !== undefined ? { endDate: query.endDate } : {}),
+          }
+        : undefined;
+
+    try {
+      const loadedCatalog = await loadPriceCatalog().catch((error: unknown) => {
+        log.warn("Activity export: pricing catalog unavailable: {error}", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      });
+      const priceCatalog =
+        loadedCatalog === null
+          ? null
+          : {
+              ...loadedCatalog,
+              offeringProvidersByModel: await getOfferingProvidersByModel(
+                db,
+                tenant.id,
+              ),
+            };
+
+      const overview = await getActivityOverview({
+        db: c.get("db"),
+        tenantId: tenant.id,
+        callerPrincipalId,
+        priceCatalog,
+        ...(range !== undefined ? { range } : {}),
+        ...(query.bucket !== undefined ? { bucket: query.bucket } : {}),
+      });
+
+      if (overview.metricsSeries.length === 0) {
+        return c.json(
+          {
+            error: {
+              code: "no_content",
+              message: "No metrics to export for this range",
+            },
+          },
+          404,
+        );
+      }
+
+      const csv = buildInsightsExportCsv(overview);
+      const filename = insightsExportFilename({
+        bucket: overview.metricsBucket,
+        range: overview.range,
+      });
+      c.header("Content-Type", "text/csv; charset=utf-8");
+      c.header("Content-Disposition", `attachment; filename="${filename}"`);
+      return c.body(csv);
+    } catch (error) {
+      log.error("Activity export failed for tenant {tenantId}: {error}", {
+        tenantId: tenant.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json(
+        {
+          error: {
+            code: "internal_error",
+            message: "Failed to export activity CSV",
           },
         },
         500,

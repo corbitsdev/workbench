@@ -17,6 +17,7 @@ export {
   inlineInferenceStep,
   STEP_KIND_TAG,
   STEP_TOOL_TAG,
+  STEP_TITLE_TAG,
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
@@ -26,6 +27,12 @@ export {
   type DeterministicToolStepOpts,
   type InlineInferenceStepOpts,
 } from "./deterministic-step";
+export {
+  classifyWorkflowSteps,
+  countHumanGates,
+  type FlowStepClass,
+  type ClassifiedFlowStep,
+} from "./flow-classify";
 export {
   EPHEMERAL_CHAT_TAG,
   EphemeralChatPayload,

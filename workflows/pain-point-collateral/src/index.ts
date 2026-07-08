@@ -58,6 +58,7 @@ export const kind = "pain-point-collateral";
 
 const generateStep = inlineInferenceStep({
   id: "pain-point-collateral-generate",
+  title: "Draft each piece",
   systemPrompt: buildCollateralGenerationSystemPrompt(),
   // trigger.payload = one {format, painPointId, painPointTitle, painPointDetail, severity} item
   // The UI pre-computes the cartesian product (max 3 pain points × 3 formats = 9 items) and
@@ -67,6 +68,7 @@ const generateStep = inlineInferenceStep({
 
 const persistStep = deterministicToolStep({
   id: "pain-point-collateral-persist",
+  title: "Save the collateral",
   tool: "artifact_create",
   // map passes each approved item as `trigger.payload` ({format, title,
   // content}); point the step input at it so the argMap fields resolve.
@@ -85,6 +87,7 @@ export const workflow = defineWorkflow({
     // 1. Fetch the Granola note list
     intake: deterministicToolStep({
       id: "pain-point-collateral-intake",
+      title: "List your call notes",
       tool: "granola_list_notes",
       input: { literal: {} },
     }),
@@ -95,6 +98,7 @@ export const workflow = defineWorkflow({
     // 3. Fetch selected note transcript
     fetch: deterministicToolStep({
       id: "pain-point-collateral-fetch",
+      title: "Load the chosen note",
       tool: "granola_get_note",
       input: { from: "steps.select.output" },
       after: ["select"],
@@ -107,6 +111,7 @@ export const workflow = defineWorkflow({
     //    Inline single-turn inference (CL-2251): no tools, so no per-step session.
     analyze: inlineInferenceStep({
       id: "pain-point-collateral-analyze",
+      title: "Find the pain points",
       systemPrompt: buildExtractionSystemPrompt(),
       input: {
         merge: [

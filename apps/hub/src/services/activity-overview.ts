@@ -34,6 +34,7 @@ import {
   like,
   lte,
   ne,
+  or,
   sql,
   type AnyColumn,
 } from "drizzle-orm";
@@ -78,6 +79,28 @@ export type UsageByPersonRow = {
 
 export type ActivityCountRow = { key: string; count: number };
 
+/** Sentinel principal for rollup rows with no member/workflow owner (CL-2746). */
+export const UNATTRIBUTED_PERSON_PRINCIPAL_ID = "unattributed";
+
+export const UNATTRIBUTED_PERSON_LABEL = "Unattributed";
+
+function instanceAddressMatchesDeployment(
+  address: AnyColumn,
+  deploymentId: AnyColumn,
+) {
+  return or(
+    and(
+      sql`substring(${address} from '^ins_([^@]+)@') = ${deploymentId}::text`,
+      sql`${address} !~ '^ins_[^-]+-[^@]+@'`,
+    ),
+    sql`substring(${address} from '^ins_([^-]+)-[^@]+@') = ${deploymentId}::text`,
+  );
+}
+
+function rangeHasDateBounds(range?: AnalyticsDateRange): boolean {
+  return range?.startDate !== undefined || range?.endDate !== undefined;
+}
+
 export type UsageByWorkflowTypeRow = {
   /** Workflow kind (e.g. `last30days`, `mvt-landing-page`). */
   kind: string;
@@ -92,6 +115,17 @@ export type UsageByWorkflowTypeRow = {
 export type WorkflowRunTokenTotalsRow = {
   /** `workflow_run_record.id` — the run this row's tokens are attributed to. */
   runId: string;
+  turnCount: number;
+  toolCallCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+};
+
+export type WorkflowRunStepTokenTotalsRow = {
+  stepId: string;
   turnCount: number;
   toolCallCount: number;
   inputTokens: number;
@@ -161,7 +195,7 @@ export type ActivityOverview = {
   /**
    * Earliest date real token counts exist (null when none). Token and tool-error
    * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
-   * range starting before this date. See `backfill-analytics-rollups.ts`.
+   * range starting before this date.
    */
   tokensRecordedFrom: string | null;
   /**
@@ -413,9 +447,9 @@ export async function getUsageByPerson(args: {
         eq(workflowRunRecord.tenantId, tenantId),
         isNull(workflowRunRecord.deletedAt),
         isNotNull(workflowRunRecord.deploymentId),
-        like(
+        instanceAddressMatchesDeployment(
           agentInstance.address,
-          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+          workflowRunRecord.deploymentId,
         ),
       ),
     )
@@ -428,10 +462,9 @@ export async function getUsageByPerson(args: {
   // record's principal. The two instance sets are disjoint (a workflow per-run
   // instance has no mapping row and vice versa), so left-joining both and
   // `coalesce`-ing picks whichever is present — mapping first when, defensively,
-  // both are. Instances in neither set (e.g. shared/system agents) coalesce to
-  // NULL and are dropped by the `IS NOT NULL` filter below, staying unattributed
-  // rather than being force-assigned.
-  const resolvedMemberPrincipalId = sql<string>`coalesce(${ownerByInstance.memberPrincipalId}, ${workflowOwnerByInstance.memberPrincipalId})`;
+  // both are. Instances in neither set (e.g. shared/system agents) land in the
+  // explicit Unattributed bucket (CL-2746) rather than being dropped or guessed.
+  const resolvedMemberPrincipalId = sql<string>`coalesce(${ownerByInstance.memberPrincipalId}, ${workflowOwnerByInstance.memberPrincipalId}, 'unattributed')`;
 
   // `principalId` here is the owning member's tenant `kind: "user"` principal
   // (the column `ensureMember` writes and the route's `c.get("principal")`
@@ -474,7 +507,6 @@ export async function getUsageByPerson(args: {
     .where(
       and(
         eq(analyticsRollupDaily.tenantId, tenantId),
-        isNotNull(resolvedMemberPrincipalId),
         range?.startDate !== undefined
           ? gte(analyticsRollupDaily.bucketDate, range.startDate)
           : undefined,
@@ -532,7 +564,10 @@ export async function getUsageByPerson(args: {
   return [...byPrincipal.entries()]
     .map(([principalId, agg]) => ({
       principalId,
-      name: agg.name,
+      name:
+        principalId === UNATTRIBUTED_PERSON_PRINCIPAL_ID
+          ? UNATTRIBUTED_PERSON_LABEL
+          : agg.name,
       isSelf: callerPrincipalId !== null && principalId === callerPrincipalId,
       turnCount: agg.turnCount,
       toolCallCount: agg.toolCallCount,
@@ -615,9 +650,9 @@ export async function getUsageByWorkflowType(args: {
     )
     .innerJoin(
       runByDeployment,
-      like(
+      instanceAddressMatchesDeployment(
         agentInstance.address,
-        sql`'ins_' || ${runByDeployment.deploymentId} || '%'`,
+        runByDeployment.deploymentId,
       ),
     )
     .where(
@@ -720,9 +755,9 @@ function runByInstanceJoin(db: DB["db"], tenantId: string) {
         eq(workflowRunRecord.tenantId, tenantId),
         isNull(workflowRunRecord.deletedAt),
         isNotNull(workflowRunRecord.deploymentId),
-        like(
+        instanceAddressMatchesDeployment(
           agentInstance.address,
-          sql`'ins_' || ${workflowRunRecord.deploymentId} || '%'`,
+          workflowRunRecord.deploymentId,
         ),
       ),
     )
@@ -802,6 +837,100 @@ export async function getWorkflowRunTokenTotals(args: {
   return rows.find((row) => row.runId === args.runId) ?? null;
 }
 
+// CL-2819: per-step token attribution via step agent addresses
+// `ins_<deploymentId>-<stepId>@…`. Supervisor-only instances (`ins_<dep>@`) stay
+// in the run-level total only; they never appear in this breakdown.
+export async function getWorkflowRunStepTokenTotals(args: {
+  db: DB["db"];
+  tenantId: string;
+  runId: string;
+}): Promise<WorkflowRunStepTokenTotalsRow[]> {
+  const { db, tenantId, runId } = args;
+  const runRows = await db
+    .select({ deploymentId: workflowRunRecord.deploymentId })
+    .from(workflowRunRecord)
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        eq(workflowRunRecord.tenantId, tenantId),
+        isNull(workflowRunRecord.deletedAt),
+        isNotNull(workflowRunRecord.deploymentId),
+      ),
+    );
+  const deploymentId = runRows[0]?.deploymentId;
+  if (deploymentId === undefined || deploymentId === null) return [];
+
+  const stepAddressPrefix = `ins_${deploymentId}-`;
+  const stepAddressPattern = new RegExp(
+    `^${stepAddressPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^@]+)@`,
+  );
+
+  const runByInstance = runByInstanceJoin(db, tenantId);
+
+  const rows = await db
+    .select({
+      address: agentInstance.address,
+      turnCount: sumInt(analyticsRollupDaily.turnCount),
+      toolCallCount: sumInt(analyticsRollupDaily.toolCallCount),
+      inputTokens: sumInt(analyticsRollupDaily.inputTokens),
+      outputTokens: sumInt(analyticsRollupDaily.outputTokens),
+      cacheReadTokens: sumInt(analyticsRollupDaily.cacheReadTokens),
+      cacheWriteTokens: sumInt(analyticsRollupDaily.cacheWriteTokens),
+      thinkingTokens: sumInt(analyticsRollupDaily.thinkingTokens),
+    })
+    .from(analyticsRollupDaily)
+    .innerJoin(
+      runByInstance,
+      eq(runByInstance.instanceId, analyticsRollupDaily.instanceId),
+    )
+    .innerJoin(
+      agentInstance,
+      eq(agentInstance.id, analyticsRollupDaily.instanceId),
+    )
+    .where(
+      and(
+        eq(analyticsRollupDaily.tenantId, tenantId),
+        eq(agentInstance.tenantId, tenantId),
+        eq(runByInstance.runId, runId),
+        like(agentInstance.address, `${stepAddressPrefix}%`),
+      ),
+    )
+    .groupBy(agentInstance.address);
+
+  const byStep = new Map<string, WorkflowRunStepTokenTotalsRow>();
+  for (const row of rows) {
+    const match = stepAddressPattern.exec(row.address);
+    const stepId = match?.[1];
+    if (stepId === undefined) continue;
+    const prev = byStep.get(stepId);
+    if (prev === undefined) {
+      byStep.set(stepId, {
+        stepId,
+        turnCount: row.turnCount,
+        toolCallCount: row.toolCallCount,
+        inputTokens: row.inputTokens,
+        outputTokens: row.outputTokens,
+        cacheReadTokens: row.cacheReadTokens,
+        cacheWriteTokens: row.cacheWriteTokens,
+        thinkingTokens: row.thinkingTokens,
+      });
+      continue;
+    }
+    byStep.set(stepId, {
+      stepId,
+      turnCount: prev.turnCount + row.turnCount,
+      toolCallCount: prev.toolCallCount + row.toolCallCount,
+      inputTokens: prev.inputTokens + row.inputTokens,
+      outputTokens: prev.outputTokens + row.outputTokens,
+      cacheReadTokens: prev.cacheReadTokens + row.cacheReadTokens,
+      cacheWriteTokens: prev.cacheWriteTokens + row.cacheWriteTokens,
+      thinkingTokens: prev.thinkingTokens + row.thinkingTokens,
+    });
+  }
+
+  return [...byStep.values()].sort((a, b) => a.stepId.localeCompare(b.stepId));
+}
+
 export async function getActivityOverview(args: {
   db: DB["db"];
   tenantId: string;
@@ -854,6 +983,9 @@ export async function getActivityOverview(args: {
     eq(workflowRunRecord.tenantId, tenantId),
     isNull(workflowRunRecord.deletedAt),
   );
+  const runBreakdownBase = rangeHasDateBounds(range)
+    ? and(runBase, createdInRange(workflowRunRecord.createdAt, range))
+    : runBase;
 
   const [
     runTotalRow,
@@ -886,12 +1018,12 @@ export async function getActivityOverview(args: {
     db
       .select({ key: workflowRunRecord.status, count: count() })
       .from(workflowRunRecord)
-      .where(runBase)
+      .where(runBreakdownBase)
       .groupBy(workflowRunRecord.status),
     db
       .select({ key: workflowRunRecord.kind, count: count() })
       .from(workflowRunRecord)
-      .where(runBase)
+      .where(runBreakdownBase)
       .groupBy(workflowRunRecord.kind)
       .orderBy(sql`count(*) desc`)
       .limit(25),

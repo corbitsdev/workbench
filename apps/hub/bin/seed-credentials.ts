@@ -136,6 +136,23 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const bifrostKey = env("BIFROST_API_KEY");
+  if (bifrostKey) {
+    entries.push({
+      providerName: "bifrost",
+      providerPlugin: "openai-compatible",
+      credentialName: env("BIFROST_CREDENTIAL_NAME", "Bifrost"),
+      secret: bifrostKey,
+      metadata: {
+        model: env("BIFROST_MODEL", "gpt-4o"),
+        baseURL: env("BIFROST_BASE_URL", "http://localhost:8080/v1"),
+        ...(env("BIFROST_MAX_TOKENS")
+          ? { maxTokens: Number(env("BIFROST_MAX_TOKENS")) }
+          : {}),
+      },
+    });
+  }
+
   // Optional cheap model dedicated to auto-titling Myra chat threads. When unset,
   // title generation falls back to the standard 'Myra LLM' source — so this entry
   // is purely an optimization (use a smaller/cheaper model for short titles).

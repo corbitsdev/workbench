@@ -1,0 +1,32 @@
+# Per-client deployment manifest — NON-SECRET, base config only.
+#
+# Copy to clients/<slug>.toml and fill in. This file is committed and reviewed.
+# It holds ONLY base deployment config: tenant identity + public URLs.
+#
+# NOT in this file:
+#   - Secrets (BETTER_AUTH_SECRET, HUB_SIGNING_KEYS, SIDECAR_TOKEN) — generated at
+#     standup, set only in Railway.
+#   - Credentials (LLM + tool API keys) — set in the Owner UI per deployment. All
+#     tools ship to every workbench; credential presence is what gates whether a
+#     tool is usable. So credentials are never listed here.
+#
+# One project per client, one Railway environment per block below. Each
+# environment is a distinct org — its own name, slug, and domain. See
+# docs/CLIENT_STANDUP.md for the full runbook.
+
+[environments.production]
+name = "Example Corp"  # GLOBAL_TENANT_NAME — display name for this environment
+slug = "example"       # GLOBAL_TENANT_SLUG — kebab-case, unique per deployment
+domain = "example.com" # GLOBAL_TENANT_DOMAIN — same-domain users auto-join
+hub_url = "https://REPLACE-example-hub.up.railway.app" # the Railway hub's URL
+# web_url is OPTIONAL: the public app URL when the SPA is served from a separate
+# origin (e.g. Vercel). It becomes the auth base + CORS origin. Omit it when the
+# hub serves the SPA itself — then the hub URL is the public origin.
+web_url = "https://REPLACE-example.vercel.app"
+
+[environments.staging]
+name = "Example Corp Staging"
+slug = "example-staging"
+domain = "example.com"
+hub_url = "https://REPLACE-example-hub-staging.up.railway.app"
+web_url = "https://REPLACE-example-staging.vercel.app"

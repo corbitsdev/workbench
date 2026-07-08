@@ -9,23 +9,18 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { WorkflowCatalog } from "@workbench/shared";
 
-const meta = {
-  version: "0.1.0",
-  sha: "abc1234",
-  deployedAt: "2026-06-27T00:00:00.000Z",
-};
+let catalogResult: {
+  data: WorkflowCatalog | undefined;
+  isPending: boolean;
+  isError: boolean;
+} = { data: undefined, isPending: false, isError: false };
 
-let deploymentsResult: { data: unknown[]; isPending: boolean } = {
-  data: [],
-  isPending: false,
-};
+let lastToggle: { kind: string; nextFavorite: boolean } | null = null;
+
 let startShouldReject = false;
-// When set, mutateAsync fires onRedeploying (simulating a deploy-window retry)
-// and stays pending until `resolveStart` is called, so the transient state is
-// observable.
 let startShouldRedeploy = false;
 let resolveStart: (() => void) | undefined;
 let lastStartVars: {
@@ -34,8 +29,18 @@ let lastStartVars: {
   onRedeploying?: () => void;
 } | null = null;
 
+mock.module("../hooks/use-workflows-catalog", () => ({
+  useWorkflowsCatalog: () => catalogResult,
+  useToggleWorkflowFavorite: () => ({
+    isPending: false,
+    mutateAsync: (vars: { kind: string; nextFavorite: boolean }) => {
+      lastToggle = vars;
+      return Promise.resolve({});
+    },
+  }),
+}));
+
 mock.module("../hooks/use-workflow", () => ({
-  useWorkflowDeployments: () => deploymentsResult,
   useStartWorkflow: () => ({
     isPending: false,
     variables: undefined,
@@ -45,9 +50,7 @@ mock.module("../hooks/use-workflow", () => ({
       onRedeploying?: () => void;
     }) => {
       lastStartVars = vars;
-      if (startShouldReject) {
-        return Promise.reject(new Error("no capacity"));
-      }
+      if (startShouldReject) return Promise.reject(new Error("no capacity"));
       if (startShouldRedeploy) {
         vars.onRedeploying?.();
         return new Promise<{ runId: string }>((resolve) => {
@@ -59,7 +62,9 @@ mock.module("../hooks/use-workflow", () => ({
   }),
 }));
 
-const { WorkflowCatalog } = require("./WorkflowCatalog");
+const {
+  WorkflowCatalog: WorkflowCatalogComponent,
+} = require("./WorkflowCatalog");
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
@@ -70,33 +75,48 @@ function wrapper({ children }: { children: React.ReactNode }) {
   );
 }
 
-const defaultDeployments = [
-  {
-    deploymentId: "dep-1",
-    kind: "collateral-generation",
-    status: "running",
-    createdAt: "",
-    meta: {
-      ...meta,
-      label: "Pain Point Collateral Generation",
+const catalog: WorkflowCatalog = {
+  entries: [
+    {
+      kind: "pain",
+      label: "Pain Point Collateral",
       description: "Analyze a call transcript and generate collateral.",
+      isFavorite: true,
+      stepCount: 2,
+      pauseCount: 1,
+      steps: [
+        { id: "s1", title: "Load Transcript", kind: "auto" },
+        { id: "s2", title: "Approve Draft", kind: "human" },
+      ],
     },
-  },
-  {
-    // No meta — falls back to the humanized kind.
-    deploymentId: "dep-2",
-    kind: "gamma-presentation-creator",
-    status: "running",
-    createdAt: "",
-  },
-];
+    {
+      kind: "gamma",
+      label: "Gamma Presentation Creator",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [{ id: "a", title: "Ingest Content", kind: "auto" }],
+    },
+  ],
+};
+
+function renderCatalog(onWorkflowStarted: (runId: string) => void) {
+  render(
+    <WorkflowCatalogComponent
+      tenantId="ten-1"
+      onWorkflowStarted={onWorkflowStarted}
+    />,
+    { wrapper },
+  );
+}
 
 describe("WorkflowCatalog", () => {
   let onWorkflowStarted: ReturnType<typeof mock>;
 
   beforeEach(() => {
     onWorkflowStarted = mock(() => undefined);
-    deploymentsResult = { data: defaultDeployments, isPending: false };
+    catalogResult = { data: catalog, isPending: false, isError: false };
+    lastToggle = null;
     startShouldReject = false;
     startShouldRedeploy = false;
     resolveStart = undefined;
@@ -105,178 +125,97 @@ describe("WorkflowCatalog", () => {
 
   afterEach(cleanup);
 
-  it("lists every deployed kind, including never-run kinds", () => {
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={["collateral-generation"]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    screen.getByText("Pain Point Collateral Generation");
-    screen.getByText("Analyze a call transcript and generate collateral.");
-    screen.getByText("Gamma presentation creator");
+  it("pins favorites in their own group and lists the rest", () => {
+    renderCatalog(onWorkflowStarted);
+    screen.getByText("Favorites");
+    screen.getByText("All workflows");
+    // The favorited workflow exposes an unfavorite control; the other a favorite
+    // control — proving the pinned grouping and per-row star state.
+    expect(
+      screen.getByRole("button", { name: /unfavorite pain point/i }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /^favorite gamma presentation/i }),
+    ).toBeTruthy();
   });
 
-  it("groups previously-run kinds separately from never-run kinds", () => {
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={["collateral-generation"]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    const recent = screen.getByRole("region", { name: "Recently run" });
-    within(recent).getByText("Pain Point Collateral Generation");
-    expect(within(recent).queryByText("Gamma presentation creator")).toBeNull();
-
-    const more = screen.getByRole("region", { name: "More workflows" });
-    within(more).getByText("Gamma presentation creator");
+  it("previews the first workflow's classified steps by default", () => {
+    renderCatalog(onWorkflowStarted);
+    screen.getByText("Load Transcript");
+    const humanStep = screen.getByText("Approve Draft").closest("li");
+    expect(humanStep).not.toBeNull();
+    within(humanStep!).getByText("Your input");
+    screen.getByText("Pauses 1 time for you");
   });
 
-  it("shows a single ungrouped list when nothing has been run yet", () => {
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    const all = screen.getByRole("region", { name: "All workflows" });
-    within(all).getByText("Pain Point Collateral Generation");
-    within(all).getByText("Gamma presentation creator");
-    expect(screen.queryByRole("region", { name: "Recently run" })).toBeNull();
+  it("switches the preview when another workflow is selected", () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Gamma Presentation Creator"));
+    screen.getByText("Ingest Content");
+    expect(screen.queryByText("Load Transcript")).toBeNull();
   });
 
-  it("filters entries by search across label and kind", async () => {
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
+  it("toggles a favorite with the workflow kind and next state", () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(
+      screen.getByRole("button", { name: /favorite gamma presentation/i }),
     );
-
-    const user = userEvent.setup();
-    await user.type(
-      screen.getByPlaceholderText(/search workflows/i),
-      "collateral",
-    );
-
-    screen.getByText("Pain Point Collateral Generation");
-    expect(screen.queryByText("Gamma presentation creator")).toBeNull();
-
-    await user.clear(screen.getByPlaceholderText(/search workflows/i));
-    await user.type(screen.getByPlaceholderText(/search workflows/i), "zzz");
-    screen.getByText("No workflows match your search.");
+    expect(lastToggle).toEqual({ kind: "gamma", nextFavorite: true });
   });
 
-  it("starts a run with empty input and reports the new run id", async () => {
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    const card = screen
-      .getByText("Gamma presentation creator")
-      .closest("div[data-kind]");
-    expect(card).not.toBeNull();
-    fireEvent.click(within(card as HTMLElement).getByRole("button"));
-
+  it("starts the selected workflow and reports the new run id", async () => {
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByText("Gamma Presentation Creator"));
+    fireEvent.click(screen.getByRole("button", { name: /start run/i }));
     await waitFor(() =>
-      expect(onWorkflowStarted).toHaveBeenCalledWith(
-        "started-gamma-presentation-creator",
-      ),
+      expect(onWorkflowStarted).toHaveBeenCalledWith("started-gamma"),
     );
-    expect(lastStartVars).toMatchObject({
-      kind: "gamma-presentation-creator",
-      input: {},
-    });
-    expect(typeof lastStartVars?.onRedeploying).toBe("function");
+    expect(lastStartVars).toMatchObject({ kind: "gamma", input: {} });
   });
 
   it("surfaces a start failure as a legible error", async () => {
     startShouldReject = true;
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    const card = screen
-      .getByText("Gamma presentation creator")
-      .closest("div[data-kind]");
-    fireEvent.click(within(card as HTMLElement).getByRole("button"));
-
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByRole("button", { name: /start run/i }));
     await waitFor(() => screen.getByText("no capacity"));
     expect(onWorkflowStarted).not.toHaveBeenCalled();
   });
 
-  it("shows a transient redeploying state during a deploy-window retry, then clears on success", async () => {
+  it("shows a redeploying banner during a deploy-window retry", () => {
     startShouldRedeploy = true;
-    render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
-      { wrapper },
-    );
-
-    const card = screen
-      .getByText("Gamma presentation creator")
-      .closest("div[data-kind]");
-    fireEvent.click(within(card as HTMLElement).getByRole("button"));
-
-    await waitFor(() => screen.getByText("Finishing an update — retrying…"));
-    // No error flash while retrying.
+    renderCatalog(onWorkflowStarted);
+    fireEvent.click(screen.getByRole("button", { name: /start run/i }));
+    // onRedeploying fires synchronously inside the click, so the banner is
+    // present without waiting, and no error flashes while the retry is pending.
+    screen.getByText("Finishing an update — retrying…");
     expect(screen.queryByText("no capacity")).toBeNull();
-
     resolveStart?.();
-    await waitFor(() =>
-      expect(onWorkflowStarted).toHaveBeenCalledWith(
-        "started-gamma-presentation-creator",
-      ),
-    );
-    await waitFor(() =>
-      expect(screen.queryByText("Finishing an update — retrying…")).toBeNull(),
-    );
   });
 
-  it("shows loading and empty states", () => {
-    deploymentsResult = { data: [], isPending: true };
-    const first = render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
+  it("shows loading, error, and empty states", () => {
+    catalogResult = { data: undefined, isPending: true, isError: false };
+    const loading = render(
+      <WorkflowCatalogComponent tenantId="ten-1" onWorkflowStarted={mock()} />,
       { wrapper },
     );
     screen.getByText("Loading workflows…");
-    first.unmount();
+    loading.unmount();
 
-    deploymentsResult = { data: [], isPending: false };
+    catalogResult = { data: undefined, isPending: false, isError: true };
+    const errored = render(
+      <WorkflowCatalogComponent tenantId="ten-1" onWorkflowStarted={mock()} />,
+      { wrapper },
+    );
+    screen.getByText(/couldn.t load the workflow catalog/i);
+    errored.unmount();
+
+    catalogResult = {
+      data: { entries: [] },
+      isPending: false,
+      isError: false,
+    };
     render(
-      <WorkflowCatalog
-        tenantId="ten-1"
-        runKinds={[]}
-        onWorkflowStarted={onWorkflowStarted}
-      />,
+      <WorkflowCatalogComponent tenantId="ten-1" onWorkflowStarted={mock()} />,
       { wrapper },
     );
     screen.getByText(/No workflows are available to run in this workbench/);

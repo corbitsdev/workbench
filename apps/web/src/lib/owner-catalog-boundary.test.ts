@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 // GET /tenants/:id/models (the Owner Models tab's native tenant API calls): a
 // malformed payload must throw (fail-closed), never slip through. Fakes fetch
 // so the real client fns + real schemas run end to end.
-function fakeFetch(payload: unknown, status = 200) {
+function fakeFetch(payload: unknown, status = 200): typeof fetch {
   return mock(
     async () =>
       new Response(JSON.stringify(payload), {
         status,
         headers: { "content-type": "application/json" },
       }),
-  );
+  ) as unknown as typeof fetch;
 }
 
 const originalFetch = globalThis.fetch;

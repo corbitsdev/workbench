@@ -92,8 +92,8 @@ const source: InferenceSource = {
 
 function makeAnalytics() {
   return {
-    onAgentEvent: mock(() => Promise.resolve()),
-    onLocalInferenceEvent: mock(() => Promise.resolve()),
+    onAgentEvent: mock((_event: unknown) => Promise.resolve()),
+    onLocalInferenceEvent: mock((_event: unknown) => Promise.resolve()),
   };
 }
 
