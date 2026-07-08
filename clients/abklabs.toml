@@ -11,14 +11,14 @@
 name = "ABK Labs"
 slug = "abk-labs"
 domain = "abklabs.com"
-hub_url = "https://REPLACE-abklabs-hub.up.railway.app"
-web_url = "https://REPLACE-abklabs-web.up.railway.app"
+hub_url = "https://corbits-workbench.up.railway.app"
+web_url = "https://workbench-ui-theta.vercel.app"
 app_env = "production"
 
 [environments.staging]
 name = "ABK Labs"
 slug = "abklabs"
 domain = "abklabs.com"
-hub_url = "https://REPLACE-abklabs-hub-staging.up.railway.app"
-web_url = "https://REPLACE-abklabs-web-staging.up.railway.app"
+hub_url = "https://corbits-workench-hub-staging.up.railway.app"
+web_url = "https://workbench-ui-git-staging-abklabs.vercel.app"
 app_env = "staging"
