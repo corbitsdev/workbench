@@ -184,15 +184,21 @@ export async function getOwnerCredentials(): Promise<OwnerCredentialState[]> {
 }
 
 /** Set or replace a provider's credential secret (write-only; owner-guarded).
- * The response is masked state only — the secret is never echoed back. */
+ * The response is masked state only — the secret is never echoed back.
+ *
+ * For gateways (e.g. bifrost), an optional baseURL can be supplied so the
+ * owner can configure the endpoint in the same flow. */
 export async function setOwnerCredential(
   providerName: string,
   secret: string,
+  baseURL?: string,
 ): Promise<OwnerCredentialState> {
+  const body: { secret: string; baseURL?: string } = { secret };
+  if (baseURL) body.baseURL = baseURL;
   const raw = await hubFetch<unknown>(
     "PUT",
     `v1/owner/credentials/${encodeURIComponent(providerName)}`,
-    { secret },
+    body,
   );
   const parsed = OwnerCredentialStateSchema(raw);
   if (parsed instanceof type.errors) {

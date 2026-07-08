@@ -55,6 +55,18 @@ describe("add-llm-credential detectProvider", () => {
     expect(detected.providerName).toBe("openai-compatible");
     expect(detected.baseURL).toBe("https://llm.example.com/v1");
   });
+
+  it("uses explicit LLM_PROVIDER_NAME=bifrost and pulls baseURL from OPENAI_COMPATIBLE_BASE_URL (or LLM_BASE_URL)", () => {
+    process.env["LLM_PROVIDER_NAME"] = "bifrost";
+    process.env["OPENAI_COMPATIBLE_API_KEY"] = "vk-bifrost-test";
+    process.env["OPENAI_COMPATIBLE_BASE_URL"] = "http://bifrost.local:8080/v1";
+
+    const detected = detectProvider();
+
+    expect(detected.providerName).toBe("bifrost");
+    expect(detected.baseURL).toBe("http://bifrost.local:8080/v1");
+    expect(detected.apiKey).toBe("vk-bifrost-test");
+  });
 });
 
 describe("add-llm-credential detectGoogleAi", () => {

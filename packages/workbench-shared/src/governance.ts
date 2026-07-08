@@ -405,6 +405,10 @@ export interface CredentialProviderCatalogEntry {
   defaultMetadata?: Record<string, unknown>;
 }
 
+/** Provider name for Bifrost (openai-compatible gateway). Central constant so
+ * UI conditionals and tests do not duplicate the string literal. */
+export const BIFROST_PROVIDER_NAME = "bifrost" as const;
+
 export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntry[] =
   [
     {
@@ -413,6 +417,13 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "OpenAI-compatible LLM",
       kind: "inference",
       defaultMetadata: { baseURL: "https://api.openai.com/v1" },
+    },
+    {
+      providerName: BIFROST_PROVIDER_NAME,
+      providerPlugin: "openai-compatible",
+      label: "Bifrost",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://your-bifrost.example.com/v1" },
     },
     {
       providerName: "anthropic",
@@ -472,13 +483,17 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
 
 /** One provider row in the Catalog/Capabilities credentials sections —
  * configured/missing state only. NEVER carries the secret; `configured` and
- * `updatedAt` are the only signals of whether/when a key was set. */
+ * `updatedAt` are the only signals of whether/when a key was set.
+ *
+ * For inference gateways (e.g. bifrost) the current baseURL (if any) is
+ * included so the owner form can pre-fill it when replacing the key. */
 export const OwnerCredentialStateSchema = type({
   providerName: "string",
   label: "string",
   kind: "'inference' | 'tool'",
   configured: "boolean",
   updatedAt: "string | null",
+  "baseURL?": "string",
 });
 export type OwnerCredentialState = typeof OwnerCredentialStateSchema.infer;
 
@@ -488,8 +503,12 @@ export const OwnerCredentialsResponse = type({
 export type OwnerCredentialsResponse = typeof OwnerCredentialsResponse.infer;
 
 /** Body for setting/replacing a provider's key. Write-only: this shape is
- * never echoed back by any response. */
+ * never echoed back by any response.
+ *
+ * For openai-compatible gateways like Bifrost, owners can also supply a baseURL
+ * so they can self-configure the endpoint without admin intervention. */
 export const OwnerCredentialSetBody = type({
   secret: "string > 0",
+  "baseURL?": "string",
 });
 export type OwnerCredentialSetBody = typeof OwnerCredentialSetBody.infer;
