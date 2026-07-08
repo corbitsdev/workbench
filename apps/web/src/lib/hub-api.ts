@@ -863,13 +863,16 @@ export async function getTenantModels(
   return parsed;
 }
 
+export type ActivityExportBucket = "day" | "week" | "month";
+
 export async function getActivityOverview(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string },
+  opts?: { startDate?: string; endDate?: string; bucket?: ActivityExportBucket },
 ): Promise<ActivityOverview> {
   const params = new URLSearchParams();
   if (opts?.startDate) params.set("startDate", opts.startDate);
   if (opts?.endDate) params.set("endDate", opts.endDate);
+  if (opts?.bucket) params.set("bucket", opts.bucket);
   const qs = params.toString();
   const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ""}`;
   const raw = await hubFetch<unknown>("GET", path);
@@ -878,4 +881,36 @@ export async function getActivityOverview(
     throw new Error(`Invalid activity overview response: ${result.summary}`);
   }
   return result;
+}
+
+/** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */
+export async function downloadActivityExportCsv(
+  tenantId: string,
+  opts?: {
+    startDate?: string;
+    endDate?: string;
+    bucket?: ActivityExportBucket;
+  },
+): Promise<{ csv: string; filename: string }> {
+  const params = new URLSearchParams();
+  if (opts?.startDate) params.set("startDate", opts.startDate);
+  if (opts?.endDate) params.set("endDate", opts.endDate);
+  if (opts?.bucket) params.set("bucket", opts.bucket);
+  const qs = params.toString();
+  const url = new URL(
+    `/api/tenants/${encodeURIComponent(tenantId)}/activity/export.csv${qs ? `?${qs}` : ""}`,
+    apiBase || window.location.origin,
+  );
+  const res = await fetch(url.toString(), { method: "GET", credentials: "include" });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {
+      status: res.status,
+    });
+  }
+  const csv = await res.text();
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename="([^"]+)"/.exec(disposition);
+  const filename = match?.[1] ?? "insights-export.csv";
+  return { csv, filename };
 }

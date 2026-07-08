@@ -16,7 +16,12 @@ import { priceUsageRows } from "@workbench/pricing";
 import { actorHref } from "./insights/ActorActivity";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useModelPricing } from "../hooks/use-model-pricing";
-import { describeHubApiFailure, getActivityOverview } from "../lib/hub-api";
+import {
+  describeHubApiFailure,
+  downloadActivityExportCsv,
+  getActivityOverview,
+  type ActivityExportBucket,
+} from "../lib/hub-api";
 import type {
   ActivityOverview,
   AnalyticsSummary,
@@ -35,7 +40,7 @@ import { CostInsights } from "./insights/CostInsights";
 import { DeferredActivitySection } from "./insights/DeferredActivitySection";
 import { TenantRoster } from "./insights/TenantRoster";
 import { SectionLabel } from "./insights/section-label";
-import { buildMetricsCsv, metricsCsvFilename } from "./insights/csv-export";
+
 import {
   cacheHitRate,
   computeDelta,
@@ -1043,6 +1048,8 @@ export function InsightsDashboard() {
   const [customRange, setCustomRange] = useState<DateRange>({});
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
+  const [exportBucket, setExportBucket] =
+    useState<ActivityExportBucket>("day");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
   const reduceMotion = useReducedMotion();
   const pricingQuery = useModelPricing(activeTenantId ?? "");
@@ -1114,18 +1121,23 @@ export function InsightsDashboard() {
 
   const canExport = (overview?.metricsSeries.length ?? 0) > 0;
   const exportCsv = () => {
-    if (!overview || overview.metricsSeries.length === 0) return;
-    const blob = new Blob([buildMetricsCsv(overview.metricsSeries)], {
-      type: "text/csv",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = metricsCsvFilename(dates);
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
+    if (!activeTenantId || !canExport) return;
+    void downloadActivityExportCsv(activeTenantId, {
+      ...dates,
+      bucket: exportBucket,
+    })
+      .then(({ csv, filename }) => {
+        const blob = new Blob([csv], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(url);
+      })
+      .catch(() => {});
   };
 
   return (
@@ -1189,13 +1201,26 @@ export function InsightsDashboard() {
               />
             </div>
           )}
+          <select
+            aria-label="Export bucket"
+            data-testid="export-bucket"
+            value={exportBucket}
+            onChange={(e) =>
+              setExportBucket(e.target.value as ActivityExportBucket)
+            }
+            className={selectClass()}
+          >
+            <option value="day">Daily</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+          </select>
           <button
             type="button"
             onClick={exportCsv}
             disabled={!canExport}
             title={
               canExport
-                ? "Download daily metrics as CSV"
+                ? "Download metrics and usage breakdowns as CSV"
                 : "No metrics to export for this range"
             }
             className="flex min-h-[40px] items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-[12px] font-medium text-text-3 transition-[color,background-color] duration-150 hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-text-3"
