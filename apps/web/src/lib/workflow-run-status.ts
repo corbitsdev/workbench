@@ -21,6 +21,12 @@ export const SORT_OPTIONS: { value: RunSort; label: string }[] = [
   { value: "oldest", label: "Oldest first" },
 ];
 
+export function formatRunWhen(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString();
+}
+
 export function statusLabel(status: string): string {
   const match = STATUS_FILTER_OPTIONS.find((opt) => opt.value === status);
   return match ? match.label : toHumanLabel(status);

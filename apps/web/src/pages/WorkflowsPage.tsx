@@ -1,14 +1,16 @@
 import { useNavigate, useParams } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { ActiveWorkflowRuns } from "../components/ActiveWorkflowRuns";
 import { WorkflowCatalog } from "../components/WorkflowCatalog";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 /**
- * The Workflows page is the launch catalog. `/workflows` is a two-pane browse +
- * animated step preview; starting a run opens its interactive detail at
- * `/workflows/:workflowId` so its human gates can be completed. Browsable run
- * history lives in Insights (`/insights/runs`), not here.
+ * The Workflows page is the launch catalog plus the user's live runs.
+ * `/workflows` lists active (non-terminal) runs above a two-pane browse +
+ * animated step preview; starting or opening a run shows its interactive
+ * detail at `/workflows/:workflowId` so its human gates can be completed.
+ * Browsable run history lives in Insights (`/insights/runs`), not here.
  */
 export function WorkflowsPage() {
   const { workflowId } = useParams<{ workflowId?: string }>();
@@ -38,6 +40,7 @@ export function WorkflowsPage() {
             Workflows
           </h1>
         </div>
+        <ActiveWorkflowRuns tenantId={activeTenantId} />
         <WorkflowCatalog
           tenantId={activeTenantId}
           onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
