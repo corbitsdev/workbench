@@ -10,11 +10,7 @@ import { createIsogitStore } from "@workbench/storage-isogit";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import {
-  AGENT_TEMPLATES,
-  LLM_DEFAULT_MODEL,
-  PERSONAL_AGENT_NAME,
-} from "@workbench/agents";
+import { AGENT_TEMPLATES, PERSONAL_AGENT_NAME } from "@workbench/agents";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -324,11 +320,16 @@ export async function renameMyraThread(
 }
 
 const TITLE_CREDENTIAL_NAME = "Myra Title LLM";
-// Cheap, fast model for titling. Served by the same openai-compatible gateway
-// (opencode-zen) the Myra LLM credential already points at, so titling works
-// with no extra credential — we just pin the flash model on the existing key.
-// Shares the canonical id so the title model can't drift from the rest of the app.
-const TITLE_MODEL = LLM_DEFAULT_MODEL;
+// Cheap, fast title model served by the same opencode-zen gateway the Myra LLM
+// credential already points at (no extra credential — we pin the model on the
+// existing key). It MUST be a plain-text model: the default director only emits
+// a reply when the turn has a `text`/`refusal` block (extractTextContent), and a
+// reasoning-first model like deepseek-v4-flash returns its output as
+// `reasoning_content` (mapped to a `thinking` block), which extracts to empty →
+// the director waits instead of replying → the title turn hangs to the deadline
+// and falls back (CL-2887). claude-haiku-4-5 is opencode-zen's own title model
+// and returns plain text.
+const TITLE_MODEL = "claude-haiku-4-5-20251001";
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
