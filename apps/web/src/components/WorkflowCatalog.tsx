@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
-import type { WorkflowCatalogEntry, WorkflowFlowStep } from "@workbench/shared";
+import type { WorkflowCatalogEntry } from "@workbench/shared";
 import { useStartWorkflow } from "../hooks/use-workflow";
 import {
   useToggleWorkflowFavorite,
   useWorkflowsCatalog,
 } from "../hooks/use-workflows-catalog";
+import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
 
 export interface WorkflowCatalogProps {
   tenantId: string | null;
@@ -24,24 +25,6 @@ function StarIcon({ filled }: { filled: boolean }) {
     </svg>
   );
 }
-
-const STEP_KIND_LABEL: Record<WorkflowFlowStep["kind"], string> = {
-  auto: "Automated",
-  agent: "AI agent",
-  human: "Your input",
-};
-
-const STEP_NODE_CLASS: Record<WorkflowFlowStep["kind"], string> = {
-  auto: "border-border bg-surface-2 text-text-3",
-  agent: "border-blue/40 bg-blue/10 text-blue",
-  human: "border-orange/50 bg-[rgba(233,132,40,0.12)] text-orange-deep",
-};
-
-const STEP_BADGE_CLASS: Record<WorkflowFlowStep["kind"], string> = {
-  auto: "bg-surface-2 text-text-3",
-  agent: "bg-blue/10 text-blue",
-  human: "bg-[rgba(233,132,40,0.12)] text-orange-deep",
-};
 
 function CatalogRow({
   entry,
@@ -144,31 +127,6 @@ function CatalogGroup({
   );
 }
 
-function FlowStepRow({ step }: { step: WorkflowFlowStep }) {
-  return (
-    <li className="flex items-start gap-3">
-      <span
-        aria-hidden="true"
-        className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-[9px] border text-[11px] font-bold ${STEP_NODE_CLASS[step.kind]}`}
-      >
-        {step.kind === "human" ? "★" : step.kind === "agent" ? "◆" : "●"}
-      </span>
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-text">
-            {step.title}
-          </span>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${STEP_BADGE_CLASS[step.kind]}`}
-          >
-            {STEP_KIND_LABEL[step.kind]}
-          </span>
-        </div>
-      </div>
-    </li>
-  );
-}
-
 function PreviewPanel({
   entry,
   starting,
@@ -206,17 +164,7 @@ function PreviewPanel({
         </span>
       </div>
 
-      {entry.steps.length > 0 ? (
-        <ol className="flex flex-col gap-3">
-          {entry.steps.map((step) => (
-            <FlowStepRow key={step.id} step={step} />
-          ))}
-        </ol>
-      ) : (
-        <p className="text-[13px] text-text-3">
-          This workflow has no preview available. You can still run it.
-        </p>
-      )}
+      <WorkflowFlowPreview steps={entry.steps} animationKey={entry.kind} />
 
       {redeploying && (
         <div className="rounded-lg border border-border bg-surface px-3 py-2 text-[13px] text-text-2">
