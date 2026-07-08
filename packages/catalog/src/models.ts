@@ -25,6 +25,7 @@ const ALL_MODELS: CatalogModelSpec[] = [
   // opencode-zen / Moonshot models
   { canonicalName: "kimi-k2.6" },
   // near-ai models
+  { canonicalName: "deepseek-ai/DeepSeek-V4-Flash" },
   { canonicalName: "near-ai/llama-3.1-70b-instruct" },
   { canonicalName: "near-ai/llama-3.3-70b-instruct" },
   { canonicalName: "near-ai/qwen-2.5-72b-instruct" },

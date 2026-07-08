@@ -26,6 +26,7 @@ export const CATALOG_OFFERINGS: CatalogOfferingSpec[] = [
   { model: "deepseek-v4-flash", provider: "opencode-zen" },
   { model: "deepseek-v4-pro", provider: "opencode-zen" },
   { model: "kimi-k2.6", provider: "opencode-zen" },
+  { model: "deepseek-ai/DeepSeek-V4-Flash", provider: "near-ai" },
   { model: "near-ai/llama-3.1-70b-instruct", provider: "near-ai" },
   { model: "near-ai/llama-3.3-70b-instruct", provider: "near-ai" },
   { model: "near-ai/qwen-2.5-72b-instruct", provider: "near-ai" },
