@@ -18,6 +18,7 @@ here rather than duplicated — duplicated detail drifts.
 | Adding an agent or tool                                | [`CREATING_AGENTS_AND_TOOLS.md`](CREATING_AGENTS_AND_TOOLS.md)                                                              |
 | Working on the call-to-artifact pipeline               | [`SOURCE_TO_ARTIFACT.md`](SOURCE_TO_ARTIFACT.md)                                                                            |
 | Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                             |
+| Standing up a client deployment                        | [`CLIENT_STANDUP.md`](CLIENT_STANDUP.md) — per-client profile + ordered Railway standup runbook                             |
 | Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added   |
 | Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                              |
 | Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                              |

@@ -1,0 +1,24 @@
+# ABK Labs — first client deployment manifest. NON-SECRET (see example.toml).
+#
+# Secrets (BETTER_AUTH_SECRET, HUB_SIGNING_KEYS, SIDECAR_TOKEN) are generated at
+# standup and set only in Railway; credentials are set in the Owner UI. Fill the
+# REPLACE URLs after the Railway services exist. Runbook: docs/CLIENT_STANDUP.md.
+#
+# Production and staging are distinct orgs with their own name/slug/domain —
+# adjust the staging values below to the real ones before provisioning.
+
+[environments.production]
+name = "ABK Labs"
+slug = "abklabs"
+domain = "abklabs.com"
+hub_url = "https://REPLACE-abklabs-hub.up.railway.app"
+web_url = "https://REPLACE-abklabs-web.up.railway.app"
+app_env = "production"
+
+[environments.staging]
+name = "ABK Labs Staging"
+slug = "abklabs-staging"
+domain = "abklabs.com"
+hub_url = "https://REPLACE-abklabs-hub-staging.up.railway.app"
+web_url = "https://REPLACE-abklabs-web-staging.up.railway.app"
+app_env = "staging"

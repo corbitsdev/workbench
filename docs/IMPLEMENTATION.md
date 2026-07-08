@@ -463,6 +463,10 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 | `WEDGE_SWEEP_INTERVAL_MS`   | No       | Cadence (ms) of the wedge-sweep reconciler that relaunches active-but-unroutable instances after a sidecar restart. Positive integer; defaults to 30000.                                                       |
 | `WEDGE_UNROUTABLE_GRACE_MS` | No       | How long (ms) an address must stay continuously unroutable before the wedge sweep relaunches it. Must exceed the 90s disconnect grace and sidecar reconnect-settle time. Positive integer; defaults to 120000. |
 
+### Client deployment
+
+Each client runs as an **isolated Railway stack** (hub + sidecar + web + Postgres + volumes) — same code image, made a distinct org by its environment. Base config for a client is a committed, **non-secret** manifest at `clients/<slug>.toml`: tenant identity (`GLOBAL_TENANT_*`), public URLs, and branding, one block per Railway environment (`production`, `staging`). `scripts/provision-client.ts` reads the manifest (`Bun.TOML.parse`, validated with arktype in `scripts/provision-client/plan.ts`), generates the secrets (`BETTER_AUTH_SECRET`, `HUB_SIGNING_KEYS`, the shared hub↔sidecar `SIDECAR_TOKEN`), resolves the auth/CORS/websocket wiring graph from the manifest URLs, and sets every per-service variable on the target Railway environment (`railway variables --set`), creating the environment if needed and preserving already-present secrets on re-run. Build/deploy config is **not** managed by the script — it stays in the committed `apps/*/railway.toml` (Railway Config-as-Code). Secrets live only in Railway; credentials live only in the Owner UI. Full runbook: [`CLIENT_STANDUP.md`](./CLIENT_STANDUP.md).
+
 ## Authentication
 
 ### Google OAuth Configuration

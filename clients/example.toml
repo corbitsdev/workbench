@@ -1,0 +1,34 @@
+# Per-client deployment manifest — NON-SECRET, base config only.
+#
+# Copy to clients/<slug>.toml and fill in. This file is committed and reviewed.
+# It holds ONLY base deployment config: tenant identity, public URLs, branding.
+#
+# NOT in this file:
+#   - Secrets (BETTER_AUTH_SECRET, HUB_SIGNING_KEYS, SIDECAR_TOKEN) — generated at
+#     standup, set only in Railway.
+#   - Credentials (LLM + tool API keys) — set in the Owner UI per deployment. All
+#     tools ship to every workbench; credential presence is what gates whether a
+#     tool is usable. So credentials are never listed here.
+#
+# One project per client, one Railway environment per block below. Each
+# environment is a distinct org — its own name, slug, and domain. See
+# docs/CLIENT_STANDUP.md for the full runbook.
+
+# Public URLs are assigned by Railway once the services exist (runbook step 2) —
+# leave the REPLACE placeholders until then; the provisioning script refuses to
+# run while any URL is unresolved.
+[environments.production]
+name = "Example Corp"  # GLOBAL_TENANT_NAME — display name for this environment
+slug = "example"       # GLOBAL_TENANT_SLUG — kebab-case, unique per deployment
+domain = "example.com" # GLOBAL_TENANT_DOMAIN — same-domain users auto-join
+hub_url = "https://REPLACE-example-hub.up.railway.app"
+web_url = "https://REPLACE-example-web.up.railway.app"
+app_env = "production" # web VITE_APP_ENV (browser title + sidebar badge)
+
+[environments.staging]
+name = "Example Corp Staging"
+slug = "example-staging"
+domain = "example.com"
+hub_url = "https://REPLACE-example-hub-staging.up.railway.app"
+web_url = "https://REPLACE-example-web-staging.up.railway.app"
+app_env = "staging"
