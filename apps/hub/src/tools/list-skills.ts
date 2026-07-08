@@ -1,11 +1,14 @@
 import type { AgentTool } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import {
+  DRAFT_SKILL_DEFINITION,
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
+  parseDraftSkillArgs,
   parseSearchQuery,
   parseSkillId,
   skillMatchesQuery,
@@ -19,6 +22,7 @@ import {
   listSkills,
   type SkillItem,
 } from "../services/skill-library";
+import { writeArtifactDeduped } from "./write-artifact";
 import type { ContextToolEntry } from "../lib/tool-registry";
 
 const log = getLogger(["api", "skill-tools"]);
@@ -27,6 +31,7 @@ export {
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  DRAFT_SKILL_DEFINITION,
 } from "@workbench/tools-skills";
 
 export type SkillToolsContext = {
@@ -205,6 +210,32 @@ async function loadSkillHandler(
   });
 }
 
+async function skillDraftHandler(
+  context: SkillToolsContext,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const draft = parseDraftSkillArgs(args);
+  const source: Record<string, unknown> = { origin: "skill-draft" };
+  if (draft.description !== undefined) source.description = draft.description;
+  if (draft.existingSkillId) source.existingSkillId = draft.existingSkillId;
+  if (draft.files && draft.files.length > 0) source.files = draft.files;
+
+  const result = await writeArtifactDeduped({
+    db: context.db as DB["db"],
+    tenantId: context.tenantId,
+    principalId: context.principalId,
+    title: draft.name,
+    body: draft.body,
+    kind: "skill-draft",
+    source,
+  });
+
+  return JSON.stringify({
+    draftId: result.artifactId,
+    version: result.version,
+  });
+}
+
 export function createSkillTools(context: SkillToolsContext): AgentTool[] {
   return [
     {
@@ -221,6 +252,11 @@ export function createSkillTools(context: SkillToolsContext): AgentTool[] {
       kind: "string",
       definition: LOAD_SKILL_DEFINITION,
       handler: (args) => loadSkillHandler(context, args),
+    },
+    {
+      kind: "string",
+      definition: DRAFT_SKILL_DEFINITION,
+      handler: (args) => skillDraftHandler(context, args),
     },
   ];
 }
@@ -256,6 +292,10 @@ export const SKILLS_HUB_TOOLS: Record<string, ContextToolEntry> = {
   },
   load_skill: {
     definition: LOAD_SKILL_DEFINITION,
+    createTools: (context) => createSkillTools(requireSkillContext(context)),
+  },
+  skill_draft: {
+    definition: DRAFT_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
 };

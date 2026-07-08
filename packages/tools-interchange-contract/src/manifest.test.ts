@@ -96,7 +96,12 @@ const cases: ContractCase[] = [
     factory: skills,
     requires: [HUB_RPC_ENV_KEY],
     env: hubEnv,
-    expectedToolNames: ["list_skills", "load_skill", "search_skills"],
+    expectedToolNames: [
+      "list_skills",
+      "load_skill",
+      "search_skills",
+      "skill_draft",
+    ],
   },
   {
     label: "dispatch",

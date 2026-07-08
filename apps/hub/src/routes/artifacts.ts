@@ -383,6 +383,10 @@ export function createArtifactsRouter(
     // Hide rejected by default; an explicit status filter overrides that.
     const hideRejectedWhere =
       statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
+    // skill-draft artifacts are internal scratch for skill authoring; they do not
+    // appear in the normal gallery.
+    const hideSkillDraftWhere =
+      kindParam === undefined ? ne(artifact.kind, "skill-draft") : undefined;
     const statusWhere = statusFilter
       ? eq(artifact.status, statusFilter)
       : undefined;
@@ -453,6 +457,7 @@ export function createArtifactsRouter(
     const whereConditions = [
       tenantWhere,
       hideRejectedWhere,
+      hideSkillDraftWhere,
       statusWhere,
       kindWhere,
       ownerWhere,

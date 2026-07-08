@@ -32,6 +32,14 @@ mock.module("../services/skill-library", () => ({
   getSkillContent,
 }));
 
+const capturedDraftWrites: any[] = [];
+mock.module("./write-artifact", () => ({
+  writeArtifactDeduped: mock(async (params: any) => {
+    capturedDraftWrites.push(params);
+    return { artifactId: "art-draft-1", version: 3 };
+  }),
+}));
+
 const { createSkillTools } = await import("./list-skills");
 
 const principals = new Map<
@@ -204,5 +212,55 @@ describe("load_skill", () => {
       tool("load_skill").handler({ id: "a1" }, new AbortController().signal),
     ).rejects.toThrow("Skill not found: a1");
     expect(getSkillAsset).not.toHaveBeenCalled();
+  });
+});
+
+describe("skill_draft", () => {
+  test("parses name+body, writes as kind=skill-draft, returns {draftId, version}", async () => {
+    capturedDraftWrites.length = 0;
+    const resultJson = await tool("skill_draft").handler(
+      { name: "my-skill", body: "export const run = () => {};" },
+      new AbortController().signal,
+    );
+    const result = JSON.parse(resultJson);
+    expect(result).toEqual({ draftId: "art-draft-1", version: 3 });
+    expect(capturedDraftWrites).toHaveLength(1);
+    expect(capturedDraftWrites[0]).toMatchObject({
+      tenantId: "ten_1",
+      principalId: "prn_1",
+      title: "my-skill",
+      body: "export const run = () => {};",
+      kind: "skill-draft",
+    });
+    expect(capturedDraftWrites[0].source).toEqual({ origin: "skill-draft" });
+  });
+
+  test("includes optional description, files, existingSkillId in source", async () => {
+    capturedDraftWrites.length = 0;
+    await tool("skill_draft").handler(
+      {
+        name: "revise-me",
+        body: "body here",
+        description: "does x",
+        files: [{ path: "util.ts", content: "export {}" }],
+        existingSkillId: "skl_abc",
+      },
+      new AbortController().signal,
+    );
+    expect(capturedDraftWrites[0]?.source).toEqual({
+      origin: "skill-draft",
+      description: "does x",
+      files: [{ path: "util.ts", content: "export {}" }],
+      existingSkillId: "skl_abc",
+    });
+  });
+
+  test("throws on missing required fields via parser", async () => {
+    await expect(
+      tool("skill_draft").handler(
+        { name: "onlyname" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("skill_draft");
   });
 });

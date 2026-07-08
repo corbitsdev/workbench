@@ -54,14 +54,66 @@ export const LOAD_SKILL_DEFINITION: ToolDefinition = {
   },
 };
 
+export const DRAFT_SKILL_DEFINITION: ToolDefinition = {
+  name: "skill_draft",
+  description:
+    "Create or update a pending skill draft (as a skill-draft artifact). Takes a stable name, optional description, the full SKILL.md body, and optional support files. Returns {draftId, version}. Use to persist authoring work before saving to the shared skill library. Drafts are deduplicated by principal+name.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description:
+          "Stable skill identifier (used for the draft title and later asset name).",
+      },
+      description: {
+        type: "string",
+        description:
+          "Short purpose/description of the skill (stored with the draft).",
+      },
+      body: {
+        type: "string",
+        description:
+          "Complete SKILL.md content (including frontmatter if used).",
+      },
+      files: {
+        type: "array",
+        description: "Optional additional support files for the skill.",
+        items: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["path", "content"],
+        },
+      },
+      existingSkillId: {
+        type: "string",
+        description:
+          "When revising an existing skill, its id (for later replace/new-version).",
+      },
+    },
+    required: ["name", "body"],
+  },
+};
+
 export const SKILL_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  DRAFT_SKILL_DEFINITION,
 ];
 
 const SearchSkillsArgs = type({ query: "string > 0" });
 const LoadSkillArgs = type({ id: "string > 0" });
+const DraftSkillArgs = type({
+  name: "string > 0",
+  description: "string?",
+  body: "string > 0",
+  "files?": type({ path: "string", content: "string" }).array(),
+  "existingSkillId?": "string > 0",
+});
 
 /** Parse and validate the `search_skills` query argument at the tool boundary. */
 export function parseSearchQuery(args: unknown): string {
@@ -79,6 +131,21 @@ export function parseSkillId(args: unknown): string {
     throw new Error(`load_skill: ${parsed.summary}`);
   }
   return parsed.id;
+}
+
+/** Parse and validate the `skill_draft` arguments at the tool boundary. */
+export function parseDraftSkillArgs(args: unknown): {
+  name: string;
+  description?: string;
+  body: string;
+  files?: Array<{ path: string; content: string }>;
+  existingSkillId?: string;
+} {
+  const parsed = DraftSkillArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`skill_draft: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** The cheap index entry returned by list_skills / search_skills (no body). */
