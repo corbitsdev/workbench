@@ -1,16 +1,25 @@
 import { useQuery } from "@tanstack/react-query";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
-import { getTenantProviders, getTenantModels } from "../../lib/hub-api";
+import {
+  getTenantProviders,
+  getTenantModels,
+  getOwnerCredentials,
+} from "../../lib/hub-api";
 import { adminTableCard } from "./admin-ui";
+import { CredentialRow } from "./CredentialRow";
 
 /**
- * Owner → Models. Read-only view of the workbench's model + provider catalog:
- * the tenant providers (including ones inherited from ancestor tenants) and
- * the resolved model catalog, grouped under the providers that offer each
- * model. Calls the native Interchange tenant APIs directly (owner holds
- * `*`/`*`, a superset of `provider:*`/`read` and `model:*`/`read`) rather than
- * a hub-specific endpoint. Read-only for v1 — adding/removing providers or
- * models is a follow-up.
+ * Owner → Catalog. Read-only view of the workbench's model + provider catalog
+ * (the tenant providers, including ones inherited from ancestor tenants, and
+ * the resolved model catalog grouped under the providers that offer each
+ * model — calls the native Interchange tenant APIs directly since owner holds
+ * `*`/`*`, a superset of `provider:*`/`read` and `model:*`/`read`), plus a
+ * "Provider credentials" section for the INFERENCE providers this workbench's
+ * agents draw on (CL-2879/CL-2883). Credentials are write-only: the owner
+ * pastes a key in and it is sent straight to the hub; every read only ever
+ * sees masked configured/missing state, never the key itself. Tool-only
+ * providers (Granola, Exa, Firecrawl, Gamma, Linear, GitHub, Attio) are
+ * managed on the Capabilities tab, not here.
  */
 export function OwnerCatalog() {
   const { activeTenantId } = useActiveWorkbench();
@@ -29,6 +38,14 @@ export function OwnerCatalog() {
     staleTime: 5 * 60_000,
   });
 
+  const credentials = useQuery({
+    queryKey: ["owner", "credentials"],
+    queryFn: getOwnerCredentials,
+  });
+  const inferenceCredentials = credentials.data?.filter(
+    (c) => c.kind === "inference",
+  );
+
   if (providers.isLoading || models.isLoading) {
     return <p className="p-3 text-sm text-text-2">Loading…</p>;
   }
@@ -42,6 +59,36 @@ export function OwnerCatalog() {
 
   return (
     <div className="space-y-5">
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-text">
+          Provider credentials
+        </h2>
+        <p className="mb-2 text-sm text-text-2">
+          Set or clear API keys for the inference providers this workbench's
+          agents use. Keys are write-only — once saved, the key itself is never
+          shown again, only whether a provider is configured.
+        </p>
+        {credentials.isLoading ? (
+          <p className="p-3 text-sm text-text-2">Loading…</p>
+        ) : credentials.isError || !inferenceCredentials ? (
+          <p className="p-3 text-sm text-text-2">
+            Could not load credentials. Try again in a moment.
+          </p>
+        ) : inferenceCredentials.length === 0 ? (
+          <p className="p-3 text-sm text-text-2">
+            No inference providers are configurable for this workbench yet.
+          </p>
+        ) : (
+          <div className={adminTableCard}>
+            <ul className="divide-y divide-border">
+              {inferenceCredentials.map((c) => (
+                <CredentialRow key={c.providerName} credential={c} />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       <div>
         <h2 className="mb-2 text-sm font-semibold text-text">Providers</h2>
         {providers.data.length === 0 ? (

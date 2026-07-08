@@ -11,6 +11,7 @@ type Outcome =
 
 let providersOutcome: Outcome = { kind: "pending" };
 let modelsOutcome: Outcome = { kind: "pending" };
+let credentialsOutcome: Outcome = { kind: "resolve", data: [] };
 
 function resolveOutcome(outcome: Outcome): Promise<unknown> {
   if (outcome.kind === "resolve") return Promise.resolve(outcome.data);
@@ -21,6 +22,10 @@ function resolveOutcome(outcome: Outcome): Promise<unknown> {
 mock.module("../../lib/hub-api", () => ({
   getTenantProviders: () => resolveOutcome(providersOutcome),
   getTenantModels: () => resolveOutcome(modelsOutcome),
+  getOwnerCredentials: () => resolveOutcome(credentialsOutcome),
+  setOwnerCredential: () => Promise.reject(new Error("not used in this test")),
+  clearOwnerCredential: () =>
+    Promise.reject(new Error("not used in this test")),
 }));
 
 mock.module("../../lib/active-workbench-context", () => ({
@@ -52,7 +57,10 @@ function renderModels() {
   );
 }
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  credentialsOutcome = { kind: "resolve", data: [] };
+});
 
 describe("OwnerCatalog", () => {
   it("renders providers and models", async () => {
@@ -111,5 +119,33 @@ describe("OwnerCatalog", () => {
     modelsOutcome = { kind: "pending" };
     renderModels();
     expect(screen.getByText(/loading/i));
+  });
+
+  it("lists only inference-kind credentials, never a secret value", async () => {
+    providersOutcome = { kind: "resolve", data: [] };
+    modelsOutcome = { kind: "resolve", data: [] };
+    credentialsOutcome = {
+      kind: "resolve",
+      data: [
+        {
+          providerName: "anthropic",
+          label: "Anthropic",
+          kind: "inference",
+          configured: true,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          providerName: "granola",
+          label: "Granola",
+          kind: "tool",
+          configured: true,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    renderModels();
+    await waitFor(() => expect(screen.getByText("Anthropic")));
+    expect(screen.queryByText("Granola")).toBeNull();
+    expect(document.body.innerHTML).not.toContain("sk-super-secret");
   });
 });

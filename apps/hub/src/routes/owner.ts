@@ -6,8 +6,12 @@ import { schema as intxSchema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import {
+  CREDENTIAL_PROVIDER_CATALOG,
   MEMBER_ROLE_NAME,
   OwnerContextResponse,
+  OwnerCredentialSetBody,
+  OwnerCredentialsResponse,
+  OwnerCredentialStateSchema,
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
@@ -19,7 +23,7 @@ import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
 import { recordAudit } from "../services/admin-audit";
 
-const { role, grant } = intxSchema;
+const { role, grant, credential, provider } = intxSchema;
 
 // The org member role is the tenant's baseline run policy (see the CL-2885 run
 // gate): a `deny` grant on it for `workflow:<kind>`/`run` disables that kind.
@@ -233,6 +237,256 @@ export function createOwnerRouter(
       }
 
       return c.json({ kind, enabled: parsed.enabled });
+    },
+  );
+
+  // Owner-only, masked-metadata view of the workbench's provider credentials
+  // (CL-2879/CL-2883). Secrets are WRITE-ONLY: this route (and every
+  // credentials route below) never reads or returns the `secret`/
+  // `refreshSecret` columns — only whether a credential row exists and when it
+  // was last touched. The provider catalog is the shared source of truth
+  // (`CREDENTIAL_PROVIDER_CATALOG`), kept in step with the seeder's
+  // `buildEntries()`. The Catalog (inference) and Capabilities (tool) tabs
+  // both call this one route and filter client-side by `kind`.
+  router.get(
+    "/owner/credentials",
+    describeRoute({
+      description:
+        "Configured/missing state for each provider credential the workbench manages. Never returns secrets.",
+      responses: {
+        200: {
+          description: "Owner credentials",
+          content: {
+            "application/json": { schema: resolver(OwnerCredentialsResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const providerRows = await db.query.provider.findMany({
+        where: eq(provider.tenantId, rootTenantId),
+        columns: { id: true, name: true },
+      });
+      const providerByName = new Map(providerRows.map((p) => [p.name, p.id]));
+
+      const credentialRows = await db.query.credential.findMany({
+        where: eq(credential.tenantId, rootTenantId),
+        columns: { providerId: true, updatedAt: true },
+      });
+      const credentialByProviderId = new Map(
+        credentialRows.map((row) => [row.providerId, row.updatedAt]),
+      );
+
+      const credentials = CREDENTIAL_PROVIDER_CATALOG.map((entry) => {
+        const providerId = providerByName.get(entry.providerName);
+        const updatedAt = providerId
+          ? (credentialByProviderId.get(providerId) ?? null)
+          : null;
+        return {
+          providerName: entry.providerName,
+          label: entry.label,
+          kind: entry.kind,
+          configured: updatedAt !== null,
+          updatedAt: updatedAt ? updatedAt.toISOString() : null,
+        };
+      });
+
+      return c.json({ credentials });
+    },
+  );
+
+  // Set or replace a provider's credential (write-only). Creates the provider
+  // row on first use (seeded with the catalog's default metadata, e.g. a
+  // well-known base URL), then upserts the credential's secret. Returns only
+  // the masked state — the secret itself is never echoed back.
+  router.put(
+    "/owner/credentials/:providerName",
+    describeRoute({
+      description:
+        "Set or replace a provider's credential secret. The secret is never returned.",
+      responses: {
+        200: {
+          description: "Updated credential state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCredentialStateSchema),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const providerName = c.req.param("providerName");
+      const entry = CREDENTIAL_PROVIDER_CATALOG.find(
+        (e) => e.providerName === providerName,
+      );
+      if (!entry) {
+        return c.json({ error: "Unknown provider" }, 404);
+      }
+
+      let body: unknown;
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json({ error: "invalid body" }, 400);
+      }
+      const parsed = OwnerCredentialSetBody(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const now = new Date();
+      let providerRow = await db.query.provider.findFirst({
+        where: and(
+          eq(provider.tenantId, rootTenantId),
+          eq(provider.name, entry.providerName),
+        ),
+        columns: { id: true },
+      });
+
+      if (!providerRow) {
+        const [created] = await db
+          .insert(provider)
+          .values({
+            id: generateId("provider"),
+            tenantId: rootTenantId,
+            name: entry.providerName,
+            plugin: entry.providerPlugin,
+            metadata: entry.defaultMetadata ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ id: provider.id });
+        providerRow = created;
+      }
+      if (!providerRow) {
+        return c.json({ error: "Could not resolve provider" }, 500);
+      }
+
+      const existingCredential = await db.query.credential.findFirst({
+        where: and(
+          eq(credential.tenantId, rootTenantId),
+          eq(credential.providerId, providerRow.id),
+        ),
+        columns: { id: true },
+      });
+
+      const actor = c.get("ownerPrincipalId");
+      let updatedAt: Date;
+      if (existingCredential) {
+        const [updated] = await db
+          .update(credential)
+          .set({ secret: parsed.secret, updatedAt: now })
+          .where(eq(credential.id, existingCredential.id))
+          .returning({ updatedAt: credential.updatedAt });
+        updatedAt = updated?.updatedAt ?? now;
+        void recordAudit({
+          db,
+          tenantId: rootTenantId,
+          action: "grant_created",
+          actorPrincipalId: actor,
+          resource: `credential:${entry.providerName}`,
+          detail: { providerName: entry.providerName, op: "rotate" },
+        });
+      } else {
+        const [created] = await db
+          .insert(credential)
+          .values({
+            id: generateId("credential"),
+            tenantId: rootTenantId,
+            providerId: providerRow.id,
+            name: entry.label,
+            type: "api_key",
+            secret: parsed.secret,
+            metadata: entry.defaultMetadata ?? null,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning({ updatedAt: credential.updatedAt });
+        updatedAt = created?.updatedAt ?? now;
+        void recordAudit({
+          db,
+          tenantId: rootTenantId,
+          action: "grant_created",
+          actorPrincipalId: actor,
+          resource: `credential:${entry.providerName}`,
+          detail: { providerName: entry.providerName, op: "create" },
+        });
+      }
+
+      return c.json({
+        providerName: entry.providerName,
+        label: entry.label,
+        kind: entry.kind,
+        configured: true,
+        updatedAt: updatedAt.toISOString(),
+      });
+    },
+  );
+
+  // Clear a provider's credential (revoke). Idempotent: clearing an
+  // already-unconfigured provider is a no-op 200, not an error.
+  router.delete(
+    "/owner/credentials/:providerName",
+    describeRoute({
+      description: "Clear a provider's credential.",
+      responses: {
+        200: {
+          description: "Updated credential state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCredentialStateSchema),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const providerName = c.req.param("providerName");
+      const entry = CREDENTIAL_PROVIDER_CATALOG.find(
+        (e) => e.providerName === providerName,
+      );
+      if (!entry) {
+        return c.json({ error: "Unknown provider" }, 404);
+      }
+
+      const providerRow = await db.query.provider.findFirst({
+        where: and(
+          eq(provider.tenantId, rootTenantId),
+          eq(provider.name, entry.providerName),
+        ),
+        columns: { id: true },
+      });
+
+      if (providerRow) {
+        const deleted = await db
+          .delete(credential)
+          .where(
+            and(
+              eq(credential.tenantId, rootTenantId),
+              eq(credential.providerId, providerRow.id),
+            ),
+          )
+          .returning({ id: credential.id });
+        if (deleted.length > 0) {
+          void recordAudit({
+            db,
+            tenantId: rootTenantId,
+            action: "grant_revoked",
+            actorPrincipalId: c.get("ownerPrincipalId"),
+            resource: `credential:${entry.providerName}`,
+            detail: { providerName: entry.providerName, op: "clear" },
+          });
+        }
+      }
+
+      return c.json({
+        providerName: entry.providerName,
+        label: entry.label,
+        kind: entry.kind,
+        configured: false,
+        updatedAt: null,
+      });
     },
   );
 

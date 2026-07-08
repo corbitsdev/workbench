@@ -9,6 +9,9 @@ import {
   OwnerWorkflowsResponse,
   type OwnerWorkflows,
   OwnerWorkflowState,
+  OwnerCredentialsResponse,
+  OwnerCredentialStateSchema,
+  type OwnerCredentialState,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -164,6 +167,51 @@ export async function setOwnerWorkflowEnabled(
   const parsed = OwnerWorkflowState(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed owner workflow response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Masked configured/missing state for every provider credential the workbench
+ * manages (owner-guarded). Never carries a secret. Catalog filters this to
+ * `kind: "inference"`; Capabilities filters it to `kind: "tool"`. */
+export async function getOwnerCredentials(): Promise<OwnerCredentialState[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/credentials");
+  const parsed = OwnerCredentialsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/credentials response: ${parsed.summary}`);
+  }
+  return parsed.credentials;
+}
+
+/** Set or replace a provider's credential secret (write-only; owner-guarded).
+ * The response is masked state only — the secret is never echoed back. */
+export async function setOwnerCredential(
+  providerName: string,
+  secret: string,
+): Promise<OwnerCredentialState> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/credentials/${encodeURIComponent(providerName)}`,
+    { secret },
+  );
+  const parsed = OwnerCredentialStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner credential response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Clear a provider's credential (owner-guarded). */
+export async function clearOwnerCredential(
+  providerName: string,
+): Promise<OwnerCredentialState> {
+  const raw = await hubFetch<unknown>(
+    "DELETE",
+    `v1/owner/credentials/${encodeURIComponent(providerName)}`,
+  );
+  const parsed = OwnerCredentialStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner credential response: ${parsed.summary}`);
   }
   return parsed;
 }

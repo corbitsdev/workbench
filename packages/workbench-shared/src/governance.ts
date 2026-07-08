@@ -354,3 +354,128 @@ export const AuditListResponse = type({
   pageInfo: PageInfoSchema,
 });
 export type AuditListResponse = typeof AuditListResponse.infer;
+
+// ─── Owner credentials (CL-2879, split by kind CL-2879/CL-2883) ────
+//
+// Owner-managed provider credentials are split across two tabs by what the
+// provider is FOR: `kind: "inference"` providers (LLM sources an agent's
+// `credentialRequirements` resolve against) surface in Catalog next to the
+// model/provider browser; `kind: "tool"` providers (Granola, Exa, Firecrawl,
+// Gamma, Linear, GitHub, Attio — resolved at tool-execution time via
+// `resolveCredentialRequirement`, never via `credentialRequirements`) surface
+// in Capabilities next to the other integrations. Secrets are WRITE-ONLY end
+// to end: the owner types a key in, the hub stores it, and every read path
+// (this schema) carries only masked metadata — never the secret itself. This
+// is the single source of truth for which providers the two tabs manage; it
+// mirrors `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (the
+// credential-seeding catalog) so the two never silently diverge on provider
+// naming.
+//
+// `defaultMetadata` seeds a brand-new provider row's `metadata` (e.g. the
+// well-known API base URL) so an owner-created credential resolves correctly
+// on the first save; it is never applied to an existing provider row.
+export interface CredentialProviderCatalogEntry {
+  /** Matches `credentialRequirements[].providerName` / `credentialProviderNames`. */
+  providerName: string;
+  /** The Interchange provider `plugin` field. */
+  providerPlugin: string;
+  /** Human-readable label shown in the owning tab. */
+  label: string;
+  /** `inference` providers are wired into an agent's `credentialRequirements`
+   * (LLM sources); `tool` providers are resolved at tool-execution time and
+   * must never appear in `credentialRequirements` (see the apps/hub/AGENTS.md
+   * "Agent credentials vs tool credentials" rule). Drives which owner tab
+   * (Catalog vs Capabilities) renders the row. */
+  kind: "inference" | "tool";
+  /** Seeded onto a newly-created provider row only (never patches an existing one). */
+  defaultMetadata?: Record<string, unknown>;
+}
+
+export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntry[] =
+  [
+    {
+      providerName: "openai-compatible",
+      providerPlugin: "openai-compatible",
+      label: "OpenAI-compatible LLM",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://api.openai.com/v1" },
+    },
+    {
+      providerName: "anthropic",
+      providerPlugin: "anthropic",
+      label: "Anthropic",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://api.anthropic.com" },
+    },
+    {
+      providerName: "xai",
+      providerPlugin: "xai",
+      label: "xAI",
+      kind: "inference",
+    },
+    {
+      providerName: "granola",
+      providerPlugin: "granola",
+      label: "Granola",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
+    },
+    { providerName: "exa", providerPlugin: "exa", label: "Exa", kind: "tool" },
+    {
+      providerName: "firecrawl",
+      providerPlugin: "firecrawl",
+      label: "Firecrawl",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.firecrawl.dev/v2" },
+    },
+    {
+      providerName: "gamma",
+      providerPlugin: "gamma",
+      label: "Gamma",
+      kind: "tool",
+    },
+    {
+      providerName: "linear",
+      providerPlugin: "linear",
+      label: "Linear",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.linear.app/graphql" },
+    },
+    {
+      providerName: "github",
+      providerPlugin: "github",
+      label: "GitHub",
+      kind: "tool",
+    },
+    {
+      providerName: "attio",
+      providerPlugin: "attio",
+      label: "Attio",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.attio.com" },
+    },
+  ] as const;
+
+/** One provider row in the Catalog/Capabilities credentials sections —
+ * configured/missing state only. NEVER carries the secret; `configured` and
+ * `updatedAt` are the only signals of whether/when a key was set. */
+export const OwnerCredentialStateSchema = type({
+  providerName: "string",
+  label: "string",
+  kind: "'inference' | 'tool'",
+  configured: "boolean",
+  updatedAt: "string | null",
+});
+export type OwnerCredentialState = typeof OwnerCredentialStateSchema.infer;
+
+export const OwnerCredentialsResponse = type({
+  credentials: OwnerCredentialStateSchema.array(),
+});
+export type OwnerCredentialsResponse = typeof OwnerCredentialsResponse.infer;
+
+/** Body for setting/replacing a provider's key. Write-only: this shape is
+ * never echoed back by any response. */
+export const OwnerCredentialSetBody = type({
+  secret: "string > 0",
+});
+export type OwnerCredentialSetBody = typeof OwnerCredentialSetBody.infer;
