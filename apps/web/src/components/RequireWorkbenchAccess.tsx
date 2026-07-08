@@ -1,5 +1,6 @@
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { NoWorkbenchWelcomePage } from "../pages/NoWorkbenchWelcomePage";
+import { WorkbenchLoadingScreen } from "./WorkbenchBootScreen";
 
 export function RequireWorkbenchAccess({
   children,
@@ -9,11 +10,7 @@ export function RequireWorkbenchAccess({
   const { workbenches, loading } = useActiveWorkbench();
 
   if (loading) {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-page text-sm text-text-2">
-        Loading workbenches…
-      </div>
-    );
+    return <WorkbenchLoadingScreen />;
   }
 
   if (workbenches.length === 0) {

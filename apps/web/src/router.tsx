@@ -17,6 +17,7 @@ import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
 import { RequireWorkbenchAccess } from "./components/RequireWorkbenchAccess";
 import { ActiveContextProvider } from "./lib/active-context-store";
 import { ConnectionStatusProvider } from "./lib/connection-status-context";
+import { WorkbenchLoadingScreen } from "./components/WorkbenchBootScreen";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
 import { ChatsListPage } from "./pages/ChatsListPage";
@@ -130,7 +131,7 @@ function ProtectedLayout() {
     return (
       <Navigate to={{ pathname: "/login", search: location.search }} replace />
     );
-  if (session.status === "loading") return null;
+  if (session.status === "loading") return <WorkbenchLoadingScreen />;
   return <Outlet />;
 }
 

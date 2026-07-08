@@ -43,6 +43,20 @@ describe("RequireWorkbenchAccess", () => {
     expect(screen.queryByText("App content")).toBeNull();
   });
 
+  it("shows the Loading Workbench boot screen while workbenches load", () => {
+    useActiveWorkbench.mockReturnValue({
+      workbenches: [],
+      loading: true,
+    });
+    render(
+      <RequireWorkbenchAccess>
+        <div>App content</div>
+      </RequireWorkbenchAccess>,
+    );
+    expect(screen.getByText("Loading Workbench")).toBeTruthy();
+    expect(screen.queryByText("App content")).toBeNull();
+  });
+
   it("renders children when workbenches exist", () => {
     useActiveWorkbench.mockReturnValue({
       workbenches: [{ tenantId: "tnt_1", slug: "gtm", name: "GTM" }],
