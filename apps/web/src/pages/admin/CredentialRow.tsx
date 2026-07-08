@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, inputFieldClass } from "@workbench/ui";
 import { clearOwnerCredential, setOwnerCredential } from "../../lib/hub-api";
 import type { OwnerCredentialState } from "@workbench/shared";
+import { BIFROST_PROVIDER_NAME } from "@workbench/shared";
 
 /**
  * One provider credential row shared by Catalog (inference providers) and
@@ -23,6 +24,8 @@ export function CredentialRow({
 }: {
   credential: OwnerCredentialState;
 }) {
+  const isBifrost = credential.providerName === BIFROST_PROVIDER_NAME;
+  const [baseURL, setBaseURL] = useState(credential.baseURL ?? "");
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [secret, setSecret] = useState("");
@@ -30,10 +33,11 @@ export function CredentialRow({
   const fieldId = useId();
 
   const setMutation = useMutation({
-    mutationFn: (value: string) =>
-      setOwnerCredential(credential.providerName, value),
+    mutationFn: (value: { secret: string; baseURL?: string }) =>
+      setOwnerCredential(credential.providerName, value.secret, value.baseURL),
     onSuccess: () => {
       setSecret("");
+      setBaseURL("");
       setEditing(false);
       void queryClient.invalidateQueries({
         queryKey: ["owner", "credentials"],
@@ -80,6 +84,8 @@ export function CredentialRow({
               size="sm"
               onClick={() => {
                 setError(null);
+                setSecret("");
+                setBaseURL(credential.baseURL ?? "");
                 setEditing(true);
               }}
             >
@@ -112,7 +118,13 @@ export function CredentialRow({
             e.preventDefault();
             if (secret.trim().length === 0 || setMutation.isPending) return;
             setError(null);
-            setMutation.mutateAsync(secret.trim()).catch(() => {
+            const payload = {
+              secret: secret.trim(),
+              ...(isBifrost && baseURL.trim()
+                ? { baseURL: baseURL.trim() }
+                : {}),
+            };
+            setMutation.mutateAsync(payload).catch(() => {
               /* onError already surfaces this to the user */
             });
           }}
@@ -131,6 +143,27 @@ export function CredentialRow({
               className={inputFieldClass}
             />
           </div>
+
+          {isBifrost && (
+            <div className="min-w-[240px] flex-1 space-y-1">
+              <label
+                className="block text-[12px] text-text-3"
+                htmlFor={`${fieldId}-base`}
+              >
+                Base URL
+              </label>
+              <input
+                id={`${fieldId}-base`}
+                type="text"
+                autoComplete="off"
+                value={baseURL}
+                onChange={(e) => setBaseURL(e.target.value)}
+                placeholder="https://your-bifrost.example.com/v1"
+                className={inputFieldClass}
+              />
+            </div>
+          )}
+
           <Button
             type="submit"
             variant="primary"
@@ -146,6 +179,7 @@ export function CredentialRow({
             onClick={() => {
               setEditing(false);
               setSecret("");
+              setBaseURL(credential.baseURL ?? "");
               setError(null);
             }}
           >

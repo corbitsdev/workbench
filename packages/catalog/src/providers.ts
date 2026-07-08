@@ -16,6 +16,7 @@ export const CATALOG_PROVIDERS: CatalogProviderSpec[] = [
   { name: "google-ai", plugin: "google-genai", credentialName: "google-ai" },
   { name: "near-ai", plugin: "openai-compatible", credentialName: "near-ai" },
   { name: "Myra LLM", plugin: "openai-compatible", credentialName: "Myra LLM" },
+  { name: "bifrost", plugin: "openai-compatible", credentialName: "Bifrost" },
   {
     name: "openrouter",
     plugin: "openai-compatible",

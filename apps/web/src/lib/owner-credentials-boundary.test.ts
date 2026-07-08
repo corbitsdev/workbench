@@ -97,6 +97,23 @@ describe("setOwnerCredential / clearOwnerCredential boundary", () => {
     await expect(setOwnerCredential("anthropic", "sk-test")).rejects.toThrow();
   });
 
+  it("accepts optional baseURL on set and echoes it in the masked response (bifrost)", async () => {
+    const bifrostState = {
+      ...validState,
+      providerName: "bifrost",
+      label: "Bifrost",
+      baseURL: "https://bifrost.example.com/v1",
+    };
+    globalThis.fetch = fakeFetch(bifrostState) as typeof fetch;
+    const result = await setOwnerCredential(
+      "bifrost",
+      "vk-abc123",
+      "https://bifrost.example.com/v1",
+    );
+    expect(result).toEqual(bifrostState);
+    expect(result.baseURL).toBe("https://bifrost.example.com/v1");
+  });
+
   it("resolves a well-formed clear response", async () => {
     globalThis.fetch = fakeFetch({
       ...validState,
