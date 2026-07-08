@@ -67,6 +67,10 @@ function renderHistory(initialPath = "/insights/runs") {
         path: "/workflows",
         element: React.createElement("div", null, "catalog"),
       },
+      {
+        path: "/workflows/:workflowId",
+        element: React.createElement("div", { "data-testid": "run-pane" }),
+      },
     ],
     { initialEntries: [initialPath] },
   );
@@ -116,6 +120,25 @@ describe("WorkflowRunHistory", () => {
     const { router } = renderHistory();
     fireEvent.click(screen.getByText("Deck build", { selector: "span" }));
     expect(router.state.location.pathname).toBe("/insights/trace/run-1");
+  });
+
+  it("links an awaiting run row to its interactive gate pane", () => {
+    runsResult = {
+      data: [
+        {
+          runId: "run-3",
+          kind: "pain",
+          status: "awaiting",
+          createdAt: "2026-01-03T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: false,
+      refetch: () => {},
+    };
+    const { router } = renderHistory();
+    fireEvent.click(screen.getByText("Pain", { selector: "span" }));
+    expect(router.state.location.pathname).toBe("/workflows/run-3");
   });
 
   it("filters the list by status", () => {

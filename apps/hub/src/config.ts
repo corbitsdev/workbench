@@ -304,6 +304,10 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // Global override for the Demos sidebar section (hidden by default). When
+    // true the demo links are served to every client regardless of the org-wide
+    // owner toggle; absent/false leaves demos to the owner grant.
+    showDemos: parseBooleanEnv("SHOW_DEMOS"),
     // Per-kind → tenant-slug routing for boot-time autopublish (CL-2641). Null
     // when unset → every def targets the global root tenant (back-compat).
     workflowAutopublishMap: parseWorkflowAutopublishMap(),

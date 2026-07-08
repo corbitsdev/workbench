@@ -7,9 +7,29 @@ import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 let sidebarIsAdmin = false;
+let sidebarDemoLinks: { label: string; href: string; icon: string }[] = [];
 mock.module("../../lib/hub-api", () => ({
-  getMe: () => Promise.resolve({ isAdmin: sidebarIsAdmin }),
+  getMe: () =>
+    Promise.resolve({ isAdmin: sidebarIsAdmin, demoLinks: sidebarDemoLinks }),
 }));
+
+const DEMO_FIXTURE = [
+  {
+    label: "Deal Scout",
+    href: "https://deal-scout-abklabs.vercel.app/",
+    icon: "search",
+  },
+  {
+    label: "Notion Spike",
+    href: "https://app-notion-spike.up.railway.app/",
+    icon: "file-text",
+  },
+  {
+    label: "Workbench (staging)",
+    href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
+    icon: "flask",
+  },
+];
 
 mock.module("../AuthProvider", () => ({
   useAuth: () => ({
@@ -55,6 +75,7 @@ const { AppSidebar } = require("./AppSidebar");
 
 afterEach(() => {
   cleanup();
+  sidebarDemoLinks = [];
 });
 
 function renderSidebar(path = "/", props: Record<string, unknown> = {}) {
@@ -124,7 +145,8 @@ describe("AppSidebar", () => {
     expect(closed).toBe(1);
   });
 
-  it("renders the Demos section linking out to each external demo", () => {
+  it("renders the Demos section from the /me payload, linking out to each demo", async () => {
+    sidebarDemoLinks = DEMO_FIXTURE;
     renderSidebar();
     const cases = [
       { name: /deal scout/i, href: "https://deal-scout-abklabs.vercel.app/" },
@@ -138,17 +160,36 @@ describe("AppSidebar", () => {
       },
     ];
     for (const { name, href } of cases) {
-      const link = screen.getByRole("link", { name }) as HTMLAnchorElement;
+      const link = (await screen.findByRole("link", {
+        name,
+      })) as HTMLAnchorElement;
       expect(link.getAttribute("href")).toBe(href);
       expect(link.getAttribute("target")).toBe("_blank");
       expect(link.getAttribute("rel")).toBe("noopener noreferrer");
     }
   });
 
-  it("calls onNavigate when a demo link is selected so the drawer can close", () => {
+  it("hides the Demos section entirely when the payload carries no demo links", async () => {
+    sidebarIsAdmin = true;
+    sidebarDemoLinks = [];
+    renderSidebar();
+    // The Admin link only renders once the async /me query resolves, so waiting
+    // for it proves the payload was applied — and demos are still absent.
+    await screen.findByRole("link", { name: /admin/i });
+    expect(screen.queryByText("Demos")).toBeNull();
+    expect(screen.queryByRole("link", { name: /deal scout/i })).toBeNull();
+    sidebarIsAdmin = false;
+  });
+
+  it("calls onNavigate when a demo link is selected so the drawer can close", async () => {
+    sidebarDemoLinks = DEMO_FIXTURE;
     let closed = 0;
     renderSidebar("/", { onNavigate: () => (closed += 1) });
-    (screen.getByRole("link", { name: /deal scout/i }) as HTMLElement).click();
+    (
+      (await screen.findByRole("link", {
+        name: /deal scout/i,
+      })) as HTMLElement
+    ).click();
     expect(closed).toBe(1);
   });
 

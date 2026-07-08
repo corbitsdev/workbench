@@ -308,6 +308,59 @@ export const MemberPreferences = type({
 });
 export type MemberPreferences = typeof MemberPreferences.infer;
 
+// --- Demos ---
+// The Demos sidebar section is opt-in and HIDDEN by default. It is the mirror
+// image of the workflow-run gate: that gate is allow-by-default and a `deny`
+// grant disables a kind; demos are deny-by-default and an explicit member-role
+// ALLOW on `demos`/`view` opts the org in. Enablement is that grant OR the hub
+// `SHOW_DEMOS` env flag (a global override). When disabled the links never leave
+// the hub — the client receives an empty list, so nothing to hide client-side.
+export const DEMOS_RESOURCE = "demos";
+export const DEMOS_VIEW_ACTION = "view";
+
+// `icon` is a stable key the web client maps to a lucide component; an unknown
+// key falls back to a generic icon, so adding a link never forces a client
+// change. Icons are React components and cannot cross the API as values.
+export const DemoLinkSchema = type({
+  label: "string",
+  href: "string",
+  icon: "string",
+});
+export type DemoLink = typeof DemoLinkSchema.infer;
+
+export const DEMO_LINKS: DemoLink[] = [
+  {
+    label: "Deal Scout",
+    href: "https://deal-scout-abklabs.vercel.app/",
+    icon: "search",
+  },
+  {
+    label: "Notion Spike",
+    href: "https://app-notion-spike.up.railway.app/",
+    icon: "file-text",
+  },
+  {
+    label: "Workbench (staging)",
+    href: "https://workbench-ui-git-staging-abklabs.vercel.app/",
+    icon: "flask",
+  },
+];
+
+// Owner-area read/toggle for the org-wide demos grant. `enabled` reflects the
+// member-role grant only. `forcedByEnv` is true when the `SHOW_DEMOS` env
+// override is on — demos then show regardless of the grant, so the toggle has no
+// effect and the UI says so instead of lying.
+export const OwnerDemosResponse = type({
+  enabled: "boolean",
+  forcedByEnv: "boolean",
+});
+export type OwnerDemosResponse = typeof OwnerDemosResponse.infer;
+
+export const OwnerDemosToggle = type({
+  enabled: "boolean",
+});
+export type OwnerDemosToggle = typeof OwnerDemosToggle.infer;
+
 // A single step in a workflow's flow, classified for the catalog preview:
 // "auto" = a deterministic tool/fetch/export step, "agent" = a genuine LLM
 // reasoning step, "human" = an awaitSignal gate that pauses for the user.

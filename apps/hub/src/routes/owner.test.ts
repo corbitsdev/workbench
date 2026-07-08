@@ -60,10 +60,15 @@ function buildApp(db: unknown = {}) {
       db: db as never,
       grantStore: grantStoreFor(),
       rootTenantId: "ten_root",
+      showDemos: ownerRouterShowDemos,
     }),
   );
   return app;
 }
+
+// Toggled per-test to exercise the SHOW_DEMOS env override surfaced as
+// `forcedByEnv`. Reset to false by default.
+let ownerRouterShowDemos = false;
 
 describe("owner grant gate", () => {
   it("allows an owner (holds */* wildcard grant)", async () => {
@@ -297,5 +302,150 @@ describe("owner credentials routes", () => {
     const body = (await res.json()) as { configured: boolean; kind: string };
     expect(body.kind).toBe("tool");
     expect(JSON.stringify(body)).not.toContain("grn-secret-token");
+  });
+});
+
+// The org-wide demos toggle is grant CRUD on the org member role: enable writes
+// an `allow` for `demos`/`view`, disable removes it. Demos are hidden by default
+// (no grant present). These fakes capture what the route writes so the
+// assertions pin the grant it produces, not the mock plumbing.
+describe("owner demos routes", () => {
+  function demosDb(opts: { allowGrant?: boolean } = {}) {
+    const memberRole = [{ id: "rol_member" }];
+    const grantRows = opts.allowGrant
+      ? [
+          {
+            id: "grt_demos",
+            resource: "demos",
+            action: "view",
+            effect: "allow",
+            origin: "system",
+            conditions: null,
+            expiresAt: null,
+            roleId: "rol_member",
+            principalId: null,
+          },
+        ]
+      : [];
+    const insertedGrants: Record<string, unknown>[] = [];
+    let deleteCalls = 0;
+
+    const db = {
+      query: {
+        role: {
+          findMany: async () => memberRole,
+          findFirst: async () => memberRole[0],
+        },
+        grant: {
+          findMany: async () => grantRows,
+          findFirst: async () => (opts.allowGrant ? grantRows[0] : undefined),
+        },
+      },
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          if ("effect" in vals) insertedGrants.push(vals);
+          return Promise.resolve();
+        },
+      }),
+      delete: () => ({
+        where: () => {
+          deleteCalls += 1;
+          return Promise.resolve();
+        },
+      }),
+    };
+    return { db, insertedGrants, deleteCalls: () => deleteCalls };
+  }
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = demosDb();
+    const res = await buildApp(db).request("/owner/demos");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET reports disabled when no demos allow grant exists", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterShowDemos = false;
+    const { db } = demosDb({ allowGrant: false });
+    const res = await buildApp(db).request("/owner/demos");
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+      enabled: false,
+      forcedByEnv: false,
+    });
+  });
+
+  it("GET reports enabled when the demos allow grant exists", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterShowDemos = false;
+    const { db } = demosDb({ allowGrant: true });
+    const res = await buildApp(db).request("/owner/demos");
+    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+      enabled: true,
+      forcedByEnv: false,
+    });
+  });
+
+  it("GET reports forcedByEnv when SHOW_DEMOS is on, even without a grant", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterShowDemos = true;
+    const { db } = demosDb({ allowGrant: false });
+    const res = await buildApp(db).request("/owner/demos");
+    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+      enabled: false,
+      forcedByEnv: true,
+    });
+    ownerRouterShowDemos = false;
+  });
+
+  it("PUT enable writes an allow grant on demos/view", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterShowDemos = false;
+    const { db, insertedGrants } = demosDb({ allowGrant: false });
+    const res = await buildApp(db).request("/owner/demos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+      enabled: true,
+      forcedByEnv: false,
+    });
+    expect(insertedGrants).toHaveLength(1);
+    expect(insertedGrants[0]).toMatchObject({
+      resource: "demos",
+      action: "view",
+      effect: "allow",
+    });
+  });
+
+  it("PUT disable removes the allow grant", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterShowDemos = false;
+    const { db, deleteCalls } = demosDb({ allowGrant: true });
+    const res = await buildApp(db).request("/owner/demos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+      enabled: false,
+      forcedByEnv: false,
+    });
+    expect(deleteCalls()).toBe(1);
+  });
+
+  it("PUT rejects a non-boolean body with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = demosDb();
+    const res = await buildApp(db).request("/owner/demos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: "yes" }),
+    });
+    expect(res.status).toBe(400);
   });
 });

@@ -7,11 +7,15 @@ import { generateId } from "@intx/hub-common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import {
   CREDENTIAL_PROVIDER_CATALOG,
+  DEMOS_RESOURCE,
+  DEMOS_VIEW_ACTION,
   MEMBER_ROLE_NAME,
   OwnerContextResponse,
   OwnerCredentialSetBody,
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
+  OwnerDemosResponse,
+  OwnerDemosToggle,
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
@@ -21,6 +25,7 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import { demosViewAllowed } from "../lib/demos-gate";
 import {
   loadMemberRoleGrantsForTenantChain,
   workflowRunDenied,
@@ -54,6 +59,9 @@ export interface CreateOwnerRouterDeps {
   db: HubDb;
   grantStore: GrantStore;
   rootTenantId: string;
+  // Whether the `SHOW_DEMOS` env override is on. Reported as `forcedByEnv` so the
+  // owner sees the demos toggle is inert while the deployment forces demos on.
+  showDemos: boolean;
 }
 
 /**
@@ -67,7 +75,7 @@ export interface CreateOwnerRouterDeps {
 export function createOwnerRouter(
   deps: CreateOwnerRouterDeps,
 ): Hono<OwnerRouteEnv> {
-  const { db, grantStore, rootTenantId } = deps;
+  const { db, grantStore, rootTenantId, showDemos } = deps;
   const router = new Hono<OwnerRouteEnv>();
 
   router.use(
@@ -236,6 +244,125 @@ export function createOwnerRouter(
       }
 
       return c.json({ kind, enabled: parsed.enabled });
+    },
+  );
+
+  // The org-wide demos toggle. `enabled` is true when the org member role holds
+  // an `allow` for `demos`/`view` — the opt-in the sidebar's Demos section reads
+  // (demos are hidden by default). The `SHOW_DEMOS` env override is separate and
+  // does not surface here.
+  router.get(
+    "/owner/demos",
+    describeRoute({
+      description: "Whether the Demos sidebar section is enabled org-wide.",
+      responses: {
+        200: {
+          description: "Owner demos state",
+          content: {
+            "application/json": { schema: resolver(OwnerDemosResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      return c.json({
+        enabled: await demosViewAllowed(grants),
+        forcedByEnv: showDemos,
+      });
+    },
+  );
+
+  // Toggle the Demos section org-wide. Enable = write a member-role `allow` for
+  // `demos`/`view`; disable = remove it. Grant CRUD on the org member role, the
+  // mirror of the workflow toggle (which writes a `deny`).
+  router.put(
+    "/owner/demos",
+    describeRoute({
+      description: "Enable or disable the Demos sidebar section org-wide.",
+      responses: {
+        200: {
+          description: "Updated demos state",
+          content: {
+            "application/json": { schema: resolver(OwnerDemosResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerDemosToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+      const now = new Date();
+
+      if (parsed.enabled) {
+        const existing = await db.query.grant.findFirst({
+          where: and(
+            eq(grant.roleId, roleId),
+            eq(grant.resource, DEMOS_RESOURCE),
+            eq(grant.action, DEMOS_VIEW_ACTION),
+            eq(grant.effect, "allow"),
+          ),
+          columns: { id: true },
+        });
+        if (!existing) {
+          await db.insert(grant).values({
+            id: generateId("grant"),
+            tenantId: rootTenantId,
+            roleId,
+            resource: DEMOS_RESOURCE,
+            action: DEMOS_VIEW_ACTION,
+            effect: "allow",
+            origin: "system",
+            createdAt: now,
+            updatedAt: now,
+          });
+          void recordAudit({
+            db,
+            tenantId: rootTenantId,
+            action: "grant_created",
+            actorPrincipalId: actor,
+            resource: DEMOS_RESOURCE,
+            detail: { capability: "demos-view", effect: "allow" },
+          });
+        }
+      } else {
+        await db
+          .delete(grant)
+          .where(
+            and(
+              eq(grant.roleId, roleId),
+              eq(grant.resource, DEMOS_RESOURCE),
+              eq(grant.action, DEMOS_VIEW_ACTION),
+              eq(grant.effect, "allow"),
+            ),
+          );
+        void recordAudit({
+          db,
+          tenantId: rootTenantId,
+          action: "grant_revoked",
+          actorPrincipalId: actor,
+          resource: DEMOS_RESOURCE,
+          detail: { capability: "demos-view" },
+        });
+      }
+
+      return c.json({ enabled: parsed.enabled, forcedByEnv: showDemos });
     },
   );
 

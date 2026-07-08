@@ -12,6 +12,10 @@ import {
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   type OwnerCredentialState,
+  OwnerDemosResponse,
+  type OwnerDemosResponse as OwnerDemosState,
+  type DemoLink,
+  DemoLinkSchema,
   WorkflowCatalogSchema,
   type WorkflowCatalog,
 } from "@workbench/shared";
@@ -129,21 +133,57 @@ export type MeResponse = {
   personalAgentSyncAvailable?: boolean;
   /** Server-persisted UI preferences, folded into the bootstrap to avoid an extra round-trip. */
   preferences?: MemberPreferences;
+  /** Demo links for the sidebar's Demos section. Resolved server-side and only
+   * populated when demos are enabled (env override or org-wide owner toggle);
+   * omitted/empty means the section is hidden. */
+  demoLinks?: DemoLink[];
 };
 
+const DemoLinksArraySchema = DemoLinkSchema.array();
+
 /**
- * Validates the `preferences` blob at the web trust boundary, degrading to an
- * empty map on a malformed payload so a bad server value can never poison the
- * preferences store.
+ * Validates the parts of the `/me` payload that cross the web trust boundary,
+ * degrading each to a safe empty value on a malformed shape so a bad server
+ * value can never poison the preferences store or the sidebar.
  */
-function parseMePreferences(me: MeResponse): MeResponse {
-  if (me.preferences === undefined) return me;
-  const parsed = MemberPreferencesSchema(me.preferences);
-  return { ...me, preferences: parsed instanceof type.errors ? {} : parsed };
+function parseMe(me: MeResponse): MeResponse {
+  const next: MeResponse = { ...me };
+  if (me.preferences !== undefined) {
+    const parsed = MemberPreferencesSchema(me.preferences);
+    next.preferences = parsed instanceof type.errors ? {} : parsed;
+  }
+  if (me.demoLinks !== undefined) {
+    const parsed = DemoLinksArraySchema(me.demoLinks);
+    next.demoLinks = parsed instanceof type.errors ? [] : parsed;
+  }
+  return next;
 }
 
 export async function getMe(): Promise<MeResponse> {
-  return parseMePreferences(await hubFetch<MeResponse>("GET", "v1/me"));
+  return parseMe(await hubFetch<MeResponse>("GET", "v1/me"));
+}
+
+/** The org-wide Demos toggle state: the grant-backed `enabled`, plus whether the
+ * `SHOW_DEMOS` env override is forcing demos on (making the toggle inert). */
+export async function getOwnerDemos(): Promise<OwnerDemosState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/demos");
+  const parsed = OwnerDemosResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/demos response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable the Demos sidebar section org-wide (owner-guarded). */
+export async function setOwnerDemosEnabled(
+  enabled: boolean,
+): Promise<OwnerDemosState> {
+  const raw = await hubFetch<unknown>("PUT", "v1/owner/demos", { enabled });
+  const parsed = OwnerDemosResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner demos response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Deployed workflow kinds + their run-enablement state (owner-guarded). */
@@ -230,7 +270,7 @@ export type PostMeBody = {
 
 /** Ensures org membership / Myra and syncs live session grants (safe to repeat). */
 export async function postMe(body: PostMeBody = {}): Promise<MeResponse> {
-  return parseMePreferences(await hubFetch<MeResponse>("POST", "v1/me", body));
+  return parseMe(await hubFetch<MeResponse>("POST", "v1/me", body));
 }
 
 /**
@@ -892,7 +932,11 @@ export type ActivityExportBucket = "day" | "week" | "month";
 
 export async function getActivityOverview(
   tenantId: string,
-  opts?: { startDate?: string; endDate?: string; bucket?: ActivityExportBucket },
+  opts?: {
+    startDate?: string;
+    endDate?: string;
+    bucket?: ActivityExportBucket;
+  },
 ): Promise<ActivityOverview> {
   const params = new URLSearchParams();
   if (opts?.startDate) params.set("startDate", opts.startDate);
@@ -926,7 +970,10 @@ export async function downloadActivityExportCsv(
     `/api/tenants/${encodeURIComponent(tenantId)}/activity/export.csv${qs ? `?${qs}` : ""}`,
     apiBase || window.location.origin,
   );
-  const res = await fetch(url.toString(), { method: "GET", credentials: "include" });
+  const res = await fetch(url.toString(), {
+    method: "GET",
+    credentials: "include",
+  });
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
     throw Object.assign(new Error(hubErrorMessage(errBody, res.status)), {

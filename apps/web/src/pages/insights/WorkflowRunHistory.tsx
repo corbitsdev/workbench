@@ -19,6 +19,7 @@ import {
 import {
   SORT_OPTIONS,
   STATUS_FILTER_OPTIONS,
+  formatRunWhen,
   statusDotClass,
   statusLabel,
   statusTextClass,
@@ -26,12 +27,6 @@ import {
 
 const toolbarSelectClass =
   "h-[34px] rounded-[9px] border border-border bg-page px-[11px] text-[12.5px] text-text focus:border-border-strong focus:outline-none";
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString();
-}
 
 function StatusFilterControl({
   value,
@@ -90,7 +85,11 @@ function RunRow({
       className="group relative flex w-full items-stretch rounded-[9px] transition-colors hover:bg-row-hover"
     >
       <Link
-        to={`/insights/trace/${run.runId}`}
+        to={
+          run.status === "awaiting"
+            ? `/workflows/${run.runId}`
+            : `/insights/trace/${run.runId}`
+        }
         className="flex min-w-0 flex-1 items-start gap-2.5 px-2.5 py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong"
       >
         <span
@@ -109,7 +108,7 @@ function RunRow({
             </span>
           </span>
           <span className="text-[11px] tabular-nums text-text-3">
-            {formatWhen(run.createdAt)}
+            {formatRunWhen(run.createdAt)}
           </span>
         </span>
       </Link>
@@ -155,7 +154,10 @@ function RunRow({
  * The browsable workflow run history (`/insights/runs`). Lists every run for the
  * active workbench with status/kind filters, search, and sort; each row opens
  * the read-only execution trace at `/insights/trace/:runId`. This is the single
- * home for run history — the Workflows page is the launch catalog only.
+ * home for run history — the Workflows page carries only the launch catalog
+ * and the active-run strip. An `awaiting` row opens the interactive pane at
+ * `/workflows/:runId` instead of the trace, since that run needs a human gate
+ * completed, not a post-mortem.
  */
 export function WorkflowRunHistory() {
   const navigate = useNavigate();

@@ -8,11 +8,26 @@ const TRANSIENT_PATTERNS = [
   "No sidecar available",
   "sidecar not connected",
   "sidecar not available",
+  // Hub/sidecar mid-restart (a redeploy): the gateway or the agent is briefly
+  // unreachable. These are recoverable once the restart settles, so the launch
+  // loop should retry rather than fall to a terminal error.
+  "unreachable",
+  "502",
+  "Bad Gateway",
+  "503",
+  "Service Unavailable",
+  "504",
+  "Gateway Timeout",
+  "Failed to fetch",
+  "NetworkError",
+  "network error",
+  "Load failed",
 ];
 
 export function isTransientLaunchError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return TRANSIENT_PATTERNS.some((p) => message.includes(p));
+  const lower = message.toLowerCase();
+  return TRANSIENT_PATTERNS.some((p) => lower.includes(p.toLowerCase()));
 }
 
 const MISSING_CONFIG_PATTERNS = [
