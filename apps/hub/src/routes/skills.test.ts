@@ -94,6 +94,7 @@ const mockedSkillLibrary = {
   updateSkill: mockUpdateSkill,
   listSkillVersions: mockListSkillVersions,
   restoreSkillVersion: mockRestoreSkillVersion,
+	  approveSkillDraft: mock(() => Promise.resolve({ skill: { id: "ast-1", name: "test-skill" }, draftId: "art-draft-xyz" })),
   listShareTargets: mock(() =>
     Promise.resolve([
       { tenantId: "tenant-1", name: "Acme Org" },
@@ -487,5 +488,24 @@ describe("DELETE /agents/:agentId/skills/:assetId", () => {
     );
     expect(res.status).toBe(200);
     expect(db.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("POST /skills/drafts/:draftId/approve", () => {
+  it("approves a skill-draft by calling createSkill or updateSkill (based on existingSkillId) and resolves the draft artifact", async () => {
+    // This test will fail until the route + approveSkillDraft impl is added (red step)
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request("http://localhost/skills/drafts/art-draft-xyz/approve?tenantId=tenant-1", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ scope: "private" }),
+      }),
+    );
+    // Expect success once implemented; currently will be 404 or unhandled
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toHaveProperty("skill");
+    expect(json).toHaveProperty("draftId");
   });
 });

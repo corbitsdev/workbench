@@ -8,7 +8,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { skillAccess } from "../db/schema";
+import { artifact, skillAccess } from "../db/schema";
 import type { AssetService, RepoStore } from "@intx/hub-sessions";
 import { AssetServiceError } from "@intx/hub-sessions";
 import type { UserContext } from "../lib/user-context";
@@ -1045,4 +1045,68 @@ export async function updateSkill(
   );
   if (!refreshed) throw new SkillLibraryError("Skill not found", 404);
   return refreshed;
+}
+
+export async function approveSkillDraft(
+  assetService: AssetService,
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+  opts: { scope?: SkillAccessScope; ownerUserId?: string; ownerName?: string } = {},
+): Promise<{ skill: SkillItem; draftId: string }> {
+  const rows = await db
+    .select()
+    .from(artifact)
+    .where(and(eq(artifact.id, draftId), eq(artifact.kind, "skill-draft")))
+    .limit(1);
+
+  const draft = rows[0];
+  if (!draft) throw new SkillLibraryError("Draft not found", 404);
+  if (draft.status !== "draft") {
+    throw new SkillLibraryError("Draft is not in draft status", 400);
+  }
+
+  const source = (draft.source ?? {}) as Record<string, unknown>;
+  const files: SkillBundleFileInput[] = [
+    { path: "SKILL.md", content: Buffer.from(draft.content ?? "") },
+    ...((source.files as any[]) ?? []).map((f) => ({
+      path: f.path,
+      content: Buffer.from(f.content ?? ""),
+    })),
+  ];
+  const description = (source.description as string | null) ?? null;
+  const name = draft.title;
+  const scope = opts.scope === "private" ? "private" : "tenant";
+  const ownerUserId = opts.ownerUserId ?? "user-1"; // caller supplies from c.get in routes
+  const ownerName = opts.ownerName ?? "User";
+
+  let skill: SkillItem;
+  if (typeof source.existingSkillId === "string" && source.existingSkillId) {
+    const actor: SkillActor = {
+      tenantId: userContext.tenantId,
+      userId: ownerUserId,
+      principalId: userContext.principalId,
+    };
+    skill = await updateSkill(assetService, db, actor, {
+      assetId: source.existingSkillId,
+      description,
+      files,
+    });
+  } else {
+    skill = await createSkill(assetService, db, userContext, {
+      name,
+      description,
+      files,
+      scope,
+      ownerUserId,
+      ownerName,
+    });
+  }
+
+  await db
+    .update(artifact)
+    .set({ status: "approved", updatedAt: new Date() })
+    .where(eq(artifact.id, draftId));
+
+  return { skill, draftId };
 }
