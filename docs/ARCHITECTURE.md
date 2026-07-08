@@ -60,21 +60,21 @@ The web app folds the log into a `RunState`. The **primary live surface** is the
 
 The hub deploys Interchange's `createApp`, which registers all tenant, principal, grant, agent, and instance routes. The workbench is a multi-tenant system built on top of Interchange's identity and delivery primitives.
 
-### Tenancy Model: Shared Global Org Tenant
+### Tenancy Model: Root Tenant
 
-The workbench runs on a **single shared global org tenant**, seeded once at hub boot. Its name/slug/domain come from env (`GLOBAL_TENANT_{SLUG,NAME,DOMAIN}` via `requireEnv`) — never hardcoded, so the same code produces a different org per deployment. The seed (`seedGlobalTenant`) is idempotent and race-safe across replicas (unique-slug catch-and-reselect) and fails loud if the tenant exists but is missing its system roles.
+The workbench runs on a **single root tenant** (the deployment's org), seeded once at hub boot. Its name/slug/domain come from env (`GLOBAL_TENANT_{SLUG,NAME,DOMAIN}` via `requireEnv` — the env keys retain the `GLOBAL_` prefix for wire-compatibility even though the config property is `config.rootTenant`) — never hardcoded, so the same code produces a different org per deployment. The seed (`seedGlobalTenant`) is idempotent and race-safe across replicas (unique-slug catch-and-reselect) and fails loud if the tenant exists but is missing its system roles.
 
-Every same-domain user **auto-joins the global tenant as a `member` principal** (`ensureGlobalMember`, race-safe via the unique `principal (tenantId, kind, refId)` constraint). The `member` role is intentionally grant-less: product reads are principal-scoped and never consult the Interchange grant system, so a `member *:read` grant would only widen blast radius in a shared tenant. Owner (`*:*`) and admin (`*:{read,create,manage}`) grants remain for org admins.
+Every same-domain user **auto-joins the root tenant as a `member` principal** (`ensureGlobalMember`, race-safe via the unique `principal (tenantId, kind, refId)` constraint). The `member` role is intentionally grant-less: product reads are principal-scoped and never consult the Interchange grant system, so a `member *:read` grant would only widen blast radius in a shared tenant. Owner (`*:*`) and admin (`*:{read,create,manage}`) grants remain for org admins.
 
-**Workbenches are sub-tenants** of the global tenant (`parentId = globalTenantId`). Because `getAncestorChain` resolves nearest-tenant-first, an LLM credential stored once at the org level resolves down the hierarchy into every workbench via `resolveCredentialRequirement` — no per-workbench credential duplication.
+**Workbenches are sub-tenants** of the root tenant (`parentId = rootTenantId`). Because `getAncestorChain` resolves nearest-tenant-first, an LLM credential stored once at the org level resolves down the hierarchy into every workbench via `resolveCredentialRequirement` — no per-workbench credential duplication.
 
-`getUserContext` resolves the caller's working context as their member principal in the global tenant (by config slug). This single function gates every workflow/artifact route. The former per-user personal-tenant model (slug `user-{userId}`) and all its provisioning/repair paths have been removed.
+`getUserContext` resolves the caller's working context as their member principal in the root tenant (by config slug). This single function gates every workflow/artifact route. The former per-user personal-tenant model (slug `user-{userId}`) and all its provisioning/repair paths have been removed.
 
-> **Forward path (substrate for multi-tenant SaaS):** this builds the per-org shape SaaS needs — org tenant → member principals → sub-tenant workbenches → tenant+principal-scoped data + credential inheritance. Going multi-tenant later is additive: replace the single env-seeded org with per-customer org provisioning and resolve the user's org by membership instead of the one constant. Treat the `GLOBAL_TENANT_*` env seed as a deliberately temporary v1 mechanism.
+> **Forward path (substrate for multi-tenant SaaS):** this builds the per-org shape SaaS needs — root tenant → member principals → sub-tenant workbenches → tenant+principal-scoped data + credential inheritance. Going multi-tenant later is additive: replace the single env-seeded org with per-customer org provisioning and resolve the user's org by membership instead of the one constant. Treat the `GLOBAL_TENANT_*` env seed as a deliberately temporary v1 mechanism — the per-customer / isolated-infra provisioning that replaces it is not yet built.
 
 ### Agent Definitions and Signup Provisioning
 
-**Agent templates** (`@workbench/agents`) are materialized as first-class Interchange agent definitions in the global tenant at hub boot via `seedAgentTemplates(db)`. This is idempotent — re-boot is a no-op. Definitions become visible and editable in admin-ui automatically.
+**Agent templates** (`@workbench/agents`) are materialized as first-class Interchange agent definitions in the root tenant at hub boot via `seedAgentTemplates(db)`. This is idempotent — re-boot is a no-op. Definitions become visible and editable in admin-ui automatically.
 
 | Template   | Role                                                                    |
 | ---------- | ----------------------------------------------------------------------- |
@@ -88,10 +88,10 @@ The enabled-template set (which definitions members auto-get on join) defaults t
 
 **On join** (`user.create.after` / `session.create.after` / `GET /me`):
 
-1. `ensureGlobalMember` — creates the user's `member` principal in the global tenant (idempotent, race-safe via unique constraint)
+1. `ensureGlobalMember` — creates the user's `member` principal in the root tenant (idempotent, race-safe via unique constraint)
 2. For each enabled template definition: creates a per-user **instance** keyed on `(definitionId, memberPrincipalId)` — idempotent, no duplicate instances on re-login
 
-Instance creation uses Interchange-native instance APIs; no bespoke per-user agent creation. The org-level credential is inherited at launch time from the global tenant's ancestor chain via `resolveCredentialRequirement` — no per-user credential entry.
+Instance creation uses Interchange-native instance APIs; no bespoke per-user agent creation. The org-level credential is inherited at launch time from the root tenant's ancestor chain via `resolveCredentialRequirement` — no per-user credential entry.
 
 Myra instances are owned per member via the hub-owned `member_agent_instance` mapping (`memberPrincipalId → instanceId`, `templateKey: 'myra'`) — **not** `(tenantId, name)`: in a shared tenant every member's instance is named "Myra," so name-based lookup would hand one user's instance to everyone. The join-time provisioner creates exactly one Myra mapping; `POST /v1/me` keys auto-relaunch off it.
 
@@ -115,11 +115,11 @@ Credentials and grants follow Interchange's model exactly. The workbench does no
 
 **Myra's credential requirement**: `{ providerName: 'openai-compatible', source: 'tenant', name: 'Myra LLM' }`. The credential named `'Myra LLM'` is stored tenant-owned (org level or per-workbench); Interchange resolves it down the ancestor chain at launch time.
 
-**Credential setup**: An org admin creates the LLM credential once at the global tenant level via `@intx/admin-ui`. Members never enter API keys. The credential resolves down the ancestor chain to every member's instance at launch time via `resolveCredentialRequirement`.
+**Credential setup**: An org admin creates the LLM credential once at the root tenant level via `@intx/admin-ui`. Members never enter API keys. The credential resolves down the ancestor chain to every member's instance at launch time via `resolveCredentialRequirement`.
 
 **Grants** (manage access, not resolution): The hub writes a `grant` row giving the creating principal manage access to the credential record (`resource: credential:{id}`, `origin: creator`). This grant enables the Settings UI to delete/update the credential. It is separate from resolution — Interchange resolves credentials from the tenant, not from grants to instance principals.
 
-**Credential ownership in a shared tenant**: because every member is a principal in the same global tenant, `GET`/`PATCH /v1/tenants/:tenantId/credentials` are scoped to the caller's owned credentials. The decision is delegated entirely to Interchange's authorization evaluator (`authorize`/`evaluateGrants` from `@intx/authz`) against the resource `credential:<id>` — no hand-rolled grant interpretation. A member's `creator` grant authorizes their own credentials; an admin/owner wildcard grant authorizes all. "Shared org" credentials (e.g. a tenant-owned `Myra LLM` key seeded at the org level with no creator grant) are not enumerable/editable by ordinary members via this route but remain resolvable at launch (resolution is not grant-gated).
+**Credential ownership in a shared tenant**: because every member is a principal in the same root tenant, `GET`/`PATCH /v1/tenants/:tenantId/credentials` are scoped to the caller's owned credentials. The decision is delegated entirely to Interchange's authorization evaluator (`authorize`/`evaluateGrants` from `@intx/authz`) against the resource `credential:<id>` — no hand-rolled grant interpretation. A member's `creator` grant authorizes their own credentials; an admin/owner wildcard grant authorizes all. "Shared org" credentials (e.g. a tenant-owned `Myra LLM` key seeded at the org level with no creator grant) are not enumerable/editable by ordinary members via this route but remain resolvable at launch (resolution is not grant-gated).
 
 **Workflow step credentials**: A native workflow declares its inference needs per step in its `defineWorkflow` definition. At deploy time the hub's workflow-deploy service resolves the tenant deploy config (the base inference source from the tenant LLM credential) and the orchestrator binds it; credentials remain tenant-owned and resolved down the ancestor chain, never passed as IDs through the deploy call.
 
@@ -299,7 +299,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 
 - **Workspace**: The user-facing organizational unit in GTM Workbench. Every user belongs to one workspace. Use "workspace" in UI copy.
 - **Tenant**: The Interchange concept that a workspace maps to 1:1. Use "tenant" in backend/API code, "workspace" in UI and product copy.
-- **Personal Tenant**: Removed. The former per-user personal tenant model (`user-{userId}`) was replaced by the shared global org tenant + per-user instances of enabled agent definitions.
+- **Personal Tenant**: Removed. The former per-user personal tenant model (`user-{userId}`) was replaced by the shared root tenant + per-user instances of enabled agent definitions.
 - **Source**: Input material selected for a job, such as a call document, uploaded file, brain/context file, URL, or prior artifact reused as input.
 - **Workflow**: A reusable recipe or definition. Workbench owns the product-facing offering; Interchange owns deployable workflow execution.
 - **Job**: One execution/run of a workflow against selected sources and options. Jobs are what users resume, review, and complete.
@@ -310,7 +310,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 ## Design Decisions
 
 - **Interchange as the foundation**: The hub deploys `createApp` from Interchange rather than building its own tenant/identity/agent infrastructure.
-- **Shared global org tenant**: All users are member principals of one env-named global org tenant seeded at boot; agent definitions are seeded at the same time via `seedAgentTemplates`; workbenches are sub-tenants and per-user Myra instances live in the global tenant. Replaced the former per-user personal-tenant model (which was fragile — provisioned from three paths — and not the SaaS substrate). Data is kept private by per-principal scoping, not by per-user tenants.
+- **Root tenant**: All users are member principals of one env-named root tenant (the deployment's org, config property `config.rootTenant`, id `rootTenantId`) seeded at boot; agent definitions are seeded at the same time via `seedAgentTemplates`; workbenches are sub-tenants and per-user Myra instances live in the root tenant. Replaced the former per-user personal-tenant model (which was fragile — provisioned from three paths — and not the SaaS substrate). Data is kept private by per-principal scoping, not by per-user tenants.
 - **Artifact-centric model**: All outputs — from agents and workflows — are stored as `artifact` rows with provenance. Artifacts can be reused as inputs.
 - **Native workflow runtime**: Workflows are native `@intx/workflow` definitions deployed as git-backed assets and executed by Interchange's runtime; the hub does not implement workflow orchestration. Adding a workflow needs no hub change.
 - **Parallel generation**: Each collateral output type in a Collateral Generation workflow generates independently in parallel via separate agent calls.
