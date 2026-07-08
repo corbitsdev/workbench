@@ -38,6 +38,7 @@ import {
   fetchBlobObjectUrl,
 } from "../lib/instance-transport";
 import { classifyLaunchState } from "../components/agent-launch-helpers";
+import { useReportConnectionStatus } from "./use-report-connection-status";
 
 const LAUNCH_RETRY_DELAY_MS = 4000;
 const MAX_LAUNCH_TRANSIENT_RETRIES = 8;
@@ -485,6 +486,19 @@ export function useMyraSession(
   });
 
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
+
+  // Feed this session's phase to the app-level reconnecting overlay so a
+  // hub/sidecar restart covers the app instead of dropping to a "Try again".
+  // Keyed by identity so switching threads (a new instance) is not misread as a
+  // dropped session.
+  useReportConnectionStatus(
+    state.phase,
+    enabled,
+    reconnect,
+    instanceId !== null && tenantId !== null
+      ? `${tenantId}:${instanceId}`
+      : null,
+  );
 
   const session = state.phase === "ready" ? state.session : null;
 

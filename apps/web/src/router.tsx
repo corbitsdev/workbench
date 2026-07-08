@@ -16,6 +16,7 @@ import { ChatLauncherProvider } from "./lib/chat-launcher-context";
 import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
 import { RequireWorkbenchAccess } from "./components/RequireWorkbenchAccess";
 import { ActiveContextProvider } from "./lib/active-context-store";
+import { ConnectionStatusProvider } from "./lib/connection-status-context";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
 import { ChatsListPage } from "./pages/ChatsListPage";
@@ -144,39 +145,41 @@ function AppShell() {
         <ChatLauncherProvider>
           <CommandPaletteProvider>
             <ActiveContextProvider>
-              <div className="flex h-dvh flex-row overflow-hidden bg-page">
-                <AppSidebar
-                  mobileOpen={drawerOpen}
-                  onNavigate={() => setDrawerOpen(false)}
-                />
-                {drawerOpen && (
-                  <button
-                    type="button"
-                    aria-label="Close menu"
-                    onClick={() => setDrawerOpen(false)}
-                    className="fixed inset-0 z-40 bg-black/40 md:hidden"
+              <ConnectionStatusProvider>
+                <div className="flex h-dvh flex-row overflow-hidden bg-page">
+                  <AppSidebar
+                    mobileOpen={drawerOpen}
+                    onNavigate={() => setDrawerOpen(false)}
                   />
-                )}
-                <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                  <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                  {drawerOpen && (
                     <button
                       type="button"
-                      onClick={() => setDrawerOpen(true)}
-                      aria-label="Open menu"
-                      className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
-                    >
-                      <Menu size={20} />
-                    </button>
-                    <span className="text-sm font-semibold text-text">
-                      Workbench
-                    </span>
-                  </header>
-                  <main className="flex-1 overflow-hidden">
-                    <Outlet />
-                  </main>
-                  <PersonalAgentChat />
+                      aria-label="Close menu"
+                      onClick={() => setDrawerOpen(false)}
+                      className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                    />
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                    <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setDrawerOpen(true)}
+                        aria-label="Open menu"
+                        className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
+                      >
+                        <Menu size={20} />
+                      </button>
+                      <span className="text-sm font-semibold text-text">
+                        Workbench
+                      </span>
+                    </header>
+                    <main className="flex-1 overflow-hidden">
+                      <Outlet />
+                    </main>
+                    <PersonalAgentChat />
+                  </div>
                 </div>
-              </div>
+              </ConnectionStatusProvider>
             </ActiveContextProvider>
           </CommandPaletteProvider>
         </ChatLauncherProvider>
