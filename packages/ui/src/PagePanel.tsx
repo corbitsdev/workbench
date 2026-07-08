@@ -10,7 +10,20 @@ interface PagePanelProps {
   scroll?: boolean;
   /** Drop the panel's drop shadow (some surfaces render flatter). */
   flat?: boolean;
+  /**
+   * Size the panel to its content instead of filling the viewport height. The
+   * frame ends where the content ends (no dead full-height scrollport when the
+   * content is short) and the panel itself scrolls once content exceeds the
+   * available height. Overrides `scroll`.
+   */
+  fitContent?: boolean;
   className?: string;
+}
+
+function frameSizingClass(scroll: boolean, fitContent: boolean): string {
+  if (fitContent) return "max-h-full self-start overflow-y-auto";
+  if (scroll) return "min-h-full overflow-y-auto";
+  return "overflow-hidden";
 }
 
 /**
@@ -22,6 +35,7 @@ export function PagePanel({
   children,
   scroll = true,
   flat = false,
+  fitContent = false,
   className,
 }: PagePanelProps) {
   return (
@@ -29,7 +43,7 @@ export function PagePanel({
       <section
         className={cn(
           "flex flex-1 flex-col border border-border bg-bg",
-          scroll ? "min-h-full overflow-y-auto" : "overflow-hidden",
+          frameSizingClass(scroll, fitContent),
           !flat && "shadow-[var(--shadow)]",
           className,
         )}
