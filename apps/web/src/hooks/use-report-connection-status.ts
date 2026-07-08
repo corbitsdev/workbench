@@ -11,8 +11,9 @@ import {
  * Reports a Myra session's connection status to the app-level provider so the
  * reconnecting overlay can cover the app during a restart. Called once inside
  * `useMyraSession`, so every surface that opens a session participates with no
- * extra wiring. Fires a single automatic `reconnect()` when a previously-ready
- * session first errors, healing a dropped session without a user click.
+ * extra wiring. Fires throttled automatic `reconnect()`s while a previously-ready
+ * session is dropped, healing it without a user click for the length of a real
+ * redeploy before falling through to the manual "Try again".
  *
  * `identityKey` is the session's identity (instance + tenant). When it changes
  * the user has navigated to a *different* session, not lost the current one, so
@@ -47,7 +48,7 @@ export function useReportConnectionStatus(
   const active = enabled && identityKey !== null;
 
   useEffect(() => {
-    const decision = reduceReporter(stateRef.current, phase, active);
+    const decision = reduceReporter(stateRef.current, phase, active, Date.now());
     stateRef.current = decision.nextState;
     report(id, decision.status);
     if (decision.reconnect) reconnectRef.current();

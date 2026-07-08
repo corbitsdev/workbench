@@ -26,11 +26,24 @@ describe("isTransientLaunchError", () => {
     );
   });
 
+  it("treats hub/sidecar restart errors (a redeploy) as transient", () => {
+    for (const msg of [
+      "502 Bad Gateway",
+      "503 Service Unavailable",
+      "504 Gateway Timeout",
+      "agent is unreachable",
+      "Failed to fetch",
+      "NetworkError when attempting to fetch resource",
+      "Load failed",
+    ]) {
+      expect(isTransientLaunchError(new Error(msg))).toBe(true);
+    }
+  });
+
   it("does not treat auth or config errors as transient", () => {
     expect(isTransientLaunchError(new Error("credential not found"))).toBe(
       false,
     );
-    expect(isTransientLaunchError(new Error("502 Bad Gateway"))).toBe(false);
     expect(
       isTransientLaunchError(new Error("agent definition not registered")),
     ).toBe(false);
@@ -97,8 +110,9 @@ describe("classifyLaunchState", () => {
     expect(classifyLaunchState("deployed", "credential not found").kind).toBe(
       "missing-config",
     );
+    // A redeploy-time gateway error is transient, not fatal.
     expect(classifyLaunchState("deployed", "502 Bad Gateway").kind).toBe(
-      "fatal",
+      "connecting",
     );
   });
 
@@ -129,17 +143,23 @@ describe("classifyLaunchState", () => {
   });
 
   it("returns fatal for unrecognised non-transient errors", () => {
-    const state = classifyLaunchState(undefined, "502 Bad Gateway");
+    const state = classifyLaunchState(
+      undefined,
+      "agent definition not registered",
+    );
     expect(state.kind).toBe("fatal");
     if (state.kind === "fatal") {
-      expect(state.message).toBe("502 Bad Gateway");
+      expect(state.message).toBe("agent definition not registered");
     }
   });
 
   it("deploying takes precedence over launchError when instance is not running", () => {
     // If the instance hasn't reached running status, we always show deploying
     // regardless of whether there's also a launch error.
-    const state = classifyLaunchState("provisioning", "502 Bad Gateway");
+    const state = classifyLaunchState(
+      "provisioning",
+      "agent definition not registered",
+    );
     expect(state.kind).toBe("deploying");
   });
 });
