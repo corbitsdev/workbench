@@ -34,6 +34,7 @@ import { SettingsToolDetail } from "./pages/SettingsToolDetail";
 import { InsightsDashboard } from "./pages/InsightsDashboard";
 import { ActorDetailPage } from "./pages/insights/ActorDetailPage";
 import { WorkflowTracePage } from "./pages/insights/WorkflowTracePage";
+import { WorkflowRunHistory } from "./pages/insights/WorkflowRunHistory";
 import { AdminLayout } from "./pages/admin/AdminLayout";
 import { AdminPrincipals } from "./pages/admin/AdminPrincipals";
 import { PrincipalDetail } from "./pages/admin/PrincipalDetail";
@@ -113,6 +114,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Insights",
     to: "/insights",
     keywords: ["analytics", "usage", "dashboard", "metrics"],
+  },
+  {
+    id: "nav:run-history",
+    category: "navigation",
+    title: "Run history",
+    to: "/insights/runs",
+    keywords: ["workflow", "runs", "history", "past", "executions"],
   },
   {
     id: "nav:settings",
@@ -282,6 +290,7 @@ export const router = createBrowserRouter([
             ],
           },
           { path: "/insights", element: <InsightsDashboard /> },
+          { path: "/insights/runs", element: <WorkflowRunHistory /> },
           { path: "/insights/users/:id", element: <ActorDetailPage /> },
           {
             path: "/insights/trace/:runId",

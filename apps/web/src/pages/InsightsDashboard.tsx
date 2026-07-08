@@ -532,7 +532,15 @@ function CountTable({
 function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
-      <SectionLabel>Operational ledger</SectionLabel>
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel>Operational ledger</SectionLabel>
+        <Link
+          to="/insights/runs"
+          className="text-[12px] font-medium text-text-3 underline hover:text-text"
+        >
+          View run history →
+        </Link>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           label="Artifacts"
@@ -1048,8 +1056,7 @@ export function InsightsDashboard() {
   const [customRange, setCustomRange] = useState<DateRange>({});
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [actorFilter, setActorFilter] = useState<ActorFilter>("all");
-  const [exportBucket, setExportBucket] =
-    useState<ActivityExportBucket>("day");
+  const [exportBucket, setExportBucket] = useState<ActivityExportBucket>("day");
   const { activeTenantId, activeWorkbench, loading } = useActiveWorkbench();
   const reduceMotion = useReducedMotion();
   const pricingQuery = useModelPricing(activeTenantId ?? "");

@@ -1,51 +1,11 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 
-let runsResult: {
-  data?: unknown[];
-  isLoading: boolean;
-  isError: boolean;
-  refetch: () => void;
-} = { data: [], isLoading: false, isError: false, refetch: () => {} };
-
-let lastRunsTenantId: string | null | undefined;
 let activeTenantId: string | null = "ten-1";
-
-let lastArchivedRunId: string | null = null;
-let archiveShouldReject = false;
-mock.module("../hooks/use-workflow", () => ({
-  useWorkflowRuns: (tenantId?: string | null) => {
-    lastRunsTenantId = tenantId;
-    return runsResult;
-  },
-  useStartWorkflow: () => ({
-    isPending: false,
-    variables: undefined,
-    mutateAsync: (_vars: { kind: string }) =>
-      Promise.resolve({ runId: "run-started" }),
-  }),
-  useArchiveWorkflowRun: () => ({
-    isPending: false,
-    isError: false,
-    variables: undefined,
-    mutateAsync: (runId: string) => {
-      lastArchivedRunId = runId;
-      return archiveShouldReject
-        ? Promise.reject(new Error("archive failed"))
-        : Promise.resolve(undefined);
-    },
-  }),
-}));
 
 mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({
@@ -77,34 +37,8 @@ mock.module("../components/ErrorBoundary", () => ({
     React.createElement(React.Fragment, null, children),
 }));
 
-// Stub the catalog modal: when open, expose a button that simulates a user
-// choosing a kind and the start mutation resolving with a new runId.
-let lastCatalogProps: {
-  open: boolean;
-  tenantId: string | null;
-  onWorkflowStarted: (runId: string) => void;
-} | null = null;
-mock.module("../components/layout/UnifiedCatalogModal", () => ({
-  UnifiedCatalogModal: (props: {
-    open: boolean;
-    tenantId: string | null;
-    onWorkflowStarted: (runId: string) => void;
-  }) => {
-    lastCatalogProps = props;
-    if (!props.open) return null;
-    return React.createElement(
-      "button",
-      {
-        "data-testid": "stub-start",
-        onClick: () => props.onWorkflowStarted("run-new"),
-      },
-      "start kind",
-    );
-  },
-}));
-
 // Stub the catalog surface: capture its props so tests can assert the page
-// wires tenant, run kinds, and navigation into it.
+// wires the tenant and the started-run navigation into it.
 let lastCatalogSurfaceProps: {
   tenantId: string | null;
   onWorkflowStarted: (runId: string) => void;
@@ -127,23 +61,15 @@ const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {
   cleanup();
-  localStorage.clear();
   activeTenantId = "ten-1";
-  lastRunsTenantId = undefined;
   lastPaneTenantId = undefined;
-  lastCatalogProps = null;
   lastCatalogSurfaceProps = null;
-  lastArchivedRunId = null;
-  archiveShouldReject = false;
 });
 
 function renderWorkflowsPage(initialPath = "/workflows") {
   const router = createMemoryRouter(
     [
-      {
-        path: "/workflows",
-        element: React.createElement(WorkflowsPage),
-      },
+      { path: "/workflows", element: React.createElement(WorkflowsPage) },
       {
         path: "/workflows/:workflowId",
         element: React.createElement(WorkflowsPage),
@@ -155,492 +81,40 @@ function renderWorkflowsPage(initialPath = "/workflows") {
   return { router, ...view };
 }
 
-// The run list, search, and filters now live in the hover/focus-to-expand
-// overlay. Latch it open via the rail's expand toggle so those controls are
-// present and interactive before a test drives them.
-function expandRail() {
-  fireEvent.click(screen.getByRole("button", { name: /expand run list/i }));
-}
-
-// The no-selection landing dashboard renders the same kind labels as the rail
-// (active cards + recents), so rail-scoped assertions must query within the
-// rail overlay to stay unambiguous.
-function rail() {
-  const el = document.getElementById("workflow-rail-overlay");
-  if (!el) throw new Error("rail overlay not found");
-  return within(el);
-}
-
 describe("WorkflowsPage", () => {
-  it("shows a loading state", () => {
-    runsResult = {
-      data: undefined,
-      isLoading: true,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    screen.getByText(/loading runs/i);
-  });
-
-  it("shows an empty state when there are no runs", () => {
-    runsResult = {
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    screen.getByText(/no workflow runs yet/i);
-  });
-
-  it("renders the catalog surface on the empty-state dashboard", () => {
-    runsResult = {
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
+  it("renders the catalog surface wired to the active tenant", () => {
+    activeTenantId = "ten-42";
     renderWorkflowsPage();
     screen.getByTestId("workflow-catalog-surface");
-    expect(lastCatalogSurfaceProps?.tenantId).toBe("ten-1");
+    expect(lastCatalogSurfaceProps?.tenantId).toBe("ten-42");
   });
 
-  it("renders the catalog surface on the dashboard and navigates to a started run", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
+  it("does not render run history, filters, or a New-run button", () => {
+    renderWorkflowsPage();
+    expect(screen.queryByLabelText("Search runs")).toBeNull();
+    expect(screen.queryByRole("button", { name: /new run/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Failed" })).toBeNull();
+  });
+
+  it("navigates to the interactive run detail when a run is started", () => {
     const { router } = renderWorkflowsPage();
-    screen.getByTestId("workflow-catalog-surface");
     lastCatalogSurfaceProps?.onWorkflowStarted("run-new");
     expect(router.state.location.pathname).toBe("/workflows/run-new");
   });
 
-  it("scopes the run list and run pane to the active workbench tenant", () => {
-    activeTenantId = "ten-42";
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage("/workflows/run-1");
-    expect(lastRunsTenantId).toBe("ten-42");
-    expect(lastPaneTenantId).toBe("ten-42");
-  });
-
-  it("navigates to /workflows/:workflowId when a run is selected", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    const { router } = renderWorkflowsPage();
-    expandRail();
-    fireEvent.click(rail().getByText("Deck build", { selector: "span" }));
-    expect(router.state.location.pathname).toBe("/workflows/run-1");
-  });
-
-  it("opens run pane from /workflows/:workflowId deep link", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
+  it("opens the run pane on a /workflows/:workflowId deep link, scoped to the tenant", () => {
+    activeTenantId = "ten-7";
     renderWorkflowsPage("/workflows/run-1");
     expect(screen.getByTestId("run-pane").textContent).toBe("run-1");
+    expect(lastPaneTenantId).toBe("ten-7");
+    // The catalog is not mounted while a run is open.
+    expect(screen.queryByTestId("workflow-catalog-surface")).toBeNull();
   });
 
-  it("renders the dashboard with a not-available note (not the run pane) when deep-linking to an unknown run id", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage("/workflows/does-not-exist");
-    expect(screen.queryByTestId("run-pane")).toBeNull();
-    screen.getByText(/that run is no longer available/i);
-  });
-
-  it("drops the URL back to /workflows after the selected run is archived (two-tap confirm)", async () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
+  it("returns to the catalog when the run pane is closed", async () => {
     const { router } = renderWorkflowsPage("/workflows/run-1");
-    expect(router.state.location.pathname).toBe("/workflows/run-1");
-
-    expandRail();
-    // First tap only arms the confirm — no archive, no navigation yet.
-    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
-    expect(lastArchivedRunId).toBeNull();
-    expect(router.state.location.pathname).toBe("/workflows/run-1");
-    // The explicit Confirm control commits.
-    fireEvent.click(
-      screen.getByLabelText(/confirm: stop and remove deck-build run/i),
-    );
-    expect(lastArchivedRunId).toBe("run-1");
-
-    // Navigation happens once the archive mutation resolves.
-    await Promise.resolve();
-    expect(router.state.location.pathname).toBe("/workflows");
-  });
-
-  it("a single tap arms an explicit Confirm/Cancel; only Confirm archives", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    expandRail();
-
-    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
-    expect(lastArchivedRunId).toBeNull();
-    // Armed: the plain Archive control is replaced by an explicit Confirm + Cancel.
-    expect(screen.queryByLabelText("Archive deck-build run")).toBeNull();
-    screen.getByLabelText("Cancel archiving deck-build run");
-
-    fireEvent.click(
-      screen.getByLabelText(/confirm: stop and remove deck-build run/i),
-    );
-    expect(lastArchivedRunId).toBe("run-1");
-  });
-
-  it("Cancel disarms the confirm without archiving", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    expandRail();
-
-    fireEvent.click(screen.getByLabelText("Archive deck-build run"));
-    fireEvent.click(screen.getByLabelText("Cancel archiving deck-build run"));
-    expect(lastArchivedRunId).toBeNull();
-    // Back to the resting Archive affordance.
-    screen.getByLabelText("Archive deck-build run");
-  });
-
-  it("filters the run list by status", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "failed",
-          createdAt: "2026-01-02T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    expandRail();
-
-    rail().getByText("Deck build", { selector: "span" });
-    rail().getByText("Last30days", { selector: "span" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-
-    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
-    rail().getByText("Last30days", { selector: "span" });
-  });
-
-  it("resets filters from the toolbar control", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "failed",
-          createdAt: "2026-01-02T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    expandRail();
-
-    fireEvent.click(screen.getByRole("button", { name: "Failed" }));
-    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
-    rail().getByText("Deck build", { selector: "span" });
-  });
-
-  it("searches the run list by workflow kind", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "completed",
-          createdAt: "2026-01-02T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    expandRail();
-
-    fireEvent.change(screen.getByLabelText("Search runs"), {
-      target: { value: "last30" },
-    });
-
-    expect(rail().queryByText("Deck build", { selector: "span" })).toBeNull();
-    rail().getByText("Last30days", { selector: "span" });
-  });
-
-  it("opens the catalog from the rail New run, and starting a run selects it", () => {
-    activeTenantId = "ten-7";
-    runsResult = {
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    const { router } = renderWorkflowsPage();
-
-    expect(screen.queryByTestId("stub-start")).toBeNull();
-    // The dashboard no longer carries a New-run button; the run-history rail is
-    // the only modal-catalog entry point (aria-hidden while the rail is
-    // collapsed, so query it including hidden elements).
-    fireEvent.click(
-      screen.getAllByRole("button", { name: /new run/i, hidden: true })[0]!,
-    );
-    expect(lastCatalogProps?.open).toBe(true);
-    expect(lastCatalogProps?.tenantId).toBe("ten-7");
-
-    fireEvent.click(screen.getByTestId("stub-start"));
-    expect(router.state.location.pathname).toBe("/workflows/run-new");
-  });
-
-  it("renders stat counts from the runs on the landing dashboard", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "running",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "awaiting",
-          createdAt: "2026-01-02T00:00:00Z",
-        },
-        {
-          runId: "run-3",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-03T00:00:00Z",
-        },
-        {
-          runId: "run-4",
-          kind: "last30days",
-          status: "failed",
-          createdAt: "2026-01-04T00:00:00Z",
-        },
-        {
-          runId: "run-5",
-          kind: "deck-build",
-          status: "failed",
-          createdAt: "2026-01-05T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    screen.getByLabelText("Show 1 running runs");
-    screen.getByLabelText("Show 1 awaiting runs");
-    screen.getByLabelText("Show 1 completed runs");
-    // Failures are never surfaced — there is no failed metric despite two
-    // failed runs in the data.
-    expect(screen.queryByLabelText(/failed runs/i)).toBeNull();
-  });
-
-  it("clicking a status metric applies the status filter and pins the rail", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-        {
-          runId: "run-2",
-          kind: "last30days",
-          status: "running",
-          createdAt: "2026-01-02T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    const completedMetric = screen.getByLabelText("Show 1 completed runs");
-    expect(completedMetric.getAttribute("aria-pressed")).toBe("false");
-
-    fireEvent.click(completedMetric);
-
-    expect(
-      screen
-        .getByLabelText("Show 1 completed runs")
-        .getAttribute("aria-pressed"),
-    ).toBe("true");
-    // The rail opens (transient, no longer persisted): its overlay un-hides.
-    expect(
-      document
-        .getElementById("workflow-rail-overlay")
-        ?.getAttribute("aria-hidden"),
-    ).toBe("false");
-  });
-
-  it("clicking an active workflow card navigates to that run", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-active",
-          kind: "deck-build",
-          status: "awaiting",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    const { router } = renderWorkflowsPage();
-    fireEvent.click(screen.getByText("Needs you"));
-    expect(router.state.location.pathname).toBe("/workflows/run-active");
-  });
-
-  it("renders a view-all-runs link on the dashboard", () => {
-    runsResult = {
-      data: [
-        {
-          runId: "run-1",
-          kind: "deck-build",
-          status: "completed",
-          createdAt: "2026-01-01T00:00:00Z",
-        },
-      ],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    screen.getByRole("button", { name: "View all runs" });
-  });
-
-  it("pivots to a catalog-first empty state when there are zero runs", () => {
-    runsResult = {
-      data: [],
-      isLoading: false,
-      isError: false,
-      refetch: () => {},
-    };
-    renderWorkflowsPage();
-    screen.getByText(/no workflows yet/i);
-    screen.getByText(/start a workflow from the catalog/i);
-    // The empty state carries no New-run button — the catalog below is the only
-    // launch path. The collapsed rail's New-run stays aria-hidden.
-    expect(screen.queryByRole("button", { name: /new run/i })).toBeNull();
+    // WorkflowRunPane is stubbed, so drive the close by navigating as it would.
+    await router.navigate("/workflows");
+    await screen.findByTestId("workflow-catalog-surface");
   });
 });
