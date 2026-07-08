@@ -66,6 +66,31 @@ export const MYRA_TOOL_CATALOG: ToolCatalog = [
     ],
   ),
   entry(
+    "notion",
+    "Notion — search, read, and create workspace pages and databases.",
+    ["notion", "pages", "databases", "docs", "notes", "wiki", "knowledge"],
+    [
+      {
+        bare: "notion_search",
+        description: "Search pages and databases by title.",
+      },
+      { bare: "notion_get_page", description: "Fetch one page's properties." },
+      {
+        bare: "notion_get_page_content",
+        description: "Read a page's body blocks.",
+      },
+      {
+        bare: "notion_get_database",
+        description: "Fetch a database's schema.",
+      },
+      {
+        bare: "notion_query_database",
+        description: "Query rows of a database.",
+      },
+      { bare: "notion_create_page", description: "Create a page or db row." },
+    ],
+  ),
+  entry(
     "granola",
     "Granola — meeting notes, transcripts, and folders.",
     ["granola", "meetings", "notes", "transcripts", "calls"],

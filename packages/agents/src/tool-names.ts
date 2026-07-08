@@ -92,6 +92,14 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "linear_list_teams",
     "linear_list_users",
   ],
+  "@workbench/tools-notion/notion": [
+    "notion_search",
+    "notion_get_page",
+    "notion_get_page_content",
+    "notion_get_database",
+    "notion_query_database",
+    "notion_create_page",
+  ],
   "@workbench/tools-vercel/vercel": [
     "vercel_list_projects",
     "vercel_list_deployments",
@@ -153,6 +161,7 @@ const PACKAGE_PROVIDERS: Record<string, string> = {
   "@workbench/tools-firecrawl": "firecrawl",
   "@workbench/tools-gamma": "gamma",
   "@workbench/tools-linear": "linear",
+  "@workbench/tools-notion": "notion",
   "@workbench/tools-vercel": "vercel",
   "@workbench/tools-github": "github",
   "@workbench/tools-granola": "granola",

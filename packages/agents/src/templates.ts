@@ -155,6 +155,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       { name: "@workbench/tools-exa", version: "^0.1.0" },
       { name: "@workbench/tools-linear", version: "^0.1.0" },
       { name: "@workbench/tools-attio", version: "^0.1.0" },
+      { name: "@workbench/tools-notion", version: "^0.1.0" },
       { name: "@workbench/tools-granola", version: "^0.1.0" },
       { name: "@workbench/tools-artifact", version: "^0.1.0" },
       { name: "@workbench/tools-fileparser", version: "^0.1.0" },

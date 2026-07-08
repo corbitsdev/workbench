@@ -104,6 +104,26 @@ describe("seed-credentials buildEntries", () => {
     expect(entries.find((e) => e.providerName === "attio")).toBeUndefined();
   });
 
+  it("includes notion entry with REST baseURL when NOTION_API_KEY is set", () => {
+    process.env["NOTION_API_KEY"] = "notion_test123";
+
+    const entries = buildEntries();
+
+    const notion = entries.find((e) => e.providerName === "notion");
+    expect(notion).toBeDefined();
+    expect(notion?.secret).toBe("notion_test123");
+    expect(notion?.providerPlugin).toBe("notion");
+    expect(notion?.metadata?.["baseURL"]).toBe("https://api.notion.com");
+  });
+
+  it("omits notion entry when NOTION_API_KEY is not set", () => {
+    delete process.env["NOTION_API_KEY"];
+
+    const entries = buildEntries();
+
+    expect(entries.find((e) => e.providerName === "notion")).toBeUndefined();
+  });
+
   it("includes vercel entry with REST baseURL when VERCEL_API_KEY is set", () => {
     process.env["VERCEL_API_KEY"] = "vercel_test123";
 

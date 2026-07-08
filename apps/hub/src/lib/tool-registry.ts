@@ -8,6 +8,7 @@ import { ATTIO_HUB_TOOLS } from "@workbench/tools-attio";
 import { BLUESKY_HUB_TOOLS } from "@workbench/tools-bluesky";
 import { EXA_HUB_TOOLS } from "@workbench/tools-exa";
 import { LINEAR_HUB_TOOLS } from "@workbench/tools-linear";
+import { NOTION_HUB_TOOLS } from "@workbench/tools-notion";
 import { FIRECRAWL_HUB_TOOLS } from "@workbench/tools-firecrawl";
 import { GAMMA_HUB_TOOLS } from "@workbench/tools-gamma";
 import { GRANOLA_HUB_TOOLS } from "@workbench/tools-granola";
@@ -57,6 +58,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...EXA_HUB_TOOLS,
   ...FIRECRAWL_HUB_TOOLS,
   ...LINEAR_HUB_TOOLS,
+  ...NOTION_HUB_TOOLS,
   // GAMMA_HUB_TOOLS carries only the credential tools that call the Gamma API;
   // gamma_list_templates executes via HUB_BACKED_TOOLS and is listed here (like
   // every other hub-backed tool) so the Tools gallery and search still show it.

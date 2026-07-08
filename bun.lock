@@ -68,6 +68,7 @@
         "@workbench/tools-hackernews": "workspace:*",
         "@workbench/tools-last30days": "workspace:*",
         "@workbench/tools-linear": "workspace:*",
+        "@workbench/tools-notion": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
@@ -1140,6 +1141,19 @@
     },
     "packages/tools-linear": {
       "name": "@workbench/tools-linear",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tools-notion": {
+      "name": "@workbench/tools-notion",
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
@@ -2456,6 +2470,8 @@
     "@workbench/tools-last30days": ["@workbench/tools-last30days@workspace:packages/tools-last30days"],
 
     "@workbench/tools-linear": ["@workbench/tools-linear@workspace:packages/tools-linear"],
+
+    "@workbench/tools-notion": ["@workbench/tools-notion@workspace:packages/tools-notion"],
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 
