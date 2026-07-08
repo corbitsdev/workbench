@@ -1,6 +1,7 @@
 import { GrantRequirement, CredentialRequirement } from "@intx/types";
 import { canonicalizeToolNames } from "../tool-names";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
+import { LLM_CREDENTIAL_NAME } from "../constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;
@@ -16,12 +17,12 @@ export const PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS: CredentialRequirementType[]
     {
       providerName: "openai-compatible",
       source: "tenant",
-      name: "near-ai",
+      name: LLM_CREDENTIAL_NAME,
     },
   ];
 
 export const PERSONAL_AGENT_MODEL_CONFIG = {
-  defaultModel: "deepseek-ai/DeepSeek-V4-Flash",
+  defaultModel: "kimi-k2.6",
 } as const;
 
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
