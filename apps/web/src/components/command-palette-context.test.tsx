@@ -61,6 +61,8 @@ mock.module("../lib/hub-api", () => {
     getOwnerCredentials: stub,
     setOwnerCredential: stub,
     clearOwnerCredential: stub,
+    getOwnerDemos: stub,
+    setOwnerDemosEnabled: stub,
     postMe: stub,
     patchMePreferences: stub,
     patchMeProfile: stub,

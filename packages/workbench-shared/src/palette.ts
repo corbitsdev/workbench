@@ -134,11 +134,7 @@ export function filterPaletteNavItems(
   me: { isAdmin?: boolean; isOwner?: boolean } | undefined,
 ): PaletteResultItem[] {
   return items.filter((item) => {
-    const req = (item as any).requires as
-      | "admin"
-      | "owner"
-      | "admin-or-owner"
-      | undefined;
+    const req = item.requires;
     if (!req) return true;
     if (req === "owner") return !!me?.isOwner;
     if (req === "admin") return !!me?.isAdmin;
