@@ -17,6 +17,7 @@ import {
   getRunKindStats,
   listRunRecords,
   listRunSteps,
+  loadDeploymentMeta,
   loadRunRecord,
   markRunStopped,
   softDeleteRunRecord,
@@ -45,6 +46,7 @@ import {
   type ProvisionRunDeploymentFn,
 } from "./workflow-runs";
 import { getWorkflowRunTokenTotals } from "../services/activity-overview";
+import { WorkflowMeta } from "../lib/workflow-meta";
 
 const log = getLogger(["api", "workflow-run-records"]);
 
@@ -98,6 +100,11 @@ const RunStateResponse = type({
   status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
   "originConversationId?": "string",
+  // The run's deploy-time version provenance, joined from the deployment index
+  // by deploymentId. Sourced here rather than from the grant-filtered runnable
+  // catalog so the run pane's version badge survives an owner disabling the
+  // kind. Omitted for deployments that predate version capture.
+  "meta?": WorkflowMeta,
 });
 
 const ErrorResponse = type({ error: "string" });
@@ -174,18 +181,22 @@ export const DeployInProgressResponse = type({
 });
 export type DeployInProgress = typeof DeployInProgressResponse.infer;
 
-function stateResponse(state: {
-  runId: string;
-  kind: string;
-  status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
-  deploymentId?: string;
-  originConversationId?: string;
-}): {
+function stateResponse(
+  state: {
+    runId: string;
+    kind: string;
+    status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+    deploymentId?: string;
+    originConversationId?: string;
+  },
+  meta?: WorkflowMeta | null,
+): {
   runId: string;
   kind: string;
   status: string;
   deploymentId?: string;
   originConversationId?: string;
+  meta?: WorkflowMeta;
 } {
   return {
     runId: state.runId,
@@ -197,7 +208,20 @@ function stateResponse(state: {
     ...(state.originConversationId !== undefined
       ? { originConversationId: state.originConversationId }
       : {}),
+    ...(meta ? { meta } : {}),
   };
+}
+
+// Resolve the run's deploy-time version meta for the record response. Keyed by
+// the run's own deploymentId (not the grant-filtered catalog), so a run whose
+// kind an owner has since disabled still carries its version. Null when the run
+// has no deployment yet (provisioning) or the deployment predates version meta.
+async function resolveStateMeta(
+  db: HubDb,
+  state: { deploymentId?: string },
+): Promise<WorkflowMeta | null> {
+  if (state.deploymentId === undefined) return null;
+  return loadDeploymentMeta(db, state.deploymentId);
 }
 
 // Map a run-exec failure to an HTTP response. The deploy-window 503 (CL-2707)
@@ -365,7 +389,12 @@ export function createWorkflowRunRecordsRouter(deps: {
       // provisions + fires the trigger on a detached background task; the UI
       // polls this row and the projection bridge advances it to 'running' once
       // the sidecar emits its first event, or the tail flips it to 'failed'.
-      return c.json(stateResponse(result.state));
+      return c.json(
+        stateResponse(
+          result.state,
+          await resolveStateMeta(deps.db, result.state),
+        ),
+      );
     },
   );
 
@@ -591,7 +620,9 @@ export function createWorkflowRunRecordsRouter(deps: {
       const gate = assertRunOwnership(chain, context, state);
       if (gate) return c.json({ error: gate.error }, gate.status);
 
-      return c.json(stateResponse(state));
+      return c.json(
+        stateResponse(state, await resolveStateMeta(deps.db, state)),
+      );
     },
   );
 
@@ -1037,7 +1068,12 @@ export function createWorkflowRunRecordsRouter(deps: {
         },
       );
       if (!result.ok) return runExecErrorResponse(c, result);
-      return c.json(stateResponse(result.state));
+      return c.json(
+        stateResponse(
+          result.state,
+          await resolveStateMeta(deps.db, result.state),
+        ),
+      );
     },
   );
 

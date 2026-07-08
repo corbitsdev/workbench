@@ -19,6 +19,12 @@ mock.module("@intx/db", () => ({
 // projection bridge would do), load reads it back — including deploymentId, which
 // resume needs to address the sidecar.
 const runs = new Map<string, RunState>();
+// Deploy-time provenance keyed by deploymentId. The record read joins it in so
+// the version badge survives an owner disabling the kind.
+const deploymentMetas = new Map<
+  string,
+  { version: string; sha: string; deployedAt: string }
+>();
 mock.module("../workflow-executor/run-store", () => ({
   setRunStatus: async (
     _db: unknown,
@@ -77,6 +83,10 @@ mock.module("../workflow-executor/run-store", () => ({
   },
   loadRunRecord: async (_db: unknown, runId: string) => {
     const found = runs.get(runId);
+    return found ? structuredClone(found) : null;
+  },
+  loadDeploymentMeta: async (_db: unknown, deploymentId: string) => {
+    const found = deploymentMetas.get(deploymentId);
     return found ? structuredClone(found) : null;
   },
   softDeleteRunRecord: async (_db: unknown, runId: string) => {
@@ -238,6 +248,7 @@ const isSidecarConnected = (): boolean => {
 
 function resetCaptures(): void {
   runs.clear();
+  deploymentMetas.clear();
   sentMessages.length = 0;
   sentSignals.length = 0;
   ensureCalls.length = 0;
@@ -729,6 +740,42 @@ describe("workflow runs on the sidecar (records router)", () => {
     // The fresh per-run deploymentId the async tail attached round-trips through
     // the read DTO.
     expect(read.json.deploymentId).toBe("ses_run_1");
+  });
+
+  test("GET run state carries the run's deployment version meta", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    await settleStart(start.json.runId);
+    // Provenance for the exact deployment the run's async tail attached. The
+    // record read joins it in so the badge does not depend on the gate-filtered
+    // catalog list — an owner disabling the kind must not hide it.
+    deploymentMetas.set("ses_run_1", {
+      version: "3",
+      sha: "a1b2c3d",
+      deployedAt: "2026-05-01T00:00:00.000Z",
+    });
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.status).toBe(200);
+    expect(read.json.meta).toEqual({
+      version: "3",
+      sha: "a1b2c3d",
+      deployedAt: "2026-05-01T00:00:00.000Z",
+    });
+  });
+
+  test("GET run state omits meta for a deployment with no provenance", async () => {
+    resetCaptures();
+    const a = app();
+    const start = await post(a, "/workflow-exec/pain-point-collateral/start", {
+      input: {},
+    });
+    await settleStart(start.json.runId);
+    const read = await get(a, `/workflow-exec/records/${start.json.runId}`);
+    expect(read.status).toBe(200);
+    expect(read.json.meta).toBeUndefined();
   });
 
   test("GET /records lists only the callers own runs (per-user private)", async () => {

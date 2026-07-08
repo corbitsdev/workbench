@@ -113,15 +113,19 @@ function WorkflowRunPaneInner({
 
   // Resolve the exact deployment that produced this run so the badge shows the
   // version that actually ran — not the newest deployment of the kind, which
-  // would be wrong after a redeploy. Falls back to no badge when the run predates
-  // deploymentId persistence or its deployment has since been superseded.
+  // would be wrong after a redeploy. The record's own meta is authoritative and
+  // ownership-checked; it survives an owner disabling the kind (which drops the
+  // deployment from the grant-filtered catalog list). Fall back to the catalog
+  // list only for runs whose record predates version-meta persistence, and to no
+  // badge when neither carries it.
   const deploymentMeta = useMemo(() => {
+    if (record?.meta) return record.meta;
     if (!deployments || !recordDeploymentId) return null;
     const match = deployments.find(
       (d) => d.deploymentId === recordDeploymentId,
     );
     return match?.meta ?? null;
-  }, [deployments, recordDeploymentId]);
+  }, [record?.meta, deployments, recordDeploymentId]);
 
   const { data: uiModule, isPending: uiModulePending } = useQuery({
     queryKey: ["workflow-ui-module", kind],
