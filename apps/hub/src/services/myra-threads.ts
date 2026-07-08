@@ -5,15 +5,11 @@ import {
   getAncestorChain,
 } from "@intx/db";
 import { generateId } from "@intx/hub-common";
-import {
-  createAgent,
-  createDefaultDirectorRegistry,
-  defineAgent,
-  type AuthorizeFn,
-} from "@intx/agent";
 import type { InferenceSource } from "@intx/types/runtime";
-import { createIsogitStore, type GCPolicy } from "@workbench/storage-isogit";
-import { randomUUID } from "node:crypto";
+import { createIsogitStore } from "@workbench/storage-isogit";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   AGENT_TEMPLATES,
@@ -25,10 +21,7 @@ import {
   myraThreadTitleFromFirstMessage,
 } from "@workbench/shared";
 import type { SessionService } from "@intx/hub-sessions";
-import {
-  createEventCollector,
-  type TurnFinalized,
-} from "@workbench/event-collector";
+import { runTrackedOneShot } from "./tracked-one-shot";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
@@ -370,12 +363,6 @@ function sanitizeTitle(raw: string): string | null {
   return title;
 }
 
-const ALLOW_ALL_AUTHORIZE: AuthorizeFn = async () => ({
-  effect: "allow" as const,
-  matchingGrants: [],
-  resolvedBy: null,
-});
-
 /**
  * Resolve the inference source for title generation. Prefers a cheap optional
  * tenant credential named 'Myra Title LLM'; falls back to the Myra definition's
@@ -441,17 +428,10 @@ async function resolveTitleSource(
   };
 }
 
-// Best-effort teardown: cleanup must not throw over the real result/error, but
-// the failure is logged rather than silently dropped.
-const logTeardownError = (op: string) => (err: unknown) =>
-  log.warn(`Myra title turn teardown failed: ${op}`, {
-    error: err instanceof Error ? err.message : String(err),
-  });
-
-// Serializes title turns per member principal. A member's title turns share one
-// durable working tree (their audit repo), so they must not run concurrently;
-// different principals run fully in parallel. The map holds one tail promise per
-// principal (bounded by active members).
+// Serializes title turns per member principal so one member's concurrent titles
+// run one-at-a-time (bounding concurrent inference per member); different
+// principals run fully in parallel. The map holds one tail promise per principal
+// (bounded by active members).
 const titleLocks = new Map<string, Promise<unknown>>();
 function runSerializedPerPrincipal<T>(
   key: string,
@@ -470,20 +450,10 @@ function runSerializedPerPrincipal<T>(
 }
 
 /**
- * Write-path reclaim policy for the durable per-principal title repos. They
- * accumulate audit commits for the life of the member, so they use the same
- * thresholds as the hub agent repos with keep-history retention — the trail
- * is durable user data, only loose/pack bloat is reclaimed.
- */
-export function titleStoreGcPolicy(): GCPolicy {
-  return { ...getConfig().hub.agentGc, retention: "keep-history" };
-}
-
-/**
- * Run ONE non-streaming @intx/agent turn for the title, pumping every emitted
- * InferenceEvent into a hand-rolled event-collector so the turn is recorded to
- * analytics under the thread's instance + tenant (rolls up in /insights). The
- * turn's audit commits land in the member's durable per-principal repo.
+ * Run ONE title-generation turn via the shared tracked-one-shot primitive: an
+ * ephemeral scratch repo (no durable per-principal state), the turn recorded to
+ * the thread's instance + tenant, and token usage forwarded to analytics so it
+ * rolls up per member in /insights.
  */
 async function runTitleTurn(
   db: HubDb,
@@ -493,30 +463,17 @@ async function runTitleTurn(
     instanceId: string;
     source: InferenceSource;
     firstMessage: string;
+    analytics: AnalyticsSubscriber;
     signal: AbortSignal;
   },
 ): Promise<string | null> {
-  // Durable per-(tenant, principal) audit repo on the hub's persistent volume
-  // (the same dataDir agent repos live on). One-way: each title turn's audit
-  // commits accumulate here as the title-agent-use trail; never deleted. Keyed
-  // per principal so each member's titling is its own repo (attribution) and
-  // only a member's own concurrent titles ever contend (serialized below).
-  const contextDir = join(
-    getConfig().hub.dataDir,
-    "myra-title",
-    opts.tenantId,
-    opts.memberPrincipalId,
-  );
-  const store = await createIsogitStore(
-    contextDir,
-    undefined,
-    titleStoreGcPolicy(),
-  );
-
-  // The collector persists this turn to `inference_turn`, whose `session_id` is
-  // a NOT NULL FK to `agent_session`. A fabricated id would violate the FK and
-  // fail every title turn, so we key the collector to one durable, reused title
-  // session per tenant — created once, idempotently, on first use.
+  // The turn is recorded to `inference_turn`, whose `session_id` is a NOT NULL
+  // FK to `agent_session`; key it to one durable, reused title session per
+  // tenant, created idempotently on first use. instanceRow.principalId is also
+  // the attribution principal so title tokens roll up to the owning member.
+  // NOTE: this session is tenant-shared and its `principalId` belongs to
+  // whichever instance created it first — usage/attribution must key off the
+  // per-turn instanceId (as analytics does), never off session.principalId.
   const instanceRow = await db.query.agentInstance.findFirst({
     where: (i, { eq: ieq }) => ieq(i.id, opts.instanceId),
   });
@@ -534,76 +491,40 @@ async function runTitleTurn(
     })
     .onConflictDoNothing({ target: agentSession.id });
 
-  const def = defineAgent({
-    id: `myra-title-${randomUUID()}`,
-    systemPrompt: TITLE_SYSTEM_PROMPT,
-    tools: [],
-    capabilities: [],
-    inference: {
-      sources: [{ provider: opts.source.provider, model: opts.source.model }],
-    },
-  });
-
-  const env = {
-    sources: [opts.source],
-    defaultSource: opts.source.id,
-    storage: store,
-    workdir: contextDir,
-    audit: store,
-    authorize: ALLOW_ALL_AUTHORIZE,
-    directors: createDefaultDirectorRegistry(),
-    closeTimeoutMs: 1000,
-  };
-
-  let finalizedText: string | null = null;
-  const onTurnFinalized = (turn: TurnFinalized) => {
-    if (turn.status === "completed" && turn.text.trim() !== "") {
-      finalizedText = turn.text;
-    }
-  };
-
-  const collector = createEventCollector({
-    db,
-    sessionId: titleSessionId,
-    instanceId: opts.instanceId,
-    tenantId: opts.tenantId,
-    onTurnFinalized,
-  });
-
-  const agentInst = await createAgent(def, env);
-
-  // On deadline (CL-2866) close() releases the agent workdir lock so a wedged
-  // turn cannot pin the per-principal title repo. It is idempotent, so the
-  // success/catch paths below may safely close again.
-  const onAbort = () => {
-    void agentInst.close().catch(logTeardownError("abort close agent"));
-  };
-  if (opts.signal.aborted) onAbort();
-  else opts.signal.addEventListener("abort", onAbort, { once: true });
-
-  async function pumpStream(): Promise<void> {
-    for await (const event of agentInst.stream()) {
-      if (event.type === "message.received") continue;
-      await collector.onEvent(event);
-    }
-  }
-
-  const pumpDone = pumpStream();
+  // A title is a stateless one-shot: empty context, no durable trail. Give it a
+  // throwaway scratch repo — a single tiny commit that never trips GC (so
+  // `send()` returns immediately instead of after the O(repo) keep-history
+  // repack that hung the old shared per-principal repo, CL-2887) and leaves
+  // nothing on the volume. Usage + the turn record below are the tracking, not
+  // this repo.
+  const contextDir = await mkdtemp(join(tmpdir(), "myra-title-"));
   try {
-    const result = await agentInst.send(opts.firstMessage);
-    await agentInst.close();
-    await pumpDone.catch(logTeardownError("pump stream"));
-    await collector.abandon();
-    const text =
-      finalizedText ?? collector.getAccumulatedText() ?? result.reply;
-    return text;
-  } catch (err) {
-    await agentInst.close().catch(logTeardownError("close agent"));
-    await pumpDone.catch(logTeardownError("pump stream"));
-    await collector.abandon().catch(logTeardownError("abandon collector"));
-    throw err;
+    const store = await createIsogitStore(contextDir);
+    return await runTrackedOneShot({
+      db,
+      tenantId: opts.tenantId,
+      source: opts.source,
+      systemPrompt: TITLE_SYSTEM_PROMPT,
+      agentIdPrefix: "myra-title",
+      message: opts.firstMessage,
+      store,
+      workdir: contextDir,
+      analytics: {
+        subscriber: opts.analytics,
+        attributionPrincipalId: instanceRow.principalId,
+      },
+      turnRecording: {
+        sessionId: titleSessionId,
+        instanceId: opts.instanceId,
+      },
+      signal: opts.signal,
+    });
   } finally {
-    opts.signal.removeEventListener("abort", onAbort);
+    await rm(contextDir, { recursive: true, force: true }).catch((err) =>
+      log.warn("Myra title temp repo cleanup failed", {
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
   }
 }
 
@@ -626,6 +547,7 @@ async function runTitleTurnBounded(
     instanceId: string;
     source: InferenceSource;
     firstMessage: string;
+    analytics: AnalyticsSubscriber;
   },
   timeoutMs: number,
 ): Promise<string | null> {
@@ -654,7 +576,7 @@ async function runTitleTurnBounded(
  */
 export async function generateMyraThreadTitle(
   db: HubDb,
-  _deps: Record<string, never>,
+  deps: { analytics: AnalyticsSubscriber },
   opts: {
     tenantId: string;
     memberPrincipalId: string;
@@ -723,6 +645,7 @@ export async function generateMyraThreadTitle(
           instanceId: mapping.instanceId,
           source,
           firstMessage,
+          analytics: deps.analytics,
         },
         getConfig().hub.myraTitleTurnTimeoutMs,
       ),
@@ -765,6 +688,7 @@ export async function generateMyraThreadTitle(
 /** Fire-and-forget titling so the HTTP handler never blocks on inference. */
 export function scheduleMyraThreadTitle(
   db: HubDb,
+  deps: { analytics: AnalyticsSubscriber },
   opts: {
     tenantId: string;
     memberPrincipalId: string;
@@ -772,7 +696,7 @@ export function scheduleMyraThreadTitle(
     firstMessage: string;
   },
 ): void {
-  void generateMyraThreadTitle(db, {}, opts).catch((err) => {
+  void generateMyraThreadTitle(db, deps, opts).catch((err) => {
     log.error("Myra thread title job failed unexpectedly", {
       threadId: opts.threadId,
       error: err instanceof Error ? err : new Error(String(err)),

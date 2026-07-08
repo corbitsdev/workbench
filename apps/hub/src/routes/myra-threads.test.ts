@@ -53,7 +53,11 @@ function wrapWithAuth(router: Hono, userId = "usr-1"): Hono {
 
 function buildRouter(): Hono {
   // biome-ignore lint/suspicious/noExplicitAny: structural mocks for injected deps
-  return createMyraThreadsRouter({} as any, {} as any) as unknown as Hono;
+  return createMyraThreadsRouter(
+    {} as any,
+    {} as any,
+    {} as any,
+  ) as unknown as Hono;
 }
 
 describe("Myra threads router", () => {
@@ -257,6 +261,7 @@ describe("Myra threads router", () => {
     expect(body.thread).toBeNull();
     expect(scheduleMyraThreadTitle).toHaveBeenCalledWith(
       expect.anything(),
+      expect.objectContaining({ analytics: expect.anything() }),
       expect.objectContaining({
         threadId: "map-1",
         firstMessage: "How should we price the enterprise tier?",

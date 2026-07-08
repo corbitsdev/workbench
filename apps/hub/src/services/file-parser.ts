@@ -1,39 +1,17 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
-import {
-  createAgent,
-  createDefaultDirectorRegistry,
-  defineAgent,
-  type AuthorizeFn,
-} from "@intx/agent";
 import { createInboundMessage } from "@intx/mime";
 import type { MessageAttachment } from "@intx/types/runtime";
-import { parseInferenceEvent } from "@intx/types/runtime";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
-import { type } from "arktype";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import { FILE_PARSER_NAME, FILE_PARSER_SYSTEM_PROMPT } from "@workbench/agents";
-import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
 import { resolveInstanceSourcesFromDefinition } from "./agent-provisioning";
-
-const log = getLogger(["api", "file-parser"]);
+import { runTrackedOneShot } from "./tracked-one-shot";
 
 const { agent } = intxSchema;
-
-const ALLOW_ALL_AUTHORIZE: AuthorizeFn = async () => ({
-  effect: "allow" as const,
-  matchingGrants: [],
-  resolvedBy: null,
-});
-
-const logTeardownError = (op: string) => (err: unknown) =>
-  log.warn(`File parse turn teardown failed: ${op}`, {
-    error: err instanceof Error ? err.message : String(err),
-  });
 
 /**
  * Raised when a document could not be parsed — no File Parser definition seeded,
@@ -159,28 +137,9 @@ export async function parseDocument(
   // No GC policy: each repo receives exactly one parse turn (keyed per
   // traceId), so per-repo growth is bounded and a write-path reclaim
   // threshold could never be reached.
+  // Durable store (contextDir) — deliberately kept as the auditable trace of the
+  // parse turn (CL-2628); NOT deleted.
   const store = await createIsogitStore(contextDir);
-
-  const def_ = defineAgent({
-    id: `file-parser-${randomUUID()}`,
-    systemPrompt: FILE_PARSER_SYSTEM_PROMPT,
-    tools: [],
-    capabilities: [],
-    inference: {
-      sources: [{ provider: source.provider, model: source.model }],
-    },
-  });
-
-  const env = {
-    sources: [source],
-    defaultSource: source.id,
-    storage: store,
-    workdir: contextDir,
-    audit: store,
-    authorize: ALLOW_ALL_AUTHORIZE,
-    directors: createDefaultDirectorRegistry(),
-    closeTimeoutMs: 1000,
-  };
 
   const attachment: MessageAttachment = {
     name: input.filename,
@@ -199,42 +158,31 @@ export async function parseDocument(
     attachments: [attachment],
   });
 
-  const agentInst = await createAgent(def_, env);
-
-  // Drain the event stream so the reactor never backs up on an unread channel;
-  // the extracted text comes from the send() reply, not the stream. The parse
-  // turn is NOT recorded to any session — attributing it to the caller's live
-  // session persisted the document dump as a phantom assistant turn (CL-2628
-  // review). Token usage IS forwarded (CL-2801): each inference event is fed to
-  // the analytics subscriber, keyed by this one-shot's own agent id so its seq
-  // space can't collide with the caller's sidecar events, and attributed to the
-  // caller's instance so its cost rolls up to the right person.
-  async function drainStream(): Promise<void> {
-    for await (const event of agentInst.stream()) {
-      if (analytics === undefined) continue;
-      const validated = parseInferenceEvent(event);
-      if (validated instanceof type.errors) continue;
-      await analytics.analytics.onLocalInferenceEvent({
-        tenantId: input.tenantId,
-        attributionPrincipalId: analytics.attributionPrincipalId,
-        eventAddress: def_.id,
-        event: validated,
-      });
-    }
+  // Run via the shared tracked one-shot. The parse turn is NOT recorded to any
+  // session (no turnRecording) — attributing it to the caller's live session
+  // persisted the document dump as a phantom assistant turn (CL-2628 review).
+  // Token usage IS forwarded (CL-2801) via analytics, attributed to the caller's
+  // instance so its cost rolls up to the right person.
+  const text = await runTrackedOneShot({
+    db,
+    tenantId: input.tenantId,
+    source,
+    systemPrompt: FILE_PARSER_SYSTEM_PROMPT,
+    agentIdPrefix: "file-parser",
+    message,
+    store,
+    workdir: contextDir,
+    ...(analytics
+      ? {
+          analytics: {
+            subscriber: analytics.analytics,
+            attributionPrincipalId: analytics.attributionPrincipalId,
+          },
+        }
+      : {}),
+  });
+  if (!text || text.trim() === "") {
+    throw new FileParseError("The File Parser returned no content.");
   }
-  const pumpDone = drainStream();
-
-  try {
-    const result = await agentInst.send(message);
-    const text = result.reply;
-    if (!text || text.trim() === "") {
-      throw new FileParseError("The File Parser returned no content.");
-    }
-    return text;
-  } finally {
-    // The isogit store (contextDir) is deliberately NOT removed — it is the
-    // durable, auditable trace of the parse turn.
-    await agentInst.close().catch(logTeardownError("close agent"));
-    await pumpDone.catch(logTeardownError("pump stream"));
-  }
+  return text;
 }

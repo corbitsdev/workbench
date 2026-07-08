@@ -1019,7 +1019,7 @@ v1.route(
   ),
 );
 v1.route("/", createMembersRouter(db));
-v1.route("/", createMyraThreadsRouter(db, sessionService));
+v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createArtifactsRouter(db));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
