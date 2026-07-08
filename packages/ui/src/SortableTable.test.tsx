@@ -107,4 +107,17 @@ describe("SortableTable", () => {
     );
     screen.getByText("No people yet");
   });
+
+  it("contains the absolute sr-only caption within a positioned wrapper", () => {
+    // The caption is position:absolute (sr-only). Its wrapper must be a
+    // positioned containing block (`relative`), otherwise on a tall page the
+    // caption escapes every scroll ancestor and stretches the document,
+    // leaving empty space below the app.
+    renderTable();
+    const caption = screen.getByText("Usage by person");
+    expect(caption.tagName).toBe("CAPTION");
+    expect(caption.className).toContain("sr-only");
+    const wrapper = screen.getByTestId("sortable-table").parentElement;
+    expect(wrapper?.className).toContain("relative");
+  });
 });

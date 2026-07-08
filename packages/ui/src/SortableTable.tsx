@@ -105,7 +105,13 @@ export function SortableTable<T>({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="overflow-x-auto rounded-[12px] border border-border">
+      {/* `relative` makes this wrapper the containing block for the
+          `position:absolute` sr-only <caption>. Without it, the caption's
+          containing block is the nearest positioned ancestor (often the page
+          root), so no scroll ancestor clips it: on a tall page it sits at the
+          bottom of the unscrolled content and stretches the whole document,
+          adding empty space below the app. */}
+      <div className="relative overflow-x-auto rounded-[12px] border border-border">
         <table
           className="w-full text-left text-[13px]"
           data-testid="sortable-table"
