@@ -11,6 +11,13 @@ import type { OwnerCredentialState } from "@workbench/shared";
  * save and never held in the row's own state afterward — nothing here
  * re-renders a stored secret.
  */
+function formatUpdatedAt(isoString: string): string {
+  return new Date(isoString).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export function CredentialRow({
   credential,
 }: {
@@ -50,6 +57,11 @@ export function CredentialRow({
           <p className="mt-0.5 font-mono text-xs text-text-3">
             {credential.providerName}
           </p>
+          {credential.configured && credential.updatedAt && (
+            <p className="mt-0.5 text-xs text-text-3">
+              Updated {formatUpdatedAt(credential.updatedAt)}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <span

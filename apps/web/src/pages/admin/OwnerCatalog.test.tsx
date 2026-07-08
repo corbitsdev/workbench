@@ -148,4 +148,24 @@ describe("OwnerCatalog", () => {
     expect(screen.queryByText("Granola")).toBeNull();
     expect(document.body.innerHTML).not.toContain("sk-super-secret");
   });
+
+  it("shows when a configured credential was last updated", async () => {
+    providersOutcome = { kind: "resolve", data: [] };
+    modelsOutcome = { kind: "resolve", data: [] };
+    credentialsOutcome = {
+      kind: "resolve",
+      data: [
+        {
+          providerName: "anthropic",
+          label: "Anthropic",
+          kind: "inference",
+          configured: true,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    renderModels();
+    await waitFor(() => expect(screen.getByText("Anthropic")));
+    expect(screen.getByText(/updated/i));
+  });
 });
