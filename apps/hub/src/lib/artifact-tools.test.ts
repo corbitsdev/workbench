@@ -8,6 +8,7 @@ import {
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
   createArtifactTools,
@@ -166,6 +167,9 @@ describe("artifact tool registry", () => {
     );
     expect(ARTIFACT_HUB_TOOLS.artifact_read.definition).toBe(
       ARTIFACT_READ_DEFINITION,
+    );
+    expect(ARTIFACT_HUB_TOOLS.artifact_read_chunk.definition).toBe(
+      ARTIFACT_READ_CHUNK_DEFINITION,
     );
     expect(ARTIFACT_HUB_TOOLS.artifact_write.definition).toBe(
       ARTIFACT_WRITE_DEFINITION,
@@ -442,6 +446,155 @@ describe("artifact_read handler", () => {
     await expect(
       handler({ artifactId: "art_cross", tenantId: "tnt_other" }),
     ).rejects.toThrow(/Artifact not found/);
+  });
+
+  it("returns the whole body without chunk metadata when it fits under the default limit", async () => {
+    const body = "x".repeat(500);
+    const { context } = makeQueryContext([
+      [
+        {
+          id: "art_small",
+          title: "Small",
+          kind: "note",
+          status: "draft",
+          version: 1,
+          content: body,
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_read");
+
+    const result = JSON.parse(
+      (await handler({ artifactId: "art_small" })) as string,
+    );
+    expect(result).toEqual({
+      artifactId: "art_small",
+      title: "Small",
+      kind: "note",
+      status: "draft",
+      version: 1,
+      content: body,
+    });
+    expect(result.continuation).toBeUndefined();
+    expect(result.contentLength).toBeUndefined();
+  });
+
+  it("returns a head chunk pointing at artifact_read_chunk when the body is too large", async () => {
+    const body = "y".repeat(20000);
+    const { context } = makeQueryContext([
+      [
+        {
+          id: "art_big",
+          title: "Big",
+          kind: "note",
+          status: "draft",
+          version: 1,
+          content: body,
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_read");
+
+    const result = JSON.parse(
+      (await handler({ artifactId: "art_big" })) as string,
+    );
+    expect(result.contentLength).toBe(20000);
+    expect(result.chunkStart).toBe(0);
+    expect(result.chunkEnd).toBe(8000);
+    expect(result.content).toBe(body.slice(0, 8000));
+    expect(result.content.length).toBe(8000);
+    expect(result.continuation).toContain("artifact_read_chunk");
+    expect(result.continuation).toContain("offset=8000");
+  });
+});
+
+describe("artifact_read_chunk handler", () => {
+  const bigRow = (content: string) => [
+    {
+      id: "art_big",
+      title: "Big",
+      kind: "note",
+      status: "draft",
+      version: 1,
+      content,
+    },
+  ];
+
+  it("reads a later chunk from an explicit offset and marks the final chunk complete", async () => {
+    const body = "z".repeat(20000);
+    const { context } = makeQueryContext([bigRow(body)]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    const result = JSON.parse(
+      (await handler({ artifactId: "art_big", offset: 16000 })) as string,
+    );
+    expect(result.chunkStart).toBe(16000);
+    expect(result.chunkEnd).toBe(20000);
+    expect(result.content).toBe(body.slice(16000, 20000));
+    expect(result.continuation).toBeUndefined();
+  });
+
+  it("reassembles the full body across successive chunks", async () => {
+    const body = Array.from({ length: 25000 }, (_, i) =>
+      String.fromCharCode(97 + (i % 26)),
+    ).join("");
+    const handler = () =>
+      handlerFor(
+        makeQueryContext([bigRow(body)]).context,
+        "artifact_read_chunk",
+      );
+
+    let assembled = "";
+    let offset = 0;
+    let guard = 0;
+    let done = false;
+    while (!done && guard < 20) {
+      guard += 1;
+      const result = JSON.parse(
+        (await handler()({ artifactId: "art_big", offset })) as string,
+      );
+      assembled += result.content;
+      offset = result.chunkEnd;
+      done = result.continuation === undefined;
+    }
+    expect(assembled).toBe(body);
+    expect(offset).toBe(body.length);
+  });
+
+  it("honors an explicit limit", async () => {
+    const body = "q".repeat(5000);
+    const { context } = makeQueryContext([bigRow(body)]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    const result = JSON.parse(
+      (await handler({ artifactId: "art_big", limit: 100 })) as string,
+    );
+    expect(result.content).toBe(body.slice(0, 100));
+    expect(result.chunkEnd).toBe(100);
+    expect(result.continuation).toContain("offset=100");
+  });
+
+  it("returns an empty final chunk when offset is at or past the end", async () => {
+    const body = "w".repeat(3000);
+    const { context } = makeQueryContext([bigRow(body)]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    const result = JSON.parse(
+      (await handler({ artifactId: "art_big", offset: 9999 })) as string,
+    );
+    expect(result.content).toBe("");
+    expect(result.chunkStart).toBe(3000);
+    expect(result.chunkEnd).toBe(3000);
+    expect(result.continuation).toBeUndefined();
+  });
+
+  it("rejects a negative offset", async () => {
+    const { context } = makeQueryContext([bigRow("body")]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    await expect(
+      handler({ artifactId: "art_big", offset: -1 }),
+    ).rejects.toThrow(/offset must be a non-negative integer/);
   });
 });
 
