@@ -94,6 +94,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Tools",
     to: "/admin/tools",
     keywords: ["integrations", "providers", "library", "admin"],
+    requires: "admin",
   },
   {
     id: "nav:admin",
@@ -101,6 +102,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Admin",
     to: "/admin",
     keywords: ["governance", "grants", "roles", "principals", "audit"],
+    requires: "admin",
   },
   {
     id: "nav:owner",
@@ -108,6 +110,7 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Owner",
     to: "/owner",
     keywords: ["owner", "workbench"],
+    requires: "owner",
   },
   {
     id: "nav:insights",
