@@ -765,6 +765,82 @@ export function providerLogoUrl(tenantId: string, provider: string): string {
   return `${base}/api/tenants/${encodeURIComponent(tenantId)}/pricing/logos/${encodeURIComponent(provider)}`;
 }
 
+/** A tenant provider definition (owner-guarded native tenant API), including
+ * ones inherited from ancestor tenants. Only the fields the Models tab
+ * renders are validated; extra fields are ignored rather than rejected. */
+export const TenantProviderSchema = type({
+  id: "string",
+  name: "string",
+  plugin: "string",
+  "+": "ignore",
+});
+export type TenantProvider = typeof TenantProviderSchema.infer;
+
+const TenantProvidersResponse = type({
+  data: TenantProviderSchema.array(),
+  "+": "ignore",
+});
+
+/** Lists the tenant's provider catalog, including providers inherited from
+ * ancestor tenants (owner holds `provider:*`/`read` via the `*`/`*` grant).
+ * Parsed at the boundary rather than cast. */
+export async function getTenantProviders(
+  tenantId: string,
+): Promise<TenantProvider[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${encodeURIComponent(tenantId)}/providers?inherited=true`,
+  );
+  const parsed = TenantProvidersResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant providers response: ${parsed.summary}`);
+  }
+  return parsed.data;
+}
+
+/** One offering (provider + priority + pricing) of a resolved model, from the
+ * tenant's model discovery view. */
+export const TenantModelOfferingSchema = type({
+  offeringId: "string",
+  providerId: "string",
+  providerName: "string",
+  plugin: "string",
+  priority: "number",
+  "+": "ignore",
+});
+export type TenantModelOffering = typeof TenantModelOfferingSchema.infer;
+
+/** A resolved model in the tenant's catalog (inheritance + shadowing already
+ * applied), with the providers that offer it. */
+export const TenantModelSchema = type({
+  id: "string",
+  canonicalName: "string",
+  displayName: "string | null",
+  description: "string | null",
+  offerings: TenantModelOfferingSchema.array(),
+  "+": "ignore",
+});
+export type TenantModel = typeof TenantModelSchema.infer;
+
+const TenantModelsResponse = TenantModelSchema.array();
+
+/** Lists the tenant's resolved model catalog (owner-guarded native tenant
+ * API): every model visible after inheritance/shadowing, broken down by the
+ * providers that offer it. Parsed at the boundary rather than cast. */
+export async function getTenantModels(
+  tenantId: string,
+): Promise<TenantModel[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${encodeURIComponent(tenantId)}/models`,
+  );
+  const parsed = TenantModelsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant models response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export async function getActivityOverview(
   tenantId: string,
   opts?: { startDate?: string; endDate?: string },

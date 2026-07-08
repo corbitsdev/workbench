@@ -11,6 +11,7 @@ const SUB_NAV = [
   { to: "/owner/setup", label: "Setup", end: false },
   { to: "/owner/capabilities", label: "Capabilities", end: false },
   { to: "/owner/workflows", label: "Workflows", end: false },
+  { to: "/owner/models", label: "Models", end: false },
 ] as const;
 
 /**
