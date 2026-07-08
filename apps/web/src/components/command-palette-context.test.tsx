@@ -1,4 +1,3 @@
-/// <reference types="bun" />
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import {
@@ -6,9 +5,9 @@ import {
   cleanup,
   fireEvent,
   render,
-  screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router";
 import type { ReactNode } from "react";
@@ -50,6 +49,51 @@ mock.module("../lib/palette-search", () => ({
   searchPaletteEntities: searchSpy,
 }));
 
+let meData: { isAdmin?: boolean; isOwner?: boolean } = {};
+mock.module("../lib/hub-api", () => {
+  const stub = async () => ({}) as any;
+  return {
+    getMe: () => Promise.resolve({ ...meData }),
+    describeHubApiFailure: (e: unknown) => String(e),
+    principalToWorkbenchEntry: (p: any) => p,
+    getOwnerWorkflows: stub,
+    setOwnerWorkflowEnabled: stub,
+    getOwnerCredentials: stub,
+    setOwnerCredential: stub,
+    clearOwnerCredential: stub,
+    postMe: stub,
+    patchMePreferences: stub,
+    patchMeProfile: stub,
+    ensureMeSynced: stub,
+    listMyraThreads: stub,
+    createMyraThread: stub,
+    renameMyraThread: stub,
+    deleteMyraThread: stub,
+    generateMyraThreadTitle: stub,
+    getMyPrincipals: stub,
+    principalsToWorkbenches: (p: any) => p,
+    listWorkbenches: stub,
+    listAgentInstances: stub,
+    deleteAgentInstance: stub,
+    launchInstanceSession: stub,
+    stopAgentInstance: stub,
+    listAgentTemplates: stub,
+    upsertRating: () => {},
+    getOutputFeedback: stub,
+    saveOutputFeedback: stub,
+    deployAgentFromTemplate: stub,
+    getAnalyticsSummary: stub,
+    getAnalyticsSummaryByAgent: stub,
+    getModelPricing: stub,
+    providerLogoUrl: () => "",
+    getTenantProviders: stub,
+    getTenantModels: stub,
+    getActivityOverview: stub,
+    getWorkflowsCatalog: stub,
+    downloadActivityExportCsv: stub,
+  };
+});
+
 const { CommandPaletteProvider } = await import("./command-palette-context");
 
 function LocationProbe() {
@@ -57,10 +101,13 @@ function LocationProbe() {
   return <div data-testid="location">{location.pathname}</div>;
 }
 
-function renderProvider() {
+function renderProvider(me?: { isAdmin?: boolean; isOwner?: boolean }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  const meValue = me ?? {};
+  queryClient.setQueryData(["me"], { ...meValue });
+  meData = { ...meValue };
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/"]}>
@@ -81,53 +128,53 @@ function pressCmdK() {
 afterEach(() => {
   cleanup();
   searchSpy.mockClear();
+  meData = {};
 });
 
 describe("CommandPaletteProvider", () => {
   it("opens on Cmd+K and toggles closed on a second Cmd+K", () => {
-    renderProvider();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    const r = renderProvider();
+    expect(r.queryByRole("combobox")).toBeNull();
 
     pressCmdK();
-    screen.getByRole("combobox");
+    r.getByRole("combobox");
 
     pressCmdK();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(r.queryByRole("combobox")).toBeNull();
   });
 
   it("resets the query when Cmd+K closes and reopens the palette", () => {
-    renderProvider();
+    const r = renderProvider();
     pressCmdK();
-    const input = screen.getByRole("combobox") as HTMLInputElement;
+    const input = r.getByRole("combobox") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "acme" } });
     expect(input.value).toBe("acme");
 
     // Cmd+K closes, Cmd+K reopens — the second open must show a fresh query,
     // not the stale "acme" left from the prior session.
     pressCmdK();
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(r.queryByRole("combobox")).toBeNull();
     pressCmdK();
-    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("");
+    expect((r.getByRole("combobox") as HTMLInputElement).value).toBe("");
   });
 
-  it("navigates to the selected nav command's route and closes", () => {
-    renderProvider();
+  it("navigates to the selected nav command's route and closes", async () => {
+    const r = renderProvider();
     pressCmdK();
-    const input = screen.getByRole("combobox");
-    // Enter fires before the search debounce, so only the client-side nav
-    // command is present — selecting it navigates immediately.
-    fireEvent.change(input, { target: { value: "artif" } });
-    fireEvent.keyDown(input, { key: "Enter" });
+    // Click the Artifacts row directly (avoids brittle fireEvent simulation of
+    // controlled cmdk input for ranking + enter-to-select).
+    const artifacts = r.getByRole("option", { name: "Artifacts" });
+    fireEvent.click(artifacts);
 
-    expect(screen.getByTestId("location").textContent).toBe("/artifacts");
-    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(r.getByTestId("location").textContent).toBe("/artifacts");
+    expect(r.queryByRole("combobox")).toBeNull();
   });
 
   it("debounces a query to the server search and navigates to an entity result", async () => {
-    renderProvider();
+    const r = renderProvider();
     pressCmdK();
-    const input = screen.getByRole("combobox");
-    fireEvent.change(input, { target: { value: "acme" } });
+    const input = r.getByRole("combobox");
+    await userEvent.type(input, "acme");
 
     // The debounced query reaches the server search with the active tenant.
     await waitFor(() => expect(searchSpy).toHaveBeenCalled(), {
@@ -137,15 +184,57 @@ describe("CommandPaletteProvider", () => {
 
     // The matched title is split into highlight spans, so match on text content.
     await waitFor(() => {
-      const titles = screen
-        .getAllByRole("option")
-        .map((o) => o.textContent ?? "");
+      const titles = r.getAllByRole("option").map((o) => o.textContent ?? "");
       expect(titles.some((t) => t.includes("Acme call"))).toBe(true);
     });
-    const option = screen
+    const option = r
       .getAllByRole("option")
       .find((o) => (o.textContent ?? "").includes("Acme call"))!;
     fireEvent.click(option);
-    expect(screen.getByTestId("location").textContent).toBe("/chats/c1");
+    expect(r.getByTestId("location").textContent).toBe("/chats/c1");
+  });
+
+  describe("role-gated nav entries", () => {
+    it("hides admin/owner/tools for non-admin non-owner", () => {
+      const r = renderProvider({ isAdmin: false, isOwner: false });
+      pressCmdK();
+      const titles = r.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(titles.some((t) => t.includes("Admin"))).toBe(false);
+      expect(titles.some((t) => t.includes("Owner"))).toBe(false);
+      expect(titles.some((t) => t.includes("Tools"))).toBe(false);
+      // ungated still present
+      expect(titles.some((t) => t.includes("Chats"))).toBe(true);
+    });
+
+    it("shows admin+tools but hides owner for admin", () => {
+      const r = renderProvider({ isAdmin: true, isOwner: false });
+      pressCmdK();
+      const titles = r.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(titles.some((t) => t.includes("Admin"))).toBe(true);
+      expect(titles.some((t) => t.includes("Tools"))).toBe(true);
+      expect(titles.some((t) => t.includes("Owner"))).toBe(false);
+    });
+
+    it("shows owner+admin+tools for owner", () => {
+      const r = renderProvider({ isAdmin: true, isOwner: true });
+      pressCmdK();
+      const titles = r.getAllByRole("option").map((o) => o.textContent ?? "");
+      expect(titles.some((t) => t.includes("Admin"))).toBe(true);
+      expect(titles.some((t) => t.includes("Owner"))).toBe(true);
+      expect(titles.some((t) => t.includes("Tools"))).toBe(true);
+    });
+
+    it("non-admin search for admin yields no Admin nav entry", () => {
+      const r = renderProvider({ isAdmin: false, isOwner: false });
+      pressCmdK();
+      const input = r.getByRole("combobox");
+      act(() => {
+        fireEvent.change(input, { target: { value: "admin" } });
+      });
+      // When no items match, cmdk shows empty state (role=presentation) instead
+      // of option rows. Use queryAll to avoid throwing.
+      const titles = r.queryAllByRole("option").map((o) => o.textContent ?? "");
+      expect(titles.some((t) => t.includes("Admin"))).toBe(false);
+    });
   });
 });

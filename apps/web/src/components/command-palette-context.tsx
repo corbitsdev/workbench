@@ -8,12 +8,18 @@ import {
   useState,
 } from "react";
 import { useNavigate } from "react-router";
-import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useQuery,
+} from "@tanstack/react-query";
 import type { PaletteResultItem } from "@workbench/shared";
+import { filterPaletteNavItems } from "@workbench/shared";
 import { CommandPalette } from "./CommandPalette";
 import { NAV_COMMANDS } from "../router";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { searchPaletteEntities } from "../lib/palette-search";
+import { getMe } from "../lib/hub-api";
 
 interface CommandPaletteContextValue {
   open: boolean;
@@ -51,6 +57,12 @@ export function CommandPaletteProvider({
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
   const { activeTenantId } = useActiveWorkbench();
+
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
 
   const resetQuery = useCallback(() => {
     if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
@@ -122,6 +134,11 @@ export function CommandPaletteProvider({
     [search.data],
   );
 
+  const navItems = useMemo(
+    () => filterPaletteNavItems(NAV_COMMANDS, meQuery.data),
+    [meQuery.data],
+  );
+
   const onSelect = useCallback(
     (item: PaletteResultItem) => {
       closePalette();
@@ -147,7 +164,7 @@ export function CommandPaletteProvider({
         onClose={closePalette}
         query={query}
         onQueryChange={handleQueryChange}
-        navItems={NAV_COMMANDS}
+        navItems={navItems}
         entityItems={entityItems}
         onSelect={onSelect}
         loading={search.isFetching}
