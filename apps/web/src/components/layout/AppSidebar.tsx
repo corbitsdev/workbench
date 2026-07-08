@@ -12,6 +12,7 @@ import {
   FlaskConical,
   ChevronDown,
   ShieldCheck,
+  KeyRound,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
@@ -40,6 +41,16 @@ const ADMIN_NAV_ITEM = {
   to: "/admin",
   label: "Admin",
   icon: ShieldCheck,
+  end: false,
+} as const;
+
+// Shown only to owners (ABK Labs staff — the `owner` role's `*`/`*`). The hub
+// re-checks the owner grant on every /owner route; this is nav visibility only.
+// Owner ⊃ admin, so an owner sees both this and the Admin item.
+const OWNER_NAV_ITEM = {
+  to: "/owner",
+  label: "Owner",
+  icon: KeyRound,
   end: false,
 } as const;
 
@@ -182,6 +193,17 @@ export function AppSidebar({
           >
             <ADMIN_NAV_ITEM.icon size={17} />
             {ADMIN_NAV_ITEM.label}
+          </NavLink>
+        )}
+        {meQuery.data?.isOwner && (
+          <NavLink
+            to={OWNER_NAV_ITEM.to}
+            end={OWNER_NAV_ITEM.end}
+            onClick={onNavigate}
+            className={({ isActive }) => navItemClass(isActive)}
+          >
+            <OWNER_NAV_ITEM.icon size={17} />
+            {OWNER_NAV_ITEM.label}
           </NavLink>
         )}
       </nav>

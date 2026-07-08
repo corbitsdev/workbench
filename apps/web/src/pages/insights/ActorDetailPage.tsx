@@ -4,6 +4,7 @@ import { PagePanel } from "@workbench/ui";
 import { type Actor } from "@workbench/client";
 import { useActor } from "../../hooks/use-actor";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
+import { usePublishActiveContext } from "../../lib/active-context-store";
 import { usePrincipalActivity } from "./ActorTimeline";
 import { MomentWalker } from "./MomentWalker";
 import {
@@ -42,6 +43,34 @@ function lastActiveLabel(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+// Compact activity summary for the active-context projection (CL-2726). The
+// projector truncates it to PRINCIPAL_SUMMARY_MAX_CHARS, so this only needs to
+// be a faithful, readable digest of the loaded activity union — never the full
+// record set. Counts every kind (including ones outside the named buckets) so
+// the total and the breakdown never disagree.
+const SUMMARY_KINDS = [
+  ["tool_call", "tool calls"],
+  ["grant", "grants"],
+  ["workflow_run", "workflow runs"],
+  ["artifact", "artifacts"],
+] as const;
+
+function buildPrincipalSummary(
+  entries: { kind: string; timestamp?: string | null }[],
+): string {
+  const count = (kind: string) => entries.filter((e) => e.kind === kind).length;
+  const named = SUMMARY_KINDS.reduce((sum, [k]) => sum + count(k), 0);
+  const other = entries.length - named;
+  const lines = [
+    `${entries.length} recorded moments`,
+    ...SUMMARY_KINDS.map(([kind, label]) => `${label}: ${count(kind)}`),
+  ];
+  if (other > 0) lines.push(`other: ${other}`);
+  const last = entries[0]?.timestamp;
+  if (last) lines.push(`last active: ${lastActiveLabel(last)}`);
+  return lines.join("\n");
 }
 
 const FACETS: FacetDef[] = [
@@ -86,6 +115,23 @@ export function ActorDetailPage() {
 
   const actor = actorQuery.data ?? stateActor;
   const backLink = "/insights";
+
+  // Publish the viewed principal as the active surface (CL-2726) so the Myra
+  // popup can attach it as context. Only once identity has actually resolved —
+  // never publish a "Loading…" or "Unknown actor" placeholder.
+  usePublishActiveContext(
+    actor
+      ? {
+          kind: "principal",
+          id: principalId,
+          label: actor.displayName,
+          actorKind: actor.kind,
+          status: actor.status,
+          summary: buildPrincipalSummary(entries),
+        }
+      : null,
+    actor ? `${actor.id}:${entries.length}` : undefined,
+  );
 
   if (!loading && !activeTenantId) {
     return (

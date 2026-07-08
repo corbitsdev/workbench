@@ -80,6 +80,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
     "list_skills",
     "search_skills",
     "load_skill",
+    "workflow_list_kinds",
     "workflow_start",
     "workflow_list_runs",
     "workflow_signal",

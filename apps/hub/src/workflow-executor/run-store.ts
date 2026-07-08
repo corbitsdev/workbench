@@ -1,11 +1,14 @@
+import { type } from "arktype";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { HubDb } from "../db";
 import {
+  workflowRun,
   workflowRunRecord,
   workflowRunStep,
   workflowRunStepPhases,
   type WorkflowRunRecordRow,
 } from "../db/schema";
+import { WorkflowMeta } from "../lib/workflow-meta";
 
 export type WorkflowRunStepPhase = (typeof workflowRunStepPhases)[number];
 
@@ -418,6 +421,28 @@ export async function loadRunRecord(
     ),
   });
   return row ? rowToState(row) : null;
+}
+
+// Resolve a deployment's deploy-time version meta (version / sha / deployedAt)
+// by its deploymentId, independent of the member-facing runnable catalog. That
+// catalog is grant-filtered and excludes soft-deleted rows — an owner disabling
+// a kind drops it, and a redeploy soft-deletes the superseded deployment. But a
+// run's already-executed version is immutable audit info its viewer is entitled
+// to see, so this read intentionally does NOT filter on deletedAt: it must still
+// resolve the version of a run whose deployment has since been disabled,
+// superseded, or undeployed. Returns null only when the deployment predates
+// version capture or its stored meta fails validation.
+export async function loadDeploymentMeta(
+  db: HubDb,
+  deploymentId: string,
+): Promise<WorkflowMeta | null> {
+  const row = await db.query.workflowRun.findFirst({
+    where: eq(workflowRun.deploymentId, deploymentId),
+    columns: { meta: true },
+  });
+  if (!row?.meta) return null;
+  const parsed = WorkflowMeta(row.meta);
+  return parsed instanceof type.errors ? null : parsed;
 }
 
 export async function listRunRecords(

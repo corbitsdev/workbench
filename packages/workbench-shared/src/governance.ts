@@ -28,6 +28,98 @@ export const ADMIN_ACTION = "manage";
  * wildcard match — "admins inherit other grants" with no per-grant copying. */
 export const ADMIN_ROLE_NAME = "admin";
 
+/** The Interchange system role every tenant seeds as its baseline. It carries no
+ * grants by default; the owner area expresses per-tenant workflow-run policy as
+ * grants on this role (see the workflow run gate, CL-2885). */
+export const MEMBER_ROLE_NAME = "member";
+
+/** The actions the `admin` system role is seeded with (`*`/{read,create,manage},
+ * see `seedSystemRolesAndGrants`). Exported so the seed AND the owner-gate probe
+ * test consume ONE definition and cannot silently diverge — the owner gate's
+ * correctness depends on the relationship between this set and `OWNER_ACTION`
+ * (below). */
+export const ADMIN_GRANT_ACTIONS = ["read", "create", "manage"] as const;
+
+/** Resource probed by the OWNER gate. As with the admin gate, any string works
+ * (the owner role's wildcard is what grants access); a dedicated `owner:*`
+ * keeps the intent legible in logs and the evaluate debugger. */
+export const OWNER_RESOURCE = "owner:*";
+/** Action probed by the OWNER gate — the crux of owner-vs-admin. `admin` bears
+ * `*` for the specific actions in `ADMIN_GRANT_ACTIONS`, while `owner` bears
+ * `*`/`*`. The gate is safe as long as NO non-owner principal holds an action
+ * *pattern* that globs to `OWNER_ACTION` on a resource globbing to
+ * `OWNER_RESOURCE`. The authz matcher globs on the grant (pattern) side, so this
+ * is broader than "a literal outside `ADMIN_GRANT_ACTIONS`": an action pattern
+ * like `o*` would also match. Today only the owner role's `*`/`*` does — the
+ * seeded admin literals (`read`/`create`/`manage`) do not, and no operator path
+ * mints a wildcard/`o*` action grant to a non-owner. `owner-grant-probe.test.ts`
+ * pins this against the real authz engine using `ADMIN_GRANT_ACTIONS`; do NOT
+ * add a wildcard or `o*`-shaped action to a non-owner grant without revisiting
+ * it. */
+export const OWNER_ACTION = "own";
+
+// ─── Workflow run gate (CL-2885) ───────────────────────────────────
+
+/** Action probed by the workflow-run gate, paired with a `workflow:<kind>`
+ * resource. Mirrors the deploy gate's shape (`workflow:*`/`create`). */
+export const WORKFLOW_RUN_ACTION = "run";
+
+/** The resource string for running a specific workflow kind. The run gate is
+ * allow-by-default (workflows already ran for everyone before the gate): a run
+ * is blocked only by an explicit tenant-level `deny` on this resource/action,
+ * which the owner area adds to disable a workflow.
+ *
+ * Constraints on the owner writer (CL-2877):
+ * - Denies MUST be unconditional. The gate evaluates with no condition registry,
+ *   so a deny carrying `conditions` is skipped by the matcher — i.e. a
+ *   conditional deny fails OPEN (the run proceeds). Write plain denies.
+ * - A `workflow:*` deny disables all kinds ONLY while no more-specific member
+ *   allow exists — the matcher is specificity-first, so a `workflow:<kind>`
+ *   allow (member role holds none today) would override a `workflow:*` deny for
+ *   that kind. Prefer per-kind denies over relying on a wildcard-vs-allow race. */
+export function workflowRunResource(kind: string): string {
+  return `workflow:${kind}`;
+}
+
+// ─── Owner area wire schemas (CL-2874) ─────────────────────────────
+
+/** `GET /owner/context` — owner identity + the root tenant the owner governs.
+ * The `/owner` web shell parses the response through this schema (never casts). */
+export const OwnerContextResponse = type({
+  tenantId: "string",
+  ownerPrincipalId: "string",
+});
+export type OwnerContext = typeof OwnerContextResponse.infer;
+
+/** `GET /owner/workflows` — deployed workflow kinds with run-enablement state.
+ * `enabled` is the effective run-gate state (CL-2885): false when the org member
+ * role holds a `deny` for that kind. The owner toggle writes/removes that deny. */
+export const OwnerWorkflowState = type({ kind: "string", enabled: "boolean" });
+export type OwnerWorkflowState = typeof OwnerWorkflowState.infer;
+
+export const OwnerWorkflowsResponse = type({
+  workflows: OwnerWorkflowState.array(),
+});
+export type OwnerWorkflows = typeof OwnerWorkflowsResponse.infer;
+
+/** Body for the owner workflow toggle: the desired enablement state. */
+export const OwnerWorkflowToggle = type({ enabled: "boolean" });
+export type OwnerWorkflowToggle = typeof OwnerWorkflowToggle.infer;
+
+/** Runnable workflow kind surfaced in the member catalog and Myra list tool. */
+export const RunnableWorkflowKindSchema = type({
+  kind: "string",
+  "label?": "string",
+  "description?": "string",
+});
+export type RunnableWorkflowKind = typeof RunnableWorkflowKindSchema.infer;
+
+export const RunnableWorkflowKindsResponse = type({
+  kinds: RunnableWorkflowKindSchema.array(),
+});
+export type RunnableWorkflowKindsResponse =
+  typeof RunnableWorkflowKindsResponse.infer;
+
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 
@@ -276,3 +368,128 @@ export const AuditListResponse = type({
   pageInfo: PageInfoSchema,
 });
 export type AuditListResponse = typeof AuditListResponse.infer;
+
+// ─── Owner credentials (CL-2879, split by kind CL-2879/CL-2883) ────
+//
+// Owner-managed provider credentials are split across two tabs by what the
+// provider is FOR: `kind: "inference"` providers (LLM sources an agent's
+// `credentialRequirements` resolve against) surface in Catalog next to the
+// model/provider browser; `kind: "tool"` providers (Granola, Exa, Firecrawl,
+// Gamma, Linear, GitHub, Attio — resolved at tool-execution time via
+// `resolveCredentialRequirement`, never via `credentialRequirements`) surface
+// in Capabilities next to the other integrations. Secrets are WRITE-ONLY end
+// to end: the owner types a key in, the hub stores it, and every read path
+// (this schema) carries only masked metadata — never the secret itself. This
+// is the single source of truth for which providers the two tabs manage; it
+// mirrors `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (the
+// credential-seeding catalog) so the two never silently diverge on provider
+// naming.
+//
+// `defaultMetadata` seeds a brand-new provider row's `metadata` (e.g. the
+// well-known API base URL) so an owner-created credential resolves correctly
+// on the first save; it is never applied to an existing provider row.
+export interface CredentialProviderCatalogEntry {
+  /** Matches `credentialRequirements[].providerName` / `credentialProviderNames`. */
+  providerName: string;
+  /** The Interchange provider `plugin` field. */
+  providerPlugin: string;
+  /** Human-readable label shown in the owning tab. */
+  label: string;
+  /** `inference` providers are wired into an agent's `credentialRequirements`
+   * (LLM sources); `tool` providers are resolved at tool-execution time and
+   * must never appear in `credentialRequirements` (see the apps/hub/AGENTS.md
+   * "Agent credentials vs tool credentials" rule). Drives which owner tab
+   * (Catalog vs Capabilities) renders the row. */
+  kind: "inference" | "tool";
+  /** Seeded onto a newly-created provider row only (never patches an existing one). */
+  defaultMetadata?: Record<string, unknown>;
+}
+
+export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntry[] =
+  [
+    {
+      providerName: "openai-compatible",
+      providerPlugin: "openai-compatible",
+      label: "OpenAI-compatible LLM",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://api.openai.com/v1" },
+    },
+    {
+      providerName: "anthropic",
+      providerPlugin: "anthropic",
+      label: "Anthropic",
+      kind: "inference",
+      defaultMetadata: { baseURL: "https://api.anthropic.com" },
+    },
+    {
+      providerName: "xai",
+      providerPlugin: "xai",
+      label: "xAI",
+      kind: "inference",
+    },
+    {
+      providerName: "granola",
+      providerPlugin: "granola",
+      label: "Granola",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
+    },
+    { providerName: "exa", providerPlugin: "exa", label: "Exa", kind: "tool" },
+    {
+      providerName: "firecrawl",
+      providerPlugin: "firecrawl",
+      label: "Firecrawl",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.firecrawl.dev/v2" },
+    },
+    {
+      providerName: "gamma",
+      providerPlugin: "gamma",
+      label: "Gamma",
+      kind: "tool",
+    },
+    {
+      providerName: "linear",
+      providerPlugin: "linear",
+      label: "Linear",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.linear.app/graphql" },
+    },
+    {
+      providerName: "github",
+      providerPlugin: "github",
+      label: "GitHub",
+      kind: "tool",
+    },
+    {
+      providerName: "attio",
+      providerPlugin: "attio",
+      label: "Attio",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.attio.com" },
+    },
+  ] as const;
+
+/** One provider row in the Catalog/Capabilities credentials sections —
+ * configured/missing state only. NEVER carries the secret; `configured` and
+ * `updatedAt` are the only signals of whether/when a key was set. */
+export const OwnerCredentialStateSchema = type({
+  providerName: "string",
+  label: "string",
+  kind: "'inference' | 'tool'",
+  configured: "boolean",
+  updatedAt: "string | null",
+});
+export type OwnerCredentialState = typeof OwnerCredentialStateSchema.infer;
+
+export const OwnerCredentialsResponse = type({
+  credentials: OwnerCredentialStateSchema.array(),
+});
+export type OwnerCredentialsResponse = typeof OwnerCredentialsResponse.infer;
+
+/** Body for setting/replacing a provider's key. Write-only: this shape is
+ * never echoed back by any response. */
+export const OwnerCredentialSetBody = type({
+  secret: "string > 0",
+});
+export type OwnerCredentialSetBody = typeof OwnerCredentialSetBody.infer;

@@ -40,18 +40,6 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
     ],
   },
   {
-    id: "notifications",
-    title: "Notifications",
-    fields: [
-      {
-        key: "emailNotifications",
-        label: "Email notifications",
-        kind: "toggle",
-        description: "Receive a summary when a workflow finishes.",
-      },
-    ],
-  },
-  {
     id: "appearance",
     title: "Appearance",
     fields: [
@@ -90,9 +78,7 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
   },
 ];
 
-const INITIAL_VALUES: SettingsValues = {
-  emailNotifications: false,
-};
+const INITIAL_VALUES: SettingsValues = {};
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();

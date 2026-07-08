@@ -4,7 +4,12 @@ import { PERSONAL_AGENT_BASE_TOOLS } from "./personal-agent/definition";
 import { AGENT_TEMPLATES } from "./templates";
 
 const FACTORY_ID = "@workbench/tools-workflows/workflows";
-const TOOLS = ["workflow_start", "workflow_list_runs", "workflow_signal"];
+const TOOLS = [
+  "workflow_list_kinds",
+  "workflow_start",
+  "workflow_list_runs",
+  "workflow_signal",
+];
 
 // CL-2656: a tool must be in BOTH the PACKAGE_TOOLS prefixing table (so
 // canonicalizeToolNames emits the runtime name authz checks) AND the grants
@@ -16,7 +21,7 @@ describe("workflow tools grant wiring (CL-2678)", () => {
     );
   });
 
-  test("PERSONAL_AGENT_BASE_TOOLS grants all three workflow tools by canonical name", () => {
+  test("PERSONAL_AGENT_BASE_TOOLS grants all workflow tools by canonical name", () => {
     for (const name of TOOLS) {
       expect(PERSONAL_AGENT_BASE_TOOLS).toContain(`${FACTORY_ID}:${name}`);
     }

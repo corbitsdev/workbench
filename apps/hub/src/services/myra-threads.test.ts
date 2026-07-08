@@ -10,23 +10,46 @@ let lastCreateEventCollectorConfig: {
 let collectorEvents: { type: string }[] = [];
 let agentReply = "Pricing Deep Dive";
 let agentShouldThrow = false;
+// When true, the agent's send() never resolves on its own; it settles only when
+// close() is invoked — models a turn wedged in the reactor/send path (CL-2866).
+let agentSendHangs = false;
+// When true, close() never resolves — models the reported wedge, a hang in
+// post-inference teardown (close / audit-commit) that abort cannot unblock.
+let agentCloseHangs = false;
+let agentCloseCalls = 0;
+let titleTurnTimeoutMs = 45_000;
 let lastIsogitDir: string | null = null;
 let lastIsogitGcPolicy: unknown = null;
+let isogitDirs: string[] = [];
 
 function resetTitleMocks() {
   lastCreateEventCollectorConfig = null;
   collectorEvents = [];
   agentReply = "Pricing Deep Dive";
   agentShouldThrow = false;
+  agentSendHangs = false;
+  agentCloseHangs = false;
+  agentCloseCalls = 0;
+  titleTurnTimeoutMs = 45_000;
   lastIsogitDir = null;
   lastIsogitGcPolicy = null;
+  isogitDirs = [];
+  analyticsMock.onLocalInferenceEvent.mockClear();
   ancestorChainResult = ["tn-global"];
 }
+
+const analyticsMock = {
+  onAgentEvent: mock(() => Promise.resolve()),
+  onLocalInferenceEvent: mock(() => Promise.resolve()),
+};
+// biome-ignore lint/suspicious/noExplicitAny: structural analytics deps for the title fn
+const titleDeps = { analytics: analyticsMock } as any;
 
 mock.module("@workbench/storage-isogit", () => ({
   createIsogitStore: mock((dir: string, _signer?: unknown, gc?: unknown) => {
     lastIsogitDir = dir;
     lastIsogitGcPolicy = gc ?? null;
+    isogitDirs.push(dir);
     return Promise.resolve({});
   }),
 }));
@@ -68,21 +91,62 @@ mock.module("@workbench/event-collector", () => ({
 mock.module("@intx/agent", () => ({
   defineAgent: mock((def: unknown) => def),
   createDefaultDirectorRegistry: mock(() => ({})),
-  createAgent: mock(() =>
-    Promise.resolve({
+  createAgent: mock(() => {
+    let rejectHungSend: ((err: unknown) => void) | null = null;
+    return Promise.resolve({
       async *stream() {
         yield { type: "inference.start", data: { model: "m" } };
-        yield { type: "inference.done", data: { turn: { content: [] } } };
+        // Schema-valid inference.done (seq + usage + source) so the real
+        // parseInferenceEvent in runTrackedOneShot accepts it and the title
+        // path's analytics forwarding actually fires (CL-2887 seam coverage).
+        yield {
+          type: "inference.done",
+          seq: 2,
+          data: {
+            turn: {
+              role: "assistant",
+              content: [],
+              model: "gpt-4o",
+              timestamp: 0,
+            },
+            usage: {
+              input: 10,
+              output: 5,
+              cacheRead: 0,
+              cacheWrite: 0,
+              thinking: 0,
+            },
+            source: {
+              sourceId: "off_1",
+              provider: "openai-compatible",
+              model: "gpt-4o",
+            },
+          },
+        };
         yield { type: "message.received", data: {} };
       },
       send: mock(() => {
         if (agentShouldThrow)
           return Promise.reject(new Error("inference boom"));
+        if (agentSendHangs)
+          return new Promise((_, reject) => {
+            rejectHungSend = reject;
+          });
         return Promise.resolve({ reply: agentReply });
       }),
-      close: mock(() => Promise.resolve()),
-    }),
-  ),
+      close: mock(() => {
+        agentCloseCalls += 1;
+        // close() drains the send queue with AgentClosedError in the real agent;
+        // mirror that so a hung send() rejects when the turn is aborted.
+        rejectHungSend?.(new Error("AgentClosedError"));
+        // Real close() releases the workdir lock only after its own bounded
+        // shutdown wait; model a wedge in that teardown as a never-settling
+        // close so the deadline — not close — must bound the caller (CL-2866).
+        if (agentCloseHangs) return new Promise<void>(() => {});
+        return Promise.resolve();
+      }),
+    });
+  }),
 }));
 
 const resolveCredentialRequirementMock = mock(() => Promise.resolve(null));
@@ -111,6 +175,7 @@ mock.module("../config", () => ({
     hub: {
       dataDir: "/tmp/myra-title-test",
       agentGc: { packThreshold: 16, looseThreshold: 512, warnBytes: 1024 },
+      myraTitleTurnTimeoutMs: titleTurnTimeoutMs,
     },
     rootTenant: { slug: "global", domain: "global.test" },
   }),
@@ -527,16 +592,12 @@ describe("generateMyraThreadTitle", () => {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "How should we price the enterprise tier?",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+    });
 
     expect(result).toEqual({
       id: "map-1",
@@ -552,6 +613,114 @@ describe("generateMyraThreadTitle", () => {
       "inference.start",
       "inference.done",
     ]);
+    // Seam: token usage from the title turn is forwarded to analytics,
+    // attributed to the thread instance's principal so it rolls up per member
+    // in /insights (CL-2887). The inference.done carries usage; the one-shot's
+    // own agent id namespaces the idempotency key.
+    expect(analyticsMock.onLocalInferenceEvent).toHaveBeenCalled();
+    const call = analyticsMock.onLocalInferenceEvent.mock.calls.find(
+      (c) =>
+        (c[0] as { event: { type: string } }).event.type === "inference.done",
+    );
+    expect(call).toBeDefined();
+    const arg = call?.[0] as {
+      tenantId: string;
+      attributionPrincipalId: string;
+      eventAddress: string;
+    };
+    expect(arg.tenantId).toBe("tn-global");
+    expect(arg.attributionPrincipalId).toBe("prn-inst");
+    expect(arg.eventAddress).toMatch(/^myra-title-/);
+  });
+
+  it("aborts a wedged turn on timeout, closing the agent and returning the fallback (CL-2866)", async () => {
+    resetTitleMocks();
+    // The turn hangs after inference; only close() can settle it.
+    agentSendHangs = true;
+    titleTurnTimeoutMs = 20;
+    const fallback = {
+      id: "map-1",
+      instanceId: "inst-1",
+      label: "How should we price the enterprise tier",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+    };
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+      renamed: fallback,
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+
+    // The deadline must not hang the caller; it returns the persisted fallback.
+    expect(result?.label).toBe("How should we price the enterprise tier");
+    // The abort tore the agent down — close() ran, releasing the workdir lock.
+    // Pre-CL-2866 the Promise.race abandoned the turn and close() was never hit.
+    // The exact count is timing-dependent (onAbort + the orphaned catch both
+    // close, idempotently), so we only assert close was invoked at all.
+    expect(agentCloseCalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not wedge subsequent turns when the first turn hangs in teardown (CL-2866)", async () => {
+    resetTitleMocks();
+    // The reported wedge: inference completes but close()/audit-commit never
+    // settles. Abort cannot unblock an in-flight close, so only the deadline
+    // racing the whole turn keeps the per-principal chain from pinning.
+    agentCloseHangs = true;
+    titleTurnTimeoutMs = 20;
+    const db = buildTitleDb({
+      mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
+      renamed: {
+        id: "map-1",
+        instanceId: "inst-1",
+        label: "First fallback",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const first = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "First message",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+    // The wedged first turn still returns (its fallback) and fired the abort's
+    // close() attempt rather than hanging the caller.
+    expect(first?.label).toBe("First fallback");
+    expect(agentCloseCalls).toBeGreaterThanOrEqual(1);
+
+    // A second, healthy turn for the same principal must proceed rather than
+    // queue forever behind the wedged first turn's serialization tail.
+    agentCloseHangs = false;
+    titleTurnTimeoutMs = 45_000;
+    const db2 = buildTitleDb({
+      mappingRow: { id: "map-2", instanceId: "inst-2", label: "Chat" },
+      renamed: {
+        id: "map-2",
+        instanceId: "inst-2",
+        label: "Pricing Deep Dive",
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const second = await generateMyraThreadTitle(db2 as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-2",
+      firstMessage: "Second message about pricing",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+
+    expect(second?.label).toBe("Pricing Deep Dive");
   });
 
   it("resolves the title source via the tenant hierarchy for a sub-tenant", async () => {
@@ -574,16 +743,12 @@ describe("generateMyraThreadTitle", () => {
     );
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-child",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "How should we price the enterprise tier?",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-child",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+    });
 
     expect(result?.label).toBe("Pricing Deep Dive");
     // The recorded turn is attributed to the active child tenant.
@@ -601,16 +766,12 @@ describe("generateMyraThreadTitle", () => {
     });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "Hello",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "Hello",
+    });
 
     expect(result).toBeNull();
     expect(lastCreateEventCollectorConfig).toBeNull();
@@ -621,16 +782,12 @@ describe("generateMyraThreadTitle", () => {
     const db = buildTitleDb({ mappingRow: undefined });
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "missing",
-        firstMessage: "Hello",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "missing",
+      firstMessage: "Hello",
+    });
 
     expect(result).toBeNull();
   });
@@ -676,16 +833,12 @@ describe("generateMyraThreadTitle", () => {
 
     try {
       // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-      const result = await generateMyraThreadTitle(
-        db as any,
-        {},
-        {
-          tenantId: "tn-global",
-          memberPrincipalId: "prn-member",
-          threadId: "map-1",
-          firstMessage: "Hello",
-        },
-      );
+      const result = await generateMyraThreadTitle(db as any, titleDeps, {
+        tenantId: "tn-global",
+        memberPrincipalId: "prn-member",
+        threadId: "map-1",
+        firstMessage: "Hello",
+      });
 
       // The fault short-circuits BEFORE any inference turn (propagated to the
       // handler, not swallowed and continued to a fallback source that would run
@@ -709,16 +862,12 @@ describe("generateMyraThreadTitle", () => {
     const { labelRef } = captureRenameLabel(db);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "Hello",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "Hello",
+    });
 
     expect(labelRef.value).toBe("Hello");
     expect(result?.label).toBe("Hello");
@@ -737,16 +886,12 @@ describe("generateMyraThreadTitle", () => {
     const { labelRef } = captureRenameLabel(db);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "How should we price the enterprise tier?",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "How should we price the enterprise tier?",
+    });
 
     // The turn DID run (the failure is empty output, not a skipped turn).
     expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
@@ -764,17 +909,13 @@ describe("generateMyraThreadTitle", () => {
     const { labelRef } = captureRenameLabel(db);
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage:
-          "Can you help me put together a comprehensive pricing strategy",
-      },
-    );
+    await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage:
+        "Can you help me put together a comprehensive pricing strategy",
+    });
 
     // Budget 48 chars; break at the last word boundary within it.
     expect(labelRef.value).toBe("Can you help me put together a comprehensive");
@@ -815,32 +956,65 @@ describe("generateMyraThreadTitle", () => {
     })) as never;
 
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
-    const result = await generateMyraThreadTitle(
-      db as any,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "pricing?",
-      },
-    );
+    const result = await generateMyraThreadTitle(db as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "pricing?",
+    });
 
     expect(persistedLabel).toBe("Pricing Strategy");
     expect(result?.label).toBe("Pricing Strategy");
-    // Durable audit repo lives under the hub dataDir, keyed per (tenant, principal).
-    expect(lastIsogitDir).toBe(
-      "/tmp/myra-title-test/myra-title/tn-global/prn-member",
+    // The scratch repo lives on the hub dataDir volume (like the file parser
+    // and every other agent repo), grouped per (tenant, principal) with a fresh
+    // per-generation id so no repo is reused or grown, and no GC policy (CL-2887).
+    expect(lastIsogitDir).toMatch(
+      /^\/tmp\/myra-title-test\/myra-title\/tn-global\/prn-member\/[0-9a-f-]{36}$/,
     );
-    // The durable title repo must reclaim on the write path (CL-2663): the
-    // configured hub thresholds reach the store, with keep-history retention
-    // since the audit trail is durable user data.
-    expect(lastIsogitGcPolicy).toEqual({
-      packThreshold: 16,
-      looseThreshold: 512,
-      warnBytes: 1024,
-      retention: "keep-history",
-    });
+    expect(lastIsogitGcPolicy).toBeNull();
+  });
+
+  it("uses a fresh per-generation repo so no repo is reused or grown (CL-2887)", async () => {
+    resetTitleMocks();
+    const makeDb = (mapId: string, instanceId: string) =>
+      buildTitleDb({
+        mappingRow: { id: mapId, instanceId, label: "Chat" },
+        renamed: {
+          id: mapId,
+          instanceId,
+          label: "Titled",
+          createdAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      });
+
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await generateMyraThreadTitle(makeDb("map-1", "inst-1") as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "first thread",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    await generateMyraThreadTitle(makeDb("map-2", "inst-2") as any, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-2",
+      firstMessage: "second thread",
+      // biome-ignore lint/suspicious/noExplicitAny: structural opts
+    } as any);
+
+    const titleRepos = isogitDirs.filter((d) => d.includes("/myra-title/"));
+    expect(titleRepos).toHaveLength(2);
+    // Two generations for the SAME principal must land in distinct per-generation
+    // repos — the pre-CL-2887 shared per-principal repo reused one path and grew
+    // unbounded (and it repacked the whole history on each commit, hanging send).
+    expect(titleRepos[0]).not.toBe(titleRepos[1]);
+    for (const dir of titleRepos) {
+      expect(dir).toMatch(
+        /\/myra-title\/tn-global\/prn-member\/[0-9a-f-]{36}$/,
+      );
+    }
   });
 
   it("returns null when firstMessage is blank without touching the db", async () => {
@@ -849,16 +1023,12 @@ describe("generateMyraThreadTitle", () => {
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
     const db: any = { query: { memberAgentInstance: { findFirst } } };
 
-    const result = await generateMyraThreadTitle(
-      db,
-      {},
-      {
-        tenantId: "tn-global",
-        memberPrincipalId: "prn-member",
-        threadId: "map-1",
-        firstMessage: "   ",
-      },
-    );
+    const result = await generateMyraThreadTitle(db, titleDeps, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      threadId: "map-1",
+      firstMessage: "   ",
+    });
 
     expect(result).toBeNull();
     expect(findFirst).not.toHaveBeenCalled();

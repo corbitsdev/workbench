@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
 import {
   ARTIFACT_BODY_MAX_CHARS,
+  PRINCIPAL_SUMMARY_MAX_CHARS,
   ActiveContextSchema,
   THREAD_MAX_TURNS,
   THREAD_TURN_MAX_CHARS,
@@ -10,6 +11,7 @@ import {
   activeContextToRef,
   projectActiveContext,
   type ActiveContext,
+  type PrincipalContext,
   type ThreadContext,
   type WorkflowRunContext,
 } from "./active-context";
@@ -31,6 +33,18 @@ describe("ActiveContextSchema", () => {
       label: "X",
     });
     expect(bad instanceof type.errors).toBe(true);
+  });
+
+  test("accepts a well-formed principal context", () => {
+    const ok = ActiveContextSchema({
+      kind: "principal",
+      id: "pri_1",
+      label: "Myra (agent)",
+      actorKind: "agent",
+      status: "active",
+      summary: "12 moments, 3 tool calls",
+    });
+    expect(ok instanceof type.errors).toBe(false);
   });
 });
 
@@ -142,5 +156,38 @@ describe("thread projector", () => {
     // Every kept turn is truncated, so no full sentinel survives.
     expect(leadIn).not.toContain("TURN_TAIL_");
     expect(leadIn).toContain("…");
+  });
+});
+
+describe("principal projector", () => {
+  const ctx: PrincipalContext = {
+    kind: "principal",
+    id: "pri_42",
+    label: "Ada Lovelace",
+    actorKind: "user",
+    status: "active",
+    summary: `${"s".repeat(PRINCIPAL_SUMMARY_MAX_CHARS + 300)}SUMMARY_TAIL`,
+  };
+
+  test("emits identity fields and the activity summary", () => {
+    const { leadIn } = projectActiveContext(ctx);
+    expect(leadIn).toContain('principal "Ada Lovelace"');
+    expect(leadIn).toContain("pri_42");
+    expect(leadIn).toContain("type: user");
+    expect(leadIn).toContain("status: active");
+  });
+
+  test("truncates the summary rather than dumping it whole", () => {
+    const { leadIn } = projectActiveContext(ctx);
+    expect(leadIn).not.toContain("SUMMARY_TAIL");
+    expect(leadIn).toContain("…");
+    expect(leadIn.length).toBeLessThan(PRINCIPAL_SUMMARY_MAX_CHARS + 300);
+  });
+
+  test("attachment carries the same projection as text/markdown", () => {
+    const { leadIn, attachment } = projectActiveContext(ctx);
+    expect(attachment.contentType).toBe("text/markdown");
+    expect(attachment.name).toContain("pri_42");
+    expect(new TextDecoder().decode(attachment.data)).toBe(leadIn);
   });
 });

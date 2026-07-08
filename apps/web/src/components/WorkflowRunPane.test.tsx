@@ -451,6 +451,56 @@ describe("WorkflowRunPane", () => {
     ).toBe(false);
   });
 
+  it("re-enables when a concurrent gate with the same signal name is still awaiting", async () => {
+    record = makeRecord({ status: "awaiting" });
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 1,
+      steps: [
+        {
+          stepId: "gateA",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    const { rerender } = render(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+      { wrapper },
+    );
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    screen.getByText("fire-signal").click();
+    await waitFor(() => screen.getByText("signal-pending:true"));
+
+    logStateData = {
+      runId: "wfr_1",
+      phase: "running",
+      lastSeq: 2,
+      steps: [
+        { stepId: "gateA", phase: "completed" },
+        {
+          stepId: "gateB",
+          phase: "awaiting-signal",
+          awaitingSignalName: "approve",
+        },
+      ],
+    } as LogRunState;
+    rerender(
+      <WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />,
+    );
+
+    await waitFor(() => screen.getByText("signal-pending:false"));
+    expect(
+      (screen.getByText("fire-signal") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
   it("clears the latch when the same-stepId gate is consumed even if the step later re-awaits", async () => {
     // A map/loop step re-awaits under the same stepId. The latch must clear the
     // moment our signal is consumed (leaves the awaiting set) — it must not stay
@@ -682,6 +732,66 @@ describe("WorkflowRunPane", () => {
       }),
     );
     expect(screen.queryByRole("button", { name: /v2\.0\.0/i })).toBeNull();
+  });
+
+  it("renders the badge from the run record when the kind's deployment is absent from the grant-filtered catalog", async () => {
+    // An owner disabled the kind, so the member-facing deployments list omits
+    // it. The badge must survive: it is audit info for a run that already ran,
+    // sourced from the record's own version meta, not the gated catalog list.
+    record = makeRecord({
+      kind: "with-panel",
+      status: "completed",
+      deploymentId: "ses_dep1",
+      meta: {
+        version: "3",
+        sha: "a1b2c3d",
+        deployedAt: "2026-05-01T00:00:00.000Z",
+      },
+    });
+    deployments = [];
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      screen.getByRole("button", {
+        name: /Workflow version: v3 · a1b2c3d/i,
+      }),
+    );
+  });
+
+  it("prefers the record's own meta over a stale catalog entry for the same deployment", async () => {
+    record = makeRecord({
+      kind: "with-panel",
+      status: "completed",
+      deploymentId: "ses_dep1",
+      meta: {
+        version: "3",
+        sha: "a1b2c3d",
+        deployedAt: "2026-05-01T00:00:00.000Z",
+      },
+    });
+    deployments = [
+      {
+        deploymentId: "ses_dep1",
+        kind: "with-panel",
+        status: "running",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        meta: {
+          version: "1.2.3",
+          sha: "abc1234",
+          deployedAt: "2026-01-01T00:00:00.000Z",
+        },
+      },
+    ];
+    render(<WorkflowRunPane deploymentId="wfr_1" onClose={() => undefined} />, {
+      wrapper,
+    });
+    await waitFor(() =>
+      screen.getByRole("button", {
+        name: /Workflow version: v3 · a1b2c3d/i,
+      }),
+    );
+    expect(screen.queryByRole("button", { name: /v1\.2\.3/i })).toBeNull();
   });
 
   it("opens the version popover via keyboard and shows version, sha and deployed time", async () => {

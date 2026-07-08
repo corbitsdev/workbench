@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { cn, Markdown } from "@workbench/ui";
-import type {
-  FormField,
-  ProgressStepState,
-  ReviewListDisplayField,
-  UIBlock,
-  UIResponse,
+import {
+  MAX_UI_BLOCK_NEST_DEPTH,
+  type FormField,
+  type ProgressStepState,
+  type ReviewListDisplayField,
+  type UIBlock,
+  type UIResponse,
 } from "./ui-block";
 
 /**
@@ -16,6 +17,8 @@ import type {
  */
 export interface UIBlockViewProps {
   block: UIBlock;
+  /** Canvas recursion guard; callers should not set this. */
+  depth?: number;
   /**
    * Invoked when an interactive block produces a response to send to the agent.
    * May return a promise (the host's resume mutation) — interactive blocks await
@@ -29,7 +32,23 @@ export interface UIBlockViewProps {
     | undefined;
 }
 
-export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
+function formatTableCell(cell: string | number | boolean): string {
+  return typeof cell === "string" ? cell : String(cell);
+}
+
+export function UIBlockView({
+  block,
+  onRespond,
+  onAction,
+  depth = 0,
+}: UIBlockViewProps) {
+  if (depth > MAX_UI_BLOCK_NEST_DEPTH) {
+    return (
+      <p className="text-sm text-text-3">
+        This UI block could not be displayed (nesting limit).
+      </p>
+    );
+  }
   switch (block.kind) {
     case "text":
       return (
@@ -92,6 +111,7 @@ export function UIBlockView({ block, onRespond, onAction }: UIBlockViewProps) {
             <UIBlockView
               key={index}
               block={child}
+              depth={depth + 1}
               onRespond={onRespond}
               onAction={onAction}
             />
@@ -293,7 +313,7 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
               >
                 {row.map((cell, cellIndex) => (
                   <td key={cellIndex} className="px-3 py-1.5 text-text">
-                    {cell}
+                    {formatTableCell(cell)}
                   </td>
                 ))}
               </tr>
@@ -305,7 +325,30 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
   );
 }
 
+function isSafeLinkHref(url: string): boolean {
+  const trimmed = url.trim();
+  if (/^javascript:/iu.test(trimmed)) return false;
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "mailto:"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function LinkBlock({ block }: { block: Extract<UIBlock, { kind: "link" }> }) {
+  if (!isSafeLinkHref(block.url)) {
+    return (
+      <span className="text-sm text-text-2">
+        {block.title ?? block.url}
+      </span>
+    );
+  }
   return (
     <a
       href={block.url}
@@ -473,16 +516,30 @@ type FieldValue = LeafValue | Record<string, LeafValue>[];
 type LeafField = Exclude<FormField, { kind: "group" }>;
 
 function leafInitialValue(field: LeafField): LeafValue {
-  if (field.kind === "multiSelect") return [];
+  if (field.kind === "multiSelect") {
+    return (field.options || [])
+      .filter((o) => o.defaultChecked === true)
+      .map((o) => o.value);
+  }
   if (field.kind === "number") {
     return field.defaultValue === undefined ? "" : String(field.defaultValue);
   }
   return field.defaultValue ?? "";
 }
 
+function effectiveGroupMin(min: number | undefined): number {
+  if (min === undefined) return 1;
+  return Math.max(min, 0);
+}
+
 function initialValue(field: FormField): FieldValue {
   if (field.kind === "group") {
-    const rowCount = Math.max(field.min ?? 1, 1);
+    if (Array.isArray(field.defaultRows) && field.defaultRows.length > 0) {
+      return field.defaultRows.map((seed) =>
+        seededRow(field.fields, seed as Record<string, unknown>),
+      );
+    }
+    const rowCount = effectiveGroupMin(field.min);
     return Array.from({ length: rowCount }, () => emptyRow(field.fields));
   }
   return leafInitialValue(field);
@@ -494,11 +551,45 @@ function emptyRow(fields: LeafField[]): Record<string, LeafValue> {
   return row;
 }
 
-function leafFilled(field: LeafField, value: LeafValue): boolean {
-  if (field.required !== true) return true;
-  if (field.kind === "multiSelect") {
-    return Array.isArray(value) && value.length >= Math.max(field.min ?? 1, 1);
+// Coerce a pre-seeded `defaultRows` row (which may carry raw typed values from a
+// prior step — e.g. a number for a `number` cell) into the string / string[]
+// state shape every cell renderer and `leafToPayload` assume. A missing cell
+// falls back to its own default; without this a numeric cell reaches
+// `leafToPayload` as a number and throws on `.trim()` (CL-2773 review).
+function seededRow(
+  fields: LeafField[],
+  seed: Record<string, unknown>,
+): Record<string, LeafValue> {
+  const row: Record<string, LeafValue> = {};
+  for (const field of fields) {
+    const value = seed[field.name];
+    if (value === undefined || value === null) {
+      row[field.name] = leafInitialValue(field);
+    } else if (field.kind === "multiSelect") {
+      row[field.name] = Array.isArray(value)
+        ? value.map((entry) => String(entry))
+        : leafInitialValue(field);
+    } else {
+      row[field.name] = String(value);
+    }
   }
+  return row;
+}
+
+function leafFilled(field: LeafField, value: LeafValue): boolean {
+  if (field.kind === "multiSelect") {
+    const selected = Array.isArray(value) ? value : [];
+    const min =
+      field.required === true
+        ? Math.max(field.min ?? 1, 1)
+        : Math.max(field.min ?? 0, 0);
+    if (field.required !== true) {
+      if (selected.length === 0) return true;
+      return selected.length >= min;
+    }
+    return selected.length >= min;
+  }
+  if (field.required !== true) return true;
   if (field.kind === "number") {
     // A required number must parse to a real number: a non-empty but
     // non-numeric entry (e.g. "abc") is NaN and must NOT satisfy the field, or
@@ -512,7 +603,7 @@ function leafFilled(field: LeafField, value: LeafValue): boolean {
 function fieldSatisfied(field: FormField, value: FieldValue): boolean {
   if (field.kind !== "group") return leafFilled(field, value as LeafValue);
   const rows = value as Record<string, LeafValue>[];
-  if (rows.length < Math.max(field.min ?? 0, 0)) return false;
+  if (rows.length < effectiveGroupMin(field.min)) return false;
   return rows.every((row) =>
     field.fields.every((sub) => leafFilled(sub, row[sub.name] ?? "")),
   );
@@ -544,6 +635,7 @@ function leafToPayload(field: LeafField, value: LeafValue): unknown {
 function fieldToPayload(field: FormField, value: FieldValue): unknown {
   if (field.kind !== "group") return leafToPayload(field, value as LeafValue);
   const rows = value as Record<string, LeafValue>[];
+  if (rows.length === 0) return undefined;
   return rows.map((row) => {
     const entry: Record<string, unknown> = {};
     for (const sub of field.fields) {
@@ -754,7 +846,7 @@ function FormBlock({
         }
         const rows = (values[field.name] as Record<string, LeafValue>[]) ?? [];
         const atMax = field.max !== undefined && rows.length >= field.max;
-        const atMin = rows.length <= Math.max(field.min ?? 1, 1);
+        const atMin = rows.length <= effectiveGroupMin(field.min);
         return (
           <fieldset key={field.name} className="space-y-2">
             {field.label !== undefined && (
@@ -842,7 +934,11 @@ function MultiSelectBlock({
   block: Extract<UIBlock, { kind: "multiSelect" }>;
   onRespond?: (response: UIResponse) => void | Promise<void>;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
+  const [selected, setSelected] = useState<string[]>(() =>
+    block.options
+      .filter((o) => o.defaultChecked === true)
+      .map((o) => o.value ?? o.label),
+  );
   const [submitted, setSubmitted] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1194,9 +1290,16 @@ function ChoiceBlock({
     setError(null);
     setPendingId(option.id);
     try {
+      const rawValue = option.value ?? option.label;
+      const value =
+        typeof rawValue === "string" ||
+        typeof rawValue === "number" ||
+        typeof rawValue === "boolean"
+          ? rawValue
+          : JSON.stringify(rawValue);
       await onRespond?.({
         blockKind: "choice",
-        value: option.value ?? option.label,
+        value,
         ...(block.signalName !== undefined
           ? { signalName: block.signalName }
           : {}),

@@ -16,6 +16,17 @@ export interface RunRecord {
   // deployed version and to read the run's event log / step outputs. Absent on
   // runs created before the record began persisting it.
   deploymentId?: string;
+  // The run's deploy-time version provenance, joined on the hub from the run's
+  // own deployment. Sourced here — not from the grant-filtered runnable catalog
+  // — so the run pane's version badge survives an owner disabling the kind.
+  // Absent for deployments that predate version capture.
+  meta?: {
+    version: string;
+    sha: string;
+    deployedAt: string;
+    label?: string;
+    description?: string;
+  };
 }
 
 // True once the run can no longer advance on its own — the caller stops polling

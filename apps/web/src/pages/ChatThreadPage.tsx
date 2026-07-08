@@ -54,6 +54,7 @@ export function ChatThreadPage() {
   const maybeTitleFromFirstMessage = useAutoTitleFirstMessage(
     active,
     session.messages,
+    session.instanceId,
   );
 
   // HITL signal routing (CL-2681): derive whether free text in the prompt box

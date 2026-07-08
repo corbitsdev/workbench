@@ -1,6 +1,11 @@
 import { authorize, type GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import { ADMIN_ACTION, ADMIN_RESOURCE } from "@workbench/shared";
+import {
+  ADMIN_ACTION,
+  ADMIN_RESOURCE,
+  OWNER_ACTION,
+  OWNER_RESOURCE,
+} from "@workbench/shared";
 import type { MiddlewareHandler } from "hono";
 import type { HubDb } from "../db";
 import { ensureMember } from "./tenant-provisioning";
@@ -24,6 +29,28 @@ export async function isAdmin(
     tenantId,
     ADMIN_RESOURCE,
     ADMIN_ACTION,
+  );
+  return result.effect === "allow";
+}
+
+// Whether a principal holds OWNER authority in a tenant, resolved through the
+// SAME native grant model as isAdmin. This gates on tenant-wide wildcard
+// authority: it probes `OWNER_RESOURCE`/`OWNER_ACTION`, which only a `*`/`*`
+// (or otherwise `own`-globbing) grant satisfies. The seeded `admin` role bears
+// `*`/{read,create,manage} — none of which match `own` — so an admin is denied;
+// the `owner` role's `*`/`*` is the sole holder today (see OWNER_ACTION for the
+// exact invariant). Fail-closed: anything but an explicit `allow` is not owner.
+export async function isOwner(
+  grantStore: GrantStore,
+  principalId: string,
+  tenantId: string,
+): Promise<boolean> {
+  const result = await authorize(
+    grantStore,
+    principalId,
+    tenantId,
+    OWNER_RESOURCE,
+    OWNER_ACTION,
   );
   return result.effect === "allow";
 }
@@ -60,6 +87,40 @@ export function createAdminGrantGuard(deps: {
       );
     }
     c.set("adminPrincipalId", principalId);
+    return next();
+  };
+}
+
+// Hono middleware that authorizes the session caller as an OWNER and stashes
+// their root-tenant principal id on the context. Mirrors createAdminGrantGuard
+// but gates on owner authority: an admin who is not an owner is denied (403).
+// The web `/owner` nav gate is cosmetic; this guard is authoritative.
+export function createOwnerGrantGuard(deps: {
+  db: HubDb;
+  grantStore: GrantStore;
+  rootTenantId: string;
+}): MiddlewareHandler<{
+  Variables: { userId: string; ownerPrincipalId: string };
+}> {
+  return async (c, next) => {
+    const userId = c.get("userId");
+    const { principalId } = await ensureMember(deps.db, {
+      tenantId: deps.rootTenantId,
+      userId,
+    });
+    const allowed = await isOwner(
+      deps.grantStore,
+      principalId,
+      deps.rootTenantId,
+    );
+    if (!allowed) {
+      log.info("owner area access denied", { principalId });
+      return c.json(
+        { error: "You do not have permission to access the owner area" },
+        403,
+      );
+    }
+    c.set("ownerPrincipalId", principalId);
     return next();
   };
 }

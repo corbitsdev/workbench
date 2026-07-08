@@ -57,9 +57,24 @@ function parseWorkflowAutopublishMap(): WorkflowAutopublishMap | null {
 const DEFAULT_HUB_AGENT_GC_PACK_THRESHOLD = 64;
 const DEFAULT_HUB_AGENT_GC_LOOSE_THRESHOLD = 2048;
 const DEFAULT_HUB_AGENT_GC_WARN_BYTES = 256 * 1024 * 1024;
+// Hard ceiling on a single Myra auto-title turn. On expiry the turn is aborted
+// (reactor torn down, workdir lock released) so a wedged post-inference teardown
+// cannot pin the per-principal title repo — see CL-2866.
+// COUPLING: the web client polls the thread list for the generated title only
+// up to TITLE_POLL_WINDOW_MS (apps/web/src/hooks/use-myra-threads.ts). If this
+// timeout is raised past that window, a slow-but-successful title lands after
+// the client stops polling and won't show until reload (CL-2872) — raise the
+// client window to match.
+const DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS = 45_000;
 
 const DEFAULT_WEDGE_SWEEP_INTERVAL_MS = 30_000;
 const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
+
+// CL-2756 awaiting-supervisor pre-warm backstop cadence (mirrors the reconciler's
+// DEFAULT_AWAITING_PREWARM_INTERVAL_MS). 30s: a gate-parked supervisor is
+// re-established well before a human returns to the gate; each tick no-ops for
+// already-routable supervisors.
+const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
 
 // CL-2727 run liveness sweep. Generous defaults so a healthy-but-slow run is
 // never failed: a GONE supervisor with no progress is orphaned past the grace,
@@ -95,6 +110,20 @@ function parseOrigins(raw: string | undefined): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function parseAutoJoinTenantSlugs(): string[] {
+  const raw = process.env["AUTO_JOIN_TENANT_SLUGS"];
+  if (!raw || raw.trim() === "") return [];
+  const seen = new Set<string>();
+  const slugs: string[] = [];
+  for (const part of raw.split(",")) {
+    const slug = part.trim();
+    if (!slug || seen.has(slug)) continue;
+    seen.add(slug);
+    slugs.push(slug);
+  }
+  return slugs;
 }
 
 function parseBooleanEnv(name: string): boolean {
@@ -244,6 +273,11 @@ export function loadConfig() {
           DEFAULT_HUB_AGENT_GC_WARN_BYTES,
         ),
       },
+      myraTitleTurnTimeoutMs: parsePositiveIntEnv(
+        "HUB_MYRA_TITLE_TURN_TIMEOUT_MS",
+        DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS,
+        "milliseconds",
+      ),
     },
     // The deployment's root tenant — the default home every user lands in.
     // Name/slug/domain are deployment-specific and never hardcoded; a different
@@ -259,6 +293,10 @@ export function loadConfig() {
     get globalTenant() {
       return this.rootTenant;
     },
+    // Tenants to auto-join on signup/login (comma-separated slugs). Default empty
+    // — no implicit org membership. Set to the global slug to preserve legacy
+    // "everyone joins root" behavior until admin invite rules land (CL-2855).
+    autoJoinTenantSlugs: parseAutoJoinTenantSlugs(),
     // Build SHA injected by Railway at image build time via RAILWAY_GIT_COMMIT_SHA.
     // Absent in local dev — null is the correct value there.
     buildSha: optionalEnv("RAILWAY_GIT_COMMIT_SHA") ?? null,
@@ -286,6 +324,16 @@ export function loadConfig() {
     wedgeUnroutableGraceMs: parsePositiveIntEnv(
       "WEDGE_UNROUTABLE_GRACE_MS",
       DEFAULT_WEDGE_UNROUTABLE_GRACE_MS,
+      "milliseconds",
+    ),
+    // CL-2756 awaiting-supervisor pre-warm backstop. How often the periodic
+    // sweep re-establishes gate-parked (`awaiting`) supervisors that are
+    // unroutable, so a human's gate-resume finds the supervisor already routable
+    // and pays no re-establish on the critical path. Default 30s; override with
+    // AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS (positive integer milliseconds).
+    awaitingSupervisorPrewarmIntervalMs: parsePositiveIntEnv(
+      "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
+      DEFAULT_AWAITING_PREWARM_INTERVAL_MS,
       "milliseconds",
     ),
     // CL-2727 continuous run liveness sweep. `stallGraceMs`: a GONE-supervisor

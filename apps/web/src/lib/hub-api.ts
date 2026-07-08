@@ -6,6 +6,12 @@ import {
   type SavedRating,
   type MemberPreferences,
   MemberPreferences as MemberPreferencesSchema,
+  OwnerWorkflowsResponse,
+  type OwnerWorkflows,
+  OwnerWorkflowState,
+  OwnerCredentialsResponse,
+  OwnerCredentialStateSchema,
+  type OwnerCredentialState,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -112,6 +118,11 @@ export type MeResponse = {
    * resolved server-side via Interchange's native grant model). The hub admin
    * routes re-check this — the flag only drives nav visibility. */
   isAdmin?: boolean;
+  /** Whether the caller may see the Owner area (holds the `owner` role's `*`/`*`
+   * grant — ABK Labs staff, a strict superset of admin). Resolved server-side
+   * via Interchange's native grant model; the hub owner routes re-check it, so
+   * this flag only drives nav visibility. */
+  isOwner?: boolean;
   /** When true, call postMe() to provision or push template/grant updates. */
   personalAgentSyncAvailable?: boolean;
   /** Server-persisted UI preferences, folded into the bootstrap to avoid an extra round-trip. */
@@ -131,6 +142,78 @@ function parseMePreferences(me: MeResponse): MeResponse {
 
 export async function getMe(): Promise<MeResponse> {
   return parseMePreferences(await hubFetch<MeResponse>("GET", "v1/me"));
+}
+
+/** Deployed workflow kinds + their run-enablement state (owner-guarded). */
+export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/workflows");
+  const parsed = OwnerWorkflowsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/workflows response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable a workflow kind for the workbench (owner-guarded). */
+export async function setOwnerWorkflowEnabled(
+  kind: string,
+  enabled: boolean,
+): Promise<OwnerWorkflowState> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/workflows/${encodeURIComponent(kind)}`,
+    { enabled },
+  );
+  const parsed = OwnerWorkflowState(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner workflow response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Masked configured/missing state for every provider credential the workbench
+ * manages (owner-guarded). Never carries a secret. Catalog filters this to
+ * `kind: "inference"`; Capabilities filters it to `kind: "tool"`. */
+export async function getOwnerCredentials(): Promise<OwnerCredentialState[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/credentials");
+  const parsed = OwnerCredentialsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/credentials response: ${parsed.summary}`);
+  }
+  return parsed.credentials;
+}
+
+/** Set or replace a provider's credential secret (write-only; owner-guarded).
+ * The response is masked state only — the secret is never echoed back. */
+export async function setOwnerCredential(
+  providerName: string,
+  secret: string,
+): Promise<OwnerCredentialState> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/credentials/${encodeURIComponent(providerName)}`,
+    { secret },
+  );
+  const parsed = OwnerCredentialStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner credential response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Clear a provider's credential (owner-guarded). */
+export async function clearOwnerCredential(
+  providerName: string,
+): Promise<OwnerCredentialState> {
+  const raw = await hubFetch<unknown>(
+    "DELETE",
+    `v1/owner/credentials/${encodeURIComponent(providerName)}`,
+  );
+  const parsed = OwnerCredentialStateSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner credential response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 export type PostMeBody = {
@@ -702,6 +785,82 @@ export async function getModelPricing(tenantId: string): Promise<PriceCatalog> {
 export function providerLogoUrl(tenantId: string, provider: string): string {
   const base = apiBase || window.location.origin;
   return `${base}/api/tenants/${encodeURIComponent(tenantId)}/pricing/logos/${encodeURIComponent(provider)}`;
+}
+
+/** A tenant provider definition (owner-guarded native tenant API), including
+ * ones inherited from ancestor tenants. Only the fields the Models tab
+ * renders are validated; extra fields are ignored rather than rejected. */
+export const TenantProviderSchema = type({
+  id: "string",
+  name: "string",
+  plugin: "string",
+  "+": "ignore",
+});
+export type TenantProvider = typeof TenantProviderSchema.infer;
+
+const TenantProvidersResponse = type({
+  data: TenantProviderSchema.array(),
+  "+": "ignore",
+});
+
+/** Lists the tenant's provider catalog, including providers inherited from
+ * ancestor tenants (owner holds `provider:*`/`read` via the `*`/`*` grant).
+ * Parsed at the boundary rather than cast. */
+export async function getTenantProviders(
+  tenantId: string,
+): Promise<TenantProvider[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${encodeURIComponent(tenantId)}/providers?inherited=true`,
+  );
+  const parsed = TenantProvidersResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant providers response: ${parsed.summary}`);
+  }
+  return parsed.data;
+}
+
+/** One offering (provider + priority + pricing) of a resolved model, from the
+ * tenant's model discovery view. */
+export const TenantModelOfferingSchema = type({
+  offeringId: "string",
+  providerId: "string",
+  providerName: "string",
+  plugin: "string",
+  priority: "number",
+  "+": "ignore",
+});
+export type TenantModelOffering = typeof TenantModelOfferingSchema.infer;
+
+/** A resolved model in the tenant's catalog (inheritance + shadowing already
+ * applied), with the providers that offer it. */
+export const TenantModelSchema = type({
+  id: "string",
+  canonicalName: "string",
+  displayName: "string | null",
+  description: "string | null",
+  offerings: TenantModelOfferingSchema.array(),
+  "+": "ignore",
+});
+export type TenantModel = typeof TenantModelSchema.infer;
+
+const TenantModelsResponse = TenantModelSchema.array();
+
+/** Lists the tenant's resolved model catalog (owner-guarded native tenant
+ * API): every model visible after inheritance/shadowing, broken down by the
+ * providers that offer it. Parsed at the boundary rather than cast. */
+export async function getTenantModels(
+  tenantId: string,
+): Promise<TenantModel[]> {
+  const raw = await hubFetch<unknown>(
+    "GET",
+    `tenants/${encodeURIComponent(tenantId)}/models`,
+  );
+  const parsed = TenantModelsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed tenant models response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 export async function getActivityOverview(

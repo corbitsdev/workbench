@@ -5,6 +5,7 @@ export const CATALOG_PROVIDERS: CatalogProviderSpec[] = [
     name: "opencode-zen",
     plugin: "openai-compatible",
     credentialName: "opencode-zen",
+    modelsDevProviderId: "opencode",
   },
   {
     name: "anthropic-api",
@@ -15,4 +16,10 @@ export const CATALOG_PROVIDERS: CatalogProviderSpec[] = [
   { name: "google-ai", plugin: "google-genai", credentialName: "google-ai" },
   { name: "near-ai", plugin: "openai-compatible", credentialName: "near-ai" },
   { name: "Myra LLM", plugin: "openai-compatible", credentialName: "Myra LLM" },
+  {
+    name: "openrouter",
+    plugin: "openai-compatible",
+    credentialName: "openrouter",
+    modelsDevProviderId: "openrouter",
+  },
 ];

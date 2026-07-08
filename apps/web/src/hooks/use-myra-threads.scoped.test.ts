@@ -245,12 +245,18 @@ describe("Myra thread mutations (tenant scoping)", () => {
     const { Wrapper } = wrapper();
     renderHook(
       () =>
-        useAutoTitleFirstMessage(thread, [
-          {
-            role: "user",
-            content: "Summarize yesterday's Attio changes",
-          },
-        ]),
+        useAutoTitleFirstMessage(
+          thread,
+          [
+            {
+              role: "user",
+              content: "Summarize yesterday's Attio changes",
+            },
+          ],
+          // The session must have resolved to this thread's instance for the
+          // transcript to be trusted (CL-2882).
+          thread.instanceId,
+        ),
       { wrapper: Wrapper },
     );
 

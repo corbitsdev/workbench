@@ -181,6 +181,78 @@ describe("resolveModelRate provider collisions (CL-2714)", () => {
     expect(resolveModelRate(collision(), "llama-3.3-70b")).toBeNull();
   });
 
+  test("ambiguous bare id prices via tenant offering when one qualified rate matches", () => {
+    const payload: ModelsDevPayload = {
+      opencode: {
+        id: "opencode",
+        name: "OpenCode",
+        models: {
+          "deepseek-v4-flash": {
+            id: "deepseek-v4-flash",
+            name: "DeepSeek V4 Flash",
+            cost: { input: 0.14, output: 0.28 },
+          },
+        },
+      },
+      cheap: {
+        id: "cheap",
+        name: "Cheap",
+        models: {
+          "deepseek-v4-flash": {
+            id: "deepseek-v4-flash",
+            name: "DeepSeek V4 Flash",
+            cost: { input: 9, output: 9 },
+          },
+        },
+      },
+    };
+    const catalog = buildPriceCatalog(payload, "t", "now");
+    expect(resolveModelRate(catalog, "deepseek-v4-flash")).toBeNull();
+    const withOffering = {
+      ...catalog,
+      offeringProvidersByModel: {
+        "deepseek-v4-flash": ["opencode-zen"],
+      },
+    };
+    const rate = resolveModelRate(withOffering, "deepseek-v4-flash");
+    expect(rate?.input).toBe(0.14);
+    expect(rate?.provider).toBe("opencode");
+  });
+
+  test("ambiguous bare id stays null when tenant offerings imply conflicting rates", () => {
+    const payload: ModelsDevPayload = {
+      opencode: {
+        id: "opencode",
+        name: "OpenCode",
+        models: {
+          "deepseek-v4-flash": {
+            id: "deepseek-v4-flash",
+            name: "DeepSeek V4 Flash",
+            cost: { input: 0.14, output: 0.28 },
+          },
+        },
+      },
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        models: {
+          "deepseek-v4-flash": {
+            id: "deepseek-v4-flash",
+            name: "DeepSeek V4 Flash",
+            cost: { input: 1.5, output: 2.5 },
+          },
+        },
+      },
+    };
+    const catalog = {
+      ...buildPriceCatalog(payload, "t", "now"),
+      offeringProvidersByModel: {
+        "deepseek-v4-flash": ["opencode-zen", "openrouter"],
+      },
+    };
+    expect(resolveModelRate(catalog, "deepseek-v4-flash")).toBeNull();
+  });
+
   test("a qualified id for an unknown provider falls back to the bare id", () => {
     // Bare id is ambiguous, so even the fallback is honestly null.
     expect(resolveModelRate(collision(), "fireworks/llama-3.3-70b")).toBeNull();

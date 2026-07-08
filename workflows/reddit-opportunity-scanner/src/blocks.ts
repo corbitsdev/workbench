@@ -12,14 +12,12 @@
  *      / geography / ICP hints. Emitted verbatim as `{ inputUrl, ... }`; the
  *      URL validation the panel enforced client-side is enforced server-side at
  *      the /resume boundary (RedditIntakePayloadSchema).
- *   2. recommendation-review — NOT migrated to a dock form (CL-2774). The
- *      analyze step produces a concrete `{subreddit, query}` search plan plus
- *      keyword/subreddit recommendations, but today's `form` primitives cannot
- *      reflect that prior model output: `group` cannot pre-seed rows and
- *      `multiSelect` cannot pre-check options, so a dock form would silently
- *      discard the AI's plan and force the user to retype it — net-worse than
- *      the panel. The dock links to the run page; the panel collects the review
- *      there. The gate re-migrates once the pre-seed primitives land (CL-2774).
+ *   2. recommendation-review — a pre-seeded `form` (CL-2773). The analyze step's
+ *      keyword + subreddit recommendations are emitted as multiSelect options
+ *      with defaultChecked, the search plan as a group with defaultRows, plus
+ *      businessContext (textarea defaultValue) and competitors (multiSelect).
+ *      The dock form now collects the review; the run-page panel is the
+ *      strangler fallback.
  *   3. opportunity-selection — a `reviewList` (approvedKey "selected"). Each row
  *      carries the FULL opportunity object as its `payload` — the persist step
  *      MAPS over `selected`, one `artifact_create` per opportunity reading
@@ -41,7 +39,13 @@ import {
   type ProgressStep,
   type UIBlock,
 } from "@workbench/blocks";
-import { type Opportunity, parseCurateOutput } from "./parse";
+import {
+  type AnalyzeResult,
+  type Opportunity,
+  parseAnalyzeOutput,
+  parseCurateOutput,
+  deriveBusinessContext,
+} from "./parse";
 
 /** The intake gate's `awaitSignal` name (matches the workflow def). */
 export const INTAKE_SIGNAL = "intake";
@@ -107,6 +111,98 @@ function intakeForm(signalName: string): UIBlock {
 // `content`; when it is missing, synthesize a non-empty brief from the
 // opportunity's fields so the persist map's `artifact_create` never saves an
 // empty document (CL-2769).
+function reviewForm(signalName: string, analysis: AnalyzeResult): UIBlock {
+  const kwOptions = (analysis.keywords ?? []).map((k) => ({
+    value: k.label,
+    label: k.label,
+    ...(k.reason !== undefined ? { description: k.reason } : {}),
+    defaultChecked: true,
+  }));
+  const subOptions = (analysis.subreddits ?? []).map((s) => {
+    const clean = s.label.replace(/^r\//i, "");
+    return {
+      value: clean,
+      label: clean,
+      ...(s.reason !== undefined ? { description: s.reason } : {}),
+      defaultChecked: true,
+    };
+  });
+  const searchRows = (analysis.searches ?? []).map((s) => ({
+    subreddit: s.subreddit.replace(/^r\//i, ""),
+    query: s.query,
+    ...(s.intent !== undefined ? { intent: s.intent } : {}),
+    ...(s.reason !== undefined ? { reason: s.reason } : {}),
+    sort: s.sort ?? "relevance",
+    timeframe: s.timeframe ?? "month",
+    limit: s.limit ?? 15,
+  }));
+
+  const keywordsField: FormField = {
+    kind: "multiSelect",
+    name: "keywords",
+    label: "Keywords",
+    required: true,
+    min: 1,
+    options: kwOptions,
+  };
+  const subredditsField: FormField = {
+    kind: "multiSelect",
+    name: "subreddits",
+    label: "Subreddits",
+    required: true,
+    min: 1,
+    options: subOptions,
+  };
+  const businessContextField: FormField = {
+    kind: "textarea",
+    name: "businessContext",
+    label: "Business context (optional)",
+    defaultValue: deriveBusinessContext(analysis),
+  };
+  const competitorsField: FormField = {
+    kind: "multiSelect",
+    name: "competitors",
+    label: "Competitors (optional)",
+    options: (analysis.competitors ?? []).map((c) => ({
+      value: c,
+      label: c,
+      defaultChecked: true,
+    })),
+  };
+  const searchesField: FormField = {
+    kind: "group",
+    name: "searches",
+    label: "Searches",
+    min: 1,
+    addLabel: "Add search",
+    defaultRows: searchRows,
+    fields: [
+      { kind: "text", name: "subreddit", label: "Subreddit", required: true },
+      { kind: "text", name: "query", label: "Query", required: true },
+      { kind: "text", name: "sort", label: "Sort" },
+      { kind: "text", name: "timeframe", label: "Timeframe" },
+      { kind: "number", name: "limit", label: "Limit" },
+      { kind: "text", name: "intent", label: "Intent" },
+      { kind: "text", name: "reason", label: "Reason" },
+    ],
+  };
+
+  return {
+    kind: "form",
+    prompt:
+      "Review / edit the inferred keywords, subreddits and search plan before scanning Reddit.",
+    signalName,
+    submitLabel: "Scan Reddit",
+    fields: [
+      keywordsField,
+      subredditsField,
+      businessContextField,
+      competitorsField,
+      searchesField,
+    ],
+  };
+}
+
 export function opportunityContent(opportunity: Opportunity): string {
   if (
     typeof opportunity.content === "string" &&
@@ -194,18 +290,18 @@ export function buildRedditOpportunityScannerBlocks(
     if (gate.signalName === INTAKE_SIGNAL) {
       blocks.push(intakeForm(gate.signalName));
     } else if (gate.signalName === REVIEW_SIGNAL) {
-      // The review gate is NOT a dock form (CL-2774): a form would discard the
-      // analyze step's pre-seeded search plan + recommendations (group can't
-      // pre-seed rows, multiSelect can't pre-check), so we link to the run page
-      // where the panel collects the review. Re-migrates when the pre-seed
-      // primitives land.
-      blocks.push(
-        runPageLink(
-          input.runId,
-          "Review the search plan on the run page",
-          "Review the inferred keywords, subreddits, and search plan on the run page before scanning Reddit.",
-        ),
-      );
+      const analysis = parseAnalyzeOutput(input.stepOutputs["analyze"]);
+      if (analysis !== "pending" && analysis !== "error") {
+        blocks.push(reviewForm(gate.signalName, analysis));
+      } else {
+        blocks.push(
+          runPageLink(
+            input.runId,
+            "Review the search plan on the run page",
+            "Review the inferred keywords, subreddits, and search plan on the run page before scanning Reddit.",
+          ),
+        );
+      }
     } else if (gate.signalName === SELECTION_SIGNAL) {
       const curated = parseCurateOutput(input.stepOutputs["curate"]);
       const opportunities = Array.isArray(curated) ? curated : [];

@@ -245,6 +245,106 @@ describe("form block", () => {
     });
     expect((submit as HTMLButtonElement).disabled).toBe(true);
   });
+
+  it("allows min:0 groups to start empty and omit the group from the payload", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "intake-config",
+          fields: [
+            {
+              kind: "text",
+              name: "campaign",
+              label: "Campaign",
+              required: true,
+            },
+            {
+              kind: "group",
+              name: "variants",
+              label: "Variants",
+              min: 0,
+              fields: [
+                {
+                  kind: "text",
+                  name: "providerName",
+                  label: "Provider",
+                  required: true,
+                },
+                { kind: "text", name: "model", label: "Model", required: true },
+              ],
+            },
+          ],
+        }}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    expect(screen.queryByRole("textbox", { name: /Provider/ })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: /Campaign/ }), {
+      target: { value: "Q3 push" },
+    });
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({ campaign: "Q3 push" });
+  });
+
+  it("lets a min:0 group grow to a filled row in the payload", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "intake-config",
+          fields: [
+            {
+              kind: "text",
+              name: "campaign",
+              label: "Campaign",
+              required: true,
+            },
+            {
+              kind: "group",
+              name: "variants",
+              label: "Variants",
+              addLabel: "Add variant",
+              min: 0,
+              fields: [
+                {
+                  kind: "text",
+                  name: "providerName",
+                  label: "Provider",
+                  required: true,
+                },
+                { kind: "text", name: "model", label: "Model", required: true },
+              ],
+            },
+          ],
+        }}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Add variant" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Campaign/ }), {
+      target: { value: "Q3 push" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Provider/ }), {
+      target: { value: "openai" },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Model/ }), {
+      target: { value: "gpt-4o" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(received?.payload).toEqual({
+      campaign: "Q3 push",
+      variants: [{ providerName: "openai", model: "gpt-4o" }],
+    });
+  });
 });
 
 describe("form block — multiSelect field", () => {
@@ -284,6 +384,102 @@ describe("form block — multiSelect field", () => {
     expect((submit as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(submit);
     expect(received?.payload).toEqual({ channels: ["reddit", "seo"] });
+  });
+
+  it("allows an empty optional multiSelect and omits it from the payload", () => {
+    const optionalBlock: UIBlock = {
+      kind: "form",
+      signalName: "pick-channels",
+      fields: [
+        {
+          kind: "multiSelect",
+          name: "channels",
+          label: "Channels",
+          min: 2,
+          options: [
+            { value: "reddit", label: "Reddit" },
+            { value: "seo", label: "SEO" },
+          ],
+        },
+      ],
+    };
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={optionalBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({});
+  });
+
+  it("enforces min on optional multiSelect once the user picks at least one option", () => {
+    const optionalBlock: UIBlock = {
+      kind: "form",
+      signalName: "pick-channels",
+      fields: [
+        {
+          kind: "multiSelect",
+          name: "channels",
+          label: "Channels",
+          min: 2,
+          options: [
+            { value: "reddit", label: "Reddit" },
+            { value: "seo", label: "SEO" },
+            { value: "email", label: "Email" },
+          ],
+        },
+      ],
+    };
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={optionalBlock}
+        onRespond={(response) => {
+          received = response;
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Reddit/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /SEO/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(submit);
+    expect(received?.payload).toEqual({ channels: ["reddit", "seo"] });
+  });
+
+  it("still requires at least one selection when required is true even if min is 0", () => {
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "pick-channels",
+          fields: [
+            {
+              kind: "multiSelect",
+              name: "channels",
+              label: "Channels",
+              required: true,
+              min: 0,
+              options: [
+                { value: "reddit", label: "Reddit" },
+                { value: "seo", label: "SEO" },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    const submit = screen.getByRole("button", { name: "Submit" });
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Reddit/ }));
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
   });
 });
 
@@ -515,5 +711,193 @@ describe("isUIBlock guard — form + multiSelect", () => {
       isUIBlock({ kind: "form", fields: [{ kind: "select", name: "s" }] }),
     ).toBe(false);
     expect(isUIBlock({ kind: "multiSelect", options: [] })).toBe(false);
+  });
+});
+
+// --- Pre-seed tests (CL-2773). These assert the new defaultChecked / defaultRows
+// behavior. Written first (red) so they fail until the initialValue + renderer
+// changes land.
+describe("form block — multiSelect defaultChecked pre-seed (CL-2773)", () => {
+  const block: UIBlock = {
+    kind: "form",
+    signalName: "pick",
+    fields: [
+      {
+        kind: "multiSelect",
+        name: "channels",
+        label: "Channels",
+        min: 1,
+        options: [
+          { value: "reddit", label: "Reddit", defaultChecked: true },
+          { value: "seo", label: "SEO" },
+          { value: "email", label: "Email", defaultChecked: true },
+        ],
+      },
+    ],
+  };
+
+  it("renders with defaultChecked options already selected", () => {
+    render(<UIBlockView block={block} />);
+    // These two should be checked from the start (pre-seed).
+    expect(
+      (screen.getByRole("checkbox", { name: /Reddit/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: /Email/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    // SEO not defaulted.
+    expect(
+      (screen.getByRole("checkbox", { name: /SEO/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+  });
+
+  it("submits the pre-seeded selection (and allows edit)", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={block}
+        onRespond={(r) => {
+          received = r;
+        }}
+      />,
+    );
+    // Uncheck one default (edit)
+    fireEvent.click(screen.getByRole("checkbox", { name: /Email/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(received?.payload).toEqual({ channels: ["reddit"] });
+  });
+});
+
+describe("standalone multiSelect block defaultChecked pre-seed (CL-2773)", () => {
+  const block: UIBlock = {
+    kind: "multiSelect",
+    prompt: "Pick channels",
+    signalName: "ch",
+    min: 1,
+    options: [
+      { id: "r", label: "Reddit", value: "reddit", defaultChecked: true },
+      { id: "s", label: "SEO", value: "seo" },
+    ],
+  };
+
+  it("starts with defaultChecked selected", () => {
+    render(<UIBlockView block={block} />);
+    expect(
+      (screen.getByRole("checkbox", { name: /Reddit/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: /SEO/ }) as HTMLInputElement)
+        .checked,
+    ).toBe(false);
+  });
+});
+
+describe("form block — group defaultRows pre-seed (CL-2773)", () => {
+  const block: UIBlock = {
+    kind: "form",
+    signalName: "plan",
+    fields: [
+      {
+        kind: "group",
+        name: "searches",
+        label: "Searches",
+        min: 1,
+        defaultRows: [
+          { subreddit: "startups", query: "tools" },
+          { subreddit: "SaaS", query: "pricing" },
+        ],
+        fields: [
+          {
+            kind: "text",
+            name: "subreddit",
+            label: "Subreddit",
+            required: true,
+          },
+          { kind: "text", name: "query", label: "Query", required: true },
+        ],
+      },
+    ],
+  };
+
+  it("renders pre-filled rows from defaultRows (values in inputs)", () => {
+    render(<UIBlockView block={block} />);
+    // Two rows present
+    const subInputs = screen.getAllByRole("textbox", { name: /Subreddit/ });
+    expect(subInputs).toHaveLength(2);
+    expect((subInputs[0] as HTMLInputElement).value).toBe("startups");
+    expect((subInputs[1] as HTMLInputElement).value).toBe("SaaS");
+    const queryInputs = screen.getAllByRole("textbox", { name: /Query/ });
+    expect((queryInputs[0] as HTMLInputElement).value).toBe("tools");
+    expect((queryInputs[1] as HTMLInputElement).value).toBe("pricing");
+  });
+
+  it("submits the pre-seeded rows (group payload)", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={block}
+        onRespond={(r) => {
+          received = r;
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(received?.payload).toEqual({
+      searches: [
+        { subreddit: "startups", query: "tools" },
+        { subreddit: "SaaS", query: "pricing" },
+      ],
+    });
+  });
+
+  // Regression (CL-2773 review): a defaultRows cell can carry a raw typed value
+  // from a prior step — a number for a `number` cell (the reddit `limit: 15`
+  // shape). Submitting the pre-seeded row UNTOUCHED must not throw — the cell is
+  // normalized to string state on seed so leafToPayload can parse it back.
+  it("submits a numeric defaultRows cell left untouched (no throw)", () => {
+    let received: UIResponse | undefined;
+    render(
+      <UIBlockView
+        block={{
+          kind: "form",
+          signalName: "plan",
+          fields: [
+            {
+              kind: "group",
+              name: "searches",
+              label: "Searches",
+              min: 1,
+              defaultRows: [
+                { subreddit: "startups", query: "tools", limit: 15 },
+              ],
+              fields: [
+                {
+                  kind: "text",
+                  name: "subreddit",
+                  label: "Subreddit",
+                  required: true,
+                },
+                { kind: "text", name: "query", label: "Query", required: true },
+                { kind: "number", name: "limit", label: "Limit" },
+              ],
+            },
+          ],
+        }}
+        onRespond={(r) => {
+          received = r;
+        }}
+      />,
+    );
+    // The numeric cell renders its seeded value as string state.
+    const limitInput = screen.getByRole("spinbutton", { name: /Limit/ });
+    expect((limitInput as HTMLInputElement).value).toBe("15");
+    fireEvent.click(screen.getByRole("button", { name: "Submit" }));
+    expect(received?.payload).toEqual({
+      searches: [{ subreddit: "startups", query: "tools", limit: 15 }],
+    });
   });
 });

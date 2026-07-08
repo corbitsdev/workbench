@@ -82,12 +82,10 @@ describe("reddit-opportunity-scanner blocks (CL-2769)", () => {
     }
   });
 
-  test("review gate links to the run page — NOT a dock form (CL-2774)", () => {
-    // The analyze step's pre-seeded search plan + recommendations can't be
-    // expressed by today's form primitives (no pre-seeded rows / pre-checked
-    // options), so the review gate stays on the run-page panel. Even with a
-    // fully-parsed analysis available, the dock emits a run-page link, never a
-    // form — shipping a form would silently discard the AI's plan.
+  test("review gate emits a pre-seeded form (CL-2773)", () => {
+    // With defaultChecked + defaultRows the analyze output can now pre-seed
+    // the review form directly in the dock (keywords/subreddits pre-checked,
+    // searches group pre-filled).
     const blocks = buildRedditOpportunityScannerBlocks(
       baseInput({
         steps: [
@@ -101,10 +99,23 @@ describe("reddit-opportunity-scanner blocks (CL-2769)", () => {
         stepOutputs: { analyze: JSON.parse(analyzeReply(ANALYSIS)) },
       }),
     );
-    expect(blocks.some((b) => b.kind === "form")).toBe(false);
-    const link = blocks.find((b) => b.kind === "link");
-    if (link?.kind !== "link") throw new Error("expected a run-page link");
-    expect(link.url).toBe("/workflows/run_1");
+    const form = blocks.find((b) => b.kind === "form");
+    if (form?.kind !== "form")
+      throw new Error("expected a form block for review");
+    expect(form.signalName).toBe(REVIEW_SIGNAL);
+    // Pre-seeded multiSelects and group are present.
+    const hasKeywords = form.fields.some(
+      (f) => f.kind === "multiSelect" && f.name === "keywords",
+    );
+    const hasSubreddits = form.fields.some(
+      (f) => f.kind === "multiSelect" && f.name === "subreddits",
+    );
+    const hasSearches = form.fields.some(
+      (f) => f.kind === "group" && f.name === "searches",
+    );
+    expect(hasKeywords).toBe(true);
+    expect(hasSubreddits).toBe(true);
+    expect(hasSearches).toBe(true);
   });
 
   test("selection gate emits a reviewList with approvedKey 'selected'", () => {

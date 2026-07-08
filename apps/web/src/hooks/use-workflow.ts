@@ -25,6 +25,19 @@ function withTenant(path: string, tenantId?: string | null): string {
   return `${path}${sep}tenantId=${encodeURIComponent(tenantId)}`;
 }
 
+// Mirror of apps/hub/src/lib/workflow-meta.ts (separate build graphs make a
+// literal import non-trivial). `deployedAt` is an ISO string at the source.
+const workflowMetaSchema = type({
+  version: "string",
+  sha: "string",
+  deployedAt: "string.date.iso",
+  // The workflow's display name + one-line description, captured at deploy time
+  // (optional — older deployments carry none).
+  "label?": "string",
+  "description?": "string",
+});
+export type WorkflowMeta = typeof workflowMetaSchema.infer;
+
 // Thin-executor run record (CL-2240). State lives in a single row read from the
 // hub; there is no SSE event log to reduce. Parse every response at the boundary.
 const runRecordSchema = type({
@@ -32,6 +45,10 @@ const runRecordSchema = type({
   kind: "string",
   status: "'provisioning'|'running'|'awaiting'|'completed'|'failed'",
   "deploymentId?": "string",
+  // The run's deploy-time version meta, joined on the hub from the run's own
+  // deployment so the version badge does not depend on the grant-filtered
+  // catalog list. Omitted for deployments that predate version capture.
+  "meta?": workflowMetaSchema,
 });
 
 function parseRunRecord(raw: unknown): RunRecord {
@@ -52,19 +69,6 @@ const workflowRunSchema = type({
 });
 export type WorkflowRun = typeof workflowRunSchema.infer;
 const workflowRunListSchema = workflowRunSchema.array();
-
-// Mirror of apps/hub/src/lib/workflow-meta.ts (separate build graphs make a
-// literal import non-trivial). `deployedAt` is an ISO string at the source.
-const workflowMetaSchema = type({
-  version: "string",
-  sha: "string",
-  deployedAt: "string.date.iso",
-  // The workflow's display name + one-line description, captured at deploy time
-  // (optional — older deployments carry none).
-  "label?": "string",
-  "description?": "string",
-});
-export type WorkflowMeta = typeof workflowMetaSchema.infer;
 
 const workflowDeploymentSchema = type({
   deploymentId: "string",

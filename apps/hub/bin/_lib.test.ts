@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { resolveTargetTenant } from "./_lib";
+import { recommendTenancyCutover, resolveTargetTenant } from "./_lib";
 
 const realFetch = globalThis.fetch;
 const ttyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
@@ -117,5 +117,52 @@ describe("resolveTargetTenant", () => {
         globalSlug: "abklabs",
       }),
     ).rejects.toThrow(/not a principal of tenant "nope"/);
+  });
+});
+
+describe("recommendTenancyCutover", () => {
+  test("target already root matching GLOBAL → flip-env-only", () => {
+    const tenants = [
+      {
+        id: "t1",
+        slug: "abklabs",
+        name: "ABK",
+        parentId: null,
+      },
+      {
+        id: "t2",
+        slug: "interchange",
+        name: "Legacy",
+        parentId: null,
+      },
+    ];
+    const rec = recommendTenancyCutover(tenants, "abklabs", "abklabs", () => 0);
+    expect(rec.strategy).toBe("flip-env-only");
+    expect(rec.steps.some((s) => s.includes("interchange"))).toBe(true);
+  });
+
+  test("target child of legacy root → reparent-sql", () => {
+    const tenants = [
+      {
+        id: "root",
+        slug: "interchange",
+        name: "Interchange",
+        parentId: null,
+      },
+      {
+        id: "child",
+        slug: "abklabs",
+        name: "ABK",
+        parentId: "root",
+      },
+    ];
+    const rec = recommendTenancyCutover(
+      tenants,
+      "interchange",
+      "abklabs",
+      (id) => (id === "root" ? 5 : 1),
+    );
+    expect(rec.strategy).toBe("merge-then-delete-legacy");
+    expect(rec.steps[0]).toContain("parent_id = NULL");
   });
 });

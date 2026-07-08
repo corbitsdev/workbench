@@ -1,4 +1,4 @@
-import { and, gt, inArray, isNotNull, isNull, like } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, like } from "drizzle-orm";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
@@ -63,9 +63,38 @@ export interface WorkflowReconciler {
   // instance rows, so it is a cheap no-op for the normal case where teardown
   // already ran. Run on hub startup after `reconcileAll`.
   reclaimOrphanedDeployments(): Promise<void>;
+  // CL-2756: proactively re-establish the supervisor of every run PARKED at an
+  // awaitSignal gate (`awaiting`) whose supervisor address is not currently
+  // routable, so the human's gate-resume finds it already routable and pays NO
+  // re-establish + child re-spawn on the critical path. This is the PERIODIC
+  // backstop for the reconnect-driven `reconcileAll` (which fires only on
+  // `agent.reconnected`): a sidecar that restarts and restores no sessions — an
+  // all-inline/deterministic deployment, or a missed reconnect event — emits no
+  // `agent.reconnected`, so nothing re-establishes the parked supervisor until
+  // the resume itself does. Strictly awaiting-scoped: a `running` run is NEVER
+  // pre-warmed here (a running run that lost its supervisor is failed by the
+  // liveness sweep, not resurrected — resurrecting it would reintroduce the
+  // churn the per-run/eviction model exists to prevent). Idempotent and
+  // coalesced through `ensureDeploymentRoutable`; a failure is surfaced and
+  // counted, never swallowed, and never aborts the batch.
+  reconcileAwaiting(): Promise<AwaitingPrewarmSummary>;
   // Subscribe to sidecar reconnect events and reconcile on each (coalesced to
   // one in-flight pass). Returns an unsubscribe handle.
   start(): () => void;
+}
+
+export interface AwaitingPrewarmSummary {
+  // Unique awaiting deployments considered this pass.
+  candidates: number;
+  // Deployments the pass re-established (were unroutable, establish succeeded).
+  reestablished: number;
+  // Awaiting deployments already routable — skipped, no establish attempted.
+  alreadyRoutable: number;
+  // Awaiting deployments whose kind has no registry row to recover the deploy
+  // principal from — cannot be revived, skipped.
+  skippedNoPrincipal: number;
+  // Establish attempts that threw — surfaced (logged + counted), batch continues.
+  failed: number;
 }
 
 // How far back the orphan janitor looks for terminated-but-not-torn-down runs.
@@ -273,6 +302,117 @@ export function createWorkflowReconciler(deps: {
     }
   }
 
+  // Recover the DEPLOY principal per `kind tenantId` from the published-definition
+  // registry (`workflow_run`). A per-run record's own `principalId` is the run
+  // OWNER, but `ensureDeploymentRoutable` revives the supervisor's agent/instance
+  // rows as the DEPLOYER, so the registry is the source of that principal — the
+  // same recovery `reconcileAll` performs.
+  async function loadDeployPrincipalByKind(): Promise<Map<string, string>> {
+    const registryRows = await deps.db
+      .select({
+        kind: workflowRun.kind,
+        tenantId: workflowRun.tenantId,
+        principalId: workflowRun.principalId,
+      })
+      .from(workflowRun)
+      .where(
+        and(isNotNull(workflowRun.deploymentId), isNull(workflowRun.deletedAt)),
+      );
+    const byKind = new Map<string, string>();
+    for (const r of registryRows) {
+      byKind.set(`${r.kind} ${r.tenantId}`, r.principalId);
+    }
+    return byKind;
+  }
+
+  async function reconcileAwaiting(): Promise<AwaitingPrewarmSummary> {
+    const summary: AwaitingPrewarmSummary = {
+      candidates: 0,
+      reestablished: 0,
+      alreadyRoutable: 0,
+      skippedNoPrincipal: 0,
+      failed: 0,
+    };
+
+    const awaitingRecords = await deps.db
+      .select({
+        deploymentId: workflowRunRecord.deploymentId,
+        kind: workflowRunRecord.kind,
+        tenantId: workflowRunRecord.tenantId,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          eq(workflowRunRecord.status, "awaiting"),
+          isNotNull(workflowRunRecord.deploymentId),
+          isNull(workflowRunRecord.deletedAt),
+        ),
+      );
+    if (awaitingRecords.length === 0) return summary;
+
+    const routable = new Set(deps.getRoutableAddresses());
+    const deployPrincipalByKind = await loadDeployPrincipalByKind();
+
+    const seen = new Set<string>();
+    for (const rec of awaitingRecords) {
+      if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
+      seen.add(rec.deploymentId);
+      summary.candidates += 1;
+
+      const address = deriveDeploymentAddress({
+        deploymentId: rec.deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
+      // Already routable: the healthy case (the supervisor survived, or a
+      // reconnect reconcile already re-established it). Skip — never re-drive a
+      // deploy frame at a live supervisor.
+      if (routable.has(address)) {
+        summary.alreadyRoutable += 1;
+        continue;
+      }
+
+      const deployPrincipal = deployPrincipalByKind.get(
+        `${rec.kind} ${rec.tenantId}`,
+      );
+      if (deployPrincipal === undefined) {
+        // The kind was undeployed since the run parked — no registry row to
+        // recover the deploy principal, so the supervisor cannot be revived.
+        summary.skippedNoPrincipal += 1;
+        continue;
+      }
+
+      try {
+        const result = await deps.ensureDeploymentRoutable({
+          deploymentId: rec.deploymentId,
+          kind: rec.kind,
+          tenantId: rec.tenantId,
+          creatorPrincipalId: deployPrincipal,
+        });
+        if (result.reestablished) summary.reestablished += 1;
+      } catch (err) {
+        // Surface (do not swallow) and keep sweeping the rest of the batch — one
+        // parked run's establish failure must not strand the others.
+        summary.failed += 1;
+        log.error("awaiting pre-warm: re-establish failed for deployment", {
+          deploymentId: rec.deploymentId,
+          kind: rec.kind,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    if (summary.reestablished > 0 || summary.failed > 0) {
+      log.info("awaiting pre-warm pass complete", {
+        candidates: summary.candidates,
+        reestablished: summary.reestablished,
+        alreadyRoutable: summary.alreadyRoutable,
+        skippedNoPrincipal: summary.skippedNoPrincipal,
+        failed: summary.failed,
+      });
+    }
+    return summary;
+  }
+
   async function reclaimOrphanedDeployments(): Promise<void> {
     const cutoff = new Date(Date.now() - ORPHAN_RECLAIM_WINDOW_MS);
     const recentTerminal = await deps.db
@@ -336,6 +476,7 @@ export function createWorkflowReconciler(deps: {
   return {
     failOrphanedRuns,
     reconcileAll,
+    reconcileAwaiting,
     reclaimOrphanedDeployments,
     start() {
       // The handler is awaited by the sidecar-handler's reconnect flow; it must
@@ -350,4 +491,40 @@ export function createWorkflowReconciler(deps: {
       });
     },
   };
+}
+
+// Single contract-guaranteed default cadence for the awaiting pre-warm backstop
+// (CL-2756). 30s mirrors the chat-side wedge sweep: frequent enough that a
+// gate-parked supervisor is re-established well before a human returns to the
+// gate, cheap because each tick is a no-op for already-routable supervisors.
+export const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
+
+// Register the periodic awaiting-supervisor pre-warm on an interval. Owns a
+// reentrancy flag (a slow tick must not overlap the next) and returns an
+// unsubscribe that clears the timer (mirrors `registerWedgeSweepReconciler`'s
+// teardown contract). The timer is `unref`'d so it never keeps the process alive.
+export function registerAwaitingSupervisorPrewarm(deps: {
+  reconciler: Pick<WorkflowReconciler, "reconcileAwaiting">;
+  intervalMs?: number;
+}): () => void {
+  const intervalMs = deps.intervalMs ?? DEFAULT_AWAITING_PREWARM_INTERVAL_MS;
+  let sweeping = false;
+
+  const timer = setInterval(() => {
+    if (sweeping) return;
+    sweeping = true;
+    void deps.reconciler
+      .reconcileAwaiting()
+      .catch((err) => {
+        log.error("awaiting pre-warm tick failed", {
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      })
+      .finally(() => {
+        sweeping = false;
+      });
+  }, intervalMs);
+  if (typeof timer.unref === "function") timer.unref();
+
+  return () => clearInterval(timer);
 }

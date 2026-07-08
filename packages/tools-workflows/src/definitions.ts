@@ -5,17 +5,28 @@ import type { ToolDefinition } from "@intx/types/runtime";
 // top-level primitive. `input`/`payload` stay objects because they ARE the
 // opaque per-workflow payloads, not addressing parameters.
 
+export const WORKFLOW_LIST_KINDS_DEFINITION: ToolDefinition = {
+  name: "workflow_list_kinds",
+  description:
+    "List workflow kinds the caller may start. Returns only kinds deployed on the tenant chain and allowed by the org run policy — the same runnable catalog as the Workflows page.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
+};
+
 export const WORKFLOW_START_DEFINITION: ToolDefinition = {
   name: "workflow_start",
   description:
-    "Start a workflow run by kind on behalf of the user. The run is recorded against this conversation, so it appears in the chat's workflow dock. Returns { runId, kind, status }. Use workflow_list_runs to check progress and workflow_signal to resolve a pending gate.",
+    "Start a workflow run by kind on behalf of the user. Call workflow_list_kinds first and use a returned kind. The run is recorded against this conversation, so it appears in the chat's workflow dock. Returns { runId, kind, status }. Use workflow_list_runs to check progress and workflow_signal to resolve a pending gate.",
   inputSchema: {
     type: "object",
     properties: {
       kind: {
         type: "string",
         description:
-          "The workflow kind to start, e.g. 'last30days-research'. Must be a deployed workflow kind.",
+          "The workflow kind to start (from workflow_list_kinds), e.g. 'last30days-research'.",
       },
       input: {
         type: "object",
@@ -30,7 +41,7 @@ export const WORKFLOW_START_DEFINITION: ToolDefinition = {
 export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
   name: "workflow_list_runs",
   description:
-    "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, and originConversationId for each run.",
+    "List the user's workflow runs. By default only runs started from the current conversation are returned; pass allConversations=true to list the user's runs from every conversation. Returns runId, kind, status, createdAt, originConversationId, and for runs with status 'awaiting' a pendingGates array (signalName plus optional payloadSchema describing the gate's expected fields).",
   inputSchema: {
     type: "object",
     properties: {
@@ -51,7 +62,7 @@ export const WORKFLOW_LIST_RUNS_DEFINITION: ToolDefinition = {
 export const WORKFLOW_SIGNAL_DEFINITION: ToolDefinition = {
   name: "workflow_signal",
   description:
-    "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Pass the runId, the signalName the gate expects, and an optional payload object with the gate's fields. Returns the run's state after the signal.",
+    "Deliver a signal to a workflow run that is waiting on a gate (status 'awaiting'), resuming it. Read the run's pendingGates from workflow_list_runs first and pass that exact signalName — never invent one. Pass the runId, signalName, and an optional payload object matching the gate's fields. On a wrong signalName returns { ok: false, error, pendingGates } instead of succeeding. Returns the run's state after a successful signal.",
   inputSchema: {
     type: "object",
     properties: {
@@ -75,6 +86,7 @@ export const WORKFLOW_SIGNAL_DEFINITION: ToolDefinition = {
 };
 
 export const WORKFLOW_TOOL_DEFINITIONS: ToolDefinition[] = [
+  WORKFLOW_LIST_KINDS_DEFINITION,
   WORKFLOW_START_DEFINITION,
   WORKFLOW_LIST_RUNS_DEFINITION,
   WORKFLOW_SIGNAL_DEFINITION,

@@ -27,6 +27,74 @@ function myraThreadsKey(tenantId: string | null) {
 const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
 const inFlightCreates = new Map<string, Promise<MyraThread>>();
 
+// Titling is fire-and-forget on the hub: POST /title returns immediately and
+// the real title lands seconds later (the LLM turn). A single onSettled refetch
+// races that write and loses, and nothing else refetches the list — so the new
+// title never appears until reload (CL-2872). While a title is in flight we
+// poll the thread list until the generated title lands, then stop.
+export const TITLE_POLL_INTERVAL_MS = 2_000;
+// Failure-case ceiling only: the early-stop below ends polling the moment the
+// title lands (~2s typical). This bounds the wait when the hub never produces a
+// title (its turn timed out). It is deliberately kept above the hub's own
+// title-turn deadline (HUB_MYRA_TITLE_TURN_TIMEOUT_MS, default 45s) plus margin
+// — if an operator raises that env var past this ceiling, raise this too, or a
+// slow-but-successful title will land after we stop polling. See the matching
+// note at DEFAULT_HUB_MYRA_TITLE_TURN_TIMEOUT_MS in apps/hub/src/config.ts.
+const TITLE_POLL_WINDOW_MS = 60_000;
+
+type TitlePoll = { until: number; pending: Map<string, string> };
+// tenantId -> { window ceiling, pending threadId -> optimistic label }.
+const titlePolls = new Map<string, TitlePoll>();
+
+/**
+ * Record that a title turn is in flight for `threadId`, storing the optimistic
+ * label we showed so the poll can recognise when the real title has replaced it.
+ */
+export function markTitlingActive(
+  tenantId: string,
+  threadId: string,
+  optimisticLabel: string,
+  now = Date.now(),
+): void {
+  const existing = titlePolls.get(tenantId);
+  const pending = existing?.pending ?? new Map<string, string>();
+  pending.set(threadId, optimisticLabel);
+  titlePolls.set(tenantId, { until: now + TITLE_POLL_WINDOW_MS, pending });
+}
+
+/**
+ * Poll interval for the thread list while a title is still landing, or false
+ * once every pending title has landed or the window ceiling is hit. Drops a
+ * pending thread as soon as its label is non-default and no longer the
+ * optimistic fallback, and prunes the tenant entry so the map stays bounded.
+ */
+export function titlePollInterval(
+  tenantId: string | null,
+  threads: readonly MyraThreadListItem[] | undefined,
+  now = Date.now(),
+): number | false {
+  if (!tenantId) return false;
+  const poll = titlePolls.get(tenantId);
+  if (!poll) return false;
+  if (threads) {
+    for (const [threadId, optimistic] of poll.pending) {
+      const item = threads.find((t) => t.id === threadId);
+      if (
+        item &&
+        !isDefaultMyraThreadLabel(item.label) &&
+        item.label !== optimistic
+      ) {
+        poll.pending.delete(threadId);
+      }
+    }
+  }
+  if (poll.pending.size === 0 || now >= poll.until) {
+    titlePolls.delete(tenantId);
+    return false;
+  }
+  return TITLE_POLL_INTERVAL_MS;
+}
+
 export function readLastActiveThreadId(): string | null {
   try {
     return localStorage.getItem(LAST_ACTIVE_THREAD_KEY);
@@ -85,6 +153,8 @@ export function useMyraThreads() {
     queryFn: () => listMyraThreads(requireActiveTenant(activeTenantId)),
     enabled: !!activeTenantId,
     staleTime: 60_000,
+    refetchInterval: (query) =>
+      titlePollInterval(activeTenantId, query.state.data),
   });
 }
 
@@ -161,6 +231,9 @@ export function useGenerateMyraThreadTitle() {
     onMutate: ({ id, firstMessage }) => {
       const tenantId = requireActiveTenant(activeTenantId);
       const label = myraThreadTitleFromFirstMessage(firstMessage);
+      // The real title lands asynchronously; poll the list until it replaces
+      // this optimistic label.
+      markTitlingActive(tenantId, id, label);
       queryClient.setQueryData<MyraThreadListItem[]>(
         myraThreadsKey(tenantId),
         (existing) => {
@@ -171,12 +244,10 @@ export function useGenerateMyraThreadTitle() {
         },
       );
     },
-    onSuccess: (thread) => {
-      if (thread)
-        void queryClient.invalidateQueries({
-          queryKey: myraThreadsKey(activeTenantId),
-        });
-    },
+    // The hub accepts titling asynchronously and returns { thread: null }, so
+    // there is no title to read from the response — the polling window opened in
+    // onMutate is what surfaces the eventual title. This first invalidation just
+    // kicks the query so refetchInterval begins scheduling polls.
     onSettled: () => {
       void queryClient.invalidateQueries({
         queryKey: myraThreadsKey(activeTenantId),
@@ -207,6 +278,7 @@ function firstUserMessage(
 export function useAutoTitleFirstMessage(
   active: MyraThread | null,
   messages: { role: string; content: string }[] = [],
+  messagesInstanceId: string | null = null,
 ): (text: string) => void {
   const generateTitle = useGenerateMyraThreadTitle();
   const titledRef = useRef<Set<string>>(new Set());
@@ -238,10 +310,17 @@ export function useAutoTitleFirstMessage(
 
   useEffect(() => {
     if (!active || !isDefaultThreadLabel(active.label)) return;
+    // `messages` come from the live session, which reconnects to a switched
+    // thread in a post-commit effect — so on the render right after "+ New
+    // chat", `active` is already the new thread while `messages` still hold the
+    // previous thread's transcript. Titling then would name the new thread from
+    // the old thread's first message (CL-2882). Only trust the transcript once
+    // the session has resolved to the active thread's own instance.
+    if (messagesInstanceId !== active.instanceId) return;
     const firstMessage = firstUserMessage(messages);
     if (firstMessage === null) return;
     titleFromText(firstMessage);
-  }, [active, messages, titleFromText]);
+  }, [active, messages, messagesInstanceId, titleFromText]);
 
   return titleFromText;
 }

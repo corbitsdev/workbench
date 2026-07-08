@@ -72,7 +72,10 @@ import {
   type ReclaimDeploymentFn,
 } from "./services/workflow-deploy";
 import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
-import { createWorkflowReconciler } from "./services/workflow-reconciler";
+import {
+  createWorkflowReconciler,
+  registerAwaitingSupervisorPrewarm,
+} from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
@@ -81,7 +84,8 @@ import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
-import { isAdmin } from "./lib/admin-grant";
+import { createOwnerRouter } from "./routes/owner";
+import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
   registerDisconnectReconciler,
@@ -127,9 +131,8 @@ import { loadSigningKeyRegistry } from "./lib/signing-keys";
 import {
   seedGlobalTenant,
   seedAgentTemplates,
-  ensureMember,
+  autoJoinConfiguredTenants,
   lookupMember,
-  provisionMemberInstances,
 } from "./lib/tenant-provisioning";
 import { reconcileMemberInstanceGrants } from "./services/grant-reconcile";
 import { AGENT_TEMPLATES } from "@workbench/agents";
@@ -250,22 +253,15 @@ const auth = betterAuth({
         },
         after: async (user) => {
           try {
-            const { principalId: rootPrincipalId } = await ensureMember(db, {
-              tenantId: rootTenantId,
-              userId: user.id,
-            });
-            await provisionMemberInstances(db, {
-              tenantId: rootTenantId,
-              userId: user.id,
-              memberPrincipalId: rootPrincipalId,
-            });
-            log.info("User joined root tenant", {
-              userId: user.id,
-              rootTenantId,
-              rootPrincipalId,
-            });
+            const joined = await autoJoinConfiguredTenants(db, user.id);
+            if (joined.length > 0) {
+              log.info("User auto-joined tenants on signup", {
+                userId: user.id,
+                slugs: joined.map((j) => j.slug),
+              });
+            }
           } catch (err) {
-            log.error("Root-tenant membership failed for new user", {
+            log.error("Auto-join failed for new user", {
               userId: user.id,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -276,19 +272,10 @@ const auth = betterAuth({
     session: {
       create: {
         after: async (session) => {
-          // Repair path: ensure root-tenant membership on login in case signup hook failed.
           try {
-            const { principalId } = await ensureMember(db, {
-              tenantId: rootTenantId,
-              userId: session.userId,
-            });
-            await provisionMemberInstances(db, {
-              tenantId: rootTenantId,
-              userId: session.userId,
-              memberPrincipalId: principalId,
-            });
+            await autoJoinConfiguredTenants(db, session.userId);
           } catch (err) {
-            log.error("Session repair failed — continuing", {
+            log.error("Session auto-join repair failed — continuing", {
               userId: session.userId,
               error: err instanceof Error ? err : new Error(String(err)),
             });
@@ -660,7 +647,7 @@ hubApp.route(
   "/api/tenants/:tenantId/activity",
   createTenantActivityRouter({ db }),
 );
-hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter());
+hubApp.route("/api/tenants/:tenantId/pricing", createPricingRouter({ db }));
 
 // CL-2749: pre-warm the shared models.dev pricing cache on boot so the first
 // post-deploy Insights pricing request is served warm instead of eating the
@@ -884,8 +871,13 @@ v1.get("/me", async (c) => {
   // org tenant), so this authorizes over the SAME tenant the admin route guard
   // uses (`rootTenantId`) — the nav gate and the real gate cannot diverge.
   let admin = false;
+  let owner = false;
   if (memberPrincipalId && workingTenantId) {
     admin = await isAdmin(grantStore, memberPrincipalId, workingTenantId);
+    // Owner is a strict superset of admin (see isOwner): ABK Labs owners hold
+    // the `owner` role (`*`/`*`); customer-side admins do not. Drives the
+    // `/owner` nav gate — the owner routes re-check server-side.
+    owner = await isOwner(grantStore, memberPrincipalId, workingTenantId);
   }
 
   return c.json({
@@ -900,6 +892,7 @@ v1.get("/me", async (c) => {
     credentialResolved,
     personalAgentSyncAvailable,
     isAdmin: admin,
+    isOwner: owner,
     preferences,
   });
 });
@@ -1026,7 +1019,7 @@ v1.route(
   ),
 );
 v1.route("/", createMembersRouter(db));
-v1.route("/", createMyraThreadsRouter(db, sessionService));
+v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createArtifactsRouter(db));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
@@ -1041,6 +1034,7 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
+v1.route("/", createOwnerRouter({ db, grantStore, rootTenantId }));
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.
@@ -1140,6 +1134,19 @@ const runLivenessSweep = createRunLivenessSweep({
   intervalMs: config.runLivenessSweep.intervalMs,
 });
 runLivenessSweep.start();
+// CL-2756: periodic backstop that re-establishes gate-parked (`awaiting`)
+// supervisors that are unroutable, so a human's gate-resume finds the supervisor
+// already routable and pays no re-establish + child re-spawn on the critical
+// path. The reconnect-driven reconcileAll (above) covers the case where a
+// sidecar restart restores some session and fires `agent.reconnected`; this
+// backstop covers the case where NO reconnect event fires (an all-inline/
+// deterministic deployment restores no session, or a missed event). Strictly
+// awaiting-scoped — a running run is never resurrected here (the liveness sweep
+// owns that decision).
+const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
+  reconciler: workflowReconciler,
+  intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
+});
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
@@ -1368,6 +1375,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     try {
       log.info("Received {signal}, draining", { signal });
       stopWedgeSweepReconciler();
+      stopAwaitingSupervisorPrewarm();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

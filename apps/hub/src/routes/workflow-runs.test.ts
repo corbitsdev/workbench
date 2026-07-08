@@ -116,6 +116,8 @@ function makeDb(owned: boolean) {
       workflowRun: {
         findFirst,
       },
+      // No member-role policy → the CL-2885 run gate allows (default).
+      role: { findMany: mock(() => Promise.resolve([])) },
     },
     update: () => ({ set: setMock }),
   } as unknown as HubDb;
@@ -141,6 +143,7 @@ function makeListDb(
       workflowRun: {
         findMany: mock(() => Promise.resolve(findManyRows)),
       },
+      role: { findMany: mock(() => Promise.resolve([])) },
     },
   } as unknown as HubDb;
 }
@@ -415,6 +418,71 @@ describe("GET /workflow-runs (workbench-aware visibility)", () => {
       "dep-global",
       "dep-wb",
     ]);
+  });
+
+  it("omits deployments whose kind is denied by the member run gate", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: "tenant-1", principalId: "p-1" },
+        forbidden: false,
+      });
+    ancestorChain = ["tenant-1"];
+    const rows: WorkflowRunRow[] = [
+      {
+        deploymentId: "dep-wb",
+        kind: "deck",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        tenantId: "tenant-1",
+      },
+      {
+        deploymentId: "dep-other",
+        kind: "report",
+        status: "idle",
+        createdAt: "2026-06-05T00:00:00.000Z",
+        tenantId: "tenant-1",
+      },
+    ];
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => Promise.resolve(rows),
+          }),
+        }),
+      }),
+      query: {
+        workflowRun: { findMany: mock(() => Promise.resolve(rows)) },
+        role: {
+          findMany: mock(() => Promise.resolve([{ id: "rol_member" }])),
+        },
+        grant: {
+          findMany: mock(() =>
+            Promise.resolve([
+              {
+                id: "grt_1",
+                resource: "workflow:deck",
+                action: "run",
+                effect: "deny",
+                origin: "role",
+                conditions: null,
+                expiresAt: null,
+                roleId: "rol_member",
+                principalId: null,
+              },
+            ]),
+          ),
+        },
+      },
+    } as unknown as HubDb;
+    const res = await listApp(db).request(
+      new Request("http://local/workflow-runs?tenantId=tenant-1", {
+        method: "GET",
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { kind: string }[];
+    expect(body.map((r) => r.kind)).toEqual(["report"]);
   });
 
   it("403s when the caller is not a principal of the requested tenant", async () => {

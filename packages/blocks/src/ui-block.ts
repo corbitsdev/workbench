@@ -66,6 +66,7 @@ export type FormFieldOption = {
   value: string;
   label: string;
   description?: string;
+  defaultChecked?: boolean;
 };
 
 /**
@@ -160,6 +161,7 @@ export type FormField =
       addLabel?: string;
       min?: number;
       max?: number;
+      defaultRows?: Record<string, unknown>[];
       fields: Exclude<FormField, { kind: "group" }>[];
     };
 
@@ -252,6 +254,7 @@ export type UIBlock =
         label: string;
         value?: string;
         description?: string;
+        defaultChecked?: boolean;
       }[];
     }
   | {
@@ -316,7 +319,12 @@ const FORM_FIELD_KINDS = new Set<FormField["kind"]>([
 function isFormFieldOption(value: unknown): value is FormFieldOption {
   if (typeof value !== "object" || value === null) return false;
   const opt = value as Record<string, unknown>;
-  return typeof opt.value === "string" && typeof opt.label === "string";
+  return (
+    typeof opt.value === "string" &&
+    typeof opt.label === "string" &&
+    (opt.defaultChecked === undefined ||
+      typeof opt.defaultChecked === "boolean")
+  );
 }
 
 /**
@@ -349,6 +357,11 @@ export function isFormField(
     return (
       Array.isArray(field.fields) &&
       field.fields.length > 0 &&
+      (field.defaultRows === undefined ||
+        (Array.isArray(field.defaultRows) &&
+          field.defaultRows.every(
+            (r: unknown) => typeof r === "object" && r !== null,
+          ))) &&
       field.fields.every((sub) => isFormField(sub, false))
     );
   }
@@ -364,13 +377,34 @@ function hasKind(value: unknown): value is { kind: string } {
   );
 }
 
+export const MAX_UI_BLOCK_NEST_DEPTH = 24;
+
+function isTableCell(value: unknown): boolean {
+  return (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  );
+}
+
+function isTableShape(block: Record<string, unknown>): boolean {
+  if (!Array.isArray(block.columns) || !Array.isArray(block.rows)) return false;
+  if (!(block.columns as unknown[]).every((c) => typeof c === "string"))
+    return false;
+  return (block.rows as unknown[]).every(
+    (row) =>
+      Array.isArray(row) &&
+      (row as unknown[]).every((cell) => isTableCell(cell)),
+  );
+}
+
 /**
- * Validate that a parsed value is a structurally-sound UIBlock. This is a
- * shallow guard: it confirms the discriminant and the required fields each
- * variant's renderer reads, so a malformed block degrades to text rather than
- * throwing inside React.
+ * Validate that a parsed value is a structurally-sound UIBlock. Confirms the
+ * discriminant and the fields each renderer reads (including table cell types
+ * and canvas nesting depth) so malformed input degrades to text, not a crash.
  */
-export function isUIBlock(value: unknown): value is UIBlock {
+function isUIBlockAtDepth(value: unknown, depth: number): value is UIBlock {
+  if (depth > MAX_UI_BLOCK_NEST_DEPTH) return false;
   if (!hasKind(value)) return false;
   const block = value as Record<string, unknown>;
   if (!KNOWN_KINDS.has(block.kind as UIBlock["kind"])) return false;
@@ -385,7 +419,7 @@ export function isUIBlock(value: unknown): value is UIBlock {
         typeof block.title === "string" && typeof block.source === "string"
       );
     case "table":
-      return Array.isArray(block.columns) && Array.isArray(block.rows);
+      return isTableShape(block);
     case "link":
       return typeof block.url === "string";
     case "error":
@@ -450,11 +484,17 @@ export function isUIBlock(value: unknown): value is UIBlock {
     case "canvas":
       return (
         Array.isArray(block.blocks) &&
-        (block.blocks as unknown[]).every(isUIBlock)
+        (block.blocks as unknown[]).every((child) =>
+          isUIBlockAtDepth(child, depth + 1),
+        )
       );
     default:
       return false;
   }
+}
+
+export function isUIBlock(value: unknown): value is UIBlock {
+  return isUIBlockAtDepth(value, 0);
 }
 
 function tryParseJson(source: string): unknown {

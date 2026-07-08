@@ -14,7 +14,10 @@ import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
 import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
+import { RequireWorkbenchAccess } from "./components/RequireWorkbenchAccess";
 import { ActiveContextProvider } from "./lib/active-context-store";
+import { ConnectionStatusProvider } from "./lib/connection-status-context";
+import { WorkbenchLoadingScreen } from "./components/WorkbenchBootScreen";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
 import { ChatsListPage } from "./pages/ChatsListPage";
@@ -38,6 +41,11 @@ import { AdminDefinitions } from "./pages/admin/AdminDefinitions";
 import { DefinitionDetail } from "./pages/admin/DefinitionDetail";
 import { AdminAudit } from "./pages/admin/AdminAudit";
 import { RequireAdmin } from "./pages/admin/RequireAdmin";
+import { OwnerLayout } from "./pages/admin/OwnerLayout";
+import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
+import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
+import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
+import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
 // new home under /admin.
@@ -93,6 +101,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     keywords: ["governance", "grants", "roles", "principals", "audit"],
   },
   {
+    id: "nav:owner",
+    category: "navigation",
+    title: "Owner",
+    to: "/owner",
+    keywords: ["owner", "workbench"],
+  },
+  {
     id: "nav:insights",
     category: "navigation",
     title: "Insights",
@@ -116,7 +131,7 @@ function ProtectedLayout() {
     return (
       <Navigate to={{ pathname: "/login", search: location.search }} replace />
     );
-  if (session.status === "loading") return null;
+  if (session.status === "loading") return <WorkbenchLoadingScreen />;
   return <Outlet />;
 }
 
@@ -127,45 +142,49 @@ function AppShell() {
 
   return (
     <ActiveWorkbenchProvider>
-      <ChatLauncherProvider>
-        <CommandPaletteProvider>
-          <ActiveContextProvider>
-            <div className="flex h-dvh flex-row overflow-hidden bg-page">
-              <AppSidebar
-                mobileOpen={drawerOpen}
-                onNavigate={() => setDrawerOpen(false)}
-              />
-              {drawerOpen && (
-                <button
-                  type="button"
-                  aria-label="Close menu"
-                  onClick={() => setDrawerOpen(false)}
-                  className="fixed inset-0 z-40 bg-black/40 md:hidden"
-                />
-              )}
-              <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
-                  <button
-                    type="button"
-                    onClick={() => setDrawerOpen(true)}
-                    aria-label="Open menu"
-                    className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
-                  >
-                    <Menu size={20} />
-                  </button>
-                  <span className="text-sm font-semibold text-text">
-                    Workbench
-                  </span>
-                </header>
-                <main className="flex-1 overflow-hidden">
-                  <Outlet />
-                </main>
-                <PersonalAgentChat />
-              </div>
-            </div>
-          </ActiveContextProvider>
-        </CommandPaletteProvider>
-      </ChatLauncherProvider>
+      <RequireWorkbenchAccess>
+        <ChatLauncherProvider>
+          <CommandPaletteProvider>
+            <ActiveContextProvider>
+              <ConnectionStatusProvider>
+                <div className="flex h-dvh flex-row overflow-hidden bg-page">
+                  <AppSidebar
+                    mobileOpen={drawerOpen}
+                    onNavigate={() => setDrawerOpen(false)}
+                  />
+                  {drawerOpen && (
+                    <button
+                      type="button"
+                      aria-label="Close menu"
+                      onClick={() => setDrawerOpen(false)}
+                      className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                    />
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                    <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setDrawerOpen(true)}
+                        aria-label="Open menu"
+                        className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
+                      >
+                        <Menu size={20} />
+                      </button>
+                      <span className="text-sm font-semibold text-text">
+                        Workbench
+                      </span>
+                    </header>
+                    <main className="flex-1 overflow-hidden">
+                      <Outlet />
+                    </main>
+                    <PersonalAgentChat />
+                  </div>
+                </div>
+              </ConnectionStatusProvider>
+            </ActiveContextProvider>
+          </CommandPaletteProvider>
+        </ChatLauncherProvider>
+      </RequireWorkbenchAccess>
     </ActiveWorkbenchProvider>
   );
 }
@@ -233,6 +252,33 @@ export const router = createBrowserRouter([
               { path: "definitions", element: <AdminDefinitions /> },
               { path: "definitions/:key", element: <DefinitionDetail /> },
               { path: "audit", element: <AdminAudit /> },
+            ],
+          },
+          {
+            path: "/owner",
+            element: <OwnerLayout />,
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/owner/catalog" replace />,
+              },
+              { path: "catalog", element: <OwnerCatalog /> },
+              { path: "capabilities", element: <OwnerCapabilities /> },
+              { path: "capabilities/gamma", element: <OwnerGammaTemplates /> },
+              { path: "workflows", element: <OwnerWorkflows /> },
+              // Legacy owner routes → their new homes.
+              {
+                path: "templates",
+                element: <Navigate to="/owner/capabilities/gamma" replace />,
+              },
+              {
+                path: "models",
+                element: <Navigate to="/owner/catalog" replace />,
+              },
+              {
+                path: "setup",
+                element: <Navigate to="/owner/catalog" replace />,
+              },
             ],
           },
           { path: "/insights", element: <InsightsDashboard /> },

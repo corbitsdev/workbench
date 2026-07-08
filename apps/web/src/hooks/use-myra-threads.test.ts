@@ -9,12 +9,17 @@ mock.module("../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({ activeTenantId: "tnt_child" }),
 }));
 import {
+  markTitlingActive,
   readLastActiveThreadId,
   resolveActiveThread,
+  TITLE_POLL_INTERVAL_MS,
+  titlePollInterval,
   useAutoTitleFirstMessage,
+  useGenerateMyraThreadTitle,
+  useMyraThreads,
   writeLastActiveThreadId,
 } from "./use-myra-threads";
-import type { MyraThread } from "../lib/hub-api";
+import type { MyraThread, MyraThreadListItem } from "../lib/hub-api";
 
 const thread = (id: string): MyraThread => ({
   id,
@@ -63,6 +68,184 @@ describe("resolveActiveThread", () => {
   });
 });
 
+describe("title polling gate (CL-2872)", () => {
+  const item = (label: string): MyraThreadListItem => ({
+    id: "thr-1",
+    instanceId: "inst-1",
+    label,
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  it("does not poll a tenant with no title in flight", () => {
+    expect(titlePollInterval("tnt_idle", undefined, 1000)).toBe(false);
+    expect(titlePollInterval(null, undefined, 1000)).toBe(false);
+  });
+
+  it("keeps polling while the label is still default or the optimistic fallback", () => {
+    const start = 1_000_000;
+    markTitlingActive("tnt_a", "thr-1", "How should we price", start);
+
+    // Still the default label — title has not landed.
+    expect(titlePollInterval("tnt_a", [item("Chat")], start + 1_000)).toBe(
+      TITLE_POLL_INTERVAL_MS,
+    );
+    // Now the optimistic fallback we set — still not the generated title.
+    expect(
+      titlePollInterval("tnt_a", [item("How should we price")], start + 1_000),
+    ).toBe(TITLE_POLL_INTERVAL_MS);
+  });
+
+  it("early-stops the moment the generated title replaces the fallback", () => {
+    const start = 1_000_000;
+    markTitlingActive("tnt_b", "thr-1", "How should we price", start);
+    expect(
+      titlePollInterval("tnt_b", [item("Enterprise pricing")], start + 1_000),
+    ).toBe(false);
+    // Pruned: a later check without a fresh mark stays stopped.
+    expect(titlePollInterval("tnt_b", [item("Chat")], start + 1_000)).toBe(
+      false,
+    );
+  });
+
+  it("stops (and prunes) at the window ceiling even if the title never lands", () => {
+    const start = 1_000_000;
+    markTitlingActive("tnt_c", "thr-1", "How should we price", start);
+    expect(
+      titlePollInterval("tnt_c", [item("Chat")], start + 10 * 60_000),
+    ).toBe(false);
+    expect(titlePollInterval("tnt_c", [item("Chat")], start + 1_000)).toBe(
+      false,
+    );
+  });
+});
+
+describe("useMyraThreads title polling (CL-2872)", () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    cleanup();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("refetches the list while titling is active and surfaces the late title", async () => {
+    let listCalls = 0;
+    const pollFetch = mock(async (url: string, _init?: RequestInit) => {
+      if (!String(url).endsWith("/me/myra/threads")) {
+        return new Response("{}", {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      listCalls += 1;
+      // The title lands on a later poll, not the first fetch — exactly the race
+      // the single onSettled refetch used to lose.
+      const label = listCalls >= 2 ? "Enterprise pricing" : "Chat";
+      return new Response(
+        JSON.stringify({
+          threads: [
+            {
+              id: "thr-1",
+              instanceId: "inst-1",
+              label,
+              createdAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    });
+    globalThis.fetch = pollFetch as unknown as typeof fetch;
+
+    // A title turn is in flight for the active tenant; the optimistic label is
+    // neither the default nor the eventual generated title.
+    markTitlingActive("tnt_child", "thr-1", "How can we cut onboarding");
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(() => useMyraThreads(), { wrapper });
+
+    await waitFor(() => expect(result.current.data?.[0]?.label).toBe("Chat"));
+    // Without polling the label would stay "Chat" forever; the gate drives a
+    // second fetch that surfaces the generated title.
+    await waitFor(
+      () => expect(result.current.data?.[0]?.label).toBe("Enterprise pricing"),
+      { timeout: 6_000 },
+    );
+  });
+
+  it("surfaces the title through the real onMutate/onSettled trigger on an already-mounted list", async () => {
+    // Drives the production order: the list is mounted and idle first, THEN the
+    // title mutation fires — its onMutate opens the gate and its onSettled
+    // invalidation kicks the query so refetchInterval begins polling. Guards the
+    // load-bearing onSettled invalidation the pre-opened-gate test above skips.
+    let listCalls = 0;
+    const realOrderFetch = mock(async (url: string, _init?: RequestInit) => {
+      const u = String(url);
+      if (u.endsWith("/title")) {
+        return new Response(JSON.stringify({ thread: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      if (u.endsWith("/me/myra/threads")) {
+        listCalls += 1;
+        const label = listCalls >= 2 ? "Enterprise pricing" : "Chat";
+        return new Response(
+          JSON.stringify({
+            threads: [
+              {
+                id: "thr-1",
+                instanceId: "inst-1",
+                label,
+                createdAt: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("{}", {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    globalThis.fetch = realOrderFetch as unknown as typeof fetch;
+
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(
+      () => ({
+        list: useMyraThreads(),
+        title: useGenerateMyraThreadTitle(),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() =>
+      expect(result.current.list.data?.[0]?.label).toBe("Chat"),
+    );
+    act(() =>
+      result.current.title.mutate({
+        id: "thr-1",
+        firstMessage: "How should we price the enterprise tier",
+      }),
+    );
+    await waitFor(
+      () =>
+        expect(result.current.list.data?.[0]?.label).toBe("Enterprise pricing"),
+      { timeout: 6_000 },
+    );
+  });
+});
+
 describe("useAutoTitleFirstMessage", () => {
   const defaultThread: MyraThread = {
     id: "thr-1",
@@ -82,7 +265,11 @@ describe("useAutoTitleFirstMessage", () => {
   );
   const originalFetch = globalThis.fetch;
 
-  function renderTitleHook(active: MyraThread | null) {
+  function renderTitleHook(
+    active: MyraThread | null,
+    messages: { role: string; content: string }[] = [],
+    messagesInstanceId: string | null = null,
+  ) {
     const client = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -91,9 +278,10 @@ describe("useAutoTitleFirstMessage", () => {
     });
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children);
-    return renderHook(() => useAutoTitleFirstMessage(active), {
-      wrapper,
-    });
+    return renderHook(
+      () => useAutoTitleFirstMessage(active, messages, messagesInstanceId),
+      { wrapper },
+    );
   }
 
   function titleCalls(): [string, RequestInit?][] {
@@ -129,6 +317,37 @@ describe("useAutoTitleFirstMessage", () => {
       label: "Renamed by user",
     });
     act(() => result.current("hello"));
+    await Promise.resolve();
+    expect(titleCalls()).toHaveLength(0);
+  });
+
+  it("auto-titles from the transcript only when the session resolved to the active thread's instance", async () => {
+    // Effect path: active thread's own instance, its own messages.
+    renderTitleHook(
+      defaultThread,
+      [{ role: "user", content: "How should we price Q3?" }],
+      defaultThread.instanceId,
+    );
+    await waitFor(() => expect(titleCalls()).toHaveLength(1));
+    const [, init] = titleCalls()[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      firstMessage: "How should we price Q3?",
+    });
+  });
+
+  it("does NOT auto-title a new thread from a previous thread's stale messages (CL-2882)", async () => {
+    // The "+ New chat" race: active is the new default thread (instance B) but
+    // the session still holds the previous thread's transcript (instance A), so
+    // the messages' instance id does not match the active thread's.
+    renderTitleHook(
+      { ...defaultThread, id: "thr-new", instanceId: "inst-B" },
+      [{ role: "user", content: "the previous thread's first message" }],
+      "inst-A",
+    );
+    // The guard is a synchronous early-return inside the effect (which runs on
+    // commit), so flushing a couple of microtasks is enough to prove it never
+    // fired — there is no deferred/debounced path that could title on a later tick.
+    await Promise.resolve();
     await Promise.resolve();
     expect(titleCalls()).toHaveLength(0);
   });

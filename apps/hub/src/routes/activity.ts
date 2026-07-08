@@ -5,6 +5,7 @@ import { Hono, type Env } from "hono";
 
 import { loadPriceCatalog } from "../lib/pricing";
 import { getActivityOverview } from "../services/activity-overview";
+import { getOfferingProvidersByModel } from "../services/offering-providers-by-model";
 
 const log = getLogger(["hub", "activity"]);
 
@@ -78,12 +79,22 @@ export function createActivityRouter({
       // overview — usage-by-person/workflow-type simply carry `cost: null`
       // (the honest "not priced" state), same as the shared cache's own
       // failure mode (CL-2749).
-      const priceCatalog = await loadPriceCatalog().catch((error: unknown) => {
+      const loadedCatalog = await loadPriceCatalog().catch((error: unknown) => {
         log.warn("Activity overview: pricing catalog unavailable: {error}", {
           error: error instanceof Error ? error.message : String(error),
         });
         return null;
       });
+      const priceCatalog =
+        loadedCatalog === null
+          ? null
+          : {
+              ...loadedCatalog,
+              offeringProvidersByModel: await getOfferingProvidersByModel(
+                db,
+                tenant.id,
+              ),
+            };
 
       const overview = await getActivityOverview({
         db: c.get("db"),

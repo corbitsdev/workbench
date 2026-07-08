@@ -1,3 +1,4 @@
+import { modelsDevProviderIdsForCatalogProvider } from "@workbench/catalog";
 import { type } from "arktype";
 
 /**
@@ -89,6 +90,13 @@ export const PriceCatalogSchema = type({
   // Bare ids offered by more than one provider at DIFFERENT rates — a bare
   // lookup for one of these is honestly "no rate", never a guessed provider.
   ambiguous: "string[]",
+  /**
+   * Tenant catalog offerings: canonical model → catalog provider names. Set only
+   * on tenant-scoped API responses (never on the shared models.dev cache).
+   */
+  "offeringProvidersByModel?": {
+    "[string]": "string[]",
+  },
 });
 
 export type PriceCatalog = typeof PriceCatalogSchema.infer;
@@ -206,10 +214,15 @@ export function resolveModelRate(
     if (qualified !== null) return qualified;
     // Provider unknown to the catalog: fall back to the bare id (which still
     // returns null if that bare id is ambiguous across providers).
-    return resolveBare(catalog, modelName.slice(slash + 1));
+    const bareId = modelName.slice(slash + 1);
+    const bare = resolveBare(catalog, bareId);
+    if (bare !== null) return bare;
+    return resolveViaTenantOfferings(catalog, bareId);
   }
 
-  return resolveBare(catalog, modelName);
+  const bare = resolveBare(catalog, modelName);
+  if (bare !== null) return bare;
+  return resolveViaTenantOfferings(catalog, modelName);
 }
 
 function resolveExact(
@@ -231,6 +244,60 @@ function resolveBare(catalog: PriceCatalog, bareId: string): ModelRate | null {
     return null;
   }
   return resolveExact(catalog.models, bareId);
+}
+
+function rateFingerprint(rate: ModelRate): string {
+  return JSON.stringify({
+    input: rate.input,
+    output: rate.output,
+    cacheRead: rate.cacheRead,
+    cacheWrite: rate.cacheWrite,
+  });
+}
+
+function offeringProvidersForModel(
+  catalog: PriceCatalog,
+  bareId: string,
+): string[] | null {
+  const byModel = catalog.offeringProvidersByModel;
+  if (byModel === undefined) return null;
+  if (byModel[bareId] !== undefined) return byModel[bareId];
+  const lower = bareId.toLowerCase();
+  for (const [model, providers] of Object.entries(byModel)) {
+    if (model.toLowerCase() === lower) return providers;
+  }
+  return null;
+}
+
+/**
+ * When a bare telemetry id has no unique models.dev rate, try qualified keys
+ * implied by the tenant's visible catalog offerings (CL-2859). Succeeds only
+ * when every resolved qualified variant shares one rate shape.
+ */
+function resolveViaTenantOfferings(
+  catalog: PriceCatalog,
+  bareId: string,
+): ModelRate | null {
+  const catalogProviders = offeringProvidersForModel(catalog, bareId);
+  if (catalogProviders === null || catalogProviders.length === 0) {
+    return null;
+  }
+
+  const distinct = new Map<string, ModelRate>();
+  for (const catalogProvider of new Set(catalogProviders)) {
+    for (const modelsDevProvider of modelsDevProviderIdsForCatalogProvider(
+      catalogProvider,
+    )) {
+      const qualifiedKey = `${modelsDevProvider}/${bareId}`;
+      const rate = resolveExact(catalog.qualified, qualifiedKey);
+      if (rate !== null) {
+        distinct.set(rateFingerprint(rate), rate);
+      }
+    }
+  }
+
+  if (distinct.size !== 1) return null;
+  return distinct.values().next().value ?? null;
 }
 
 // --- cost math ------------------------------------------------------------

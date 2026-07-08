@@ -194,6 +194,15 @@ known kinds enumerated at `:292-305`). The interactive gate kinds are:
   columns, per-row `payload`, and an emitted `decisions` array covering every
   row.
 
+**Structured payloads need a payload-aware host.** `form`, `multiSelect`, and
+`choice` options with object `payload` emit their data in `UIResponse.payload`,
+not in `value` (forms intentionally use `value: ""`). Only surfaces that forward
+`resolveResumePayload` (`apps/web/src/lib/resume-payload.ts`) deliver that shape
+to a workflow gate: the **WorkflowDock** run card, the **run-page** block host
+(`WorkflowRunPane` / `WorkflowRunBlocks`), and **Myra** chat
+(`MyraChatSurface`). Workspace agent chat (`AgentChat`) posts `value` as plain
+mail text — fine for text blocks, but not for structured gate blocks.
+
 The chat dock (`apps/web/src/components/WorkflowDock.tsx`) renders these via
 `UIBlockView` (`:366`) from blocks built per-kind: each migrated workflow package
 supplies its **own** block builder (e.g.

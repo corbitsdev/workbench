@@ -14,6 +14,9 @@
     "admin": "bun --env-file=../../.env run bin/admin/index.ts",
     "admin:staging": "bun --env-file=../../.env.staging run bin/admin/index.ts",
     "admin:production": "bun --env-file=../../.env.production run bin/admin/index.ts",
+    "audit-tenancy:staging": "bun --env-file=../../.env.staging run bin/audit-tenancy.ts",
+    "audit-tenancy:production": "bun --env-file=../../.env.production run bin/audit-tenancy.ts",
+    "audit-tenancy": "bun --env-file=../../.env run bin/audit-tenancy.ts",
     "db:generate": "drizzle-kit generate --config=drizzle.config.ts"
   },
   "dependencies": {

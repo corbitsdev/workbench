@@ -3,6 +3,7 @@ import { describeRoute, resolver } from "hono-openapi";
 import { type } from "arktype";
 import type { DB } from "@intx/db";
 import type { SessionService } from "@intx/hub-sessions";
+import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 import {
@@ -45,6 +46,7 @@ const TitleMyraThreadBody = type({
 export function createMyraThreadsRouter(
   db: DB["db"],
   sessionService: SessionService,
+  analytics: AnalyticsSubscriber,
 ) {
   const app = new Hono<{ Variables: { userId: string } }>();
   const hubDb = db as unknown as HubDb;
@@ -246,12 +248,16 @@ export function createMyraThreadsRouter(
       if (!ctx) {
         return c.json({ error: "Not a member of this tenant" }, 403);
       }
-      scheduleMyraThreadTitle(hubDb, {
-        tenantId: ctx.tenantId,
-        memberPrincipalId: ctx.memberPrincipalId,
-        threadId,
-        firstMessage: parsed.firstMessage,
-      });
+      scheduleMyraThreadTitle(
+        hubDb,
+        { analytics },
+        {
+          tenantId: ctx.tenantId,
+          memberPrincipalId: ctx.memberPrincipalId,
+          threadId,
+          firstMessage: parsed.firstMessage,
+        },
+      );
       return c.json({ thread: null });
     },
   );

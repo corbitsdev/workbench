@@ -7,6 +7,7 @@ import type {
 } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import {
+  WORKFLOW_LIST_KINDS_DEFINITION,
   WORKFLOW_LIST_RUNS_DEFINITION,
   WORKFLOW_SIGNAL_DEFINITION,
   WORKFLOW_START_DEFINITION,
@@ -16,11 +17,13 @@ import type {
   EnsureDeploymentRoutableFn,
   ProvisionRunDeploymentFn,
 } from "../routes/workflow-runs";
+import { listRunnableWorkflowKinds } from "../lib/workflow-run-gate";
 import {
   resumeWorkflowRun,
   startWorkflowRun,
 } from "../workflow-executor/run-exec";
-import { listRunRecords } from "../workflow-executor/run-store";
+import { describePendingGates } from "../workflow-executor/pending-gate-info";
+import { listRunRecords, loadRunRecord } from "../workflow-executor/run-store";
 import type { ContextToolEntry } from "../lib/tool-registry";
 
 export type WorkflowRunToolsContext = {
@@ -143,16 +146,22 @@ export function createWorkflowRunTools(
   return [
     {
       kind: "string",
+      definition: WORKFLOW_LIST_KINDS_DEFINITION,
+      handler: async () => {
+        const chain = await getAncestorChain(context.db, context.tenantId);
+        const kinds = await listRunnableWorkflowKinds(context.db, chain);
+        return JSON.stringify({ kinds }, null, 2);
+      },
+    },
+    {
+      kind: "string",
       definition: WORKFLOW_START_DEFINITION,
       handler: async (args) => {
         const deps = requireWorkflowDeps(context);
         const kind = requireString(args, "kind");
         const input = optionalObject(args, "input");
         const caller = await resolveCaller(context.db, context);
-        const chain = await getAncestorChain(
-          context.db as never,
-          context.tenantId,
-        );
+        const chain = await getAncestorChain(context.db, context.tenantId);
         const result = await startWorkflowRun(
           {
             db: context.db,
@@ -170,12 +179,17 @@ export function createWorkflowRunTools(
           },
         );
         if (!result.ok) throw new Error(result.error);
+        if (result.backgroundTask !== undefined) {
+          await result.backgroundTask;
+        }
+        const state =
+          (await loadRunRecord(context.db, result.state.runId)) ?? result.state;
         return JSON.stringify(
           {
-            runId: result.state.runId,
-            kind: result.state.kind,
-            status: result.state.status,
-            originConversationId: result.state.originConversationId,
+            runId: state.runId,
+            kind: state.kind,
+            status: state.status,
+            originConversationId: state.originConversationId,
           },
           null,
           2,
@@ -187,10 +201,7 @@ export function createWorkflowRunTools(
       definition: WORKFLOW_LIST_RUNS_DEFINITION,
       handler: async (args) => {
         const caller = await resolveCaller(context.db, context);
-        const chain = await getAncestorChain(
-          context.db as never,
-          context.tenantId,
-        );
+        const chain = await getAncestorChain(context.db, context.tenantId);
         const kind =
           typeof args.kind === "string" && args.kind.trim() !== ""
             ? args.kind.trim()
@@ -205,7 +216,40 @@ export function createWorkflowRunTools(
             ? undefined
             : { originConversationId: caller.conversationId },
         );
-        return JSON.stringify({ runs: rows }, null, 2);
+        const runs = await Promise.all(
+          rows.map(async (row) => {
+            if (row.status !== "awaiting") {
+              return { ...row, pendingGates: [] as const };
+            }
+            // Listing only needs the run's repo to fold its gate — not the full
+            // start/resume wiring. Degrade to no gates rather than coupling the
+            // list path to launch deps it never uses (or throwing when a run has
+            // no deployment / the enrichment deps are absent).
+            const record = await loadRunRecord(context.db, row.runId);
+            if (
+              record === null ||
+              record.deploymentId === undefined ||
+              record.deploymentId === null ||
+              context.repoStore === undefined ||
+              context.deploymentDomain === undefined
+            ) {
+              return { ...row, pendingGates: [] as const };
+            }
+            const pendingGates = await describePendingGates(
+              {
+                repoStore: context.repoStore,
+                deploymentDomain: context.deploymentDomain,
+              },
+              {
+                runId: record.runId,
+                kind: record.kind,
+                deploymentId: record.deploymentId,
+              },
+            );
+            return { ...row, pendingGates };
+          }),
+        );
+        return JSON.stringify({ runs }, null, 2);
       },
     },
     {
@@ -217,10 +261,7 @@ export function createWorkflowRunTools(
         const signalName = requireString(args, "signalName");
         const payload = optionalObject(args, "payload");
         const caller = await resolveCaller(context.db, context);
-        const chain = await getAncestorChain(
-          context.db as never,
-          context.tenantId,
-        );
+        const chain = await getAncestorChain(context.db, context.tenantId);
         const result = await resumeWorkflowRun(
           {
             db: context.db,
@@ -237,7 +278,37 @@ export function createWorkflowRunTools(
             payload,
           },
         );
-        if (!result.ok) throw new Error(result.error);
+        if (!result.ok) {
+          // A wrong signal name (409, not parked on it) or a malformed payload
+          // (400) is recoverable: return the run's real pending gate(s) + their
+          // expected payload so the agent retries correctly instead of guessing
+          // (CL-2870). Other failures (not found / not owner / delivery) throw.
+          if (result.status === 409 || result.status === 400) {
+            const record = await loadRunRecord(context.db, runId);
+            const pendingGates =
+              record !== null &&
+              record.deploymentId !== undefined &&
+              record.deploymentId !== null
+                ? await describePendingGates(
+                    {
+                      repoStore: deps.repoStore,
+                      deploymentDomain: deps.deploymentDomain,
+                    },
+                    {
+                      runId: record.runId,
+                      kind: record.kind,
+                      deploymentId: record.deploymentId,
+                    },
+                  )
+                : [];
+            return JSON.stringify(
+              { ok: false, error: result.error, pendingGates },
+              null,
+              2,
+            );
+          }
+          throw new Error(result.error);
+        }
         return JSON.stringify(
           {
             runId: result.state.runId,
@@ -254,6 +325,7 @@ export function createWorkflowRunTools(
 
 function entry(name: string): ContextToolEntry {
   const definitions = {
+    workflow_list_kinds: WORKFLOW_LIST_KINDS_DEFINITION,
     workflow_start: WORKFLOW_START_DEFINITION,
     workflow_list_runs: WORKFLOW_LIST_RUNS_DEFINITION,
     workflow_signal: WORKFLOW_SIGNAL_DEFINITION,
@@ -265,6 +337,7 @@ function entry(name: string): ContextToolEntry {
 }
 
 export const WORKFLOWS_HUB_TOOLS: Record<string, ContextToolEntry> = {
+  workflow_list_kinds: entry("workflow_list_kinds"),
   workflow_start: entry("workflow_start"),
   workflow_list_runs: entry("workflow_list_runs"),
   workflow_signal: entry("workflow_signal"),

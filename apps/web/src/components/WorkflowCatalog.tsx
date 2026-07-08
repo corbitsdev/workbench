@@ -180,7 +180,8 @@ export function WorkflowCatalog({
       )}
       {!isPending && deployedWorkflows.length === 0 && (
         <p className="py-4 text-[13px] text-text-3">
-          No workflows deployed yet.
+          No workflows are available to run in this workbench. Your admin may
+          need to deploy workflows or enable them for members.
         </p>
       )}
       {!isPending &&

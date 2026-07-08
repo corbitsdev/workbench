@@ -1,5 +1,9 @@
 import { type } from "arktype";
 
+export const Last30daysTopicSchema = type("string").narrow(
+  (value) => value.trim().length > 0,
+);
+
 // Resume-boundary contract for the last30days-research workflow's `intake` gate
 // (CL-2765). The gate collects what to research: a `topic` (REQUIRED and
 // non-empty — every downstream source query and the report title derive from it,
@@ -17,7 +21,7 @@ import { type } from "arktype";
 // derived `query`/`days`; they are accepted (optional) so the strangler-fallback
 // path stays valid.
 export const Last30daysIntakePayloadSchema = type({
-  topic: "string >= 1",
+  topic: Last30daysTopicSchema,
   "focus?": "string",
   "query?": "string",
   "days?": "number",

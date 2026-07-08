@@ -8,6 +8,7 @@ import {
   templateModelRequirements,
   type AgentTemplate,
 } from "@workbench/agents";
+import { ADMIN_GRANT_ACTIONS } from "@workbench/shared";
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
 import { memberAgentInstance, enabledWorkflow } from "../db/schema";
@@ -120,7 +121,7 @@ export async function seedSystemRolesAndGrants(
     updatedAt: now,
   });
 
-  for (const action of ["read", "create", "manage"] as const) {
+  for (const action of ADMIN_GRANT_ACTIONS) {
     await tx.insert(grant).values({
       id: generateId("grant"),
       tenantId,
@@ -358,6 +359,56 @@ export async function lookupGlobalMember(
   const tenantId = await getRootTenantId(db);
   if (!tenantId) return null;
   return lookupMember(db, { tenantId, userId: opts.userId });
+}
+
+export type AutoJoinOutcome = {
+  tenantId: string;
+  slug: string;
+  principalId: string;
+};
+
+/**
+ * Join the user to each configured auto-join tenant (by slug) and provision
+ * template instances. Missing slugs are skipped with a warning. Idempotent.
+ */
+export async function autoJoinConfiguredTenants(
+  db: ProductionDB,
+  userId: string,
+  slugs?: string[],
+): Promise<AutoJoinOutcome[]> {
+  const configured = slugs ?? getConfig().autoJoinTenantSlugs;
+  if (configured.length === 0) return [];
+
+  const outcomes: AutoJoinOutcome[] = [];
+  for (const slug of configured) {
+    const row = await db.query.tenant.findFirst({
+      where: eq(tenant.slug, slug),
+    });
+    if (!row) {
+      log.warn("AUTO_JOIN_TENANT_SLUGS: tenant slug not found — skipping", {
+        slug,
+        userId,
+      });
+      continue;
+    }
+    const { principalId } = await ensureMember(db, {
+      tenantId: row.id,
+      userId,
+    });
+    await provisionMemberInstances(db as unknown as HubDb, {
+      tenantId: row.id,
+      userId,
+      memberPrincipalId: principalId,
+    });
+    outcomes.push({ tenantId: row.id, slug, principalId });
+    log.info("Auto-joined tenant", {
+      userId,
+      tenantId: row.id,
+      slug,
+      principalId,
+    });
+  }
+  return outcomes;
 }
 
 /**

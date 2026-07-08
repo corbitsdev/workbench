@@ -26,6 +26,7 @@ const MANAGED_KEYS = [
   "WORKFLOW_AUTOPUBLISH_MAP",
   "WEDGE_SWEEP_INTERVAL_MS",
   "WEDGE_UNROUTABLE_GRACE_MS",
+  "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
   "RUN_LIVENESS_STALL_GRACE_MS",
   "RUN_LIVENESS_START_HARD_DEADLINE_MS",
   "RUN_LIVENESS_INTERVAL_MS",
@@ -34,6 +35,7 @@ const MANAGED_KEYS = [
   "HUB_AGENT_GC_PACK_THRESHOLD",
   "HUB_AGENT_GC_LOOSE_THRESHOLD",
   "HUB_AGENT_GC_WARN_BYTES",
+  "AUTO_JOIN_TENANT_SLUGS",
 ];
 
 let savedEnv: Record<string, string | undefined>;
@@ -81,6 +83,13 @@ describe("loadConfig", () => {
       domain: "acme.example.com",
     });
     expect(config.granola.baseUrl).toBe("https://public-api.granola.ai/v1");
+    expect(config.autoJoinTenantSlugs).toEqual([]);
+  });
+
+  it("parses AUTO_JOIN_TENANT_SLUGS as a deduped slug list", () => {
+    setRequiredEnv();
+    process.env["AUTO_JOIN_TENANT_SLUGS"] = " abklabs, gtm ,abklabs,";
+    expect(loadConfig().autoJoinTenantSlugs).toEqual(["abklabs", "gtm"]);
   });
 
   it("defaults workflowAutopublishOnBoot to false and enables it only for true/1", () => {
@@ -144,6 +153,24 @@ describe("loadConfig", () => {
 
     process.env["WEDGE_SWEEP_INTERVAL_MS"] = "5000";
     expect(loadConfig().wedgeSweepIntervalMs).toBe(5_000);
+  });
+
+  it("defaults awaitingSupervisorPrewarmIntervalMs to 30000 and honors a positive override", () => {
+    setRequiredEnv();
+    expect(loadConfig().awaitingSupervisorPrewarmIntervalMs).toBe(30_000);
+
+    process.env["AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS"] = "10000";
+    expect(loadConfig().awaitingSupervisorPrewarmIntervalMs).toBe(10_000);
+  });
+
+  it("rejects a zero, negative, decimal, or non-numeric AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS", () => {
+    setRequiredEnv();
+    for (const bad of ["0", "-5", "1.5", "abc"]) {
+      process.env["AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS"] = bad;
+      expect(() => loadConfig()).toThrow(
+        `AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS must be a positive integer (milliseconds); got "${bad}"`,
+      );
+    }
   });
 
   it("rejects a zero, negative, decimal, or non-numeric WEDGE_SWEEP_INTERVAL_MS", () => {
