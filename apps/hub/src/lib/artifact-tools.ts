@@ -9,6 +9,7 @@ import {
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 } from "@workbench/tools-artifact";
@@ -28,6 +29,7 @@ export {
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 };
@@ -99,6 +101,94 @@ function optionalVersion(args: Record<string, unknown>): number | undefined {
     throw new Error("version must be a positive integer");
   }
   return value;
+}
+
+const DEFAULT_READ_LIMIT = 8000;
+
+function optionalOffset(args: Record<string, unknown>): number | undefined {
+  const value = args.offset;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error("offset must be a non-negative integer");
+  }
+  return value;
+}
+
+function optionalLimit(args: Record<string, unknown>): number | undefined {
+  const value = args.limit;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error("limit must be a positive integer");
+  }
+  return value;
+}
+
+type ReadResult = {
+  artifactId: string;
+  title: string;
+  kind: string;
+  status: string;
+  version: number;
+  content: string;
+  contentLength?: number;
+  chunkStart?: number;
+  chunkEnd?: number;
+  continuation?: string;
+};
+
+// The runtime caps a tool result at ~10K characters and spills the rest to a
+// tool-output:// URI the agent cannot read. A chunk is measured in raw
+// characters, but the result is JSON-encoded before that cap applies, and
+// escaping (newlines, quotes) can inflate it — so the encoded result, not the
+// raw slice, must stay under this budget to avoid re-triggering the spill.
+const SAFE_ENCODED_BUDGET = 9000;
+
+function buildChunk(
+  base: Omit<ReadResult, "content">,
+  content: string,
+  start: number,
+  end: number,
+  total: number,
+): ReadResult {
+  const result: ReadResult = {
+    ...base,
+    content: content.slice(start, end),
+    contentLength: total,
+    chunkStart: start,
+    chunkEnd: end,
+  };
+  if (end < total) {
+    result.continuation = `Showing characters ${start}–${end} of ${total}. Call artifact_read_chunk again with offset=${end} (same artifactId) to read the next chunk, and keep going until there is no continuation field.`;
+  }
+  return result;
+}
+
+function windowContent(
+  base: Omit<ReadResult, "content">,
+  content: string,
+  offset: number | undefined,
+  limit: number | undefined,
+): ReadResult {
+  const total = content.length;
+  const hasWindow = offset !== undefined || limit !== undefined;
+  if (!hasWindow && total <= DEFAULT_READ_LIMIT) {
+    const whole: ReadResult = { ...base, content };
+    if (jsonResult(whole).length <= SAFE_ENCODED_BUDGET) {
+      return whole;
+    }
+  }
+
+  const start = Math.min(offset ?? 0, total);
+  const size = limit ?? DEFAULT_READ_LIMIT;
+  let end = Math.min(start + size, total);
+  let result = buildChunk(base, content, start, end, total);
+  while (end > start + 1 && jsonResult(result).length > SAFE_ENCODED_BUDGET) {
+    const ratio = SAFE_ENCODED_BUDGET / jsonResult(result).length;
+    const shrunk = start + Math.max(1, Math.floor((end - start) * ratio));
+    end = shrunk >= end ? end - 1 : shrunk;
+    result = buildChunk(base, content, start, end, total);
+  }
+  return result;
 }
 
 function jsonResult(value: unknown): string {
@@ -306,70 +396,87 @@ async function ownerIsMemberOfTenant(
   return membershipRows.length > 0;
 }
 
+async function resolveArtifactContent(
+  context: ArtifactToolContext,
+  args: Record<string, unknown>,
+): Promise<{ base: Omit<ReadResult, "content">; content: string }> {
+  const artifactId = requiredString(args, "artifactId");
+  const version = optionalVersion(args);
+  const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
+
+  if (tenantId !== context.tenantId) {
+    const allowed = await ownerIsMemberOfTenant(context.db, context, tenantId);
+    if (!allowed) throw new Error(`Artifact not found: ${artifactId}`);
+  }
+
+  const [row] = await context.db
+    .select()
+    .from(artifact)
+    .where(and(eq(artifact.id, artifactId), eq(artifact.tenantId, tenantId)))
+    .limit(1);
+
+  if (!row) throw new Error(`Artifact not found: ${artifactId}`);
+
+  if (version === undefined) {
+    return {
+      base: {
+        artifactId: row.id,
+        title: row.title,
+        kind: row.kind,
+        status: row.status,
+        version: row.version,
+      },
+      content: row.content,
+    };
+  }
+
+  const [versionRow] = await context.db
+    .select()
+    .from(artifactVersion)
+    .where(
+      and(
+        eq(artifactVersion.artifactId, artifactId),
+        eq(artifactVersion.version, version),
+      ),
+    )
+    .limit(1);
+
+  if (!versionRow) {
+    throw new Error(`Version ${version} not found for artifact ${artifactId}`);
+  }
+
+  return {
+    base: {
+      artifactId: row.id,
+      title: versionRow.title,
+      kind: row.kind,
+      status: row.status,
+      version: versionRow.version,
+    },
+    content: versionRow.content,
+  };
+}
+
 function createReadHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_READ_DEFINITION,
     handler: async (args) => {
-      const artifactId = requiredString(args, "artifactId");
-      const version = optionalVersion(args);
-      const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
+      const { base, content } = await resolveArtifactContent(context, args);
+      return jsonResult(windowContent(base, content, undefined, undefined));
+    },
+  };
+}
 
-      if (tenantId !== context.tenantId) {
-        const allowed = await ownerIsMemberOfTenant(
-          context.db,
-          context,
-          tenantId,
-        );
-        if (!allowed) throw new Error(`Artifact not found: ${artifactId}`);
-      }
-
-      const [row] = await context.db
-        .select()
-        .from(artifact)
-        .where(
-          and(eq(artifact.id, artifactId), eq(artifact.tenantId, tenantId)),
-        )
-        .limit(1);
-
-      if (!row) throw new Error(`Artifact not found: ${artifactId}`);
-
-      if (version === undefined) {
-        return jsonResult({
-          artifactId: row.id,
-          title: row.title,
-          kind: row.kind,
-          status: row.status,
-          version: row.version,
-          content: row.content,
-        });
-      }
-
-      const [versionRow] = await context.db
-        .select()
-        .from(artifactVersion)
-        .where(
-          and(
-            eq(artifactVersion.artifactId, artifactId),
-            eq(artifactVersion.version, version),
-          ),
-        )
-        .limit(1);
-
-      if (!versionRow) {
-        throw new Error(
-          `Version ${version} not found for artifact ${artifactId}`,
-        );
-      }
-
-      return jsonResult({
-        artifactId: row.id,
-        title: versionRow.title,
-        kind: row.kind,
-        status: row.status,
-        version: versionRow.version,
-        content: versionRow.content,
-      });
+function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
+  return {
+    kind: "string",
+    definition: ARTIFACT_READ_CHUNK_DEFINITION,
+    handler: async (args) => {
+      const offset = optionalOffset(args) ?? 0;
+      const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
+      const { base, content } = await resolveArtifactContent(context, args);
+      return jsonResult(windowContent(base, content, offset, limit));
     },
   };
 }
@@ -669,6 +776,7 @@ export function createArtifactTools(context: ArtifactToolContext): AgentTool[] {
     createLinkFileHandler(context),
     createCreateHandler(context),
     createReadHandler(context),
+    createReadChunkHandler(context),
     createWriteHandler(context),
     createListHandler(context),
     createLinkPresentationHandler(context),
@@ -685,6 +793,7 @@ export const ARTIFACT_HUB_TOOLS = {
   artifact_link_file: artifactToolEntry(ARTIFACT_LINK_FILE_DEFINITION),
   artifact_create: artifactToolEntry(ARTIFACT_CREATE_DEFINITION),
   artifact_read: artifactToolEntry(ARTIFACT_READ_DEFINITION),
+  artifact_read_chunk: artifactToolEntry(ARTIFACT_READ_CHUNK_DEFINITION),
   artifact_write: artifactToolEntry(ARTIFACT_WRITE_DEFINITION),
   artifact_list: artifactToolEntry(ARTIFACT_LIST_DEFINITION),
   artifact_link_presentation: artifactToolEntry(

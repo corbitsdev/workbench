@@ -67,6 +67,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
     "granola_list_folders",
     "artifact_create",
     "artifact_read",
+    "artifact_read_chunk",
     "artifact_write",
     "artifact_list",
     "parse_file",

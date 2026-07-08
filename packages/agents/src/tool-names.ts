@@ -38,6 +38,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   "@workbench/tools-artifact/artifact": [
     "artifact_create",
     "artifact_read",
+    "artifact_read_chunk",
     "artifact_write",
     "artifact_list",
     "artifact_find_by_title",

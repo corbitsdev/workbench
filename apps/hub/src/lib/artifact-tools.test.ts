@@ -588,6 +588,19 @@ describe("artifact_read_chunk handler", () => {
     expect(result.continuation).toBeUndefined();
   });
 
+  it("keeps the JSON-encoded chunk under the tool-output size cap for escape-heavy content", async () => {
+    const body = "\n".repeat(20000);
+    const { context } = makeQueryContext([bigRow(body)]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    const raw = (await handler({ artifactId: "art_big" })) as string;
+    expect(raw.length).toBeLessThanOrEqual(10000);
+    const result = JSON.parse(raw);
+    expect(result.chunkEnd).toBeGreaterThan(0);
+    expect(result.content).toBe(body.slice(0, result.chunkEnd));
+    expect(result.continuation).toContain(`offset=${result.chunkEnd}`);
+  });
+
   it("rejects a negative offset", async () => {
     const { context } = makeQueryContext([bigRow("body")]);
     const handler = handlerFor(context, "artifact_read_chunk");
