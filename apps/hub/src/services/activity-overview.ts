@@ -195,7 +195,7 @@ export type ActivityOverview = {
   /**
    * Earliest date real token counts exist (null when none). Token and tool-error
    * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
-   * range starting before this date. See `backfill-analytics-rollups.ts`.
+   * range starting before this date.
    */
   tokensRecordedFrom: string | null;
   /**
