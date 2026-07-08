@@ -7,16 +7,22 @@ const STEP_KIND_LABEL: Record<WorkflowFlowStep["kind"], string> = {
   human: "Your input",
 };
 
+const STEP_CHIP_CLASS: Record<WorkflowFlowStep["kind"], string> = {
+  auto: "border-border bg-surface-2",
+  agent: "border-blue/40 bg-blue/5",
+  human: "border-orange/50 bg-[rgba(233,132,40,0.08)]",
+};
+
 const STEP_NODE_CLASS: Record<WorkflowFlowStep["kind"], string> = {
-  auto: "border-border bg-surface-2 text-text-3",
+  auto: "border-border bg-surface text-text-3",
   agent: "border-blue/40 bg-blue/10 text-blue",
   human: "border-orange/50 bg-[rgba(233,132,40,0.12)] text-orange-deep",
 };
 
 const STEP_BADGE_CLASS: Record<WorkflowFlowStep["kind"], string> = {
-  auto: "bg-surface-2 text-text-3",
-  agent: "bg-blue/10 text-blue",
-  human: "bg-[rgba(233,132,40,0.12)] text-orange-deep",
+  auto: "text-text-3",
+  agent: "text-blue",
+  human: "text-orange-deep",
 };
 
 const STEP_GLYPH: Record<WorkflowFlowStep["kind"], string> = {
@@ -25,10 +31,12 @@ const STEP_GLYPH: Record<WorkflowFlowStep["kind"], string> = {
   human: "★",
 };
 
-// The step-flow diagram. Selecting a workflow re-keys the list so the steps
-// stagger/spring in top-to-bottom and a pulse travels the spine to convey flow
-// direction. Under prefers-reduced-motion the steps appear at rest and the pulse
-// is omitted — the same information, no movement.
+const LEGEND: WorkflowFlowStep["kind"][] = ["auto", "agent", "human"];
+
+// The step-flow diagram. Steps flow left-to-right, top-to-bottom in a compact
+// responsive grid; the number on each chip carries the run order so a wide,
+// short layout still reads as a sequence. Selecting a workflow re-keys the grid
+// so the chips stagger in. Under prefers-reduced-motion the chips appear at rest.
 export function WorkflowFlowPreview({
   steps,
   animationKey,
@@ -49,67 +57,68 @@ export function WorkflowFlowPreview({
   const container: Variants = {
     hidden: {},
     show: {
-      transition: { staggerChildren: reduceMotion ? 0 : 0.07 },
+      transition: { staggerChildren: reduceMotion ? 0 : 0.03 },
     },
   };
   const item: Variants = reduceMotion
     ? { hidden: { opacity: 1 }, show: { opacity: 1 } }
     : {
-        hidden: { opacity: 0, y: 8 },
+        hidden: { opacity: 0, y: 6 },
         show: {
           opacity: 1,
           y: 0,
-          transition: { type: "spring", stiffness: 420, damping: 30 },
+          transition: { type: "spring", stiffness: 460, damping: 32 },
         },
       };
 
   return (
-    <motion.ol
-      key={animationKey}
-      className="relative flex flex-col gap-3 py-1 pl-1"
-      variants={container}
-      initial="hidden"
-      animate="show"
-    >
-      <span
-        aria-hidden="true"
-        className="absolute bottom-4 left-5 top-4 w-px -translate-x-1/2 bg-border"
-      />
-      {!reduceMotion && (
-        <motion.span
-          aria-hidden="true"
-          className="absolute left-5 h-2 w-2 -translate-x-1/2 rounded-full bg-accent shadow-[0_0_10px_2px_var(--accent-soft)]"
-          initial={{ top: "0%", opacity: 0 }}
-          animate={{ top: ["2%", "98%"], opacity: [0, 1, 1, 0] }}
-          transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
-        />
-      )}
-      {steps.map((step) => (
-        <motion.li
-          key={step.id}
-          variants={item}
-          className="relative flex items-start gap-3"
-        >
-          <span
-            aria-hidden="true"
-            className={`z-10 grid h-8 w-8 shrink-0 place-items-center rounded-[9px] border text-[11px] font-bold ${STEP_NODE_CLASS[step.kind]}`}
+    <div className="flex flex-col gap-3">
+      <motion.ol
+        key={animationKey}
+        className="grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(190px,1fr))]"
+        variants={container}
+        initial="hidden"
+        animate="show"
+      >
+        {steps.map((step, index) => (
+          <motion.li
+            key={step.id}
+            variants={item}
+            className={`flex items-center gap-2.5 rounded-[10px] border px-2.5 py-2 ${STEP_CHIP_CLASS[step.kind]}`}
           >
-            {STEP_GLYPH[step.kind]}
-          </span>
-          <div className="min-w-0 pt-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[13px] font-semibold text-text">
+            <span
+              className={`grid h-7 w-7 shrink-0 place-items-center rounded-[8px] border text-[10px] font-bold tabular-nums ${STEP_NODE_CLASS[step.kind]}`}
+            >
+              {index + 1}
+            </span>
+            <div className="flex min-w-0 flex-col">
+              <span className="truncate text-[12.5px] font-semibold leading-tight text-text">
                 {step.title}
               </span>
               <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${STEP_BADGE_CLASS[step.kind]}`}
+                className={`flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.04em] ${STEP_BADGE_CLASS[step.kind]}`}
               >
+                <span aria-hidden="true">{STEP_GLYPH[step.kind]}</span>
                 {STEP_KIND_LABEL[step.kind]}
               </span>
             </div>
-          </div>
-        </motion.li>
-      ))}
-    </motion.ol>
+          </motion.li>
+        ))}
+      </motion.ol>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px] font-semibold uppercase tracking-[0.04em] text-text-3">
+        {LEGEND.map((kind) => (
+          <span key={kind} className="flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className={`grid h-4 w-4 place-items-center rounded-[5px] border text-[9px] ${STEP_NODE_CLASS[kind]}`}
+            >
+              {STEP_GLYPH[kind]}
+            </span>
+            {STEP_KIND_LABEL[kind]}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }

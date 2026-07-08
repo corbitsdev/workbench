@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { WorkflowCatalog } from "@workbench/shared";
@@ -141,8 +142,9 @@ describe("WorkflowCatalog", () => {
   it("previews the first workflow's classified steps by default", () => {
     renderCatalog(onWorkflowStarted);
     screen.getByText("Load Transcript");
-    screen.getByText("Approve Draft");
-    screen.getByText("Your input");
+    const humanStep = screen.getByText("Approve Draft").closest("li");
+    expect(humanStep).not.toBeNull();
+    within(humanStep!).getByText("Your input");
     screen.getByText("Pauses 1 time for you");
   });
 

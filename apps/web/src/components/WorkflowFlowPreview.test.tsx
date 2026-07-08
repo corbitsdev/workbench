@@ -26,6 +26,14 @@ describe("WorkflowFlowPreview", () => {
     within(items[2]!).getByText("Your input");
   });
 
+  it("numbers each step by its run order", () => {
+    render(<WorkflowFlowPreview steps={steps} animationKey="wf" />);
+    const items = screen.getAllByRole("listitem");
+    within(items[0]!).getByText("1");
+    within(items[1]!).getByText("2");
+    within(items[2]!).getByText("3");
+  });
+
   it("shows a no-preview message when there are no steps", () => {
     render(<WorkflowFlowPreview steps={[]} animationKey="wf" />);
     expect(screen.queryByRole("listitem")).toBeNull();
