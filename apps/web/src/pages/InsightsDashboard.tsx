@@ -729,7 +729,7 @@ function KpiRow({
         />
         <Stat
           label="Workflow runs"
-          value={formatNumber(data.workflowRuns.executionRecords)}
+          value={formatNumber(data.workflowRuns.executionsStartedInRange)}
           sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
           emphasis
         />
