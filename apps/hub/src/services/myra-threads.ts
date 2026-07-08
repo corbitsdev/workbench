@@ -328,8 +328,11 @@ const TITLE_CREDENTIAL_NAME = "Myra Title LLM";
 // `reasoning_content` (mapped to a `thinking` block), which extracts to empty →
 // the director waits instead of replying → the title turn hangs to the deadline
 // and falls back (CL-2887). claude-haiku-4-5 is opencode-zen's own title model
-// and returns plain text.
-const TITLE_MODEL = "claude-haiku-4-5-20251001";
+// and returns plain text. The id is sent VERBATIM to the opencode-zen gateway
+// (no catalog translation — same path deepseek-v4-flash used), so it must be
+// opencode-zen's exact bare id `claude-haiku-4-5`, confirmed on models.dev; the
+// dated `-20251001` catalog variant is NOT a valid gateway id and 404s.
+const TITLE_MODEL = "claude-haiku-4-5";
 const TITLE_SYSTEM_PROMPT =
   "Generate a concise 3-6 word title for a chat that begins with the user's message. Reply with ONLY the title — no quotes, no punctuation at the end.";
 
