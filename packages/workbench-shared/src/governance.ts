@@ -103,6 +103,21 @@ export const OwnerSetupResponse = type({
 });
 export type OwnerSetup = typeof OwnerSetupResponse.infer;
 
+/** `GET /owner/workflows` — deployed workflow kinds with run-enablement state.
+ * `enabled` is the effective run-gate state (CL-2885): false when the org member
+ * role holds a `deny` for that kind. The owner toggle writes/removes that deny. */
+export const OwnerWorkflowState = type({ kind: "string", enabled: "boolean" });
+export type OwnerWorkflowState = typeof OwnerWorkflowState.infer;
+
+export const OwnerWorkflowsResponse = type({
+  workflows: OwnerWorkflowState.array(),
+});
+export type OwnerWorkflows = typeof OwnerWorkflowsResponse.infer;
+
+/** Body for the owner workflow toggle: the desired enablement state. */
+export const OwnerWorkflowToggle = type({ enabled: "boolean" });
+export type OwnerWorkflowToggle = typeof OwnerWorkflowToggle.infer;
+
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 

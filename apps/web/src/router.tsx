@@ -43,6 +43,7 @@ import { OwnerLayout } from "./pages/admin/OwnerLayout";
 import { OwnerOverview } from "./pages/admin/OwnerOverview";
 import { OwnerSetup } from "./pages/admin/OwnerSetup";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
+import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
 // new home under /admin.
@@ -256,6 +257,7 @@ export const router = createBrowserRouter([
               { index: true, element: <OwnerOverview /> },
               { path: "setup", element: <OwnerSetup /> },
               { path: "templates", element: <OwnerGammaTemplates /> },
+              { path: "workflows", element: <OwnerWorkflows /> },
             ],
           },
           { path: "/insights", element: <InsightsDashboard /> },

@@ -10,6 +10,9 @@ import {
   type OwnerContext,
   OwnerSetupResponse,
   type OwnerSetup,
+  OwnerWorkflowsResponse,
+  type OwnerWorkflows,
+  OwnerWorkflowState,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -160,6 +163,33 @@ export async function getOwnerSetup(): Promise<OwnerSetup> {
   const parsed = OwnerSetupResponse(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed /owner/setup response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Deployed workflow kinds + their run-enablement state (owner-guarded). */
+export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/workflows");
+  const parsed = OwnerWorkflowsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/workflows response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable a workflow kind for the workbench (owner-guarded). */
+export async function setOwnerWorkflowEnabled(
+  kind: string,
+  enabled: boolean,
+): Promise<OwnerWorkflowState> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/workflows/${encodeURIComponent(kind)}`,
+    { enabled },
+  );
+  const parsed = OwnerWorkflowState(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner workflow response: ${parsed.summary}`);
   }
   return parsed;
 }
