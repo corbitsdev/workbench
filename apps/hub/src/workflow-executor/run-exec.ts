@@ -9,6 +9,7 @@ import type {
 } from "@intx/hub-sessions";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
+import { isWorkflowRunDeniedForTenant } from "../lib/workflow-run-gate";
 import { workflowRun } from "../db/schema";
 import type {
   EnsureDeploymentRoutableFn,
@@ -219,6 +220,20 @@ export async function startWorkflowRun(
     originConversationId: string | null;
   },
 ): Promise<RunExecResult> {
+  // Owner-controlled run gate (CL-2885). Enforced HERE — the single layer every
+  // run entry point funnels through (the /workflow-exec start route AND the
+  // workflow_start agent tool) — so no caller can start a disabled workflow.
+  // Allow-by-default: blocked only by an explicit member-role deny for this kind
+  // on the workbench or an ancestor. (The legacy /workflow-runs start route does
+  // not pass through here and gates itself.)
+  if (await isWorkflowRunDeniedForTenant(deps.db, opts.chain, opts.kind)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "This workflow is disabled for your workbench",
+    };
+  }
+
   const definition = await resolveDeployment(deps.db, opts.chain, opts.kind);
   if (!definition) {
     return {

@@ -82,7 +82,10 @@ const DEFINITION = {
 function makeDb(): HubDb {
   // biome-ignore lint/suspicious/noExplicitAny: structural test mock
   const db: any = {
-    query: { workflowRun: { findMany: async () => [DEFINITION] } },
+    query: {
+      workflowRun: { findMany: async () => [DEFINITION] },
+      role: { findMany: async () => [] },
+    },
   };
   return db as HubDb;
 }
@@ -261,7 +264,10 @@ describe("startWorkflowRun async-start contract (CL-2755)", () => {
     reset();
     // biome-ignore lint/suspicious/noExplicitAny: structural test mock
     const db: any = {
-      query: { workflowRun: { findMany: async () => [] } },
+      query: {
+        workflowRun: { findMany: async () => [] },
+        role: { findMany: async () => [] },
+      },
     };
     const result = await startWorkflowRun(
       { ...baseDeps(provisionOk), db: db as HubDb },
@@ -271,5 +277,41 @@ describe("startWorkflowRun async-start contract (CL-2755)", () => {
     if (result.ok) throw new Error("unreachable");
     expect(result.status).toBe(404);
     expect(rows.size).toBe(0);
+  });
+
+  test("CL-2885: a member-role deny blocks the run with 403 and seeds no row (gate covers every caller: route AND agent tool)", async () => {
+    reset();
+    // biome-ignore lint/suspicious/noExplicitAny: structural test mock
+    const db: any = {
+      query: {
+        workflowRun: { findMany: async () => [DEFINITION] },
+        role: { findMany: async () => [{ id: "rol_member" }] },
+        grant: {
+          findMany: async () => [
+            {
+              id: "grt_deny",
+              resource: "workflow:pain-point-collateral",
+              action: "run",
+              effect: "deny",
+              origin: "role",
+              conditions: null,
+              expiresAt: null,
+              roleId: "rol_member",
+              principalId: null,
+              tenantId: "tn-1",
+            },
+          ],
+        },
+      },
+    };
+    const result = await startWorkflowRun(
+      { ...baseDeps(provisionOk), db: db as HubDb },
+      startOpts,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("unreachable");
+    expect(result.status).toBe(403);
+    expect(rows.size).toBe(0); // gated before provisioning — no run started
+    expect(sent).toHaveLength(0);
   });
 });

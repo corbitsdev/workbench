@@ -28,6 +28,11 @@ export const ADMIN_ACTION = "manage";
  * wildcard match — "admins inherit other grants" with no per-grant copying. */
 export const ADMIN_ROLE_NAME = "admin";
 
+/** The Interchange system role every tenant seeds as its baseline. It carries no
+ * grants by default; the owner area expresses per-tenant workflow-run policy as
+ * grants on this role (see the workflow run gate, CL-2885). */
+export const MEMBER_ROLE_NAME = "member";
+
 /** The actions the `admin` system role is seeded with (`*`/{read,create,manage},
  * see `seedSystemRolesAndGrants`). Exported so the seed AND the owner-gate probe
  * test consume ONE definition and cannot silently diverge — the owner gate's
@@ -52,6 +57,29 @@ export const OWNER_RESOURCE = "owner:*";
  * add a wildcard or `o*`-shaped action to a non-owner grant without revisiting
  * it. */
 export const OWNER_ACTION = "own";
+
+// ─── Workflow run gate (CL-2885) ───────────────────────────────────
+
+/** Action probed by the workflow-run gate, paired with a `workflow:<kind>`
+ * resource. Mirrors the deploy gate's shape (`workflow:*`/`create`). */
+export const WORKFLOW_RUN_ACTION = "run";
+
+/** The resource string for running a specific workflow kind. The run gate is
+ * allow-by-default (workflows already ran for everyone before the gate): a run
+ * is blocked only by an explicit tenant-level `deny` on this resource/action,
+ * which the owner area adds to disable a workflow.
+ *
+ * Constraints on the owner writer (CL-2877):
+ * - Denies MUST be unconditional. The gate evaluates with no condition registry,
+ *   so a deny carrying `conditions` is skipped by the matcher — i.e. a
+ *   conditional deny fails OPEN (the run proceeds). Write plain denies.
+ * - A `workflow:*` deny disables all kinds ONLY while no more-specific member
+ *   allow exists — the matcher is specificity-first, so a `workflow:<kind>`
+ *   allow (member role holds none today) would override a `workflow:*` deny for
+ *   that kind. Prefer per-kind denies over relying on a wildcard-vs-allow race. */
+export function workflowRunResource(kind: string): string {
+  return `workflow:${kind}`;
+}
 
 // ─── Owner area wire schemas (CL-2874) ─────────────────────────────
 

@@ -142,6 +142,8 @@ function fakeDb(): HubDb {
           },
         ],
       },
+      // No member-role policy → the CL-2885 run gate allows (default).
+      role: { findMany: async () => [] },
     },
   } as unknown as HubDb;
 }

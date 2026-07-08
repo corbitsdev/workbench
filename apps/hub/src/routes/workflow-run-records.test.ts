@@ -347,6 +347,8 @@ function makeDb(
       workflowRunRecord: {
         findFirst: async () => ({ startedAt: null, endedAt: null }),
       },
+      // No member-role policy → the CL-2885 run gate allows (default).
+      role: { findMany: async () => [] },
     },
   };
   return db as HubDb;
@@ -592,6 +594,7 @@ describe("workflow runs on the sidecar (records router)", () => {
           findMany: async () => [DEFAULT_DEPLOYMENT],
           findFirst: async () => undefined,
         },
+        role: { findMany: async () => [] },
       },
     } as unknown as HubDb;
     const a = routerWith({ db });

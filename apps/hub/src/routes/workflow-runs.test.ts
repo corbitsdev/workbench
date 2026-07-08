@@ -116,6 +116,8 @@ function makeDb(owned: boolean) {
       workflowRun: {
         findFirst,
       },
+      // No member-role policy → the CL-2885 run gate allows (default).
+      role: { findMany: mock(() => Promise.resolve([])) },
     },
     update: () => ({ set: setMock }),
   } as unknown as HubDb;
@@ -141,6 +143,7 @@ function makeListDb(
       workflowRun: {
         findMany: mock(() => Promise.resolve(findManyRows)),
       },
+      role: { findMany: mock(() => Promise.resolve([])) },
     },
   } as unknown as HubDb;
 }
