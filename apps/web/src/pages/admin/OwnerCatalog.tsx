@@ -12,7 +12,7 @@ import { adminTableCard } from "./admin-ui";
  * a hub-specific endpoint. Read-only for v1 — adding/removing providers or
  * models is a follow-up.
  */
-export function OwnerModels() {
+export function OwnerCatalog() {
   const { activeTenantId } = useActiveWorkbench();
 
   const providers = useQuery({

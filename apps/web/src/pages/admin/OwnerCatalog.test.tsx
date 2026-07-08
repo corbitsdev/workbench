@@ -38,7 +38,7 @@ mock.module("../../lib/active-workbench-context", () => ({
   }),
 }));
 
-import { OwnerModels } from "./OwnerModels";
+import { OwnerCatalog } from "./OwnerCatalog";
 
 function renderModels() {
   return render(
@@ -47,14 +47,14 @@ function renderModels() {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <OwnerModels />
+      <OwnerCatalog />
     </QueryClientProvider>,
   );
 }
 
 afterEach(() => cleanup());
 
-describe("OwnerModels", () => {
+describe("OwnerCatalog", () => {
   it("renders providers and models", async () => {
     providersOutcome = {
       kind: "resolve",

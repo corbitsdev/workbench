@@ -91,18 +91,6 @@ export const OwnerContextResponse = type({
 });
 export type OwnerContext = typeof OwnerContextResponse.infer;
 
-/** `GET /owner/setup` — the workbench's underlying provisioned configuration
- * (read-only, CL-2880): tenant identity, hierarchy position, and the workflow
- * kinds currently deployed (runnable) in it. Parsed at the web boundary. */
-export const OwnerSetupResponse = type({
-  tenantId: "string",
-  tenantName: "string",
-  tenantSlug: "string",
-  parentTenantId: "string | null",
-  deployedWorkflowKinds: "string[]",
-});
-export type OwnerSetup = typeof OwnerSetupResponse.infer;
-
 /** `GET /owner/workflows` — deployed workflow kinds with run-enablement state.
  * `enabled` is the effective run-gate state (CL-2885): false when the org member
  * role holds a `deny` for that kind. The owner toggle writes/removes that deny. */

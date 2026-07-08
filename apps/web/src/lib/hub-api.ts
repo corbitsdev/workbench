@@ -6,10 +6,6 @@ import {
   type SavedRating,
   type MemberPreferences,
   MemberPreferences as MemberPreferencesSchema,
-  OwnerContextResponse,
-  type OwnerContext,
-  OwnerSetupResponse,
-  type OwnerSetup,
   OwnerWorkflowsResponse,
   type OwnerWorkflows,
   OwnerWorkflowState,
@@ -143,28 +139,6 @@ function parseMePreferences(me: MeResponse): MeResponse {
 
 export async function getMe(): Promise<MeResponse> {
   return parseMePreferences(await hubFetch<MeResponse>("GET", "v1/me"));
-}
-
-/** Owner identity + the root tenant the owner governs. Owner-guarded server-side
- * (403 for non-owners); parsed at the boundary rather than cast. */
-export async function getOwnerContext(): Promise<OwnerContext> {
-  const raw = await hubFetch<unknown>("GET", "v1/owner/context");
-  const parsed = OwnerContextResponse(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Malformed /owner/context response: ${parsed.summary}`);
-  }
-  return parsed;
-}
-
-/** The workbench's provisioned setup (owner-guarded, read-only). Parsed at the
- * boundary rather than cast. */
-export async function getOwnerSetup(): Promise<OwnerSetup> {
-  const raw = await hubFetch<unknown>("GET", "v1/owner/setup");
-  const parsed = OwnerSetupResponse(raw);
-  if (parsed instanceof type.errors) {
-    throw new Error(`Malformed /owner/setup response: ${parsed.summary}`);
-  }
-  return parsed;
 }
 
 /** Deployed workflow kinds + their run-enablement state (owner-guarded). */

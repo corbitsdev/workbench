@@ -7,14 +7,15 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 
 // The security-relevant invariant the shell exists to enforce: a non-owner must
 // never reach owner data. Exercised through the REAL router + real OwnerLayout
-// gate + real OwnerOverview outlet — only the hub-api module is mocked, so the
+// gate + real OwnerCatalog outlet (the landing) — only hub-api is mocked, so the
 // gate genuinely stands between the route and the fetch. Catches a regression
 // where the gate is moved below <Outlet/> (child mounts before the check).
 
 let ownerFlag = false;
-const getOwnerContext = mock(async () => ({
-  tenantId: "ten_root",
-  ownerPrincipalId: "prn_owner",
+const getTenantProviders = mock(async () => []);
+const getTenantModels = mock(async () => []);
+mock.module("../../lib/active-workbench-context", () => ({
+  useActiveWorkbench: () => ({ activeTenantId: "ten_root" }),
 }));
 mock.module("../../lib/hub-api", () => ({
   getMe: () =>
@@ -29,11 +30,12 @@ mock.module("../../lib/hub-api", () => ({
       isAdmin: ownerFlag,
       isOwner: ownerFlag,
     }),
-  getOwnerContext,
+  getTenantProviders,
+  getTenantModels,
 }));
 
 const { OwnerLayout } = await import("./OwnerLayout");
-const { OwnerOverview } = await import("./OwnerOverview");
+const { OwnerCatalog } = await import("./OwnerCatalog");
 
 function renderAtOwner() {
   const router = createMemoryRouter(
@@ -41,7 +43,7 @@ function renderAtOwner() {
       {
         path: "/owner",
         element: <OwnerLayout />,
-        children: [{ index: true, element: <OwnerOverview /> }],
+        children: [{ index: true, element: <OwnerCatalog /> }],
       },
     ],
     { initialEntries: ["/owner"] },
@@ -59,21 +61,21 @@ function renderAtOwner() {
 
 afterEach(() => {
   cleanup();
-  getOwnerContext.mockClear();
+  getTenantProviders.mockClear();
+  getTenantModels.mockClear();
 });
 
 describe("/owner access gate", () => {
-  it("a non-owner sees no-access and never fetches owner context", async () => {
+  it("a non-owner sees no-access and never fetches owner data", async () => {
     ownerFlag = false;
     renderAtOwner();
     await waitFor(() => expect(screen.getByText("Owner only")));
-    expect(getOwnerContext).toHaveBeenCalledTimes(0);
+    expect(getTenantProviders).toHaveBeenCalledTimes(0);
   });
 
-  it("an owner reaches the overview and fetches owner context", async () => {
+  it("an owner reaches the catalog and fetches owner data", async () => {
     ownerFlag = true;
     renderAtOwner();
-    await waitFor(() => expect(screen.getByText("ten_root")));
-    expect(getOwnerContext).toHaveBeenCalled();
+    await waitFor(() => expect(getTenantProviders).toHaveBeenCalled());
   });
 });

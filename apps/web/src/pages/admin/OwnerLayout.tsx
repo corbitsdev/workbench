@@ -4,14 +4,13 @@ import { PagePanel, Skeleton } from "@workbench/ui";
 import { getMe } from "../../lib/hub-api";
 import { tabButtonClass } from "./admin-ui";
 
-// Owner-area tabs. Feature tabs (Workflows, Models, Credentials, Setup,
-// Templates) append their entry here as they land; Overview is the landing.
+// Owner-area tabs. Catalog is the landing (/owner redirects to it): inference
+// providers, their models, and credentials. Capabilities holds tool/integration
+// providers. Workflows enables/disables per workbench.
 const SUB_NAV = [
-  { to: "/owner", label: "Overview", end: true },
-  { to: "/owner/setup", label: "Setup", end: false },
+  { to: "/owner/catalog", label: "Catalog", end: false },
   { to: "/owner/capabilities", label: "Capabilities", end: false },
   { to: "/owner/workflows", label: "Workflows", end: false },
-  { to: "/owner/models", label: "Models", end: false },
 ] as const;
 
 /**
