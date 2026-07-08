@@ -965,14 +965,16 @@ describe("generateMyraThreadTitle", () => {
 
     expect(persistedLabel).toBe("Pricing Strategy");
     expect(result?.label).toBe("Pricing Strategy");
-    // The title turn's scratch repo is an ephemeral temp dir (CL-2887) — not a
-    // durable per-principal path — created with the default GC policy.
-    expect(lastIsogitDir).toMatch(/myra-title-[^/]+$/);
-    expect(lastIsogitDir).not.toContain("/myra-title/tn-global");
+    // The scratch repo lives on the hub dataDir volume (like the file parser
+    // and every other agent repo), grouped per (tenant, principal) with a fresh
+    // per-generation id so no repo is reused or grown, and no GC policy (CL-2887).
+    expect(lastIsogitDir).toMatch(
+      /^\/tmp\/myra-title-test\/myra-title\/tn-global\/prn-member\/[0-9a-f-]{36}$/,
+    );
     expect(lastIsogitGcPolicy).toBeNull();
   });
 
-  it("uses a fresh ephemeral repo per title generation so no repo is reused or grown (CL-2887)", async () => {
+  it("uses a fresh per-generation repo so no repo is reused or grown (CL-2887)", async () => {
     resetTitleMocks();
     const makeDb = (mapId: string, instanceId: string) =>
       buildTitleDb({
@@ -1002,14 +1004,16 @@ describe("generateMyraThreadTitle", () => {
       // biome-ignore lint/suspicious/noExplicitAny: structural opts
     } as any);
 
-    const titleRepos = isogitDirs.filter((d) => /myra-title-[^/]+$/.test(d));
+    const titleRepos = isogitDirs.filter((d) => d.includes("/myra-title/"));
     expect(titleRepos).toHaveLength(2);
-    // Two generations for the SAME principal must land in distinct ephemeral
+    // Two generations for the SAME principal must land in distinct per-generation
     // repos — the pre-CL-2887 shared per-principal repo reused one path and grew
     // unbounded (and it repacked the whole history on each commit, hanging send).
     expect(titleRepos[0]).not.toBe(titleRepos[1]);
     for (const dir of titleRepos) {
-      expect(dir).not.toContain("/myra-title/tn-global");
+      expect(dir).toMatch(
+        /\/myra-title\/tn-global\/prn-member\/[0-9a-f-]{36}$/,
+      );
     }
   });
 

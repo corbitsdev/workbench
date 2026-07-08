@@ -8,8 +8,7 @@ import { generateId } from "@intx/hub-common";
 import type { InferenceSource } from "@intx/types/runtime";
 import { createIsogitStore } from "@workbench/storage-isogit";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
   AGENT_TEMPLATES,
@@ -491,41 +490,40 @@ async function runTitleTurn(
     })
     .onConflictDoNothing({ target: agentSession.id });
 
-  // A title is a stateless one-shot: empty context, no durable trail. Give it a
-  // throwaway scratch repo — a single tiny commit that never trips GC (so
-  // `send()` returns immediately instead of after the O(repo) keep-history
-  // repack that hung the old shared per-principal repo, CL-2887) and leaves
-  // nothing on the volume. Usage + the turn record below are the tracking, not
-  // this repo.
-  const contextDir = await mkdtemp(join(tmpdir(), "myra-title-"));
-  try {
-    const store = await createIsogitStore(contextDir);
-    return await runTrackedOneShot({
-      db,
-      tenantId: opts.tenantId,
-      source: opts.source,
-      systemPrompt: TITLE_SYSTEM_PROMPT,
-      agentIdPrefix: "myra-title",
-      message: opts.firstMessage,
-      store,
-      workdir: contextDir,
-      analytics: {
-        subscriber: opts.analytics,
-        attributionPrincipalId: instanceRow.principalId,
-      },
-      turnRecording: {
-        sessionId: titleSessionId,
-        instanceId: opts.instanceId,
-      },
-      signal: opts.signal,
-    });
-  } finally {
-    await rm(contextDir, { recursive: true, force: true }).catch((err) =>
-      log.warn("Myra title temp repo cleanup failed", {
-        error: err instanceof Error ? err.message : String(err),
-      }),
-    );
-  }
+  // Scratch repo for the turn, keyed per generation on the hub's persistent
+  // volume (the same dataDir every other agent repo lives on) — mirrors the file
+  // parser. A fresh per-generation id means each repo holds a single tiny commit
+  // (no unbounded growth, no GC repack on the commit send() awaits) while
+  // staying on the filesystem @intx/agent's isogit store is proven against, not
+  // an OS tmpdir. No GC policy, like the file parser. Usage + the turn record
+  // below are the tracking, not this repo.
+  const contextDir = join(
+    getConfig().hub.dataDir,
+    "myra-title",
+    opts.tenantId,
+    opts.memberPrincipalId,
+    randomUUID(),
+  );
+  const store = await createIsogitStore(contextDir);
+  return await runTrackedOneShot({
+    db,
+    tenantId: opts.tenantId,
+    source: opts.source,
+    systemPrompt: TITLE_SYSTEM_PROMPT,
+    agentIdPrefix: "myra-title",
+    message: opts.firstMessage,
+    store,
+    workdir: contextDir,
+    analytics: {
+      subscriber: opts.analytics,
+      attributionPrincipalId: instanceRow.principalId,
+    },
+    turnRecording: {
+      sessionId: titleSessionId,
+      instanceId: opts.instanceId,
+    },
+    signal: opts.signal,
+  });
 }
 
 /**
