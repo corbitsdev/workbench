@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, inputFieldClass } from "@workbench/ui";
 import { clearOwnerCredential, setOwnerCredential } from "../../lib/hub-api";
 import type { OwnerCredentialState } from "@workbench/shared";
-import { BIFROST_PROVIDER_NAME } from "@workbench/shared";
+import { CREDENTIAL_PROVIDER_CATALOG } from "@workbench/shared";
 
 /**
  * One provider credential row shared by Catalog (inference providers) and
@@ -24,13 +24,22 @@ export function CredentialRow({
 }: {
   credential: OwnerCredentialState;
 }) {
-  const isBifrost = credential.providerName === BIFROST_PROVIDER_NAME;
+  const catalogEntry = CREDENTIAL_PROVIDER_CATALOG.find(
+    (e) => e.providerName === credential.providerName,
+  );
+  const secondaryField = catalogEntry?.secondaryField;
+  const secretLabel = catalogEntry?.secretLabel ?? "API key";
+  const platforms = catalogEntry?.platforms;
   const [baseURL, setBaseURL] = useState(credential.baseURL ?? "");
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const fieldId = useId();
+
+  const canSave =
+    secret.trim().length > 0 &&
+    (!secondaryField?.required || baseURL.trim().length > 0);
 
   const setMutation = useMutation({
     mutationFn: (value: { secret: string; baseURL?: string }) =>
@@ -61,6 +70,11 @@ export function CredentialRow({
           <p className="mt-0.5 font-mono text-xs text-text-3">
             {credential.providerName}
           </p>
+          {platforms && platforms.length > 0 && (
+            <p className="mt-0.5 text-xs text-text-3">
+              Powers {platforms.join(", ")}
+            </p>
+          )}
           {credential.configured && credential.updatedAt && (
             <p className="mt-0.5 text-xs text-text-3">
               Updated {formatUpdatedAt(credential.updatedAt)}
@@ -116,11 +130,11 @@ export function CredentialRow({
           className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3"
           onSubmit={(e) => {
             e.preventDefault();
-            if (secret.trim().length === 0 || setMutation.isPending) return;
+            if (!canSave || setMutation.isPending) return;
             setError(null);
             const payload = {
               secret: secret.trim(),
-              ...(isBifrost && baseURL.trim()
+              ...(secondaryField && baseURL.trim()
                 ? { baseURL: baseURL.trim() }
                 : {}),
             };
@@ -131,7 +145,7 @@ export function CredentialRow({
         >
           <div className="min-w-[240px] flex-1 space-y-1">
             <label className="block text-[12px] text-text-3" htmlFor={fieldId}>
-              API key
+              {secretLabel}
             </label>
             <input
               id={fieldId}
@@ -144,13 +158,13 @@ export function CredentialRow({
             />
           </div>
 
-          {isBifrost && (
+          {secondaryField && (
             <div className="min-w-[240px] flex-1 space-y-1">
               <label
                 className="block text-[12px] text-text-3"
                 htmlFor={`${fieldId}-base`}
               >
-                Base URL
+                {secondaryField.label}
               </label>
               <input
                 id={`${fieldId}-base`}
@@ -158,7 +172,7 @@ export function CredentialRow({
                 autoComplete="off"
                 value={baseURL}
                 onChange={(e) => setBaseURL(e.target.value)}
-                placeholder="https://your-bifrost.example.com/v1"
+                placeholder={secondaryField.placeholder}
                 className={inputFieldClass}
               />
             </div>
@@ -168,7 +182,7 @@ export function CredentialRow({
             type="submit"
             variant="primary"
             size="sm"
-            disabled={secret.trim().length === 0 || setMutation.isPending}
+            disabled={!canSave || setMutation.isPending}
           >
             {setMutation.isPending ? "Saving…" : "Save"}
           </Button>

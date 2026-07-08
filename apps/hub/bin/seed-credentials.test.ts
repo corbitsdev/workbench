@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { CREDENTIAL_PROVIDER_CATALOG } from "@workbench/shared";
 import { buildEntries } from "./seed-credentials";
+
+// Provider plugins used for LLM inference credentials. Everything the seeder
+// emits on any OTHER plugin is a tool credential, and every tool credential
+// must be manageable from the Owner UI (i.e. present in the catalog below).
+const INFERENCE_PLUGINS = new Set([
+  "openai-compatible",
+  "openai",
+  "anthropic",
+  "google-genai",
+  "xai",
+]);
 
 describe("seed-credentials buildEntries", () => {
   const originalEnv = process.env;
@@ -270,6 +282,40 @@ describe("seed-credentials buildEntries", () => {
     expect(
       entries.find((e) => e.providerName === "Myra Title LLM"),
     ).toBeUndefined();
+  });
+
+  it("surfaces every seeded tool credential in the Owner credential catalog", () => {
+    // Set a key for every tool integration so buildEntries emits them all.
+    process.env["GRANOLA_API_KEY"] = "k";
+    process.env["EXA_API_KEY"] = "k";
+    process.env["FIRECRAWL_API_KEY"] = "k";
+    process.env["GAMMA_API_KEY"] = "k";
+    process.env["GITHUB_API_KEY"] = "k";
+    process.env["LINEAR_API_KEY"] = "k";
+    process.env["ATTIO_API_KEY"] = "k";
+    process.env["VERCEL_API_KEY"] = "k";
+    process.env["YOUTUBE_API_KEY"] = "k";
+    process.env["SCRAPECREATORS_API_KEY"] = "k";
+    process.env["BLUESKY_APP_PASSWORD"] = "k";
+    process.env["BLUESKY_HANDLE"] = "test.bsky.social";
+
+    const catalogToolProviders = new Set(
+      CREDENTIAL_PROVIDER_CATALOG.filter((e) => e.kind === "tool").map(
+        (e) => e.providerName,
+      ),
+    );
+
+    const seededToolProviders = buildEntries()
+      .filter((e) => !INFERENCE_PLUGINS.has(e.providerPlugin))
+      .map((e) => e.providerName);
+
+    // Guards against the drift that hid vercel/scrapecreators/youtube/bluesky
+    // from the Owner UI: a seed entry without a matching catalog row.
+    expect(seededToolProviders.length).toBeGreaterThan(0);
+    const missing = seededToolProviders.filter(
+      (name) => !catalogToolProviders.has(name),
+    );
+    expect(missing).toEqual([]);
   });
 
   it("does not collide numbered openai-compatible providers with the canonical one", () => {

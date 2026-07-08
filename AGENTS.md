@@ -150,8 +150,9 @@ When you add a `@workbench/tools-*` package with a credential `providerName`:
 - Add the env var to `.env.example`.
 - Add a `buildEntries()` test asserting the entry appears/disappears with the env var.
 - Add the `providerName` to the agent's `credentialProviderNames` (never `credentialRequirements`).
+- **Add the provider to `CREDENTIAL_PROVIDER_CATALOG` in `packages/workbench-shared/src/governance.ts`** (`kind: "tool"`) so the key can be set/replaced/cleared from the Owner → Capabilities page. The catalog is a hand-maintained list, NOT derived from the tool packages — a new tool credential is invisible in the Owner UI until it is added here. The `surfaces every seeded tool credential` test in `seed-credentials.test.ts` fails if a seeded tool provider is missing from the catalog. If the credential needs more than a secret (an endpoint or identity handle), set `secondaryField`; override `secretLabel` when the secret is not an API key; list the platforms one credential powers via `platforms`.
 
-Keyless tools need no seed entry — say so in the package README.
+Keyless tools need no seed entry and no catalog entry — say so in the package README.
 
 ## Issue Workflow
 
