@@ -110,10 +110,41 @@ mock.module("../workflow-executor/run-awaiting-signals", () => ({
 
 const { WORKFLOWS_HUB_TOOLS } = await import("./workflow-run-tools");
 
+// A member-role deny grant, shaped like an `@intx/db` grant row, that the gate
+// reads to disable a workflow — the same grant the owner toggle writes.
+type MemberDenyGrant = {
+  id: string;
+  resource: string;
+  action: string;
+  effect: "allow" | "deny" | "ask";
+  origin: string;
+  conditions: null;
+  expiresAt: null;
+  roleId: string;
+  principalId: null;
+};
+
 // The Myra instance calling the tool: instance principal prn-instance, owned by
 // member prn-member through Myra thread (conversation) thread-1.
-function fakeDb(): HubDb {
+function fakeDb(memberRoleGrants: MemberDenyGrant[] = []): HubDb {
+  const hasPolicy = memberRoleGrants.length > 0;
   return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () =>
+            Promise.resolve([
+              {
+                deploymentId: "dep-catalog",
+                kind: "smoke-test",
+                status: "idle",
+                createdAt: "2026-06-01T00:00:00.000Z",
+                meta: { label: "Smoke test" },
+              },
+            ]),
+        }),
+      }),
+    }),
     query: {
       agentInstance: {
         findFirst: async () => ({
@@ -142,8 +173,12 @@ function fakeDb(): HubDb {
           },
         ],
       },
-      // No member-role policy → the CL-2885 run gate allows (default).
-      role: { findMany: async () => [] },
+      // Absent a member-role policy the run gate allows by default; a seeded
+      // member role + deny grants let the gate block a kind.
+      role: {
+        findMany: async () => (hasPolicy ? [{ id: "role-member" }] : []),
+      },
+      grant: { findMany: async () => memberRoleGrants },
     },
   } as unknown as HubDb;
 }
@@ -151,9 +186,10 @@ function fakeDb(): HubDb {
 function makeContext(overrides?: {
   sendUserMessage?: (args: Record<string, unknown>) => Promise<void>;
   sendSignalDeliver?: (args: Record<string, unknown>) => void;
+  memberRoleGrants?: MemberDenyGrant[];
 }) {
   return {
-    db: fakeDb(),
+    db: fakeDb(overrides?.memberRoleGrants),
     tenantId: "tn-1",
     agentId: "agent-1",
     principalId: "prn-instance",
@@ -184,6 +220,43 @@ function getTool(name: string, context: ReturnType<typeof makeContext>) {
     throw new Error(`missing string tool: ${name}`);
   return tool;
 }
+
+describe("workflow_list_kinds", () => {
+  test("returns distinct runnable kinds from the deployment catalog", async () => {
+    const context = makeContext();
+    const tool = getTool("workflow_list_kinds", context);
+    const raw = await tool.handler({}, new AbortController().signal);
+    const result = JSON.parse(raw) as {
+      kinds: { kind: string; label?: string }[];
+    };
+    expect(result.kinds).toEqual([{ kind: "smoke-test", label: "Smoke test" }]);
+  });
+
+  test("omits a kind the owner disabled via a member-role deny grant", async () => {
+    // Member role carries an explicit deny on workflow:smoke-test/run — the
+    // exact grant the owner toggle writes to disable a workflow. The catalog
+    // still lists the deployment, so the gate (not the query) must drop it.
+    const context = makeContext({
+      memberRoleGrants: [
+        {
+          id: "grant-deny",
+          resource: "workflow:smoke-test",
+          action: "run",
+          effect: "deny",
+          origin: "role",
+          conditions: null,
+          expiresAt: null,
+          roleId: "role-member",
+          principalId: null,
+        },
+      ],
+    });
+    const tool = getTool("workflow_list_kinds", context);
+    const raw = await tool.handler({}, new AbortController().signal);
+    const result = JSON.parse(raw) as { kinds: { kind: string }[] };
+    expect(result.kinds).toEqual([]);
+  });
+});
 
 describe("workflow_start", () => {
   test("starts a run owned by the calling member with the conversation threaded as originConversationId", async () => {

@@ -119,6 +119,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "load_skill",
   ],
   "@workbench/tools-workflows/workflows": [
+    "workflow_list_kinds",
     "workflow_start",
     "workflow_list_runs",
     "workflow_signal",

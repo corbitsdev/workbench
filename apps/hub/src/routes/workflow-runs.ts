@@ -20,7 +20,15 @@ import { getAncestorChain } from "@intx/db";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
-import { isWorkflowRunDeniedForTenant } from "../lib/workflow-run-gate";
+import {
+  isWorkflowRunDeniedForTenant,
+  listRunnableWorkflowDeployments,
+} from "../lib/workflow-run-gate";
+
+export {
+  listRunnableWorkflowDeployments,
+  listRunnableWorkflowKinds,
+} from "../lib/workflow-run-gate";
 import { requestBodySchema } from "../lib/openapi";
 import { WorkflowMeta } from "../lib/workflow-meta";
 
@@ -237,7 +245,7 @@ export function createWorkflowRunsRouter(deps: {
       tags: ["Workflows"],
       summary: "List workflow deployments",
       description:
-        "Lists workflow deployments visible to the calling user — the active workbench plus any inherited from ancestor tenants. Optional `?tenantId=` selects a workbench the user belongs to; default is the active workbench.",
+        "Lists workflow deployments visible to the calling user — the active workbench plus any inherited from ancestor tenants — omitting kinds denied by the member run gate. Optional `?tenantId=` selects a workbench the user belongs to; default is the active workbench.",
       parameters: [
         {
           name: "tenantId",
@@ -275,26 +283,8 @@ export function createWorkflowRunsRouter(deps: {
       // Walk active workbench -> ... -> global so a workbench sees its own
       // deployments plus those inherited from any ancestor tenant.
       const chain = await getAncestorChain(deps.db, context.tenantId);
-
-      const rows = await deps.db
-        .select({
-          deploymentId: workflowRun.deploymentId,
-          kind: workflowRun.kind,
-          status: workflowRun.status,
-          createdAt: workflowRun.createdAt,
-          meta: workflowRun.meta,
-        })
-        .from(workflowRun)
-        .where(
-          and(
-            inArray(workflowRun.tenantId, chain),
-            isNotNull(workflowRun.deploymentId),
-            isNull(workflowRun.deletedAt),
-          ),
-        )
-        .orderBy(desc(workflowRun.createdAt));
-
-      return c.json(rows);
+      const runnable = await listRunnableWorkflowDeployments(deps.db, chain);
+      return c.json(runnable);
     },
   );
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { GrantRule } from "@intx/types/authz";
 import type { HubDb } from "../db";
 import {
+  filterDeploymentsToRunnable,
   isWorkflowRunDeniedForTenant,
   workflowRunDenied,
 } from "./workflow-run-gate";
@@ -162,5 +163,46 @@ describe("isWorkflowRunDeniedForTenant", () => {
     await expect(
       isWorkflowRunDeniedForTenant(db, ["tn"], "brief-builder"),
     ).resolves.toBe(true);
+  });
+});
+
+describe("filterDeploymentsToRunnable", () => {
+  it("drops deployments whose kind is denied on the tenant chain", async () => {
+    const db = fakeDb(
+      ["rol_member"],
+      [{ resource: "workflow:deck", action: "run", effect: "deny" }],
+    );
+    const rows = [
+      {
+        deploymentId: "dep-1",
+        kind: "deck",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      },
+      {
+        deploymentId: "dep-2",
+        kind: "report",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      },
+    ];
+    const filtered = await filterDeploymentsToRunnable(db, ["tn"], rows);
+    expect(filtered.map((r) => r.kind)).toEqual(["report"]);
+  });
+
+  it("returns an empty list when workflow:* is denied", async () => {
+    const db = fakeDb(
+      ["rol_member"],
+      [{ resource: "workflow:*", action: "run", effect: "deny" }],
+    );
+    const rows = [
+      {
+        deploymentId: "dep-1",
+        kind: "deck",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+      },
+    ];
+    expect(await filterDeploymentsToRunnable(db, ["tn"], rows)).toEqual([]);
   });
 });

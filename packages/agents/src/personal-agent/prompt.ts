@@ -59,7 +59,7 @@ When a request is about *their* things inside a tool — "my issues", "my deals"
     },
     {
       tag: "workflows",
-      content: `When a workflow run is awaiting a gate, call workflow_list_runs and read its pendingGates (signalName and payload shape) before workflow_signal — never guess a signal name.`,
+      content: `Before starting a workflow, call workflow_list_kinds and use a returned kind — do not guess from memory. When a workflow run is awaiting a gate, call workflow_list_runs and read its pendingGates (signalName and payload shape) before workflow_signal — never guess a signal name.`,
     },
     {
       tag: "notes",

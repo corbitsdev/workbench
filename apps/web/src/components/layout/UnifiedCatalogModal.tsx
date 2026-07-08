@@ -223,7 +223,9 @@ export function UnifiedCatalogModal({
                   filteredWorkflows.length === 0 &&
                   deployedWorkflows.length === 0 && (
                     <p className="col-span-1 py-6 text-center sm:col-span-2 text-[13px] text-text-3">
-                      No workflows deployed yet.
+                      No workflows are available to run in this workbench. Your
+                      admin may need to deploy workflows or enable them for
+                      members.
                     </p>
                   )}
                 {!workflowsPending &&

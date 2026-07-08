@@ -279,6 +279,6 @@ describe("WorkflowCatalog", () => {
       />,
       { wrapper },
     );
-    screen.getByText("No workflows deployed yet.");
+    screen.getByText(/No workflows are available to run in this workbench/);
   });
 });

@@ -21,6 +21,10 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import {
+  loadMemberRoleGrantsForTenantChain,
+  workflowRunDenied,
+} from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
 
 const { role, grant, credential, provider } = intxSchema;
@@ -123,27 +127,22 @@ export function createOwnerRouter(
       });
       const kinds = [...new Set(deployments.map((d) => d.kind))].sort();
 
-      const roleId = await memberRoleId(db, rootTenantId);
-      const denyRows = roleId
-        ? await db.query.grant.findMany({
-            where: and(
-              eq(grant.roleId, roleId),
-              eq(grant.action, WORKFLOW_RUN_ACTION),
-              eq(grant.effect, "deny"),
-            ),
-            columns: { resource: true },
-          })
-        : [];
-      const deniedResources = new Set(denyRows.map((g) => g.resource));
-      const wildcardDenied = deniedResources.has(workflowRunResource("*"));
-
-      return c.json({
-        workflows: kinds.map((kind) => ({
+      // Decide enablement from the org member-role grants — loaded ONCE, and
+      // scoped to the tenant the owner toggle actually writes (rootTenantId).
+      // Reading the same scope the write targets keeps the displayed state
+      // honest: removing a deny here re-enables the kind (an ancestor deny, if
+      // one ever existed, is a chain concern the owner cannot toggle anyway).
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      const workflows = await Promise.all(
+        kinds.map(async (kind) => ({
           kind,
-          enabled:
-            !wildcardDenied && !deniedResources.has(workflowRunResource(kind)),
+          enabled: !(await workflowRunDenied(grants, kind)),
         })),
-      });
+      );
+
+      return c.json({ workflows });
     },
   );
 

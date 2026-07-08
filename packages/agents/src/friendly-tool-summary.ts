@@ -110,6 +110,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   firecrawl_monitor_check: "Checking a page monitor",
 
   // Workflow runs
+  workflow_list_kinds: "Listing runnable workflows",
   workflow_start: (args) => {
     const kind = firstStringArg(args, ["kind"]);
     return kind === null

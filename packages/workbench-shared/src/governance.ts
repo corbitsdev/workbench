@@ -106,6 +106,20 @@ export type OwnerWorkflows = typeof OwnerWorkflowsResponse.infer;
 export const OwnerWorkflowToggle = type({ enabled: "boolean" });
 export type OwnerWorkflowToggle = typeof OwnerWorkflowToggle.infer;
 
+/** Runnable workflow kind surfaced in the member catalog and Myra list tool. */
+export const RunnableWorkflowKindSchema = type({
+  kind: "string",
+  "label?": "string",
+  "description?": "string",
+});
+export type RunnableWorkflowKind = typeof RunnableWorkflowKindSchema.infer;
+
+export const RunnableWorkflowKindsResponse = type({
+  kinds: RunnableWorkflowKindSchema.array(),
+});
+export type RunnableWorkflowKindsResponse =
+  typeof RunnableWorkflowKindsResponse.infer;
+
 /** Interchange's seeded system roles (see `seedSystemRolesAndGrants`). */
 export const SYSTEM_ROLE_NAMES = ["owner", "admin", "member"] as const;
 
