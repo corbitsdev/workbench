@@ -39,8 +39,8 @@ function resetTitleMocks() {
 }
 
 const analyticsMock = {
-  onAgentEvent: mock(() => Promise.resolve()),
-  onLocalInferenceEvent: mock(() => Promise.resolve()),
+  onAgentEvent: mock((_event: unknown) => Promise.resolve()),
+  onLocalInferenceEvent: mock((_event: unknown) => Promise.resolve()),
 };
 // biome-ignore lint/suspicious/noExplicitAny: structural analytics deps for the title fn
 const titleDeps = { analytics: analyticsMock } as any;

@@ -182,11 +182,14 @@ describe("load_tools → shared exposureState → director advertises (integrati
     );
 
     // Load it through the REAL runner (mutates the shared exposureState).
-    await runner.run({
-      id: "c1",
-      name: "load_tools",
-      arguments: { package: "attio" },
-    } as ToolCall);
+    await runner.run(
+      {
+        id: "c1",
+        name: "load_tools",
+        arguments: { package: "attio" },
+      } as ToolCall,
+      new AbortController().signal,
+    );
     expect(exposure.exposed.has("attio__query_records")).toBe(true);
 
     // Next turn: the director advertises it — via the same shared state, not a
