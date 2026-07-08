@@ -14,8 +14,11 @@ export const ClientEnvironmentSchema = type({
   slug: "string > 0",
   domain: "string > 0",
   hub_url: "string > 0",
-  web_url: "string > 0",
-  "app_env?": "string > 0",
+  // Optional public app URL. Present when the web app is served from a separate
+  // origin (e.g. Vercel) — it becomes the auth base + CORS origin. Absent when
+  // the hub serves the SPA itself, in which case the hub URL is the public
+  // origin. The provisioning script never configures a web service either way.
+  "web_url?": "string > 0",
 });
 export type ClientEnvironment = typeof ClientEnvironmentSchema.infer;
 
@@ -32,13 +35,17 @@ export interface ClientSecrets {
   sidecarToken: string;
 }
 
+// The provisioning script owns only the Railway hub and sidecar services. The
+// web app is deployed separately (Vercel, or baked into the hub image) and is
+// never a Railway service this script configures.
 export interface ServiceEnvPlan {
   hub: Record<string, string>;
   sidecar: Record<string, string>;
-  web: Record<string, string>;
 }
 
 export type ServiceName = keyof ServiceEnvPlan;
+
+export const SERVICES = ["hub", "sidecar"] as const;
 
 // Keys whose value is a generated secret. On re-apply these must never be
 // rotated blindly — an existing deployment's sessions and hub↔sidecar link
@@ -105,9 +112,11 @@ export function isPlaceholderUrl(url: string): boolean {
 }
 
 export function assertResolvedUrls(env: ClientEnvironment): void {
-  const unresolved = (["hub_url", "web_url"] as const).filter((k) =>
-    isPlaceholderUrl(env[k]),
-  );
+  const urls: Array<[string, string]> = [["hub_url", env.hub_url]];
+  if (env.web_url !== undefined) urls.push(["web_url", env.web_url]);
+  const unresolved = urls
+    .filter(([, url]) => isPlaceholderUrl(url))
+    .map(([k]) => k);
   if (unresolved.length > 0) {
     throw new Error(
       `Unresolved placeholder URL(s): ${unresolved.join(", ")}. Create the ` +
@@ -116,11 +125,18 @@ export function assertResolvedUrls(env: ClientEnvironment): void {
   }
 }
 
+// The origin the browser actually uses: the separate web URL when the SPA is
+// served elsewhere (Vercel), else the hub's own URL when the hub serves the SPA.
+// Drives the auth base and CORS; the sidecar always talks to the hub directly.
+export function publicOrigin(env: ClientEnvironment): string {
+  return env.web_url ?? env.hub_url;
+}
+
 export function buildEnvPlan(
   env: ClientEnvironment,
   secrets: ClientSecrets,
 ): ServiceEnvPlan {
-  const appEnv = env.app_env ?? "production";
+  const origin = publicOrigin(env);
   return {
     // DATABASE_URL is injected by the Railway Postgres plugin — never set here.
     hub: {
@@ -129,8 +145,8 @@ export function buildEnvPlan(
       GLOBAL_TENANT_NAME: env.name,
       GLOBAL_TENANT_DOMAIN: env.domain,
       BETTER_AUTH_SECRET: secrets.betterAuthSecret,
-      BETTER_AUTH_BASE_URL: env.hub_url,
-      SUPPORTED_CORS_ORIGINS: env.web_url,
+      BETTER_AUTH_BASE_URL: origin,
+      SUPPORTED_CORS_ORIGINS: origin,
       HUB_DATA_DIR: "/data",
       HUB_SIGNING_KEYS: secrets.hubSigningKeys,
       SIDECAR_TOKEN: secrets.sidecarToken,
@@ -140,10 +156,6 @@ export function buildEnvPlan(
       SIDECAR_TOKEN: secrets.sidecarToken,
       HUB_WS_URL: hubWsUrl(env.hub_url),
       SIDECAR_DATA_DIR: "/data",
-    },
-    web: {
-      VITE_API_BASE_URL: env.hub_url,
-      VITE_APP_ENV: appEnv,
     },
   };
 }
@@ -165,7 +177,7 @@ export function buildRailwayVariableCommands(
   opts: RailwayApplyOptions,
 ): string[][] {
   const commands: string[][] = [];
-  for (const service of ["hub", "sidecar", "web"] as const) {
+  for (const service of SERVICES) {
     const serviceName = opts.services[service];
     for (const [key, value] of Object.entries(plan[service])) {
       if (SECRET_KEYS.has(key) && opts.existing?.has(`${serviceName}:${key}`)) {

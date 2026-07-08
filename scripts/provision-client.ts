@@ -21,6 +21,7 @@ import {
   parseManifest,
   selectEnvironment,
   SECRET_KEYS,
+  SERVICES,
   type ServiceEnvPlan,
   type ServiceName,
 } from "./provision-client/plan";
@@ -38,7 +39,6 @@ function parseArgs(argv: string[]): CliArgs {
   const services: Record<ServiceName, string> = {
     hub: "hub",
     sidecar: "sidecar",
-    web: "web",
   };
   let apply = false;
   let project: string | undefined;
@@ -53,8 +53,6 @@ function parseArgs(argv: string[]): CliArgs {
       services.hub = argv[++i];
     } else if (arg === "--sidecar-service") {
       services.sidecar = argv[++i];
-    } else if (arg === "--web-service") {
-      services.web = argv[++i];
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown flag: ${arg}`);
     } else {
@@ -110,7 +108,7 @@ function existingKeysFor(
   project?: string,
 ): Set<string> {
   const existing = new Set<string>();
-  for (const service of ["hub", "sidecar", "web"] as const) {
+  for (const service of SERVICES) {
     const serviceName = services[service];
     const args = [
       "variables",
@@ -145,7 +143,7 @@ function printPlan(
   environment: string,
 ): void {
   console.log(`\nEnvironment-variable plan — ${clientSlug} / ${environment}\n`);
-  for (const service of ["hub", "sidecar", "web"] as const) {
+  for (const service of SERVICES) {
     console.log(`[${service}]`);
     for (const [key, value] of Object.entries(plan[service])) {
       const marker = SECRET_KEYS.has(key)

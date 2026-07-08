@@ -7,25 +7,26 @@ import {
   hubWsUrl,
   parseManifest,
   selectEnvironment,
+  type ClientEnvironment,
   type ClientManifest,
   type ClientSecrets,
 } from "./plan";
 
+// production: web served from a separate origin (web_url present, e.g. Vercel).
+// staging: hub serves the SPA itself (no web_url).
 const MANIFEST_TOML = `
 [environments.production]
 name = "Acme Corp"
 slug = "acme"
 domain = "acme.com"
 hub_url = "https://acme-hub.up.railway.app"
-web_url = "https://acme-web.up.railway.app"
-app_env = "production"
+web_url = "https://acme-web.vercel.app"
 
 [environments.staging]
 name = "Acme Corp Staging"
 slug = "acme-staging"
 domain = "acme.com"
 hub_url = "https://acme-hub-staging.up.railway.app"
-web_url = "https://acme-web-staging.up.railway.app"
 `;
 
 const FIXED_SECRETS: ClientSecrets = {
@@ -34,7 +35,7 @@ const FIXED_SECRETS: ClientSecrets = {
   sidecarToken: "shared-token-value",
 };
 
-const SERVICES = { hub: "hub", sidecar: "sidecar", web: "web" } as const;
+const SERVICES = { hub: "hub", sidecar: "sidecar" } as const;
 
 function loadManifest(): ClientManifest {
   return parseManifest(MANIFEST_TOML);
@@ -48,17 +49,19 @@ describe("parseManifest", () => {
       "staging",
     ]);
     expect(m.environments.production.name).toBe("Acme Corp");
-    expect(m.environments.staging.name).toBe("Acme Corp Staging");
+    expect(m.environments.production.web_url).toBe(
+      "https://acme-web.vercel.app",
+    );
+    expect(m.environments.staging.web_url).toBeUndefined();
   });
 
   it("throws when a required field is missing", () => {
-    const bad = `[environments.production]\nname = "X"\nslug = "x"\ndomain = "x.com"\nhub_url = "https://h"\n`;
+    const bad = `[environments.production]\nname = "X"\nslug = "x"\ndomain = "x.com"\n`;
     expect(() => parseManifest(bad)).toThrow(/Invalid client manifest/);
   });
 
-  it("throws when there are no environments", () => {
-    expect(() => parseManifest(`environments = {}\n`)).not.toThrow();
-    // empty env map parses; selection is what fails (covered below)
+  it("accepts an environment with no web_url (hub-serves-web)", () => {
+    expect(() => loadManifest()).not.toThrow();
   });
 });
 
@@ -101,65 +104,97 @@ describe("hubWsUrl", () => {
 });
 
 describe("assertResolvedUrls", () => {
-  it("throws when a URL still holds the REPLACE placeholder", () => {
-    const env = {
+  it("throws when the hub URL still holds the REPLACE placeholder", () => {
+    const env: ClientEnvironment = {
+      name: "X",
       slug: "x",
       domain: "x.com",
       hub_url: "https://REPLACE-hub.up.railway.app",
-      web_url: "https://x-web.up.railway.app",
+      web_url: "https://x-web.vercel.app",
     };
     expect(() => assertResolvedUrls(env)).toThrow(/hub_url/);
   });
-  it("passes when both URLs are resolved", () => {
-    const env = selectEnvironment(loadManifest(), "production");
+
+  it("throws when a present web URL is still a placeholder", () => {
+    const env: ClientEnvironment = {
+      name: "X",
+      slug: "x",
+      domain: "x.com",
+      hub_url: "https://x-hub.up.railway.app",
+      web_url: "https://REPLACE-web.vercel.app",
+    };
+    expect(() => assertResolvedUrls(env)).toThrow(/web_url/);
+  });
+
+  it("passes with a resolved hub URL and no web URL", () => {
+    const env = selectEnvironment(loadManifest(), "staging");
+    expect(env.web_url).toBeUndefined();
     expect(() => assertResolvedUrls(env)).not.toThrow();
   });
 });
 
 describe("buildEnvPlan", () => {
   const manifest = loadManifest();
-  const env = selectEnvironment(manifest, "production");
-  const plan = buildEnvPlan(env, FIXED_SECRETS);
 
-  it("resolves the auth + CORS wiring from the hub and web URLs", () => {
+  it("uses the separate web URL as the auth + CORS origin when present", () => {
+    const env = selectEnvironment(manifest, "production");
+    const plan = buildEnvPlan(env, FIXED_SECRETS);
+    expect(plan.hub.BETTER_AUTH_BASE_URL).toBe("https://acme-web.vercel.app");
+    expect(plan.hub.SUPPORTED_CORS_ORIGINS).toBe("https://acme-web.vercel.app");
+  });
+
+  it("uses the hub URL as the origin when there is no separate web (hub-serves-web)", () => {
+    const env = selectEnvironment(manifest, "staging");
+    const plan = buildEnvPlan(env, FIXED_SECRETS);
     expect(plan.hub.BETTER_AUTH_BASE_URL).toBe(env.hub_url);
-    expect(plan.hub.SUPPORTED_CORS_ORIGINS).toBe(env.web_url);
-    expect(plan.web.VITE_API_BASE_URL).toBe(env.hub_url);
+    expect(plan.hub.SUPPORTED_CORS_ORIGINS).toBe(env.hub_url);
   });
 
-  it("uses the same SIDECAR_TOKEN on hub and sidecar", () => {
-    expect(plan.hub.SIDECAR_TOKEN).toBe(FIXED_SECRETS.sidecarToken);
-    expect(plan.sidecar.SIDECAR_TOKEN).toBe(FIXED_SECRETS.sidecarToken);
-  });
-
-  it("derives the sidecar HUB_WS_URL from the hub URL", () => {
+  it("points the sidecar HUB_WS_URL at the hub, never the web origin", () => {
+    const env = selectEnvironment(manifest, "production");
+    const plan = buildEnvPlan(env, FIXED_SECRETS);
     expect(plan.sidecar.HUB_WS_URL).toBe(
       "wss://acme-hub.up.railway.app/api/sidecars/ws",
     );
   });
 
+  it("uses the same SIDECAR_TOKEN on hub and sidecar", () => {
+    const plan = buildEnvPlan(
+      selectEnvironment(manifest, "production"),
+      FIXED_SECRETS,
+    );
+    expect(plan.hub.SIDECAR_TOKEN).toBe(FIXED_SECRETS.sidecarToken);
+    expect(plan.sidecar.SIDECAR_TOKEN).toBe(FIXED_SECRETS.sidecarToken);
+  });
+
   it("carries tenant identity onto the hub", () => {
+    const plan = buildEnvPlan(
+      selectEnvironment(manifest, "production"),
+      FIXED_SECRETS,
+    );
     expect(plan.hub.GLOBAL_TENANT_SLUG).toBe("acme");
     expect(plan.hub.GLOBAL_TENANT_NAME).toBe("Acme Corp");
     expect(plan.hub.GLOBAL_TENANT_DOMAIN).toBe("acme.com");
   });
 
-  it("never sets DATABASE_URL (Postgres plugin injects it)", () => {
+  it("never sets DATABASE_URL and never emits a VITE var or a web service", () => {
+    const plan = buildEnvPlan(
+      selectEnvironment(manifest, "production"),
+      FIXED_SECRETS,
+    );
     expect(plan.hub).not.toHaveProperty("DATABASE_URL");
-  });
-
-  it("defaults VITE_APP_ENV to production when app_env is unset", () => {
-    const staging = selectEnvironment(manifest, "staging");
-    const stagingPlan = buildEnvPlan(staging, FIXED_SECRETS);
-    expect(staging.app_env).toBeUndefined();
-    expect(stagingPlan.web.VITE_APP_ENV).toBe("production");
+    expect(plan).not.toHaveProperty("web");
+    const allKeys = [...Object.keys(plan.hub), ...Object.keys(plan.sidecar)];
+    expect(allKeys.some((k) => k.startsWith("VITE_"))).toBe(false);
   });
 });
 
 describe("buildRailwayVariableCommands", () => {
   const manifest = loadManifest();
-  const env = selectEnvironment(manifest, "production");
-  const plan = buildEnvPlan(env, FIXED_SECRETS);
+  const plan = buildEnvPlan(
+    selectEnvironment(manifest, "production"),
+    FIXED_SECRETS,
+  );
 
   it("emits a scoped `railway variables --set` per variable", () => {
     const cmds = buildRailwayVariableCommands(plan, {
@@ -179,6 +214,17 @@ describe("buildRailwayVariableCommands", () => {
       "production",
       "--skip-deploys",
     ]);
+  });
+
+  it("only targets the hub and sidecar services (never web)", () => {
+    const cmds = buildRailwayVariableCommands(plan, {
+      services: SERVICES,
+      environment: "production",
+    });
+    const targetedServices = new Set(
+      cmds.map((c) => c[c.indexOf("--service") + 1]),
+    );
+    expect([...targetedServices].sort()).toEqual(["hub", "sidecar"]);
   });
 
   it("threads --project through when provided", () => {
@@ -202,7 +248,6 @@ describe("buildRailwayVariableCommands", () => {
       c.some((a) => a.startsWith("SIDECAR_TOKEN=")),
     );
     expect(setsSidecarToken).toBe(false);
-    // non-secret wiring is still emitted
     expect(
       cmds.some((c) => c.some((a) => a.startsWith("BETTER_AUTH_BASE_URL="))),
     ).toBe(true);

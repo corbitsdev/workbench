@@ -6,18 +6,20 @@ How to stand up an isolated GTM Workbench deployment for a client.
 
 Standing up a client, once the manifest exists, is short:
 
-1. In Railway, create a project for the client and add the three services from
-   this repo, each using its committed `railway.toml` (Config-as-Code). Add the
-   Postgres plugin and a `/data` volume on the hub and the sidecar.
-2. Generate public domains for the hub and web services; paste them into
-   `clients/<slug>.toml` under the target environment.
+1. In Railway, create a project for the client and add the **hub** and
+   **sidecar** services from this repo, each using its committed `railway.toml`
+   (Config-as-Code). Add the Postgres plugin and a `/data` volume on each. (The
+   web app is deployed separately — see the Model section.)
+2. Generate the hub's public domain; if the web app is served from a separate
+   origin (e.g. Vercel), note its URL too. Paste both into `clients/<slug>.toml`
+   under the target environment.
 3. `railway link` to the project, then apply the variables:
    ```
    bun run scripts/provision-client.ts <slug> production --apply
    ```
    This creates the environment if needed, generates the secrets, resolves the
-   whole wiring graph, and sets every variable on all three services. Run it
-   again with `staging` for a staging environment.
+   wiring, and sets every variable on the hub and sidecar. Run it again with
+   `staging` for a staging environment.
 4. Deploy. Promote the first owner (`seed-prod`), then set the client's
    credentials in the Owner UI.
 
@@ -27,10 +29,16 @@ the plan and eyeball it.
 
 ## Model
 
-- **One isolated Railway stack per client**: three services (hub, sidecar, web) +
-  a Postgres plugin + a volume on the hub and the sidecar. Same code image for
-  every client — a stack becomes a distinct client org purely through its
-  environment.
+- **One isolated stack per client.** The provisioning script manages two Railway
+  services — **hub** and **sidecar** — plus a Postgres plugin and a `/data`
+  volume on each. Same code image for every client; a stack becomes a distinct
+  client org purely through its environment.
+- **The web app is deployed separately, and the script never touches it.** Today
+  the web SPA is hosted on **Vercel** (which proxies `/api` to the Railway hub);
+  it could also be baked into the hub image and served same-origin (a future
+  option). Either way it is not a Railway service the provisioning script
+  configures. The script only needs to know the **public app URL** (the origin
+  the browser uses) to set the auth base and CORS.
 - **Per-client configuration has two layers:**
   - **Layer 1 — deployment env** (this runbook): tenant identity + the
     secret/URL wiring graph. Base config lives in the client manifest; the
@@ -58,8 +66,8 @@ the plan and eyeball it.
 Each client has **one committed manifest** at `clients/<slug>.toml`. See
 [`clients/example.toml`](../clients/example.toml) for the template.
 
-The manifest is **base deployment config only** — tenant identity, public URLs,
-and branding, per environment. Three things are deliberately NOT in it:
+The manifest is **base deployment config only** — tenant identity and public
+URLs, per environment. Three things are deliberately NOT in it:
 
 - **Secrets** (`BETTER_AUTH_SECRET`, `HUB_SIGNING_KEYS`, `SIDECAR_TOKEN`) →
   generated at standup, stored **only in Railway**. Never committed.
@@ -90,35 +98,40 @@ org** — its own name, slug, and domain, not just its own URLs.
 name = "Acme Corp"  # GLOBAL_TENANT_NAME — display name for this environment
 slug = "acme"       # GLOBAL_TENANT_SLUG — kebab, unique per deployment
 domain = "acme.com" # GLOBAL_TENANT_DOMAIN — same-domain users auto-join
-hub_url = "https://<hub>.up.railway.app" # filled after services exist (step 2)
-web_url = "https://<web>.up.railway.app"
-app_env = "production" # web VITE_APP_ENV branding
+hub_url = "https://<hub>.up.railway.app" # the Railway hub's URL (filled in step 2)
+# web_url is OPTIONAL — the public app URL when the SPA is served from a separate
+# origin (e.g. Vercel). It becomes the auth base + CORS origin. Omit it when the
+# hub serves the SPA itself; then the hub URL is the public origin.
+web_url = "https://<app>.vercel.app"
 
 [environments.staging]
 name = "Acme Corp Staging"
 slug = "acme-staging"
 domain = "acme.com"
 hub_url = "https://<hub-staging>.up.railway.app"
-web_url = "https://<web-staging>.up.railway.app"
-app_env = "staging"
+web_url = "https://<app-staging>.vercel.app"
 ```
 
-The provisioning script derives every hub/sidecar/web variable and the secrets
-from these fields — see [`clients/example.toml`](../clients/example.toml).
+The provisioning script derives every hub + sidecar variable and the secrets from
+these fields — see [`clients/example.toml`](../clients/example.toml).
 
 ### The wiring graph (the failure point)
 
-These values are **derived from each other**. Get one wrong and the stack builds
-green but is silently broken (auth loops, CORS rejects, "no sidecar connected").
-Set them as a unit:
+The script derives these from the manifest. `public_origin` = `web_url` if the
+web app is served separately, else the hub URL. Get one wrong and the stack
+builds green but is silently broken (auth loops, CORS rejects, "no sidecar
+connected"):
 
-| Value                    | Derived from                                               | Consumed by                                      |
-| ------------------------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| `BETTER_AUTH_BASE_URL`   | = `HUB_PUBLIC_URL`                                         | hub                                              |
-| `VITE_API_BASE_URL`      | = `HUB_PUBLIC_URL`                                         | web (**build-time ARG** — rebuild web to change) |
-| `HUB_WS_URL`             | = `HUB_PUBLIC_URL`, `https`→`wss`, path `/api/sidecars/ws` | sidecar                                          |
-| `SUPPORTED_CORS_ORIGINS` | = `WEB_PUBLIC_URL`                                         | hub (required in production)                     |
-| `SIDECAR_TOKEN`          | one generated secret                                       | hub **and** sidecar — must be identical          |
+| Value                    | Derived from                                        | Consumed by                             |
+| ------------------------ | --------------------------------------------------- | --------------------------------------- |
+| `BETTER_AUTH_BASE_URL`   | = `public_origin` (`web_url` ?? `hub_url`)          | hub                                     |
+| `SUPPORTED_CORS_ORIGINS` | = `public_origin`                                   | hub                                     |
+| `HUB_WS_URL`             | = `hub_url`, `https`→`wss`, path `/api/sidecars/ws` | sidecar (always the hub, never the web) |
+| `SIDECAR_TOKEN`          | one generated secret                                | hub **and** sidecar — must be identical |
+
+`VITE_API_BASE_URL` is intentionally not here — the SPA is same-origin (either the
+hub serves it, or the separate host proxies `/api`), so the web build leaves it
+unset and manages its own build vars wherever it deploys (e.g. Vercel).
 
 ---
 
@@ -127,18 +140,19 @@ Set them as a unit:
 ### 1. Create the Railway project and services
 
 - New Railway project for the client.
-- Add three services from this repo, each with **Root Directory = `/`** (the repo
-  root is the Docker build context) and Config-as-Code pointing at:
-  - hub → `apps/hub/railway.toml`
-  - sidecar → `apps/sidecar/railway.toml`
-  - web → `apps/web/railway.toml`
+- Add the **hub** and **sidecar** services from this repo, each with **Root
+  Directory = `/`** (the repo root is the Docker build context) and Config-as-Code
+  pointing at `apps/hub/railway.toml` and `apps/sidecar/railway.toml`.
 - Add the **Postgres** plugin (injects `DATABASE_URL` into the hub).
 - Add a **Volume** to the hub (mount `/data`) and to the sidecar (mount `/data`).
+- Deploy the **web app separately** (Vercel, per the current ABK Labs setup — it
+  proxies `/api` to the hub). It is not part of this Railway project.
 
 ### 2. Capture public URLs
 
-Generate a public domain for the hub and the web service. Record both in the
-profile, then compute the wiring-graph values above.
+Generate the hub's public domain. If the web app is served from a separate origin
+(e.g. Vercel), note its URL as `web_url`; omit `web_url` if the hub serves the
+SPA itself. Record them in the manifest.
 
 ### 3. Provision the environment variables
 
@@ -149,18 +163,18 @@ From a checkout with `railway link` pointed at the client's project:
 bun run scripts/provision-client.ts <slug> production
 
 # Apply it — creates the environment if needed, generates the secrets,
-# resolves the wiring graph, sets every variable on all three services:
+# resolves the wiring, sets every variable on the hub and sidecar:
 bun run scripts/provision-client.ts <slug> production --apply
 ```
 
-The script owns **only variables and the Railway environment**. It generates
-`BETTER_AUTH_SECRET` / `HUB_SIGNING_KEYS` / `SIDECAR_TOKEN`, sets the identical
-`SIDECAR_TOKEN` on hub and sidecar, derives `BETTER_AUTH_BASE_URL`,
-`SUPPORTED_CORS_ORIGINS`, `HUB_WS_URL`, and `VITE_API_BASE_URL` from the
-manifest URLs, and sets the `GLOBAL_TENANT_*` identity. It never sets
-`DATABASE_URL` (the Postgres plugin injects it) and never touches build/deploy
-config (that is the committed `railway.toml`). Re-running is safe: existing
-secrets are preserved, not rotated.
+The script owns **only the hub + sidecar variables and the Railway environment**.
+It generates `BETTER_AUTH_SECRET` / `HUB_SIGNING_KEYS` / `SIDECAR_TOKEN`, sets the
+identical `SIDECAR_TOKEN` on hub and sidecar, sets `BETTER_AUTH_BASE_URL` and
+`SUPPORTED_CORS_ORIGINS` to the public origin, derives `HUB_WS_URL` from the hub
+URL, and sets the `GLOBAL_TENANT_*` identity. It never sets `DATABASE_URL` (the
+Postgres plugin injects it), never sets any `VITE_*` var (the web build owns
+those), and never touches build/deploy config (the committed `railway.toml`).
+Re-running is safe: existing secrets are preserved, not rotated.
 
 For a staging environment, run the same command with `staging`.
 
