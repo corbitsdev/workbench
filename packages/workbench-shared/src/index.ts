@@ -301,6 +301,9 @@ export const MemberPreferences = type({
   // Attio Task Agent workflow's member-selection gate so returning runs default
   // to "you" (and skip the picker) while staying switchable to another member.
   "attioMemberId?": "string",
+  // Workflow kinds (the stable definition id) the member has favorited, in the
+  // catalog. A patch replaces the whole array; favorites are pinned in the UI.
+  "favoriteWorkflows?": "string[]",
   "[string]": "unknown",
 });
 export type MemberPreferences = typeof MemberPreferences.infer;

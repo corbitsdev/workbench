@@ -70,6 +70,24 @@ describe("PATCH /api/v1/me/preferences", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 when favoriteWorkflows is not a string array", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    const res = await mountApp().request(patch({ favoriteWorkflows: "nope" }));
+    expect(res.status).toBe(400);
+  });
+
+  it("passes a favoriteWorkflows array through to the store", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    mergeMemberPreferences.mockClear();
+    const res = await mountApp().request(
+      patch({ favoriteWorkflows: ["a", "b"] }),
+    );
+    expect(res.status).toBe(200);
+    expect((mergeMemberPreferences.mock.calls[0] as unknown[])[3]).toEqual({
+      favoriteWorkflows: ["a", "b"],
+    });
+  });
+
   it("returns 409 when the caller has no provisioned membership", async () => {
     member = null;
     const res = await mountApp().request(patch({ theme: "tkww" }));

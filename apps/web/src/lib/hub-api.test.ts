@@ -199,6 +199,20 @@ describe("hub-api network helpers", () => {
     });
   });
 
+  it("getMe keeps a favoriteWorkflows array in preferences", async () => {
+    installFetch(() => ({
+      body: {
+        userId: "u1",
+        userName: "Sawyer",
+        preferences: { favoriteWorkflows: ["attio-task-agent", "last30days"] },
+      },
+    }));
+    const me = await getMe();
+    expect(me.preferences).toEqual({
+      favoriteWorkflows: ["attio-task-agent", "last30days"],
+    });
+  });
+
   it("ensureMeSynced GETs first and POSTs only when personalAgentSyncAvailable", async () => {
     const stale = { userId: "u1", personalAgentSyncAvailable: true };
     const fresh = { userId: "u1", personalAgentSyncAvailable: false };
