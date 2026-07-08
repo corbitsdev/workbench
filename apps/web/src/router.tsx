@@ -47,6 +47,7 @@ import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
 import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
+import { OwnerDemos } from "./pages/admin/OwnerDemos";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
 // new home under /admin.
@@ -274,6 +275,7 @@ export const router = createBrowserRouter([
               { path: "capabilities", element: <OwnerCapabilities /> },
               { path: "capabilities/gamma", element: <OwnerGammaTemplates /> },
               { path: "workflows", element: <OwnerWorkflows /> },
+              { path: "demos", element: <OwnerDemos /> },
               // Legacy owner routes → their new homes.
               {
                 path: "templates",

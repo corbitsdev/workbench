@@ -86,6 +86,7 @@ import { createSkillsRouter } from "./routes/skills";
 import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
+import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
 import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
@@ -881,6 +882,16 @@ v1.get("/me", async (c) => {
     owner = await isOwner(grantStore, memberPrincipalId, workingTenantId);
   }
 
+  // Demos are hidden by default. The links are resolved server-side and only
+  // included when demos are enabled (env override OR org-wide grant), so the
+  // list never reaches the client while disabled. The env flag short-circuits
+  // the grant lookup so this bootstrap hot path skips two DB queries when
+  // SHOW_DEMOS is on.
+  const demosGrantEnabled = config.showDemos
+    ? false
+    : await isDemosEnabledByGrant(db, rootTenantId);
+  const demoLinks = resolveDemoLinks(config.showDemos, demosGrantEnabled);
+
   return c.json({
     userId,
     userName,
@@ -895,6 +906,7 @@ v1.get("/me", async (c) => {
     isAdmin: admin,
     isOwner: owner,
     preferences,
+    demoLinks,
   });
 });
 
@@ -1035,7 +1047,15 @@ v1.route(
   "/",
   createAdminRouter({ db, grantStore, assetService, rootTenantId }),
 );
-v1.route("/", createOwnerRouter({ db, grantStore, rootTenantId }));
+v1.route(
+  "/",
+  createOwnerRouter({
+    db,
+    grantStore,
+    rootTenantId,
+    showDemos: config.showDemos,
+  }),
+);
 // Built before the runs router so the run-start/signal handlers and the
 // reconciler can share its idempotent `ensureDeploymentRoutable` re-establish
 // primitive.
