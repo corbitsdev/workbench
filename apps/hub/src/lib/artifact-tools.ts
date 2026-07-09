@@ -22,7 +22,7 @@ import {
   summarizeWebSiteContent,
 } from "@workbench/shared";
 import { getLogger } from "@intx/log";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne } from "drizzle-orm";
 import {
   artifact,
   artifactStatus,
@@ -1023,6 +1023,8 @@ function createFindByTitleHandler(context: ArtifactToolContext): AgentTool {
         eq(artifact.tenantId, context.tenantId),
         eq(artifact.title, title),
         ne(artifact.kind, "skill-draft"),
+        // Archived artifacts are hidden from agents too (CL-3156).
+        isNull(artifact.archivedAt),
       ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
 
@@ -1060,6 +1062,8 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
       const conditions = [
         eq(artifact.tenantId, context.tenantId),
         ne(artifact.kind, "skill-draft"),
+        // Archived artifacts are hidden from agents too (CL-3156).
+        isNull(artifact.archivedAt),
       ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
       if (status !== undefined) conditions.push(eq(artifact.status, status));

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   and,
@@ -9,12 +9,15 @@ import {
   gte,
   ilike,
   inArray,
+  isNotNull,
+  isNull,
   lt,
   lte,
   ne,
   or,
   sql,
 } from "drizzle-orm";
+import type { GrantStore } from "@intx/authz";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { schema as intxSchema } from "@intx/db";
@@ -28,6 +31,7 @@ import {
 } from "../db/schema";
 import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
+import { isAdmin } from "../lib/admin-grant";
 import { canActOnSkillDraft } from "../services/skill-library";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 
@@ -285,8 +289,124 @@ async function attachOwnerNames(
  */
 export function createArtifactsRouter(
   db: HubDb,
+  grantStore: GrantStore,
 ): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
+
+  // Archive (soft-hide) or unarchive an artifact (CL-3156). Shared by the two
+  // routes below: `archive=true` stamps `archivedAt`, `false` clears it. Both
+  // are idempotent — re-archiving never overwrites the original timestamp, and
+  // unarchiving a visible artifact is a no-op success. Authorization: the
+  // artifact owner, or a workspace owner/admin. Tenant scope is enforced first,
+  // so a cross-tenant caller is rejected before the owner/admin check.
+  async function setArchived(
+    c: Context<{ Variables: { userId: string } }>,
+    archive: boolean,
+  ) {
+    const id = c.req.param("id");
+    if (!id) return c.json({ error: "Artifact not found" }, 404);
+    const userId = c.get("userId");
+    const requestedTenantId = c.req.query("tenantId");
+
+    const art = await db.query.artifact.findFirst({
+      where: eq(artifact.id, id),
+    });
+    if (!art) return c.json({ error: "Artifact not found" }, 404);
+
+    const { context: userContext, forbidden } = await getRequestedUserContext(
+      db,
+      userId,
+      requestedTenantId ?? art.tenantId,
+    );
+    if (forbidden) {
+      return c.json({ error: "Tenant not accessible" }, 403);
+    }
+    if (!userContext || art.tenantId !== userContext.tenantId) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    const isArtifactOwner =
+      art.ownerPrincipalId !== null &&
+      art.ownerPrincipalId === userContext.principalId;
+    const allowed =
+      isArtifactOwner ||
+      (await isAdmin(
+        grantStore,
+        userContext.principalId,
+        userContext.tenantId,
+      ));
+    if (!allowed) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
+
+    if (archive && art.archivedAt === null) {
+      const archivedAt = new Date();
+      await db
+        .update(artifact)
+        .set({ archivedAt })
+        .where(and(eq(artifact.id, id), isNull(artifact.archivedAt)));
+      art.archivedAt = archivedAt;
+    } else if (!archive && art.archivedAt !== null) {
+      await db
+        .update(artifact)
+        .set({ archivedAt: null })
+        .where(eq(artifact.id, id));
+      art.archivedAt = null;
+    }
+
+    const row = {
+      ...serializeArtifact(art),
+      sessionName: null,
+      sessionStatus: null,
+      ownerName: null as string | null,
+    };
+    await attachOwnerNames(db, userContext.tenantId, [row]);
+    return c.json({ artifact: row });
+  }
+
+  const archiveRouteParams = [
+    { name: "id", in: "path", required: true, schema: { type: "string" } },
+    {
+      name: "tenantId",
+      in: "query",
+      required: false,
+      schema: { type: "string" },
+    },
+  ] as const;
+
+  router.post(
+    "/artifacts/:id/archive",
+    describeRoute({
+      tags: ["artifacts"],
+      summary: "Archive (soft-hide) an artifact",
+      description:
+        "Sets archived_at so the artifact disappears from default listings. Reversible via unarchive; no data is destroyed. Allowed for the artifact owner or a workspace owner/admin. Idempotent.",
+      parameters: [...archiveRouteParams],
+      responses: {
+        200: { description: "Artifact archived" },
+        403: { description: "Forbidden" },
+        404: { description: "Artifact not found" },
+      },
+    }),
+    (c) => setArchived(c, true),
+  );
+
+  router.post(
+    "/artifacts/:id/unarchive",
+    describeRoute({
+      tags: ["artifacts"],
+      summary: "Unarchive an artifact",
+      description:
+        "Clears archived_at so the artifact reappears in default listings. Allowed for the artifact owner or a workspace owner/admin. Idempotent.",
+      parameters: [...archiveRouteParams],
+      responses: {
+        200: { description: "Artifact unarchived" },
+        403: { description: "Forbidden" },
+        404: { description: "Artifact not found" },
+      },
+    }),
+    (c) => setArchived(c, false),
+  );
 
   // List the caller's tenant artifacts for the gallery, newest-first by default.
   router.get("/artifacts", async (c) => {
@@ -385,6 +505,12 @@ export function createArtifactsRouter(
     // Hide rejected by default; an explicit status filter overrides that.
     const hideRejectedWhere =
       statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
+    // Archived artifacts (CL-3156) are hidden from default views; `?archived=true`
+    // opts into the Archived view, which shows only archived artifacts.
+    const showArchived = c.req.query("archived") === "true";
+    const archivedWhere = showArchived
+      ? isNotNull(artifact.archivedAt)
+      : isNull(artifact.archivedAt);
     // skill-draft is internal skill-authoring scratch — never list it, even when
     // an explicit kind=skill-draft filter is supplied (review surface is
     // GET /skills/drafts, not the artifacts gallery).
@@ -459,6 +585,7 @@ export function createArtifactsRouter(
     const whereConditions = [
       tenantWhere,
       hideRejectedWhere,
+      archivedWhere,
       hideSkillDraftWhere,
       statusWhere,
       kindWhere,
