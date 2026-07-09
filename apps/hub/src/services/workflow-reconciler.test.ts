@@ -18,6 +18,13 @@ type CasRow = {
   pendingSignal: unknown;
 };
 let casRowsRef: Map<string, CasRow> | null = null;
+// Re-delivery refreshes the pending record's timestamp (backoff between
+// re-deliveries); tests observe the refresh through this trace.
+const pendingRefreshes: {
+  runId: string;
+  signalId: string;
+  receivedAt: string;
+}[] = [];
 mock.module("../workflow-executor/run-store", () => ({
   setRunStatus: async (_db: unknown, runId: string, status: string) => {
     const row = failRowsRef?.get(runId);
@@ -25,6 +32,17 @@ mock.module("../workflow-executor/run-store", () => ({
   },
   loadRunRecord: async (_db: unknown, runId: string) =>
     casRowsRef?.get(runId) ?? null,
+  setPendingSignal: async (
+    _db: unknown,
+    runId: string,
+    signal: { signalId: string; receivedAt: string },
+  ) => {
+    pendingRefreshes.push({
+      runId,
+      signalId: signal.signalId,
+      receivedAt: signal.receivedAt,
+    });
+  },
 }));
 
 const {
@@ -636,6 +654,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     // defaults to a re-read that matches the decision read (CAS passes).
     casOverride?: Map<string, CasRow>;
   }) {
+    pendingRefreshes.length = 0;
     casRowsRef = new Map(
       opts.records
         .filter((r) => r.id !== undefined)
@@ -791,6 +810,17 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     expect(summary.redelivered).toBe(1);
     expect(summary.dormant).toBe(0);
     expect(h.undeploys).toEqual([]);
+    // The re-delivery refreshes the pending record's timestamp (same
+    // signalId), so the next pass backs off for another delay window
+    // instead of re-delivering and re-waking on every tick forever.
+    expect(pendingRefreshes).toHaveLength(1);
+    expect(pendingRefreshes[0]?.runId).toBe("run_ses_run_pending");
+    expect(pendingRefreshes[0]?.signalId).toBe("sig-lost");
+    const refreshed = pendingRefreshes[0]?.receivedAt;
+    expect(refreshed).toBeString();
+    if (refreshed !== undefined) {
+      expect(Date.now() - Date.parse(refreshed)).toBeLessThan(5_000);
+    }
   });
 
   it("gives a freshly-accepted pending signal time to land (no immediate re-delivery) and never hibernates a pending-signal run", async () => {
@@ -848,6 +878,27 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     ]);
     expect(summary.redelivered).toBe(1);
     expect(h.undeploys).toEqual([]);
+  });
+
+  it("neither hibernates nor re-delivers a run carrying a MALFORMED pending signal (fail loud, act on neither rail)", async () => {
+    const rec = parkedRecord("ses_run_garbled", GRACE_MS * 10);
+    rec.pendingSignal = {
+      bogus: true,
+    } as unknown as RecordRow["pendingSignal"];
+    const h = makeHarness({
+      records: [rec],
+      routable: [addressOf("ses_run_garbled")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    // Malformed ≠ absent: the raw column is non-null, so the run must not be
+    // hibernated (a signal may be in flight behind the corruption), and the
+    // unparseable record cannot be re-delivered either.
+    expect(h.undeploys).toEqual([]);
+    expect(h.sentSignals).toEqual([]);
+    expect(summary.hibernated).toBe(0);
+    expect(summary.redelivered).toBe(0);
   });
 
   it("skips the hibernate when the CAS re-read shows the run resumed since the decision read", async () => {

@@ -74,18 +74,50 @@ describe("pending gate-signal record", () => {
     expect(loaded?.pendingSignal).toEqual(SIGNAL);
   });
 
-  test("the projection clears the pending signal once the log shows it received", async () => {
+  test("the projection clears the pending signal once the log proves ITS signalId received", async () => {
     await insertRunRecord(db, { ...base, runId: "wfr_p2" });
     await setPendingSignal(db, "wfr_p2", SIGNAL);
 
     await applyRunProjection(db, "wfr_p2", {
       status: "running",
-      clearPendingSignal: true,
+      clearPendingSignal: { signalIds: [SIGNAL.signalId] },
     });
 
     const loaded = await loadRunRecord(db, "wfr_p2");
     expect(loaded?.pendingSignal).toBeUndefined();
     expect(loaded?.status).toBe("running");
+  });
+
+  test("a clear proven for an EARLIER signalId does not erase a newly-accepted pending signal (multi-gate interleave)", async () => {
+    await insertRunRecord(db, { ...base, runId: "wfr_p5" });
+    // Gate N's signal was accepted, delivered, and its SignalReceived is
+    // about to fold — but gate N+1's signal was accepted in the meantime.
+    const gateN1 = { ...SIGNAL, signalId: "sig-2", signalName: "next-gate" };
+    await setPendingSignal(db, "wfr_p5", gateN1);
+
+    // The projection folds gate N's receipt (sig-1). The clear is
+    // conditional IN SQL on the proven signalId, so a stale decision read
+    // cannot erase sig-2 before its own delivery is proven.
+    await applyRunProjection(db, "wfr_p5", {
+      status: "awaiting",
+      clearPendingSignal: { signalIds: ["sig-1"] },
+    });
+
+    const loaded = await loadRunRecord(db, "wfr_p5");
+    expect(loaded?.pendingSignal).toEqual(gateN1);
+  });
+
+  test("a terminal projection clears any pending signal unconditionally (no further gate exists)", async () => {
+    await insertRunRecord(db, { ...base, runId: "wfr_p6" });
+    await setPendingSignal(db, "wfr_p6", SIGNAL);
+
+    await applyRunProjection(db, "wfr_p6", {
+      status: "completed",
+      clearPendingSignal: true,
+    });
+
+    const loaded = await loadRunRecord(db, "wfr_p6");
+    expect(loaded?.pendingSignal).toBeUndefined();
   });
 
   test("a projection write without the clear flag preserves an in-flight pending signal", async () => {
