@@ -6,6 +6,7 @@ const ALL_MODELS: CatalogModelSpec[] = [
   { canonicalName: "claude-sonnet-5" },
   { canonicalName: "claude-sonnet-4-6" },
   { canonicalName: "claude-opus-4-8" },
+  { canonicalName: "claude-haiku-4-5" },
   { canonicalName: "claude-haiku-4-5-20251001" },
   // opencode-zen / OpenAI models
   { canonicalName: "gpt-5.5" },

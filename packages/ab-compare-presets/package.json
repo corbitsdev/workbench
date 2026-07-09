@@ -25,6 +25,7 @@
     "arktype": "catalog:"
   },
   "devDependencies": {
+    "@workbench/catalog": "workspace:*",
     "@workbench/test-utils": "workspace:*",
     "@types/bun": "latest",
     "typescript": "catalog:"

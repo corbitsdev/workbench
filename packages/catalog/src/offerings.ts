@@ -9,7 +9,7 @@ export const CATALOG_OFFERINGS: CatalogOfferingSpec[] = [
   { model: "claude-sonnet-4-6", provider: "anthropic-api" },
   { model: "claude-opus-4-8", provider: "opencode-zen" },
   { model: "claude-opus-4-8", provider: "anthropic-api" },
-  { model: "claude-haiku-4-5-20251001", provider: "opencode-zen" },
+  { model: "claude-haiku-4-5", provider: "opencode-zen" },
   { model: "claude-haiku-4-5-20251001", provider: "anthropic-api" },
   { model: "gpt-5.5", provider: "opencode-zen" },
   { model: "gpt-5.5", provider: "OpenAI" },

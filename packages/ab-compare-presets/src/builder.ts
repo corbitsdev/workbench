@@ -50,6 +50,7 @@ export function buildAbPresetWorkflow(config: AbPresetConfig): BuiltAbPreset {
       title: variant.label,
       systemPrompt: AB_PRESET_EXECUTE_SYSTEM_PROMPT,
       model: variant.model,
+      ...(variant.provider !== undefined ? { provider: variant.provider } : {}),
       nonFatal: true,
       retry: VARIANT_RETRY,
       input: { from: "steps.config.output.input" },
