@@ -307,11 +307,13 @@ Tenant-scoped aggregate palette search (see § Command Palette and UI Components
 The `artifact` table is the single store for all workflow and agent outputs.
 
 - `id` (UUID, primary key)
-- `kind` (CollateralType enum: case-study, one-pager, email-draft, call-document, ...)
+- `kind` (text — workflow collateral kinds such as case-study, one-pager, email-draft, call-document, plus agent-authored kinds such as `web` and `web_site`)
 - `sessionId` (UUID, foreign key, **nullable** — workflow-level artifacts have no session)
 - `workflowId` (UUID, foreign key, nullable — links to a `workflow_run` for run-scoped artifacts)
 - `content` (text)
 - `createdAt` (timestamp)
+
+**Web deliverables.** `kind=web` stores a single HTML document (previewed in `apps/web` via `ArtifactBody`). `kind=web_site` stores a JSON bundle validated by `WebSiteContentSchema` in `@workbench/workbench-shared` (`packages/workbench-shared/src/web-site.ts`): relative paths, optional `entry` (default `index.html`), per-file and total byte limits. Hub `artifact_*` tools normalize and validate `web_site` on create/write; `artifact_read` returns a summary or one file via optional `path`. **Publish:** Myra calls hub-backed `vercel_deploy_artifact` (`apps/hub/src/tools/vercel-deploy-artifact.ts`), which expands `web` / `web_site` content and posts files through `deployStaticFilesToVercel` (`@workbench/tools-vercel`). Tenant `vercel` credentials resolve at hub execution time (not in agent `credentialRequirements`). The sidecar approval gate blocks both `vercel_deploy_static_file` and `vercel_deploy_artifact` before the hub RPC runs.
 
 ### Workflow Run (`workflow_run`)
 

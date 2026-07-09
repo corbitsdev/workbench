@@ -48,4 +48,5 @@ here rather than duplicated — duplicated detail drifts.
 - [`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) — how a workflow is authored,
   pushed, deployed, and run on the native runtime
 - `packages/tools-*/README.md` — individual hub tool packages (Gamma, Granola,
-  Firecrawl, Exa, …) and their credential resolution
+  Firecrawl, Exa, Vercel, …) and their credential resolution
+- `packages/workbench-shared/src/web-site.ts` — canonical `web_site` artifact JSON schema and deploy expansion helpers (see IMPLEMENTATION.md § Artifacts)
