@@ -539,6 +539,76 @@ describe("launchAgentSession retry behavior", () => {
     }
   });
 
+  it("deletes pre-existing session_asset rows before launching the session", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const sessionAsset = intxDbReal.schema.sessionAsset;
+    const order: string[] = [];
+    const deletedTables: unknown[] = [];
+
+    const db = launchDb();
+    db.delete = mock((table: unknown) => {
+      deletedTables.push(table);
+      order.push(table === sessionAsset ? "delete-asset" : "delete-other");
+      return { where: mock(() => Promise.resolve()) };
+    });
+
+    const launchSession = mock(() => {
+      order.push("launch");
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+
+    const result = await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+
+    expect(deletedTables).toContain(sessionAsset);
+    expect(order.indexOf("delete-asset")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("delete-asset")).toBeLessThan(order.indexOf("launch"));
+    expect(launchSession).toHaveBeenCalledTimes(1);
+    expect(result.sessionId).toBeTruthy();
+  });
+
+  it("clears session_asset once, outside the retry loop, so a retry does not re-delete", async () => {
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    const sessionAsset = intxDbReal.schema.sessionAsset;
+    let assetDeletes = 0;
+
+    const db = launchDb();
+    db.delete = mock((table: unknown) => {
+      if (table === sessionAsset) assetDeletes += 1;
+      return { where: mock(() => Promise.resolve()) };
+    });
+
+    let calls = 0;
+    const launchSession = mock(() => {
+      calls += 1;
+      if (calls === 1)
+        return Promise.reject(new Error("transient network blip"));
+      return Promise.resolve();
+    });
+    const sessionService = { ...mockSessionService, launchSession };
+
+    await launchAgentSession(
+      db as never,
+      sessionService as never,
+      mockGrantStore as never,
+      mockEventCollectors as never,
+      BASE_OPTS,
+    );
+
+    expect(launchSession).toHaveBeenCalledTimes(2);
+    expect(assetDeletes).toBe(1);
+  }, 10000);
+
   it("resolves using the instance's persisted model preferences", async () => {
     // The instance carries an invoker `pin` preference. The mocked resolver
     // treats any non-empty preference as excluding all sources, so launch must
