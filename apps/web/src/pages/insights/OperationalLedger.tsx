@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { ActivityOverview } from "../../lib/hub-api";
 import { formatNumber, Stat } from "./stats";
 import { SectionLabel } from "./section-label";
@@ -6,7 +7,15 @@ import { CountTable } from "./CountTable";
 export function OperationalLedger({ data }: { data: ActivityOverview }) {
   return (
     <div className="flex flex-col gap-4">
-      <SectionLabel>Operational ledger</SectionLabel>
+      <div className="flex items-center justify-between gap-3">
+        <SectionLabel>Operational ledger</SectionLabel>
+        <Link
+          to="/insights/runs"
+          className="text-[12px] font-medium text-text-3 underline hover:text-text"
+        >
+          View run history →
+        </Link>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat
           label="Artifacts"
