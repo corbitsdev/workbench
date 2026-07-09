@@ -379,6 +379,38 @@ describe("artifact → gamma deck Panel", () => {
     expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
   });
 
+  it("keeps the preview gate answerable when draft text is missing", async () => {
+    const onSignal = mock(() => {});
+    renderPanel(
+      <Panel
+        logRead={true}
+        deploymentId="dep_1"
+        state={makeState({
+          "render-1": "completed",
+          "preview-1": "awaiting-signal",
+        })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          "render-1": toolEnvelope("c4", {
+            gammaUrl: "https://gamma.app/docs/deck-1",
+          }),
+        }}
+        onSignal={onSignal}
+        onClose={noop}
+      />,
+    );
+
+    screen.getByText(/Draft text isn't available here yet/i);
+    expect(
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
+    ).toBe("https://gamma.app/docs/deck-1");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Looks good — approve" }),
+    );
+    expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
+  });
+
   it("sends refine feedback from a non-final round", async () => {
     const onSignal = mock(() => {});
     renderPanel(
@@ -879,7 +911,8 @@ describe("artifact → gamma deck Panel", () => {
     const [url, init] = call!;
     // Base URL prefix (VITE_API_BASE_URL ?? "") + the hub path; credentials
     // ride along so a split-origin deploy still authenticates.
-    expect(url).toBe("/api/v1/gamma-templates");
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+    expect(url).toBe(`${apiBase}/api/v1/gamma-templates`);
     expect(init?.credentials).toBe("include");
   });
 

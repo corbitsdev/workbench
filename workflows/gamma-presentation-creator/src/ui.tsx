@@ -19,6 +19,7 @@ import type { RunState, StepState } from "@intx/workflow";
 // From ./constants, NOT ./index: importing the server-only workflow definition
 // here would pull @intx/agent into the browser `/ui` chunk and break panel load.
 import { MAX_ROUNDS } from "./constants";
+import { readGenerateReply } from "./generate-output";
 
 type StepPhase = StepState["phase"];
 
@@ -93,8 +94,6 @@ const NoteItem = type({ id: "string", "title?": "string | null" });
 const NotesResult = type({ notes: NoteItem.array() });
 
 const GammaResult = type({ "gammaUrl?": "string", "url?": "string" });
-
-const GenerateOutput = type({ reply: "string" });
 
 function peelEnvelope(raw: unknown): unknown {
   const envelope = ToolResultEnvelope(raw);
@@ -203,16 +202,6 @@ function readRenderURL(
   const parsed = GammaResult(inner);
   if (parsed instanceof type.errors) return undefined;
   return readString(parsed.gammaUrl) ?? readString(parsed.url);
-}
-
-function readDraftContent(
-  stepOutputs: Record<string, unknown>,
-  round: number,
-): string | undefined {
-  const parsed = GenerateOutput(stepOutputs[`generate-${round}`]);
-  if (parsed instanceof type.errors) return undefined;
-  const reply = parsed.reply.trim();
-  return reply.length > 0 ? reply : undefined;
 }
 
 // ── Routing helpers ───────────────────────────────────────────────────────────
@@ -831,7 +820,7 @@ function PreviewScreen({
 }) {
   const url = readRenderURL(stepOutputs, round);
   const safeUrl = isSafePresentationURL(url) ? url : undefined;
-  const draft = readDraftContent(stepOutputs, round);
+  const draft = readGenerateReply(stepOutputs, round);
   const canRefine = round < MAX_ROUNDS;
   const [feedback, setFeedback] = useState("");
   const disabled = !connected || signalPending;
