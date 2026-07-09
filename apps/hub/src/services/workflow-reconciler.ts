@@ -8,7 +8,7 @@ import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
 import {
   loadRunRecord,
-  setPendingSignal,
+  refreshPendingSignalIfCurrent,
   setRunStatus,
 } from "../workflow-executor/run-store";
 import { PendingRunSignalSchema } from "../workflow-executor/pending-signal";
@@ -501,7 +501,20 @@ export function createWorkflowReconciler(deps: {
         `${rec.kind} ${rec.tenantId}`,
       );
       if (deployPrincipal === undefined) {
+        // Fail loud EVERY pass: this run holds an accepted-but-undeliverable
+        // signal (its kind was undeployed, so the supervisor cannot be
+        // revived) and it is pendingHandled, so it will never be hibernated
+        // either — without this line it would strand invisibly forever.
         summary.skippedNoPrincipal += 1;
+        log.error(
+          "pending gate signal cannot be delivered: kind has no registry row to revive the supervisor",
+          {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            kind: rec.kind,
+            signalName: pending.signalName,
+          },
+        );
         continue;
       }
       try {
@@ -513,11 +526,21 @@ export function createWorkflowReconciler(deps: {
         });
         // Refresh BEFORE dispatch: same signalId, new receivedAt — the next
         // pass backs off for a full window. Ordering matters: refreshing
-        // after a dispatch that wedged would re-deliver every tick.
-        await setPendingSignal(deps.db, rec.id, {
-          ...pending,
-          receivedAt: new Date().toISOString(),
-        });
+        // after a dispatch that wedged would re-deliver every tick. The
+        // refresh is CONDITIONAL on the record still holding this signalId;
+        // zero rows means the projection cleared it (receipt folded) or a
+        // newer signal replaced it mid-pass — skip the dispatch, there is
+        // nothing pending anymore and an unconditional write would have
+        // resurrected the cleared record.
+        const stillPending = await refreshPendingSignalIfCurrent(
+          deps.db,
+          rec.id,
+          {
+            ...pending,
+            receivedAt: new Date().toISOString(),
+          },
+        );
+        if (!stillPending) continue;
         deps.sendSignalDeliver({
           agentAddress: address,
           runId: rec.id,
@@ -589,10 +612,15 @@ export function createWorkflowReconciler(deps: {
           // hibernate if it is STILL the run we decided on — status
           // `awaiting`, no writes since the decision read, no signal
           // accepted meanwhile. This shrinks the resume-then-kill race to
-          // the undeploy frame's flight time. The residual (a signal lands
-          // and the run resumes mid-flight, then the teardown kills it
-          // mid-step) leaves a `running` run whose supervisor is gone — the
-          // run liveness sweep fails it visibly; it is not resumable.
+          // the undeploy frame's flight time. Even the residual (a signal
+          // lands and the run resumes mid-flight, then the teardown kills
+          // the child) mostly self-heals through the durable rail: the
+          // pending-signal record is still set unless the receipt already
+          // folded, so the next pass wakes the deployment and re-delivers.
+          // Only the narrow slice where the child packed SignalReceived
+          // (clearing the record) and was then killed mid-step is
+          // unrecoverable — a `running` run with a gone supervisor, failed
+          // visibly by the run liveness sweep.
           const fresh = await loadRunRecord(deps.db, rec.id);
           if (
             fresh === null ||
@@ -670,7 +698,8 @@ export function createWorkflowReconciler(deps: {
       summary.reestablished > 0 ||
       summary.failed > 0 ||
       summary.hibernated > 0 ||
-      summary.redelivered > 0
+      summary.redelivered > 0 ||
+      summary.skippedNoPrincipal > 0
     ) {
       log.info("awaiting pre-warm pass complete", {
         candidates: summary.candidates,

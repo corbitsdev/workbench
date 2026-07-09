@@ -712,7 +712,13 @@ export function createWorkflowRunsRouter(deps: {
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         404: {
-          description: "Workflow deployment not found",
+          description:
+            "Workflow deployment not found, or the run does not belong to it",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description:
+            "The run is not parked on an open gate for the named signal",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         500: {

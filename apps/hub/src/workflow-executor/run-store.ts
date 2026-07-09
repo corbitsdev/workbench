@@ -108,6 +108,29 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
   };
 }
 
+// Refresh a pending signal's `receivedAt` (re-delivery backoff) ONLY while
+// the record still holds the SAME signalId — conditional in SQL, mirroring
+// the clear's CASE machinery, so a refresh racing the projection's clear (or
+// a newer accepted signal) can never resurrect or clobber it. Returns whether
+// a row was updated; a `false` means there is nothing pending to re-deliver.
+export async function refreshPendingSignalIfCurrent(
+  db: HubDb,
+  runId: string,
+  signal: PendingRunSignal,
+): Promise<boolean> {
+  const updated = await db
+    .update(workflowRunRecord)
+    .set({ pendingSignal: signal })
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        sql`${workflowRunRecord.pendingSignal}->>'signalId' = ${signal.signalId}`,
+      ),
+    )
+    .returning({ id: workflowRunRecord.id });
+  return updated.length > 0;
+}
+
 // Persist a 202-accepted gate signal on the run record BEFORE dispatching it
 // to the sidecar. Last accepted signal wins (a re-signal replaces the prior
 // record); the projection clears it once the log proves receipt.
