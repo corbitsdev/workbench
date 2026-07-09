@@ -355,6 +355,8 @@ Examples:
 - pain point brief
 - call summary
 - launch package
+- single-page HTML (`web`)
+- multi-file static site (`web_site`)
 
 Artifacts are outputs. They can later be selected as Sources, but that does not
 erase their output identity.
@@ -440,6 +442,7 @@ Examples:
 - save artifact
 - draft email
 - draft or schedule social post
+- publish `web` or `web_site` artifact to a hosted URL (Vercel; human approval before deploy)
 - webhook/custom action placeholder
 
 Minimum shape:

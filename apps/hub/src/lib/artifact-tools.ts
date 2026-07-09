@@ -13,7 +13,14 @@ import {
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 } from "@workbench/tools-artifact";
-import { GammaPresentationContentSchema } from "@workbench/shared";
+import {
+  GammaPresentationContentSchema,
+  parseWebSiteContentJson,
+  serializeWebSiteContent,
+  WEB_SITE_KIND,
+  normalizeWebSitePath,
+  summarizeWebSiteContent,
+} from "@workbench/shared";
 import { and, desc, eq } from "drizzle-orm";
 import {
   artifact,
@@ -195,6 +202,22 @@ function jsonResult(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function normalizeArtifactContentForKind(
+  kind: string,
+  content: string,
+): string {
+  if (kind === WEB_SITE_KIND) {
+    return serializeWebSiteContent(parseWebSiteContentJson(content));
+  }
+  return content;
+}
+
+function assertArtifactContentForKind(kind: string, content: string): void {
+  if (kind === WEB_SITE_KIND) {
+    parseWebSiteContentJson(content);
+  }
+}
+
 function assertSessionContext(context: ArtifactToolContext): void {
   if (typeof context.sessionId !== "string" || context.sessionId.length === 0) {
     throw new Error("session context is required");
@@ -270,7 +293,11 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
     handler: async (args) => {
       const title = requiredString(args, "title");
       const kind = requiredString(args, "kind");
-      const content = requiredString(args, "content");
+      const content = normalizeArtifactContentForKind(
+        kind,
+        requiredString(args, "content"),
+      );
+      assertArtifactContentForKind(kind, content);
       const source = {
         origin: "agent",
         type: "inline",
@@ -462,7 +489,33 @@ function createReadHandler(context: ArtifactToolContext): AgentTool {
     kind: "string",
     definition: ARTIFACT_READ_DEFINITION,
     handler: async (args) => {
+      const filePath = optionalNonEmptyString(args, "path");
       const { base, content } = await resolveArtifactContent(context, args);
+
+      if (base.kind === WEB_SITE_KIND) {
+        if (filePath !== undefined) {
+          const site = parseWebSiteContentJson(content);
+          const normalized = normalizeWebSitePath(filePath);
+          const fileContent = site.files[normalized];
+          if (fileContent === undefined) {
+            throw new Error(
+              `File not found in web_site artifact: ${normalized}`,
+            );
+          }
+          const windowed = windowContent(
+            base,
+            fileContent,
+            undefined,
+            undefined,
+          );
+          return jsonResult({ ...windowed, path: normalized });
+        }
+        return jsonResult({
+          ...base,
+          summary: summarizeWebSiteContent(content),
+        });
+      }
+
       return jsonResult(windowContent(base, content, undefined, undefined));
     },
   };
@@ -476,6 +529,11 @@ function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
       const offset = optionalOffset(args) ?? 0;
       const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
       const { base, content } = await resolveArtifactContent(context, args);
+      if (base.kind === WEB_SITE_KIND) {
+        throw new Error(
+          "artifact_read_chunk does not support web_site artifacts; use artifact_read for a summary or pass path to read one file",
+        );
+      }
       return jsonResult(windowContent(base, content, offset, limit));
     },
   };
@@ -516,7 +574,11 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
 
         const newVersion = existing.version + 1;
         const title = nextTitle ?? existing.title;
-        const content = nextContent ?? existing.content;
+        let content = nextContent ?? existing.content;
+        if (nextContent !== undefined) {
+          content = normalizeArtifactContentForKind(existing.kind, content);
+          assertArtifactContentForKind(existing.kind, content);
+        }
 
         await tx
           .update(artifact)

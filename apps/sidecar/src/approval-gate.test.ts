@@ -87,6 +87,27 @@ describe("createApprovalGatedRunner", () => {
     expect(inner.calls).toHaveLength(1);
   });
 
+  test("gates vercel_deploy_artifact the same as static file deploy", async () => {
+    const inner = innerRunner();
+    let approved = false;
+    const runner = createApprovalGatedRunner(inner, {
+      gatedTools: new Set(["vercel_deploy_artifact"]),
+      approve: async () => {
+        approved = true;
+        return { approved: true };
+      },
+    });
+
+    const result = await runner.run(
+      call("vercel_deploy_artifact"),
+      new AbortController().signal,
+    );
+
+    expect(approved).toBe(true);
+    expect(result.isError).toBe(false);
+    expect(inner.calls).toHaveLength(1);
+  });
+
   test("blocks a gated tool when approval is rejected and never runs it", async () => {
     const inner = innerRunner();
     const runner = createApprovalGatedRunner(inner, {

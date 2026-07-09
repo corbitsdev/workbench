@@ -97,6 +97,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "vercel_list_deployments",
     "vercel_deploy_static_file",
   ],
+  "@workbench/tools-vercel/deploy-artifact": ["vercel_deploy_artifact"],
   "@workbench/tools-last30days/core": [
     "last30days_core_extract",
     "last30days_core_report",

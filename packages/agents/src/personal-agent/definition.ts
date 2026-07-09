@@ -74,6 +74,7 @@ export const PERSONAL_AGENT_BASE_TOOLS: string[] = [
     "vercel_list_projects",
     "vercel_list_deployments",
     "vercel_deploy_static_file",
+    "vercel_deploy_artifact",
     "list_agents",
     "list_principals",
     "identity_get",

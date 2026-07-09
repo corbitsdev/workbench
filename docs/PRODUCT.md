@@ -72,7 +72,7 @@ A skill is visible to everyone in the tenant it was created in and that tenant's
 - **Fast**: Select call artifacts, get draft collateral in minutes
 - **Reviewable**: Every step is human-approved, not black-box automation
 - **Resumable**: Sessions are saved, so users can return and iterate
-- **Exportable**: Final output is assembled and ready to copy, download, or deliver
+- **Exportable**: Final output is assembled and ready to copy, download, or deliver — including **hosted static sites** (`web` single-page HTML and `web_site` multi-file bundles) that Myra can publish to a **public Vercel URL** after explicit human approval
 
 ## Workbench Model
 
@@ -82,7 +82,7 @@ The current workflow is the first concrete version of a more general workbench m
 2. **Jobs** — One run of a workflow against selected sources and options
 3. **Review Gates** — Human decisions that steer the job without exposing the full internal pipeline
 4. **Artifacts** — Generated or curated outputs, including collateral, briefs, summaries, and packages
-5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule, post, or send
+5. **Hooks** — Optional delivery actions such as copy, export, draft, schedule, post, send, or **publish a web artifact to Vercel** (preview by default; production only when the user asks)
 
 The product should surface named outcomes such as "Create sales collateral" or "Draft LinkedIn posts" rather than raw internal steps.
 

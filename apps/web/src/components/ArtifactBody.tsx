@@ -1,4 +1,9 @@
 import { usesSocialPostPreview } from "@workbench/artifact";
+import {
+  buildWebSitePreviewHtml,
+  parseWebSiteContentJson,
+  WebSiteContentError,
+} from "@workbench/shared";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
@@ -272,6 +277,46 @@ function WebBody({ html }: { html: string }) {
   );
 }
 
+function WebSiteBody({ content }: { content: string }) {
+  let entry = "index.html";
+  let previewHtml = "";
+  let paths: string[] = [];
+  try {
+    const site = parseWebSiteContentJson(content);
+    entry = site.entry ?? "index.html";
+    previewHtml = buildWebSitePreviewHtml(site);
+    paths = Object.keys(site.files).sort((a, b) => a.localeCompare(b));
+  } catch (error) {
+    const message =
+      error instanceof WebSiteContentError
+        ? error.message
+        : "Invalid web_site artifact content";
+    return (
+      <div className="rounded border border-border bg-surface-2/40 px-4 py-8 text-center text-sm text-text-3">
+        {message}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <WebBody html={previewHtml} />
+      <div className="rounded border border-border bg-surface-2/30 px-4 py-3 text-sm text-text-2">
+        <p className="font-medium text-text">Site bundle</p>
+        <p className="mt-1 text-text-3">
+          Entry: <span className="font-mono text-text-2">{entry}</span> ·{" "}
+          {paths.length} file{paths.length === 1 ? "" : "s"}
+        </p>
+        <ul className="mt-2 max-h-40 list-inside list-disc overflow-y-auto font-mono text-xs text-text-3">
+          {paths.map((path) => (
+            <li key={path}>{path}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const body = artifact.content;
   const type = artifact.kind;
@@ -304,6 +349,8 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     // single-file HTML app or landing page
     case "web":
       return <WebBody html={body} />;
+    case "web_site":
+      return <WebSiteBody content={body} />;
     // email
     case "email":
     case "follow-up-email":

@@ -10,6 +10,7 @@ export * from "./governance";
 export * from "./last30days";
 export * from "./reddit-opportunity-scanner";
 export * from "./pain-point-collateral";
+export * from "./web-site";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

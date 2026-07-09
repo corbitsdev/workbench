@@ -68,6 +68,7 @@ describe("toLlmToolName (CL-2306)", () => {
       "granola_list_notes",
       "linear_list_issues",
       "vercel_deploy_static_file",
+      "vercel_deploy_artifact",
       "last30days_core_extract",
       "last30days_validate",
       "reddit_search",

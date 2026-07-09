@@ -89,6 +89,11 @@ export const MYRA_TOOL_CATALOG: ToolCatalog = [
         bare: "vercel_deploy_static_file",
         description: "Deploy a static file to Vercel.",
       },
+      {
+        bare: "vercel_deploy_artifact",
+        description:
+          "Deploy a web or web_site artifact to a public Vercel URL.",
+      },
     ],
   ),
   entry(

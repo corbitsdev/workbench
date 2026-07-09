@@ -307,7 +307,7 @@ Defined in `apps/hub/src/db/schema.ts` using Drizzle ORM.
 - **Job**: One execution/run of a workflow against selected sources and options. Jobs are what users resume, review, and complete.
 - **Review Gate**: A human decision point in a job, such as selecting input artifacts, confirming findings, approving collateral, or confirming delivery.
 - **Artifact**: An output produced or curated by a job or agent. Artifacts can later be selected as sources for new jobs, but remain outputs with provenance.
-- **Hook**: Optional delivery action after review, such as copy/export, draft email, schedule social post, or webhook/custom action.
+- **Hook**: Optional delivery action after review, such as copy/export, draft email, schedule social post, publish a `web` / `web_site` artifact to Vercel (approval-gated at the sidecar), or webhook/custom action.
 
 ## Design Decisions
 
