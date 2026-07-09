@@ -17,14 +17,19 @@ change.
   serializes its `workflow`, and `POST`s the definition to the operator path
   `POST /api/v1/workflows/deploy` (or `POST /api/internal/workflows/deploy` for
   the service-token machine path).
-- **Deploy** (hub): validates the definition, resolves the tenant deploy config
-  (the base inference source from the tenant LLM credential), and hands it to the
-  exported `@intx/workflow-deploy` orchestrator. The orchestrator runs the
-  capability walk, commits `workflow.json` + `capability-declarations.json` to the
-  git-backed `workflow` repo, launches one session per step, and sends the
-  multi-step deploy frame to the sidecar.
-- **Run** (sidecar): the workflow-host supervisor reads `workflow.json` from the
-  `workflow` repo and drives the steps, including `awaitSignal` human gates.
+- **Deploy** (hub, `persistCatalog`): validates the definition, resolves the
+  tenant deploy config (the base inference source from the tenant LLM credential),
+  and hands it to the exported `@intx/workflow-deploy` orchestrator. The
+  orchestrator runs the capability walk and commits `workflow.json` +
+  `capability-declarations.json` to the git-backed `workflow` repo; the hub writes
+  the per-step DB/grant rows. Deploy is **hub-only** — it sends **no** deploy frame
+  and spawns **no** supervisor, so it succeeds with the sidecar disconnected (boot
+  autopublish no longer waits for a sidecar connection).
+- **Run** (hub → sidecar): run-start provisions a fresh per-run deployment
+  (`provisionRunDeployment`) that reads the published `workflow.json` back, mints a
+  new `deploymentId`, and sends the multi-step deploy frame; the workflow-host
+  supervisor then reads `workflow.json` and drives the steps, including
+  `awaitSignal` human gates.
 
 ## Lifecycle: a deployed workflow has zero live instances
 
