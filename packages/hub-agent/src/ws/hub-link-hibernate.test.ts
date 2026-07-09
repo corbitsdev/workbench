@@ -214,9 +214,9 @@ type TestEnv = {
   router: SidecarRouter;
 };
 
-function startTestServer(): TestEnv {
+function startTestServer(requestTimeoutMs = 5000): TestEnv {
   const router = createSidecarRouter({
-    requestTimeoutMs: 5000,
+    requestTimeoutMs,
     hubPublicKey: "a".repeat(64),
     lookups: {},
   });
@@ -352,6 +352,208 @@ describe("hub-link hibernate undeploy flavor", () => {
       client.close();
       await waitFor(
         () => !env.router.getConnectedSidecars().includes("sc-hibernate"),
+      );
+    }
+  });
+
+  test("a transient hibernate hook failure is retried once and still acks", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const keyStore = createTestKeyStore();
+
+    let hibernateCalls = 0;
+    const deployRouter: DeployRouter = {
+      async deploy(frame) {
+        const result = await sessions.provisionAgent(frame.config);
+        keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
+        return { publicKey: result.publicKey };
+      },
+      async hibernate() {
+        hibernateCalls += 1;
+        if (hibernateCalls === 1) throw new Error("transient teardown race");
+      },
+    };
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-hibernate-retry",
+      token: "test-token",
+      transport,
+      sessions,
+      keyStore,
+      deployRouter,
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-hibernate-retry"),
+      );
+      const agentAddress = "agent-hibernate-retry@test.interchange";
+      await env.router.sendAgentDeploy(agentAddress, {
+        ...TEST_CONFIG,
+        agentAddress,
+        sessionId: "ses_test-hibernate-retry",
+      });
+      await waitFor(() =>
+        env.router.getRoutableAddresses().includes(agentAddress),
+      );
+
+      // First hibernate attempt throws; the link retries the idempotent
+      // teardown once, the retry succeeds, and the ack fires.
+      await env.router.sendAgentUndeploy(
+        agentAddress,
+        WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+      );
+      await waitFor(
+        () => !env.router.getRoutableAddresses().includes(agentAddress),
+      );
+      expect(hibernateCalls).toBe(2);
+      expect(sessions.deletedDirs).toEqual([]);
+    } finally {
+      client.close();
+      await waitFor(
+        () =>
+          !env.router.getConnectedSidecars().includes("sc-hibernate-retry"),
+      );
+    }
+  });
+});
+
+describe("hub-link hibernate withholds the ack when it cannot hibernate", () => {
+  // Withholding the ack does NOT keep the address routable — interchange's
+  // sendAgentUndeploy timeout arm removes the address before rejecting. What
+  // the withheld ack buys is a LOUD failure at the hub caller (the reconciler
+  // counts it) instead of a silent success, and the sidecar keeps the
+  // deployment resident so the wake re-deploy's resident-supervisor guard can
+  // recover it. A short-timeout server keeps these tests fast.
+  const shortEnv = startTestServer(300);
+
+  afterAll(async () => {
+    await shortEnv.server.stop(true);
+  });
+
+  test("missing hibernate hook: no ack, no teardown of any kind", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const keyStore = createTestKeyStore();
+
+    const undeployed: string[] = [];
+    const deployRouter: DeployRouter = {
+      async deploy(frame) {
+        const result = await sessions.provisionAgent(frame.config);
+        keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
+        return { publicKey: result.publicKey };
+      },
+      async undeploy(frame) {
+        undeployed.push(frame.agentAddress);
+      },
+      // No hibernate hook.
+    };
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${shortEnv.server.port}/ws`,
+      sidecarId: "sc-no-hook",
+      token: "test-token",
+      transport,
+      sessions,
+      keyStore,
+      deployRouter,
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        shortEnv.router.getConnectedSidecars().includes("sc-no-hook"),
+      );
+      const agentAddress = "agent-no-hook@test.interchange";
+      await shortEnv.router.sendAgentDeploy(agentAddress, {
+        ...TEST_CONFIG,
+        agentAddress,
+        sessionId: "ses_test-no-hook",
+      });
+      await waitFor(() =>
+        shortEnv.router.getRoutableAddresses().includes(agentAddress),
+      );
+
+      // No ack is sent, so the hub-side undeploy times out (rejects) —
+      // the failure is loud, never a silent fake success.
+      await expect(
+        shortEnv.router.sendAgentUndeploy(
+          agentAddress,
+          WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+        ),
+      ).rejects.toThrow();
+      // The deployment stays fully resident on the sidecar: neither the
+      // undeploy hook nor any state deletion ran.
+      expect(undeployed).toEqual([]);
+      expect(sessions.deletedDirs).toEqual([]);
+      expect(sessions.destroyed).toEqual([]);
+    } finally {
+      client.close();
+      await waitFor(
+        () => !shortEnv.router.getConnectedSidecars().includes("sc-no-hook"),
+      );
+    }
+  });
+
+  test("hibernate hook failing twice: retried once, then no ack and the deployment stays resident", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const keyStore = createTestKeyStore();
+
+    let hibernateCalls = 0;
+    const deployRouter: DeployRouter = {
+      async deploy(frame) {
+        const result = await sessions.provisionAgent(frame.config);
+        keyStore.recordHubKey(frame.agentAddress, frame.hubPublicKey);
+        return { publicKey: result.publicKey };
+      },
+      async hibernate() {
+        hibernateCalls += 1;
+        throw new Error("teardown keeps failing");
+      },
+    };
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${shortEnv.server.port}/ws`,
+      sidecarId: "sc-hook-fails",
+      token: "test-token",
+      transport,
+      sessions,
+      keyStore,
+      deployRouter,
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        shortEnv.router.getConnectedSidecars().includes("sc-hook-fails"),
+      );
+      const agentAddress = "agent-hook-fails@test.interchange";
+      await shortEnv.router.sendAgentDeploy(agentAddress, {
+        ...TEST_CONFIG,
+        agentAddress,
+        sessionId: "ses_test-hook-fails",
+      });
+      await waitFor(() =>
+        shortEnv.router.getRoutableAddresses().includes(agentAddress),
+      );
+
+      await expect(
+        shortEnv.router.sendAgentUndeploy(
+          agentAddress,
+          WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+        ),
+      ).rejects.toThrow();
+      expect(hibernateCalls).toBe(2);
+      expect(sessions.deletedDirs).toEqual([]);
+      expect(sessions.destroyed).toEqual([]);
+    } finally {
+      client.close();
+      await waitFor(
+        () =>
+          !shortEnv.router.getConnectedSidecars().includes("sc-hook-fails"),
       );
     }
   });

@@ -483,5 +483,56 @@ describe("createSidecarDeployRouter hibernate", () => {
     expect(
       await fs.readFile(path.join(workflowRunDir, "events.jsonl"), "utf8"),
     ).toBe("{}");
+
+    // Orphan self-heal: a hibernate whose ack path failed leaves the hub
+    // believing the deployment is down while the child is still resident
+    // (interchange's undeploy timeout arm unroutes before rejecting); the
+    // wake then re-sends agent.deploy at the live supervisor. The deploy
+    // branch must shut the resident child down (state-preserving — no rm)
+    // before standing the fresh one up, or the old child leaks and two
+    // children drive one workflow-run repo.
+    const thirdDeploy = router.deploy(frame);
+    while (spawns.length < 3) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const third = spawns[2];
+    if (third === undefined) throw new Error("unreachable");
+    await completeSpawnHandshake(third);
+    await thirdDeploy;
+
+    const fourthDeploy = router.deploy(frame);
+    while (spawns.length < 4) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const fourth = spawns[3];
+    if (fourth === undefined) throw new Error("unreachable");
+    await completeSpawnHandshake(fourth);
+    await fourthDeploy;
+
+    // The resident third child was shut down by the fourth deploy...
+    expect(third.killed).toBe(true);
+    expect(third.exitedResolved).toBe(true);
+    // ...without reclaiming any durable state (a hibernate-shaped teardown,
+    // not an undeploy).
+    expect(await fs.readFile(stepStateFile, "utf8")).toBe("x");
+    expect(
+      await fs.readFile(path.join(workflowRunDir, "events.jsonl"), "utf8"),
+    ).toBe("{}");
+    // The fresh child owns the deployment's routing.
+    expect(
+      await signalRouter.tryRoute({
+        type: "signal.deliver",
+        agentAddress: frame.agentAddress,
+        runId: "run-1",
+        signalName: "approval",
+        signalId: "sig-2",
+        payload: {},
+      }),
+    ).toBe(true);
+    expect(
+      fourth.supervisorToChild.lines.find((line) =>
+        line.includes("signal.deliver"),
+      ),
+    ).toBeString();
   });
 });
