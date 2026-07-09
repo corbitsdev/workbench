@@ -363,6 +363,34 @@ describe("ArtifactModal", () => {
     });
   });
 
+  describe("CL-3156: Archive action", () => {
+    it("renders an Archive button and calls onArchive with the artifact", () => {
+      const onArchive = mock(() => {});
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onArchive,
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+      expect(onArchive).toHaveBeenCalledTimes(1);
+      expect(onArchive).toHaveBeenCalledWith(artifact);
+    });
+
+    it("does not render an Archive button when onArchive is absent", () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+        }),
+      );
+      expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
+    });
+  });
+
   describe("CL-1937: Open in Myra action", () => {
     it("invokes onOpenInMyra with the artifact when the button is clicked", () => {
       const onOpenInMyra = mock(() => {});

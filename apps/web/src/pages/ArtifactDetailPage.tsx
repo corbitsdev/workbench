@@ -1,8 +1,10 @@
 import { Link, useNavigate, useParams } from "react-router";
-import { ArrowLeft, MessageSquare } from "lucide-react";
+import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@workbench/ui";
-import { useArtifact } from "@workbench/client/react";
+import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
+import { getMe } from "../lib/hub-api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -29,8 +31,14 @@ function CenteredNotice({ children }: { children: React.ReactNode }) {
 export function ArtifactDetailPage() {
   const { artifactId } = useParams();
   const navigate = useNavigate();
-  const { activeTenantId } = useActiveWorkbench();
+  const { activeTenantId, activeWorkbench } = useActiveWorkbench();
   const { openWithMessage } = useChatLauncher();
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
+  const archiveMutation = useArchiveArtifact(clientOptions);
 
   const {
     data: artifact,
@@ -77,6 +85,21 @@ export function ArtifactDetailPage() {
     );
   }
 
+  // Owner-or-admin gate; the server re-checks. Archiving redirects back to the
+  // gallery, whose list query the mutation invalidates.
+  const canArchive =
+    meQuery.data?.isAdmin === true ||
+    meQuery.data?.isOwner === true ||
+    (loadedArtifact.ownerPrincipalId !== null &&
+      loadedArtifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
+
+  function handleArchive() {
+    archiveMutation.mutate(
+      { artifactId: loadedArtifact.id, tenantId: activeTenantId },
+      { onSuccess: () => navigate("/artifacts") },
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -96,6 +119,18 @@ export function ArtifactDetailPage() {
             {resolveKindLabel(artifact.kind)}
           </p>
         </div>
+        {canArchive && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleArchive}
+            disabled={archiveMutation.isPending}
+            className="flex shrink-0 items-center gap-1.5"
+          >
+            <Archive size={14} />
+            Archive
+          </Button>
+        )}
         <Button
           variant="secondary"
           size="sm"
