@@ -1,9 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import {
+  DRAFT_SKILL_DEFINITION,
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   SKILL_TOOL_DEFINITIONS,
+  parseDraftSkillArgs,
   parseSearchQuery,
   parseSkillId,
   skillMatchesQuery,
@@ -11,11 +13,12 @@ import {
 } from "./index";
 
 describe("skill tool definitions", () => {
-  it("exposes exactly the three read-only tools", () => {
+  it("exposes the read tools plus skill_draft", () => {
     expect(SKILL_TOOL_DEFINITIONS.map((d) => d.name).sort()).toEqual([
       "list_skills",
       "load_skill",
       "search_skills",
+      "skill_draft",
     ]);
   });
 
@@ -23,9 +26,19 @@ describe("skill tool definitions", () => {
     expect(LIST_SKILLS_DEFINITION.inputSchema.required).toEqual([]);
   });
 
-  it("search_skills requires query and load_skill requires id", () => {
+  it("search_skills requires query, load_skill requires id, skill_draft requires name+body", () => {
     expect(SEARCH_SKILLS_DEFINITION.inputSchema.required).toEqual(["query"]);
     expect(LOAD_SKILL_DEFINITION.inputSchema.required).toEqual(["id"]);
+    expect(DRAFT_SKILL_DEFINITION.inputSchema.required).toEqual([
+      "name",
+      "body",
+    ]);
+  });
+
+  it("skill_draft description points humans at Skills → Pending drafts", () => {
+    expect(DRAFT_SKILL_DEFINITION.description).toContain(
+      "Skills → Pending drafts",
+    );
   });
 });
 
@@ -92,5 +105,32 @@ describe("skillMatchesQuery", () => {
     };
     expect(skillMatchesQuery(sparse, "lonely")).toBe(true);
     expect(skillMatchesQuery(sparse, "nope")).toBe(false);
+  });
+});
+
+describe("parseDraftSkillArgs", () => {
+  it("parses valid args (whitespace preserved, like other parsers)", () => {
+    expect(parseDraftSkillArgs({ name: "foo", body: "bar" })).toEqual({
+      name: "foo",
+      body: "bar",
+    });
+    expect(
+      parseDraftSkillArgs({ name: "  FOO ", body: " baz ", description: "d" }),
+    ).toEqual({
+      name: "  FOO ",
+      body: " baz ",
+      description: "d",
+    });
+  });
+
+  it("throws on invalid draft args (missing/empty name or body)", () => {
+    expect(() => parseDraftSkillArgs({ name: "n", body: "" })).toThrow(
+      "skill_draft",
+    );
+    expect(() => parseDraftSkillArgs({ name: "", body: "b" })).toThrow(
+      "skill_draft",
+    );
+    expect(() => parseDraftSkillArgs({ name: "n" })).toThrow("skill_draft");
+    expect(() => parseDraftSkillArgs({ body: "b" })).toThrow("skill_draft");
   });
 });

@@ -22,7 +22,7 @@ import {
   summarizeWebSiteContent,
 } from "@workbench/shared";
 import { getLogger } from "@intx/log";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 import {
   artifact,
   artifactStatus,
@@ -414,6 +414,11 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
     handler: async (args) => {
       const title = requiredString(args, "title");
       const kind = requiredString(args, "kind");
+      if (kind === "skill-draft") {
+        throw new Error(
+          "skill-draft artifacts must be created with the skill_draft tool",
+        );
+      }
       const content = normalizeArtifactContentForKind(
         kind,
         requiredString(args, "content"),
@@ -612,6 +617,10 @@ function createReadHandler(context: ArtifactToolContext): AgentTool {
     handler: async (args) => {
       const filePath = optionalNonEmptyString(args, "path");
       const { base, content } = await resolveArtifactContent(context, args);
+      // skill-draft is private authoring scratch; use skill_draft / library tools.
+      if (base.kind === "skill-draft") {
+        throw new Error(`Artifact not found: ${base.artifactId}`);
+      }
 
       if (base.kind === WEB_SITE_KIND) {
         if (filePath !== undefined) {
@@ -650,6 +659,9 @@ function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
       const offset = optionalOffset(args) ?? 0;
       const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
       const { base, content } = await resolveArtifactContent(context, args);
+      if (base.kind === "skill-draft") {
+        throw new Error(`Artifact not found: ${base.artifactId}`);
+      }
       if (base.kind === WEB_SITE_KIND) {
         throw new Error(
           "artifact_read_chunk does not support web_site artifacts; use artifact_read for a summary or pass path to read one file",
@@ -692,6 +704,11 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
           .limit(1);
 
         if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
+        if (existing.kind === "skill-draft") {
+          throw new Error(
+            "skill-draft artifacts must be updated with the skill_draft tool",
+          );
+        }
 
         const newVersion = existing.version + 1;
         const title = nextTitle ?? existing.title;
@@ -1000,9 +1017,12 @@ function createFindByTitleHandler(context: ArtifactToolContext): AgentTool {
       const title = requiredString(args, "title");
       const kind = optionalString(args, "kind");
 
+      if (kind === "skill-draft") return jsonResult(null);
+
       const conditions = [
         eq(artifact.tenantId, context.tenantId),
         eq(artifact.title, title),
+        ne(artifact.kind, "skill-draft"),
       ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
 
@@ -1026,6 +1046,10 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
     definition: ARTIFACT_LIST_DEFINITION,
     handler: async (args) => {
       const kind = optionalString(args, "kind");
+      // skill-draft is not a gallery kind — only skill_draft / Skills UI.
+      if (kind === "skill-draft") {
+        return jsonResult({ artifacts: [] });
+      }
       const status = optionalStatus(args);
       const rawLimit =
         typeof args.limit === "number" && Number.isFinite(args.limit)
@@ -1033,7 +1057,10 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
           : DEFAULT_LIST_LIMIT;
       const limit = Math.min(Math.max(1, Math.floor(rawLimit)), MAX_LIST_LIMIT);
 
-      const conditions = [eq(artifact.tenantId, context.tenantId)];
+      const conditions = [
+        eq(artifact.tenantId, context.tenantId),
+        ne(artifact.kind, "skill-draft"),
+      ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
       if (status !== undefined) conditions.push(eq(artifact.status, status));
 

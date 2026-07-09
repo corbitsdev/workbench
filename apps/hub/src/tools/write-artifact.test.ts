@@ -15,6 +15,7 @@ type InsertedVersion = {
 type InsertedArtifact = {
   tenantId: string;
   principalId: string;
+  ownerPrincipalId?: string | null;
   kind: string;
   title: string;
   content: string;
@@ -487,6 +488,70 @@ describe("write_artifact tool", () => {
       SIGNAL,
     );
     expect(updates).toHaveLength(0);
+  });
+
+  it("writeArtifactDeduped stamps ownerPrincipalId on create", async () => {
+    const inserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: inserts });
+    const { writeArtifactDeduped } = await import("./write-artifact");
+    await writeArtifactDeduped({
+      db: db as never,
+      tenantId: "tnt-1",
+      principalId: "prn-agent",
+      title: "my-skill",
+      body: "body",
+      kind: "skill-draft",
+      source: { origin: "skill-draft" },
+      ownerPrincipalId: "prn-owner",
+    });
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]?.ownerPrincipalId).toBe("prn-owner");
+    expect(inserts[0]?.status).toBe("draft");
+  });
+
+  it("writeArtifactDeduped resets skill-draft status to draft on re-write", async () => {
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-draft-1",
+      prevMaxVersion: 1,
+      captureArtifactUpdates: updates,
+    });
+    const { writeArtifactDeduped } = await import("./write-artifact");
+    await writeArtifactDeduped({
+      db: db as never,
+      tenantId: "tnt-1",
+      principalId: "prn-agent",
+      title: "my-skill",
+      body: "revised body",
+      kind: "skill-draft",
+      source: { origin: "skill-draft" },
+      ownerPrincipalId: "prn-owner",
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.status).toBe("draft");
+    expect(updates[0]?.ownerPrincipalId).toBe("prn-owner");
+    expect(updates[0]?.content).toBe("revised body");
+  });
+
+  it("writeArtifactDeduped does not force status on non-skill-draft updates", async () => {
+    const updates: Record<string, unknown>[] = [];
+    const db = makeMockDb({
+      existingArtifactId: "art-research",
+      prevMaxVersion: 1,
+      captureArtifactUpdates: updates,
+    });
+    const { writeArtifactDeduped } = await import("./write-artifact");
+    await writeArtifactDeduped({
+      db: db as never,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+      title: "Brief",
+      body: "b",
+      kind: "research",
+      source: { origin: "tool" },
+    });
+    expect(updates).toHaveLength(1);
+    expect("status" in (updates[0] ?? {})).toBe(false);
   });
 
   it("missing title: throws before any DB write", async () => {

@@ -19,8 +19,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  useApproveSkillDraft,
+  useDiscardSkillDraft,
+  useSkillDrafts,
   useSkillLibrary,
   useSkillShareTargets,
+  type SkillDraftItem,
   type SkillLibraryItem,
 } from "../hooks/use-skills";
 import { getMe } from "../lib/hub-api";
@@ -93,7 +97,12 @@ export function SkillsLibrary() {
   const { mode: viewMode, setMode: setViewMode } = useViewMode("skills");
 
   const skillsQuery = useSkillLibrary(tenantId);
+  const draftsQuery = useSkillDrafts(tenantId);
   const shareTargetsQuery = useSkillShareTargets(tenantId);
+  const approveDraft = useApproveSkillDraft();
+  const discardDraft = useDiscardSkillDraft();
+  const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const accessLabel = (skill: SkillLibraryItem) => {
     if (skill.scope === "private") return "Private";
@@ -114,7 +123,47 @@ export function SkillsLibrary() {
     );
   }, [query, skillsQuery.data]);
 
+  const filteredDrafts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (draftsQuery.data ?? []).filter(
+      (draft) =>
+        !q ||
+        draft.title.toLowerCase().includes(q) ||
+        (draft.description ?? "").toLowerCase().includes(q),
+    );
+  }, [query, draftsQuery.data]);
+
   const isSearching = query.trim().length > 0;
+
+  const onApprove = (draft: SkillDraftItem, scope: "tenant" | "private") => {
+    setActionError(null);
+    approveDraft
+      .mutateAsync({ draftId: draft.id, scope, tenantId })
+      .then((result) => {
+        navigate(`/skills/${result.skill.id}`);
+      })
+      .catch((err: unknown) => {
+        setActionError(
+          err instanceof Error ? err.message : "Could not approve draft",
+        );
+      });
+  };
+
+  const onDiscard = (draft: SkillDraftItem) => {
+    if (
+      !window.confirm(`Discard draft “${draft.title}”? This cannot be undone.`)
+    ) {
+      return;
+    }
+    setActionError(null);
+    discardDraft
+      .mutateAsync({ draftId: draft.id, tenantId })
+      .catch((err: unknown) => {
+        setActionError(
+          err instanceof Error ? err.message : "Could not discard draft",
+        );
+      });
+  };
 
   const skillRowColumns: DataTableColumn<SkillLibraryItem>[] = [
     {
@@ -162,6 +211,174 @@ export function SkillsLibrary() {
       </LibraryPageHeader>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
+        {actionError && (
+          <div className="mb-3 rounded-md border border-border bg-surface px-3 py-2 text-[12px] text-text">
+            {actionError}
+          </div>
+        )}
+
+        {draftsQuery.isLoading && (
+          <div className="mb-4 text-[13px] text-text-3">
+            Loading pending drafts…
+          </div>
+        )}
+        {draftsQuery.isError && (
+          <div className="mb-4 text-[13px] text-text-3">
+            Could not load pending drafts.
+          </div>
+        )}
+
+        {filteredDrafts.length > 0 && (
+          <section className="mb-8">
+            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-text-3">
+              Pending drafts ({filteredDrafts.length})
+            </h2>
+            <ul className="flex flex-col gap-2">
+              {filteredDrafts.map((draft) => {
+                const expanded = expandedDraftId === draft.id;
+                const isRevision = Boolean(draft.existingSkillId);
+                // Resolve the live skill name from the already-loaded library
+                // so the reviewer sees which skill will be updated.
+                const revisionTarget = draft.existingSkillId
+                  ? (skillsQuery.data ?? []).find(
+                      (s) => s.id === draft.existingSkillId,
+                    )
+                  : undefined;
+                const revisionLabel = revisionTarget
+                  ? `revises ${revisionTarget.displayName ?? revisionTarget.name}`
+                  : isRevision
+                    ? "revises existing skill"
+                    : null;
+                const busy =
+                  (approveDraft.isPending || discardDraft.isPending) &&
+                  (approveDraft.variables?.draftId === draft.id ||
+                    discardDraft.variables?.draftId === draft.id);
+                return (
+                  <li
+                    key={draft.id}
+                    className="rounded-md border border-border bg-surface px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[13.5px] font-semibold text-text">
+                          {draft.title}
+                          {revisionLabel ? (
+                            <span className="ml-2 text-[11px] font-normal text-text-3">
+                              {revisionLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        {draft.description ? (
+                          <div className="mt-0.5 line-clamp-2 text-[12px] text-text-3">
+                            {draft.description}
+                          </div>
+                        ) : null}
+                        <div className="mt-1 font-mono text-[11px] text-text-3">
+                          Updated {new Date(draft.updatedAt).toLocaleString()}
+                          {draft.files.length > 0
+                            ? ` · ${draft.files.length} support file${draft.files.length === 1 ? "" : "s"}`
+                            : ""}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() =>
+                            setExpandedDraftId(expanded ? null : draft.id)
+                          }
+                        >
+                          {expanded ? "Hide" : "Review"}
+                        </Button>
+                        {isRevision ? (
+                          <Button
+                            type="button"
+                            variant="library"
+                            size="library"
+                            disabled={busy}
+                            onClick={() => {
+                              const targetName =
+                                revisionTarget?.displayName ??
+                                revisionTarget?.name ??
+                                draft.title;
+                              if (
+                                !window.confirm(
+                                  `Publish a new version of “${targetName}”? This updates the live skill.`,
+                                )
+                              ) {
+                                return;
+                              }
+                              onApprove(draft, "tenant");
+                            }}
+                          >
+                            Publish new version
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              variant="library"
+                              size="library"
+                              disabled={busy}
+                              onClick={() => onApprove(draft, "tenant")}
+                              title="Save to the skill library visible in this workspace"
+                            >
+                              Save to library
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="library"
+                              size="library"
+                              disabled={busy}
+                              onClick={() => onApprove(draft, "private")}
+                              title="Save as private to you only"
+                            >
+                              Save private
+                            </Button>
+                          </>
+                        )}
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() => onDiscard(draft)}
+                        >
+                          Discard
+                        </Button>
+                      </div>
+                    </div>
+                    {expanded && (
+                      <div className="mt-3 flex flex-col gap-3">
+                        <div>
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-text-3">
+                            SKILL.md
+                          </div>
+                          <pre className="max-h-72 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
+                            {draft.content}
+                          </pre>
+                        </div>
+                        {draft.files.map((file) => (
+                          <div key={file.path}>
+                            <div className="mb-1 font-mono text-[11px] font-semibold text-text-3">
+                              {file.path}
+                            </div>
+                            <pre className="max-h-48 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
+                              {file.content}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {skillsQuery.isLoading && (
           <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
         )}
@@ -176,6 +393,10 @@ export function SkillsLibrary() {
             <div className="py-10 text-[13px] text-text-3">
               {isSearching ? (
                 <>No results for &ldquo;{query.trim()}&rdquo;.</>
+              ) : filteredDrafts.length > 0 ? (
+                <>
+                  Published skills will appear here after you approve a draft.
+                </>
               ) : (
                 <>
                   No skills yet.{" "}

@@ -38,7 +38,8 @@ export type ArtifactKind =
   | "pain-points"
   | "call-transcript"
   | "presentation"
-  | "gamma_presentation";
+  | "gamma_presentation"
+  | "skill-draft";
 
 export type ArtifactStatus = "draft" | "approved" | "rejected";
 
