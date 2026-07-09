@@ -21,6 +21,7 @@ const DDL = `
     status text NOT NULL DEFAULT 'running',
     input jsonb,
     origin_conversation_id text,
+    pending_signal jsonb,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),

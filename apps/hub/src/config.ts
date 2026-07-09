@@ -76,6 +76,15 @@ const DEFAULT_WEDGE_UNROUTABLE_GRACE_MS = 120_000;
 // already-routable supervisors.
 const DEFAULT_AWAITING_PREWARM_INTERVAL_MS = 30_000;
 
+// Hibernation grace for gate-parked (awaiting) workflow runs (mirrors the
+// reconciler's DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS). A run parked at an
+// awaitSignal gate longer than this has its deployment hibernated — the
+// sidecar kills the workflow child and supervisor residency while keeping all
+// durable run state; the gate signal re-establishes it on delivery. The same
+// horizon scopes the awaiting pre-warm: only runs parked less than this are
+// proactively re-established.
+const DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS = 120_000;
+
 // CL-2727 run liveness sweep. Generous defaults so a healthy-but-slow run is
 // never failed: a GONE supervisor with no progress is orphaned past the grace,
 // while a ROUTABLE supervisor with no progress (a slow first step) is left alone
@@ -338,6 +347,16 @@ export function loadConfig() {
     awaitingSupervisorPrewarmIntervalMs: parsePositiveIntEnv(
       "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
       DEFAULT_AWAITING_PREWARM_INTERVAL_MS,
+      "milliseconds",
+    ),
+    // How long a workflow run may sit parked at an awaitSignal gate before
+    // its deployment is hibernated (child killed, durable run state kept;
+    // wake is signal-driven). Also the awaiting pre-warm horizon. Default
+    // 120s; override with WORKFLOW_HIBERNATION_GRACE_MS (positive integer
+    // milliseconds).
+    workflowHibernationGraceMs: parsePositiveIntEnv(
+      "WORKFLOW_HIBERNATION_GRACE_MS",
+      DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS,
       "milliseconds",
     ),
     // CL-2727 continuous run liveness sweep. `stallGraceMs`: a GONE-supervisor

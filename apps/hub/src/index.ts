@@ -1141,6 +1141,9 @@ const workflowReconciler = createWorkflowReconciler({
   getRoutableAddresses: sidecarRouter.getRoutableAddresses,
   deploymentDomain: config.rootTenant.domain,
   reclaimDeployment,
+  sendAgentUndeploy: sidecarRouter.sendAgentUndeploy,
+  sendSignalDeliver: sidecarRouter.sendSignalDeliver,
+  hibernationGraceMs: config.workflowHibernationGraceMs,
 });
 workflowReconciler.start();
 // CL-2727: continuous liveness sweep. Where failOrphanedRuns runs ONCE at boot,

@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import {
   workflowRun,
@@ -9,6 +10,14 @@ import {
   type WorkflowRunRecordRow,
 } from "../db/schema";
 import { WorkflowMeta } from "../lib/workflow-meta";
+import {
+  PendingRunSignalSchema,
+  type PendingRunSignal,
+} from "./pending-signal";
+
+export { PendingRunSignalSchema, type PendingRunSignal };
+
+const log = getLogger(["workflow-executor", "run-store"]);
 
 export type WorkflowRunStepPhase = (typeof workflowRunStepPhases)[number];
 
@@ -42,6 +51,11 @@ export interface RunState {
   // The conversation the run was started from (CL-2677); absent for
   // direct-started runs with no chat context.
   originConversationId?: string;
+  // Durable record of a 202-accepted gate signal not yet proven delivered by
+  // the run log; absent once the projection observes its SignalReceived.
+  pendingSignal?: PendingRunSignal;
+  // Last write time of the record row; read by the hibernation CAS.
+  updatedAt?: Date;
 }
 
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
@@ -52,9 +66,31 @@ export interface RunProjection {
   status: RunState["status"];
   startedAt?: string;
   endedAt?: string;
+  // Clear the durable pending-signal record. `true` clears unconditionally
+  // (terminal status only — no further gate exists to consume a signal).
+  // `{ signalIds }` clears CONDITIONALLY IN SQL: the record is nulled only if
+  // the signalId it holds at write time is one of the log-proven ids, so a
+  // signal accepted between the projection's decision read and this write
+  // (the next gate's) is never erased before its own delivery is proven.
+  clearPendingSignal?: true | { signalIds: readonly string[] };
 }
 
 function rowToState(row: WorkflowRunRecordRow): RunState {
+  const pendingSignal =
+    row.pendingSignal === null || row.pendingSignal === undefined
+      ? undefined
+      : PendingRunSignalSchema(row.pendingSignal);
+  if (pendingSignal instanceof type.errors) {
+    // Fail loud: a malformed record cannot be surfaced as a typed
+    // pendingSignal, but silently omitting it would let readers of this
+    // projection disagree with readers of the raw column (the reconciler's
+    // hibernate guard). The raw column stays non-null, so raw-column guards
+    // still hold; this log is the operator's handle on the corruption.
+    log.error("workflow_run_record.pending_signal is malformed", {
+      runId: row.id,
+      problem: pendingSignal.summary,
+    });
+  }
   return {
     runId: row.id,
     kind: row.kind,
@@ -65,7 +101,48 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     ...(row.originConversationId !== null
       ? { originConversationId: row.originConversationId }
       : {}),
+    ...(pendingSignal !== undefined && !(pendingSignal instanceof type.errors)
+      ? { pendingSignal }
+      : {}),
+    updatedAt: row.updatedAt,
   };
+}
+
+// Refresh a pending signal's `receivedAt` (re-delivery backoff) ONLY while
+// the record still holds the SAME signalId — conditional in SQL, mirroring
+// the clear's CASE machinery, so a refresh racing the projection's clear (or
+// a newer accepted signal) can never resurrect or clobber it. Returns whether
+// a row was updated; a `false` means there is nothing pending to re-deliver.
+export async function refreshPendingSignalIfCurrent(
+  db: HubDb,
+  runId: string,
+  signal: PendingRunSignal,
+): Promise<boolean> {
+  const updated = await db
+    .update(workflowRunRecord)
+    .set({ pendingSignal: signal })
+    .where(
+      and(
+        eq(workflowRunRecord.id, runId),
+        sql`${workflowRunRecord.pendingSignal}->>'signalId' = ${signal.signalId}`,
+      ),
+    )
+    .returning({ id: workflowRunRecord.id });
+  return updated.length > 0;
+}
+
+// Persist a 202-accepted gate signal on the run record BEFORE dispatching it
+// to the sidecar. Last accepted signal wins (a re-signal replaces the prior
+// record); the projection clears it once the log proves receipt.
+export async function setPendingSignal(
+  db: HubDb,
+  runId: string,
+  signal: PendingRunSignal,
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ pendingSignal: signal })
+    .where(eq(workflowRunRecord.id, runId));
 }
 
 export async function insertRunRecord(
@@ -174,6 +251,19 @@ export async function applyRunProjection(
   }
   if (projection.endedAt !== undefined) {
     patch.endedAt = new Date(projection.endedAt);
+  }
+  if (projection.clearPendingSignal === true) {
+    patch.pendingSignal = null;
+  } else if (
+    projection.clearPendingSignal !== undefined &&
+    projection.clearPendingSignal.signalIds.length > 0
+  ) {
+    const ids = projection.clearPendingSignal.signalIds;
+    patch.pendingSignal =
+      sql`CASE WHEN ${workflowRunRecord.pendingSignal}->>'signalId' IN (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )}) THEN NULL ELSE ${workflowRunRecord.pendingSignal} END` as unknown as typeof patch.pendingSignal;
   }
   await db
     .update(workflowRunRecord)
