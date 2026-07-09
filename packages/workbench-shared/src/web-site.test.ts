@@ -92,4 +92,25 @@ describe("web_site content", () => {
       "<html></html>",
     );
   });
+
+  test("refuse to deploy web_site with no index.html to serve at the root", () => {
+    const json = serializeWebSiteContent({
+      entry: "home.html",
+      files: { "home.html": "<html></html>" },
+    });
+    expect(() => expandWebArtifactToVercelFiles("web_site", json)).toThrow(
+      /must contain an "index.html" file/,
+    );
+  });
+
+  test("deploy web_site with a non-index entry when index.html is present", () => {
+    const json = serializeWebSiteContent({
+      entry: "home.html",
+      files: { "home.html": "<h1>home</h1>", "index.html": "<h1>root</h1>" },
+    });
+    const files = expandWebArtifactToVercelFiles("web_site", json);
+    expect(files.find((f) => f.path === "index.html")?.content).toBe(
+      "<h1>root</h1>",
+    );
+  });
 });
