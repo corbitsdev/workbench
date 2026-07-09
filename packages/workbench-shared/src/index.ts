@@ -101,6 +101,7 @@ export const Artifact = type({
   status: "'draft' | 'approved' | 'rejected'",
   version: "number",
   ownerPrincipalId: "string | null",
+  archivedAt: "string | null",
   createdAt: "string",
   updatedAt: "string",
   source: ArtifactSource,

@@ -63,6 +63,7 @@ const baseArtifact: ArtifactWithSession = {
   status: "approved",
   version: 1,
   ownerPrincipalId: null,
+  archivedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },

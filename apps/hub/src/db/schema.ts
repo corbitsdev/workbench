@@ -278,6 +278,10 @@ export const artifact = pgTable("artifact", {
   source: jsonb("source").$type<Record<string, unknown>>(),
   status: text("status", { enum: artifactStatus }).notNull().default("draft"),
   version: integer("version").notNull().default(1),
+  // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
+  // listings. Reversible; distinct from `status` so archiving never clobbers a
+  // draft/approved/rejected state.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

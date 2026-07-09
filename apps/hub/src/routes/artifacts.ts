@@ -208,6 +208,7 @@ function serializeArtifact(a: ArtifactRow) {
     status: a.status,
     version: a.version,
     ownerPrincipalId: a.ownerPrincipalId ?? null,
+    archivedAt: a.archivedAt?.toISOString() ?? null,
     createdAt: a.createdAt.toISOString(),
     updatedAt: a.updatedAt.toISOString(),
   };
