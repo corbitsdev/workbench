@@ -10,6 +10,7 @@ import {
   requiredString,
   resolveConfig,
   stringTool,
+  toDeckResult,
   WORKSPACE_SHARING_OPTIONS,
   type GammaDeckResult,
   type GammaToolsConfig,
@@ -68,13 +69,11 @@ async function createFromTemplate(
   }
 
   const result = await pollGeneration(config, generationId, signal);
-  // Always surface an `exportUrl` key so the workflow's persist argMap
-  // (`pdfUrl <- exportUrl`) resolves even when Gamma returns no export link —
-  // a missing key throws in the step-tool harness and would sink the whole
-  // deck save. An empty string is treated as "no PDF" downstream. `url` mirrors
-  // `gammaUrl` so a consumer keyed on either (the persist argMap reads
-  // `gammaUrl`; older packed defs read `url`) resolves against the same URL.
-  return { ...result, url: result.gammaUrl, exportUrl: result.exportUrl ?? "" };
+  // `toDeckResult` guarantees `gammaUrl`, `url`, `gammaId`, and `exportUrl` on
+  // the output so the workflow's persist argMap (which reads `gammaUrl` and
+  // `pdfUrl <- exportUrl` with a hard, no-fallback presence check) always
+  // resolves. An empty `exportUrl` is treated as "no PDF" downstream.
+  return toDeckResult(result);
 }
 
 // Tenant-owned templates are stored in the hub DB and listed via the

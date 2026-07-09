@@ -7,6 +7,7 @@ import {
   pollGeneration,
   resolveConfig,
   stringTool,
+  toDeckResult,
   WORKSPACE_SHARING_OPTIONS,
   type GammaToolsConfig,
   type ResolvedGammaConfig,
@@ -64,13 +65,9 @@ async function duplicatePresentation(
   }
 
   const result = await pollGeneration(config, generationId, signal);
-  // `url` mirrors `gammaUrl` so a consumer keyed on either resolves — see the
-  // from-template tool's note.
-  return {
-    gammaUrl: result.gammaUrl,
-    url: result.gammaUrl,
-    gammaId: result.gammaId,
-  };
+  // Same validated deck shape as the from-template tool (`exportUrl` is "" here
+  // — duplicate does not request an export). See `toDeckResult`.
+  return toDeckResult(result);
 }
 
 export const GAMMA_DUPLICATE_PRESENTATION_DEFINITION: ToolDefinition = {

@@ -64,10 +64,29 @@ export const GammaDeckResultSchema = type({
 
 export type GammaDeckResult = typeof GammaDeckResultSchema.infer;
 
-// Gamma has returned the completed deck's URL under `gammaUrl` (current shape)
-// and, on some responses / older API surfaces, under `url`. Consumers keyed on
-// `gammaUrl` (e.g. the presentation workflow's persist argMap) throw on a bare
-// `url`, so normalize a `url`-only response up to `gammaUrl` before parsing.
+// Build the deck-generation tools' shared output shape from a poll result and
+// validate it through the schema (fail-loud) so the four fields are guaranteed
+// at runtime, not just at compile time. `url` mirrors `gammaUrl`; `exportUrl`
+// defaults to "" ("no PDF") when Gamma returned no export link.
+export function toDeckResult(result: GenerationResult): GammaDeckResult {
+  const deck = {
+    gammaUrl: result.gammaUrl,
+    url: result.gammaUrl,
+    gammaId: result.gammaId,
+    exportUrl: result.exportUrl ?? "",
+  };
+  const parsed = GammaDeckResultSchema(deck);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Gamma deck result failed validation: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+// The completed deck's URL has been observed under `url` as well as `gammaUrl`
+// in older packed tool output shapes (the presentation workflow's blocks.ts
+// reader already tolerates `gammaUrl ?? url`). A consumer keyed on `gammaUrl`
+// (the persist argMap's hard, no-fallback lookup) throws on a bare `url`, so
+// normalize a `url`-only response up to `gammaUrl` before parsing.
 function normalizeDeckUrlKey(result: Record<string, unknown>): unknown {
   if (typeof result["gammaUrl"] === "string") return result;
   if (typeof result["url"] === "string") {
@@ -253,6 +272,9 @@ export async function pollGeneration(
         throw new Error(
           "Generation completed but gammaUrl or gammaId is missing",
         );
+      }
+      if (parsed.gammaUrl.length === 0) {
+        throw new Error("Generation completed but gammaUrl is empty");
       }
       return parsed;
     }

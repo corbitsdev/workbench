@@ -74,6 +74,9 @@ describe("gamma_duplicate_presentation", () => {
     const parsed = JSON.parse(result) as Record<string, unknown>;
     expect(parsed["gammaUrl"]).toBe("https://gamma.app/deck/copy-alias");
     expect(parsed["url"]).toBe("https://gamma.app/deck/copy-alias");
+    // Duplicate does not request an export, but still emits the shared deck
+    // shape so a persist argMap keyed on `exportUrl` (pdfUrl) never trips.
+    expect(parsed["exportUrl"]).toBe("");
   });
 
   it("normalizes a completed generation whose deck URL arrives under `url`", async () => {

@@ -28,7 +28,7 @@ The `exportUrl` is a **temporary download link that expires after ~1 week** and 
 
 ## Deck URL field (`gammaUrl` / `url`)
 
-Gamma has returned the completed deck's link under `gammaUrl` (current shape) and, on some responses / older API surfaces, under `url`. `pollGeneration` normalizes a `url`-only completed response up to `gammaUrl` before parsing, and both generate tools emit **both** `gammaUrl` and `url` (aliases of the same link) in their output. This keeps a downstream consumer keyed on either field resolving without a fallback — notably the presentation workflow's `persist` step, whose `argMap` maps the artifact tool's `url` arg from `gammaUrl` with a hard, no-fallback presence check that would otherwise sink the deck save when only `url` is present.
+The completed deck's link has been seen under `url` as well as `gammaUrl` in older packed tool output shapes (the presentation workflow's `blocks.ts` reader already tolerates `gammaUrl ?? url`). `pollGeneration` normalizes a `url`-only completed response up to `gammaUrl` before parsing (and rejects an empty deck link rather than persisting a blank one), and both generate tools return the same validated shape via `toDeckResult` — `gammaUrl`, `url` (a mirror of `gammaUrl`), `gammaId`, and `exportUrl` (empty when there is no PDF). This keeps a downstream consumer keyed on any of those fields resolving without a fallback — notably the presentation workflow's `persist` step, whose `argMap` maps the artifact tool's `url` arg from `gammaUrl` and `pdfUrl` from `exportUrl` with a hard, no-fallback presence check that would otherwise sink the deck save when a field is absent.
 
 ## No live deck-status reflection
 
