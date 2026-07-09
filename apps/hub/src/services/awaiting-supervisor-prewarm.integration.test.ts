@@ -111,6 +111,7 @@ function makeReconciler(routable: string[]) {
     getRoutableAddresses: () => routable,
     deploymentDomain: DEPLOYMENT_DOMAIN,
     reclaimDeployment: () => Promise.resolve(),
+    sendAgentUndeploy: () => Promise.resolve(),
   });
   return { reconciler, calls };
 }

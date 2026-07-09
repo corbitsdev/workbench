@@ -391,6 +391,7 @@ describe("workflow regression gate (CL-2713)", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DEPLOYMENT_DOMAIN,
       reclaimDeployment: () => Promise.resolve(),
+      sendAgentUndeploy: () => Promise.resolve(),
     });
 
     await reconciler.failOrphanedRuns();
@@ -434,6 +435,7 @@ describe("workflow regression gate (CL-2713)", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DEPLOYMENT_DOMAIN,
       reclaimDeployment: () => Promise.resolve(),
+      sendAgentUndeploy: () => Promise.resolve(),
     });
 
     await reconciler.reconcileAll();

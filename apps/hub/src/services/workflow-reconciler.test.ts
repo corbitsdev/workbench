@@ -332,6 +332,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -352,6 +353,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -383,6 +385,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -408,6 +411,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -428,6 +432,7 @@ describe("failOrphanedRuns", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -471,6 +476,7 @@ describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: (args) => {
         calls.push({
           deploymentId: args.deploymentId,
@@ -496,6 +502,7 @@ describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
       ensureDeploymentRoutable: noopEnsure,
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
+      sendAgentUndeploy: () => Promise.resolve(),
       reclaimDeployment: () => {
         reclaimCount += 1;
         return Promise.resolve();

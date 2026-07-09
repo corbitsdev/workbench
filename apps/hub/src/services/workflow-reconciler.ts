@@ -77,6 +77,14 @@ export interface WorkflowReconciler {
   // churn the per-run/eviction model exists to prevent). Idempotent and
   // coalesced through `ensureDeploymentRoutable`; a failure is surfaced and
   // counted, never swallowed, and never aborts the batch.
+  //
+  // Hibernation of long-parked runs: the pre-warm applies only to runs
+  // parked LESS than the hibernation grace. Past the grace the sweep flips
+  // direction — a still-routable deployment is HIBERNATED (state-preserving
+  // undeploy: child killed, workflow-run repo and step state kept) and an
+  // unroutable one is left dormant; the gate signal's own
+  // `ensureDeploymentRoutable` call re-establishes it exactly when the
+  // resume needs it.
   reconcileAwaiting(): Promise<AwaitingPrewarmSummary>;
   // Subscribe to sidecar reconnect events and reconcile on each (coalesced to
   // one in-flight pass). Returns an unsubscribe handle.
@@ -93,9 +101,40 @@ export interface AwaitingPrewarmSummary {
   // Awaiting deployments whose kind has no registry row to recover the deploy
   // principal from — cannot be revived, skipped.
   skippedNoPrincipal: number;
-  // Establish attempts that threw — surfaced (logged + counted), batch continues.
+  // Establish/hibernate attempts that threw — surfaced (logged + counted),
+  // batch continues.
   failed: number;
+  // Routable deployments parked past the hibernation grace this pass tore
+  // down (state-preserving hibernate undeploy sent and acked).
+  hibernated: number;
+  // Unroutable deployments parked past the hibernation grace left down —
+  // wake is signal-driven (`ensureDeploymentRoutable` on the signal path),
+  // never the pre-warm.
+  dormant: number;
 }
+
+// Well-known `agent.undeploy` reason that selects the sidecar's
+// state-PRESERVING teardown for a gate-parked run's deployment: the child
+// subprocess and supervisor residency are freed while the workflow-run repo,
+// step agent-state repos, and per-step scratch all survive for the
+// signal-driven resume.
+//
+// PROTOCOL CONSTANT: `packages/hub-agent/src/ws/hub-link.ts` carries a
+// byte-identical copy (`WORKFLOW_HIBERNATE_UNDEPLOY_REASON`) — the hub does
+// not depend on that package, and the undeploy wire frame carries only
+// `{ agentAddress, reason }`, so the hibernate flavor rides the reason
+// string. Change both together or hibernation silently stops matching on
+// one side.
+export const WORKFLOW_HIBERNATE_UNDEPLOY_REASON =
+  "workbench:hibernate-awaiting-run";
+
+// How long a run may sit parked at an awaitSignal gate before its deployment
+// is hibernated (child killed, durable state preserved). Also the pre-warm
+// horizon: an unroutable awaiting run parked less than this is re-established
+// (crash-recovery backstop); one parked longer stays down until a gate signal
+// wakes it through `ensureDeploymentRoutable`. Mirrored by
+// `WORKFLOW_HIBERNATION_GRACE_MS` in apps/hub/src/config.ts.
+export const DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS = 120_000;
 
 // How far back the orphan janitor looks for terminated-but-not-torn-down runs.
 // A hub crash between the terminal save and the teardown is recovered on the
@@ -110,7 +149,17 @@ export function createWorkflowReconciler(deps: {
   deploymentDomain: string;
   // CL-2582: tear a terminal run's orphaned deployment down (class 2 janitor).
   reclaimDeployment: ReclaimDeploymentFn;
+  // Hibernation teardown sender. Bound to the sidecar router's
+  // `sendAgentUndeploy` in index.ts; the reconciler sends it with the
+  // hibernate reason marker so the sidecar preserves the parked run's state.
+  sendAgentUndeploy: SidecarRouter["sendAgentUndeploy"];
+  // Hibernation grace (ms). Optional with the exported default so tests and
+  // direct constructors need not thread config; production wires the
+  // env-validated `config.workflowHibernationGraceMs`.
+  hibernationGraceMs?: number;
 }): WorkflowReconciler {
+  const hibernationGraceMs =
+    deps.hibernationGraceMs ?? DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS;
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
   // guard lives in reconcileAll itself (not just the reconnect wrapper) so the
@@ -248,6 +297,8 @@ export function createWorkflowReconciler(deps: {
           deploymentId: workflowRunRecord.deploymentId,
           kind: workflowRunRecord.kind,
           tenantId: workflowRunRecord.tenantId,
+          status: workflowRunRecord.status,
+          updatedAt: workflowRunRecord.updatedAt,
         })
         .from(workflowRunRecord)
         .where(
@@ -259,11 +310,27 @@ export function createWorkflowReconciler(deps: {
         );
 
       const seen = new Set<string>();
+      const now = Date.now();
       let reestablished = 0;
       let skippedNoPrincipal = 0;
+      let dormant = 0;
       for (const rec of activeRecords) {
         if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
         seen.add(rec.deploymentId);
+        // A run parked at a gate past the hibernation grace stays down across
+        // reconnect passes — re-establishing it here would resurrect the
+        // child the hibernation sweep just killed. Wake is signal-driven:
+        // the signal path's `ensureDeploymentRoutable` re-establishes it
+        // exactly when the gate resume needs it. A parked run's record is
+        // written only when its run log advances, so `updatedAt` is the
+        // park time (the last fold is SignalAwaited).
+        if (
+          rec.status === "awaiting" &&
+          now - rec.updatedAt.getTime() >= hibernationGraceMs
+        ) {
+          dormant += 1;
+          continue;
+        }
         const deployPrincipal = deployPrincipalByKind.get(
           `${rec.kind} ${rec.tenantId}`,
         );
@@ -290,11 +357,12 @@ export function createWorkflowReconciler(deps: {
           });
         }
       }
-      if (reestablished > 0 || skippedNoPrincipal > 0) {
+      if (reestablished > 0 || skippedNoPrincipal > 0 || dormant > 0) {
         log.info("workflow reconcile pass complete", {
           activeRecords: activeRecords.length,
           reestablished,
           skippedNoPrincipal,
+          dormant,
         });
       }
     } finally {
@@ -332,6 +400,8 @@ export function createWorkflowReconciler(deps: {
       alreadyRoutable: 0,
       skippedNoPrincipal: 0,
       failed: 0,
+      hibernated: 0,
+      dormant: 0,
     };
 
     const awaitingRecords = await deps.db
@@ -339,6 +409,7 @@ export function createWorkflowReconciler(deps: {
         deploymentId: workflowRunRecord.deploymentId,
         kind: workflowRunRecord.kind,
         tenantId: workflowRunRecord.tenantId,
+        updatedAt: workflowRunRecord.updatedAt,
       })
       .from(workflowRunRecord)
       .where(
@@ -354,6 +425,7 @@ export function createWorkflowReconciler(deps: {
     const deployPrincipalByKind = await loadDeployPrincipalByKind();
 
     const seen = new Set<string>();
+    const now = Date.now();
     for (const rec of awaitingRecords) {
       if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
       seen.add(rec.deploymentId);
@@ -363,11 +435,48 @@ export function createWorkflowReconciler(deps: {
         deploymentId: rec.deploymentId,
         deploymentDomain: deps.deploymentDomain,
       });
-      // Already routable: the healthy case (the supervisor survived, or a
-      // reconnect reconcile already re-established it). Skip — never re-drive a
-      // deploy frame at a live supervisor.
+      // Age of the park. A parked run's record is written only when its run
+      // log advances (the last fold is SignalAwaited), so `updatedAt` is the
+      // park time; each resumed-then-reparked gate refreshes it.
+      const parkedForMs = now - rec.updatedAt.getTime();
+
       if (routable.has(address)) {
+        // Parked past the grace with a live supervisor: hibernate — send the
+        // state-preserving teardown so the child subprocess and supervisor
+        // residency stop burning sidecar RAM for the whole human wait. The
+        // undeploy ack drops the address from the routable set, and the next
+        // gate signal's `ensureDeploymentRoutable` re-establishes it.
+        if (parkedForMs >= hibernationGraceMs) {
+          try {
+            await deps.sendAgentUndeploy(
+              address,
+              WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+            );
+            summary.hibernated += 1;
+          } catch (err) {
+            summary.failed += 1;
+            log.error("hibernate teardown failed for parked deployment", {
+              deploymentId: rec.deploymentId,
+              kind: rec.kind,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
+          }
+          continue;
+        }
+        // Under the grace and routable: the healthy case (the supervisor
+        // survived, or a reconnect reconcile already re-established it).
+        // Skip — never re-drive a deploy frame at a live supervisor.
         summary.alreadyRoutable += 1;
+        continue;
+      }
+
+      // Unroutable and parked past the grace: hibernated (or crashed after
+      // the grace elapsed — indistinguishable, and identically resumable).
+      // Leave it down; wake is signal-driven via the signal path's
+      // `ensureDeploymentRoutable`, so the pre-warm must not fight the
+      // hibernation sweep by resurrecting the child it just killed.
+      if (parkedForMs >= hibernationGraceMs) {
+        summary.dormant += 1;
         continue;
       }
 
@@ -401,13 +510,19 @@ export function createWorkflowReconciler(deps: {
       }
     }
 
-    if (summary.reestablished > 0 || summary.failed > 0) {
+    if (
+      summary.reestablished > 0 ||
+      summary.failed > 0 ||
+      summary.hibernated > 0
+    ) {
       log.info("awaiting pre-warm pass complete", {
         candidates: summary.candidates,
         reestablished: summary.reestablished,
         alreadyRoutable: summary.alreadyRoutable,
         skippedNoPrincipal: summary.skippedNoPrincipal,
         failed: summary.failed,
+        hibernated: summary.hibernated,
+        dormant: summary.dormant,
       });
     }
     return summary;

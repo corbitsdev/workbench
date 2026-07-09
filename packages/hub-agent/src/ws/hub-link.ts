@@ -112,7 +112,34 @@ export interface DeployRouter {
    * the implementation.
    */
   undeploy?: (frame: AgentUndeployFrame) => Promise<void>;
+  /**
+   * WORKBENCH-LOCAL (CL-3104): state-PRESERVING teardown for `deploy`.
+   * The link invokes this instead of `undeploy` when an `agent.undeploy`
+   * frame carries the `WORKFLOW_HIBERNATE_UNDEPLOY_REASON` marker: the
+   * router must release the same per-deployment routing state and shut
+   * the supervisor/child down, but keep every durable on-disk artifact
+   * (workflow-run repo, per-step agent-state repos, step scratch) so a
+   * later re-deploy at the same address resumes the parked run from the
+   * durable log. Optional for routers that never host workflows.
+   */
+  hibernate?: (frame: AgentUndeployFrame) => Promise<void>;
 }
+
+/**
+ * WORKBENCH-LOCAL (CL-3104): well-known `agent.undeploy` reason the hub's
+ * workflow reconciler sends to hibernate a gate-parked (awaiting) run's
+ * deployment. The undeploy frame (`@intx/types/sidecar`) carries only
+ * `{ agentAddress, reason }` and the hub-side sender (`@intx/hub-sessions`
+ * `sendAgentUndeploy`) exposes only those two fields, so the hibernate
+ * flavor rides the reason string — the one hub→sidecar teardown seam that
+ * crosses interchange unmodified.
+ *
+ * PROTOCOL CONSTANT: `apps/hub/src/services/workflow-reconciler.ts`
+ * carries a byte-identical copy (the hub does not depend on this package).
+ * Change both together or hibernate silently degrades on one side.
+ */
+export const WORKFLOW_HIBERNATE_UNDEPLOY_REASON =
+  "workbench:hibernate-awaiting-run";
 
 /**
  * Per-address mail handler registry the link consults on every
@@ -513,7 +540,69 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3104): hibernate flavor of agent.undeploy. Selected
+  // by the well-known reason marker; tears down runtime residency (routing
+  // registrations, supervisor/child, harness session) while preserving every
+  // durable on-disk artifact — no state-pack push, no `deleteAgentDir`, no
+  // `forgetAgent`. The ack still fires so the hub's undeploy machinery drops
+  // the address from its routable set; that unroutability is what makes the
+  // next gate signal's `ensureDeploymentRoutable` re-establish the deployment
+  // and resume the parked run. The ack is withheld when the router cannot
+  // hibernate (missing hook / hook failure): acking would make the hub
+  // believe the child is gone while it still runs, and the hub's undeploy
+  // timeout surfaces the failure loudly instead.
+  async function handleAgentHibernate(
+    frame: AgentUndeployFrame,
+  ): Promise<void> {
+    if (deployRouter.hibernate === undefined) {
+      logger.error`Hibernate requested for ${frame.agentAddress} but the deploy router has no hibernate hook; leaving the deployment resident (no ack)`;
+      return;
+    }
+    try {
+      await deployRouter.hibernate(frame);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error`Deploy router hibernate hook failed for ${frame.agentAddress}: ${msg}; leaving the deployment resident (no ack)`;
+      return;
+    }
+
+    // Same bootstrap-flag prune as the full undeploy: the wiring's hibernate
+    // clears the deployment's delta cursor, so the next push after a wake
+    // must re-run the bootstrap-retry arm.
+    const bootstrapped = workflowRunPackBootstrappedByAddress.get(
+      frame.agentAddress,
+    );
+    if (bootstrapped !== undefined) {
+      for (const key of bootstrapped) {
+        workflowRunPackBootstrapped.delete(key);
+      }
+      workflowRunPackBootstrappedByAddress.delete(frame.agentAddress);
+    }
+
+    // Stop any legacy harness session at the deployment address (a no-op for
+    // genuine multi-step deployments, which never start one).
+    try {
+      await sessions.destroySession(frame.agentAddress);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn`Failed to stop session for ${frame.agentAddress}: ${msg}`;
+    }
+
+    send({
+      type: "agent.undeploy.ack",
+      agentAddress: frame.agentAddress,
+      statePushed: false,
+    });
+    logger.info`Hibernated deployment ${frame.agentAddress}: ${frame.reason}`;
+  }
+
   async function handleAgentUndeploy(frame: AgentUndeployFrame): Promise<void> {
+    // WORKBENCH-LOCAL (CL-3104): reason-scoped hibernate branch.
+    if (frame.reason === WORKFLOW_HIBERNATE_UNDEPLOY_REASON) {
+      await handleAgentHibernate(frame);
+      return;
+    }
+
     let statePushed = false;
 
     // Release per-deployment routing state the deploy router installed

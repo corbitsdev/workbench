@@ -1689,128 +1689,162 @@ export function createSidecarDeployRouter(deps: {
         }
       }
     },
+    // WORKBENCH-LOCAL (CL-3104): the undeploy hook body moved into the
+    // shared `teardownDeployment` below (unchanged except for the
+    // `reclaimDirs` gates around the two rm sweeps) so the hibernate
+    // flavor reuses it. On a pin-bump re-sync, re-apply upstream undeploy
+    // changes INSIDE `teardownDeployment`, keeping both gates.
     async undeploy(frame): Promise<void> {
-      // Symmetric teardown for `deploy`: release the per-deployment
-      // routing state both branches install so a stale `signal.deliver`
-      // / `drain.deliver` / `mail.inbound` aimed at the dead deployment
-      // address is rejected by the router rather than dispatched into
-      // an orphan supervisor handler. The unregister calls are
-      // idempotent and safe to invoke for both branches even though
-      // the trivial branch never registers against the multi-step
-      // routers; those calls are no-ops when no handler is registered.
-      //
-      // Routers come down BEFORE the supervisor's `shutdown()` so any
-      // hub-side frame racing the undeploy is dropped at the router
-      // boundary rather than dispatched into a supervisor that is in
-      // the middle of tearing its child down. The pattern is: drop
-      // racing frames first, then unwind the underlying resource.
-      const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
-      deps.multistepMailRouter?.unregister(frame.agentAddress);
-      deps.multistepSignalRouter?.unregister(frame.agentAddress);
-      deps.multistepDrainRouter?.unregister(frame.agentAddress);
-      // Shut the per-deployment supervisor down so the workflow-process
-      // child, its IPC pipes, and its event-channel fd are released.
-      // The supervisor's `shutdown()` is idempotent (returns early when
-      // the supervisor is already in `idle`/`stopped`) and handles the
-      // kill + `exited` await internally. The map entry is removed
-      // before the await so a subsequent re-deploy on the same address
-      // cannot observe a stale handle even if `shutdown()` rejects.
-      // Trivial deploys never enter the map, so this lookup is a no-op
-      // for the trivial branch.
-      const active = activeSupervisors.get(frame.agentAddress);
-      if (active !== undefined) {
-        activeSupervisors.delete(frame.agentAddress);
-        await active.wired.supervisor.shutdown();
-        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
-        // Barrier: drain the workflow-run pack-push pipeline to a hub-acked
-        // resting state now that `shutdown()` guarantees the child can append no
-        // more events. This MUST precede the reclaim rm below (a push must not
-        // race the repo-dir deletion mid pack walk) AND the cursor clear in
-        // `unregisterDeployment` (a push that acks after `forgetDeployment` would
-        // resurrect a stale cursor → dangling-delta on redeploy). Best-effort:
-        // a failed final push has already reset its own cursor, so swallow.
-        if (deps.drainWorkflowRunPushes !== undefined) {
-          try {
-            await deps.drainWorkflowRunPushes(deploymentId);
-          } catch (cause) {
-            const reason =
-              cause instanceof Error ? cause.message : String(cause);
-            logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
-          }
-        }
-        // Drop the agent's transport registration installed at spawn for
-        // the single-step launched-agent deploy (OUTBOUND half of
-        // mailbox ownership, §3a). `unregister` is a no-op when the
-        // address was never registered (a genuine multi-step deploy
-        // whose derived per-step addresses carry no host keypair), so it
-        // is safe to call unconditionally for any spawned deployment.
-        deps.transport.unregister(frame.agentAddress);
-        // Reclaim the deployment's per-step local-disk scratch now that
-        // its supervisor + workflow-process child are torn down. The
-        // whole `workflow-step-state/<deploymentId>/` subtree goes: the
-        // warm single-step agent's stable workspace under `warm/` (the
-        // dir bounded keying parks per agent) AND any cold `runs/<runId>/`
-        // subtrees a multi-step deploy's per-run cleanup did not already
-        // drop. Awaiting `shutdown()` above guarantees no child still
-        // holds the scratch, so this is a safe `rm -rf`. The durable
-        // conversation under `agent-conversation-state/` is a DIFFERENT
-        // root and is deliberately NOT touched here -- a re-deploy on the
-        // same address must restore the prior conversation from it.
-        if (stepStateDataDir !== undefined) {
-          await rm(
-            pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
-            {
-              recursive: true,
-              force: true,
-            },
-          );
-        }
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: true });
+    },
+    // WORKBENCH-LOCAL (CL-3104): hibernate — the state-PRESERVING teardown
+    // for a deployment whose only run is parked at an awaitSignal gate.
+    // Identical residency teardown (routers, supervisor/child kill, drain
+    // barrier, slug, deployment mapping) but every durable on-disk
+    // artifact survives: the workflow-run repo holding the parked run's
+    // event log, each step's agent-state repo, the per-step scratch, and
+    // the durable conversation. A later re-deploy at the same address
+    // (the hub's signal-path re-establishment) spawns a fresh child whose
+    // self-discovery resumes the parked run from that state via the
+    // CL-2535 recoverParkedRun hook / CL-2537 live signal watcher.
+    async hibernate(frame): Promise<void> {
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
+    },
+  };
 
-        // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump re-sync.
-        // Reclaim the deployment's on-disk footprint (CL-2231). Deployment
-        // churn (supersede/redeploy + DELETE) otherwise leaks two things the
-        // rest of teardown never touches and exhausts the sidecar volume's
-        // inodes: the per-deployment workflow-run repo (a `workflow-run` repo,
-        // not an agent dir, so no undeploy path reclaims it) and every step's
-        // on-disk dirs (interchange's undeploy only deletes a step agent's dir
-        // while it is CONNECTED, orphaning idle-evicted steps forever). This
-        // hook runs on the sidecar, so it deletes the local dirs directly
-        // regardless of connection state. Complements the upstream
-        // `workflow-step-state/<deploymentId>` scratch reclaim above.
-        //
-        // Each deletion is best-effort and idempotent (`force: true` swallows
-        // ENOENT) and never throws out of the hook: teardown must converge
-        // even if a single dir cannot be removed.
+  async function teardownDeployment(
+    agentAddress: string,
+    opts: { reclaimDirs: boolean },
+  ): Promise<void> {
+    // Symmetric teardown for `deploy`: release the per-deployment
+    // routing state both branches install so a stale `signal.deliver`
+    // / `drain.deliver` / `mail.inbound` aimed at the dead deployment
+    // address is rejected by the router rather than dispatched into
+    // an orphan supervisor handler. The unregister calls are
+    // idempotent and safe to invoke for both branches even though
+    // the trivial branch never registers against the multi-step
+    // routers; those calls are no-ops when no handler is registered.
+    //
+    // Routers come down BEFORE the supervisor's `shutdown()` so any
+    // hub-side frame racing the undeploy is dropped at the router
+    // boundary rather than dispatched into a supervisor that is in
+    // the middle of tearing its child down. The pattern is: drop
+    // racing frames first, then unwind the underlying resource.
+    const deploymentId = deriveTrivialDeploymentId(agentAddress);
+    deps.multistepMailRouter?.unregister(agentAddress);
+    deps.multistepSignalRouter?.unregister(agentAddress);
+    deps.multistepDrainRouter?.unregister(agentAddress);
+    // Shut the per-deployment supervisor down so the workflow-process
+    // child, its IPC pipes, and its event-channel fd are released.
+    // The supervisor's `shutdown()` is idempotent (returns early when
+    // the supervisor is already in `idle`/`stopped`) and handles the
+    // kill + `exited` await internally. The map entry is removed
+    // before the await so a subsequent re-deploy on the same address
+    // cannot observe a stale handle even if `shutdown()` rejects.
+    // Trivial deploys never enter the map, so this lookup is a no-op
+    // for the trivial branch.
+    const active = activeSupervisors.get(agentAddress);
+    if (active !== undefined) {
+      activeSupervisors.delete(agentAddress);
+      await active.wired.supervisor.shutdown();
+      // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+      // Barrier: drain the workflow-run pack-push pipeline to a hub-acked
+      // resting state now that `shutdown()` guarantees the child can append no
+      // more events. This MUST precede the reclaim rm below (a push must not
+      // race the repo-dir deletion mid pack walk) AND the cursor clear in
+      // `unregisterDeployment` (a push that acks after `forgetDeployment` would
+      // resurrect a stale cursor → dangling-delta on redeploy). Best-effort:
+      // a failed final push has already reset its own cursor, so swallow.
+      if (deps.drainWorkflowRunPushes !== undefined) {
+        try {
+          await deps.drainWorkflowRunPushes(deploymentId);
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause);
+          logger.warn`undeploy: workflow-run push drain failed for ${agentAddress}: ${reason}`;
+        }
+      }
+      // Drop the agent's transport registration installed at spawn for
+      // the single-step launched-agent deploy (OUTBOUND half of
+      // mailbox ownership, §3a). `unregister` is a no-op when the
+      // address was never registered (a genuine multi-step deploy
+      // whose derived per-step addresses carry no host keypair), so it
+      // is safe to call unconditionally for any spawned deployment.
+      deps.transport.unregister(agentAddress);
+      // Reclaim the deployment's per-step local-disk scratch now that
+      // its supervisor + workflow-process child are torn down. The
+      // whole `workflow-step-state/<deploymentId>/` subtree goes: the
+      // warm single-step agent's stable workspace under `warm/` (the
+      // dir bounded keying parks per agent) AND any cold `runs/<runId>/`
+      // subtrees a multi-step deploy's per-run cleanup did not already
+      // drop. Awaiting `shutdown()` above guarantees no child still
+      // holds the scratch, so this is a safe `rm -rf`. The durable
+      // conversation under `agent-conversation-state/` is a DIFFERENT
+      // root and is deliberately NOT touched here -- a re-deploy on the
+      // same address must restore the prior conversation from it.
+      // WORKBENCH-LOCAL (CL-3104): the scratch reclaim is gated off for
+      // hibernate — a parked run's per-step scratch (and warm workspace)
+      // must survive so the woken child resumes against it.
+      if (opts.reclaimDirs && stepStateDataDir !== undefined) {
+        await rm(
+          pathJoin(stepStateDataDir, "workflow-step-state", deploymentId),
+          {
+            recursive: true,
+            force: true,
+          },
+        );
+      }
+
+      // WORKBENCH-LOCAL (CL-2231): not in upstream — preserve on pin-bump re-sync.
+      // Reclaim the deployment's on-disk footprint (CL-2231). Deployment
+      // churn (supersede/redeploy + DELETE) otherwise leaks two things the
+      // rest of teardown never touches and exhausts the sidecar volume's
+      // inodes: the per-deployment workflow-run repo (a `workflow-run` repo,
+      // not an agent dir, so no undeploy path reclaims it) and every step's
+      // on-disk dirs (interchange's undeploy only deletes a step agent's dir
+      // while it is CONNECTED, orphaning idle-evicted steps forever). This
+      // hook runs on the sidecar, so it deletes the local dirs directly
+      // regardless of connection state. Complements the upstream
+      // `workflow-step-state/<deploymentId>` scratch reclaim above.
+      //
+      // Each deletion is best-effort and idempotent (`force: true` swallows
+      // ENOENT) and never throws out of the hook: teardown must converge
+      // even if a single dir cannot be removed.
+      //
+      // WORKBENCH-LOCAL (CL-3104): gated off for hibernate — the
+      // workflow-run repo IS the parked run's durable event log and the
+      // step agent-state repos hold its grants; deleting either would
+      // turn the wake re-deploy into a fresh run instead of a resume.
+      if (opts.reclaimDirs) {
         for (const dir of active.ownedDirs) {
           try {
             await rm(dir, { recursive: true, force: true });
           } catch (cause) {
             const reason =
               cause instanceof Error ? cause.message : String(cause);
-            logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${frame.agentAddress}: ${reason}`;
+            logger.warn`undeploy: failed to reclaim deployment dir ${dir} for ${agentAddress}: ${reason}`;
           }
         }
-      } else if (deps.drainWorkflowRunPushes !== undefined) {
-        // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
-        // Trivial-branch barrier. No supervisor to shut down, but the routers
-        // are already unregistered above so no new run-event write can arrive;
-        // drain any in-flight push to a hub-acked rest before the cursor clear
-        // in `unregisterDeployment` below, for the same anti-resurrection reason
-        // as the multi-step path.
-        try {
-          await deps.drainWorkflowRunPushes(deploymentId);
-        } catch (cause) {
-          const reason = cause instanceof Error ? cause.message : String(cause);
-          logger.warn`undeploy: workflow-run push drain failed for ${frame.agentAddress}: ${reason}`;
-        }
       }
-      releaseSlug(deploymentId, frame.agentAddress);
-      deps.unregisterDeployment({
-        deploymentId,
-        agentAddress: frame.agentAddress,
-      });
-    },
-  };
+    } else if (deps.drainWorkflowRunPushes !== undefined) {
+      // WORKBENCH-LOCAL (CL-2340): not in upstream — preserve on pin-bump re-sync.
+      // Trivial-branch barrier. No supervisor to shut down, but the routers
+      // are already unregistered above so no new run-event write can arrive;
+      // drain any in-flight push to a hub-acked rest before the cursor clear
+      // in `unregisterDeployment` below, for the same anti-resurrection reason
+      // as the multi-step path.
+      try {
+        await deps.drainWorkflowRunPushes(deploymentId);
+      } catch (cause) {
+        const reason = cause instanceof Error ? cause.message : String(cause);
+        logger.warn`undeploy: workflow-run push drain failed for ${agentAddress}: ${reason}`;
+      }
+    }
+    releaseSlug(deploymentId, agentAddress);
+    deps.unregisterDeployment({
+      deploymentId,
+      agentAddress,
+    });
+  }
 }
 
 /**

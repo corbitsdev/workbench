@@ -37,7 +37,7 @@ import type { AgentEventListener, SessionManager } from "../session-manager";
 
 function createTestKeyStore(): AgentKeyStore & {
   registerKey(address: string, kp: KeyPair): void;
-  hasKey(address: string): boolean;
+  hasHubKey(address: string): boolean;
 } {
   const agentKeys = new Map<string, KeyPair>();
   const hubKeys = new Map<string, Uint8Array>();
@@ -45,8 +45,8 @@ function createTestKeyStore(): AgentKeyStore & {
     registerKey(address, kp) {
       agentKeys.set(address, kp);
     },
-    hasKey(address) {
-      return agentKeys.has(address);
+    hasHubKey(address) {
+      return hubKeys.has(address);
     },
     async loadOrGenerateKey(address) {
       const existing = agentKeys.get(address);
@@ -312,7 +312,7 @@ describe("hub-link hibernate undeploy flavor", () => {
       await waitFor(() =>
         env.router.getRoutableAddresses().includes(agentAddress),
       );
-      expect(keyStore.hasKey(agentAddress)).toBe(true);
+      expect(keyStore.hasHubKey(agentAddress)).toBe(true);
 
       // Hibernate: the well-known reason selects the state-preserving
       // teardown. The ack must still fire so the hub's undeploy machinery
@@ -329,9 +329,9 @@ describe("hub-link hibernate undeploy flavor", () => {
       expect(hibernated).toEqual([agentAddress]);
       expect(undeployed).toEqual([]);
       // Durable state preserved: the agent dir was NOT deleted and the
-      // signing key was NOT forgotten.
+      // recorded hub key was NOT forgotten.
       expect(sessions.deletedDirs).toEqual([]);
-      expect(keyStore.hasKey(agentAddress)).toBe(true);
+      expect(keyStore.hasHubKey(agentAddress)).toBe(true);
 
       // Wake: a fresh deploy at the same address succeeds (the hub's
       // signal-path re-establishment re-sends agent.deploy).
