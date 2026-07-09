@@ -1,8 +1,10 @@
 import { useMemo } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   UIBlockView,
   DockRunPhaseSchema,
   type DockRunPhase,
+  type UIBlock,
   type UIResponse,
 } from "@workbench/chat";
 import { Button, failedRunError, toHumanLabel } from "@workbench/ui";
@@ -34,6 +36,35 @@ function deriveActiveStep(steps: readonly StepState[]): StepState | null {
   );
   if (nonCompleted) return nonCompleted;
   return steps[steps.length - 1] ?? null;
+}
+
+// A stable identity for a block across polls. The block list is recomputed in
+// place on every /state frame (not append-only), so keying by array index would
+// remount a block whenever the list length changes — wiping its local state and
+// re-firing its entrance animation. Keying by kind + a discriminating field
+// (the unified comparison block is a singleton; gates key by signal) lets the
+// one comparison block stream its variants in place as the run progresses.
+export function blockKey(block: UIBlock, index: number): string {
+  switch (block.kind) {
+    case "comparison":
+      return "comparison";
+    case "progress":
+      return "progress";
+    case "error":
+      return "error";
+    case "link":
+      return `link:${block.url}`;
+    case "choice":
+      return `choice:${block.signalName ?? index}`;
+    case "form":
+      return `form:${block.signalName ?? index}`;
+    case "multiSelect":
+      return `multiSelect:${block.signalName ?? index}`;
+    case "reviewList":
+      return `reviewList:${block.signalName ?? index}`;
+    default:
+      return `${block.kind}:${index}`;
+  }
 }
 
 interface WorkflowRunBlocksProps {
@@ -72,6 +103,7 @@ export function WorkflowRunBlocks({
   onRespond,
   onClose,
 }: WorkflowRunBlocksProps) {
+  const reduceMotion = useReducedMotion();
   const steps = useMemo(() => [...state.steps.values()], [state]);
   const activeStep = useMemo(() => deriveActiveStep(steps), [steps]);
   const activeIndex = activeStep
@@ -153,9 +185,23 @@ export function WorkflowRunBlocks({
         aria-live="polite"
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
-        {blocks.map((block, index) => (
-          <UIBlockView key={index} block={block} onRespond={onRespond} />
-        ))}
+        <AnimatePresence initial={false}>
+          {blocks.map((block, index) => (
+            <motion.div
+              key={blockKey(block, index)}
+              {...(reduceMotion === true
+                ? {}
+                : {
+                    initial: { opacity: 0 },
+                    animate: { opacity: 1 },
+                    exit: { opacity: 0 },
+                    transition: { duration: 0.2 },
+                  })}
+            >
+              <UIBlockView block={block} onRespond={onRespond} />
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
         {failed && (
           <div className="flex flex-col items-start gap-3">

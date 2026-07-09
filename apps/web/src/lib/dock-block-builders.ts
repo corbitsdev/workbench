@@ -3,7 +3,7 @@ import {
   type DockRunInput,
   type UIBlock,
 } from "@workbench/chat";
-import { buildAbCompareHitlBlocks } from "@workbench/workflow-ab-compare-hitl/blocks";
+import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
 import { buildAttioTaskAgentBlocks } from "@workbench/workflow-attio-task-agent/blocks";
 import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator/blocks";
 import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
@@ -24,7 +24,9 @@ export type DockBlockBuilderInput = DockRunInput & {
 type DockBlockBuilder = (input: DockBlockBuilderInput) => UIBlock[];
 
 const builders: Record<string, DockBlockBuilder> = {
-  "ab-compare-hitl": buildAbCompareHitlBlocks,
+  "ab-compare-quality": buildAbPresetBlocks,
+  "ab-compare-speed": buildAbPresetBlocks,
+  "ab-compare-standard": buildAbPresetBlocks,
   "attio-task-agent": buildAttioTaskAgentBlocks,
   "gamma-presentation-creator": buildGammaBlocks,
   "last30days-research": buildLast30daysBlocks,

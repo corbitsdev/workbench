@@ -330,7 +330,7 @@ describe("ActorDetailPage", () => {
         kind: "workflow_run",
         sourceTable: "workflow_run_record",
         timestamp: "2026-07-01T15:00:00.000Z",
-        summary: "ab-compare-hitl",
+        summary: "ab-compare-quality",
       },
     ];
     renderAt("prn_u1");

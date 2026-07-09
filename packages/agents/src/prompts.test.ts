@@ -18,6 +18,11 @@ describe("agent system prompts", () => {
     expect(prompt).toContain("No emojis unless explicitly requested");
   });
 
+  it("personal agent points skill drafts at Skills → Pending drafts", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", format);
+    expect(prompt).toContain("Skills → Pending drafts");
+  });
+
   it("loop agent includes the humanizer section", () => {
     const prompt = buildLoopAgentSystemPrompt("Loop", format);
     expect(prompt).toContain("No emojis unless explicitly requested");

@@ -1,6 +1,6 @@
 import { type, type Type } from "arktype";
 import {
-  AbConfigPayloadSchema,
+  AbPresetConfigPayloadSchema,
   AbDecisionPayloadSchema,
   ClarificationPayloadSchema,
   Last30daysIntakePayloadSchema,
@@ -51,13 +51,21 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     clarification: ClarificationPayloadSchema,
     "sync-approval": SyncApprovalPayloadSchema,
   },
-  // ab-compare-hitl (CL-2683): both gates carry a structured payload. The blind
-  // winner-pick REQUIRES a non-empty ranking — a free-text `{ instruction }` is
-  // rejected here rather than composing a winner-less artifact — and the config
-  // gate REQUIRES fully-specified variants + input.
-  "ab-compare-hitl": {
+  // The curated A/B presets (CL-3074): the config gate collects ONLY the shared
+  // prompt (the models are fixed at definition time), so it validates against the
+  // prompt-only schema; the human pick is a non-empty ranking. Keyed per preset
+  // kind so the prompt-only config shape is enforced for each.
+  "ab-compare-quality": {
+    "ab-config": AbPresetConfigPayloadSchema,
     "ab-decision": AbDecisionPayloadSchema,
-    "ab-config": AbConfigPayloadSchema,
+  },
+  "ab-compare-speed": {
+    "ab-config": AbPresetConfigPayloadSchema,
+    "ab-decision": AbDecisionPayloadSchema,
+  },
+  "ab-compare-standard": {
+    "ab-config": AbPresetConfigPayloadSchema,
+    "ab-decision": AbDecisionPayloadSchema,
   },
   // gamma-presentation-creator: the `intake` gate REQUIRES a deck title + a
   // Gamma template (CL-2684) — the render step reads both. Each preview gate's

@@ -2,6 +2,7 @@ import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
 import {
+  GENERATION_EXPORT_FORMAT,
   gammaFetchJSON,
   isRecord,
   optionalString,
@@ -9,8 +10,11 @@ import {
   requiredString,
   resolveConfig,
   stringTool,
+  toDeckResult,
   WORKSPACE_SHARING_OPTIONS,
+  type GammaDeckResult,
   type GammaToolsConfig,
+  type GenerationResult,
   type ResolvedGammaConfig,
 } from "./shared";
 
@@ -19,15 +23,14 @@ export async function generateFromTemplate(
   config: GammaToolsConfig,
   args: { gammaId: string; prompt: string; title?: string },
   signal: AbortSignal,
-): Promise<{ gammaUrl: string; gammaId: string }> {
+): Promise<GenerationResult> {
   const resolved = resolveConfig(config);
   const argsMap: Record<string, unknown> = {
     gammaId: args.gammaId,
     prompt: args.prompt,
   };
   if (args.title !== undefined) argsMap["title"] = args.title;
-  const result = await createFromTemplate(resolved, argsMap, signal);
-  return result as { gammaUrl: string; gammaId: string };
+  return createFromTemplate(resolved, argsMap, signal);
 }
 
 // Direct HTTP to Gamma SaaS API — see AGENTS.md 'Third-party generation APIs' and packages/tools-gamma/README.md
@@ -35,7 +38,7 @@ async function createFromTemplate(
   config: ResolvedGammaConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
-): Promise<unknown> {
+): Promise<GammaDeckResult> {
   const gammaId = requiredString(args, "gammaId");
   const prompt = requiredString(args, "prompt");
   const title = optionalString(args["title"]);
@@ -46,6 +49,7 @@ async function createFromTemplate(
     prompt,
     ...(title !== null ? { title } : {}),
     ...(themeId !== null ? { themeId } : {}),
+    exportAs: GENERATION_EXPORT_FORMAT,
     sharingOptions: WORKSPACE_SHARING_OPTIONS,
   };
 
@@ -65,7 +69,11 @@ async function createFromTemplate(
   }
 
   const result = await pollGeneration(config, generationId, signal);
-  return { gammaUrl: result.gammaUrl, gammaId: result.gammaId };
+  // `toDeckResult` guarantees `gammaUrl`, `url`, `gammaId`, and `exportUrl` on
+  // the output so the workflow's persist argMap (which reads `gammaUrl` and
+  // `pdfUrl <- exportUrl` with a hard, no-fallback presence check) always
+  // resolves. An empty `exportUrl` is treated as "no PDF" downstream.
+  return toDeckResult(result);
 }
 
 // Tenant-owned templates are stored in the hub DB and listed via the

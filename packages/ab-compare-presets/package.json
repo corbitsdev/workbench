@@ -1,0 +1,33 @@
+{
+  "name": "@workbench/ab-compare-presets",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./blocks": {
+      "types": "./src/blocks.ts",
+      "default": "./src/blocks.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --isolate src",
+    "test:coverage": "bun test --isolate --coverage --coverage-reporter=lcov --coverage-reporter=text src"
+  },
+  "dependencies": {
+    "@intx/workflow": "workspace:*",
+    "@workbench/agents": "workspace:*",
+    "@workbench/blocks": "workspace:*",
+    "arktype": "catalog:"
+  },
+  "devDependencies": {
+    "@workbench/catalog": "workspace:*",
+    "@workbench/test-utils": "workspace:*",
+    "@types/bun": "latest",
+    "typescript": "catalog:"
+  }
+}

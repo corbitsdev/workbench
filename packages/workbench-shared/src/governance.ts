@@ -403,6 +403,21 @@ export interface CredentialProviderCatalogEntry {
   kind: "inference" | "tool";
   /** Seeded onto a newly-created provider row only (never patches an existing one). */
   defaultMetadata?: Record<string, unknown>;
+  /** Label for the secret input. Defaults to "API key"; override where the
+   * secret is not an API key (e.g. Bluesky's app password). */
+  secretLabel?: string;
+  /** When set, the owner form shows a second text input alongside the secret
+   * whose value is stored on the provider's `metadata.baseURL`. Used by
+   * providers that need an endpoint (Bifrost) or an identity handle (Bluesky)
+   * in addition to the secret. `required` blocks saving until it is filled —
+   * true where the provider cannot resolve without it (Bluesky's handle) and
+   * false where a default exists (Bifrost's baseURL). */
+  secondaryField?: { label: string; placeholder: string; required?: boolean };
+  /** Display names of the platforms a single credential powers, shown as a
+   * sub-label in the owner row. One credential can back several platforms
+   * (e.g. ScrapeCreators → Reddit, TikTok, …); the user-facing tool surface
+   * still names the individual platform, not the provider. */
+  platforms?: readonly string[];
 }
 
 /** Provider name for Bifrost (openai-compatible gateway). Central constant so
@@ -424,6 +439,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Bifrost",
       kind: "inference",
       defaultMetadata: { baseURL: "https://your-bifrost.example.com/v1" },
+      secondaryField: {
+        label: "Base URL",
+        placeholder: "https://your-bifrost.example.com/v1",
+      },
     },
     {
       providerName: "anthropic",
@@ -478,6 +497,38 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Attio",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.attio.com" },
+    },
+    {
+      providerName: "vercel",
+      providerPlugin: "vercel",
+      label: "Vercel",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.vercel.com" },
+    },
+    {
+      providerName: "youtube",
+      providerPlugin: "youtube",
+      label: "YouTube",
+      kind: "tool",
+    },
+    {
+      providerName: "scrapecreators",
+      providerPlugin: "scrapecreators",
+      label: "ScrapeCreators",
+      kind: "tool",
+      platforms: ["Reddit", "TikTok", "Instagram", "Threads", "Pinterest"],
+    },
+    {
+      providerName: "bluesky",
+      providerPlugin: "bluesky",
+      label: "Bluesky",
+      kind: "tool",
+      secretLabel: "App password",
+      secondaryField: {
+        label: "Handle",
+        placeholder: "you.bsky.social",
+        required: true,
+      },
     },
   ] as const;
 

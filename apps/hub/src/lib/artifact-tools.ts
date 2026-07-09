@@ -9,16 +9,27 @@ import {
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 } from "@workbench/tools-artifact";
-import { GammaPresentationContentSchema } from "@workbench/shared";
-import { and, desc, eq } from "drizzle-orm";
+import {
+  GammaPresentationContentSchema,
+  parseWebSiteContentJson,
+  serializeWebSiteContent,
+  WEB_SITE_KIND,
+  normalizeWebSitePath,
+  summarizeWebSiteContent,
+} from "@workbench/shared";
+import { getLogger } from "@intx/log";
+import { and, desc, eq, ne } from "drizzle-orm";
 import {
   artifact,
   artifactStatus,
   artifactVersion,
+  MAX_UPLOAD_BYTES,
   memberAgentInstance,
+  upload,
 } from "../db/schema";
 
 export {
@@ -28,11 +39,14 @@ export {
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LIST_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_READ_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
 };
 
 type ArtifactStatus = (typeof artifactStatus)[number];
+
+type FetchFn = typeof fetch;
 
 type ArtifactToolContext = {
   db: DB["db"];
@@ -40,7 +54,123 @@ type ArtifactToolContext = {
   principalId: string;
   agentId: string;
   sessionId: string;
+  // Injected HTTP client for pulling the Gamma export PDF; defaults to the
+  // global fetch. Injected in tests to keep the pull deterministic.
+  fetch?: FetchFn;
 };
+
+const log = getLogger(["lib", "artifact-tools"]);
+
+type UploadPayload = {
+  content: Buffer;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+function pdfDownloadFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\r\n"\\/]/g, "")
+    .replace(/\.pdf$/i, "")
+    .trim();
+  return `${cleaned.length > 0 ? cleaned : "deck"}.pdf`;
+}
+
+// The export CDN can stall without ever returning a status; bound the download
+// so a hung fetch cannot wedge the (otherwise interactive) tool call.
+const GAMMA_PDF_FETCH_TIMEOUT_MS = 20_000;
+
+function parseContentLength(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+// Pull the Gamma export PDF into a durable upload payload. The export URL is a
+// short-lived Gamma download link (~1 week), so the bytes are ingested now
+// rather than persisted as an expiring URL. The PDF is supplementary to the
+// deck link: any failure (network, timeout, oversize, empty) degrades to no PDF
+// rather than failing the whole persist.
+async function fetchGammaPresentationPdf(
+  context: ArtifactToolContext,
+  pdfUrl: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<UploadPayload | null> {
+  // `pdfUrl` is agent-influenced on this tool, so require https before the hub
+  // issues a server-side fetch — this closes the plaintext-internal-service /
+  // metadata (http://169.254.169.254) SSRF vector. Residual blind SSRF to an
+  // internal TLS host is out of scope: the real path passes Gamma's own trusted
+  // exportUrl, and the bytes are stored, never returned to the caller. Revisit
+  // if pdfUrl ever becomes genuinely free-form.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(pdfUrl);
+  } catch {
+    log.warn("Gamma export PDF url is not a valid URL; skipping PDF");
+    return null;
+  }
+  if (parsedUrl.protocol !== "https:") {
+    log.warn("Gamma export PDF url is not https; skipping PDF");
+    return null;
+  }
+
+  const fetchFn = context.fetch ?? fetch;
+  const timeout = AbortSignal.timeout(GAMMA_PDF_FETCH_TIMEOUT_MS);
+  const abort =
+    signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout;
+  try {
+    // `redirect: "error"` so a 3xx to a plaintext internal host can't slip past
+    // the https check above (Gamma's signed export URLs serve directly, no hop).
+    const response = await fetchFn(pdfUrl, {
+      signal: abort,
+      redirect: "error",
+    });
+    if (!response.ok) {
+      log.warn("Gamma export PDF fetch returned non-2xx; skipping PDF", {
+        status: response.status,
+      });
+      return null;
+    }
+    const declaredLength = parseContentLength(
+      response.headers.get("content-length"),
+    );
+    if (declaredLength !== null && declaredLength > MAX_UPLOAD_BYTES) {
+      log.warn("Gamma export PDF exceeds the upload ceiling; skipping PDF", {
+        size: declaredLength,
+        limit: MAX_UPLOAD_BYTES,
+      });
+      return null;
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength === 0) {
+      log.warn("Gamma export PDF was empty; skipping PDF");
+      return null;
+    }
+    // A 200 can still carry an HTML error page; require the PDF magic bytes so
+    // a non-PDF body is never stored and served as application/pdf.
+    if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+      log.warn("Gamma export PDF body is not a PDF; skipping PDF");
+      return null;
+    }
+    if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+      log.warn("Gamma export PDF exceeds the upload ceiling; skipping PDF", {
+        size: buffer.byteLength,
+        limit: MAX_UPLOAD_BYTES,
+      });
+      return null;
+    }
+    return {
+      content: buffer,
+      filename: pdfDownloadFilename(title),
+      mimeType: "application/pdf",
+      size: buffer.byteLength,
+    };
+  } catch (cause) {
+    log.warn("Gamma export PDF fetch failed; skipping PDF", { cause });
+    return null;
+  }
+}
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -101,8 +231,112 @@ function optionalVersion(args: Record<string, unknown>): number | undefined {
   return value;
 }
 
+const DEFAULT_READ_LIMIT = 8000;
+
+function optionalOffset(args: Record<string, unknown>): number | undefined {
+  const value = args.offset;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error("offset must be a non-negative integer");
+  }
+  return value;
+}
+
+function optionalLimit(args: Record<string, unknown>): number | undefined {
+  const value = args.limit;
+  if (value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error("limit must be a positive integer");
+  }
+  return value;
+}
+
+type ReadResult = {
+  artifactId: string;
+  title: string;
+  kind: string;
+  status: string;
+  version: number;
+  content: string;
+  contentLength?: number;
+  chunkStart?: number;
+  chunkEnd?: number;
+  continuation?: string;
+};
+
+// The runtime caps a tool result at ~10K characters and spills the rest to a
+// tool-output:// URI the agent cannot read. A chunk is measured in raw
+// characters, but the result is JSON-encoded before that cap applies, and
+// escaping (newlines, quotes) can inflate it — so the encoded result, not the
+// raw slice, must stay under this budget to avoid re-triggering the spill.
+const SAFE_ENCODED_BUDGET = 9000;
+
+function buildChunk(
+  base: Omit<ReadResult, "content">,
+  content: string,
+  start: number,
+  end: number,
+  total: number,
+): ReadResult {
+  const result: ReadResult = {
+    ...base,
+    content: content.slice(start, end),
+    contentLength: total,
+    chunkStart: start,
+    chunkEnd: end,
+  };
+  if (end < total) {
+    result.continuation = `Showing characters ${start}–${end} of ${total}. Call artifact_read_chunk again with offset=${end} (same artifactId) to read the next chunk, and keep going until there is no continuation field.`;
+  }
+  return result;
+}
+
+function windowContent(
+  base: Omit<ReadResult, "content">,
+  content: string,
+  offset: number | undefined,
+  limit: number | undefined,
+): ReadResult {
+  const total = content.length;
+  const hasWindow = offset !== undefined || limit !== undefined;
+  if (!hasWindow && total <= DEFAULT_READ_LIMIT) {
+    const whole: ReadResult = { ...base, content };
+    if (jsonResult(whole).length <= SAFE_ENCODED_BUDGET) {
+      return whole;
+    }
+  }
+
+  const start = Math.min(offset ?? 0, total);
+  const size = limit ?? DEFAULT_READ_LIMIT;
+  let end = Math.min(start + size, total);
+  let result = buildChunk(base, content, start, end, total);
+  while (end > start + 1 && jsonResult(result).length > SAFE_ENCODED_BUDGET) {
+    const ratio = SAFE_ENCODED_BUDGET / jsonResult(result).length;
+    const shrunk = start + Math.max(1, Math.floor((end - start) * ratio));
+    end = shrunk >= end ? end - 1 : shrunk;
+    result = buildChunk(base, content, start, end, total);
+  }
+  return result;
+}
+
 function jsonResult(value: unknown): string {
   return JSON.stringify(value, null, 2);
+}
+
+function normalizeArtifactContentForKind(
+  kind: string,
+  content: string,
+): string {
+  if (kind === WEB_SITE_KIND) {
+    return serializeWebSiteContent(parseWebSiteContentJson(content));
+  }
+  return content;
+}
+
+function assertArtifactContentForKind(kind: string, content: string): void {
+  if (kind === WEB_SITE_KIND) {
+    parseWebSiteContentJson(content);
+  }
 }
 
 function assertSessionContext(context: ArtifactToolContext): void {
@@ -180,7 +414,16 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
     handler: async (args) => {
       const title = requiredString(args, "title");
       const kind = requiredString(args, "kind");
-      const content = requiredString(args, "content");
+      if (kind === "skill-draft") {
+        throw new Error(
+          "skill-draft artifacts must be created with the skill_draft tool",
+        );
+      }
+      const content = normalizeArtifactContentForKind(
+        kind,
+        requiredString(args, "content"),
+      );
+      assertArtifactContentForKind(kind, content);
       const source = {
         origin: "agent",
         type: "inline",
@@ -306,70 +549,125 @@ async function ownerIsMemberOfTenant(
   return membershipRows.length > 0;
 }
 
+async function resolveArtifactContent(
+  context: ArtifactToolContext,
+  args: Record<string, unknown>,
+): Promise<{ base: Omit<ReadResult, "content">; content: string }> {
+  const artifactId = requiredString(args, "artifactId");
+  const version = optionalVersion(args);
+  const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
+
+  if (tenantId !== context.tenantId) {
+    const allowed = await ownerIsMemberOfTenant(context.db, context, tenantId);
+    if (!allowed) throw new Error(`Artifact not found: ${artifactId}`);
+  }
+
+  const [row] = await context.db
+    .select()
+    .from(artifact)
+    .where(and(eq(artifact.id, artifactId), eq(artifact.tenantId, tenantId)))
+    .limit(1);
+
+  if (!row) throw new Error(`Artifact not found: ${artifactId}`);
+
+  if (version === undefined) {
+    return {
+      base: {
+        artifactId: row.id,
+        title: row.title,
+        kind: row.kind,
+        status: row.status,
+        version: row.version,
+      },
+      content: row.content,
+    };
+  }
+
+  const [versionRow] = await context.db
+    .select()
+    .from(artifactVersion)
+    .where(
+      and(
+        eq(artifactVersion.artifactId, artifactId),
+        eq(artifactVersion.version, version),
+      ),
+    )
+    .limit(1);
+
+  if (!versionRow) {
+    throw new Error(`Version ${version} not found for artifact ${artifactId}`);
+  }
+
+  return {
+    base: {
+      artifactId: row.id,
+      title: versionRow.title,
+      kind: row.kind,
+      status: row.status,
+      version: versionRow.version,
+    },
+    content: versionRow.content,
+  };
+}
+
 function createReadHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_READ_DEFINITION,
     handler: async (args) => {
-      const artifactId = requiredString(args, "artifactId");
-      const version = optionalVersion(args);
-      const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
-
-      if (tenantId !== context.tenantId) {
-        const allowed = await ownerIsMemberOfTenant(
-          context.db,
-          context,
-          tenantId,
-        );
-        if (!allowed) throw new Error(`Artifact not found: ${artifactId}`);
+      const filePath = optionalNonEmptyString(args, "path");
+      const { base, content } = await resolveArtifactContent(context, args);
+      // skill-draft is private authoring scratch; use skill_draft / library tools.
+      if (base.kind === "skill-draft") {
+        throw new Error(`Artifact not found: ${base.artifactId}`);
       }
 
-      const [row] = await context.db
-        .select()
-        .from(artifact)
-        .where(
-          and(eq(artifact.id, artifactId), eq(artifact.tenantId, tenantId)),
-        )
-        .limit(1);
-
-      if (!row) throw new Error(`Artifact not found: ${artifactId}`);
-
-      if (version === undefined) {
+      if (base.kind === WEB_SITE_KIND) {
+        if (filePath !== undefined) {
+          const site = parseWebSiteContentJson(content);
+          const normalized = normalizeWebSitePath(filePath);
+          const fileContent = site.files[normalized];
+          if (fileContent === undefined) {
+            throw new Error(
+              `File not found in web_site artifact: ${normalized}`,
+            );
+          }
+          const windowed = windowContent(
+            base,
+            fileContent,
+            undefined,
+            undefined,
+          );
+          return jsonResult({ ...windowed, path: normalized });
+        }
         return jsonResult({
-          artifactId: row.id,
-          title: row.title,
-          kind: row.kind,
-          status: row.status,
-          version: row.version,
-          content: row.content,
+          ...base,
+          summary: summarizeWebSiteContent(content),
         });
       }
 
-      const [versionRow] = await context.db
-        .select()
-        .from(artifactVersion)
-        .where(
-          and(
-            eq(artifactVersion.artifactId, artifactId),
-            eq(artifactVersion.version, version),
-          ),
-        )
-        .limit(1);
+      return jsonResult(windowContent(base, content, undefined, undefined));
+    },
+  };
+}
 
-      if (!versionRow) {
+function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
+  return {
+    kind: "string",
+    definition: ARTIFACT_READ_CHUNK_DEFINITION,
+    handler: async (args) => {
+      const offset = optionalOffset(args) ?? 0;
+      const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
+      const { base, content } = await resolveArtifactContent(context, args);
+      if (base.kind === "skill-draft") {
+        throw new Error(`Artifact not found: ${base.artifactId}`);
+      }
+      if (base.kind === WEB_SITE_KIND) {
         throw new Error(
-          `Version ${version} not found for artifact ${artifactId}`,
+          "artifact_read_chunk does not support web_site artifacts; use artifact_read for a summary or pass path to read one file",
         );
       }
-
-      return jsonResult({
-        artifactId: row.id,
-        title: versionRow.title,
-        kind: row.kind,
-        status: row.status,
-        version: versionRow.version,
-        content: versionRow.content,
-      });
+      return jsonResult(windowContent(base, content, offset, limit));
     },
   };
 }
@@ -406,10 +704,19 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
           .limit(1);
 
         if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
+        if (existing.kind === "skill-draft") {
+          throw new Error(
+            "skill-draft artifacts must be updated with the skill_draft tool",
+          );
+        }
 
         const newVersion = existing.version + 1;
         const title = nextTitle ?? existing.title;
-        const content = nextContent ?? existing.content;
+        let content = nextContent ?? existing.content;
+        if (nextContent !== undefined) {
+          content = normalizeArtifactContentForKind(existing.kind, content);
+          assertArtifactContentForKind(existing.kind, content);
+        }
 
         await tx
           .update(artifact)
@@ -448,6 +755,37 @@ function validatePresentationUrl(url: string): void {
  * (guarded on the existing row's kind), otherwise a fresh row. Shared by the
  * presentation and gamma_presentation link handlers.
  */
+type UploadSourceRef = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+// The `source` to write on a version bump, or `undefined` to leave it as-is.
+// A fresh PDF replaces the reference; a requested-but-failed PDF pull clears any
+// stale reference so the new deck version never offers the prior deck's PDF; an
+// unrequested PDF leaves the existing source untouched.
+function computeBumpedSource(
+  existingSource: Record<string, unknown> | null,
+  uploadRef: UploadSourceRef | null,
+  uploadRequested: boolean,
+): Record<string, unknown> | undefined {
+  if (uploadRef !== null) {
+    return { ...(existingSource ?? {}), upload: uploadRef };
+  }
+  if (
+    uploadRequested &&
+    existingSource !== null &&
+    "upload" in existingSource
+  ) {
+    const rest = { ...existingSource };
+    delete rest.upload;
+    return rest;
+  }
+  return undefined;
+}
+
 async function upsertLinkedArtifact(
   context: ArtifactToolContext,
   opts: {
@@ -455,10 +793,49 @@ async function upsertLinkedArtifact(
     title: string;
     content: string;
     artifactId: string | undefined;
+    upload?: UploadPayload | null;
+    // True when the caller asked for a PDF (even if the fetch yielded none), so
+    // a version bump can clear a stale prior PDF rather than leave it pointing
+    // at the old deck.
+    uploadRequested?: boolean;
   },
 ): Promise<{ artifactId: string; version: number }> {
-  const { kind, title, content, artifactId } = opts;
+  const {
+    kind,
+    title,
+    content,
+    artifactId,
+    upload: uploadPayload,
+    uploadRequested = false,
+  } = opts;
   const now = new Date();
+
+  // Persist the PDF bytes and return the download reference to fold into the
+  // artifact `source`. Serving is handled by GET /artifacts/:id/download, which
+  // keys off `source.upload.id`.
+  const insertUpload = async (
+    tx: Parameters<Parameters<DB["db"]["transaction"]>[0]>[0],
+  ): Promise<UploadSourceRef | null> => {
+    if (!uploadPayload) return null;
+    const [uploadRow] = await tx
+      .insert(upload)
+      .values({
+        tenantId: context.tenantId,
+        principalId: context.principalId,
+        filename: uploadPayload.filename,
+        mimeType: uploadPayload.mimeType,
+        content: uploadPayload.content,
+        size: uploadPayload.size,
+      })
+      .returning();
+    if (!uploadRow) throw new Error("Failed to store upload");
+    return {
+      id: uploadRow.id,
+      filename: uploadPayload.filename,
+      mimeType: uploadPayload.mimeType,
+      size: uploadPayload.size,
+    };
+  };
 
   if (artifactId !== undefined) {
     return await context.db.transaction(async (tx) => {
@@ -480,10 +857,22 @@ async function upsertLinkedArtifact(
       }
 
       const newVersion = existing.version + 1;
+      const uploadRef = await insertUpload(tx);
+      const nextSource = computeBumpedSource(
+        existing.source,
+        uploadRef,
+        uploadRequested,
+      );
 
       await tx
         .update(artifact)
-        .set({ title, content, version: newVersion, updatedAt: now })
+        .set({
+          title,
+          content,
+          version: newVersion,
+          updatedAt: now,
+          ...(nextSource !== undefined ? { source: nextSource } : {}),
+        })
         .where(eq(artifact.id, artifactId));
 
       await tx.insert(artifactVersion).values({
@@ -503,15 +892,18 @@ async function upsertLinkedArtifact(
     context.db,
     context,
   );
-  const source = {
-    origin: "agent",
-    type: "inline",
-    agentId: context.agentId,
-    sessionId: context.sessionId,
-  };
   assertSessionContext(context);
 
   const row = await context.db.transaction(async (tx) => {
+    const uploadRef = await insertUpload(tx);
+    const source = {
+      origin: "agent",
+      type: "inline",
+      agentId: context.agentId,
+      sessionId: context.sessionId,
+      ...(uploadRef !== null ? { upload: uploadRef } : {}),
+    };
+
     const [created] = await tx
       .insert(artifact)
       .values({
@@ -576,23 +968,40 @@ function createLinkGammaPresentationHandler(
   return {
     kind: "string",
     definition: ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
-    handler: async (args) => {
+    handler: async (args, signal) => {
       const url = requiredString(args, "url");
       validatePresentationUrl(url);
       const title = requiredString(args, "title");
       const description = requiredString(args, "description");
       const gammaId = requiredString(args, "gammaId");
+      // A present-but-empty pdfUrl ("") means a PDF was requested but Gamma
+      // returned no export link (the workflow's create tool always emits the
+      // key). Treat that as "requested, none available" — not an error and not
+      // "no request": on a version bump it still clears a stale prior PDF. Only
+      // a genuinely absent key means no PDF was requested at all.
+      const pdfUrlRaw = optionalString(args, "pdfUrl");
+      const uploadRequested = pdfUrlRaw !== undefined;
+      const pdfUrl =
+        pdfUrlRaw !== undefined && pdfUrlRaw.trim().length > 0
+          ? pdfUrlRaw.trim()
+          : undefined;
       const artifactId = optionalNonEmptyString(args, "artifactId");
 
       const content = JSON.stringify(
         GammaPresentationContentSchema.assert({ url, description, gammaId }),
       );
 
+      const uploadPayload = pdfUrl
+        ? await fetchGammaPresentationPdf(context, pdfUrl, title, signal)
+        : null;
+
       const { artifactId: id, version } = await upsertLinkedArtifact(context, {
         kind: "gamma_presentation",
         title,
         content,
         artifactId,
+        upload: uploadPayload,
+        uploadRequested,
       });
 
       return jsonResult({ artifactId: id, version, url });
@@ -608,9 +1017,12 @@ function createFindByTitleHandler(context: ArtifactToolContext): AgentTool {
       const title = requiredString(args, "title");
       const kind = optionalString(args, "kind");
 
+      if (kind === "skill-draft") return jsonResult(null);
+
       const conditions = [
         eq(artifact.tenantId, context.tenantId),
         eq(artifact.title, title),
+        ne(artifact.kind, "skill-draft"),
       ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
 
@@ -634,6 +1046,10 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
     definition: ARTIFACT_LIST_DEFINITION,
     handler: async (args) => {
       const kind = optionalString(args, "kind");
+      // skill-draft is not a gallery kind — only skill_draft / Skills UI.
+      if (kind === "skill-draft") {
+        return jsonResult({ artifacts: [] });
+      }
       const status = optionalStatus(args);
       const rawLimit =
         typeof args.limit === "number" && Number.isFinite(args.limit)
@@ -641,7 +1057,10 @@ function createListHandler(context: ArtifactToolContext): AgentTool {
           : DEFAULT_LIST_LIMIT;
       const limit = Math.min(Math.max(1, Math.floor(rawLimit)), MAX_LIST_LIMIT);
 
-      const conditions = [eq(artifact.tenantId, context.tenantId)];
+      const conditions = [
+        eq(artifact.tenantId, context.tenantId),
+        ne(artifact.kind, "skill-draft"),
+      ];
       if (kind !== undefined) conditions.push(eq(artifact.kind, kind));
       if (status !== undefined) conditions.push(eq(artifact.status, status));
 
@@ -669,6 +1088,7 @@ export function createArtifactTools(context: ArtifactToolContext): AgentTool[] {
     createLinkFileHandler(context),
     createCreateHandler(context),
     createReadHandler(context),
+    createReadChunkHandler(context),
     createWriteHandler(context),
     createListHandler(context),
     createLinkPresentationHandler(context),
@@ -685,6 +1105,7 @@ export const ARTIFACT_HUB_TOOLS = {
   artifact_link_file: artifactToolEntry(ARTIFACT_LINK_FILE_DEFINITION),
   artifact_create: artifactToolEntry(ARTIFACT_CREATE_DEFINITION),
   artifact_read: artifactToolEntry(ARTIFACT_READ_DEFINITION),
+  artifact_read_chunk: artifactToolEntry(ARTIFACT_READ_CHUNK_DEFINITION),
   artifact_write: artifactToolEntry(ARTIFACT_WRITE_DEFINITION),
   artifact_list: artifactToolEntry(ARTIFACT_LIST_DEFINITION),
   artifact_link_presentation: artifactToolEntry(

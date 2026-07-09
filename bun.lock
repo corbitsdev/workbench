@@ -72,6 +72,7 @@
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
         "@workbench/tools-skills": "workspace:*",
+        "@workbench/tools-vercel": "workspace:*",
         "@workbench/tools-workflows": "workspace:*",
         "@workbench/tools-x": "workspace:*",
         "@workbench/tools-youtube": "workspace:*",
@@ -133,6 +134,7 @@
         "@intx/hub-client": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@tanstack/react-query": "5.100.14",
+        "@workbench/ab-compare-presets": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/artifact": "workspace:*",
         "@workbench/chat": "workspace:*",
@@ -147,7 +149,6 @@
         "@workbench/tools-granola": "workspace:*",
         "@workbench/transcript": "workspace:*",
         "@workbench/ui": "workspace:*",
-        "@workbench/workflow-ab-compare-hitl": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
@@ -562,6 +563,22 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
+      },
+    },
+    "packages/ab-compare-presets": {
+      "name": "@workbench/ab-compare-presets",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/blocks": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@workbench/catalog": "workspace:*",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
       },
     },
     "packages/agents": {
@@ -1323,29 +1340,40 @@
         "arktype": "catalog:",
       },
     },
-    "workflows/ab-compare-hitl": {
-      "name": "@workbench/workflow-ab-compare-hitl",
+    "workflows/ab-compare-quality": {
+      "name": "@workbench/workflow-ab-compare-quality",
       "version": "0.1.0",
       "dependencies": {
-        "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/blocks": "workspace:*",
-        "@workbench/shared": "workspace:*",
-        "@workbench/tools-ab-compare": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
+        "@workbench/ab-compare-presets": "workspace:*",
       },
       "devDependencies": {
-        "@testing-library/react": "^16.3.2",
         "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
         "typescript": "catalog:",
       },
-      "peerDependencies": {
-        "react": "*",
+    },
+    "workflows/ab-compare-speed": {
+      "name": "@workbench/workflow-ab-compare-speed",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/ab-compare-presets": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
+      },
+    },
+    "workflows/ab-compare-standard": {
+      "name": "@workbench/workflow-ab-compare-standard",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/workflow": "workspace:*",
+        "@workbench/ab-compare-presets": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "catalog:",
       },
     },
     "workflows/attio-task-agent": {
@@ -2345,6 +2373,8 @@
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@4.7.0", "", { "dependencies": { "@babel/core": "^7.28.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-beta.27", "@types/babel__core": "^7.20.5", "react-refresh": "^0.17.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-gUu9hwfWvvEDBBmgtAowQCojwZmJ5mcLn3aufeCsitijs3+f2NsrPtlAWIR6OPiqljl96GVCUbLe0HyqIpVaoA=="],
 
+    "@workbench/ab-compare-presets": ["@workbench/ab-compare-presets@workspace:packages/ab-compare-presets"],
+
     "@workbench/agents": ["@workbench/agents@workspace:packages/agents"],
 
     "@workbench/analytics": ["@workbench/analytics@workspace:packages/analytics"],
@@ -2449,7 +2479,11 @@
 
     "@workbench/web": ["@workbench/web@workspace:apps/web"],
 
-    "@workbench/workflow-ab-compare-hitl": ["@workbench/workflow-ab-compare-hitl@workspace:workflows/ab-compare-hitl"],
+    "@workbench/workflow-ab-compare-quality": ["@workbench/workflow-ab-compare-quality@workspace:workflows/ab-compare-quality"],
+
+    "@workbench/workflow-ab-compare-speed": ["@workbench/workflow-ab-compare-speed@workspace:workflows/ab-compare-speed"],
+
+    "@workbench/workflow-ab-compare-standard": ["@workbench/workflow-ab-compare-standard@workspace:workflows/ab-compare-standard"],
 
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 

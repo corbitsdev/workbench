@@ -39,6 +39,12 @@ via `artifact_link_gamma_presentation`, whose content is the JSON
 `{ url, description, gammaId }` (the rendered deck URL, the description, and the
 new deck's Gamma id) — not the LLM's slide text.
 
+`render-N` also surfaces a temporary Gamma export URL (`exportUrl`), which the
+persist step passes as `pdfUrl`. The handler downloads the deck PDF and stores
+it durably alongside the deck link, so the artifact offers a PDF download. The
+PDF is supplementary — a failed or oversize export still saves the deck link.
+See `packages/tools-gamma/README.md` for the export/expiry details.
+
 Steps declare their tools as serializable `capabilities`, never inline tool
 factories — the definition is pushed as JSON.
 

@@ -526,51 +526,82 @@ describe("createSidecarStepInvoker", () => {
     expect(closed).toBe(true);
   });
 
-  test("resolves selected skill IDs before inline inference sends input", async () => {
+  // Non-fatal inline steps (the A/B preset quorum): a failed turn degrades to a
+  // completed isError output instead of failing the run, so one dead variant
+  // does not kill the comparison. A step WITHOUT the tag still throws.
+  test("a nonFatal-tagged inline step degrades a failed turn to an isError output", async () => {
     const dataDir = await makeDataDir();
-    const INLINE_REPLY = "done";
-    const turn = {
-      role: "assistant",
-      content: INLINE_REPLY,
-    } as unknown as SendTurn;
-    const calls: {
-      url: string;
-      body: unknown;
-      authorization: string | null;
-    }[] = [];
-    globalThis.fetch = (async (
-      input: string | URL | Request,
-      init?: RequestInit,
-    ) => {
-      const url = String(input);
-      calls.push({
-        url,
-        body: typeof init?.body === "string" ? JSON.parse(init.body) : null,
-        authorization:
-          init?.headers instanceof Headers
-            ? init.headers.get("authorization")
-            : "Bearer tok",
-      });
-      return new Response(
-        JSON.stringify({
-          skills: [
-            {
-              id: "skill_hammy",
-              name: "hammy-humanizer",
-              displayName: "Hammy Humanizer",
-              content: "Make the copy sound human.",
-            },
-          ],
+    let closed = false;
+    const throwingAgent: Agent = {
+      send: async () => {
+        throw new Error("provider 503");
+      },
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
         }),
-        { headers: { "content-type": "application/json" } },
-      );
-    }) as unknown as typeof fetch;
+      }),
+      deliver: () => {},
+      close: async () => {
+        closed = true;
+      },
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
 
-    let sentContent: string | undefined;
-    const stubAgent: Agent = {
-      send: async (content: Parameters<Agent["send"]>[0]) => {
-        sentContent = typeof content === "string" ? content : content.content;
-        return { reply: INLINE_REPLY, turn };
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => throwingAgent,
+    });
+
+    const nonFatalReq: StepInvokeRequest = {
+      agent: {
+        ...makeAgentDefinition("inline-variant"),
+        tags: {
+          "workbench.stepKind": "inline-inference",
+          "workbench.nonFatal": "true",
+        },
+      },
+      input: { input: "run it" },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+
+    const result = await invoke(nonFatalReq);
+    const output = result.output as {
+      reply: string;
+      isError?: boolean;
+      error?: string;
+    };
+    expect(output.isError).toBe(true);
+    expect(output.error).toBe("provider 503");
+    expect(output.reply).toBe("");
+    // The agent was still torn down on the degrade path.
+    expect(closed).toBe(true);
+
+    // Same failure WITHOUT the nonFatal tag propagates (fails the run).
+    const fatalReq: StepInvokeRequest = {
+      agent: {
+        ...makeAgentDefinition("inline-variant"),
+        tags: { "workbench.stepKind": "inline-inference" },
+      },
+      input: { input: "run it" },
+      authzContext: { stepId: STEP_ID, attempt: 2, runId: RUN_ID },
+      signal: new AbortController().signal,
+    };
+    await expect(invoke(fatalReq)).rejects.toThrow("provider 503");
+  });
+
+  test("a nonFatal step with a retry policy throws until the last attempt, then degrades (so retry actually fires)", async () => {
+    const dataDir = await makeDataDir();
+    const throwingAgent: Agent = {
+      send: async () => {
+        throw new Error("provider 503");
       },
       stream: () => ({
         [Symbol.asyncIterator]: () => ({
@@ -583,20 +614,6 @@ describe("createSidecarStepInvoker", () => {
       setSources: () => {},
     } as unknown as Agent;
 
-    const resolveStepToolContext = async (
-      req: StepInvokeRequest,
-    ): Promise<StepToolContext> => ({
-      hubHttpUrl: "http://hub.test",
-      sidecarToken: "tok",
-      tenantId: "ten_1",
-      stepAgentId: `ins_dep-${req.authzContext.stepId ?? "step"}`,
-      stepAddress: `ins_dep-${req.authzContext.stepId ?? "step"}`,
-      principalId: `ins_dep-${req.authzContext.stepId ?? "step"}`,
-      grants: [],
-      cacheRoot: path.join(dataDir, "cache"),
-      cacheMaxBytes: 1024 * 1024,
-      registryMaxTarballBytes: 1024 * 1024,
-    });
     const invoke = createSidecarStepInvoker({
       table: { [STEP_ID]: SOURCE },
       dataDir,
@@ -604,39 +621,85 @@ describe("createSidecarStepInvoker", () => {
       directors: createDefaultDirectorRegistry(),
       adapters: createBuiltinRegistry(),
       evaluateGrants: allowAll,
-      resolveStepToolContext,
-      agentFactory: async () => stubAgent,
+      agentFactory: async () => throwingAgent,
     });
 
-    await invoke({
-      agent: {
-        ...makeAgentDefinition("inline-with-skill"),
-        tags: { "workbench.stepKind": "inline-inference" },
+    const agent = {
+      ...makeAgentDefinition("inline-variant"),
+      tags: {
+        "workbench.stepKind": "inline-inference",
+        "workbench.nonFatal": "true",
+        "workbench.inlineRetryMaxAttempts": "3",
       },
-      input: { input: "Rewrite this", skillIds: ["skill_hammy"] },
-      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+    };
+
+    // Attempts 1 and 2 THROW — the engine's RetryPolicy re-invokes (this is what
+    // makes retry fire at all for a non-fatal step).
+    for (const attempt of [1, 2]) {
+      await expect(
+        invoke({
+          agent,
+          input: { input: "run it" },
+          authzContext: { stepId: STEP_ID, attempt, runId: RUN_ID },
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toThrow("provider 503");
+    }
+
+    // The final attempt degrades to the non-fatal isError skip.
+    const last = await invoke({
+      agent,
+      input: { input: "run it" },
+      authzContext: { stepId: STEP_ID, attempt: 3, runId: RUN_ID },
       signal: new AbortController().signal,
     });
+    expect((last.output as { isError?: boolean }).isError).toBe(true);
+  });
 
-    expect(calls).toEqual([
-      {
-        url: "http://hub.test/api/internal/workflow-skills/resolve",
-        body: { tenantId: "ten_1", runId: RUN_ID, skillIds: ["skill_hammy"] },
-        authorization: "Bearer tok",
+  test("a nonFatal inline step still rethrows on cancellation (never masks a run cancel)", async () => {
+    const dataDir = await makeDataDir();
+    const controller = new AbortController();
+    const throwingAgent: Agent = {
+      send: async () => {
+        controller.abort();
+        throw new Error("aborted mid-turn");
       },
-    ]);
-    expect(JSON.parse(sentContent ?? "{}")).toEqual({
-      input: "Rewrite this",
-      skillIds: ["skill_hammy"],
-      skills: [
-        {
-          id: "skill_hammy",
-          name: "hammy-humanizer",
-          displayName: "Hammy Humanizer",
-          content: "Make the copy sound human.",
-        },
-      ],
+      stream: () => ({
+        [Symbol.asyncIterator]: () => ({
+          next: () => Promise.resolve({ value: undefined, done: true }),
+        }),
+      }),
+      deliver: () => {},
+      close: async () => {},
+      setSource: () => {},
+      setSources: () => {},
+    } as unknown as Agent;
+
+    const invoke = createSidecarStepInvoker({
+      table: { [STEP_ID]: SOURCE },
+      dataDir,
+      signer: async () => "sig",
+      directors: createDefaultDirectorRegistry(),
+      adapters: createBuiltinRegistry(),
+      evaluateGrants: allowAll,
+      agentFactory: async () => throwingAgent,
     });
+
+    const req: StepInvokeRequest = {
+      agent: {
+        ...makeAgentDefinition("inline-variant"),
+        tags: {
+          "workbench.stepKind": "inline-inference",
+          "workbench.nonFatal": "true",
+        },
+      },
+      input: { input: "run it" },
+      authzContext: { stepId: STEP_ID, attempt: 1, runId: RUN_ID },
+      signal: controller.signal,
+    };
+    // Signal aborted during the turn → the throw is the cancellation, not a
+    // variant failure, so it must propagate even with nonFatal set.
+    await expect(invoke(req)).rejects.toThrow("aborted mid-turn");
   });
 
   // CL-2253: the inline branch must attach a draining stream() consumer so the

@@ -28,7 +28,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_list",
-            "workbench.argMap": "{\"limit\":{\"literal\":50}}"
+            "workbench.argMap": "{\"limit\":{\"literal\":50}}",
+            "workbench.title": "List your artifacts"
           }
         },
         "drainBehavior": "cancel",
@@ -53,7 +54,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
-            "workbench.argMap": "{\"limit\":{\"literal\":30}}"
+            "workbench.argMap": "{\"limit\":{\"literal\":30}}",
+            "workbench.title": "List your call notes"
           }
         },
         "drainBehavior": "cancel"
@@ -86,7 +88,8 @@
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_read",
             "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"}}",
-            "workbench.nonFatal": "true"
+            "workbench.nonFatal": "true",
+            "workbench.title": "Load the chosen artifact"
           }
         },
         "drainBehavior": "cancel",
@@ -115,7 +118,8 @@
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
             "workbench.argMap": "{\"noteId\":{\"from\":\"noteId\"}}",
-            "workbench.nonFatal": "true"
+            "workbench.nonFatal": "true",
+            "workbench.title": "Load the chosen note"
           }
         },
         "drainBehavior": "cancel",
@@ -139,7 +143,8 @@
           },
           "description": "Inline single-turn inference: presentation-generate-1",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Draft the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -178,7 +183,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}"
+            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
+            "workbench.title": "Build the deck in Gamma"
           }
         },
         "drainBehavior": "cancel",
@@ -214,7 +220,8 @@
           },
           "description": "Inline single-turn inference: presentation-describe-1",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Summarize the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -251,7 +258,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
+            "workbench.title": "Save the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -298,7 +306,8 @@
           },
           "description": "Inline single-turn inference: presentation-generate-2",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Revise the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -342,7 +351,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}"
+            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
+            "workbench.title": "Rebuild the deck in Gamma"
           }
         },
         "drainBehavior": "cancel",
@@ -378,7 +388,8 @@
           },
           "description": "Inline single-turn inference: presentation-describe-2",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Summarize the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -415,7 +426,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
+            "workbench.title": "Save the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -462,7 +474,8 @@
           },
           "description": "Inline single-turn inference: presentation-generate-3",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Revise the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -506,7 +519,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-gamma/gamma:gamma_create_from_template",
-            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}"
+            "workbench.argMap": "{\"gammaId\":{\"from\":\"gammaId\"},\"prompt\":{\"from\":\"reply\"}}",
+            "workbench.title": "Rebuild the deck in Gamma"
           }
         },
         "drainBehavior": "cancel",
@@ -542,7 +556,8 @@
           },
           "description": "Inline single-turn inference: presentation-describe-3",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Summarize the deck"
           }
         },
         "drainBehavior": "cancel",
@@ -579,7 +594,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}"
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
+            "workbench.title": "Save the deck"
           }
         },
         "drainBehavior": "cancel",

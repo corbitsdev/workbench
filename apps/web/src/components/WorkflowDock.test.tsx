@@ -45,7 +45,7 @@ async function fakeApi(
 function listRow(
   runId: string,
   status: "provisioning" | "running" | "awaiting" | "completed" | "failed",
-  kind = "ab-compare-hitl",
+  kind = "ab-compare-quality",
 ) {
   return {
     runId,
@@ -159,7 +159,7 @@ describe("WorkflowDock", () => {
     // Attention sort: the awaiting (needs-you) run leads.
     expect(cards[0]?.textContent).toContain("smoke-test");
     expect(cards[0]?.textContent).toContain("Needs you");
-    expect(cards[1]?.textContent).toContain("ab-compare-hitl");
+    expect(cards[1]?.textContent).toContain("ab-compare-quality");
     expect(cards[1]?.textContent).toContain("Running");
 
     // Progress states derived from log step phases.
@@ -216,7 +216,7 @@ describe("WorkflowDock", () => {
     const expand = screen.getByLabelText("Expand workflows: 1 running");
     expect(expand.textContent).toContain("1");
     const dot = screen.getByTestId("dock-rail-dot");
-    expect(dot.textContent).toContain("ab-compare-hitl: Running");
+    expect(dot.textContent).toContain("ab-compare-quality: Running");
 
     // A background refetch re-render must not reopen the dock.
     await queryClient.refetchQueries();
@@ -259,7 +259,7 @@ describe("WorkflowDock", () => {
     ]);
     const first = renderDock();
     await waitFor(() => screen.getByTestId("workflow-dock-card"));
-    fireEvent.click(screen.getByLabelText("Dismiss ab-compare-hitl"));
+    fireEvent.click(screen.getByLabelText("Dismiss ab-compare-quality"));
     expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
     first.unmount();
     queryClient.clear();
@@ -297,9 +297,9 @@ describe("WorkflowDock", () => {
     expect(resume.body).toMatchObject({ signalName: "approve-draft" });
   });
 
-  it("renders the migrated ab-compare-hitl decision as a winner choice and resumes with the structured ranking payload (CL-2683)", async () => {
+  it("renders the migrated A/B preset decision as a winner choice and resumes with the structured ranking payload (CL-3074)", async () => {
     const inline = (value: unknown) => `inline:${JSON.stringify(value)}`;
-    records = [listRow("run_ab", "awaiting", "ab-compare-hitl")];
+    records = [listRow("run_ab", "awaiting", "ab-compare-quality")];
     statesByRunId["run_ab"] = {
       runId: "run_ab",
       phase: "running",
@@ -310,23 +310,21 @@ describe("WorkflowDock", () => {
           phase: "completed",
           stepType: "human",
           currentAttempt: 1,
-          outputRef: inline({
-            variants: [
-              { label: "Variant 1", model: "gpt-4o" },
-              { label: "Variant 2", model: "claude-3.5" },
-            ],
-            input: "Write a tagline.",
-          }),
+          outputRef: inline({ input: "Write a tagline." }),
         },
         {
-          stepId: "execute",
+          stepId: "exec0",
           phase: "completed",
           stepType: "inline",
           currentAttempt: 1,
-          outputRef: inline([
-            { reply: "Close deals faster." },
-            { reply: "Your team's shared brain." },
-          ]),
+          outputRef: inline({ reply: "Close deals faster." }),
+        },
+        {
+          stepId: "exec1",
+          phase: "completed",
+          stepType: "inline",
+          currentAttempt: 1,
+          outputRef: inline({ reply: "Your team's shared brain." }),
         },
         {
           stepId: "decision",
@@ -339,14 +337,16 @@ describe("WorkflowDock", () => {
     };
     renderDock();
 
-    // Blind per-variant output cards render via the shared UIBlockView — no
-    // ab-compare-hitl custom panel on this path — and the pre-decision surface
-    // reveals NO provider/model identity (CL-2683 blind pick).
+    // Blind per-variant output cards render via the shared UIBlockView, and the
+    // pre-decision surface reveals NO model identity (blind pick).
     const winnerButton = await waitFor(() =>
       screen.getByRole("button", { name: "Variant 2 wins" }),
     );
-    expect(screen.getByText("Variant 1")).toBeTruthy();
-    expect(screen.getByText("Variant 2")).toBeTruthy();
+    // "Variant N" appears both as the output card title and the humanized
+    // progress-rail label, so there are multiple matches — the point is the
+    // blind label is present and no model identity leaks.
+    expect(screen.getAllByText("Variant 1").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Variant 2").length).toBeGreaterThan(0);
     expect(screen.queryByText(/gpt-4o/)).toBeNull();
     expect(screen.queryByText(/claude-3\.5/)).toBeNull();
 

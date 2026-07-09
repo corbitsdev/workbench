@@ -115,6 +115,14 @@ export type ProvisionRunDeploymentArgs = {
 
 export interface WorkflowDeployService {
   deployWorkflow(params: DeployWorkflowParams): Promise<DeployWorkflowResult>;
+  // Persist a workflow's catalog entry WITHOUT deploying a supervisor: write the
+  // git-backed `workflow` definition repo and the per-step DB/grant rows exactly
+  // as `deployWorkflow` does, but send NO `agent.deploy` frame to the sidecar and
+  // spawn no supervisor. This is the operator/boot publish path — a definition
+  // registers at rest with zero live instances; the supervisor is minted per run
+  // by `provisionRunDeployment`. Because it never touches the sidecar, publishing
+  // succeeds with the sidecar disconnected.
+  persistCatalog(params: DeployWorkflowParams): Promise<DeployWorkflowResult>;
   // Provision a fresh, single-use deployment for ONE workflow run (per-run
   // deployment, CL-2582). Reads the kind's published definition from its
   // `workflow`-kind repo (the definition registry), resolves a fresh
@@ -181,114 +189,132 @@ export function createWorkflowDeployService(deps: {
   // deployWorkflow call resolves, so no interleave can clobber it.
   let lastDbFanoutMs = 0;
 
-  const service: WorkflowDeployService = {
-    deployWorkflow: async (params) => {
-      const walk = walkCapabilities(params.workflow, directorRegistry);
-      // Pin the npm tool packages the workflow's steps declare so the sidecar
-      // loader materializes them; the orchestrator forwards this same set to
-      // every step launch.
-      const toolPackagePins =
-        params.toolPackagePins ??
-        toolPackagesForCapabilities(capabilityNames(walk));
+  // Shared deploy body. `sendSupervisorFrame` gates the ONE sidecar hand-off:
+  // true (per-run provisioning / re-establish) sends the supervisor
+  // `agent.deploy` frame so the sidecar spawns the workflow-child; false
+  // (catalog publish) writes the definition repo + DB/grant rows only and leaves
+  // the sidecar untouched. Every other side effect — capability walk, tool-pin
+  // resolution, per-step agent/instance/grant rows, deployment-level rows, the
+  // git `workflow` repo write — runs identically in both modes.
+  const runDeploy = async (
+    params: DeployWorkflowParams,
+    sendSupervisorFrame: boolean,
+  ): Promise<DeployWorkflowResult> => {
+    const walk = walkCapabilities(params.workflow, directorRegistry);
+    // Pin the npm tool packages the workflow's steps declare so the sidecar
+    // loader materializes them; the orchestrator forwards this same set to
+    // every step launch.
+    const toolPackagePins =
+      params.toolPackagePins ??
+      toolPackagesForCapabilities(capabilityNames(walk));
 
-      // Partition every step into one of three classes by its CL-2251
-      // `STEP_KIND_TAG`:
-      //
-      //   inline-inference (CL-2251) — a no-tool single-turn reasoning turn the
-      //     sidecar runs in-process with a bare `createAgent`. NO `agent` row,
-      //     NO `agent_instance` row, NO grants file, NO launchSession.
-      //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
-      //     against a deny-all `authorize` directly (no reactor, no session).
-      //     The tool manifest/credentials endpoints gate on its `agent` row, so
-      //     we KEEP `writeStepAgentRows` for it — but it needs NO instance row,
-      //     NO grants file (the deny-all path never reads `grants.json`), and NO
-      //     launchSession.
-      //   deployed (reasoning with tools) — an `agent` row, an
-      //     `agent_instance` row, and a `state/grants.json`. As of CL-2782 its
-      //     per-step `launchSession` is ALSO no-op'd: the launched session was
-      //     pure up-front overhead (~17s of serialized deploy→pack→session-start
-      //     round-trips per step) that nothing the running step reads is
-      //     produced by. Execution rebuilds everything from these hub-written
-      //     artifacts — the agent def from workflow.json, the grants from
-      //     `state/grants.json`, and the tool manifest/credentials via hub RPC
-      //     gated on the `agent` row — none of it from the launch. The
-      //     `reestablishSupervisor` path already runs deployed steps with no
-      //     launched session (its production precedent).
-      //
-      // `launchSession` is no-op'd below for EVERY step class — inline,
-      // deterministic, and deployed — so no step launches a per-step session.
-      // That, plus skipping the inline/deterministic agent-state repos, is the
-      // session-per-step RAM win (now extended to deployed steps by CL-2782).
-      const inlineStepIds = collectInlineStepIds(params.workflow);
-      const deterministicStepIds = collectDeterministicToolStepIds(
-        params.workflow,
-      );
-      const allStepIds = [...walk.perStep.keys()];
-      const deployedStepIds = allStepIds.filter(
-        (stepId) =>
-          !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
-      );
-      // Steps that keep an `agent` row: fully-deployed steps plus deterministic
-      // tool steps (CL-2252 — the tool endpoints 404 without it).
-      const agentRowStepIds = allStepIds.filter(
-        (stepId) => !inlineStepIds.has(stepId),
-      );
-      // No step launches a per-step session (CL-2782): every step's derived
-      // agentId is in the no-launch set, so `toLaunchSession` returns a resolved
-      // no-op for all of them and the SessionService is never touched.
-      const noLaunchAgentIds = new Set(
-        allStepIds.map((stepId) =>
-          deriveStepAgentId({ deploymentId: params.deploymentId, stepId }),
-        ),
-      );
+    // Partition every step into one of three classes by its CL-2251
+    // `STEP_KIND_TAG`:
+    //
+    //   inline-inference (CL-2251) — a no-tool single-turn reasoning turn the
+    //     sidecar runs in-process with a bare `createAgent`. NO `agent` row,
+    //     NO `agent_instance` row, NO grants file, NO launchSession.
+    //   deterministic-tool (CL-2252) — a tool/API call the sidecar runs
+    //     against a deny-all `authorize` directly (no reactor, no session).
+    //     The tool manifest/credentials endpoints gate on its `agent` row, so
+    //     we KEEP `writeStepAgentRows` for it — but it needs NO instance row,
+    //     NO grants file (the deny-all path never reads `grants.json`), and NO
+    //     launchSession.
+    //   deployed (reasoning with tools) — an `agent` row, an
+    //     `agent_instance` row, and a `state/grants.json`. As of CL-2782 its
+    //     per-step `launchSession` is ALSO no-op'd: the launched session was
+    //     pure up-front overhead (~17s of serialized deploy→pack→session-start
+    //     round-trips per step) that nothing the running step reads is
+    //     produced by. Execution rebuilds everything from these hub-written
+    //     artifacts — the agent def from workflow.json, the grants from
+    //     `state/grants.json`, and the tool manifest/credentials via hub RPC
+    //     gated on the `agent` row — none of it from the launch. The
+    //     `reestablishSupervisor` path already runs deployed steps with no
+    //     launched session (its production precedent).
+    //
+    // `launchSession` is no-op'd below for EVERY step class — inline,
+    // deterministic, and deployed — so no step launches a per-step session.
+    // That, plus skipping the inline/deterministic agent-state repos, is the
+    // session-per-step RAM win (now extended to deployed steps by CL-2782).
+    const inlineStepIds = collectInlineStepIds(params.workflow);
+    const deterministicStepIds = collectDeterministicToolStepIds(
+      params.workflow,
+    );
+    const allStepIds = [...walk.perStep.keys()];
+    const deployedStepIds = allStepIds.filter(
+      (stepId) =>
+        !inlineStepIds.has(stepId) && !deterministicStepIds.has(stepId),
+    );
+    // Steps that keep an `agent` row: fully-deployed steps plus deterministic
+    // tool steps (CL-2252 — the tool endpoints 404 without it).
+    const agentRowStepIds = allStepIds.filter(
+      (stepId) => !inlineStepIds.has(stepId),
+    );
+    // No step launches a per-step session (CL-2782): every step's derived
+    // agentId is in the no-launch set, so `toLaunchSession` returns a resolved
+    // no-op for all of them and the SessionService is never touched.
+    const noLaunchAgentIds = new Set(
+      allStepIds.map((stepId) =>
+        deriveStepAgentId({ deploymentId: params.deploymentId, stepId }),
+      ),
+    );
 
-      // Persist an `agent` row per step that needs one (deployed + deterministic
-      // tool). Interchange's launchSession never writes one, and the hub's
-      // tool-credential + manifest gate authorizes a step by that row's pins —
-      // every such step carries the same union pins the orchestrator hands it.
-      // Inline steps are skipped: no harness, no row.
-      const stepCapabilityNames = capabilityNames(walk);
-      // TEMP-INSTRUMENTATION CL-2780
-      const dbfanoutStart = performance.now();
-      await writeStepAgentRows({
-        db,
-        deploymentId: params.deploymentId,
-        tenantId: params.tenantId,
-        creatorPrincipalId: params.creatorPrincipalId,
-        stepIds: agentRowStepIds,
-        toolPackagePins,
-        capabilityNames: stepCapabilityNames,
-      });
+    // Persist an `agent` row per step that needs one (deployed + deterministic
+    // tool). Interchange's launchSession never writes one, and the hub's
+    // tool-credential + manifest gate authorizes a step by that row's pins —
+    // every such step carries the same union pins the orchestrator hands it.
+    // Inline steps are skipped: no harness, no row.
+    const stepCapabilityNames = capabilityNames(walk);
+    // TEMP-INSTRUMENTATION CL-2780
+    const dbfanoutStart = performance.now();
+    await writeStepAgentRows({
+      db,
+      deploymentId: params.deploymentId,
+      tenantId: params.tenantId,
+      creatorPrincipalId: params.creatorPrincipalId,
+      stepIds: agentRowStepIds,
+      toolPackagePins,
+      capabilityNames: stepCapabilityNames,
+    });
 
-      // Write each deployed step's `state/grants.json` into its agent-state
-      // repo so both interchange's supervisor (credentialsSnapshot assembly)
-      // and our sidecar's `readStepGrants` see real grants. Without this the
-      // step agent's grant set is empty and every `tool:<name>`/`invoke` is
-      // denied. Inline steps declare no tools, and deterministic tool steps run
-      // against a hardcoded deny-all `authorize` that never consults
-      // `grants.json` (CL-2252), so neither gets a grants file (nor an
-      // agent-state repo to hold one).
-      await writeStepGrantFiles({
-        repoStore: deps.repoStore,
-        deploymentId: params.deploymentId,
-        stepIds: deployedStepIds,
-        capabilityNames: stepCapabilityNames,
-      });
+    // Write each deployed step's `state/grants.json` into its agent-state
+    // repo so both interchange's supervisor (credentialsSnapshot assembly)
+    // and our sidecar's `readStepGrants` see real grants. Without this the
+    // step agent's grant set is empty and every `tool:<name>`/`invoke` is
+    // denied. Inline steps declare no tools, and deterministic tool steps run
+    // against a hardcoded deny-all `authorize` that never consults
+    // `grants.json` (CL-2252), so neither gets a grants file (nor an
+    // agent-state repo to hold one).
+    await writeStepGrantFiles({
+      repoStore: deps.repoStore,
+      deploymentId: params.deploymentId,
+      stepIds: deployedStepIds,
+      capabilityNames: stepCapabilityNames,
+    });
 
-      // Persist a per-step `agent_instance` row for each deployed step. Its
-      // original justification — that the orchestrator's per-step launch fires
-      // an `agent.deploy` whose ack `requireInstance`-resolves this row — is
-      // STALE as of CL-2782: the deployed-step `launchSession` is now no-op'd,
-      // so no per-step `agent.deploy.ack` fires and nothing reads this row's
-      // public key. The row is KEPT (safe inert: null sessionId, no reader)
-      // because CL-2705 per-step usage attribution joins it — activity-overview's
-      // `workflowOwnerByInstance` maps a step's synthetic principal back to the
-      // run owner via `member_agent_instance`, and deployed reasoning steps emit
-      // inference usage, so dropping the row would silently regress per-step
-      // attribution. Do NOT "clean up the dead row": it is load-bearing for
-      // attribution, not for the (now absent) launch. Inline and deterministic-
-      // tool steps declare no reasoning usage under a per-step instance, so they
-      // get no instance row.
+    // Persist a per-step `agent_instance` row for each deployed step. Its
+    // original justification — that the orchestrator's per-step launch fires
+    // an `agent.deploy` whose ack `requireInstance`-resolves this row — is
+    // STALE as of CL-2782: the deployed-step `launchSession` is now no-op'd,
+    // so no per-step `agent.deploy.ack` fires and nothing reads this row's
+    // public key. The row is KEPT (safe inert: null sessionId, no reader)
+    // because CL-2705 per-step usage attribution joins it — activity-overview's
+    // `workflowOwnerByInstance` maps a step's synthetic principal back to the
+    // run owner via `member_agent_instance`, and deployed reasoning steps emit
+    // inference usage, so dropping the row would silently regress per-step
+    // attribution. Do NOT "clean up the dead row": it is load-bearing for
+    // attribution, not for the (now absent) launch. Inline and deterministic-
+    // tool steps declare no reasoning usage under a per-step instance, so they
+    // get no instance row.
+    //
+    // Both `agent_instance` writers (step + supervisor) are gated on the
+    // supervisor frame: a catalog publish spawns no supervisor and runs no
+    // steps, so writing active (`endedAt` NULL) instance rows for it would
+    // accumulate permanently-"live" phantom rows nothing ever ends — no
+    // deploy-ack resolves them, no run attributes usage under them, and only
+    // best-effort supersede teardown would ever touch them. Per-run deploys
+    // still write both.
+    if (sendSupervisorFrame) {
       await writeStepInstanceRows({
         db,
         deploymentId: params.deploymentId,
@@ -297,23 +323,28 @@ export function createWorkflowDeployService(deps: {
         creatorPrincipalId: params.creatorPrincipalId,
         stepIds: deployedStepIds,
       });
+    }
 
-      // The orchestrator's multi-step branch also registers a
-      // DEPLOYMENT-level supervisor address (`ins_<deploymentId>@<domain>`,
-      // no step suffix) and fires the `agent.deploy` frame against it. The
-      // sidecar's `agent.deploy.ack` for that frame resolves the supervisor
-      // instance via `requireInstance` (by address, endedAt IS NULL) to store
-      // its public key, and the supervisor's repo pack pushes route by the
-      // same row. The per-step writers never create this row, so without it
-      // the deploy fails with "No active instance found for address
-      // ins_<deploymentId>@<domain>". Mirror the step writers: an `agent` row
-      // (the instance's notNull FK target) plus the active instance row.
-      await writeDeploymentAgentRow({
-        db,
-        deploymentId: params.deploymentId,
-        tenantId: params.tenantId,
-        creatorPrincipalId: params.creatorPrincipalId,
-      });
+    // The orchestrator's multi-step branch also registers a
+    // DEPLOYMENT-level supervisor address (`ins_<deploymentId>@<domain>`,
+    // no step suffix) and fires the `agent.deploy` frame against it. The
+    // sidecar's `agent.deploy.ack` for that frame resolves the supervisor
+    // instance via `requireInstance` (by address, endedAt IS NULL) to store
+    // its public key, and the supervisor's repo pack pushes route by the
+    // same row. The per-step writers never create this row, so without it
+    // the deploy fails with "No active instance found for address
+    // ins_<deploymentId>@<domain>". Mirror the step writers: an `agent` row
+    // (the instance's notNull FK target) plus the active instance row. The
+    // instance row is frame-gated like the step rows (no supervisor, no ack,
+    // no pack routing on a catalog publish); the `agent` row is kept in both
+    // modes as the stable FK/naming anchor for the deployment id.
+    await writeDeploymentAgentRow({
+      db,
+      deploymentId: params.deploymentId,
+      tenantId: params.tenantId,
+      creatorPrincipalId: params.creatorPrincipalId,
+    });
+    if (sendSupervisorFrame) {
       await writeDeploymentInstanceRow({
         db,
         deploymentId: params.deploymentId,
@@ -322,74 +353,86 @@ export function createWorkflowDeployService(deps: {
         creatorPrincipalId: params.creatorPrincipalId,
         harnessSessionId: params.config.sessionId,
       });
-      // TEMP-INSTRUMENTATION CL-2780
-      const dbfanoutMs = performance.now() - dbfanoutStart;
-      lastDbFanoutMs = dbfanoutMs;
+    }
+    // TEMP-INSTRUMENTATION CL-2780
+    const dbfanoutMs = performance.now() - dbfanoutStart;
+    lastDbFanoutMs = dbfanoutMs;
 
-      // TEMP-INSTRUMENTATION CL-2780: accumulate per-launch timing across the
-      // deploy's launchSession calls (count/sum/max), wrapping the launch hook.
-      const launchTiming = { count: 0, sum: 0, max: 0 };
-      const timedLaunchSession: LaunchSessionFn = (launchParams) => {
-        const launchStart = performance.now();
-        const result = toLaunchSession(
-          deps.sessionService,
-          noLaunchAgentIds,
-        )(launchParams);
-        return result.finally(() => {
-          const ms = performance.now() - launchStart;
-          launchTiming.count += 1;
-          launchTiming.sum += ms;
-          if (ms > launchTiming.max) launchTiming.max = ms;
-        });
-      };
-
-      // The orchestrator still walks every step (it pins each step's
-      // InferenceSource into the supervisor frame's `sources` map, which the
-      // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
-      // entry too). It calls `launchSession` once per step; we wrap that hook so
-      // an inline OR deterministic-tool step's agentId resolves to a no-op
-      // promise WITHOUT touching the SessionService — zero agent-state repos,
-      // zero session launches for either. Built per-deploy because the
-      // no-launch agentId set depends on this workflow.
-      const orchestrator = createWorkflowDeployOrchestrator({
-        directorRegistry,
-        workflowRepo: createWorkflowRepoWriter(deps.repoStore),
-        // TEMP-INSTRUMENTATION CL-2780: timed wrapper around toLaunchSession.
-        launchSession: timedLaunchSession,
-        sendMultiStepDeploy: toSendMultiStepDeploy(deps.sidecarRouter),
+    // TEMP-INSTRUMENTATION CL-2780: accumulate per-launch timing across the
+    // deploy's launchSession calls (count/sum/max), wrapping the launch hook.
+    const launchTiming = { count: 0, sum: 0, max: 0 };
+    const timedLaunchSession: LaunchSessionFn = (launchParams) => {
+      const launchStart = performance.now();
+      const result = toLaunchSession(
+        deps.sessionService,
+        noLaunchAgentIds,
+      )(launchParams);
+      return result.finally(() => {
+        const ms = performance.now() - launchStart;
+        launchTiming.count += 1;
+        launchTiming.sum += ms;
+        if (ms > launchTiming.max) launchTiming.max = ms;
       });
+    };
 
-      // Approve the workflow's own declared grants AND every inference source
-      // the deploy resolved from the tenant catalog. Inline/deterministic steps
-      // declare `sources:[]`, so the capability walk emits NO
-      // `inference.source:*` grant for them; the orchestrator's
-      // `pickStepInferenceSource` then refuses the catalog-resolved
-      // `defaultSource` as unapproved. The catalog offerings ARE the
-      // operator-approved set, so approving the chain is the correct gate.
-      const operatorApprovals = new Set<string>([
-        ...collectGrants(walk),
-        ...params.config.sources.map(
-          (source) => `inference.source:${source.provider}:${source.model}`,
-        ),
-      ]);
+    // The orchestrator still walks every step (it pins each step's
+    // InferenceSource into the supervisor frame's `sources` map, which the
+    // sidecar's STEP_INFERENCE_SOURCES table reads — inline steps need that
+    // entry too). It calls `launchSession` once per step; we wrap that hook so
+    // an inline OR deterministic-tool step's agentId resolves to a no-op
+    // promise WITHOUT touching the SessionService — zero agent-state repos,
+    // zero session launches for either. Built per-deploy because the
+    // no-launch agentId set depends on this workflow.
+    const orchestrator = createWorkflowDeployOrchestrator({
+      directorRegistry,
+      workflowRepo: createWorkflowRepoWriter(deps.repoStore),
+      // TEMP-INSTRUMENTATION CL-2780: timed wrapper around toLaunchSession.
+      launchSession: timedLaunchSession,
+      // Catalog publish (sendSupervisorFrame=false) hands the orchestrator a
+      // no-op that resolves without touching the sidecar, so the workflow repo
+      // + capability walk run but no `agent.deploy` frame is sent and no
+      // supervisor spawns. Per-run provisioning passes the real hand-off.
+      sendMultiStepDeploy: sendSupervisorFrame
+        ? toSendMultiStepDeploy(deps.sidecarRouter)
+        : noopSendMultiStepDeploy,
+    });
 
-      const deployResult = await orchestrator.deployWorkflow({
-        ...params,
-        operatorApprovals,
-        toolPackagePins,
-      });
-      // TEMP-INSTRUMENTATION CL-2780
-      log.info(
-        "launchSession timing kind={kind}: launches={count} totalLaunchMs={sum} maxMs={max}",
-        {
-          kind: params.workflow.id,
-          count: launchTiming.count,
-          sum: Math.round(launchTiming.sum),
-          max: Math.round(launchTiming.max),
-        },
-      );
-      return deployResult;
-    },
+    // Approve the workflow's own declared grants AND every inference source
+    // the deploy resolved from the tenant catalog. Inline/deterministic steps
+    // declare `sources:[]`, so the capability walk emits NO
+    // `inference.source:*` grant for them; the orchestrator's
+    // `pickStepInferenceSource` then refuses the catalog-resolved
+    // `defaultSource` as unapproved. The catalog offerings ARE the
+    // operator-approved set, so approving the chain is the correct gate.
+    const operatorApprovals = new Set<string>([
+      ...collectGrants(walk),
+      ...params.config.sources.map(
+        (source) => `inference.source:${source.provider}:${source.model}`,
+      ),
+    ]);
+
+    const deployResult = await orchestrator.deployWorkflow({
+      ...params,
+      operatorApprovals,
+      toolPackagePins,
+    });
+    // TEMP-INSTRUMENTATION CL-2780
+    log.info(
+      "launchSession timing kind={kind}: launches={count} totalLaunchMs={sum} maxMs={max}",
+      {
+        kind: params.workflow.id,
+        count: launchTiming.count,
+        sum: Math.round(launchTiming.sum),
+        max: Math.round(launchTiming.max),
+      },
+    );
+    return deployResult;
+  };
+
+  const service: WorkflowDeployService = {
+    deployWorkflow: (params) => runDeploy(params, true),
+
+    persistCatalog: (params) => runDeploy(params, false),
 
     ensureDeploymentRoutable: async (args) => {
       const address = deriveDeploymentAddress({
@@ -1195,6 +1238,15 @@ function launchDeployedSession(
     ...(toolPackagePins ? { toolPackagePins } : {}),
   });
 }
+
+// Catalog-publish hand-off: satisfies the orchestrator's required
+// `sendMultiStepDeploy` dep without sending an `agent.deploy` frame. The
+// orchestrator writes the workflow repo and walks steps, then awaits this and
+// returns; no supervisor is spawned. The returned `publicKey` is empty — no
+// sidecar acked a deploy, and the catalog path (publishWorkflowDefinition)
+// ignores it (the per-run deploy is where a real supervisor pubkey is minted).
+const noopSendMultiStepDeploy: SendMultiStepDeployFn = () =>
+  Promise.resolve({ publicKey: "" });
 
 export function toSendMultiStepDeploy(
   sidecarRouter: SidecarRouter,

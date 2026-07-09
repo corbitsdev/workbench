@@ -1432,6 +1432,150 @@ describe("deployWorkflow approves the catalog inference chain", () => {
   });
 });
 
+// persistCatalog is the hub-only publish path: it must write the git `workflow`
+// definition repo + per-step DB/grant rows exactly like deployWorkflow, but send
+// NO supervisor `agent.deploy` frame — so publishing succeeds with the sidecar
+// disconnected (a throwing sendAgentDeploy is never reached).
+describe("persistCatalog (hub-only publish)", () => {
+  const SOURCE: InferenceSource = {
+    id: "openai-compatible:m",
+    provider: "openai-compatible",
+    baseURL: "https://llm.example.com",
+    apiKey: "secret",
+    model: "m",
+  };
+
+  function makeConfig(
+    deploymentId: string,
+    deploymentDomain: string,
+  ): HarnessConfig {
+    return {
+      sessionId: "sess_1",
+      agentId: deploymentId,
+      tenantId: "t1",
+      principalId: "p1",
+      agentAddress: `${deploymentId}@${deploymentDomain}`,
+      systemPrompt: "",
+      tools: [],
+      grants: [],
+      sources: [SOURCE],
+      defaultSource: SOURCE.id,
+    } as unknown as HarnessConfig;
+  }
+
+  test("persists the definition repo + DB rows and sends no supervisor frame even when the sidecar is down", async () => {
+    const deploymentId = "ses_catalog";
+    const deploymentDomain = "deploy.example.com";
+
+    const draftAgent = defineAgent({
+      id: "draft",
+      description: "deployed reasoning step",
+      systemPrompt: "draft something",
+      tools: [],
+      capabilities: [],
+      inference: { sources: [{ provider: "openai-compatible", model: "m" }] },
+    });
+    const workflow = defineWorkflow({
+      id: "pain-point-collateral",
+      trigger: { type: "manual" },
+      steps: {
+        analyze: inlineInferenceStep({
+          id: "analyze",
+          systemPrompt: "extract pain points",
+        }),
+        draft: step({ agent: draftAgent, after: ["analyze"] }),
+      },
+    });
+
+    const writeTreeRepoIds: { kind: string; id: string }[] = [];
+    const writeTree = mock(
+      async (
+        _principal: { kind: string },
+        repoId: { kind: string; id: string },
+        _ref: string,
+        _content: unknown,
+      ) => {
+        writeTreeRepoIds.push(repoId);
+        return { commitSha: "sha" };
+      },
+    );
+    const repoStore = { repoStore: { writeTree } } as unknown as AgentRepoStore;
+
+    const insertedRows: {
+      table: "agent" | "agentInstance";
+      rows: { id: string }[];
+    }[] = [];
+    const db = {
+      insert: deployWorkflowInsertMock(insertedRows),
+    } as unknown as HubDb;
+
+    const sessionService = {
+      launchSession: mock(async () => undefined),
+    } as unknown as SessionService;
+
+    // The sidecar is disconnected: any frame send throws. persistCatalog must
+    // never reach it.
+    const sendAgentDeploy = mock(async () => {
+      throw new Error("sidecar disconnected");
+    });
+    const sidecarRouter = {
+      getRoutableAddresses: () => [],
+      sendAgentDeploy,
+    } as unknown as SidecarRouter;
+
+    const service = createWorkflowDeployService({
+      db,
+      repoStore,
+      sidecarRouter,
+      sessionService,
+      directorRegistry: createWorkbenchDirectorRegistry(),
+    });
+
+    const result = await service.persistCatalog({
+      workflow,
+      deploymentId,
+      deploymentDomain,
+      tenantId: "t1",
+      creatorPrincipalId: "p1",
+      config: makeConfig(deploymentId, deploymentDomain),
+      deployContent: { systemPrompt: "" },
+      hubPublicKey: "hubkey",
+    });
+
+    expect(result.kind).toBe("multi-step");
+
+    // No supervisor frame — the disconnected sidecar was never touched.
+    expect(sendAgentDeploy).not.toHaveBeenCalled();
+
+    // The git `workflow` definition repo IS written (the catalog registry entry).
+    const workflowRepoIds = writeTreeRepoIds
+      .filter((r) => r.kind === "workflow")
+      .map((r) => r.id);
+    expect(workflowRepoIds).toContain("pain-point-collateral");
+
+    // The deployed step's grants repo + the per-step/supervisor `agent` rows are
+    // still persisted — the whole catalog fan-out runs, only the frame is gone.
+    const agentStateIds = writeTreeRepoIds
+      .filter((r) => r.kind === "agent-state")
+      .map((r) => r.id);
+    expect(agentStateIds).toContain("ses_catalog-draft");
+
+    const agentRowIds = insertedRows
+      .filter((b) => b.table === "agent")
+      .flatMap((b) => b.rows.map((r) => r.id));
+    expect(agentRowIds).toContain("ins_ses_catalog-draft");
+    expect(agentRowIds).toContain("ins_ses_catalog");
+
+    // NO `agent_instance` rows: a catalog publish never spawns a supervisor or
+    // runs steps, so active (endedAt NULL) instance rows here would be phantom
+    // "live" instances nothing ever ends. Per-run deploys mint their own.
+    const instanceRowIds = insertedRows
+      .filter((b) => b.table === "agentInstance")
+      .flatMap((b) => b.rows.map((r) => r.id));
+    expect(instanceRowIds).toEqual([]);
+  });
+});
+
 describe("ensureDeploymentRoutable", () => {
   function makeService(opts: {
     routableAddresses: string[];

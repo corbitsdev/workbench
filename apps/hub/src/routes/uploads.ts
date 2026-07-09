@@ -1,15 +1,14 @@
 import { Hono } from "hono";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { upload } from "../db/schema";
+import { MAX_UPLOAD_BYTES, upload } from "../db/schema";
 import { getRequestedUserContext } from "../lib/user-context";
 
-const log = getLogger(["api", "uploads"]);
-
 // Files arrive before the workflow run that consumes them, so they are stored in
-// the upload table (BYTEA) rather than as artifacts. 10MB comfortably covers a
-// product-catalog xlsx; larger inputs are out of scope (object storage, CL docs).
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// the upload table (BYTEA) rather than as artifacts. The size ceiling lives in
+// db/schema next to the table.
+
+const log = getLogger(["api", "uploads"]);
 
 // Only spreadsheet uploads are accepted today. Validate at the boundary (not in
 // the xlsx parser) so a PDF/ZIP/HTML payload is rejected with a clear message

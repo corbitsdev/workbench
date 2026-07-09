@@ -137,12 +137,49 @@ describe("isUIBlock", () => {
     expect(
       isUIBlock({ kind: "table", columns: ["a"], rows: [[{ x: 1 }]] }),
     ).toBe(false);
-    expect(
-      isUIBlock({ kind: "table", columns: ["a"], rows: [null] }),
-    ).toBe(false);
+    expect(isUIBlock({ kind: "table", columns: ["a"], rows: [null] })).toBe(
+      false,
+    );
     expect(isUIBlock({ kind: "link", url: 5 })).toBe(false);
     expect(isUIBlock({ kind: "error", message: 5 })).toBe(false);
     expect(isUIBlock({ kind: "canvas", blocks: "x" })).toBe(false);
+  });
+
+  it("accepts a well-formed comparison block", () => {
+    expect(
+      isUIBlock({
+        kind: "comparison",
+        status: "running",
+        blind: true,
+        result: {
+          ranking: [],
+          variants: [
+            { label: "Variant 1", content: "x", status: "responded" },
+            { label: "Variant 2", content: "", status: "streaming" },
+          ],
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects a comparison block whose result has no variants array", () => {
+    expect(
+      isUIBlock({
+        kind: "comparison",
+        status: "running",
+        result: { ranking: [] },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a comparison block with an out-of-range status", () => {
+    expect(
+      isUIBlock({
+        kind: "comparison",
+        status: "paused",
+        result: { ranking: [], variants: [] },
+      }),
+    ).toBe(false);
   });
 });
 

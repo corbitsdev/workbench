@@ -27,8 +27,7 @@ hub-owned asset git store and visibility is resolved against hub-owned tables.
   registered in both `KNOWN_TOOLS` and `HUB_BACKED_TOOLS`. It resolves the
   caller's **stable user id** (`principal.refId`) and delegates visibility to
   the existing `skill-library` service (`listSkills`, `getSkillAsset`,
-  `getSkillContent`) — the same rules the skills UI and the workflow-skills
-  resolver use.
+  `getSkillContent`) — the same rules the skills UI uses.
 
 ## Visibility
 

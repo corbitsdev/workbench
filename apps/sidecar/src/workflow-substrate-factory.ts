@@ -45,14 +45,12 @@ import {
   STEP_NONFATAL_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
-  EPHEMERAL_CHAT_TAG,
-  compactEphemeralChatInput,
 } from "@workbench/agents";
+import { runInlineInferenceStep } from "./inline-inference-step";
 import { wsUrlToHttp } from "./agent-tools";
 import type {
   Agent,
   AgentDefinition,
-  AuthorizeFn,
   BaseEnv,
   DirectorRegistry,
 } from "@intx/agent";
@@ -1041,163 +1039,6 @@ export function createSidecarStepInvoker(args: {
     }
     return inferenceInvoker(req);
   };
-}
-
-/** Deny-all authorize for inline steps: they declare no tools, so any tool
- * authz must fail closed. */
-const inlineDenyAllAuthorize: AuthorizeFn = async () => ({
-  effect: "deny",
-  matchingGrants: [],
-  resolvedBy: null,
-});
-
-/**
- * Encode the step's resolved `input` as the agent's synthetic inbound
- * message content. Mirrors `@intx/workflow-host`'s step-invoker
- * `synthesizeInputContent` (not exported): a string passes through; any
- * other value is JSON-stringified, and a non-serializable input fails loud
- * rather than sending the literal string "undefined".
- */
-function synthesizeStepInput(input: unknown): string {
-  if (typeof input === "string") return input;
-  const encoded = JSON.stringify(input);
-  if (encoded === undefined) {
-    throw new Error(
-      `inline inference step: input of typeof ${typeof input} is not JSON-serializable; the step's input selector must resolve to a serializable value`,
-    );
-  }
-  return encoded;
-}
-
-function selectedSkillIds(input: unknown): string[] {
-  if (typeof input !== "object" || input === null || !("skillIds" in input))
-    return [];
-  const value = (input as { skillIds?: unknown }).skillIds;
-  if (!Array.isArray(value)) return [];
-  return value.filter(
-    (id): id is string => typeof id === "string" && id.length > 0,
-  );
-}
-
-function stepToolContext(env: StepEnvBase): StepToolContext {
-  const context = (env as Record<string, unknown>)[STEP_TOOL_CONTEXT_KEY];
-  if (typeof context !== "object" || context === null) {
-    throw new Error(
-      "inline inference step: selected skills require step tool context",
-    );
-  }
-  return context as StepToolContext;
-}
-
-async function resolveInputSkills(
-  input: unknown,
-  env: StepEnvBase,
-  runId: string,
-): Promise<unknown> {
-  const skillIds = selectedSkillIds(input);
-  if (skillIds.length === 0) return input;
-
-  const context = stepToolContext(env);
-  const response = await fetch(
-    `${context.hubHttpUrl}/api/internal/workflow-skills/resolve`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${context.sidecarToken}`,
-      },
-      body: JSON.stringify({
-        tenantId: context.tenantId,
-        runId,
-        skillIds,
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(
-      `inline inference step: failed to resolve selected skills (${response.status})`,
-    );
-  }
-  const body = (await response.json()) as { skills?: unknown };
-  if (!Array.isArray(body.skills)) {
-    throw new Error(
-      "inline inference step: skill resolver returned an invalid payload",
-    );
-  }
-  return { ...(input as Record<string, unknown>), skills: body.skills };
-}
-
-/**
- * Run an inline single-turn inference step (CL-2251). Builds the per-step
- * env (pinning `sources`/`defaultSource` from the `STEP_INFERENCE_SOURCES`
- * table), instantiates a bare agent with a deny-all `authorize`, sends the
- * step's resolved input, and returns the `{ reply, turn }` output shape the
- * deployed inference invoker returns. The agent is always torn down.
- */
-async function runInlineInferenceStep(args: {
-  req: StepInvokeRequest;
-  buildEnv: (req: StepInvokeRequest) => Promise<StepEnvBase>;
-  agentFactory: <EnvReq extends BaseEnv>(
-    def: AgentDefinition<EnvReq>,
-    env: EnvReq,
-  ) => Promise<Agent>;
-}): Promise<{ output: { reply: string; turn: unknown } }> {
-  if (args.req.signal.aborted) {
-    throw new DOMException("aborted", "AbortError");
-  }
-  const envBase = await args.buildEnv(args.req);
-  const runId = args.req.authzContext.runId;
-  if (runId === undefined) {
-    throw new Error(
-      "inline inference step: AuthorizeContext.runId is required to resolve selected skills",
-    );
-  }
-  const resolvedInput = await resolveInputSkills(
-    args.req.input,
-    envBase,
-    runId,
-  );
-  const env: BaseEnv = { ...envBase, authorize: inlineDenyAllAuthorize };
-  const agent = await args.agentFactory(args.req.agent, env);
-  // Attach a draining stream() consumer BEFORE send() so the agent's
-  // pre-start event buffer drains into it instead of overflowing (the
-  // CL-2253 staging WARN "no stream() consumer ever attached to drain it")
-  // and the step's live progress events flow to the sidecar logs. The
-  // consumer is consume-and-discard: the workflow-child invokeStep wrapper
-  // voids onEvent for inline steps, so there is nowhere to forward to. The
-  // loop ends when close() terminates the stream consumer with done:true; a
-  // StreamBackpressureError is caught and logged rather than left to reject
-  // (we await the loop after close, so an unsettled rejection would surface
-  // as an unhandled rejection). Mirrors the deployed harness forwardEvents
-  // pattern in default-harness.ts.
-  const drainStream = async (): Promise<void> => {
-    try {
-      for await (const _event of agent.stream()) {
-        void _event;
-      }
-    } catch (err) {
-      logger.warn`inline inference step: event stream drain stopped: ${
-        err instanceof Error ? err.message : String(err)
-      }`;
-    }
-  };
-  const draining = drainStream();
-  try {
-    let inputForSend = resolvedInput;
-    const ephemeralChat = args.req.agent.tags?.[EPHEMERAL_CHAT_TAG];
-    if (ephemeralChat === "v1") {
-      const compacted = compactEphemeralChatInput(
-        resolvedInput,
-        args.req.agent.systemPrompt,
-      );
-      inputForSend = compacted.payload;
-    }
-    const sendResult = await agent.send(synthesizeStepInput(inputForSend));
-    return { output: { reply: sendResult.reply, turn: sendResult.turn } };
-  } finally {
-    await agent.close();
-    await draining;
-  }
 }
 
 /**

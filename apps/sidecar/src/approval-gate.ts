@@ -16,6 +16,7 @@ const logger = getLogger(["sidecar", "approval-gate"]);
  */
 export const APPROVAL_GATED_TOOLS: ReadonlySet<string> = new Set([
   "vercel_deploy_static_file",
+  "vercel_deploy_artifact",
 ]);
 
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };

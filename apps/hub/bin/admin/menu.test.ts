@@ -244,12 +244,12 @@ describe("itemLabel", () => {
   it("uses deploymentId as id when id is absent (workflow deployments list)", () => {
     const result = itemLabel({
       deploymentId: "ses_abc123",
-      kind: "ab-compare-hitl",
+      kind: "ab-compare-quality",
       status: "completed",
       createdAt: "2026-06-22T10:00:00Z",
     });
     expect(result.id).toBe("ses_abc123");
-    expect(result.label).toContain("ab-compare-hitl");
+    expect(result.label).toContain("ab-compare-quality");
     expect(result.label).toContain("ses_abc123");
   });
 

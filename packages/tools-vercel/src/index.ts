@@ -1,22 +1,18 @@
 import { type } from "arktype";
 import type { AgentTool } from "@intx/agent";
 import type { ToolDefinition } from "@intx/types/runtime";
+import {
+  deployStaticFilesToVercel,
+  type VercelFetch,
+  type VercelToolsConfig,
+} from "./deploy";
 
-export type VercelFetch = (
-  input: string,
-  init: RequestInit,
-) => Promise<Response>;
-
-export type VercelToolsConfig = {
-  apiKey: string;
-  baseUrl?: string;
-  fetcher?: VercelFetch;
-};
+export type { VercelFetch, VercelToolsConfig };
+export { deployStaticFilesToVercel, MAX_STATIC_FILE_BYTES } from "./deploy";
 
 const DEFAULT_BASE_URL = "https://api.vercel.com";
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
-const MAX_STATIC_FILE_BYTES = 4_500_000;
 
 const VercelProjectSchema = type({
   id: "string",
@@ -41,14 +37,6 @@ const VercelDeploymentSchema = type({
 
 const VercelDeploymentsResponse = type({
   deployments: VercelDeploymentSchema.array(),
-});
-
-const VercelDeploymentResponse = type({
-  id: "string",
-  "url?": "string",
-  "name?": "string",
-  "readyState?": "string",
-  "inspectUrl?": "string",
 });
 
 const ListProjectsArgs = type({
@@ -133,6 +121,38 @@ export const VERCEL_DEPLOY_STATIC_FILE_DEFINITION: ToolDefinition = {
       },
     },
     required: ["projectName", "filePath", "html"],
+  },
+};
+
+export const VERCEL_DEPLOY_ARTIFACT_DEFINITION: ToolDefinition = {
+  name: "vercel_deploy_artifact",
+  description:
+    'Deploy a Workbench artifact of kind web (single HTML) or web_site (multi-file JSON bundle) to a public Vercel URL. This is an irreversible write action that publishes content the user can see. It pauses for explicit human approval before it runs, so call it directly when the user asks to deploy — do not ask for approval separately. Defaults to a preview deployment; only request target "production" when the user asks to deploy to production.',
+  inputSchema: {
+    type: "object",
+    properties: {
+      artifactId: {
+        type: "string",
+        description: "Workbench artifact id (kind must be web or web_site).",
+      },
+      projectName: {
+        type: "string",
+        description: "Vercel project/name for the deployment.",
+      },
+      teamId: { type: "string", description: "Optional Vercel team ID." },
+      target: {
+        type: "string",
+        enum: ["production", "preview"],
+        description:
+          "Deployment target. Defaults to preview; production requires explicit human approval.",
+      },
+      version: {
+        type: "number",
+        description:
+          "Optional artifact version to deploy. Defaults to the latest version.",
+      },
+    },
+    required: ["artifactId", "projectName"],
   },
 };
 
@@ -263,14 +283,6 @@ async function listDeployments(
   return jsonResult(response.deployments);
 }
 
-function normalizeFilePath(filePath: string): string {
-  const normalized = filePath.replace(/^\/+/, "");
-  if (normalized.length === 0 || normalized.includes("..")) {
-    throw new Error("filePath must be a relative file path without '..'");
-  }
-  return normalized;
-}
-
 async function deployStaticFile(
   config: VercelToolsConfig,
   args: Record<string, unknown>,
@@ -281,39 +293,24 @@ async function deployStaticFile(
     throw new Error(`vercel_deploy_static_file: ${parsed.summary}`);
   }
 
-  const file = normalizeFilePath(parsed.filePath);
-  const size = new TextEncoder().encode(parsed.html).byteLength;
-  if (size > MAX_STATIC_FILE_BYTES) {
-    throw new Error(`HTML file is too large for this tool (${size} bytes)`);
+  const deployInput: {
+    projectName: string;
+    files: { path: string; content: string }[];
+    teamId?: string;
+    target?: "production" | "preview";
+  } = {
+    projectName: parsed.projectName,
+    files: [{ path: parsed.filePath, content: parsed.html }],
+  };
+  if (parsed.teamId !== undefined) {
+    deployInput.teamId = parsed.teamId;
+  }
+  if (parsed.target !== undefined) {
+    deployInput.target = parsed.target;
   }
 
-  const url = apiUrl(config, "/v13/deployments");
-  withTeamId(url, parsed.teamId);
-
-  const raw = await fetchVercelJson(config, url, {
-    method: "POST",
-    signal,
-    body: JSON.stringify({
-      name: parsed.projectName,
-      target: parsed.target ?? "preview",
-      projectSettings: { framework: null },
-      files: [
-        {
-          file,
-          data: Buffer.from(parsed.html, "utf8").toString("base64"),
-          encoding: "base64",
-        },
-      ],
-    }),
-  });
-  const response = VercelDeploymentResponse(raw);
-  if (response instanceof type.errors) {
-    throw new Error(`Vercel deployment response invalid: ${response.summary}`);
-  }
-  return jsonResult({
-    ...response,
-    url: response.url !== undefined ? `https://${response.url}` : undefined,
-  });
+  const result = await deployStaticFilesToVercel(config, deployInput, signal);
+  return jsonResult(result);
 }
 
 export function createVercelTools(config: VercelToolsConfig): AgentTool[] {

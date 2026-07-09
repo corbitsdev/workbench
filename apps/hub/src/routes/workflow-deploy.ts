@@ -276,7 +276,7 @@ export async function publishWorkflowDefinition(
   },
 ): Promise<{
   deploymentId: string;
-  result: Awaited<ReturnType<WorkflowDeployService["deployWorkflow"]>>;
+  result: Awaited<ReturnType<WorkflowDeployService["persistCatalog"]>>;
 }> {
   const { definition, targetTenantId, deployMeta } = args;
 
@@ -302,7 +302,11 @@ export async function publishWorkflowDefinition(
       definition,
     });
 
-  const result = await deps.workflowDeployService.deployWorkflow({
+  // Hub-only catalog persistence: writes the git `workflow` definition repo +
+  // per-step DB/grant rows and sends NO sidecar frame. The supervisor is minted
+  // per run by provisionRunDeployment, so publishing never needs a connected
+  // sidecar. `deployWorkflow` (with the frame) is reserved for per-run deploys.
+  const result = await deps.workflowDeployService.persistCatalog({
     // Validated envelope; the orchestrator (deployWorkflow → validateWorkflowDefinition)
     // re-runs full definition validation before launch.
     workflow: definition,

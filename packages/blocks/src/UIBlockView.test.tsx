@@ -3,6 +3,45 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 
+// The comparison block dispatches to @workbench/ui's ComparisonView, which uses
+// framer-motion — not Happy DOM-compatible. Replace motion.* with plain
+// elements so the grid renders in the test runtime.
+const MOTION_ONLY = new Set([
+  "initial",
+  "animate",
+  "exit",
+  "transition",
+  "variants",
+  "whileHover",
+  "whileTap",
+  "layout",
+]);
+mock.module("framer-motion", () => ({
+  motion: new Proxy(
+    {},
+    {
+      get(_t, tag: string) {
+        return ({
+          children,
+          ...rest
+        }: {
+          children?: React.ReactNode;
+          [key: string]: unknown;
+        }) => {
+          const domProps: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(rest)) {
+            if (!MOTION_ONLY.has(key)) domProps[key] = value;
+          }
+          return React.createElement(tag, domProps, children);
+        };
+      },
+    },
+  ),
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) =>
+    React.createElement(React.Fragment, null, children),
+  useReducedMotion: () => false,
+}));
+
 import { UIBlockView } from "./UIBlockView";
 import type { UIBlock, UIResponse } from "./ui-block";
 
@@ -463,5 +502,35 @@ describe("UIBlockView", () => {
     expect(
       screen.getByRole("button", { name: "Draft follow-up" }),
     ).not.toBeNull();
+  });
+
+  it("dispatches a comparison block to the comparison grid", () => {
+    const block: UIBlock = {
+      kind: "comparison",
+      status: "final",
+      blind: false,
+      result: {
+        ranking: [{ rank: 1, label: "Variant 1" }],
+        variants: [
+          {
+            label: "Variant 1",
+            content: "Winning body text.",
+            status: "responded",
+          },
+        ],
+      },
+    };
+    render(<UIBlockView block={block} />);
+    expect(screen.getByText("Winning body text.")).not.toBeNull();
+  });
+
+  it("gives choice option buttons the active-press affordance", () => {
+    const block: UIBlock = {
+      kind: "choice",
+      options: [{ id: "a", label: "Variant 1 wins" }],
+    };
+    render(<UIBlockView block={block} />);
+    const button = screen.getByRole("button", { name: "Variant 1 wins" });
+    expect(button.className).toContain("active:scale");
   });
 });

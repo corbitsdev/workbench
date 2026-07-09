@@ -1,9 +1,8 @@
 import { type } from "arktype";
 import { defineAgent } from "@intx/agent";
 import { step } from "@intx/workflow";
-import type { StepPrimitive, Selector } from "@intx/workflow";
+import type { StepPrimitive, Selector, RetryPolicy } from "@intx/workflow";
 import { canonicalizeToolNames } from "./tool-names";
-import { EPHEMERAL_CHAT_TAG } from "./ephemeral-chat/payload";
 import { LLM_PROVIDER } from "./constants";
 
 /**
@@ -50,6 +49,16 @@ export const STEP_ARGMAP_TAG = "workbench.argMap";
  * still surfaced (logged with the why, and recorded by the consumer as a skip).
  */
 export const STEP_NONFATAL_TAG = "workbench.nonFatal";
+
+/**
+ * The retry policy's `maxAttempts`, stringified, set when an inline step declares
+ * both `retry` and `nonFatal`. The engine's `RetryPolicy` re-invokes the step on
+ * a throw, but a `nonFatal` runner that returns an `isError` output on the first
+ * failure never throws — so retry would never fire. The runner reads this tag
+ * plus `AuthorizeContext.attempt` to degrade to the non-fatal skip only on the
+ * LAST attempt, throwing (and letting the engine retry) on earlier ones.
+ */
+export const STEP_INLINE_RETRY_MAX_TAG = "workbench.inlineRetryMaxAttempts";
 
 /**
  * Per-tool-argument reshape spec. Maps a TOOL argument name to either a
@@ -153,11 +162,6 @@ export interface InlineInferenceStepOpts {
   /** Step ids this step depends on. */
   after?: readonly string[];
   /**
-   * When set, the sidecar compacts `{ message, history }` step input to the v1
-   * ephemeral token budget before the model turn (CL-2308).
-   */
-  ephemeralChat?: "v1";
-  /**
    * Optional per-step model preference. When set, the step's placeholder agent
    * declares this `(LLM_PROVIDER, model)` as its preferred inference source, so
    * the deploy orchestrator's `pickStepInferenceSource` pins that model for this
@@ -167,6 +171,28 @@ export interface InlineInferenceStepOpts {
    * step (e.g. `LLM_WRITER_MODEL`) while the rest stay on `LLM_DEFAULT_MODEL`.
    */
   model?: string;
+  /**
+   * Optional inference-provider plugin for the declared `model` (e.g. `anthropic`,
+   * `openai`, `google-genai`). Defaults to `LLM_PROVIDER` ("openai-compatible").
+   * The declared `(provider, model)` is what the deploy's source resolution pins,
+   * so a step can run on a native-provider model (Opus via `anthropic`) rather
+   * than only the openai-compatible gateway. Ignored when `model` is absent.
+   */
+  provider?: string;
+  /**
+   * When true, a failure of this step degrades to a recorded skip (via
+   * `STEP_NONFATAL_TAG`) instead of failing the whole run — the same contract
+   * `deterministicToolStep({ nonFatal })` provides. Used by the A/B preset
+   * workflows so one dead variant does not kill the comparison; a downstream
+   * quorum step decides whether enough variants succeeded.
+   */
+  nonFatal?: boolean;
+  /**
+   * Optional retry policy for transient failures, passed through to the
+   * underlying `step`. Auto-retries the same pinned source (no cross-provider
+   * failover — that is not wired in the workflow path).
+   */
+  retry?: RetryPolicy;
   /**
    * Optional per-step output-token ceiling. Carried on the step's preferred
    * inference source as `parameters.maxTokens`; the workflow deploy lifts it
@@ -218,7 +244,7 @@ export function inlineInferenceStep(
         ? {
             sources: [
               {
-                provider: LLM_PROVIDER,
+                provider: opts.provider ?? LLM_PROVIDER,
                 model: opts.model,
                 ...(opts.maxTokens !== undefined
                   ? { parameters: { maxTokens: opts.maxTokens } }
@@ -229,8 +255,9 @@ export function inlineInferenceStep(
         : { sources: [] },
     tags: {
       [STEP_KIND_TAG]: INLINE_INFERENCE_KIND,
-      ...(opts.ephemeralChat !== undefined
-        ? { [EPHEMERAL_CHAT_TAG]: opts.ephemeralChat }
+      ...(opts.nonFatal === true ? { [STEP_NONFATAL_TAG]: "true" } : {}),
+      ...(opts.retry !== undefined
+        ? { [STEP_INLINE_RETRY_MAX_TAG]: String(opts.retry.maxAttempts) }
         : {}),
       ...(opts.title !== undefined ? { [STEP_TITLE_TAG]: opts.title } : {}),
     },
@@ -238,6 +265,7 @@ export function inlineInferenceStep(
   return step({
     agent,
     ...(opts.input !== undefined ? { input: opts.input } : {}),
+    ...(opts.retry !== undefined ? { retry: opts.retry } : {}),
     ...(opts.after !== undefined ? { after: opts.after } : {}),
   });
 }

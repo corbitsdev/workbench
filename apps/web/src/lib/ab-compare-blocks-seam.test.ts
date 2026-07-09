@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
-import { buildAbCompareHitlBlocks } from "@workbench/workflow-ab-compare-hitl/blocks";
-import { AbConfigPayloadSchema } from "@workbench/shared";
+import { buildAbPresetBlocks } from "@workbench/ab-compare-presets/blocks";
+import { AbPresetConfigPayloadSchema } from "@workbench/shared";
 import {
   logRunStateSchema,
   runStateFromLog,
@@ -9,14 +9,12 @@ import {
   type LogRunState,
 } from "./run-state-adapter";
 
-// Closes the seam gap (CL-2683 finding F): drives a real log-derived run state
-// through the production `stepOutputsFromLog` + `runStateFromLog` decoders —
-// exactly what WorkflowDock does — and only THEN into the block builder. The
-// prior "integration" test hand-shaped decoded outputs, skipping the inline-ref
-// decode that is the actual client seam.
+// Drives a real log-derived run state through the production
+// `stepOutputsFromLog` + `runStateFromLog` decoders — exactly what WorkflowDock
+// does — and only THEN into the preset block builder, so the test starts from
+// wire-shaped data (including the inline-ref decode that is the client seam),
+// not a pre-trusted object.
 
-// Build a raw /state response and parse it through the real boundary schema, so
-// the test starts from wire-shaped data, not a pre-trusted object.
 function parseLog(raw: unknown): LogRunState {
   const parsed = logRunStateSchema(raw);
   if (parsed instanceof type.errors) {
@@ -27,7 +25,17 @@ function parseLog(raw: unknown): LogRunState {
 
 const inline = (value: unknown): string => `inline:${JSON.stringify(value)}`;
 
-describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
+function stepsForBlocks(log: LogRunState) {
+  return log.steps.map((step) => ({
+    stepId: step.stepId,
+    phase: step.phase,
+    ...(step.awaitingSignalName !== undefined
+      ? { awaitingSignalName: step.awaitingSignalName }
+      : {}),
+  }));
+}
+
+describe("ab-compare presets — real log→state→blocks seam", () => {
   const rawLog = {
     runId: "run_seam",
     phase: "running" as const,
@@ -38,27 +46,21 @@ describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
         phase: "completed" as const,
         stepType: "human" as const,
         currentAttempt: 1,
-        outputRef: inline({
-          variants: [
-            { label: "Variant 1", providerName: "openai", model: "gpt-4o" },
-            {
-              label: "Variant 2",
-              providerName: "anthropic",
-              model: "claude-3.5",
-            },
-          ],
-          input: "Write a tagline for a GTM workbench.",
-        }),
+        outputRef: inline({ input: "Write a tagline for a GTM workbench." }),
       },
       {
-        stepId: "execute",
+        stepId: "exec0",
         phase: "completed" as const,
         stepType: "inline" as const,
         currentAttempt: 1,
-        outputRef: inline([
-          { reply: "Close deals faster with an AI GTM copilot." },
-          { reply: "Your revenue team's shared brain." },
-        ]),
+        outputRef: inline({ reply: "Close deals faster with an AI copilot." }),
+      },
+      {
+        stepId: "exec1",
+        phase: "completed" as const,
+        stepType: "inline" as const,
+        currentAttempt: 1,
+        outputRef: inline({ reply: "Your revenue team's shared brain." }),
       },
       {
         stepId: "decision",
@@ -70,23 +72,15 @@ describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
     ],
   };
 
-  it("decodes inline outputs and renders blind cards + a winner choice", () => {
+  it("decodes inline exec outputs into blind cards + a winner choice", () => {
     const log = parseLog(rawLog);
-
-    // The production decoders — the seam under test.
     const stepOutputs = stepOutputsFromLog(log);
     const state = runStateFromLog(log);
 
-    const blocks = buildAbCompareHitlBlocks({
+    const blocks = buildAbPresetBlocks({
       runId: log.runId,
       phase: state.phase,
-      steps: log.steps.map((step) => ({
-        stepId: step.stepId,
-        phase: step.phase,
-        ...(step.awaitingSignalName !== undefined
-          ? { awaitingSignalName: step.awaitingSignalName }
-          : {}),
-      })),
+      steps: stepsForBlocks(log),
       stepOutputs,
     });
 
@@ -103,46 +97,13 @@ describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
       expect(choice.options.length).toBe(2);
     }
 
-    // Blind through the real decode path too — no identity leaks post-decode.
-    const serialized = JSON.stringify(blocks).toLowerCase();
-    for (const identity of ["openai", "gpt-4o", "anthropic", "claude"]) {
-      expect(serialized).not.toContain(identity);
-    }
+    // Blind: the pick surface carries only the blind labels, never a model id.
+    const serialized = JSON.stringify(blocks);
+    expect(serialized).toContain("Variant 1");
+    expect(serialized).toContain("Variant 2");
   });
 
-  it("omits an out-of-line (blob) execute output, so no actionable pick renders", () => {
-    const log = parseLog({
-      ...rawLog,
-      steps: rawLog.steps.map((step) =>
-        step.stepId === "execute"
-          ? { ...step, outputRef: "blob:sha256-abc123" }
-          : step,
-      ),
-    });
-
-    const stepOutputs = stepOutputsFromLog(log);
-    // The blob ref is not client-resolvable — execute output is absent.
-    expect(stepOutputs.execute).toBeUndefined();
-
-    const blocks = buildAbCompareHitlBlocks({
-      runId: log.runId,
-      phase: runStateFromLog(log).phase,
-      steps: log.steps.map((step) => ({
-        stepId: step.stepId,
-        phase: step.phase,
-        ...(step.awaitingSignalName !== undefined
-          ? { awaitingSignalName: step.awaitingSignalName }
-          : {}),
-      })),
-      stepOutputs,
-    });
-
-    // Nothing to compare → no actionable choice, a run-page link instead.
-    expect(blocks.some((b) => b.kind === "choice")).toBe(false);
-    expect(blocks.some((b) => b.kind === "link")).toBe(true);
-  });
-
-  it("at the config gate renders a variants form whose emitted payload validates (CL-2684)", () => {
+  it("at the config gate renders a prompt-only form whose payload validates", () => {
     const log = parseLog({
       runId: "run_cfg",
       phase: "running" as const,
@@ -158,39 +119,24 @@ describe("ab-compare-hitl blocks — real log→state→blocks seam", () => {
       ],
     });
 
-    const blocks = buildAbCompareHitlBlocks({
+    const blocks = buildAbPresetBlocks({
       runId: log.runId,
       phase: runStateFromLog(log).phase,
-      steps: log.steps.map((step) => ({
-        stepId: step.stepId,
-        phase: step.phase,
-        ...(step.awaitingSignalName !== undefined
-          ? { awaitingSignalName: step.awaitingSignalName }
-          : {}),
-      })),
+      steps: stepsForBlocks(log),
       stepOutputs: stepOutputsFromLog(log),
     });
 
     const form = blocks.find((b) => b.kind === "form");
     if (form?.kind !== "form") throw new Error("expected a form block");
     expect(form.signalName).toBe("ab-config");
-    const group = form.fields.find((f) => f.name === "variants");
-    if (group?.kind !== "group") throw new Error("expected a variants group");
+    expect(form.fields.map((f) => f.name)).toEqual(["input"]);
 
-    // Build the payload the FormBlock emits from THESE field names (a wrong
-    // field name here would produce a payload the boundary rejects).
-    const row = (provider: string, model: string) => ({
-      [group.fields[0]!.name]: provider,
-      [group.fields[1]!.name]: model,
-    });
+    // The payload the FormBlock emits from THIS field validates at the boundary.
     const payload: Record<string, unknown> = {
-      // Two variants — the boundary requires a real comparison (CL-2684).
-      variants: [
-        row("openai-compatible", "kimi-k2.6"),
-        row("anthropic", "claude-opus-4-8"),
-      ],
-      input: "Ship it.",
+      [form.fields[0]!.name]: "Ship it.",
     };
-    expect(AbConfigPayloadSchema(payload) instanceof type.errors).toBe(false);
+    expect(AbPresetConfigPayloadSchema(payload) instanceof type.errors).toBe(
+      false,
+    );
   });
 });

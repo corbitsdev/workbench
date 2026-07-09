@@ -147,90 +147,50 @@ describe("validateResumePayload", () => {
     ).toBe(false);
   });
 
-  test("rejects a free-text-only ab-compare-hitl decision (no ranking)", () => {
+  test("rejects a free-text-only A/B preset decision (no ranking)", () => {
     // A blind winner-pick cannot be free text — it must carry a ranking.
-    const result = validateResumePayload("ab-compare-hitl", "ab-decision", {
+    const result = validateResumePayload("ab-compare-quality", "ab-decision", {
       instruction: "Variant 1 reads better to me.",
     });
     expect(result.ok).toBe(false);
   });
 
-  test("rejects an ab-compare-hitl decision with an empty ranking", () => {
-    const result = validateResumePayload("ab-compare-hitl", "ab-decision", {
+  test("rejects an A/B preset decision with an empty ranking", () => {
+    const result = validateResumePayload("ab-compare-speed", "ab-decision", {
       ranking: [],
     });
     expect(result.ok).toBe(false);
   });
 
-  test("accepts a structured ab-compare-hitl decision with a ranked winner", () => {
+  test("accepts a structured A/B preset decision with a ranked winner", () => {
     expect(
-      validateResumePayload("ab-compare-hitl", "ab-decision", {
+      validateResumePayload("ab-compare-standard", "ab-decision", {
         ranking: [{ rank: 1, label: "Variant 2", rationale: "Punchier." }],
       }),
     ).toEqual({ ok: true });
   });
 
-  test("rejects an empty ab-compare-hitl config payload", () => {
-    // The generic "Continue" affordance would POST `{ instruction: "" }`; the
-    // config gate needs fully-specified variants + input.
-    const result = validateResumePayload("ab-compare-hitl", "ab-config", {
+  test("rejects an empty A/B preset config payload (no prompt)", () => {
+    // The preset config gate collects only the shared prompt; a prompt is
+    // required so the run cannot start with nothing to compare.
+    const result = validateResumePayload("ab-compare-quality", "ab-config", {
       instruction: "",
     });
     expect(result.ok).toBe(false);
   });
 
-  test("accepts an ab-compare-hitl config payload with variants and input", () => {
+  test("rejects an A/B preset config with an empty prompt", () => {
     expect(
-      validateResumePayload("ab-compare-hitl", "ab-config", {
-        variants: [
-          {
-            label: "Variant 1",
-            providerName: "openai",
-            model: "gpt-4o",
-            input: "Write a tagline.",
-          },
-          {
-            label: "Variant 2",
-            providerName: "anthropic",
-            model: "claude-opus-4-8",
-            input: "Write a tagline.",
-          },
-        ],
-        input: "Write a tagline.",
-      }),
-    ).toEqual({ ok: true });
-  });
-
-  test("rejects a degenerate 1-variant ab-config comparison (CL-2684)", () => {
-    expect(
-      validateResumePayload("ab-compare-hitl", "ab-config", {
-        variants: [{ providerName: "openai", model: "gpt-4o" }],
-        input: "Write a tagline.",
-      }).ok,
+      validateResumePayload("ab-compare-speed", "ab-config", { input: "" }).ok,
     ).toBe(false);
   });
 
-  test("accepts a dock config payload with no per-variant input (CL-2684)", () => {
-    // The block-driven form omits the redundant per-variant input; the shared
-    // top-level input is authoritative, so the per-variant copy is optional.
+  test("accepts an A/B preset config payload with a shared prompt", () => {
     expect(
-      validateResumePayload("ab-compare-hitl", "ab-config", {
-        variants: [
-          { providerName: "openai-compatible", model: "kimi-k2.6" },
-          { providerName: "anthropic", model: "claude-opus-4-8" },
-        ],
+      validateResumePayload("ab-compare-standard", "ab-config", {
         input: "Write a tagline for a GTM workbench.",
       }),
     ).toEqual({ ok: true });
-  });
-
-  test("rejects an ab-config variant missing its provider or model (CL-2684)", () => {
-    expect(
-      validateResumePayload("ab-compare-hitl", "ab-config", {
-        variants: [{ providerName: "", model: "" }],
-        input: "Write a tagline.",
-      }).ok,
-    ).toBe(false);
   });
 
   test("accepts a gamma intake with a title and template", () => {

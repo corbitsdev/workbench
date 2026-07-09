@@ -1,11 +1,14 @@
 import type { AgentTool } from "@intx/agent";
 import { schema as intxSchema } from "@intx/db";
+import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import {
+  DRAFT_SKILL_DEFINITION,
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
+  parseDraftSkillArgs,
   parseSearchQuery,
   parseSkillId,
   skillMatchesQuery,
@@ -13,12 +16,16 @@ import {
 } from "@workbench/tools-skills";
 import { and, eq } from "drizzle-orm";
 import type { HubDb } from "../db";
+import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
+import { artifact } from "../db/schema";
 import {
   getSkillAsset,
   getSkillContent,
   listSkills,
+  matchSkillIdByDraftName,
   type SkillItem,
 } from "../services/skill-library";
+import { writeArtifactDeduped } from "./write-artifact";
 import type { ContextToolEntry } from "../lib/tool-registry";
 
 const log = getLogger(["api", "skill-tools"]);
@@ -27,6 +34,7 @@ export {
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  DRAFT_SKILL_DEFINITION,
 } from "@workbench/tools-skills";
 
 export type SkillToolsContext = {
@@ -205,6 +213,92 @@ async function loadSkillHandler(
   });
 }
 
+async function skillDraftHandler(
+  context: SkillToolsContext,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const draft = parseDraftSkillArgs(args);
+  const source: Record<string, unknown> = { origin: "skill-draft" };
+  if (draft.description !== undefined) source.description = draft.description;
+  if (draft.files && draft.files.length > 0) source.files = draft.files;
+
+  // Stamp the human owner (Myra's member principal), not the agent principal.
+  // Approve/list authorize against this id so the human can act on their agent's drafts.
+  const ownerPrincipalId = await resolveOwnerMemberPrincipalId(
+    context.db as DB["db"],
+    { tenantId: context.tenantId, principalId: context.principalId },
+  );
+  if (ownerPrincipalId === null) {
+    throw new Error(
+      "Cannot draft a skill: agent has no owning member principal",
+    );
+  }
+
+  // Prefer an explicit existingSkillId; otherwise resolve a library skill by
+  // asset slug / displayName so a second draft revises rather than 409-create.
+  // Draft titles are often display-ish ("Company Research"); library name is
+  // the kebab slug from toAssetName.
+  let existingSkillId = draft.existingSkillId;
+  if (!existingSkillId) {
+    const userId = await resolveViewerUserId(
+      context.db,
+      context.tenantId,
+      context.principalId,
+    );
+    if (userId !== null) {
+      const visible = await listSkills(context.db, {
+        tenantId: context.tenantId,
+        userId,
+      });
+      const matched = matchSkillIdByDraftName(visible, draft.name);
+      if (matched) existingSkillId = matched;
+    }
+  }
+
+  // Preserve a prior stamp on the same principal+title draft row —
+  // writeArtifactDeduped replaces source wholesale.
+  if (!existingSkillId) {
+    const prior = await context.db
+      .select({ source: artifact.source })
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.tenantId, context.tenantId),
+          eq(artifact.principalId, context.principalId),
+          eq(artifact.title, draft.name),
+          eq(artifact.kind, "skill-draft"),
+        ),
+      )
+      .limit(1);
+    const priorSource = (prior[0]?.source ?? {}) as Record<string, unknown>;
+    const priorId =
+      typeof priorSource.existingSkillId === "string" &&
+      priorSource.existingSkillId
+        ? priorSource.existingSkillId
+        : null;
+    if (priorId) existingSkillId = priorId;
+  }
+
+  if (existingSkillId) source.existingSkillId = existingSkillId;
+
+  const result = await writeArtifactDeduped({
+    db: context.db as DB["db"],
+    tenantId: context.tenantId,
+    principalId: context.principalId,
+    title: draft.name,
+    body: draft.body,
+    kind: "skill-draft",
+    source,
+    ownerPrincipalId,
+  });
+
+  return JSON.stringify({
+    draftId: result.artifactId,
+    version: result.version,
+    ...(existingSkillId ? { existingSkillId } : {}),
+  });
+}
+
 export function createSkillTools(context: SkillToolsContext): AgentTool[] {
   return [
     {
@@ -221,6 +315,11 @@ export function createSkillTools(context: SkillToolsContext): AgentTool[] {
       kind: "string",
       definition: LOAD_SKILL_DEFINITION,
       handler: (args) => loadSkillHandler(context, args),
+    },
+    {
+      kind: "string",
+      definition: DRAFT_SKILL_DEFINITION,
+      handler: (args) => skillDraftHandler(context, args),
     },
   ];
 }
@@ -256,6 +355,10 @@ export const SKILLS_HUB_TOOLS: Record<string, ContextToolEntry> = {
   },
   load_skill: {
     definition: LOAD_SKILL_DEFINITION,
+    createTools: (context) => createSkillTools(requireSkillContext(context)),
+  },
+  skill_draft: {
+    definition: DRAFT_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
 };

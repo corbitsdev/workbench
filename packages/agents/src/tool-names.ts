@@ -23,7 +23,10 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "identity_get",
     "identity_set",
   ],
-  "@workbench/tools-ab-compare/compose": ["ab_comparison_compose"],
+  "@workbench/tools-ab-compare/compose": [
+    "ab_preset_quorum",
+    "ab_preset_compose",
+  ],
   "@workbench/tools-attio/attio": [
     "attio_list_objects",
     "attio_query_records",
@@ -38,6 +41,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
   "@workbench/tools-artifact/artifact": [
     "artifact_create",
     "artifact_read",
+    "artifact_read_chunk",
     "artifact_write",
     "artifact_list",
     "artifact_find_by_title",
@@ -93,6 +97,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "vercel_list_deployments",
     "vercel_deploy_static_file",
   ],
+  "@workbench/tools-vercel/deploy-artifact": ["vercel_deploy_artifact"],
   "@workbench/tools-last30days/core": [
     "last30days_core_extract",
     "last30days_core_report",
@@ -117,6 +122,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "list_skills",
     "search_skills",
     "load_skill",
+    "skill_draft",
   ],
   "@workbench/tools-workflows/workflows": [
     "workflow_list_kinds",

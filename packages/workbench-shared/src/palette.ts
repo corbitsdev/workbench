@@ -17,6 +17,7 @@ export const PaletteResultItemSchema = type({
   "subtitle?": "string",
   to: "string",
   "keywords?": "string[]",
+  "requires?": "'admin' | 'owner' | 'admin-or-owner'",
 });
 export type PaletteResultItem = typeof PaletteResultItemSchema.infer;
 
@@ -123,4 +124,21 @@ export function rankPaletteItems(
   }
   ranked.sort((a, b) => b.score - a.score);
   return ranked;
+}
+
+/** Filter static nav palette entries by their optional `requires` role gate.
+ * Server-side nav (Admin/Owner) already re-checks, this is only client visibility.
+ * Owner is a superset: an owner principal has both isOwner and isAdmin true. */
+export function filterPaletteNavItems(
+  items: readonly PaletteResultItem[],
+  me: { isAdmin?: boolean; isOwner?: boolean } | undefined,
+): PaletteResultItem[] {
+  return items.filter((item) => {
+    const req = item.requires;
+    if (!req) return true;
+    if (req === "owner") return !!me?.isOwner;
+    if (req === "admin") return !!me?.isAdmin;
+    if (req === "admin-or-owner") return !!me?.isAdmin || !!me?.isOwner;
+    return true;
+  });
 }

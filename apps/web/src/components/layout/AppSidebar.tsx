@@ -1,7 +1,6 @@
 import {
   Home,
   Settings,
-  LogOut,
   BookOpen,
   BarChart2,
   Workflow,
@@ -37,8 +36,8 @@ const NAV_ITEMS = [
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
 ] as const;
 
-// Shown only to admins (Tools moved under Admin — CL-2719). The hub re-checks
-// the admin grant on every admin route, so this is nav visibility only.
+// Footer icon only, shown to admins (Tools moved under Admin — CL-2719). The
+// hub re-checks the admin grant on every admin route, so this is visibility only.
 const ADMIN_NAV_ITEM = {
   to: "/admin",
   label: "Admin",
@@ -82,7 +81,7 @@ export function AppSidebar({
   mobileOpen = false,
   onNavigate,
 }: AppSidebarProps) {
-  const { session, signOut } = useAuth();
+  const { session } = useAuth();
   const navigate = useNavigate();
   const createThread = useCreateMyraThread();
   const meQuery = useQuery({
@@ -90,6 +89,7 @@ export function AppSidebar({
     queryFn: getMe,
     staleTime: 5 * 60_000,
   });
+  const isAdmin = meQuery.data?.isAdmin === true;
   const name = session.status === "authenticated" ? session.user.name : "";
   const initials =
     name
@@ -181,17 +181,6 @@ export function AppSidebar({
             {label}
           </NavLink>
         ))}
-        {meQuery.data?.isAdmin && (
-          <NavLink
-            to={ADMIN_NAV_ITEM.to}
-            end={ADMIN_NAV_ITEM.end}
-            onClick={onNavigate}
-            className={({ isActive }) => navItemClass(isActive)}
-          >
-            <ADMIN_NAV_ITEM.icon size={17} />
-            {ADMIN_NAV_ITEM.label}
-          </NavLink>
-        )}
         {meQuery.data?.isOwner && (
           <NavLink
             to={OWNER_NAV_ITEM.to}
@@ -259,6 +248,17 @@ export function AppSidebar({
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {isAdmin ? (
+            <Link
+              to={ADMIN_NAV_ITEM.to}
+              title={ADMIN_NAV_ITEM.label}
+              aria-label={ADMIN_NAV_ITEM.label}
+              onClick={onNavigate}
+              className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
+            >
+              <ADMIN_NAV_ITEM.icon size={17} />
+            </Link>
+          ) : null}
           <Link
             to="/settings"
             title="Settings"
@@ -268,15 +268,6 @@ export function AppSidebar({
           >
             <Settings size={17} />
           </Link>
-          <button
-            type="button"
-            onClick={signOut}
-            title="Sign out"
-            aria-label="Sign out"
-            className="grid h-[34px] w-[34px] place-items-center rounded-[10px] text-text-2 transition-colors hover:text-text"
-          >
-            <LogOut size={17} />
-          </button>
         </div>
       </div>
     </aside>

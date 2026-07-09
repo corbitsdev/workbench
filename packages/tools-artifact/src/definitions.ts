@@ -37,7 +37,7 @@ export const ARTIFACT_CREATE_DEFINITION: ToolDefinition = {
       kind: {
         type: "string",
         description:
-          "Artifact kind, such as document, email, memo, article, essay, note, or web for a single-file HTML artifact with built-in CSS and JS.",
+          "Artifact kind, such as document, email, memo, article, essay, note, web for a single-file HTML artifact, or web_site for a multi-file static site stored as JSON { entry?, files: { path: content } }.",
       },
       content: {
         type: "string",
@@ -51,7 +51,7 @@ export const ARTIFACT_CREATE_DEFINITION: ToolDefinition = {
 export const ARTIFACT_READ_DEFINITION: ToolDefinition = {
   name: "artifact_read",
   description:
-    "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version.",
+    "Read a Workbench artifact by id. Returns its title, kind, status, current version, and content. Pass version to read a specific past version. When the content is too large to return at once, the result includes a 'continuation' field with instructions to read the rest with artifact_read_chunk.",
   inputSchema: {
     type: "object",
     properties: {
@@ -65,6 +65,44 @@ export const ARTIFACT_READ_DEFINITION: ToolDefinition = {
         type: "string",
         description:
           "Optional tenant the artifact lives in. Defaults to the agent's own tenant. Pass this when the artifact was created in a different tenant (e.g. the shared org workbench vs a personal workbench).",
+      },
+      path: {
+        type: "string",
+        description:
+          "For kind=web_site only: return one file's content at this relative path. Without path, web_site reads return a summary (entry, file list, sizes) instead of the full bundle.",
+      },
+    },
+    required: ["artifactId"],
+  },
+};
+
+export const ARTIFACT_READ_CHUNK_DEFINITION: ToolDefinition = {
+  name: "artifact_read_chunk",
+  description:
+    "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end. Not supported for kind=web_site — use artifact_read (summary or path) instead.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      artifactId: { type: "string", description: "The artifact id to read." },
+      offset: {
+        type: "number",
+        description:
+          "Zero-based character offset to start reading from. Defaults to 0. Use the offset named in a prior result's 'continuation' field to read the next chunk.",
+      },
+      limit: {
+        type: "number",
+        description:
+          "Maximum number of characters of content to return in this call. Defaults to a size that stays within the agent's tool-output budget.",
+      },
+      version: {
+        type: "number",
+        description:
+          "Optional specific version to read. Defaults to the latest version.",
+      },
+      tenantId: {
+        type: "string",
+        description:
+          "Optional tenant the artifact lives in. Defaults to the agent's own tenant.",
       },
     },
     required: ["artifactId"],
@@ -127,6 +165,11 @@ export const ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION: ToolDefinition = {
       gammaId: {
         type: "string",
         description: "The Gamma deck id.",
+      },
+      pdfUrl: {
+        type: "string",
+        description:
+          "Optional temporary Gamma export URL for the deck PDF. When provided, the PDF is downloaded and stored durably so the artifact offers a PDF download.",
       },
       artifactId: {
         type: "string",
@@ -262,6 +305,7 @@ export const ARTIFACT_TOOL_DEFINITIONS: ToolDefinition[] = [
   ARTIFACT_LINK_FILE_DEFINITION,
   ARTIFACT_CREATE_DEFINITION,
   ARTIFACT_READ_DEFINITION,
+  ARTIFACT_READ_CHUNK_DEFINITION,
   ARTIFACT_WRITE_DEFINITION,
   ARTIFACT_LINK_PRESENTATION_DEFINITION,
   ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,

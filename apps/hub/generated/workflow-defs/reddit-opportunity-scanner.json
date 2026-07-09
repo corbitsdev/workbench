@@ -34,7 +34,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-firecrawl/firecrawl:firecrawl_scrape",
-            "workbench.argMap": "{\"url\":{\"from\":\"inputUrl\"}}"
+            "workbench.argMap": "{\"url\":{\"from\":\"inputUrl\"}}",
+            "workbench.title": "Scan the website"
           }
         },
         "drainBehavior": "cancel",
@@ -58,7 +59,8 @@
           },
           "description": "Inline single-turn inference: reddit-opp-analyze",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Recommend subreddits & keywords"
           }
         },
         "drainBehavior": "cancel",
@@ -109,7 +111,8 @@
               "workbench.stepKind": "deterministic-tool",
               "workbench.tool": "@workbench/tools-reddit/reddit:reddit_subreddit_search",
               "workbench.argMap": "{\"subreddit\":{\"from\":\"subreddit\"},\"query\":{\"from\":\"query\"},\"sort\":{\"from\":\"sort\"},\"timeframe\":{\"from\":\"timeframe\"},\"limit\":{\"from\":\"limit\"}}",
-              "workbench.nonFatal": "true"
+              "workbench.nonFatal": "true",
+              "workbench.title": "Search each subreddit"
             }
           },
           "drainBehavior": "cancel",
@@ -142,7 +145,8 @@
           },
           "description": "Inline single-turn inference: reddit-opp-curate",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Rank the opportunities"
           }
         },
         "drainBehavior": "cancel",
@@ -191,7 +195,8 @@
             "tags": {
               "workbench.stepKind": "deterministic-tool",
               "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"literal\":\"reddit-opportunity-scan\"},\"content\":{\"from\":\"content\"}}"
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"literal\":\"reddit-opportunity-scan\"},\"content\":{\"from\":\"content\"}}",
+              "workbench.title": "Save each opportunity"
             }
           },
           "drainBehavior": "cancel",

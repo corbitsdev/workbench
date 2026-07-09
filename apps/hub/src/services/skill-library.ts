@@ -4,13 +4,14 @@ import { normalize, sep } from "node:path";
 import nodefs from "node:fs";
 import git from "isomorphic-git";
 import JSZip from "jszip";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
-import { skillAccess } from "../db/schema";
+import { artifact, skillAccess } from "../db/schema";
 import type { AssetService, RepoStore } from "@intx/hub-sessions";
 import { AssetServiceError } from "@intx/hub-sessions";
+import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
 
 const log = getLogger(["skill-library"]);
@@ -1045,4 +1046,418 @@ export async function updateSkill(
   );
   if (!refreshed) throw new SkillLibraryError("Skill not found", 404);
   return refreshed;
+}
+
+const SkillDraftSourceFileSchema = type({
+  path: "string",
+  content: "string",
+});
+const SkillDraftSourceFilesSchema = SkillDraftSourceFileSchema.array();
+
+export type SkillDraftSupportFile = {
+  path: string;
+  content: string;
+};
+
+export type SkillDraftItem = {
+  id: string;
+  title: string;
+  content: string;
+  description: string | null;
+  existingSkillId: string | null;
+  /** Support files from source.files (SKILL.md body is `content`, not listed here). */
+  files: SkillDraftSupportFile[];
+  status: "draft" | "approved" | "rejected";
+  updatedAt: string;
+  createdAt: string;
+};
+
+export type ApproveSkillDraftOpts = {
+  scope: SkillAccessScope;
+  ownerUserId: string;
+  ownerName: string;
+};
+
+/**
+ * Authorize the human caller against a skill-draft. Stamped ownerPrincipalId is
+ * the sole gate when present; unstamped legacy rows fall back to resolving the
+ * agent principal's owning member (or direct principal match for human-authored).
+ */
+export async function canActOnSkillDraft(
+  db: HubDb,
+  draft: {
+    ownerPrincipalId: string | null;
+    principalId: string | null;
+    tenantId: string | null;
+  },
+  userContext: UserContext,
+): Promise<boolean> {
+  if (draft.ownerPrincipalId != null) {
+    return draft.ownerPrincipalId === userContext.principalId;
+  }
+  if (draft.principalId === userContext.principalId) return true;
+  if (!draft.principalId || !draft.tenantId) return false;
+  const owner = await resolveOwnerMemberPrincipalId(db, {
+    tenantId: draft.tenantId,
+    principalId: draft.principalId,
+  });
+  return owner === userContext.principalId;
+}
+
+async function loadOwnedSkillDraft(
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+): Promise<typeof artifact.$inferSelect> {
+  const rows = await db
+    .select()
+    .from(artifact)
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.tenantId, userContext.tenantId),
+      ),
+    )
+    .limit(1);
+
+  const draft = rows[0];
+  if (!draft) throw new SkillLibraryError("Draft not found", 404);
+  const allowed = await canActOnSkillDraft(db, draft, userContext);
+  if (!allowed) throw new SkillLibraryError("Draft not found", 404);
+  return draft;
+}
+
+function draftSourceDescription(
+  source: Record<string, unknown>,
+): string | null {
+  return typeof source.description === "string" ? source.description : null;
+}
+
+function draftExistingSkillId(source: Record<string, unknown>): string | null {
+  return typeof source.existingSkillId === "string" && source.existingSkillId
+    ? source.existingSkillId
+    : null;
+}
+
+/**
+ * Match a visible library skill to a draft title. `listSkills` returns the
+ * kebab asset slug in `name` and the human title in `displayName`; draft titles
+ * may be either form (Myra often passes a display-ish name).
+ */
+export function matchSkillIdByDraftName(
+  skills: readonly {
+    id: string;
+    name: string;
+    displayName: string | null;
+  }[],
+  draftTitle: string,
+): string | null {
+  const slug = toAssetName(draftTitle);
+  const match = skills.find(
+    (s) =>
+      s.name === slug ||
+      s.name === draftTitle ||
+      (s.displayName !== null &&
+        (s.displayName === draftTitle || toAssetName(s.displayName) === slug)),
+  );
+  return match?.id ?? null;
+}
+
+async function resolveSkillIdByDraftTitle(
+  db: HubDb,
+  viewer: SkillViewer,
+  draftTitle: string,
+): Promise<string | null> {
+  const visible = await listSkills(db, viewer);
+  return matchSkillIdByDraftName(visible, draftTitle);
+}
+
+/** Support files for review/list. Malformed source.files yields [] (approve still validates). */
+function supportFilesFromSource(
+  source: Record<string, unknown>,
+): SkillDraftSupportFile[] {
+  if (source.files === undefined) return [];
+  const parsed = SkillDraftSourceFilesSchema(source.files);
+  if (parsed instanceof type.errors) return [];
+  const out: SkillDraftSupportFile[] = [];
+  for (const file of parsed) {
+    const normalizedPath = normalizeBundlePath(file.path);
+    if (!normalizedPath || normalizedPath === "SKILL.md") continue;
+    out.push({ path: normalizedPath, content: file.content });
+  }
+  return out;
+}
+
+function filesFromSkillDraft(
+  draft: typeof artifact.$inferSelect,
+): SkillBundleFileInput[] {
+  const source = (draft.source ?? {}) as Record<string, unknown>;
+  const files: SkillBundleFileInput[] = [
+    { path: "SKILL.md", content: Buffer.from(draft.content ?? "") },
+  ];
+
+  if (source.files === undefined) return files;
+
+  const parsed = SkillDraftSourceFilesSchema(source.files);
+  if (parsed instanceof type.errors) {
+    throw new SkillLibraryError(`Invalid draft files: ${parsed.summary}`, 400);
+  }
+
+  for (const file of parsed) {
+    const normalizedPath = normalizeBundlePath(file.path);
+    if (!normalizedPath) {
+      throw new SkillLibraryError(`Unsafe skill bundle path: ${file.path}`);
+    }
+    // Body is the SKILL.md entrypoint; skip duplicates from source.files.
+    if (normalizedPath === "SKILL.md") continue;
+    files.push({
+      path: normalizedPath,
+      content: Buffer.from(file.content),
+    });
+  }
+  return files;
+}
+
+function toSkillDraftItem(draft: typeof artifact.$inferSelect): SkillDraftItem {
+  const source = (draft.source ?? {}) as Record<string, unknown>;
+  return {
+    id: draft.id,
+    title: draft.title,
+    content: draft.content ?? "",
+    description: draftSourceDescription(source),
+    existingSkillId: draftExistingSkillId(source),
+    files: supportFilesFromSource(source),
+    status: draft.status,
+    updatedAt: draft.updatedAt.toISOString(),
+    createdAt: draft.createdAt.toISOString(),
+  };
+}
+
+export async function listSkillDrafts(
+  db: HubDb,
+  userContext: UserContext,
+): Promise<SkillDraftItem[]> {
+  const rows = await db
+    .select()
+    .from(artifact)
+    .where(
+      and(
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.status, "draft"),
+        eq(artifact.ownerPrincipalId, userContext.principalId),
+      ),
+    )
+    .orderBy(desc(artifact.updatedAt));
+
+  return rows.map(toSkillDraftItem);
+}
+
+export async function discardSkillDraft(
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+): Promise<SkillDraftItem> {
+  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
+  if (draft.status !== "draft") {
+    throw new SkillLibraryError("Draft is not in draft status", 400);
+  }
+
+  // CAS: only reject while still draft so concurrent discard/approve cannot race.
+  const [updated] = await db
+    .update(artifact)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.status, "draft"),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    throw new SkillLibraryError("Draft is no longer pending", 409);
+  }
+  return toSkillDraftItem(updated);
+}
+
+export async function approveSkillDraft(
+  assetService: AssetService,
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+  opts: ApproveSkillDraftOpts,
+): Promise<{ skill: SkillItem; draftId: string }> {
+  const ownerUserId = opts.ownerUserId.trim();
+  const ownerName = opts.ownerName.trim();
+  if (!ownerUserId || !ownerName) {
+    throw new SkillLibraryError(
+      "Owner identity is required to approve a draft",
+      400,
+    );
+  }
+
+  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
+  if (draft.status !== "draft") {
+    throw new SkillLibraryError("Draft is not in draft status", 400);
+  }
+
+  // Pre-validate so obviously bad drafts stay pending (claim is not wasted).
+  // The publish payload is taken from the *claimed* row so a concurrent
+  // skill_draft rewrite between load and claim cannot approve stale content.
+  filesFromSkillDraft(draft);
+
+  // CAS claim: flip draft → approved before create/update so concurrent approves
+  // cannot both publish. If publish fails, reopen the draft.
+  const [claimed] = await db
+    .update(artifact)
+    .set({ status: "approved", updatedAt: new Date() })
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.status, "draft"),
+      ),
+    )
+    .returning();
+
+  if (!claimed) {
+    throw new SkillLibraryError("Draft is no longer pending", 409);
+  }
+
+  const claimedSource = (claimed.source ?? {}) as Record<string, unknown>;
+  const files = filesFromSkillDraft(claimed);
+  const description = draftSourceDescription(claimedSource);
+  const name = claimed.title;
+  const scope = opts.scope === "private" ? "private" : "tenant";
+  let existingSkillId = draftExistingSkillId(claimedSource);
+
+  const actor: SkillActor = {
+    tenantId: userContext.tenantId,
+    userId: ownerUserId,
+    principalId: userContext.principalId,
+  };
+  const viewer: SkillViewer = {
+    tenantId: userContext.tenantId,
+    userId: ownerUserId,
+  };
+
+  try {
+    // Approve-side resolve: agent may have drafted with a display title that
+    // never stamped existingSkillId (slug mismatch). Prefer update over create.
+    if (!existingSkillId) {
+      existingSkillId = await resolveSkillIdByDraftTitle(db, viewer, name);
+    }
+
+    let skill: SkillItem;
+    if (existingSkillId) {
+      // Guard: a stamped id that does not match this draft title must not
+      // overwrite an unrelated skill the caller can manage.
+      const target = await getSkillAsset(db, viewer, existingSkillId);
+      if (!target) {
+        throw new SkillLibraryError("Skill not found", 404);
+      }
+      if (matchSkillIdByDraftName([target], name) !== target.id) {
+        throw new SkillLibraryError(
+          `Draft title "${name}" does not match skill "${target.displayName ?? target.name}"`,
+          400,
+        );
+      }
+      skill = await updateSkill(assetService, db, actor, {
+        assetId: existingSkillId,
+        description,
+        files,
+      });
+    } else {
+      try {
+        skill = await createSkill(assetService, db, userContext, {
+          name,
+          description,
+          files,
+          scope,
+          ownerUserId,
+          ownerName,
+        });
+      } catch (createErr) {
+        // 409 name collision: skill exists but wasn't linked — fall through to
+        // update so approve never 409-sticks the draft.
+        if (
+          !(createErr instanceof SkillLibraryError) ||
+          createErr.status !== 409
+        ) {
+          throw createErr;
+        }
+        const fallbackId = await resolveSkillIdByDraftTitle(db, viewer, name);
+        if (!fallbackId) throw createErr;
+        skill = await updateSkill(assetService, db, actor, {
+          assetId: fallbackId,
+          description,
+          files,
+        });
+      }
+    }
+
+    // Best-effort stamp after successful publish. Never reopen if this fails —
+    // the skill is already live; stamp only helps the next re-draft path.
+    try {
+      await db
+        .update(artifact)
+        .set({
+          source: {
+            ...claimedSource,
+            existingSkillId: skill.id,
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(artifact.id, draftId),
+            eq(artifact.tenantId, userContext.tenantId),
+            eq(artifact.kind, "skill-draft"),
+            eq(artifact.status, "approved"),
+          ),
+        );
+    } catch (stampErr) {
+      log.error(
+        "skill-draft approve succeeded but failed to stamp existingSkillId",
+        {
+          draftId,
+          skillId: skill.id,
+          tenantId: userContext.tenantId,
+          error:
+            stampErr instanceof Error ? stampErr.message : String(stampErr),
+        },
+      );
+    }
+
+    return { skill, draftId };
+  } catch (err) {
+    const [reopened] = await db
+      .update(artifact)
+      .set({ status: "draft", updatedAt: new Date() })
+      .where(
+        and(
+          eq(artifact.id, draftId),
+          eq(artifact.tenantId, userContext.tenantId),
+          eq(artifact.kind, "skill-draft"),
+          eq(artifact.status, "approved"),
+        ),
+      )
+      .returning();
+    if (!reopened) {
+      log.error(
+        "skill-draft approve failed and could not reopen draft; stuck approved",
+        {
+          draftId,
+          tenantId: userContext.tenantId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
+    throw err;
+  }
 }

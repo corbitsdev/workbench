@@ -44,7 +44,7 @@ function listRow(
   runId: string,
   status: "running" | "awaiting" | "completed" | "failed",
   conversationId: string,
-  kind = "ab-compare-hitl",
+  kind = "ab-compare-quality",
 ) {
   return {
     runId,
@@ -128,7 +128,7 @@ describe("WorkflowDock popup variant", () => {
     await waitFor(() => screen.getByLabelText("Expand workflows: 1 running"));
     expect(screen.queryByTestId("workflow-dock-card")).toBeNull();
     expect(screen.getByTestId("dock-rail-dot").textContent).toContain(
-      "ab-compare-hitl: Running",
+      "ab-compare-quality: Running",
     );
   });
 
@@ -148,7 +148,7 @@ describe("WorkflowDock popup variant", () => {
     );
 
     const card = await waitFor(() => screen.getByTestId("workflow-dock-card"));
-    expect(card.textContent).toContain("ab-compare-hitl");
+    expect(card.textContent).toContain("ab-compare-quality");
     expect(card.textContent).toContain("Running");
   });
 
@@ -157,7 +157,7 @@ describe("WorkflowDock popup variant", () => {
       listRow("run_mine", "running", "conv-1", "pain-point-collateral"),
     ];
     recordsByConversation["conv-2"] = [
-      listRow("run_other", "running", "conv-2", "ab-compare-hitl"),
+      listRow("run_other", "running", "conv-2", "ab-compare-quality"),
     ];
     statesByRunId["run_mine"] = logState("run_mine", "running", "in-flight");
     statesByRunId["run_other"] = logState("run_other", "running", "in-flight");
@@ -170,7 +170,7 @@ describe("WorkflowDock popup variant", () => {
 
     expect(screen.getAllByTestId("workflow-dock-card")).toHaveLength(1);
     expect(screen.getByText("pain-point-collateral")).toBeTruthy();
-    expect(screen.queryByText("ab-compare-hitl")).toBeNull();
+    expect(screen.queryByText("ab-compare-quality")).toBeNull();
     // The query was scoped to conv-1 only; conv-2 was never fetched.
     expect(
       apiCalls.some((c) => c.path.includes("originConversationId=conv-2")),

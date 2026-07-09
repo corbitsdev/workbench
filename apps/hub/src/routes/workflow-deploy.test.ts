@@ -97,7 +97,7 @@ function makeDeps(opts: {
   } as unknown as Parameters<typeof createWorkflowDeployRouter>[0]["db"];
 
   const workflowDeployService = {
-    deployWorkflow: async () => ({ kind: "trivial" as const }),
+    persistCatalog: async () => ({ kind: "trivial" as const }),
   } as unknown as Parameters<
     typeof createWorkflowDeployRouter
   >[0]["workflowDeployService"];

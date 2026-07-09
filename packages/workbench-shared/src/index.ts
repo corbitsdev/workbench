@@ -10,6 +10,7 @@ export * from "./governance";
 export * from "./last30days";
 export * from "./reddit-opportunity-scanner";
 export * from "./pain-point-collateral";
+export * from "./web-site";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -37,7 +38,8 @@ export type ArtifactKind =
   | "pain-points"
   | "call-transcript"
   | "presentation"
-  | "gamma_presentation";
+  | "gamma_presentation"
+  | "skill-draft";
 
 export type ArtifactStatus = "draft" | "approved" | "rejected";
 

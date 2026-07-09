@@ -183,6 +183,43 @@ describe("inlineInferenceStep", () => {
     expect(primitive.agent.inference.sources).toEqual([]);
   });
 
+  test("a non-default provider is declared alongside the model (native-provider models)", () => {
+    const primitive = inlineInferenceStep({
+      id: "quality-opus",
+      systemPrompt: SYSTEM_PROMPT,
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+    });
+    // The A/B presets pin native-provider models (Opus via anthropic), not only
+    // the openai-compatible gateway — the deploy matches on (provider, model).
+    expect(primitive.agent.inference.sources).toEqual([
+      { provider: "anthropic", model: "claude-opus-4-8" },
+    ]);
+  });
+
+  test("nonFatal marks the step so a failed variant degrades instead of failing the run", () => {
+    const primitive = inlineInferenceStep({
+      id: "quality-opus",
+      systemPrompt: SYSTEM_PROMPT,
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      nonFatal: true,
+    });
+    expect(primitive.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+  });
+
+  test("retry policy is threaded onto the underlying step", () => {
+    const retry = { maxAttempts: 3, initialBackoffMs: 500 };
+    const primitive = inlineInferenceStep({
+      id: "quality-opus",
+      systemPrompt: SYSTEM_PROMPT,
+      model: "claude-opus-4-8",
+      provider: "anthropic",
+      retry,
+    });
+    expect(primitive.retry).toEqual(retry);
+  });
+
   test("maxTokens rides on the preferred source's parameters so the deploy can lift it onto defaults.maxTokens", () => {
     const primitive = inlineInferenceStep({
       id: "writer",
