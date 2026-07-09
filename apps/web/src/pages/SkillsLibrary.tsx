@@ -150,6 +150,11 @@ export function SkillsLibrary() {
   };
 
   const onDiscard = (draft: SkillDraftItem) => {
+    if (
+      !window.confirm(`Discard draft “${draft.title}”? This cannot be undone.`)
+    ) {
+      return;
+    }
     setActionError(null);
     discardDraft
       .mutateAsync({ draftId: draft.id, tenantId })
@@ -212,6 +217,17 @@ export function SkillsLibrary() {
           </div>
         )}
 
+        {draftsQuery.isLoading && (
+          <div className="mb-4 text-[13px] text-text-3">
+            Loading pending drafts…
+          </div>
+        )}
+        {draftsQuery.isError && (
+          <div className="mb-4 text-[13px] text-text-3">
+            Could not load pending drafts.
+          </div>
+        )}
+
         {filteredDrafts.length > 0 && (
           <section className="mb-8">
             <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-text-3">
@@ -220,6 +236,19 @@ export function SkillsLibrary() {
             <ul className="flex flex-col gap-2">
               {filteredDrafts.map((draft) => {
                 const expanded = expandedDraftId === draft.id;
+                const isRevision = Boolean(draft.existingSkillId);
+                // Resolve the live skill name from the already-loaded library
+                // so the reviewer sees which skill will be updated.
+                const revisionTarget = draft.existingSkillId
+                  ? (skillsQuery.data ?? []).find(
+                      (s) => s.id === draft.existingSkillId,
+                    )
+                  : undefined;
+                const revisionLabel = revisionTarget
+                  ? `revises ${revisionTarget.displayName ?? revisionTarget.name}`
+                  : isRevision
+                    ? "revises existing skill"
+                    : null;
                 const busy =
                   (approveDraft.isPending || discardDraft.isPending) &&
                   (approveDraft.variables?.draftId === draft.id ||
@@ -233,9 +262,9 @@ export function SkillsLibrary() {
                       <div className="min-w-0">
                         <div className="truncate text-[13.5px] font-semibold text-text">
                           {draft.title}
-                          {draft.existingSkillId ? (
+                          {revisionLabel ? (
                             <span className="ml-2 text-[11px] font-normal text-text-3">
-                              revision
+                              {revisionLabel}
                             </span>
                           ) : null}
                         </div>
@@ -246,6 +275,9 @@ export function SkillsLibrary() {
                         ) : null}
                         <div className="mt-1 font-mono text-[11px] text-text-3">
                           Updated {new Date(draft.updatedAt).toLocaleString()}
+                          {draft.files.length > 0
+                            ? ` · ${draft.files.length} support file${draft.files.length === 1 ? "" : "s"}`
+                            : ""}
                         </div>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -260,24 +292,53 @@ export function SkillsLibrary() {
                         >
                           {expanded ? "Hide" : "Review"}
                         </Button>
-                        <Button
-                          type="button"
-                          variant="library"
-                          size="library"
-                          disabled={busy}
-                          onClick={() => onApprove(draft, "tenant")}
-                        >
-                          Approve shared
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="library"
-                          size="library"
-                          disabled={busy}
-                          onClick={() => onApprove(draft, "private")}
-                        >
-                          Approve private
-                        </Button>
+                        {isRevision ? (
+                          <Button
+                            type="button"
+                            variant="library"
+                            size="library"
+                            disabled={busy}
+                            onClick={() => {
+                              const targetName =
+                                revisionTarget?.displayName ??
+                                revisionTarget?.name ??
+                                draft.title;
+                              if (
+                                !window.confirm(
+                                  `Publish a new version of “${targetName}”? This updates the live skill.`,
+                                )
+                              ) {
+                                return;
+                              }
+                              onApprove(draft, "tenant");
+                            }}
+                          >
+                            Publish new version
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              type="button"
+                              variant="library"
+                              size="library"
+                              disabled={busy}
+                              onClick={() => onApprove(draft, "tenant")}
+                              title="Save to the skill library visible in this workspace"
+                            >
+                              Save to library
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="library"
+                              size="library"
+                              disabled={busy}
+                              onClick={() => onApprove(draft, "private")}
+                              title="Save as private to you only"
+                            >
+                              Save private
+                            </Button>
+                          </>
+                        )}
                         <Button
                           type="button"
                           variant="library"
@@ -290,9 +351,26 @@ export function SkillsLibrary() {
                       </div>
                     </div>
                     {expanded && (
-                      <pre className="mt-3 max-h-72 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
-                        {draft.content}
-                      </pre>
+                      <div className="mt-3 flex flex-col gap-3">
+                        <div>
+                          <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-text-3">
+                            SKILL.md
+                          </div>
+                          <pre className="max-h-72 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
+                            {draft.content}
+                          </pre>
+                        </div>
+                        {draft.files.map((file) => (
+                          <div key={file.path}>
+                            <div className="mb-1 font-mono text-[11px] font-semibold text-text-3">
+                              {file.path}
+                            </div>
+                            <pre className="max-h-48 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
+                              {file.content}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </li>
                 );

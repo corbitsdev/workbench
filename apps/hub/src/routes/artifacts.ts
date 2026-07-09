@@ -28,6 +28,7 @@ import {
 } from "../db/schema";
 import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
+import { canActOnSkillDraft } from "../services/skill-library";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
@@ -383,10 +384,10 @@ export function createArtifactsRouter(
     // Hide rejected by default; an explicit status filter overrides that.
     const hideRejectedWhere =
       statusFilter === undefined ? ne(artifact.status, "rejected") : undefined;
-    // skill-draft artifacts are internal scratch for skill authoring; they do not
-    // appear in the normal gallery.
-    const hideSkillDraftWhere =
-      kindParam === undefined ? ne(artifact.kind, "skill-draft") : undefined;
+    // skill-draft is internal skill-authoring scratch — never list it, even when
+    // an explicit kind=skill-draft filter is supplied (review surface is
+    // GET /skills/drafts, not the artifacts gallery).
+    const hideSkillDraftWhere = ne(artifact.kind, "skill-draft");
     const statusWhere = statusFilter
       ? eq(artifact.status, statusFilter)
       : undefined;
@@ -521,6 +522,13 @@ export function createArtifactsRouter(
     }
     if (!userContext || art.tenantId !== userContext.tenantId) {
       return c.json({ error: "Forbidden" }, 403);
+    }
+
+    // skill-draft is owner-gated: only the human who can act on the draft may
+    // deep-link it. Everyone else gets a 404 (same as missing).
+    if (art.kind === "skill-draft") {
+      const allowed = await canActOnSkillDraft(db, art, userContext);
+      if (!allowed) return c.json({ error: "Artifact not found" }, 404);
     }
 
     const row = {

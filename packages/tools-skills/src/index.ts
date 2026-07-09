@@ -57,7 +57,7 @@ export const LOAD_SKILL_DEFINITION: ToolDefinition = {
 export const DRAFT_SKILL_DEFINITION: ToolDefinition = {
   name: "skill_draft",
   description:
-    "Create or update a pending skill draft (as a skill-draft artifact). Takes a stable name, optional description, the full SKILL.md body, and optional support files. Returns {draftId, version}. Use to persist authoring work before saving to the shared skill library. Drafts are deduplicated by principal+name.",
+    "Create or update a pending skill draft (as a skill-draft artifact). Takes a stable name, optional description, the full SKILL.md body, and optional support files. Returns {draftId, version}. Drafts are NOT published — the human owner reviews and approves them under Skills → Pending drafts in the workbench UI. Tell the user that is where to open the draft. Drafts are deduplicated by principal+name.",
   inputSchema: {
     type: "object",
     properties: {
@@ -138,7 +138,7 @@ export function parseDraftSkillArgs(args: unknown): {
   name: string;
   description?: string;
   body: string;
-  files?: Array<{ path: string; content: string }>;
+  files?: { path: string; content: string }[];
   existingSkillId?: string;
 } {
   const parsed = DraftSkillArgs(args);

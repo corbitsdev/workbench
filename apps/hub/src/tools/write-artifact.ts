@@ -142,6 +142,11 @@ export function createWriteArtifactTool(
         const title = requireString(args, "title");
         const body = requireString(args, "body");
         const kind = requireString(args, "kind");
+        if (kind === "skill-draft") {
+          throw new Error(
+            "skill-draft artifacts must be created with the skill_draft tool",
+          );
+        }
 
         let citations = Array.isArray(args.citations) ? args.citations : [];
 

@@ -34,6 +34,12 @@ describe("skill tool definitions", () => {
       "body",
     ]);
   });
+
+  it("skill_draft description points humans at Skills → Pending drafts", () => {
+    expect(DRAFT_SKILL_DEFINITION.description).toContain(
+      "Skills → Pending drafts",
+    );
+  });
 });
 
 describe("parseSearchQuery", () => {

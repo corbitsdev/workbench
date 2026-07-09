@@ -255,6 +255,7 @@ const skillDraftSchema = type({
   content: "string",
   description: "string|null",
   existingSkillId: "string|null",
+  files: type({ path: "string", content: "string" }).array(),
   status: "'draft'|'approved'|'rejected'",
   updatedAt: "string",
   createdAt: "string",
@@ -305,12 +306,18 @@ export function useApproveSkillDraft() {
       }
       return parsed;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({
         queryKey: ["skill-drafts", variables.tenantId ?? null],
       });
       queryClient.invalidateQueries({
         queryKey: ["skills", variables.tenantId ?? null],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["skill", data.skill.id, variables.tenantId ?? null],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["skill-versions", data.skill.id, variables.tenantId ?? null],
       });
     },
   });

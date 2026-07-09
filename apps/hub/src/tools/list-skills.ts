@@ -17,10 +17,12 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { HubDb } from "../db";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
+import { artifact } from "../db/schema";
 import {
   getSkillAsset,
   getSkillContent,
   listSkills,
+  matchSkillIdByDraftName,
   type SkillItem,
 } from "../services/skill-library";
 import { writeArtifactDeduped } from "./write-artifact";
@@ -218,7 +220,6 @@ async function skillDraftHandler(
   const draft = parseDraftSkillArgs(args);
   const source: Record<string, unknown> = { origin: "skill-draft" };
   if (draft.description !== undefined) source.description = draft.description;
-  if (draft.existingSkillId) source.existingSkillId = draft.existingSkillId;
   if (draft.files && draft.files.length > 0) source.files = draft.files;
 
   // Stamp the human owner (Myra's member principal), not the agent principal.
@@ -232,6 +233,53 @@ async function skillDraftHandler(
       "Cannot draft a skill: agent has no owning member principal",
     );
   }
+
+  // Prefer an explicit existingSkillId; otherwise resolve a library skill by
+  // asset slug / displayName so a second draft revises rather than 409-create.
+  // Draft titles are often display-ish ("Company Research"); library name is
+  // the kebab slug from toAssetName.
+  let existingSkillId = draft.existingSkillId;
+  if (!existingSkillId) {
+    const userId = await resolveViewerUserId(
+      context.db,
+      context.tenantId,
+      context.principalId,
+    );
+    if (userId !== null) {
+      const visible = await listSkills(context.db, {
+        tenantId: context.tenantId,
+        userId,
+      });
+      const matched = matchSkillIdByDraftName(visible, draft.name);
+      if (matched) existingSkillId = matched;
+    }
+  }
+
+  // Preserve a prior stamp on the same principal+title draft row —
+  // writeArtifactDeduped replaces source wholesale.
+  if (!existingSkillId) {
+    const prior = await context.db
+      .select({ source: artifact.source })
+      .from(artifact)
+      .where(
+        and(
+          eq(artifact.tenantId, context.tenantId),
+          eq(artifact.principalId, context.principalId),
+          eq(artifact.title, draft.name),
+          eq(artifact.kind, "skill-draft"),
+        ),
+      )
+      .limit(1);
+    const priorSource = (prior[0]?.source ?? {}) as Record<string, unknown>;
+    const priorId =
+      typeof priorSource.existingSkillId === "string" &&
+      priorSource.existingSkillId
+        ? priorSource.existingSkillId
+        : null;
+    if (priorId) existingSkillId = priorId;
+  }
+
+  if (existingSkillId) source.existingSkillId = existingSkillId;
 
   const result = await writeArtifactDeduped({
     db: context.db as DB["db"],
@@ -247,6 +295,7 @@ async function skillDraftHandler(
   return JSON.stringify({
     draftId: result.artifactId,
     version: result.version,
+    ...(existingSkillId ? { existingSkillId } : {}),
   });
 }
 
