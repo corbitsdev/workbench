@@ -18,15 +18,16 @@ export const ComparisonVariantSchema = type({
   label: "string",
   "providerName?": "string",
   "model?": "string",
-  // Per-variant lifecycle for the unified live+final grid (CL-3099): a lane not
+  // Per-variant lifecycle for the unified live+final grid: a lane not
   // yet terminal is "streaming" (calm placeholder that keeps its slot), a
   // terminal non-empty lane is "responded", and a terminal empty/errored lane is
   // "no-response" (a gold marker, never dropped). Absent on saved artifacts
   // (always final + fully responded), so they render exactly as before.
   "status?": "'streaming' | 'responded' | 'no-response'",
   // A humanized model name (e.g. "Claude Opus") rendered in place of the raw
-  // provider/model ids when present. Producing it is CL-3098's job; this
-  // renderer only displays it when given, and never formats raw ids into it.
+  // provider/model ids when present. Producing that humanized string is a
+  // separate concern; this renderer only displays it when given, and never
+  // formats raw ids into it.
   "meta?": "string",
   content: "string",
 });
@@ -339,7 +340,7 @@ export interface ComparisonViewProps {
    */
   blind?: boolean;
   /**
-   * The run-level phase (CL-3099). `"running"` renders the live grid with no
+   * The run-level phase. `"running"` renders the live grid with no
    * winner accent (nothing is decided yet); `"final"` (the default) is the
    * settled state where the ranking's winner earns the accent. Drives the
    * spinner→result pill crossfade and the entrance animation.

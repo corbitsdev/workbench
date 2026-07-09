@@ -287,7 +287,7 @@ export type UIBlock =
   | {
       // A side-by-side A/B comparison rendered through @workbench/ui's
       // ComparisonView — the single renderer for both the live run and the
-      // saved artifact (CL-3099). `status` is the run-level phase (the winner
+      // saved artifact. `status` is the run-level phase (the winner
       // accent only applies once `"final"`); each variant carries its own
       // streaming / responded / no-response lifecycle. `blind` hides the
       // provider/model identity during a blind review.
