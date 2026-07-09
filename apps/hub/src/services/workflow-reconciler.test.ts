@@ -884,7 +884,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     const rec = parkedRecord("ses_run_garbled", GRACE_MS * 10);
     rec.pendingSignal = {
       bogus: true,
-    } as unknown as RecordRow["pendingSignal"];
+    } as unknown as NonNullable<RecordRow["pendingSignal"]>;
     const h = makeHarness({
       records: [rec],
       routable: [addressOf("ses_run_garbled")],

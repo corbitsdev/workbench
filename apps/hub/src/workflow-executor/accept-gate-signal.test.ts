@@ -25,6 +25,12 @@ const runsById = new Map<
 const persisted: { runId: string; signalName: string }[] = [];
 
 mock.module("./run-store", () => ({
+  // run-exec.ts imports these too; the module replacement must cover them.
+  insertRunRecord: async () => {
+    throw new Error("not used by acceptGateSignal tests");
+  },
+  failRunIfStillProvisioning: async () => false,
+  setRunDeployment: async () => {},
   loadRunRecord: async (_db: unknown, runId: string) =>
     runsById.get(runId) ?? null,
   setPendingSignal: async (

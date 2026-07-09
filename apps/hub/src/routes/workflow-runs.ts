@@ -19,7 +19,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { getAncestorChain } from "@intx/db";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
-import { setPendingSignal } from "../workflow-executor/run-store";
+import { acceptGateSignal } from "../workflow-executor/run-exec";
 import { getRequestedUserContext } from "../lib/user-context";
 import {
   isWorkflowRunDeniedForTenant,
@@ -754,36 +754,35 @@ export function createWorkflowRunsRouter(deps: {
       }
 
       try {
-        // Durable-before-dispatch: persist the accepted signal on the run
-        // record FIRST — the fire-and-forget delivery below can race a
-        // hibernate/undeploy teardown, and the awaiting reconciler
-        // re-delivers from this record until the run log proves receipt.
-        const signalId = randomUUID();
-        await setPendingSignal(deps.db, body.runId, {
-          signalId,
-          signalName: body.signalName,
-          payload: body.payload,
-          receivedAt: new Date().toISOString(),
-        });
-        // A paused run's supervisor may have been dropped from the hub's
-        // addressIndex by a restart; re-establish it before delivering so the
-        // signal does not throw `agent is unreachable` (CL-2225).
-        await deps.ensureDeploymentRoutable({
-          deploymentId,
-          kind: owned.kind,
-          tenantId: owned.tenantId,
-          creatorPrincipalId: owned.principalId,
-        });
-        deps.sidecarRouter.sendSignalDeliver({
-          agentAddress: deriveDeploymentAddress({
-            deploymentId,
+        // Guarded durable acceptance: the run must belong to THIS authorized
+        // deployment and be parked on an open gate for the named signal
+        // before the pending-signal record (a reconciler-actionable durable
+        // rail) is persisted; then the signal is dispatched. See
+        // `acceptGateSignal` for the ordering contract.
+        const result = await acceptGateSignal(
+          {
+            db: deps.db,
+            repoStore: deps.repoStore,
+            sidecarRouter: deps.sidecarRouter,
             deploymentDomain: deps.deploymentDomain,
-          }),
-          runId: body.runId,
-          signalName: body.signalName,
-          signalId,
-          payload: body.payload,
-        });
+            ensureDeploymentRoutable: deps.ensureDeploymentRoutable,
+          },
+          {
+            deploymentId,
+            kind: owned.kind,
+            tenantId: owned.tenantId,
+            creatorPrincipalId: owned.principalId,
+            runId: body.runId,
+            signalName: body.signalName,
+            payload: body.payload,
+          },
+        );
+        if (!result.ok) {
+          return c.json(
+            { error: result.error },
+            result.status as 404 | 409 | 500,
+          );
+        }
       } catch (err) {
         log.error("workflow signal delivery failed", {
           deploymentId,

@@ -1,11 +1,17 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like } from "drizzle-orm";
+import { type } from "arktype";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
-import { loadRunRecord, setRunStatus } from "../workflow-executor/run-store";
+import {
+  loadRunRecord,
+  setPendingSignal,
+  setRunStatus,
+} from "../workflow-executor/run-store";
+import { PendingRunSignalSchema } from "../workflow-executor/pending-signal";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 
@@ -455,19 +461,40 @@ export function createWorkflowReconciler(deps: {
     // not hibernate or dormant-skip them.
     const pendingHandled = new Set<string>();
     for (const rec of pendingRecords) {
-      const pending = rec.pendingSignal;
-      if (rec.deploymentId === null || pending === null) continue;
-      if (pending === undefined) continue;
+      const rawPending = rec.pendingSignal;
+      if (rec.deploymentId === null || rawPending === null) continue;
+      if (rawPending === undefined) continue;
+      // Owning the deployment (blocking hibernate) does NOT require a valid
+      // record — the raw column being non-null is the signal that something
+      // is (or claims to be) in flight. Acting on it does: parse through the
+      // same schema `rowToState` uses so the two readers agree.
       pendingHandled.add(rec.deploymentId);
+      const pending = PendingRunSignalSchema(rawPending);
+      if (pending instanceof type.errors) {
+        log.error(
+          "pending gate signal record is malformed; not re-deliverable",
+          {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            problem: pending.summary,
+          },
+        );
+        continue;
+      }
       const address = deriveDeploymentAddress({
         deploymentId: rec.deploymentId,
         deploymentDomain: deps.deploymentDomain,
       });
       // Give the in-flight first delivery time to land and its
       // SignalReceived to fold (which clears the record) before
-      // re-delivering. Re-delivery reuses the SAME signalId, so a duplicate
-      // reaching an already-satisfied gate is inert for that gate; the
-      // narrow same-name-future-gate FIFO hazard is bounded by this delay.
+      // re-delivering; the timestamp is REFRESHED on each re-delivery so a
+      // slow pack pipeline gets one re-delivery per delay window, not one
+      // per tick. Re-delivery reuses the SAME signalId, so a duplicate
+      // reaching an already-satisfied gate is inert for that gate. The
+      // same-name-future-gate FIFO hazard is bounded by PROJECTION LAG (the
+      // clear only lands when the receipt folds), not by this delay — a run
+      // whose packs stall keeps receiving one duplicate per window until
+      // the fold catches up.
       const pendingForMs = now - Date.parse(pending.receivedAt);
       if (pendingForMs < signalRedeliveryDelayMs) continue;
       const deployPrincipal = deployPrincipalByKind.get(
@@ -483,6 +510,13 @@ export function createWorkflowReconciler(deps: {
           kind: rec.kind,
           tenantId: rec.tenantId,
           creatorPrincipalId: deployPrincipal,
+        });
+        // Refresh BEFORE dispatch: same signalId, new receivedAt — the next
+        // pass backs off for a full window. Ordering matters: refreshing
+        // after a dispatch that wedged would re-deliver every tick.
+        await setPendingSignal(deps.db, rec.id, {
+          ...pending,
+          receivedAt: new Date().toISOString(),
         });
         deps.sendSignalDeliver({
           agentAddress: address,

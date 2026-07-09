@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import {
   workflowRun,
@@ -9,6 +10,14 @@ import {
   type WorkflowRunRecordRow,
 } from "../db/schema";
 import { WorkflowMeta } from "../lib/workflow-meta";
+import {
+  PendingRunSignalSchema,
+  type PendingRunSignal,
+} from "./pending-signal";
+
+export { PendingRunSignalSchema, type PendingRunSignal };
+
+const log = getLogger(["workflow-executor", "run-store"]);
 
 export type WorkflowRunStepPhase = (typeof workflowRunStepPhases)[number];
 
@@ -49,17 +58,6 @@ export interface RunState {
   updatedAt?: Date;
 }
 
-// Durable pending gate-signal record. Serialized into the run record's
-// `pending_signal` jsonb column at the accept boundary and validated back out
-// wherever it crosses that boundary.
-export const PendingRunSignalSchema = type({
-  signalId: "string",
-  signalName: "string",
-  payload: "unknown",
-  receivedAt: "string",
-});
-export type PendingRunSignal = typeof PendingRunSignalSchema.infer;
-
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
 // status plus run wall-clock timing folded from the log's RunStarted / terminal
 // events. `startedAt` is set once (first RunStarted wins); `endedAt` accompanies
@@ -68,10 +66,13 @@ export interface RunProjection {
   status: RunState["status"];
   startedAt?: string;
   endedAt?: string;
-  // Clear the durable pending-signal record: the projection sets this once
-  // the folded log proves the signal was received (matching signalId) or the
-  // run left the gate for good (terminal).
-  clearPendingSignal?: boolean;
+  // Clear the durable pending-signal record. `true` clears unconditionally
+  // (terminal status only — no further gate exists to consume a signal).
+  // `{ signalIds }` clears CONDITIONALLY IN SQL: the record is nulled only if
+  // the signalId it holds at write time is one of the log-proven ids, so a
+  // signal accepted between the projection's decision read and this write
+  // (the next gate's) is never erased before its own delivery is proven.
+  clearPendingSignal?: true | { signalIds: readonly string[] };
 }
 
 function rowToState(row: WorkflowRunRecordRow): RunState {
@@ -79,6 +80,17 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     row.pendingSignal === null || row.pendingSignal === undefined
       ? undefined
       : PendingRunSignalSchema(row.pendingSignal);
+  if (pendingSignal instanceof type.errors) {
+    // Fail loud: a malformed record cannot be surfaced as a typed
+    // pendingSignal, but silently omitting it would let readers of this
+    // projection disagree with readers of the raw column (the reconciler's
+    // hibernate guard). The raw column stays non-null, so raw-column guards
+    // still hold; this log is the operator's handle on the corruption.
+    log.error("workflow_run_record.pending_signal is malformed", {
+      runId: row.id,
+      problem: pendingSignal.summary,
+    });
+  }
   return {
     runId: row.id,
     kind: row.kind,
@@ -219,6 +231,16 @@ export async function applyRunProjection(
   }
   if (projection.clearPendingSignal === true) {
     patch.pendingSignal = null;
+  } else if (
+    projection.clearPendingSignal !== undefined &&
+    projection.clearPendingSignal.signalIds.length > 0
+  ) {
+    const ids = projection.clearPendingSignal.signalIds;
+    patch.pendingSignal =
+      sql`CASE WHEN ${workflowRunRecord.pendingSignal}->>'signalId' IN (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )}) THEN NULL ELSE ${workflowRunRecord.pendingSignal} END` as unknown as typeof patch.pendingSignal;
   }
   await db
     .update(workflowRunRecord)

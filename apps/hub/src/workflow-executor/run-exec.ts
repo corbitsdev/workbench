@@ -531,6 +531,73 @@ async function assertResumableGate(
 }
 
 /**
+ * Accept-and-deliver a gate signal addressed BY DEPLOYMENT (the legacy
+ * deployment-scoped signal route). The pending-signal record this persists is
+ * a durable rail the reconciler acts on (wake + re-deliver), so acceptance is
+ * guarded like the records-route resume: the run must belong to the
+ * authorized deployment (404 otherwise — no cross-deployment stamping) and
+ * must be parked on an open gate for the named signal (409 otherwise), so an
+ * unmatchable signal can never be persisted, re-delivered forever, and block
+ * hibernation. On success: persist durably, ensure the deployment is
+ * routable, then dispatch.
+ */
+export async function acceptGateSignal(
+  deps: ResumeWorkflowRunDeps,
+  opts: {
+    deploymentId: string;
+    kind: string;
+    tenantId: string;
+    creatorPrincipalId: string;
+    runId: string;
+    signalName: string;
+    payload: unknown;
+  },
+): Promise<RunExecResult> {
+  const state = await loadRunRecord(deps.db, opts.runId);
+  if (!state || state.deploymentId !== opts.deploymentId) {
+    // Unknown run, or a run owned by a DIFFERENT deployment than the one the
+    // caller is authorized for — reject without persisting anything, and
+    // without disclosing whether the foreign run exists.
+    return { ok: false, status: 404, error: "run not found for deployment" };
+  }
+
+  const gateConflict = await assertResumableGate(
+    deps,
+    state,
+    opts.deploymentId,
+    opts.signalName,
+  );
+  if (gateConflict) return gateConflict;
+
+  // Durable-before-dispatch (same contract as resumeWorkflowRun): the
+  // reconciler re-delivers from this record until the run log proves receipt.
+  const signalId = randomUUID();
+  await setPendingSignal(deps.db, state.runId, {
+    signalId,
+    signalName: opts.signalName,
+    payload: opts.payload ?? {},
+    receivedAt: new Date().toISOString(),
+  });
+  await deps.ensureDeploymentRoutable({
+    deploymentId: opts.deploymentId,
+    kind: opts.kind,
+    tenantId: opts.tenantId,
+    creatorPrincipalId: opts.creatorPrincipalId,
+  });
+  deps.sidecarRouter.sendSignalDeliver({
+    agentAddress: deriveDeploymentAddress({
+      deploymentId: opts.deploymentId,
+      deploymentDomain: deps.deploymentDomain,
+    }),
+    runId: state.runId,
+    signalName: opts.signalName,
+    signalId,
+    payload: opts.payload ?? {},
+  });
+  return { ok: true, state };
+}
+
+/**
  * Deliver a gate signal to a parked run's sidecar supervisor and optimistically
  * mark the run running. Owner-gated: the run's principal must be the caller's.
  */

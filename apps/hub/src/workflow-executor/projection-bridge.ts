@@ -405,17 +405,20 @@ export async function projectWorkflowRunRepo(
     const existing = await loadRunRecord(db, runId);
     if (existing === null) continue;
 
-    // Clear the durable pending-signal record once the log PROVES the signal
-    // landed (its signalId folded as SignalReceived) or the run is past ever
-    // consuming it (terminal). Matched by id — a multi-gate run can fold
-    // received-then-reparked in one batch, ending `awaiting` again with the
-    // prior gate's signal received.
-    const pending = existing.pendingSignal;
-    const clearPendingSignal =
-      pending !== undefined &&
-      (projected.receivedSignalIds.includes(pending.signalId) ||
-        projected.status === "completed" ||
-        projected.status === "failed");
+    // Clear the durable pending-signal record once the log PROVES a signal
+    // landed. Terminal → unconditional clear (no further gate exists).
+    // Otherwise the clear is keyed on the FOLDED signalIds and applied
+    // conditionally in SQL against the value at write time — never against
+    // this (stale) read — so a signal accepted between this read and the
+    // write (the next gate's) survives until its own receipt is proven.
+    const isTerminal =
+      projected.status === "completed" || projected.status === "failed";
+    let clearPendingSignal: true | { signalIds: readonly string[] } | undefined;
+    if (isTerminal) {
+      clearPendingSignal = true;
+    } else if (projected.receivedSignalIds.length > 0) {
+      clearPendingSignal = { signalIds: projected.receivedSignalIds };
+    }
 
     await applyRunProjection(db, runId, {
       status: projected.status,
@@ -425,7 +428,7 @@ export async function projectWorkflowRunRepo(
       ...(projected.endedAt !== undefined
         ? { endedAt: projected.endedAt }
         : {}),
-      ...(clearPendingSignal ? { clearPendingSignal: true } : {}),
+      ...(clearPendingSignal !== undefined ? { clearPendingSignal } : {}),
     });
 
     // Per-step projection (CL-2727): fold the SAME log through the native
