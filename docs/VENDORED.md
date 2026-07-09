@@ -157,6 +157,27 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 - **Re-sync rule:** do NOT literally re-copy from upstream — that would drop the
   reconnect machinery. Diff deliberately, adopt upstream fixes piecewise, and tag
   any newly-audited divergence with a WORKBENCH-LOCAL token as it is touched.
+- **WORKBENCH-LOCAL change (CL-3102):** lazy agent restore. `restoreSessions`
+  in `session-manager.ts` no longer builds a harness per on-disk agent — it
+  recovers only routing metadata (key cache + a `wakeable` config map) so the
+  reconnect frame still advertises every address, but no tool-package build or
+  credential HTTP fetch runs at boot/reconnect. The harness is built on demand
+  by `wakeAgent` (first inbound message via the new
+  `SessionManager.deliverInboundMail`, or an explicit `session.start`), with
+  concurrent triggers de-duplicated, inbound mail parked during the build and
+  replayed in order, bounded-backoff retries on a failed build (the agent stays
+  wakeable — never a credential-less harness), and an INFO log of wake duration
+  (message received → harness ready). `hub-link.ts`'s `mail.inbound` fallback
+  now delegates to `deliverInboundMail`, and `session.start` routes wakeable
+  agents through `wakeAgent` awaiting only the first attempt (the hub's ack
+  deadline is 30s; later retries continue in the background). Parked-mail
+  bound: the buffer is memory-only, so a parked trigger survives build
+  failures and retries but is lost on a process crash mid-wake or if the
+  wake retries exhaust with no later trigger; overflow past 256 messages
+  drops the oldest with a warning. A fresh `provisionAgent` supersedes an
+  in-flight wake via a per-wake ownership token, so the doomed build
+  discards itself and never tears down a session it did not install. All
+  blocks tagged `// WORKBENCH-LOCAL (CL-3102)`.
 
 ---
 
