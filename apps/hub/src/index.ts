@@ -111,6 +111,7 @@ import { createPricingRouter } from "./routes/pricing";
 import { prewarmPriceCatalog } from "./lib/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createPrincipalRosterRouter } from "./routes/principal-roster";
+import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -662,6 +663,10 @@ hubApp.route(
 hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/roster",
   createPrincipalRosterRouter({ db }),
+);
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/analytics",
+  createPrincipalAnalyticsRouter({ db }),
 );
 hubApp.route("/api/tenants/:tenantId/roster", createTenantRosterRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));

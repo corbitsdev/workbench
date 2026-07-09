@@ -237,8 +237,19 @@ export function ActorDetailPage() {
                   />
                 )}
                 {activeFacet === "grants" && <GrantsFacet entries={entries} />}
-                {activeFacet === "tools" && <ToolsFacet entries={entries} />}
-                {activeFacet === "cost" && <CostFacet label={name} />}
+                {activeFacet === "tools" && (
+                  <ToolsFacet
+                    tenantId={activeTenantId}
+                    principalId={principalId}
+                  />
+                )}
+                {activeFacet === "cost" && (
+                  <CostFacet
+                    tenantId={activeTenantId}
+                    principalId={principalId}
+                    label={name}
+                  />
+                )}
                 {activeFacet === "connections" && (
                   <ConnectionsFacet entries={entries} />
                 )}

@@ -816,6 +816,61 @@ export async function getPrincipalRoster(
   return parsed;
 }
 
+// ─── Principal analytics (Insights Tools + Cost facets) ──
+
+export const PrincipalToolRowSchema = type({
+  name: "string",
+  calls: "number",
+  errors: "number",
+});
+export type PrincipalToolRow = typeof PrincipalToolRowSchema.infer;
+
+export const PrincipalCostSummarySchema = type({
+  inputTokens: "number",
+  outputTokens: "number",
+  cacheReadTokens: "number",
+  cacheWriteTokens: "number",
+  thinkingTokens: "number",
+  inferenceCalls: "number",
+  toolCalls: "number",
+});
+export type PrincipalCostSummary = typeof PrincipalCostSummarySchema.infer;
+
+export const PrincipalAnalyticsSchema = type({
+  tools: PrincipalToolRowSchema.array(),
+  cost: PrincipalCostSummarySchema,
+});
+export type PrincipalAnalytics = typeof PrincipalAnalyticsSchema.infer;
+
+export const GetPrincipalAnalyticsParamsSchema = type({
+  tenantId: "string",
+  principalId: "string",
+});
+export type GetPrincipalAnalyticsParams =
+  typeof GetPrincipalAnalyticsParamsSchema.infer;
+
+/**
+ * Fetch a principal's tool-call breakdown and token/cost totals
+ * (`GET /api/tenants/:tenantId/principals/:principalId/analytics`). Powers the
+ * principal trace's Tools and Cost facets, aggregated from the durable
+ * analytics_event fact table (not the loaded timeline window).
+ */
+export async function getPrincipalAnalytics(
+  options: ClientOptions = {},
+  params: GetPrincipalAnalyticsParams,
+): Promise<PrincipalAnalytics> {
+  const raw = await request<unknown>(
+    `tenants/${encodeURIComponent(params.tenantId)}/principals/${encodeURIComponent(params.principalId)}/analytics`,
+    options,
+    TENANT_API_PREFIX,
+  );
+  const parsed = PrincipalAnalyticsSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid /analytics response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 // ─── Tenant roster (dashboard-level clickable Agents + runs, CL-2798) ──
 
 export const TenantRosterSchema = type({

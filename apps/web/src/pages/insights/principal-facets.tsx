@@ -2,6 +2,7 @@ import { Info } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { usePrincipalRoster } from "../../hooks/use-principal-roster";
+import { usePrincipalAnalytics } from "../../hooks/use-principal-analytics";
 import {
   FacetCard,
   FacetDesc,
@@ -161,25 +162,68 @@ export interface ToolRow {
   calls: number;
 }
 
-/** Aggregates `tool_call` timeline entries into per-tool call counts. */
-export function toolRowsFromEntries(entries: TimelineEntry[]): ToolRow[] {
-  const byName = new Map<string, ToolRow>();
-  for (const e of entries) {
-    if (e.kind !== "tool_call") continue;
-    const name = (e.summary ?? "").trim() || "Unknown tool";
-    const existing = byName.get(name);
-    if (existing !== undefined) existing.calls += 1;
-    else byName.set(name, { name, plain: humanizeToken(name), calls: 1 });
-  }
-  return [...byName.values()].sort((a, b) => b.calls - a.calls);
-}
+/**
+ * Tools facet. Aggregates the principal's tool calls from the durable
+ * analytics_event facts — the agent's FULL recorded history — instead of
+ * counting only the loaded timeline window (which under-counted, showing 0 when
+ * tools were older than the first page).
+ */
+export function ToolsFacet({
+  tenantId,
+  principalId,
+}: {
+  tenantId: string;
+  principalId: string;
+}) {
+  const query = usePrincipalAnalytics(tenantId, principalId, {
+    enabled: tenantId !== "" && principalId !== "",
+  });
 
-export function ToolsFacet({ entries }: { entries: TimelineEntry[] }) {
+  if (query.isLoading) {
+    return (
+      <div className="flex flex-col gap-2" data-testid="tools-loading">
+        <Skeleton className="h-16 w-full rounded-[10px]" />
+        <Skeleton className="h-16 w-full rounded-[10px]" />
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <FacetCard>
+        <div
+          className="flex flex-col items-start gap-2"
+          data-testid="facet-tools"
+        >
+          <p className="text-[13px] text-text-2">
+            Couldn&rsquo;t load this principal&rsquo;s tool activity. Please try
+            again.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              void query.refetch();
+            }}
+            className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+          >
+            Retry
+          </button>
+        </div>
+      </FacetCard>
+    );
+  }
+
+  const tools: ToolRow[] = (query.data?.tools ?? []).map((t) => ({
+    name: t.name,
+    plain: humanizeToken(t.name),
+    calls: t.calls,
+  }));
+
   return (
     <ToolsFacetView
-      tools={toolRowsFromEntries(entries)}
-      description="Every tool invoked in the loaded window and how often. The concrete data each call touched is the gap."
-      emptyText="No tool calls in the loaded window."
+      tools={tools}
+      description="Every tool this agent has invoked and how often, across its full recorded history. The concrete data each call touched is the gap."
+      emptyText="No tool calls recorded for this principal."
     />
   );
 }
@@ -419,34 +463,112 @@ function RosterGroup({
   );
 }
 
-export function CostFacet({ label }: { label: string }) {
+/**
+ * Cost facet. Renders the principal's token-class totals from the
+ * durable analytics_event facts, keyed on the principal attribution set. Was a
+ * static "not recorded yet" stub; the per-principal token grain has always been
+ * recorded — it just was never queried. Dollar pricing is a separate layer
+ * (surfaced in the tenant cost dashboard), so this shows token counts, not a
+ * fabricated dollar total.
+ */
+export function CostFacet({
+  tenantId,
+  principalId,
+  label,
+}: {
+  tenantId: string;
+  principalId: string;
+  label: string;
+}) {
+  const query = usePrincipalAnalytics(tenantId, principalId, {
+    enabled: tenantId !== "" && principalId !== "",
+  });
+
+  const cost = query.data?.cost;
+  const classes: { label: string; value: number }[] = [
+    { label: "Fresh input", value: cost?.inputTokens ?? 0 },
+    { label: "Cache read", value: cost?.cacheReadTokens ?? 0 },
+    { label: "Cache write", value: cost?.cacheWriteTokens ?? 0 },
+    { label: "Output", value: cost?.outputTokens ?? 0 },
+    ...(cost && cost.thinkingTokens > 0
+      ? [{ label: "Thinking", value: cost.thinkingTokens }]
+      : []),
+  ];
+  const hasUsage =
+    cost !== undefined &&
+    (cost.inputTokens > 0 ||
+      cost.outputTokens > 0 ||
+      cost.cacheReadTokens > 0 ||
+      cost.cacheWriteTokens > 0 ||
+      cost.thinkingTokens > 0);
+
   return (
     <div data-testid="facet-cost">
       <FacetDesc>
         {label} keeps token classes separate — fresh input, cache read, cache
-        write, output are never summed — then prices each independently.
+        write, output are never summed. Counts are the principal&rsquo;s full
+        recorded inference history; dollar pricing is applied separately.
       </FacetDesc>
-      <GapBanner>
-        Token counts are recorded per model and per day, not attributed to this
-        principal or moment; and the dollar layer isn&rsquo;t wired into
-        analytics yet. Rather than show a fabricated total, this trace surfaces
-        the gap.
-      </GapBanner>
-      <FacetCard title="Token classes → cost">
-        <ul className="flex flex-col gap-2 text-[12.5px] text-text-2">
-          {["Fresh input", "Cache read", "Cache write", "Output"].map((cls) => (
-            <li key={cls} className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-[3px] bg-blue" />
-                {cls}
-              </span>
-              <span className="font-mono text-[11px] text-gold">
-                not recorded yet
+
+      {query.isLoading && (
+        <div className="flex flex-col gap-2" data-testid="cost-loading">
+          <Skeleton className="h-24 w-full rounded-[10px]" />
+        </div>
+      )}
+
+      {query.isError && (
+        <FacetCard>
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-[13px] text-text-2">
+              Couldn&rsquo;t load this principal&rsquo;s cost. Please try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                void query.refetch();
+              }}
+              className="flex min-h-[40px] items-center rounded-[8px] border border-border px-3 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              Retry
+            </button>
+          </div>
+        </FacetCard>
+      )}
+
+      {query.isSuccess && !hasUsage && (
+        <FacetCard>
+          <p className="text-[13px] text-text-2">
+            No token usage recorded for this principal yet.
+          </p>
+        </FacetCard>
+      )}
+
+      {query.isSuccess && hasUsage && (
+        <FacetCard title="Token classes">
+          <ul className="flex flex-col gap-2 text-[12.5px] text-text-2">
+            {classes.map((cls) => (
+              <li
+                key={cls.label}
+                className="flex items-center justify-between gap-3"
+              >
+                <span className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-[3px] bg-blue" />
+                  {cls.label}
+                </span>
+                <span className="font-mono tabular-nums text-[11px] text-text">
+                  {cls.value.toLocaleString()}
+                </span>
+              </li>
+            ))}
+            <li className="mt-1 flex items-center justify-between gap-3 border-t border-border pt-2 text-text-3">
+              <span>Inference calls</span>
+              <span className="font-mono tabular-nums text-[11px]">
+                {(cost?.inferenceCalls ?? 0).toLocaleString()}
               </span>
             </li>
-          ))}
-        </ul>
-      </FacetCard>
+          </ul>
+        </FacetCard>
+      )}
     </div>
   );
 }

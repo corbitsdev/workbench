@@ -1,4 +1,4 @@
-import { and, eq, gte, lte, sql, type AnyColumn } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, sql, type AnyColumn } from "drizzle-orm";
 
 import type { DB } from "@intx/db";
 import { schema as intxSchema } from "@intx/db";
@@ -509,6 +509,142 @@ export async function getCacheBaseline(
       };
     })
     .sort((a, b) => b.inferenceCalls - a.inferenceCalls);
+}
+
+export type PrincipalToolRow = {
+  name: string;
+  calls: number;
+  errors: number;
+};
+
+export type PrincipalCostSummary = {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+  inferenceCalls: number;
+  toolCalls: number;
+};
+
+// Per-tool call breakdown for a principal set, read from the DURABLE
+// analytics_event fact table. Attribution is by principal_id (the instance's
+// synthetic principal), matching the timeline's own attribution — NOT by the
+// loaded timeline window, which is why the old facet under-counted.
+//
+// The tool NAME is not yet stored on the analytics_event row; until it is, the
+// name is recovered from turn_part. The collector writes TWO `tool` parts per
+// call under the same callId: a `kind:'call'` part that carries `name`, and a
+// `kind:'result'` part that does NOT. The LATERAL subquery filters to the part
+// that actually has a name (`metadata ->> 'name' is not null`) so it never
+// returns the nameless result row, and the LIMIT 1 keeps the join to one name
+// per event row (no fan-out / double-count). turn_part cascade-deletes with a
+// torn-down instance, so a reaped call has no part and falls back to its callId.
+export async function getPrincipalToolBreakdown(args: {
+  db: DB["db"];
+  tenantId: string;
+  principalIds: readonly string[];
+}): Promise<PrincipalToolRow[]> {
+  const { db, tenantId, principalIds } = args;
+  if (principalIds.length === 0) return [];
+  const ids = sql.join(
+    principalIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  const query = sql`
+    select
+      coalesce(tp.name, ae.tool_call_id, 'Unknown tool') as name,
+      count(*)::int as calls,
+      sum(case when ae.status = 'error' then 1 else 0 end)::int as errors
+    from analytics_event ae
+    left join lateral (
+      select p.metadata ->> 'name' as name
+      from turn_part p
+      where p.type = 'tool'
+        and p.session_id = ae.session_id
+        and p.metadata ->> 'callId' = ae.tool_call_id
+        and p.metadata ->> 'name' is not null
+      limit 1
+    ) tp on true
+    where ae.tenant_id = ${tenantId}
+      and ae.event_type = 'tool_call'
+      and ae.principal_id in (${ids})
+    group by 1
+    order by calls desc, name asc
+  `;
+  const result: unknown = await db.execute(query);
+  const rows = Array.isArray(result)
+    ? (result as Record<string, unknown>[])
+    : (result as { rows: Record<string, unknown>[] }).rows;
+  return rows.map((row) => ({
+    name: String(row["name"] ?? "").trim() || "Unknown tool",
+    calls: Number(row["calls"] ?? 0),
+    errors: Number(row["errors"] ?? 0),
+  }));
+}
+
+// Token/cost totals for a principal set from the DURABLE raw facts.
+// Tokens live only on `inference_done` rows; `tool_call` rows carry zero tokens,
+// so cost is summed over inference_done and the tool count is a separate tally.
+// Attribution is by principal_id (matches the timeline), NOT the daily rollup —
+// the raw facts carry the per-principal grain the rollup drops.
+export async function getPrincipalCostSummary(args: {
+  db: DB["db"];
+  tenantId: string;
+  principalIds: readonly string[];
+}): Promise<PrincipalCostSummary> {
+  const { db, tenantId, principalIds } = args;
+  const empty: PrincipalCostSummary = {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    thinkingTokens: 0,
+    inferenceCalls: 0,
+    toolCalls: 0,
+  };
+  if (principalIds.length === 0) return empty;
+  const ids = [...principalIds];
+
+  const costRows = await db
+    .select({
+      inputTokens: sumInteger(analyticsEvent.inputTokens),
+      outputTokens: sumInteger(analyticsEvent.outputTokens),
+      cacheReadTokens: sumInteger(analyticsEvent.cacheReadTokens),
+      cacheWriteTokens: sumInteger(analyticsEvent.cacheWriteTokens),
+      thinkingTokens: sumInteger(analyticsEvent.thinkingTokens),
+      inferenceCalls: sql<number>`count(*)`.mapWith(Number),
+    })
+    .from(analyticsEvent)
+    .where(
+      and(
+        eq(analyticsEvent.tenantId, tenantId),
+        eq(analyticsEvent.eventType, "inference_done"),
+        inArray(analyticsEvent.principalId, ids),
+      ),
+    );
+
+  const toolRows = await db
+    .select({ toolCalls: sql<number>`count(*)`.mapWith(Number) })
+    .from(analyticsEvent)
+    .where(
+      and(
+        eq(analyticsEvent.tenantId, tenantId),
+        eq(analyticsEvent.eventType, "tool_call"),
+        inArray(analyticsEvent.principalId, ids),
+      ),
+    );
+
+  const c = costRows[0];
+  return {
+    inputTokens: c?.inputTokens ?? 0,
+    outputTokens: c?.outputTokens ?? 0,
+    cacheReadTokens: c?.cacheReadTokens ?? 0,
+    cacheWriteTokens: c?.cacheWriteTokens ?? 0,
+    thinkingTokens: c?.thinkingTokens ?? 0,
+    inferenceCalls: c?.inferenceCalls ?? 0,
+    toolCalls: toolRows[0]?.toolCalls ?? 0,
+  };
 }
 
 function sumInteger(column: AnyColumn) {
