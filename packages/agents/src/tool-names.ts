@@ -178,6 +178,22 @@ export function providersForToolPackages(
 }
 
 /**
+ * Every LLM-facing tool name a known tool package can produce, via the same
+ * `<factoryId>:<name>` → `toLlmToolName` transform the sidecar applies to a
+ * loaded package's tool definitions. The dynamic-tools catalog must name only
+ * tools in this set: the credential-gate filter matches a catalog entry against
+ * the loaded tool names, so a catalog name no factory can produce would be
+ * silently hidden forever. Pin the catalog against this set in a test.
+ */
+export function producibleLlmToolNames(): Set<string> {
+  const names = new Set<string>();
+  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS)) {
+    for (const tool of tools) names.add(toLlmToolName(`${factoryId}:${tool}`));
+  }
+  return names;
+}
+
+/**
  * Map raw tool-definition names to the canonical runtime names the sidecar
  * loader emits (`<factoryId>:<name>`). Names belonging to a known tool package
  * are prefixed; everything else (local runners) is returned unchanged.
