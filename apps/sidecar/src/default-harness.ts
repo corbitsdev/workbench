@@ -10,6 +10,7 @@ import {
 } from "@workbench/agents";
 import {
   createCatalogTools,
+  filterCatalogByAvailableTools,
   DYNAMIC_TOOLS_ENV_KEY,
   type ToolExposureState,
 } from "@workbench/tools-catalog";
@@ -190,15 +191,10 @@ export function createDefaultHarnessBuilder({
       // it) and the dynamic-tools director (which reads it per infer). Every
       // tool stays loaded and dispatchable regardless — only advertisement
       // changes. Non-opt-in agents get `undefined` here and are untouched.
+      // The catalog runner itself is built later, once the loaded tool set is
+      // known, so packages whose credential is missing are never advertised.
       const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
       const exposureState: ToolExposureState = { exposed: new Set<string>() };
-      const catalogRunner =
-        dynamicToolConfig !== undefined
-          ? (createCatalogTools({
-              catalog: dynamicToolConfig.catalog,
-              exposure: exposureState,
-            }) as DefinedRunner)
-          : undefined;
 
       const grantsRef = { current: agentConfig.grants };
       const { principalId, tenantId } = agentConfig;
@@ -357,14 +353,6 @@ export function createDefaultHarnessBuilder({
           onConnectorStateChanged,
           ...credentialEnv,
           [HUB_RPC_ENV_KEY]: hubRpcContext,
-          ...(dynamicToolConfig !== undefined
-            ? {
-                [DYNAMIC_TOOLS_ENV_KEY]: {
-                  catalog: dynamicToolConfig.catalog,
-                  exposure: exposureState,
-                },
-              }
-            : {}),
         };
 
         const loadedRunners: DefinedRunner[] = [];
@@ -431,6 +419,26 @@ export function createDefaultHarnessBuilder({
           });
         }
 
+        // Gate the dynamic catalog to tools that actually loaded. A package
+        // whose credential is missing was dropped fail-soft above, so its
+        // tools are absent from `loadedToolNames` and must not be advertised —
+        // otherwise search_tools points the model at a package it can never
+        // call, which is the source of the tool-search loop (CL-3133).
+        const availableCatalog =
+          dynamicToolConfig !== undefined
+            ? filterCatalogByAvailableTools(
+                dynamicToolConfig.catalog,
+                loadedToolNames,
+              )
+            : undefined;
+        const catalogRunner =
+          availableCatalog !== undefined
+            ? (createCatalogTools({
+                catalog: availableCatalog,
+                exposure: exposureState,
+              }) as DefinedRunner)
+            : undefined;
+
         // Agent tools come from local runners (posix/mail/ask-principal) plus
         // the materialized native packages — there is no hub-side tool proxy.
         const allTools = mergeToolRunners([
@@ -487,7 +495,18 @@ export function createDefaultHarnessBuilder({
             : {}),
         };
 
-        const harness = await createHarness(def, env);
+        const harnessEnv =
+          availableCatalog !== undefined
+            ? {
+                ...env,
+                [DYNAMIC_TOOLS_ENV_KEY]: {
+                  catalog: availableCatalog,
+                  exposure: exposureState,
+                },
+              }
+            : env;
+
+        const harness = await createHarness(def, harnessEnv);
 
         // Forward the reactor's event stream to the hub. This is the seam the
         // SessionManager builds around: it supplies `onEvent` and expects the

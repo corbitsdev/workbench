@@ -9,6 +9,26 @@ export function catalogManagedNames(catalog: ToolCatalog): Set<string> {
   return names;
 }
 
+/**
+ * Restrict a catalog to the tools that actually loaded for this agent.
+ * `availableNames` is the set of LLM-facing tool names the harness
+ * materialized successfully; a package whose credential is missing is dropped
+ * fail-soft at construction, so none of its tools appear there. An entry keeps
+ * only its available tools and is omitted entirely once none remain — so
+ * `search_tools` never advertises a package the agent cannot call.
+ */
+export function filterCatalogByAvailableTools(
+  catalog: ToolCatalog,
+  availableNames: ReadonlySet<string>,
+): ToolCatalog {
+  const filtered: ToolCatalog = [];
+  for (const entry of catalog) {
+    const tools = entry.tools.filter((tool) => availableNames.has(tool.name));
+    if (tools.length > 0) filtered.push({ ...entry, tools });
+  }
+  return filtered;
+}
+
 export type SearchToolsQuery = {
   query: string;
   package?: string;
