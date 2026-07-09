@@ -95,21 +95,40 @@ export type SessionManagerConfig = {
    * distribution can omit this.
    */
   onDeployApplyError?: DeployApplyErrorSink;
+  // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning. `restoreSessions` no
+  // longer builds harnesses; the first inbound message (or explicit
+  // session open) builds one on demand via `wakeAgent`, which retries a
+  // failed build with bounded backoff. These knobs govern that retry and
+  // the inbound-mail parking buffer, and let tests inject a synchronous
+  // `sleep` so backoff is exercised without wall-clock waits.
+  /** Deferred delay used between wake retries. Defaults to a real timer. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Max build attempts a single wake makes before rejecting (default 5). */
+  wakeMaxAttempts?: number;
+  /** Initial/floor wake-retry backoff delay (default 200ms). */
+  wakeBaseDelayMs?: number;
+  /** Upper bound the wake-retry backoff is clamped to (default 5000ms). */
+  wakeMaxDelayMs?: number;
   /**
-   * Maximum number of agents whose sessions `restoreSessions` restores
-   * concurrently. Restore work is per-agent isolated (per-agent git dir,
-   * per-address repo lock), so agents restore in parallel up to this
-   * bound and a single slow or wedged agent no longer gates the rest.
-   * Defaults to `DEFAULT_RESTORE_CONCURRENCY`.
+   * Max inbound messages parked per address while its harness builds
+   * (default 256). Oldest is dropped with a warning when full.
    */
-  restoreConcurrency?: number;
+  maxParkedMail?: number;
 };
 
-/**
- * Default `restoreConcurrency`: how many agents `restoreSessions`
- * restores in parallel when the caller does not override it.
- */
-const DEFAULT_RESTORE_CONCURRENCY = 4;
+// WORKBENCH-LOCAL (CL-3102): wake-retry + parking defaults.
+const DEFAULT_WAKE_MAX_ATTEMPTS = 5;
+const DEFAULT_WAKE_BASE_DELAY_MS = 200;
+const DEFAULT_WAKE_MAX_DELAY_MS = 5_000;
+const DEFAULT_MAX_PARKED_MAIL = 256;
+
+const defaultSleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+// WORKBENCH-LOCAL (CL-3102): thrown when an in-flight wake discovers the
+// agent was destroyed (undeploy / challenge.failed) during the build.
+// Never retried — the agent is gone, not transiently failing.
+class WakeAbortedError extends Error {}
 
 export type ProvisionResult = {
   publicKey: string;
@@ -132,6 +151,43 @@ export type AgentEventListener = (event: InferenceEvent) => void;
 export type SessionManager = {
   provisionAgent(config: AgentConfig): Promise<ProvisionResult>;
   startSession(agentAddress: string): Promise<void>;
+  /**
+   * WORKBENCH-LOCAL (CL-3102): build (or reuse) an agent's harness on
+   * demand. Idempotent and de-duplicated: a concurrent call while a build
+   * is in flight awaits the same build rather than starting a second one.
+   * A build failure (e.g. the hub's credential endpoint briefly
+   * unreachable during a co-deploy) is retried with bounded backoff; if
+   * every attempt fails the returned promise rejects and the agent stays
+   * wakeable for a later trigger. Resolves once the harness is running.
+   *
+   * With `awaitFirstAttemptOnly` the returned promise settles on the FIRST
+   * attempt's outcome: a first-attempt failure rejects immediately while
+   * the remaining retries continue in the background. Callers on a wire
+   * deadline (the hub's session.start ack timeout) use this so a slow
+   * retry schedule cannot outlive the deadline.
+   */
+  wakeAgent(
+    agentAddress: string,
+    opts?: { awaitFirstAttemptOnly?: boolean },
+  ): Promise<void>;
+  /**
+   * WORKBENCH-LOCAL (CL-3102): true when the agent has been restored from
+   * disk as routing metadata but its harness has not been built yet — the
+   * lazy-restore state between a sidecar reconnect and the first inbound
+   * message.
+   */
+  isWakeable(agentAddress: string): boolean;
+  /**
+   * WORKBENCH-LOCAL (CL-3102): deliver a raw inbound mail message to the
+   * agent. A live session is delivered immediately; a wakeable (not-yet-
+   * built) agent has the message parked and its harness woken, then the
+   * parked messages are replayed into the freshly built harness in arrival
+   * order. The trigger survives every in-process failure path (build
+   * failure, retry, concurrent wake); it is lost only if the process
+   * crashes mid-wake or the retries exhaust with no later trigger — the
+   * parked buffer is memory-only.
+   */
+  deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void;
   destroySession(agentAddress: string): Promise<void>;
   abortSession(agentAddress: string, reason: string): Promise<void>;
   deliverMessage(agentAddress: string, message: InboundMessage): void;
@@ -200,6 +256,16 @@ type ProvisionedAgent = {
   keyPair: KeyPair;
 };
 
+// WORKBENCH-LOCAL (CL-3102): everything `wakeAgent` needs to build a
+// restored agent's harness on demand, captured at restore time so the
+// wake path never re-reads disk until the build itself runs. The hub
+// pairing key is not carried here — hub-link replays it into the key
+// store from the RestoredAgent list at reconnect time.
+type WakeableAgent = {
+  config: AgentConfig;
+  keyPair: KeyPair;
+};
+
 type LiveSession = AgentSession & {
   harness: Harness;
   bundle: HarnessBundle;
@@ -217,17 +283,39 @@ export function createSessionManager(
     onEvent,
     onConnectorStateChanged,
     onDeployApplyError,
-    restoreConcurrency = DEFAULT_RESTORE_CONCURRENCY,
+    // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning.
+    sleep = defaultSleep,
+    wakeMaxAttempts = DEFAULT_WAKE_MAX_ATTEMPTS,
+    wakeBaseDelayMs = DEFAULT_WAKE_BASE_DELAY_MS,
+    wakeMaxDelayMs = DEFAULT_WAKE_MAX_DELAY_MS,
+    maxParkedMail = DEFAULT_MAX_PARKED_MAIL,
   } = config;
-  if (!Number.isInteger(restoreConcurrency) || restoreConcurrency < 1) {
+  if (!Number.isInteger(wakeMaxAttempts) || wakeMaxAttempts < 1) {
     throw new Error(
-      `createSessionManager: restoreConcurrency must be a positive integer; got ${String(restoreConcurrency)}`,
+      `createSessionManager: wakeMaxAttempts must be a positive integer; got ${String(wakeMaxAttempts)}`,
     );
   }
 
   const sessions = new Map<string, LiveSession>();
   const provisioned = new Map<string, ProvisionedAgent>();
   const pending = new Set<string>();
+
+  // WORKBENCH-LOCAL (CL-3102): lazy-restore state.
+  //   `wakeable`  — agents restored from disk as routing metadata whose
+  //                 harness has not been built. Holds exactly what
+  //                 `wakeAgent` needs to build without re-scanning disk.
+  //   `waking`    — in-flight builds, keyed by address, so concurrent
+  //                 wake triggers share one build instead of racing.
+  //   `parkedMail`— inbound messages received while a harness is building,
+  //                 replayed in arrival order once it is ready.
+  const wakeable = new Map<string, WakeableAgent>();
+  const waking = new Map<string, Promise<void>>();
+  const parkedMail = new Map<string, Uint8Array[]>();
+  // Per-wake ownership token. A superseding actor (provisionAgent for a
+  // fresh deploy) flips `superseded` so the in-flight wake discards its
+  // own build instead of installing it — and never tears down a session
+  // it does not own.
+  const wakeTokens = new Map<string, { superseded: boolean }>();
 
   // Per-agent InferenceEvent fan-out. Subscribers register against a
   // specific agentAddress; the dispatch site looks the listener set up
@@ -371,6 +459,16 @@ export function createSessionManager(
     }
 
     pending.add(agentAddress);
+    // WORKBENCH-LOCAL (CL-3102): a fresh (re)provision supersedes any
+    // lazy-restore metadata for this address — the incoming config is
+    // authoritative, so drop the stale wakeable entry and any mail parked
+    // against the pre-provision harness. An in-flight wake is marked
+    // superseded so it discards its own build result on completion
+    // instead of installing a session for the pre-provision config.
+    wakeable.delete(agentAddress);
+    parkedMail.delete(agentAddress);
+    const inflightToken = wakeTokens.get(agentAddress);
+    if (inflightToken !== undefined) inflightToken.superseded = true;
 
     try {
       const { keyPair, isNew } = await keyStore.loadOrGenerateKey(agentAddress);
@@ -392,7 +490,32 @@ export function createSessionManager(
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3102): public startSession waits out a doomed
+  // in-flight wake first. A fresh deploy racing a wake (provisionAgent
+  // marked the wake superseded) must not start a second concurrent build
+  // for the same address — the wake still owns the transport registration
+  // until it discards its own build. The wake path itself calls
+  // startSessionCore directly (awaiting `waking` here would deadlock on
+  // its own entry).
   async function startSession(agentAddress: string): Promise<void> {
+    const inflight = waking.get(agentAddress);
+    if (inflight !== undefined) {
+      // The settle outcome is irrelevant here (an aborted wake is the
+      // expected case); only the unwind matters.
+      await inflight.catch(() => undefined);
+    }
+    await startSessionCore(agentAddress);
+    // Mail parked against the ADDRESS while a doomed (superseded) wake was
+    // unwinding belongs to this fresh session — the doomed wake exits via
+    // the abort path and never reaches its own drain. Draining here makes
+    // the ownership uniform: whoever brings the address live replays the
+    // residue. (The wake path drains in performWake's success arm; it must
+    // NOT drain in startSessionCore, where a doomed build would replay
+    // mail into a session about to be discarded.)
+    drainParkedMail(agentAddress);
+  }
+
+  async function startSessionCore(agentAddress: string): Promise<void> {
     const entry = provisioned.get(agentAddress);
     if (entry === undefined) {
       throw new Error(`No provisioned agent for address "${agentAddress}"`);
@@ -493,7 +616,13 @@ export function createSessionManager(
         // Best-effort cleanup; don't mask the original error.
         logger.error`Failed to unregister transport for ${agentAddress}: ${String(cleanupErr)}`;
       }
-      provisioned.set(agentAddress, entry);
+      // WORKBENCH-LOCAL (CL-3102): restore only into an empty slot. This
+      // start's own entry was deleted above, so a present entry belongs
+      // to a superseding provisionAgent that landed during the build —
+      // clobbering it would brick the new deploy's session.start.
+      if (!provisioned.has(agentAddress)) {
+        provisioned.set(agentAddress, entry);
+      }
       throw err;
     }
   }
@@ -535,18 +664,47 @@ export function createSessionManager(
   async function destroySession(agentAddress: string): Promise<void> {
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
+      // WORKBENCH-LOCAL (CL-3102): also drop any lazy-restore state so
+      // later mail cannot resurrect the destroyed agent.
+      wakeable.delete(agentAddress);
+      parkedMail.delete(agentAddress);
       logger.info`Removed provisioned agent ${agentAddress}`;
+      return;
+    }
+    // WORKBENCH-LOCAL (CL-3102): a lazily-restored agent that was never
+    // woken has no harness or transport registration to tear down — drop
+    // its restore metadata and any parked mail so undeploy/challenge.failed
+    // paths complete cleanly.
+    if (wakeable.has(agentAddress)) {
+      wakeable.delete(agentAddress);
+      parkedMail.delete(agentAddress);
+      logger.info`Removed wakeable agent ${agentAddress}`;
       return;
     }
     const session = sessions.get(agentAddress);
     if (session === undefined) {
       throw new Error(`No session exists for agent "${agentAddress}"`);
     }
+    await destroyLiveSession(agentAddress, session);
+  }
+
+  // WORKBENCH-LOCAL (CL-3102): session-only teardown, factored out of
+  // destroySession so the wake's abort path can discard exactly the
+  // session it built without touching the provisioned/wakeable early
+  // branches (which may now belong to a superseding deploy).
+  async function destroyLiveSession(
+    agentAddress: string,
+    session: LiveSession,
+  ): Promise<void> {
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
     await drainRepoOps(agentAddress);
-    sessions.delete(agentAddress);
-    transport.unregister(agentAddress);
+    // Delete only if the map still points at OUR session; a concurrent
+    // replacement must not be evicted by this teardown.
+    if (sessions.get(agentAddress) === session) {
+      sessions.delete(agentAddress);
+      transport.unregister(agentAddress);
+    }
     if (disposerErrors.length > 0) {
       logger.warn`Stopped session for ${agentAddress} with ${String(disposerErrors.length)} disposer failure(s)`;
     } else {
@@ -561,7 +719,19 @@ export function createSessionManager(
   ): Promise<void> {
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
+      // WORKBENCH-LOCAL (CL-3102): also drop any lazy-restore state so
+      // later mail cannot resurrect the destroyed agent.
+      wakeable.delete(agentAddress);
+      parkedMail.delete(agentAddress);
       logger.info`Aborted provisioned agent ${agentAddress}: ${reason}`;
+      return;
+    }
+    // WORKBENCH-LOCAL (CL-3102): see destroySession — a never-woken agent
+    // has only restore metadata to drop.
+    if (wakeable.has(agentAddress)) {
+      wakeable.delete(agentAddress);
+      parkedMail.delete(agentAddress);
+      logger.info`Aborted wakeable agent ${agentAddress}: ${reason}`;
       return;
     }
     const session = sessions.get(agentAddress);
@@ -601,43 +771,39 @@ export function createSessionManager(
     return [...sessions.keys()];
   }
 
+  // WORKBENCH-LOCAL (CL-3102): lazy restore. A sidecar reconnect must not
+  // rebuild every agent's harness (a full tool-package materialization +
+  // credential HTTP fetch each) — that is the idle-RAM cost, and the
+  // boot-time fetch races the hub's endpoint during a co-deploy and leaves
+  // agents silently toolless. Instead `restoreSessions` recovers only the
+  // routing metadata: it warms the key cache (via `scanKeys`, needed for
+  // challenge signing) and remembers each on-disk agent's config as
+  // `wakeable` so the returned addresses can be advertised in the reconnect
+  // frame and the hub keeps routing mail to them. The harness is built
+  // lazily by `wakeAgent` on the first inbound message or explicit session
+  // open. A config with no on-disk key pair is a hard failure — the agent's
+  // identity cannot be recovered without it.
+  //
+  // Key-without-config does not appear here because AgentKeyStore's
+  // scanKeys already requires a parseable agent.json before surfacing the
+  // directory, so the orphan-key case is filtered at the store boundary.
   async function restoreSessions(): Promise<RestoreResult> {
-    // Restore policy: an agent is restorable only when the on-disk
-    // state from both stores is consistent. Scan keys and configs
-    // independently, then join on address. A config without a key is
-    // surfaced as a hard failure — the agent's identity cannot be
-    // recovered without the key pair on disk.
-    //
-    // Key-without-config does not appear here because AgentKeyStore's
-    // scanKeys already requires a parseable agent.json before
-    // surfacing the directory, so the orphan-key case is filtered at
-    // the store boundary and never reaches this join.
     const [keysByAddress, configEntries] = await Promise.all([
       keyStore.scanKeys().then((k) => new Map(k.map((e) => [e.address, e]))),
       repoStore.scanConfigs(),
     ]);
 
-    // Restore agents with bounded parallelism. Each agent's provision +
-    // startSession is per-agent isolated (per-agent git dir, per-address
-    // repo lock), so running several at once cannot corrupt shared
-    // state, and one slow or wedged agent no longer gates the rest.
-    // Outcomes are written into per-index slots so the returned order is
-    // independent of completion order.
-    type Outcome =
-      | { kind: "restored"; agent: RestoredAgent }
-      | { kind: "failed"; address: string };
-    const outcomes = new Array<Outcome | undefined>(configEntries.length);
+    const restored: RestoredAgent[] = [];
+    const failed: string[] = [];
 
-    async function restoreOne(index: number): Promise<void> {
-      const entry = configEntries[index];
-      if (entry === undefined) return;
+    for (const entry of configEntries) {
       const keyEntry: AgentKeyEntry | undefined = keysByAddress.get(
         entry.address,
       );
       if (keyEntry === undefined) {
         logger.error`Cannot restore "${entry.address}": agent.json exists but key pair is missing`;
-        outcomes[index] = { kind: "failed", address: entry.address };
-        return;
+        failed.push(entry.address);
+        continue;
       }
 
       const agent: RestoredAgent = {
@@ -647,50 +813,315 @@ export function createSessionManager(
       if (entry.hubPublicKey !== undefined) {
         agent.hubPublicKey = entry.hubPublicKey;
       }
+      restored.push(agent);
 
-      if (sessions.has(entry.address)) {
-        outcomes[index] = { kind: "restored", agent };
-        return;
-      }
-      try {
-        await provisionAgent(entry.config);
-        if (entry.hubPublicKey !== undefined) {
-          await repoStore.persistPairing(entry.address, entry.hubPublicKey);
-        }
-        await startSession(entry.address);
-        outcomes[index] = { kind: "restored", agent };
-        logger.info`Restored session for ${entry.address}`;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        outcomes[index] = { kind: "failed", address: entry.address };
-        logger.error`Failed to restore session for ${entry.address}: ${msg}`;
-      }
-    }
+      // An already-live session (e.g. an agent deployed during the restore
+      // window) needs no wakeable entry — it is already built and routable.
+      if (sessions.has(entry.address)) continue;
 
-    // Worker pool: each worker pulls the next index until the list
-    // drains. Reading and advancing `cursor` is synchronous (no await
-    // between), so each index is handed to exactly one worker.
-    let cursor = 0;
-    async function worker(): Promise<void> {
-      for (;;) {
-        const index = cursor;
-        cursor += 1;
-        if (index >= configEntries.length) return;
-        await restoreOne(index);
-      }
-    }
-    const workerCount = Math.min(restoreConcurrency, configEntries.length);
-    await Promise.all(Array.from({ length: workerCount }, () => worker()));
-
-    const restored: RestoredAgent[] = [];
-    const failed: string[] = [];
-    for (const outcome of outcomes) {
-      if (outcome === undefined) continue;
-      if (outcome.kind === "restored") restored.push(outcome.agent);
-      else failed.push(outcome.address);
+      wakeable.set(entry.address, {
+        config: entry.config,
+        keyPair: keyEntry.keyPair,
+      });
+      logger.info`Registered wakeable agent ${entry.address}`;
     }
 
     return { restored, failed };
+  }
+
+  // WORKBENCH-LOCAL (CL-3102): build a restored agent's harness on demand.
+  // One attempt: promote the wakeable entry into `provisioned` and run the
+  // normal `startSession`, which registers the transport and fetches
+  // credentials at build time. `startSession`'s own failure path restores
+  // the `provisioned` entry; we clear it so a failed attempt leaves the
+  // agent purely wakeable for the next retry.
+  //
+  // Cancellation contract with destroySession/abortSession: teardown of a
+  // not-yet-built agent removes its `wakeable` entry. The entry surviving
+  // until build success is therefore the liveness token — if it is gone
+  // when the build lands, the agent was destroyed mid-build, so the
+  // freshly built harness is torn down instead of registered and the
+  // wake rejects with WakeAbortedError (never retried).
+  async function wakeAttempt(
+    agentAddress: string,
+    token: { superseded: boolean },
+  ): Promise<void> {
+    const entry = wakeable.get(agentAddress);
+    if (entry === undefined || token.superseded) {
+      throw new WakeAbortedError(
+        `Wake aborted for "${agentAddress}": agent was destroyed or superseded`,
+      );
+    }
+    // Snapshot the config the build will run against. An update landing
+    // during the build rebinds `entry.config` (the entry object itself is
+    // stable), so a changed reference after the build means the harness
+    // came live against a stale config and the drift must be re-applied.
+    const configAtBuild = entry.config;
+    const wakeProvision: ProvisionedAgent = {
+      config: configAtBuild,
+      keyPair: entry.keyPair,
+    };
+    provisioned.set(agentAddress, wakeProvision);
+    try {
+      await startSessionCore(agentAddress);
+    } catch (err) {
+      // Delete only OUR entry (startSessionCore's guarded rollback put it
+      // back on failure). A superseding provisionAgent's fresh entry that
+      // landed during the failed build must survive, or the deploy's
+      // session.start finds no provisioned agent.
+      if (provisioned.get(agentAddress) === wakeProvision) {
+        provisioned.delete(agentAddress);
+      }
+      throw err;
+    }
+    // Ownership: this is OUR build — startSessionCore just installed it,
+    // and any competing startSessionCore would have thrown on the
+    // sessions/transport collision. Captured so the abort branch below
+    // can never tear down a session installed by someone else.
+    const ourSession = sessions.get(agentAddress);
+    if (token.superseded || wakeable.get(agentAddress) !== entry) {
+      // Destroyed or superseded while the harness was building: discard
+      // the zombie build (dispose the bundle, unregister the transport)
+      // rather than leaving a live harness for a torn-down or replaced
+      // agent — but only the session WE built, via the session-only
+      // teardown (destroySession's provisioned/wakeable early branches
+      // may now belong to the superseding deploy).
+      if (
+        ourSession !== undefined &&
+        sessions.get(agentAddress) === ourSession
+      ) {
+        await destroyLiveSession(agentAddress, ourSession);
+      }
+      throw new WakeAbortedError(
+        `Wake aborted for "${agentAddress}": agent was destroyed or superseded during the build`,
+      );
+    }
+    if (entry.config !== configAtBuild && ourSession !== undefined) {
+      // An updateGrants/updateSources landed during the build: the
+      // harness came live against the snapshot, so re-apply the current
+      // config to the live session (the update path already persisted
+      // it to disk).
+      ourSession.bundle.updateGrants(entry.config.grants);
+      ourSession.harness.setSources(
+        entry.config.sources,
+        entry.config.defaultSource,
+      );
+      ourSession.config = entry.config;
+      logger.info`Re-applied config updated during wake for ${agentAddress}`;
+    }
+    wakeable.delete(agentAddress);
+  }
+
+  // WORKBENCH-LOCAL (CL-3102): retry the build with bounded exponential
+  // backoff. The dominant failure is the hub's credential endpoint being
+  // briefly unreachable during a co-deploy; retrying rather than caching a
+  // credential-less harness means a wake is never permanently degraded.
+  // The wake clock starts at the trigger (message received) so the logged
+  // duration measures received → harness ready.
+  // Attempt-boundary waiters: callers on a wire deadline
+  // (`awaitFirstAttemptOnly`) register here — whether they started the
+  // wake or joined one mid-retry — and are settled with the outcome of
+  // the NEXT attempt to complete, never the full retry schedule.
+  type AttemptWaiter = { resolve(): void; reject(err: unknown): void };
+  const attemptWaiters = new Map<string, Set<AttemptWaiter>>();
+
+  function registerAttemptWaiter(agentAddress: string): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let set = attemptWaiters.get(agentAddress);
+      if (set === undefined) {
+        set = new Set();
+        attemptWaiters.set(agentAddress, set);
+      }
+      set.add({ resolve, reject });
+    });
+  }
+
+  function settleAttemptWaiters(agentAddress: string, err?: unknown): void {
+    const set = attemptWaiters.get(agentAddress);
+    if (set === undefined) return;
+    attemptWaiters.delete(agentAddress);
+    for (const waiter of set) {
+      if (err === undefined) waiter.resolve();
+      else waiter.reject(err);
+    }
+  }
+
+  async function performWake(
+    agentAddress: string,
+    startedAt: number,
+    token: { superseded: boolean },
+  ): Promise<void> {
+    let attempt = 0;
+    try {
+      for (;;) {
+        attempt += 1;
+        try {
+          await wakeAttempt(agentAddress, token);
+          const elapsedMs = Date.now() - startedAt;
+          logger.info`Woke agent ${agentAddress} in ${String(elapsedMs)}ms (attempt ${String(attempt)})`;
+          // Clear the in-flight marker and drain in the same synchronous
+          // region: nothing can park a message between them, so mail
+          // parked during the build is always replayed regardless of
+          // which caller (inbound mail or session.start) triggered the
+          // wake, and mail arriving after the drain delivers live.
+          waking.delete(agentAddress);
+          drainParkedMail(agentAddress);
+          settleAttemptWaiters(agentAddress);
+          return;
+        } catch (err) {
+          // Every attempt boundary settles the registered waiters with
+          // that attempt's outcome; waiters registered during the backoff
+          // sleep are settled by the next boundary.
+          settleAttemptWaiters(agentAddress, err);
+          if (err instanceof WakeAbortedError) {
+            logger.info`${err.message}`;
+            throw err;
+          }
+          const msg = err instanceof Error ? err.message : String(err);
+          if (attempt >= wakeMaxAttempts) {
+            logger.error`Wake failed for ${agentAddress} after ${String(attempt)} attempt(s): ${msg}`;
+            throw err instanceof Error ? err : new Error(msg);
+          }
+          const delayMs = Math.min(
+            wakeBaseDelayMs * 2 ** (attempt - 1),
+            wakeMaxDelayMs,
+          );
+          logger.warn`Wake attempt ${String(attempt)} for ${agentAddress} failed: ${msg}; retrying in ${String(delayMs)}ms`;
+          await sleep(delayMs);
+        }
+      }
+    } finally {
+      waking.delete(agentAddress);
+      if (wakeTokens.get(agentAddress) === token) {
+        wakeTokens.delete(agentAddress);
+      }
+      // Safety net: a waiter registered after the terminal attempt's
+      // settle (same wake — waking is cleared synchronously with each
+      // settle, so this is normally empty) must not hang forever.
+      settleAttemptWaiters(
+        agentAddress,
+        new WakeAbortedError(
+          `Wake for "${agentAddress}" ended before the awaited attempt`,
+        ),
+      );
+    }
+  }
+
+  function wakeAgent(
+    agentAddress: string,
+    opts?: { awaitFirstAttemptOnly?: boolean },
+  ): Promise<void> {
+    if (sessions.has(agentAddress)) return Promise.resolve();
+    const awaitFirstAttemptOnly = opts?.awaitFirstAttemptOnly === true;
+    const inflight = waking.get(agentAddress);
+    if (inflight !== undefined) {
+      // A deadline-bound caller joining a wake mid-retry awaits only the
+      // next attempt boundary, not the remainder of the retry schedule.
+      if (awaitFirstAttemptOnly) return registerAttemptWaiter(agentAddress);
+      return inflight;
+    }
+    // Fast-fail an unknown address: retrying cannot make a missing
+    // wakeable entry appear.
+    if (!wakeable.has(agentAddress)) {
+      return Promise.reject(
+        new Error(`No wakeable agent for address "${agentAddress}"`),
+      );
+    }
+    const startedAt = Date.now();
+    const token = { superseded: false };
+    wakeTokens.set(agentAddress, token);
+    // performWake owns removing the `waking` entry (in its own success /
+    // failure paths) so the removal is synchronous with the parked-mail
+    // drain; a `.finally` here would run one microtask later and could
+    // clobber a newer wake's entry.
+    const build = performWake(agentAddress, startedAt, token);
+    waking.set(agentAddress, build);
+    if (awaitFirstAttemptOnly) {
+      // The caller observes only the first attempt boundary; the full
+      // build's eventual rejection (retries exhausted / aborted) is
+      // already logged by performWake — observe it so it cannot surface
+      // as an unhandled rejection.
+      build.catch(() => undefined);
+      return registerAttemptWaiter(agentAddress);
+    }
+    return build;
+  }
+
+  function isWakeable(agentAddress: string): boolean {
+    return wakeable.has(agentAddress);
+  }
+
+  // WORKBENCH-LOCAL (CL-3102): deliver a raw inbound mail message to a live
+  // session's mailbox and enqueue the audit commit. Transport delivery
+  // errors are logged (not thrown) so a malformed frame never wedges the
+  // caller; the commit is enqueued only for a live session so it cannot
+  // reject unobserved.
+  function deliverLive(agentAddress: string, rawMessage: Uint8Array): void {
+    try {
+      transport.deliver(agentAddress, rawMessage);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn`Failed to deliver inbound mail to ${agentAddress}: ${msg}`;
+    }
+    if (sessions.has(agentAddress)) {
+      void commitInboundMail(agentAddress, rawMessage);
+    }
+  }
+
+  function parkMail(agentAddress: string, rawMessage: Uint8Array): void {
+    let queue = parkedMail.get(agentAddress);
+    if (queue === undefined) {
+      queue = [];
+      parkedMail.set(agentAddress, queue);
+    }
+    if (queue.length >= maxParkedMail) {
+      logger.warn`Parked inbound mail queue full for ${agentAddress}, dropping oldest`;
+      queue.shift();
+    }
+    queue.push(rawMessage);
+  }
+
+  // Replay parked messages into the freshly built harness in arrival
+  // order. Synchronous with no await between deliveries, so a message
+  // arriving concurrently cannot interleave ahead of the drained batch.
+  function drainParkedMail(agentAddress: string): void {
+    const queue = parkedMail.get(agentAddress);
+    parkedMail.delete(agentAddress);
+    if (queue === undefined) return;
+    for (const rawMessage of queue) {
+      deliverLive(agentAddress, rawMessage);
+    }
+  }
+
+  function deliverInboundMail(
+    agentAddress: string,
+    rawMessage: Uint8Array,
+  ): void {
+    // A build already in flight: park behind the messages already queued so
+    // arrival order is preserved when the batch drains.
+    if (waking.has(agentAddress)) {
+      parkMail(agentAddress, rawMessage);
+      return;
+    }
+    if (sessions.has(agentAddress)) {
+      deliverLive(agentAddress, rawMessage);
+      return;
+    }
+    if (wakeable.has(agentAddress)) {
+      parkMail(agentAddress, rawMessage);
+      // The wake itself drains the parked batch on success (performWake),
+      // so a wake triggered by any caller replays this message.
+      void wakeAgent(agentAddress).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Leave the parked batch in place: the agent stays wakeable, so
+        // a later inbound message triggers a fresh wake that drains it.
+        logger.error`Wake for inbound mail to ${agentAddress} failed: ${msg}`;
+      });
+      return;
+    }
+    // Unknown address: fall through to the live path so the "no mailbox"
+    // failure surfaces the same way it did before lazy restore.
+    deliverLive(agentAddress, rawMessage);
   }
 
   async function updateGrants(
@@ -699,6 +1130,17 @@ export function createSessionManager(
   ): Promise<void> {
     const session = sessions.get(agentAddress);
     if (session === undefined) {
+      // WORKBENCH-LOCAL (CL-3102): a sleeping (wakeable) agent has no
+      // harness to update, but the change must not be lost — fold it into
+      // the stored config and persist so the eventual wake builds with the
+      // fresh grants. No wake is forced; a config update is not activity.
+      const entry = wakeable.get(agentAddress);
+      if (entry !== undefined) {
+        entry.config = { ...entry.config, grants };
+        await repoStore.persistConfig(agentAddress, entry.config);
+        logger.info`Updated grants for sleeping agent ${agentAddress} (${String(grants.length)} rules)`;
+        return;
+      }
       throw new Error(`No session exists for agent "${agentAddress}"`);
     }
     session.bundle.updateGrants(grants);
@@ -713,9 +1155,6 @@ export function createSessionManager(
     defaultSource: string,
   ): Promise<void> {
     const session = sessions.get(agentAddress);
-    if (session === undefined) {
-      throw new Error(`No session exists for agent "${agentAddress}"`);
-    }
     const source = sources.find((s) => s.id === defaultSource);
     if (source === undefined) {
       throw new Error(
@@ -723,6 +1162,19 @@ export function createSessionManager(
       );
     }
     buildHarness.canBuildSource(source);
+    if (session === undefined) {
+      // WORKBENCH-LOCAL (CL-3102): see updateGrants — persist the update
+      // into the sleeping agent's stored config so the eventual wake
+      // builds against the fresh sources.
+      const entry = wakeable.get(agentAddress);
+      if (entry !== undefined) {
+        entry.config = { ...entry.config, sources, defaultSource };
+        await repoStore.persistConfig(agentAddress, entry.config);
+        logger.info`Updated sources for sleeping agent ${agentAddress}`;
+        return;
+      }
+      throw new Error(`No session exists for agent "${agentAddress}"`);
+    }
     session.harness.setSources(sources, defaultSource);
     session.config = { ...session.config, sources, defaultSource };
     await repoStore.persistConfig(agentAddress, session.config);
@@ -825,6 +1277,9 @@ export function createSessionManager(
   return {
     provisionAgent,
     startSession,
+    wakeAgent,
+    isWakeable,
+    deliverInboundMail,
     destroySession,
     abortSession,
     deliverMessage,

@@ -469,7 +469,35 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   async function handleSessionStart(frame: SessionStartFrame): Promise<void> {
     try {
-      await sessions.startSession(frame.agentAddress);
+      // WORKBENCH-LOCAL (CL-3102): an explicit session open for a lazily-
+      // restored agent must build its harness through the wake path (with
+      // backoff), not `startSession` — which expects an already-provisioned
+      // agent. A freshly-deployed (provisioned, never-restored) agent is not
+      // wakeable, so it still takes the direct `startSession` path.
+      //
+      // Only the FIRST wake attempt is awaited: the hub's session.start
+      // ack deadline is DEFAULT_REQUEST_TIMEOUT_MS = 30s
+      // (@intx/hub-sessions ws/sidecar-handler.ts) and the full retry
+      // schedule (up to 5 builds + 3s cumulative backoff) can exceed it
+      // when builds are slow. A first-attempt failure acks as agent.error
+      // within the deadline while the remaining retries continue in the
+      // background — a later hub retry (or inbound mail) finds the agent
+      // live or still wakeable.
+      //
+      // Live session first: a start for an address whose harness is
+      // already running (a hub retry after a background wake succeeded,
+      // or a duplicate frame) acks idempotently — once live, the agent
+      // is neither wakeable nor provisioned, so falling through to
+      // `startSession` would error a perfectly healthy harness.
+      if (sessions.hasSession(frame.agentAddress)) {
+        logger.info`session.start for ${frame.agentAddress}: session already live, acking idempotently`;
+      } else if (sessions.isWakeable(frame.agentAddress)) {
+        await sessions.wakeAgent(frame.agentAddress, {
+          awaitFirstAttemptOnly: true,
+        });
+      } else {
+        await sessions.startSession(frame.agentAddress);
+      }
       send({
         type: "session.start.ack",
         agentAddress: frame.agentAddress,
@@ -1002,8 +1030,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         if (routed) {
           break;
         }
-        deliverLocalMail(frame.agentAddress, rawBytes);
-        void sessions.commitInboundMail(frame.agentAddress, rawBytes);
+        // WORKBENCH-LOCAL (CL-3102): a lazily-restored agent has no harness
+        // yet; `deliverInboundMail` delivers to a live session immediately,
+        // or parks this message and wakes the agent (building its harness +
+        // fetching credentials) then replays the parked message. The parked
+        // buffer is memory-only: the trigger survives build failures and
+        // retries but is lost on a process crash mid-wake or if the wake
+        // retries exhaust with no later trigger.
+        sessions.deliverInboundMail(frame.agentAddress, rawBytes);
         break;
       }
       case "agent.deploy":
@@ -1056,15 +1090,6 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         break;
       default:
         logger.warn`Unknown frame type from hub: ${(frame as { type: string }).type}`;
-    }
-  }
-
-  function deliverLocalMail(agentAddress: string, message: Uint8Array): void {
-    try {
-      transport.deliver(agentAddress, message);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn`Failed to deliver inbound mail to ${agentAddress}: ${msg}`;
     }
   }
 
