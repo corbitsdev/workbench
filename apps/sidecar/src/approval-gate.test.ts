@@ -6,6 +6,7 @@ import type {
   ToolRunner,
 } from "@intx/types/runtime";
 import {
+  APPROVAL_GATED_TOOLS,
   createApprovalClient,
   createApprovalGatedRunner,
 } from "./approval-gate";
@@ -106,6 +107,11 @@ describe("createApprovalGatedRunner", () => {
     expect(approved).toBe(true);
     expect(result.isError).toBe(false);
     expect(inner.calls).toHaveLength(1);
+  });
+
+  test("ships both Vercel write tools in the production gated set", () => {
+    expect(APPROVAL_GATED_TOOLS.has("vercel_deploy_static_file")).toBe(true);
+    expect(APPROVAL_GATED_TOOLS.has("vercel_deploy_artifact")).toBe(true);
   });
 
   test("blocks a gated tool when approval is rejected and never runs it", async () => {
