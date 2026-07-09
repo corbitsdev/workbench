@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { type } from "arktype";
 import {
   CSV_TABLE_ROW_CAP,
+  ParsedCsvSchema,
   capCsvRows,
   parseCsv,
   parsedCsvIsTabular,
@@ -137,6 +139,34 @@ describe("parsedCsvIsTabular", () => {
 
   test("stays tabular when the file has blank separator lines", () => {
     expect(parsedCsvIsTabular(parseCsv("a,b\n1,2\n\n3,4\n"))).toBe(true);
+  });
+});
+
+describe("ParsedCsvSchema", () => {
+  test("accepts a well-formed tabular parse", () => {
+    const parsed = ParsedCsvSchema(parseCsv("a,b\n1,2\n3,4\n"));
+    expect(parsed instanceof type.errors).toBe(false);
+  });
+
+  test("accepts a header-only parse with zero rows", () => {
+    expect(ParsedCsvSchema(parseCsv("a,b,c\n")) instanceof type.errors).toBe(
+      false,
+    );
+  });
+
+  test("rejects an empty parse with no columns", () => {
+    const result = ParsedCsvSchema({ headers: [], rows: [] });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
+  test("rejects a ragged parse whose rows do not match the header width", () => {
+    const result = ParsedCsvSchema({ headers: ["a", "b"], rows: [["1"]] });
+    expect(result instanceof type.errors).toBe(true);
+  });
+
+  test("rejects a structurally wrong value (rows not string[][])", () => {
+    const result = ParsedCsvSchema({ headers: ["a"], rows: [[1]] });
+    expect(result instanceof type.errors).toBe(true);
   });
 });
 

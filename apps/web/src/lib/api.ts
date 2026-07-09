@@ -181,23 +181,34 @@ export async function api<T>(
   return data;
 }
 
-// Text-body sibling of `api()`. Some routes (e.g. GET /artifacts/:id/download)
-// return raw text rather than JSON, so the success body is read with `.text()`.
-// The failure path is identical to `api()` — same status/auth/error-shape
-// handling — only the success decode differs. There is no arktype schema here:
-// the body is opaque text (CSV), validated downstream by the parser, not a shape.
-export async function apiText(method: string, path: string): Promise<string> {
+// Outcome of a CSV preview fetch. Discriminated so the viewer can render the
+// right surface without re-inspecting headers: parse `csv`, degrade `not-csv` to
+// raw text (a non-CSV artifact deep-linked into the viewer — never parse HTML or
+// JSON into a garbage table), and refuse `too-large` before parsing so a
+// pathological upload can't hang the tab.
+export type CsvPreviewResult =
+  | { kind: "csv"; text: string }
+  | { kind: "not-csv"; text: string; contentType: string | null }
+  | { kind: "too-large"; bytes: number };
+
+// Fetch an artifact's downloadable text with guards applied at the boundary. A
+// non-ok response throws (same path as `api()`), so the caller's error branch can
+// fall back to a plain download link. `maxBytes` gates both the declared
+// Content-Length (refused before the body is read) and the actual decoded length
+// (a chunked response with no length header).
+export async function fetchCsvPreview(
+  path: string,
+  maxBytes: number,
+): Promise<CsvPreviewResult> {
   const url = buildApiUrl(path);
-  const init: RequestInit = { method, credentials: "include" };
+  logger.info("API request", { method: "GET", url });
 
-  logger.info("API request", { method, url });
-
-  const res = await fetch(url, init);
+  const res = await fetch(url, { method: "GET", credentials: "include" });
   if (!res.ok) {
     const body: unknown = await res.json().catch(() => null);
     const apiError = toApiError(res, body);
     logger.error("API request failed", {
-      method,
+      method: "GET",
       url,
       status: res.status,
       error: apiError.message,
@@ -205,9 +216,24 @@ export async function apiText(method: string, path: string): Promise<string> {
     throw apiError;
   }
 
-  const data = await res.text();
-  logger.info("API response", { method, url, status: res.status });
-  return data;
+  const lengthHeader = res.headers.get("Content-Length");
+  const declared = lengthHeader === null ? null : Number(lengthHeader);
+  if (declared !== null && Number.isFinite(declared) && declared > maxBytes) {
+    return { kind: "too-large", bytes: declared };
+  }
+
+  const contentType = res.headers.get("Content-Type");
+  const text = await res.text();
+  if (text.length > maxBytes) {
+    return { kind: "too-large", bytes: text.length };
+  }
+
+  const isCsv =
+    contentType !== null && contentType.toLowerCase().includes("text/csv");
+  if (!isCsv) {
+    return { kind: "not-csv", text, contentType };
+  }
+  return { kind: "csv", text };
 }
 
 // Multipart upload seam. `api()` JSON-encodes its body, so a file upload needs

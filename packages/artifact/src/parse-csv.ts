@@ -3,12 +3,41 @@
 // embedded quotes). Hand-rolled rather than adding a dependency — the write side
 // is a ~15-line escaper and this is its inverse.
 
-export type ParsedCsv = { headers: string[]; rows: string[][] };
+import { type } from "arktype";
+
+// Canonical shape of a parsed CSV, and the boundary gate for rendering it as a
+// table. The narrow is the single source of truth for "is this safe to grid?":
+// it rejects a headerless parse (nothing to render) and any ragged parse (a row
+// whose column count differs from the header — the classic sign of a mis-parse
+// or a non-CSV file routed here). A rejected result routes deterministically to
+// the raw-text fallback rather than relying on parseCsv "never throwing".
+export const ParsedCsvSchema = type({
+  headers: "string[]",
+  rows: "string[][]",
+}).narrow((csv, ctx) => {
+  if (csv.headers.length === 0) {
+    return ctx.reject("a CSV table needs at least one column");
+  }
+  const width = csv.headers.length;
+  if (!csv.rows.every((row) => row.length === width)) {
+    return ctx.reject("every CSV row must match the header column count");
+  }
+  return true;
+});
+export type ParsedCsv = typeof ParsedCsvSchema.infer;
 
 // Default cap on rows rendered as a live table. DataTable has no virtualization,
 // so an unbounded export would freeze the panel; past this we truncate and show a
 // "download for full file" indicator. Named so it is trivially tunable.
 export const CSV_TABLE_ROW_CAP = 500;
+
+// Hard ceiling, in bytes/characters, on CSV text we will parse and preview. A
+// pathological upload would make parseCsv walk (and the DOM hold) an unbounded
+// string, hanging the tab; past this the viewer shows a "too large to preview —
+// download instead" state and never parses. 2 MB comfortably covers real GTM
+// exports (a 500-row display cap is reached long before this) while a 2 MB string
+// parses in well under a frame.
+export const CSV_MAX_PREVIEW_BYTES = 2_000_000;
 
 // RFC 4180 reader. Single pass. Two bits of state: whether we are inside a quoted
 // field, and whether the current record has accumulated any content (`started`).
@@ -100,14 +129,12 @@ export function parseCsv(input: string): ParsedCsv {
   return { headers, rows: body };
 }
 
-// A parsed CSV is safe to render as a table when it has a header row and every
-// body row has exactly the header's column count. A file with zero body rows is
-// tabular (an empty table with headers). Any ragged row — the classic sign of a
-// mis-parse or a non-CSV file that happened to be routed here — drops the whole
-// render to a raw-text fallback so cells never silently shift columns.
+// A parsed CSV is safe to render as a table when ParsedCsvSchema accepts it: a
+// header row present and every body row matching the header's column count (zero
+// body rows is fine — an empty table with headers). The schema is the gate; this
+// is the boolean convenience wrapper the viewer reads.
 export function parsedCsvIsTabular(parsed: ParsedCsv): boolean {
-  if (parsed.headers.length === 0) return false;
-  return parsed.rows.every((row) => row.length === parsed.headers.length);
+  return !(ParsedCsvSchema(parsed) instanceof type.errors);
 }
 
 export type CappedCsv = {

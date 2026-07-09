@@ -49,6 +49,8 @@ export {
 } from "./artifact-kinds";
 export {
   CSV_TABLE_ROW_CAP,
+  CSV_MAX_PREVIEW_BYTES,
+  ParsedCsvSchema,
   parseCsv,
   parsedCsvIsTabular,
   capCsvRows,

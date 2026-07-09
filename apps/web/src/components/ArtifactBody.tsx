@@ -7,12 +7,12 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
-import { CsvTable } from "./CsvTable";
+import { CsvRawText, CsvTable, CsvTooLarge } from "./CsvTable";
 import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
 import { buildApiUrl } from "../lib/api";
-import { useArtifactDownloadText } from "../hooks/use-artifact-download-text";
+import { useArtifactCsvPreview } from "../hooks/use-artifact-csv-preview";
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -112,10 +112,7 @@ function UploadedCsvBody({
   artifactId: string;
   filename: string | null;
 }) {
-  const { data, isLoading, isError } = useArtifactDownloadText(
-    artifactId,
-    true,
-  );
+  const { data, isLoading, isError } = useArtifactCsvPreview(artifactId, true);
 
   if (isLoading) {
     return (
@@ -125,14 +122,35 @@ function UploadedCsvBody({
     );
   }
 
+  // A failed fetch: keep the file retrievable via the plain download link.
   if (isError || data === undefined) {
     return <FileBody artifactId={artifactId} filename={filename} />;
+  }
+
+  if (data.kind === "too-large") {
+    return (
+      <div className="space-y-3">
+        <DownloadCsvLink artifactId={artifactId} />
+        <CsvTooLarge />
+      </div>
+    );
+  }
+
+  // Wrong content type (a non-CSV artifact deep-linked here): show the bytes as
+  // raw text rather than parsing HTML/JSON into a garbage table.
+  if (data.kind === "not-csv") {
+    return (
+      <div className="space-y-3">
+        <DownloadCsvLink artifactId={artifactId} />
+        <CsvRawText text={data.text} />
+      </div>
+    );
   }
 
   return (
     <div className="space-y-3">
       <DownloadCsvLink artifactId={artifactId} />
-      <CsvTable csvText={data} />
+      <CsvTable csvText={data.text} />
     </div>
   );
 }

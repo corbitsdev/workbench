@@ -13,11 +13,28 @@ import ArtifactBody from "./ArtifactBody";
 
 const originalFetch = globalThis.fetch;
 
-function textResponse(body: string, status = 200): Response {
+function textResponse(
+  body: string,
+  init: {
+    status?: number;
+    contentType?: string | null;
+    contentLength?: number;
+  } = {},
+): Response {
+  const headers = new Map<string, string>();
+  const contentType =
+    init.contentType === undefined
+      ? "text/csv; charset=utf-8"
+      : init.contentType;
+  if (contentType !== null) headers.set("content-type", contentType);
+  if (init.contentLength !== undefined) {
+    headers.set("content-length", String(init.contentLength));
+  }
+  const status = init.status ?? 200;
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: () => null },
+    headers: { get: (k: string) => headers.get(k.toLowerCase()) ?? null },
     text: () => Promise.resolve(body),
     json: () => Promise.resolve(null),
   } as unknown as Response;
@@ -222,7 +239,7 @@ describe("ArtifactBody rendering", () => {
 
   it("falls back to a download link when the uploaded CSV bytes fail to load", async () => {
     globalThis.fetch = mock(() =>
-      Promise.resolve(textResponse("nope", 500)),
+      Promise.resolve(textResponse("nope", { status: 500 })),
     ) as unknown as typeof fetch;
     withQueryClient(
       React.createElement(ArtifactBody, {
@@ -241,6 +258,58 @@ describe("ArtifactBody rendering", () => {
       /\/api\/v1\/artifacts\/art-csv3\/download$/,
     );
     expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("shows raw text, not a garbage table, when a deep-linked artifact is not CSV", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        textResponse("<html><body>not a csv</body></html>", {
+          contentType: "text/html",
+        }),
+      ),
+    ) as unknown as typeof fetch;
+    withQueryClient(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-html",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "page.csv", mimeType: "text/csv" },
+          },
+        },
+      }),
+    );
+    // The raw bytes surface as text; the HTML is never parsed into a table.
+    await screen.findByText(/not a csv/i);
+    expect(screen.queryByRole("table")).toBeNull();
+    screen.getByRole("link", { name: /download csv/i });
+  });
+
+  it("refuses to preview an uploaded CSV whose declared size exceeds the cap", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(
+        textResponse("a,b\n1,2\n", {
+          contentType: "text/csv",
+          contentLength: 50_000_000,
+        }),
+      ),
+    ) as unknown as typeof fetch;
+    withQueryClient(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-big",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "huge.csv", mimeType: "text/csv" },
+          },
+        },
+      }),
+    );
+    await screen.findByText(/too large to preview/i);
+    expect(screen.queryByRole("table")).toBeNull();
+    screen.getByRole("link", { name: /download csv/i });
   });
 
   it("renders a non-CSV uploaded file as a plain download link, not a table", () => {

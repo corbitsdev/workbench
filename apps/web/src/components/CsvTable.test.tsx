@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import React from "react";
-import { CSV_TABLE_ROW_CAP } from "@workbench/artifact";
+import { CSV_MAX_PREVIEW_BYTES, CSV_TABLE_ROW_CAP } from "@workbench/artifact";
 import { CsvTable } from "./CsvTable";
 
 afterEach(() => {
@@ -76,6 +76,15 @@ describe("CsvTable", () => {
         "i",
       ),
     );
+  });
+
+  it("refuses to parse an oversized file and shows a too-large notice", () => {
+    // One header line plus a body larger than the byte ceiling. If it parsed,
+    // a table would render; the guard must short-circuit before parseCsv runs.
+    const huge = "a,b\n" + "x,y\n".repeat(CSV_MAX_PREVIEW_BYTES / 4 + 10);
+    render(React.createElement(CsvTable, { csvText: huge }));
+    expect(screen.queryByRole("table")).toBeNull();
+    screen.getByText(/too large to preview/i);
   });
 
   it("shows no truncation indicator when the file fits under the cap", () => {
