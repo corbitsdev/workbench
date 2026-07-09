@@ -237,6 +237,12 @@ export function expandWebArtifactToVercelFiles(
   }
   if (kind === WEB_SITE_KIND) {
     const site = parseWebSiteContentJson(rawContent);
+    if (site.files["index.html"] === undefined) {
+      const entry = site.entry ?? "index.html";
+      throw new WebSiteContentError(
+        `web_site must contain an "index.html" file to deploy (Vercel serves index.html at the root); entry is "${entry}"`,
+      );
+    }
     return Object.entries(site.files).map(([path, content]) => ({
       path,
       content,
