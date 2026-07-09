@@ -342,7 +342,44 @@ describe("artifact → gamma deck Panel", () => {
     );
   });
 
-  it("shows the rendered deck and approves the round", async () => {
+  it("shows draft text and an external Gamma link without embedding an iframe", async () => {
+    const onSignal = mock(() => {});
+    const draft = "SLIDE 1: Hook\nThe buyer stalls at security review.";
+    renderPanel(
+      <Panel
+        logRead={true}
+        deploymentId="dep_1"
+        state={makeState({
+          "generate-1": "completed",
+          "render-1": "completed",
+          "preview-1": "awaiting-signal",
+        })}
+        connected
+        signalPending={false}
+        stepOutputs={{
+          "generate-1": { reply: draft },
+          "render-1": toolEnvelope("c4", {
+            gammaUrl: "https://gamma.app/docs/deck-1",
+          }),
+        }}
+        onSignal={onSignal}
+        onClose={noop}
+      />,
+    );
+
+    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
+    screen.getByText(/Hook/u);
+    expect(
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
+    ).toBe("https://gamma.app/docs/deck-1");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Looks good — approve" }),
+    );
+    expect(onSignal).toHaveBeenCalledWith("preview-1", { approved: true });
+  });
+
+  it("keeps the preview gate answerable when draft text is missing", async () => {
     const onSignal = mock(() => {});
     renderPanel(
       <Panel
@@ -364,9 +401,10 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    const frame = screen.getByTitle("Generated Gamma presentation");
-    expect(frame.getAttribute("src")).toBe("https://gamma.app/docs/deck-1");
-
+    screen.getByText(/Draft text isn't available here yet/i);
+    expect(
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
+    ).toBe("https://gamma.app/docs/deck-1");
     await userEvent.click(
       screen.getByRole("button", { name: "Looks good — approve" }),
     );
@@ -482,10 +520,9 @@ describe("artifact → gamma deck Panel", () => {
       />,
     );
 
-    // No iframe for an unsafe URL, and no "Open in Gamma" link to it...
     expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
     expect(screen.queryByRole("link", { name: "Open in Gamma" })).toBeNull();
-    screen.getByText(/deck preview couldn't be loaded/i);
+    screen.getByText(/Gamma link isn't available/i);
     // ...but the preview gate is still answerable so the run can't deadlock.
     await userEvent.click(
       screen.getByRole("button", { name: "Looks good — approve" }),
@@ -538,8 +575,9 @@ describe("artifact → gamma deck Panel", () => {
     );
 
     screen.getByText("Saved to workbench");
+    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
     expect(
-      screen.getByTitle("Generated Gamma presentation").getAttribute("src"),
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
     ).toBe("https://gamma.app/docs/deck-1");
   });
 
@@ -575,8 +613,9 @@ describe("artifact → gamma deck Panel", () => {
 
     expect(screen.queryByText("Saved to workbench")).toBeNull();
     screen.getByRole("button", { name: "Looks good — approve" });
+    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
     expect(
-      screen.getByTitle("Generated Gamma presentation").getAttribute("src"),
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
     ).toBe("https://gamma.app/docs/deck-2");
   });
 
@@ -829,8 +868,9 @@ describe("artifact → gamma deck Panel", () => {
     );
 
     screen.getByText("Saved to workbench");
+    expect(screen.queryByTitle("Generated Gamma presentation")).toBeNull();
     expect(
-      screen.getByTitle("Generated Gamma presentation").getAttribute("src"),
+      screen.getByRole("link", { name: "Open in Gamma" }).getAttribute("href"),
     ).toBe("https://gamma.app/docs/deck-1");
   });
 
@@ -871,7 +911,8 @@ describe("artifact → gamma deck Panel", () => {
     const [url, init] = call!;
     // Base URL prefix (VITE_API_BASE_URL ?? "") + the hub path; credentials
     // ride along so a split-origin deploy still authenticates.
-    expect(url).toBe("/api/v1/gamma-templates");
+    const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
+    expect(url).toBe(`${apiBase}/api/v1/gamma-templates`);
     expect(init?.credentials).toBe("include");
   });
 

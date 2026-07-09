@@ -24,6 +24,7 @@ import {
 } from "@workbench/blocks";
 import { type } from "arktype";
 import { MAX_ROUNDS } from "./constants";
+import { readGenerateReply } from "./generate-output";
 
 /** The intake gate's `awaitSignal` name (matches the workflow def). */
 export const INTAKE_SIGNAL = "intake";
@@ -39,10 +40,6 @@ export interface GammaBlockInput extends DockRunInput {
   stepOutputs: Record<string, unknown>;
 }
 
-// The inline-inference generate step's output carries the slide content on
-// `reply` (the render step's argMap reads `{ from: "reply" }`).
-const GenerateOutput = type({ reply: "string" });
-
 // The Gamma render tool's output carries the live deck URL — `gammaUrl`, or
 // `url` on older tool shapes (mirrors the panel's GammaResult parse).
 const RenderOutput = type({ "gammaUrl?": "string", "url?": "string" });
@@ -57,16 +54,6 @@ function runPageLink(
   description: string,
 ): UIBlock {
   return { kind: "link", url: `/workflows/${runId}`, title, description };
-}
-
-function slideContent(
-  stepOutputs: Record<string, unknown>,
-  round: number,
-): string | undefined {
-  const parsed = GenerateOutput(stepOutputs[`generate-${round}`]);
-  if (parsed instanceof type.errors) return undefined;
-  const reply = parsed.reply.trim();
-  return reply.length > 0 ? reply : undefined;
 }
 
 function deckUrl(
@@ -156,7 +143,7 @@ export function buildGammaBlocks(input: GammaBlockInput): UIBlock[] {
     const match = PREVIEW_SIGNAL.exec(gate.signalName);
     if (match !== null && match[1] !== undefined) {
       const round = Number(match[1]);
-      const content = slideContent(input.stepOutputs, round);
+      const content = readGenerateReply(input.stepOutputs, round);
       if (content !== undefined) {
         // The generated draft, markdown-rendered in full — never truncated.
         blocks.push({
