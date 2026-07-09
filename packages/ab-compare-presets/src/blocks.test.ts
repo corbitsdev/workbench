@@ -16,6 +16,16 @@ function choiceBlock(blocks: UIBlock[]): Extract<UIBlock, { kind: "choice" }> {
   return choice;
 }
 
+function comparisonBlock(
+  blocks: UIBlock[],
+): Extract<UIBlock, { kind: "comparison" }> {
+  const comparison = blocks.find((b) => b.kind === "comparison");
+  if (comparison === undefined || comparison.kind !== "comparison") {
+    throw new Error("no comparison");
+  }
+  return comparison;
+}
+
 describe("buildAbPresetBlocks", () => {
   test("the config gate renders a prompt-only form (no provider/model fields)", () => {
     const input: AbPresetBlockInput = {
@@ -35,7 +45,34 @@ describe("buildAbPresetBlocks", () => {
     expect(form.fields.map((f) => f.name)).toEqual(["input"]);
   });
 
-  test("blind variant outputs skip a failed variant and offer a winner choice", () => {
+  test("in-flight execs emit ONE comparison block with streaming variants, not documents", () => {
+    const input: AbPresetBlockInput = {
+      runId: "run_1",
+      phase: "running",
+      steps: [
+        { stepId: "config", phase: "completed" },
+        { stepId: "exec0", phase: "completed" },
+        { stepId: "exec1", phase: "in-flight" },
+      ],
+      // exec0 already produced output, but exec1 is still running.
+      stepOutputs: { exec0: { reply: "opus answer" } },
+    };
+    const blocks = buildAbPresetBlocks(input);
+
+    // No document cards — one unified comparison block carries every lane.
+    expect(blocks.some((b) => b.kind === "document")).toBe(false);
+    expect(blocks.filter((b) => b.kind === "comparison")).toHaveLength(1);
+
+    const comparison = comparisonBlock(blocks);
+    expect(comparison.status).toBe("running");
+    expect(comparison.blind).toBe(true);
+    const statuses = comparison.result.variants.map((v) => v.status);
+    expect(statuses).toEqual(["responded", "streaming"]);
+    // The finished lane keeps its content in place while the other streams.
+    expect(comparison.result.variants[0]?.content).toBe("opus answer");
+  });
+
+  test("once every lane is terminal the block flips to final with per-variant statuses", () => {
     const input: AbPresetBlockInput = {
       runId: "run_1",
       phase: "running",
@@ -59,20 +96,22 @@ describe("buildAbPresetBlocks", () => {
       },
     };
     const blocks = buildAbPresetBlocks(input);
+    expect(blocks.some((b) => b.kind === "document")).toBe(false);
 
-    // The failed variant (exec2) produces no document; the other three do.
-    const docs = blocks.filter((b) => b.kind === "document");
-    expect(docs.map((d) => (d.kind === "document" ? d.title : ""))).toEqual([
-      "Variant 1",
-      "Variant 2",
-      "Variant 4",
+    const comparison = comparisonBlock(blocks);
+    expect(comparison.status).toBe("final");
+    // Every variant keeps its slot; the failed lane is no-response, never dropped.
+    expect(comparison.result.variants.map((v) => v.status)).toEqual([
+      "responded",
+      "responded",
+      "no-response",
+      "responded",
     ]);
-    // Outputs never leak a model identity (blind).
-    for (const d of docs) {
-      if (d.kind === "document") {
-        expect(d.title).toMatch(/^Variant \d$/u);
-      }
+    // Blind: labels never leak a model identity.
+    for (const v of comparison.result.variants) {
+      expect(v.label).toMatch(/^Variant \d$/u);
     }
+
     // The choice offers exactly the three variants that produced an answer.
     const choice = choiceBlock(blocks);
     expect(choice.signalName).toBe("ab-decision");
@@ -81,36 +120,13 @@ describe("buildAbPresetBlocks", () => {
       "Variant 2",
       "Variant 4",
     ]);
-    // The winner's payload ranks it first.
-    const firstOption = choice.options[0];
-    const payload = firstOption?.payload as {
+    const payload = choice.options[0]?.payload as {
       ranking: { rank: number; label: string }[];
     };
     expect(payload.ranking[0]).toEqual({ rank: 1, label: "Variant 1" });
   });
 
-  test("hides all results until every lane finishes (no incremental reveal)", () => {
-    const input: AbPresetBlockInput = {
-      runId: "run_1",
-      phase: "running",
-      steps: [
-        { stepId: "config", phase: "completed" },
-        { stepId: "exec0", phase: "completed" },
-        { stepId: "exec1", phase: "in-flight" },
-      ],
-      // exec0 already produced output, but exec1 is still running.
-      stepOutputs: { exec0: { reply: "opus answer" } },
-    };
-    const blocks = buildAbPresetBlocks(input);
-    // No document cards yet — results appear together once all lanes finish.
-    expect(blocks.some((b) => b.kind === "document")).toBe(false);
-    const placeholder = blocks.find((b) => b.kind === "text");
-    expect(placeholder?.kind === "text" && placeholder.text).toMatch(
-      /once they all finish/u,
-    );
-  });
-
-  test("notes how many models did not respond once all lanes finish", () => {
+  test("degraded run: comparison block with a no-response variant, no did-not-respond text, no documents", () => {
     const input: AbPresetBlockInput = {
       runId: "run_1",
       phase: "running",
@@ -126,16 +142,24 @@ describe("buildAbPresetBlocks", () => {
       },
     };
     const blocks = buildAbPresetBlocks(input);
-    expect(blocks.filter((b) => b.kind === "document")).toHaveLength(2);
-    const note = blocks.find(
-      (b) => b.kind === "text" && b.text.includes("did not respond"),
-    );
-    expect(note?.kind === "text" && note.text).toContain(
-      "1 of 3 models did not respond",
-    );
+    expect(blocks.some((b) => b.kind === "document")).toBe(false);
+    // No alarming "did not respond" tally block — the comparison grid's survivor
+    // pill is the single, calm count.
+    expect(
+      blocks.some(
+        (b) => b.kind === "text" && b.text.includes("did not respond"),
+      ),
+    ).toBe(false);
+
+    const comparison = comparisonBlock(blocks);
+    expect(comparison.result.variants.map((v) => v.status)).toEqual([
+      "responded",
+      "no-response",
+      "responded",
+    ]);
   });
 
-  test("all-variants-failed: no cards, a dock-voiced message, and failed progress states", () => {
+  test("all-variants-failed: a comparison block of no-response cells, a run error, no documents", () => {
     const input: AbPresetBlockInput = {
       runId: "run_1",
       phase: "failed",
@@ -151,13 +175,22 @@ describe("buildAbPresetBlocks", () => {
       },
     };
     const blocks = buildAbPresetBlocks(input);
-    // No output cards, and a message in the dock's own voice (not only the raw
-    // error string).
     expect(blocks.some((b) => b.kind === "document")).toBe(false);
-    const note = blocks.find(
-      (b) => b.kind === "text" && b.text.includes("None of the models"),
-    );
-    expect(note).toBeDefined();
+
+    const comparison = comparisonBlock(blocks);
+    expect(
+      comparison.result.variants.every((v) => v.status === "no-response"),
+    ).toBe(true);
+
+    // The total-quorum-failure error path is preserved.
+    expect(
+      blocks.some(
+        (b) =>
+          b.kind === "error" &&
+          b.message === "only 0 of 2 models produced an answer",
+      ),
+    ).toBe(true);
+
     // The failed variant lanes are shown as failed, not a misleading green done.
     const progress = blocks.find((b) => b.kind === "progress");
     if (progress?.kind !== "progress") throw new Error("no progress block");
