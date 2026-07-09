@@ -31,13 +31,25 @@ export type ParsedCsv = typeof ParsedCsvSchema.infer;
 // "download for full file" indicator. Named so it is trivially tunable.
 export const CSV_TABLE_ROW_CAP = 500;
 
-// Hard ceiling, in bytes/characters, on CSV text we will parse and preview. A
+// Companion cap on columns. A wide-and-short CSV (thousands of columns) floods
+// the same non-virtualized table the row cap protects; past this we render the
+// first N columns and note the truncation.
+export const CSV_COLUMN_CAP = 50;
+
+// Hard ceiling, in UTF-8 bytes, on CSV text we will parse and preview. A
 // pathological upload would make parseCsv walk (and the DOM hold) an unbounded
 // string, hanging the tab; past this the viewer shows a "too large to preview —
 // download instead" state and never parses. 2 MB comfortably covers real GTM
 // exports (a 500-row display cap is reached long before this) while a 2 MB string
 // parses in well under a frame.
 export const CSV_MAX_PREVIEW_BYTES = 2_000_000;
+
+// True UTF-8 byte length of a string — so the size ceiling is measured in the
+// same unit as an HTTP Content-Length, not UTF-16 code units. A multibyte
+// character costs more bytes than `.length` reports.
+export function utf8ByteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
 
 // RFC 4180 reader. Single pass. Two bits of state: whether we are inside a quoted
 // field, and whether the current record has accumulated any content (`started`).

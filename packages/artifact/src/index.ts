@@ -49,11 +49,13 @@ export {
 } from "./artifact-kinds";
 export {
   CSV_TABLE_ROW_CAP,
+  CSV_COLUMN_CAP,
   CSV_MAX_PREVIEW_BYTES,
   ParsedCsvSchema,
   parseCsv,
   parsedCsvIsTabular,
   capCsvRows,
+  utf8ByteLength,
   type ParsedCsv,
   type CappedCsv,
 } from "./parse-csv";

@@ -50,36 +50,25 @@ afterEach(() => {
 });
 
 describe("fetchCsvPreview", () => {
-  it("returns a csv result when the content type is text/csv", async () => {
+  it("returns the csv text regardless of the reported vendor content type", async () => {
+    // The download route echoes the stored upload mime — often a vendor mime for
+    // a real .csv. The size guard is the only boundary concern here; whether the
+    // bytes are tabular is decided downstream by the parser, not re-sniffed.
     globalThis.fetch = mock(() =>
       Promise.resolve(
-        response("a,b\n1,2\n", { contentType: "text/csv; charset=utf-8" }),
+        response("a,b\n1,2\n", { contentType: "application/vnd.ms-excel" }),
       ),
     ) as unknown as typeof fetch;
     const result = await fetchCsvPreview("/artifacts/x/download", 1000);
     expect(result).toEqual({ kind: "csv", text: "a,b\n1,2\n" });
   });
 
-  it("routes a non-csv content type to the not-csv branch without parsing", async () => {
-    globalThis.fetch = mock(() =>
-      Promise.resolve(
-        response("<html>nope</html>", { contentType: "text/html" }),
-      ),
-    ) as unknown as typeof fetch;
-    const result = await fetchCsvPreview("/artifacts/x/download", 1000);
-    expect(result).toEqual({
-      kind: "not-csv",
-      text: "<html>nope</html>",
-      contentType: "text/html",
-    });
-  });
-
-  it("treats a missing content type as not-csv", async () => {
+  it("returns csv text even when no content type is present", async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(response("a,b\n1,2\n", { contentType: null })),
     ) as unknown as typeof fetch;
     const result = await fetchCsvPreview("/artifacts/x/download", 1000);
-    expect(result.kind).toBe("not-csv");
+    expect(result).toEqual({ kind: "csv", text: "a,b\n1,2\n" });
   });
 
   it("refuses a payload whose declared Content-Length exceeds the cap", async () => {
@@ -114,35 +103,24 @@ describe("fetchCsvPreview", () => {
 });
 
 describe("useArtifactCsvPreview", () => {
-  it("does not fetch while disabled", () => {
-    const fetchMock = mock(() =>
-      Promise.resolve(response("a,b\n1,2\n", { contentType: "text/csv" })),
-    );
-    globalThis.fetch = fetchMock as unknown as typeof fetch;
-    renderHook(() => useArtifactCsvPreview("art-1", false), {
-      wrapper: wrapper(),
-    });
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it("does not fetch when the artifact id is missing", () => {
     const fetchMock = mock(() =>
       Promise.resolve(response("a,b\n1,2\n", { contentType: "text/csv" })),
     );
     globalThis.fetch = fetchMock as unknown as typeof fetch;
-    renderHook(() => useArtifactCsvPreview(undefined, true), {
+    renderHook(() => useArtifactCsvPreview(undefined), {
       wrapper: wrapper(),
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("returns a csv result from the download route when enabled", async () => {
+  it("returns a csv result from the download route", async () => {
     globalThis.fetch = mock(() =>
       Promise.resolve(
         response("region,total\nWest,42\n", { contentType: "text/csv" }),
       ),
     ) as unknown as typeof fetch;
-    const { result } = renderHook(() => useArtifactCsvPreview("art-1", true), {
+    const { result } = renderHook(() => useArtifactCsvPreview("art-1"), {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));

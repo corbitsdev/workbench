@@ -6,6 +6,7 @@ import {
   capCsvRows,
   parseCsv,
   parsedCsvIsTabular,
+  utf8ByteLength,
 } from "./parse-csv";
 
 describe("parseCsv", () => {
@@ -167,6 +168,16 @@ describe("ParsedCsvSchema", () => {
   test("rejects a structurally wrong value (rows not string[][])", () => {
     const result = ParsedCsvSchema({ headers: ["a"], rows: [[1]] });
     expect(result instanceof type.errors).toBe(true);
+  });
+});
+
+describe("utf8ByteLength", () => {
+  test("counts bytes, not UTF-16 code units, for multibyte characters", () => {
+    // "é" is 2 UTF-8 bytes, "😀" is 4 — a naive .length would undercount both.
+    expect(utf8ByteLength("abc")).toBe(3);
+    expect(utf8ByteLength("é")).toBe(2);
+    expect(utf8ByteLength("😀")).toBe(4);
+    expect("😀".length).toBe(2);
   });
 });
 

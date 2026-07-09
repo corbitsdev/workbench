@@ -1,8 +1,11 @@
+import { useMemo } from "react";
 import {
   capCsvRows,
+  CSV_COLUMN_CAP,
   CSV_MAX_PREVIEW_BYTES,
   parseCsv,
   parsedCsvIsTabular,
+  utf8ByteLength,
 } from "@workbench/artifact";
 import { DataTable, type DataTableColumn } from "@workbench/ui";
 
@@ -17,11 +20,12 @@ interface CsvRow {
 }
 
 // The honest fallback surface: show the source text verbatim rather than force a
-// non-CSV or ragged file into a misleading grid. Shared by the ragged-parse
-// branch here and the wrong-content-type branch in the uploaded-CSV viewer.
+// ragged/non-tabular file into a misleading grid. Height-capped with its own
+// scroll so a multi-thousand-line file can't render as one giant <pre> and
+// re-open the DOM-freeze the tabular path guards against.
 export function CsvRawText({ text }: { text: string }) {
   return (
-    <pre className="overflow-x-auto rounded border border-border bg-surface-2 p-3 text-xs text-text-2">
+    <pre className="max-h-96 overflow-auto rounded border border-border bg-surface-2 p-3 text-xs text-text-2">
       {text}
     </pre>
   );
@@ -37,25 +41,43 @@ export function CsvTooLarge() {
   );
 }
 
-// Renders CSV text as a table. Guards before parsing: an oversized string is
-// refused up front (parseCsv would otherwise walk the whole thing and the DOM
-// would hold it, hanging the tab). Then parses defensively — a ragged/malformed
-// file (any row whose column count differs from the header) degrades to raw text
-// so cells never shift columns. Large-but-allowed files are row-capped so the
-// non-virtualized table never freezes, with an honest "showing N of M" indicator.
+type CsvView =
+  | { kind: "too-large" }
+  | { kind: "raw" }
+  | { kind: "table"; headers: string[] };
+
+// Renders CSV text as a table. Guards before parsing: an oversized string (true
+// UTF-8 bytes) is refused up front — parseCsv would otherwise walk the whole
+// thing and the DOM would hold it, hanging the tab. Then parses defensively — a
+// ragged/malformed file degrades to raw text so cells never shift columns. The
+// parse + validation is memoized on the text so a parent re-render does not
+// re-walk the whole row set. Large-but-allowed files are row- and column-capped
+// so the non-virtualized table never freezes, with an honest "showing N of M"
+// indicator.
 export function CsvTable({ csvText }: { csvText: string }) {
-  if (csvText.length > CSV_MAX_PREVIEW_BYTES) {
-    return <CsvTooLarge />;
-  }
+  const parsed = useMemo(() => {
+    if (utf8ByteLength(csvText) > CSV_MAX_PREVIEW_BYTES) return null;
+    return parseCsv(csvText);
+  }, [csvText]);
 
-  const parsed = parseCsv(csvText);
+  const view: CsvView = useMemo(() => {
+    if (parsed === null) return { kind: "too-large" };
+    if (!parsedCsvIsTabular(parsed)) return { kind: "raw" };
+    return { kind: "table", headers: parsed.headers };
+  }, [parsed]);
 
-  if (!parsedCsvIsTabular(parsed)) {
+  if (view.kind === "too-large") return <CsvTooLarge />;
+  if (view.kind === "raw" || parsed === null)
     return <CsvRawText text={csvText} />;
-  }
+
+  const totalColumns = view.headers.length;
+  const columnsTruncated = totalColumns > CSV_COLUMN_CAP;
+  const shownHeaders = columnsTruncated
+    ? view.headers.slice(0, CSV_COLUMN_CAP)
+    : view.headers;
 
   const capped = capCsvRows(parsed);
-  const columns: DataTableColumn<CsvRow>[] = parsed.headers.map(
+  const columns: DataTableColumn<CsvRow>[] = shownHeaders.map(
     (header, colIndex) => ({
       key: String(colIndex),
       header,
@@ -64,9 +86,21 @@ export function CsvTable({ csvText }: { csvText: string }) {
   );
   const rows: CsvRow[] = capped.rows.map((cells, index) => ({ index, cells }));
 
+  const notes: string[] = [];
+  if (capped.truncated) {
+    notes.push(
+      `${capped.rows.length.toLocaleString()} of ${capped.total.toLocaleString()} rows`,
+    );
+  }
+  if (columnsTruncated) {
+    notes.push(
+      `${CSV_COLUMN_CAP.toLocaleString()} of ${totalColumns.toLocaleString()} columns`,
+    );
+  }
+
   return (
     <div className="space-y-2">
-      <div className="overflow-x-auto rounded border border-border">
+      <div className="max-h-[32rem] overflow-auto rounded border border-border">
         <DataTable
           columns={columns}
           rows={rows}
@@ -74,10 +108,9 @@ export function CsvTable({ csvText }: { csvText: string }) {
           caption="CSV contents"
         />
       </div>
-      {capped.truncated ? (
+      {notes.length > 0 ? (
         <p className="text-xs text-text-3">
-          Showing {capped.rows.length.toLocaleString()} of{" "}
-          {capped.total.toLocaleString()} rows — download for the full file.
+          Showing {notes.join(" and ")} — download for the full file.
         </p>
       ) : null}
     </div>

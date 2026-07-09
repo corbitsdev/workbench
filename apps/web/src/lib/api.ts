@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { utf8ByteLength } from "@workbench/artifact";
 import { logger } from "./logger";
 
 // Empty string means same-origin (frontend served from the API).
@@ -181,21 +182,23 @@ export async function api<T>(
   return data;
 }
 
-// Outcome of a CSV preview fetch. Discriminated so the viewer can render the
-// right surface without re-inspecting headers: parse `csv`, degrade `not-csv` to
-// raw text (a non-CSV artifact deep-linked into the viewer — never parse HTML or
-// JSON into a garbage table), and refuse `too-large` before parsing so a
-// pathological upload can't hang the tab.
+// Outcome of a CSV preview fetch. The viewer already decided this artifact is a
+// CSV (routing on stored mime / .csv extension), so the only boundary concern
+// here is size: hand back the `csv` text to parse, or refuse a `too-large`
+// payload up front. Whether the parsed text is actually tabular is decided
+// downstream by the arktype narrow, not by re-sniffing the Content-Type — the
+// download route echoes the stored upload mime, which for a real .csv is often a
+// vendor mime (application/vnd.ms-excel, application/octet-stream, empty), so a
+// strict text/csv check here would reject common legitimate uploads.
 export type CsvPreviewResult =
   | { kind: "csv"; text: string }
-  | { kind: "not-csv"; text: string; contentType: string | null }
   | { kind: "too-large"; bytes: number };
 
-// Fetch an artifact's downloadable text with guards applied at the boundary. A
-// non-ok response throws (same path as `api()`), so the caller's error branch can
-// fall back to a plain download link. `maxBytes` gates both the declared
-// Content-Length (refused before the body is read) and the actual decoded length
-// (a chunked response with no length header).
+// Fetch an artifact's downloadable CSV text with a size guard. A non-ok response
+// throws (same path as `api()`), so the caller's error branch can fall back to a
+// download link. The declared Content-Length is refused BEFORE the body is read;
+// a chunked response with no length header is read in full, then refused if its
+// true UTF-8 byte length exceeds `maxBytes`.
 export async function fetchCsvPreview(
   path: string,
   maxBytes: number,
@@ -222,16 +225,10 @@ export async function fetchCsvPreview(
     return { kind: "too-large", bytes: declared };
   }
 
-  const contentType = res.headers.get("Content-Type");
   const text = await res.text();
-  if (text.length > maxBytes) {
-    return { kind: "too-large", bytes: text.length };
-  }
-
-  const isCsv =
-    contentType !== null && contentType.toLowerCase().includes("text/csv");
-  if (!isCsv) {
-    return { kind: "not-csv", text, contentType };
+  const bytes = utf8ByteLength(text);
+  if (bytes > maxBytes) {
+    return { kind: "too-large", bytes };
   }
   return { kind: "csv", text };
 }

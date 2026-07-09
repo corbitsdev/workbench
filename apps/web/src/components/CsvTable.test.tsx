@@ -2,7 +2,11 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import React from "react";
-import { CSV_MAX_PREVIEW_BYTES, CSV_TABLE_ROW_CAP } from "@workbench/artifact";
+import {
+  CSV_COLUMN_CAP,
+  CSV_MAX_PREVIEW_BYTES,
+  CSV_TABLE_ROW_CAP,
+} from "@workbench/artifact";
 import { CsvTable } from "./CsvTable";
 
 afterEach(() => {
@@ -85,6 +89,26 @@ describe("CsvTable", () => {
     render(React.createElement(CsvTable, { csvText: huge }));
     expect(screen.queryByRole("table")).toBeNull();
     screen.getByText(/too large to preview/i);
+  });
+
+  it("caps columns and notes the truncation for a very wide file", () => {
+    const totalCols = CSV_COLUMN_CAP + 20;
+    const header = Array.from({ length: totalCols }, (_, i) => `c${i}`).join(
+      ",",
+    );
+    const row = Array.from({ length: totalCols }, (_, i) => `v${i}`).join(",");
+    render(React.createElement(CsvTable, { csvText: `${header}\n${row}\n` }));
+
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("columnheader")).toHaveLength(
+      CSV_COLUMN_CAP,
+    );
+    screen.getByText(
+      new RegExp(
+        `showing ${CSV_COLUMN_CAP.toLocaleString()} of ${totalCols.toLocaleString()} columns`,
+        "i",
+      ),
+    );
   });
 
   it("shows no truncation indicator when the file fits under the cap", () => {

@@ -215,9 +215,13 @@ describe("ArtifactBody rendering", () => {
     screen.getByRole("link", { name: /download csv/i });
   });
 
-  it("routes an uploaded .csv by extension even without a csv mime type", async () => {
+  it("renders a table for a vendor-mime .csv (Excel reports application/vnd.ms-excel)", async () => {
+    // Production truth: the download route echoes the stored upload mime, so the
+    // response Content-Type is the SAME vendor mime as source.upload.mimeType —
+    // they cannot diverge. A strict text/csv gate would wrongly reject this.
+    const storedMime = "application/vnd.ms-excel";
     globalThis.fetch = mock(() =>
-      Promise.resolve(textResponse("a,b\n1,2\n")),
+      Promise.resolve(textResponse("a,b\n1,2\n", { contentType: storedMime })),
     ) as unknown as typeof fetch;
     withQueryClient(
       React.createElement(ArtifactBody, {
@@ -226,15 +230,14 @@ describe("ArtifactBody rendering", () => {
           content: "",
           kind: "file",
           source: {
-            upload: {
-              filename: "export.csv",
-              mimeType: "application/vnd.ms-excel",
-            },
+            upload: { filename: "export.csv", mimeType: storedMime },
           },
         },
       }),
     );
-    await screen.findByRole("table");
+    const table = await screen.findByRole("table");
+    within(table).getByText("1");
+    within(table).getByText("2");
   });
 
   it("falls back to a download link when the uploaded CSV bytes fail to load", async () => {
@@ -258,30 +261,30 @@ describe("ArtifactBody rendering", () => {
       /\/api\/v1\/artifacts\/art-csv3\/download$/,
     );
     expect(screen.queryByRole("table")).toBeNull();
+    // Legible failure, not a silent bare link.
+    screen.getByText(/preview unavailable/i);
   });
 
-  it("shows raw text, not a garbage table, when a deep-linked artifact is not CSV", async () => {
+  it("degrades a routed-in but ragged CSV to raw text, not a shifted table", async () => {
+    // The bytes reach the viewer (routed by mime/extension) but the arktype
+    // tabular narrow rejects the ragged rows, so it falls back to raw text.
+    const ragged = "a,b,c\n1,2\n";
     globalThis.fetch = mock(() =>
-      Promise.resolve(
-        textResponse("<html><body>not a csv</body></html>", {
-          contentType: "text/html",
-        }),
-      ),
+      Promise.resolve(textResponse(ragged, { contentType: "text/csv" })),
     ) as unknown as typeof fetch;
     withQueryClient(
       React.createElement(ArtifactBody, {
         artifact: {
-          id: "art-html",
+          id: "art-ragged",
           content: "",
           kind: "file",
           source: {
-            upload: { filename: "page.csv", mimeType: "text/csv" },
+            upload: { filename: "ragged.csv", mimeType: "text/csv" },
           },
         },
       }),
     );
-    // The raw bytes surface as text; the HTML is never parsed into a table.
-    await screen.findByText(/not a csv/i);
+    await screen.findByText((content) => content.includes("a,b,c"));
     expect(screen.queryByRole("table")).toBeNull();
     screen.getByRole("link", { name: /download csv/i });
   });
