@@ -26,6 +26,10 @@ Both from-template generate call sites send `exportAs: GENERATION_EXPORT_FORMAT`
 
 The `exportUrl` is a **temporary download link that expires after ~1 week** and is not tied to the API key. It is therefore not persisted as-is. The Gamma workflow threads `exportUrl` into `artifact_link_gamma_presentation` as `pdfUrl`; the hub handler downloads the bytes and stores them durably in the `upload` table (BYTEA), referenced from the artifact's `source.upload`, and served by `GET /artifacts/:id/download`. The PDF is supplementary to the deck link: an oversize (> `MAX_UPLOAD_BYTES`), empty, or failed fetch degrades to persisting the deck link without a PDF rather than failing the deck save.
 
+## Deck URL field (`gammaUrl` / `url`)
+
+Gamma has returned the completed deck's link under `gammaUrl` (current shape) and, on some responses / older API surfaces, under `url`. `pollGeneration` normalizes a `url`-only completed response up to `gammaUrl` before parsing, and both generate tools emit **both** `gammaUrl` and `url` (aliases of the same link) in their output. This keeps a downstream consumer keyed on either field resolving without a fallback — notably the presentation workflow's `persist` step, whose `argMap` maps the artifact tool's `url` arg from `gammaUrl` with a hard, no-fallback presence check that would otherwise sink the deck save when only `url` is present.
+
 ## No live deck-status reflection
 
 Generation status is a synchronous in-tool poll (`pollGeneration`): the render step blocks until the deck is `completed`, surfaced to the user only as the workflow step's own progress. Gamma exposes **no webhook and no API to observe a published deck's later manual edits**, so there is no way to reflect post-generation deck changes back into Workbench. Decks are one-shot: create in the workflow, then edit manually in Gamma.
