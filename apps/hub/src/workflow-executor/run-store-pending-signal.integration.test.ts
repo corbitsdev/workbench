@@ -9,6 +9,7 @@ import {
   applyRunProjection,
   insertRunRecord,
   loadRunRecord,
+  refreshPendingSignalIfCurrent,
   setPendingSignal,
 } from "./run-store";
 
@@ -130,6 +131,55 @@ describe("pending gate-signal record", () => {
 
     const loaded = await loadRunRecord(db, "wfr_p3");
     expect(loaded?.pendingSignal).toEqual(SIGNAL);
+  });
+
+  test("the re-delivery refresh updates the record only while ITS signalId is still current", async () => {
+    await insertRunRecord(db, { ...base, runId: "wfr_p7" });
+    await setPendingSignal(db, "wfr_p7", SIGNAL);
+
+    const refreshed = await refreshPendingSignalIfCurrent(db, "wfr_p7", {
+      ...SIGNAL,
+      receivedAt: "2026-07-09T01:00:00.000Z",
+    });
+
+    expect(refreshed).toBe(true);
+    const loaded = await loadRunRecord(db, "wfr_p7");
+    expect(loaded?.pendingSignal?.receivedAt).toBe("2026-07-09T01:00:00.000Z");
+  });
+
+  test("the re-delivery refresh cannot resurrect a record the projection just cleared", async () => {
+    await insertRunRecord(db, { ...base, runId: "wfr_p8" });
+    await setPendingSignal(db, "wfr_p8", SIGNAL);
+    // The projection proves receipt and clears between the reconciler's
+    // decision read and its refresh.
+    await applyRunProjection(db, "wfr_p8", {
+      status: "running",
+      clearPendingSignal: { signalIds: [SIGNAL.signalId] },
+    });
+
+    const refreshed = await refreshPendingSignalIfCurrent(db, "wfr_p8", {
+      ...SIGNAL,
+      receivedAt: "2026-07-09T01:00:00.000Z",
+    });
+
+    expect(refreshed).toBe(false);
+    const loaded = await loadRunRecord(db, "wfr_p8");
+    expect(loaded?.pendingSignal).toBeUndefined();
+  });
+
+  test("the re-delivery refresh does not clobber a NEWER pending signal accepted meanwhile", async () => {
+    await insertRunRecord(db, { ...base, runId: "wfr_p9" });
+    const newer = { ...SIGNAL, signalId: "sig-newer" };
+    await setPendingSignal(db, "wfr_p9", newer);
+
+    const refreshed = await refreshPendingSignalIfCurrent(db, "wfr_p9", {
+      ...SIGNAL,
+      receivedAt: "2026-07-09T01:00:00.000Z",
+    });
+
+    expect(refreshed).toBe(false);
+    const loaded = await loadRunRecord(db, "wfr_p9");
+    expect(loaded?.pendingSignal).toEqual(newer);
   });
 
   test("re-signaling replaces the pending record (last accepted signal wins)", async () => {

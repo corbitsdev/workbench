@@ -19,12 +19,15 @@ type CasRow = {
 };
 let casRowsRef: Map<string, CasRow> | null = null;
 // Re-delivery refreshes the pending record's timestamp (backoff between
-// re-deliveries); tests observe the refresh through this trace.
+// re-deliveries); tests observe the refresh through this trace. The refresh
+// is conditional on the record still holding the same signalId — tests flip
+// `refreshResultRef` to model the projection clearing it mid-pass.
 const pendingRefreshes: {
   runId: string;
   signalId: string;
   receivedAt: string;
 }[] = [];
+let refreshResultRef = true;
 mock.module("../workflow-executor/run-store", () => ({
   setRunStatus: async (_db: unknown, runId: string, status: string) => {
     const row = failRowsRef?.get(runId);
@@ -32,7 +35,7 @@ mock.module("../workflow-executor/run-store", () => ({
   },
   loadRunRecord: async (_db: unknown, runId: string) =>
     casRowsRef?.get(runId) ?? null,
-  setPendingSignal: async (
+  refreshPendingSignalIfCurrent: async (
     _db: unknown,
     runId: string,
     signal: { signalId: string; receivedAt: string },
@@ -42,6 +45,7 @@ mock.module("../workflow-executor/run-store", () => ({
       signalId: signal.signalId,
       receivedAt: signal.receivedAt,
     });
+    return refreshResultRef;
   },
 }));
 
@@ -655,6 +659,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     casOverride?: Map<string, CasRow>;
   }) {
     pendingRefreshes.length = 0;
+    refreshResultRef = true;
     casRowsRef = new Map(
       opts.records
         .filter((r) => r.id !== undefined)
@@ -844,6 +849,29 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     expect(h.sentSignals).toEqual([]);
     expect(summary.hibernated).toBe(0);
     expect(summary.redelivered).toBe(0);
+  });
+
+  it("skips the re-delivery when the conditional refresh finds the record already cleared (no resurrection, no duplicate)", async () => {
+    const pending = {
+      signalId: "sig-cleared",
+      signalName: "approval",
+      payload: {},
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+    };
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_cleared", GRACE_MS * 10, pending)],
+      routable: [],
+    });
+    // The projection cleared the record (receipt folded) between the
+    // reconciler's select and its refresh: the conditional write hits zero
+    // rows, so nothing must be dispatched.
+    refreshResultRef = false;
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.sentSignals).toEqual([]);
+    expect(summary.redelivered).toBe(0);
+    expect(summary.failed).toBe(0);
   });
 
   it("re-delivers a stale pending signal even after the resume path's optimistic running flip", async () => {
