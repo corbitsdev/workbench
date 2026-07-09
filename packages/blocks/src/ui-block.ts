@@ -16,6 +16,7 @@
  */
 
 import { type } from "arktype";
+import { ComparisonResultSchema, type ComparisonResult } from "@workbench/ui";
 
 export const DocumentActionsSchema = type({
   "copy?": "boolean",
@@ -283,6 +284,18 @@ export type UIBlock =
         defaultDecision?: "approved" | "rejected";
       }[];
     }
+  | {
+      // A side-by-side A/B comparison rendered through @workbench/ui's
+      // ComparisonView — the single renderer for both the live run and the
+      // saved artifact (CL-3099). `status` is the run-level phase (the winner
+      // accent only applies once `"final"`); each variant carries its own
+      // streaming / responded / no-response lifecycle. `blind` hides the
+      // provider/model identity during a blind review.
+      kind: "comparison";
+      status: "running" | "final";
+      result: ComparisonResult;
+      blind?: boolean;
+    }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
 
 export type ExtractedUIBlock = {
@@ -304,6 +317,7 @@ const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "form",
   "multiSelect",
   "reviewList",
+  "comparison",
   "canvas",
 ]);
 
@@ -480,6 +494,12 @@ function isUIBlockAtDepth(value: unknown, depth: number): value is UIBlock {
             (row as Record<string, unknown>).fields !== null &&
             "payload" in (row as Record<string, unknown>),
         )
+      );
+    case "comparison":
+      return (
+        (block.status === "running" || block.status === "final") &&
+        !(ComparisonResultSchema(block.result) instanceof type.errors) &&
+        (block.blind === undefined || typeof block.blind === "boolean")
       );
     case "canvas":
       return (

@@ -31,21 +31,40 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// One entry per `exec<i>` step, in index order, with its blind label and the
-// text it produced (empty when the variant failed its non-fatal step).
-function readVariants(
-  input: AbPresetBlockInput,
-): { label: string; content: string }[] {
+type VariantStatus = "streaming" | "responded" | "no-response";
+
+interface PresetVariant {
+  label: string;
+  content: string;
+  status: VariantStatus;
+}
+
+// One entry per `exec<i>` step, in index order, with its blind label, the text
+// it produced, and its lifecycle status: a lane not yet terminal is "streaming"
+// (keeps its slot with a calm placeholder), a terminal lane with a reply is
+// "responded", and a terminal empty/errored lane is "no-response" (kept in the
+// grid as a gold marker, never dropped).
+function readVariants(input: AbPresetBlockInput): PresetVariant[] {
   const execIds = input.steps
     .map((step) => step.stepId)
     .filter((id) => /^exec\d+$/u.test(id))
     .sort((a, b) => Number(a.slice(4)) - Number(b.slice(4)));
   return execIds.map((id, index) => {
+    const step = input.steps.find((s) => s.stepId === id);
+    const terminal = step !== undefined && TERMINAL_PHASES.has(step.phase);
     const output = input.stepOutputs[id];
     const reply = isRecord(output) ? output.reply : undefined;
     const failed = isRecord(output) && output.isError === true;
     const content = !failed && typeof reply === "string" ? reply : "";
-    return { label: `Variant ${index + 1}`, content };
+    let status: VariantStatus;
+    if (!terminal) {
+      status = "streaming";
+    } else if (failed || content.trim().length === 0) {
+      status = "no-response";
+    } else {
+      status = "responded";
+    }
+    return { label: `Variant ${index + 1}`, content, status };
   });
 }
 
@@ -141,35 +160,27 @@ export function buildAbPresetBlocks(input: AbPresetBlockInput): UIBlock[] {
   }
 
   const variants = readVariants(input);
-  const withOutput = variants.filter((v) => v.content.trim().length > 0);
+  const responded = variants.filter((v) => v.status === "responded");
   const lanesComplete = allExecsTerminal(input);
 
-  if (lanesComplete) {
-    for (const variant of withOutput) {
-      blocks.push({
-        kind: "document",
-        title: variant.label,
-        source: variant.content,
-      });
-    }
-    const dropped = variants.length - withOutput.length;
-    if (withOutput.length === 0 && variants.length > 0) {
-      // Total failure: every model was dropped, so the quorum gate fails the run.
-      // Say so in the dock's own voice rather than leaving only the raw error.
-      blocks.push({
-        kind: "text",
-        text: "None of the models produced an answer, so there is no comparison to review.",
-      });
-    } else if (dropped > 0) {
-      blocks.push({
-        kind: "text",
-        text: `${dropped} of ${variants.length} models did not respond and were left out of the comparison.`,
-      });
-    }
-  } else if (execSteps(input).length > 0) {
+  // ONE unified comparison block carries every lane — live and final. The live
+  // grid streams each cell in place (a streaming cell becomes responded without
+  // remounting); a lane that never answers keeps its slot as a gold no-response
+  // marker. The winner accent is suppressed until `status` is "final". Always
+  // blind here — the model reveal lives on the run page's saved artifact.
+  if (variants.length > 0) {
     blocks.push({
-      kind: "text",
-      text: "Running the models — every model's output appears together once they all finish.",
+      kind: "comparison",
+      status: lanesComplete ? "final" : "running",
+      blind: true,
+      result: {
+        ranking: [],
+        variants: variants.map((v) => ({
+          label: v.label,
+          content: v.content,
+          status: v.status,
+        })),
+      },
     });
   }
 
@@ -180,9 +191,9 @@ export function buildAbPresetBlocks(input: AbPresetBlockInput): UIBlock[] {
     } else if (
       gate.signalName === DECISION_SIGNAL &&
       lanesComplete &&
-      withOutput.length > 0
+      responded.length > 0
     ) {
-      const labels = withOutput.map((v) => v.label);
+      const labels = responded.map((v) => v.label);
       blocks.push({
         kind: "choice",
         prompt: "Pick the winning variant.",
@@ -191,7 +202,7 @@ export function buildAbPresetBlocks(input: AbPresetBlockInput): UIBlock[] {
           placeholder: "Why did it win? (optional)",
           payloadKey: "rationale",
         },
-        options: withOutput.map((variant) => ({
+        options: responded.map((variant) => ({
           id: variant.label,
           label: `${variant.label} wins`,
           value: variant.label,

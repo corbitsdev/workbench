@@ -512,7 +512,11 @@ describe("UIBlockView", () => {
       result: {
         ranking: [{ rank: 1, label: "Variant 1" }],
         variants: [
-          { label: "Variant 1", content: "Winning body text.", status: "responded" },
+          {
+            label: "Variant 1",
+            content: "Winning body text.",
+            status: "responded",
+          },
         ],
       },
     };

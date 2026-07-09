@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cn, Markdown } from "@workbench/ui";
+import { cn, ComparisonView, Markdown } from "@workbench/ui";
 import {
   MAX_UI_BLOCK_NEST_DEPTH,
   type FormField,
@@ -99,6 +99,14 @@ export function UIBlockView({
         <ReviewListBlock
           block={block}
           {...(onRespond !== undefined ? { onRespond } : {})}
+        />
+      );
+    case "comparison":
+      return (
+        <ComparisonView
+          result={block.result}
+          status={block.status}
+          blind={block.blind ?? false}
         />
       );
     case "canvas":
@@ -344,9 +352,7 @@ function isSafeLinkHref(url: string): boolean {
 function LinkBlock({ block }: { block: Extract<UIBlock, { kind: "link" }> }) {
   if (!isSafeLinkHref(block.url)) {
     return (
-      <span className="text-sm text-text-2">
-        {block.title ?? block.url}
-      </span>
+      <span className="text-sm text-text-2">{block.title ?? block.url}</span>
     );
   }
   return (
@@ -918,7 +924,7 @@ function FormBlock({
         onClick={() => {
           void submit();
         }}
-        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
       >
         {pending && <Spinner />}
         {pending ? "Submitting…" : (block.submitLabel ?? "Submit")}
@@ -1024,7 +1030,7 @@ function MultiSelectBlock({
         onClick={() => {
           void submit();
         }}
-        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
       >
         {pending && <Spinner />}
         {pending ? "Submitting…" : (block.submitLabel ?? "Submit")}
@@ -1241,7 +1247,7 @@ function ReviewListBlock({
         onClick={() => {
           void submit();
         }}
-        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+        className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
       >
         {pending && <Spinner />}
         {pending
@@ -1338,7 +1344,7 @@ function ChoiceBlock({
             onClick={() => {
               void choose(option);
             }}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text hover:border-orange hover:text-orange disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
           >
             {pendingId === option.id && <Spinner />}
             {pendingId === option.id ? "Submitting…" : option.label}

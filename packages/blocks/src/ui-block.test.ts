@@ -137,9 +137,9 @@ describe("isUIBlock", () => {
     expect(
       isUIBlock({ kind: "table", columns: ["a"], rows: [[{ x: 1 }]] }),
     ).toBe(false);
-    expect(
-      isUIBlock({ kind: "table", columns: ["a"], rows: [null] }),
-    ).toBe(false);
+    expect(isUIBlock({ kind: "table", columns: ["a"], rows: [null] })).toBe(
+      false,
+    );
     expect(isUIBlock({ kind: "link", url: 5 })).toBe(false);
     expect(isUIBlock({ kind: "error", message: 5 })).toBe(false);
     expect(isUIBlock({ kind: "canvas", blocks: "x" })).toBe(false);
@@ -164,7 +164,11 @@ describe("isUIBlock", () => {
 
   it("rejects a comparison block whose result has no variants array", () => {
     expect(
-      isUIBlock({ kind: "comparison", status: "running", result: { ranking: [] } }),
+      isUIBlock({
+        kind: "comparison",
+        status: "running",
+        result: { ranking: [] },
+      }),
     ).toBe(false);
   });
 
