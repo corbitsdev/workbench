@@ -169,6 +169,9 @@ tarball, a per-agent pin, loaded in-process. There is no agent-side tool proxy.
   forwards over the `workbench.hubRpc` rail to the scoped
   `POST /api/internal/hub-tools/run`, which executes hub-side and authorizes
   against the instance principal's grants. No tool secrets in the sidecar.
+- **Approval-gated publish tools** (`vercel_deploy_static_file`,
+  `vercel_deploy_artifact`) require human approval in the sidecar harness before
+  the deploy runs.
 
 The agent-session proxy (`createHubToolRunner` → `/api/internal/tools/run`) is
 **gone**. `KNOWN_TOOLS` remains only as the tool→provider mapping for the
