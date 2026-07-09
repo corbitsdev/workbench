@@ -83,7 +83,7 @@ describe("KpiRow", () => {
 
     expect(kpi.getByText("Total activity")).toBeDefined();
     expect(kpi.getByText("13")).toBeDefined(); // 10 + 3
-    expect(kpi.getByText("chats + tool calls")).toBeDefined();
+    expect(kpi.getByText("turns + tool calls")).toBeDefined();
 
     expect(kpi.getByText("Active actors")).toBeDefined();
     expect(kpi.getByText("4")).toBeDefined();

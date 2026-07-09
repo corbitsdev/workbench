@@ -345,7 +345,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      screen.getByText("Total chats");
+      screen.getByText("Total turns");
     });
     expect(screen.getAllByText("12").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Tool calls").length).toBeGreaterThanOrEqual(1);
@@ -355,7 +355,7 @@ describe("InsightsDashboard", () => {
     renderPage();
 
     await waitFor(() => {
-      screen.getByText("Total chats");
+      screen.getByText("Total turns");
     });
     expect(screen.getAllByText("100.0% success").length).toBe(2);
     expect(screen.queryByText(/failure rate/)).toBeNull();
@@ -388,7 +388,11 @@ describe("InsightsDashboard", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("sparkline")).toBeNull();
     });
-    expect(screen.queryByText("Activity trends")).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Trend line appears once 3+ daily buckets are selected",
+      ).length,
+    ).toBe(3);
   });
 
   it("renders heatmap cells carrying each active day's turn count", async () => {
@@ -459,7 +463,7 @@ describe("InsightsDashboard", () => {
       expect(screen.getByTestId("mini-bar").getAttribute("data-label")).toBe(
         "kimi",
       );
-      const modelsCard = screen.getByText("Models · by chats").closest("div")!;
+      const modelsCard = screen.getByText("Models · by turns").closest("div")!;
       expect(within(modelsCard).queryByText("deepseek-v4-flash")).toBeNull();
     } finally {
       mockOverview.models = [
@@ -566,7 +570,7 @@ describe("InsightsDashboard", () => {
     const headers = within(personTable)
       .getAllByRole("columnheader")
       .map((th) => th.textContent?.replace(/[▲▼]/g, "").trim());
-    expect(headers).toEqual(["Person", "Chats", "Tool calls", "Tokens"]);
+    expect(headers).toEqual(["Person", "Turns", "Tool calls", "Tokens"]);
     // Default sort is tokens desc: Sawyer (790) before Dana (360).
     const bodyRows = within(personTable).getAllByTestId("sortable-row");
     expect(bodyRows[0]?.textContent).toContain("Sawyer");
@@ -863,7 +867,7 @@ describe("InsightsDashboard KPIs, charts, and filters", () => {
     mockOverview.inference.summary.failedTurnCount = 2;
     try {
       renderPage();
-      const label = await screen.findByText("Total chats");
+      const label = await screen.findByText("Total turns");
       const tile = label.closest("div")!;
       const value = within(tile).getByText("12");
       expect(value.className).toContain("text-red");

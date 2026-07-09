@@ -26,7 +26,7 @@ export function InstanceBreakdown({
             <tr>
               <th className="px-4 py-2 font-medium">Instance</th>
               <th className="px-4 py-2 font-medium">Agent</th>
-              <th className="px-4 py-2 text-right font-medium">Chats</th>
+              <th className="px-4 py-2 text-right font-medium">Turns</th>
               <th className="px-4 py-2 text-right font-medium">Tool calls</th>
               <th className="px-4 py-2 text-right font-medium">Tokens</th>
             </tr>

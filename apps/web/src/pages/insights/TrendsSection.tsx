@@ -36,12 +36,12 @@ export function TrendsSection({
   const tokenValues = series.map((d) => d.inputTokens + d.outputTokens);
   const heatDays = series.map((d) => ({ date: d.date, value: d.turnCount }));
 
-  return series.length < 7 ? null : (
+  return (
     <div className="flex flex-col gap-4">
       <SectionLabel>Activity trends</SectionLabel>
       <div className="grid gap-4 lg:grid-cols-3">
         <TrendCard
-          label="Chats per day"
+          label="Turns / day"
           total={formatNumber(summary.turnCount)}
           values={turnValues}
           delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
@@ -69,8 +69,8 @@ export function TrendsSection({
           }
         />
       </div>
-      <HudCard label="Chats per day">
-        <Heatmap days={heatDays} label="Chats per day heatmap" />
+      <HudCard label="Turns per day">
+        <Heatmap days={heatDays} label="Turns per day heatmap" />
       </HudCard>
     </div>
   );

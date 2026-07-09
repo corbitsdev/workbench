@@ -39,7 +39,7 @@ export function KpiRow({
         <Stat
           label="Total activity"
           value={formatNumber(activity)}
-          sub="chats + tool calls"
+          sub="turns + tool calls"
           delta={computeDelta(activity, prevActivity)}
           emphasis
         />

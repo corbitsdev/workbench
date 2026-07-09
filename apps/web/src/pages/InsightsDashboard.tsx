@@ -226,7 +226,7 @@ function ChartsSection({
       <HudCard label="Activity over time">
         <TimeSeriesChart
           series={activitySeries}
-          label="Chats and tool calls per day"
+          label="Turns and tool calls per day"
           variant="area"
         />
       </HudCard>
@@ -240,7 +240,7 @@ function ChartsSection({
           />
         </HudCard>
         <HudCard
-          label="Top actors · by chats"
+          label="Top actors · by turns"
           tag={
             tokenCaveat !== null ? (
               <CardLabel>tokens partial</CardLabel>
@@ -249,7 +249,7 @@ function ChartsSection({
         >
           <CategoryBarChart
             data={actorBars}
-            label="Top actors by chats"
+            label="Top actors by turns"
             maxBars={8}
             formatValue={formatNumber}
           />
@@ -289,7 +289,7 @@ function SortablePersonTable({ people }: { people: UsageByPersonRow[] }) {
     },
     {
       key: "turnCount",
-      header: "Chats",
+      header: "Turns",
       align: "right",
       sortValue: (r) => r.turnCount,
       render: (r) => (
@@ -353,7 +353,7 @@ function SortableWorkflowKindTable({ rows }: { rows: WorkflowKindRow[] }) {
     },
     {
       key: "turnCount",
-      header: "Chats",
+      header: "Turns",
       align: "right",
       sortValue: (r) => r.turnCount,
       render: (r) => (

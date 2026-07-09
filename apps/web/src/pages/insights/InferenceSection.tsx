@@ -62,7 +62,7 @@ export function InferenceSection({
       {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
-          label="Total chats"
+          label="Total turns"
           value={formatNumber(summary.turnCount)}
           delta={computeDelta(summary.turnCount, prev?.turnCount ?? null)}
           sub={`${turnRate.toFixed(1)}% success`}
@@ -125,7 +125,7 @@ export function InferenceSection({
 
       {modelRows.length > 0 && (
         <HudCard
-          label="Models · by chats"
+          label="Models · by turns"
           tag={
             modelRows.length > 8 ? (
               <CardLabel>{`+${modelRows.length - 8} more`}</CardLabel>
