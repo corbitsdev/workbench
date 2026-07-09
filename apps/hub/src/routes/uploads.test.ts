@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
-import { createUploadsRouter, MAX_UPLOAD_BYTES } from "./uploads";
+import { createUploadsRouter } from "./uploads";
+import { MAX_UPLOAD_BYTES } from "../db/schema";
 import type { HubDb } from "../db";
 
 mock.module("../config", () => ({

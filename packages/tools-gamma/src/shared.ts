@@ -39,9 +39,15 @@ export const WORKSPACE_SHARING_OPTIONS = {
   externalAccess: "view",
 } as const;
 
+// Automatic export after generation. Gamma accepts "pdf" | "pptx" | "png"; we
+// pull the PDF so the deck can be ingested durably into Workbench artifacts
+// (the returned exportUrl is a temporary download link — see README).
+export const GENERATION_EXPORT_FORMAT = "pdf" as const;
+
 const GenerationResultSchema = type({
   gammaUrl: "string",
   gammaId: "string",
+  "exportUrl?": "string",
 });
 
 export type GenerationResult = typeof GenerationResultSchema.infer;

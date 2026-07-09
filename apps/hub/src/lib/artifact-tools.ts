@@ -21,12 +21,15 @@ import {
   normalizeWebSitePath,
   summarizeWebSiteContent,
 } from "@workbench/shared";
+import { getLogger } from "@intx/log";
 import { and, desc, eq } from "drizzle-orm";
 import {
   artifact,
   artifactStatus,
   artifactVersion,
+  MAX_UPLOAD_BYTES,
   memberAgentInstance,
+  upload,
 } from "../db/schema";
 
 export {
@@ -43,13 +46,131 @@ export {
 
 type ArtifactStatus = (typeof artifactStatus)[number];
 
+type FetchFn = typeof fetch;
+
 type ArtifactToolContext = {
   db: DB["db"];
   tenantId: string;
   principalId: string;
   agentId: string;
   sessionId: string;
+  // Injected HTTP client for pulling the Gamma export PDF; defaults to the
+  // global fetch. Injected in tests to keep the pull deterministic.
+  fetch?: FetchFn;
 };
+
+const log = getLogger(["lib", "artifact-tools"]);
+
+type UploadPayload = {
+  content: Buffer;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+function pdfDownloadFilename(title: string): string {
+  const cleaned = title
+    .replace(/[\r\n"\\/]/g, "")
+    .replace(/\.pdf$/i, "")
+    .trim();
+  return `${cleaned.length > 0 ? cleaned : "deck"}.pdf`;
+}
+
+// The export CDN can stall without ever returning a status; bound the download
+// so a hung fetch cannot wedge the (otherwise interactive) tool call.
+const GAMMA_PDF_FETCH_TIMEOUT_MS = 20_000;
+
+function parseContentLength(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+// Pull the Gamma export PDF into a durable upload payload. The export URL is a
+// short-lived Gamma download link (~1 week), so the bytes are ingested now
+// rather than persisted as an expiring URL. The PDF is supplementary to the
+// deck link: any failure (network, timeout, oversize, empty) degrades to no PDF
+// rather than failing the whole persist.
+async function fetchGammaPresentationPdf(
+  context: ArtifactToolContext,
+  pdfUrl: string,
+  title: string,
+  signal?: AbortSignal,
+): Promise<UploadPayload | null> {
+  // `pdfUrl` is agent-influenced on this tool, so require https before the hub
+  // issues a server-side fetch — this closes the plaintext-internal-service /
+  // metadata (http://169.254.169.254) SSRF vector. Residual blind SSRF to an
+  // internal TLS host is out of scope: the real path passes Gamma's own trusted
+  // exportUrl, and the bytes are stored, never returned to the caller. Revisit
+  // if pdfUrl ever becomes genuinely free-form.
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(pdfUrl);
+  } catch {
+    log.warn("Gamma export PDF url is not a valid URL; skipping PDF");
+    return null;
+  }
+  if (parsedUrl.protocol !== "https:") {
+    log.warn("Gamma export PDF url is not https; skipping PDF");
+    return null;
+  }
+
+  const fetchFn = context.fetch ?? fetch;
+  const timeout = AbortSignal.timeout(GAMMA_PDF_FETCH_TIMEOUT_MS);
+  const abort =
+    signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout;
+  try {
+    // `redirect: "error"` so a 3xx to a plaintext internal host can't slip past
+    // the https check above (Gamma's signed export URLs serve directly, no hop).
+    const response = await fetchFn(pdfUrl, {
+      signal: abort,
+      redirect: "error",
+    });
+    if (!response.ok) {
+      log.warn("Gamma export PDF fetch returned non-2xx; skipping PDF", {
+        status: response.status,
+      });
+      return null;
+    }
+    const declaredLength = parseContentLength(
+      response.headers.get("content-length"),
+    );
+    if (declaredLength !== null && declaredLength > MAX_UPLOAD_BYTES) {
+      log.warn("Gamma export PDF exceeds the upload ceiling; skipping PDF", {
+        size: declaredLength,
+        limit: MAX_UPLOAD_BYTES,
+      });
+      return null;
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength === 0) {
+      log.warn("Gamma export PDF was empty; skipping PDF");
+      return null;
+    }
+    // A 200 can still carry an HTML error page; require the PDF magic bytes so
+    // a non-PDF body is never stored and served as application/pdf.
+    if (buffer.subarray(0, 5).toString("latin1") !== "%PDF-") {
+      log.warn("Gamma export PDF body is not a PDF; skipping PDF");
+      return null;
+    }
+    if (buffer.byteLength > MAX_UPLOAD_BYTES) {
+      log.warn("Gamma export PDF exceeds the upload ceiling; skipping PDF", {
+        size: buffer.byteLength,
+        limit: MAX_UPLOAD_BYTES,
+      });
+      return null;
+    }
+    return {
+      content: buffer,
+      filename: pdfDownloadFilename(title),
+      mimeType: "application/pdf",
+      size: buffer.byteLength,
+    };
+  } catch (cause) {
+    log.warn("Gamma export PDF fetch failed; skipping PDF", { cause });
+    return null;
+  }
+}
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
@@ -617,6 +738,37 @@ function validatePresentationUrl(url: string): void {
  * (guarded on the existing row's kind), otherwise a fresh row. Shared by the
  * presentation and gamma_presentation link handlers.
  */
+type UploadSourceRef = {
+  id: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+};
+
+// The `source` to write on a version bump, or `undefined` to leave it as-is.
+// A fresh PDF replaces the reference; a requested-but-failed PDF pull clears any
+// stale reference so the new deck version never offers the prior deck's PDF; an
+// unrequested PDF leaves the existing source untouched.
+function computeBumpedSource(
+  existingSource: Record<string, unknown> | null,
+  uploadRef: UploadSourceRef | null,
+  uploadRequested: boolean,
+): Record<string, unknown> | undefined {
+  if (uploadRef !== null) {
+    return { ...(existingSource ?? {}), upload: uploadRef };
+  }
+  if (
+    uploadRequested &&
+    existingSource !== null &&
+    "upload" in existingSource
+  ) {
+    const rest = { ...existingSource };
+    delete rest.upload;
+    return rest;
+  }
+  return undefined;
+}
+
 async function upsertLinkedArtifact(
   context: ArtifactToolContext,
   opts: {
@@ -624,10 +776,49 @@ async function upsertLinkedArtifact(
     title: string;
     content: string;
     artifactId: string | undefined;
+    upload?: UploadPayload | null;
+    // True when the caller asked for a PDF (even if the fetch yielded none), so
+    // a version bump can clear a stale prior PDF rather than leave it pointing
+    // at the old deck.
+    uploadRequested?: boolean;
   },
 ): Promise<{ artifactId: string; version: number }> {
-  const { kind, title, content, artifactId } = opts;
+  const {
+    kind,
+    title,
+    content,
+    artifactId,
+    upload: uploadPayload,
+    uploadRequested = false,
+  } = opts;
   const now = new Date();
+
+  // Persist the PDF bytes and return the download reference to fold into the
+  // artifact `source`. Serving is handled by GET /artifacts/:id/download, which
+  // keys off `source.upload.id`.
+  const insertUpload = async (
+    tx: Parameters<Parameters<DB["db"]["transaction"]>[0]>[0],
+  ): Promise<UploadSourceRef | null> => {
+    if (!uploadPayload) return null;
+    const [uploadRow] = await tx
+      .insert(upload)
+      .values({
+        tenantId: context.tenantId,
+        principalId: context.principalId,
+        filename: uploadPayload.filename,
+        mimeType: uploadPayload.mimeType,
+        content: uploadPayload.content,
+        size: uploadPayload.size,
+      })
+      .returning();
+    if (!uploadRow) throw new Error("Failed to store upload");
+    return {
+      id: uploadRow.id,
+      filename: uploadPayload.filename,
+      mimeType: uploadPayload.mimeType,
+      size: uploadPayload.size,
+    };
+  };
 
   if (artifactId !== undefined) {
     return await context.db.transaction(async (tx) => {
@@ -649,10 +840,22 @@ async function upsertLinkedArtifact(
       }
 
       const newVersion = existing.version + 1;
+      const uploadRef = await insertUpload(tx);
+      const nextSource = computeBumpedSource(
+        existing.source,
+        uploadRef,
+        uploadRequested,
+      );
 
       await tx
         .update(artifact)
-        .set({ title, content, version: newVersion, updatedAt: now })
+        .set({
+          title,
+          content,
+          version: newVersion,
+          updatedAt: now,
+          ...(nextSource !== undefined ? { source: nextSource } : {}),
+        })
         .where(eq(artifact.id, artifactId));
 
       await tx.insert(artifactVersion).values({
@@ -672,15 +875,18 @@ async function upsertLinkedArtifact(
     context.db,
     context,
   );
-  const source = {
-    origin: "agent",
-    type: "inline",
-    agentId: context.agentId,
-    sessionId: context.sessionId,
-  };
   assertSessionContext(context);
 
   const row = await context.db.transaction(async (tx) => {
+    const uploadRef = await insertUpload(tx);
+    const source = {
+      origin: "agent",
+      type: "inline",
+      agentId: context.agentId,
+      sessionId: context.sessionId,
+      ...(uploadRef !== null ? { upload: uploadRef } : {}),
+    };
+
     const [created] = await tx
       .insert(artifact)
       .values({
@@ -745,23 +951,40 @@ function createLinkGammaPresentationHandler(
   return {
     kind: "string",
     definition: ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
-    handler: async (args) => {
+    handler: async (args, signal) => {
       const url = requiredString(args, "url");
       validatePresentationUrl(url);
       const title = requiredString(args, "title");
       const description = requiredString(args, "description");
       const gammaId = requiredString(args, "gammaId");
+      // A present-but-empty pdfUrl ("") means a PDF was requested but Gamma
+      // returned no export link (the workflow's create tool always emits the
+      // key). Treat that as "requested, none available" — not an error and not
+      // "no request": on a version bump it still clears a stale prior PDF. Only
+      // a genuinely absent key means no PDF was requested at all.
+      const pdfUrlRaw = optionalString(args, "pdfUrl");
+      const uploadRequested = pdfUrlRaw !== undefined;
+      const pdfUrl =
+        pdfUrlRaw !== undefined && pdfUrlRaw.trim().length > 0
+          ? pdfUrlRaw.trim()
+          : undefined;
       const artifactId = optionalNonEmptyString(args, "artifactId");
 
       const content = JSON.stringify(
         GammaPresentationContentSchema.assert({ url, description, gammaId }),
       );
 
+      const uploadPayload = pdfUrl
+        ? await fetchGammaPresentationPdf(context, pdfUrl, title, signal)
+        : null;
+
       const { artifactId: id, version } = await upsertLinkedArtifact(context, {
         kind: "gamma_presentation",
         title,
         content,
         artifactId,
+        upload: uploadPayload,
+        uploadRequested,
       });
 
       return jsonResult({ artifactId: id, version, url });

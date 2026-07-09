@@ -258,7 +258,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
             "workbench.title": "Save the deck"
           }
         },
@@ -426,7 +426,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
             "workbench.title": "Save the deck"
           }
         },
@@ -594,7 +594,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:artifact_link_gamma_presentation",
-            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"deckTitle\"},\"url\":{\"from\":\"gammaUrl\"},\"description\":{\"from\":\"reply\"},\"gammaId\":{\"from\":\"gammaId\"},\"pdfUrl\":{\"from\":\"exportUrl\"}}",
             "workbench.title": "Save the deck"
           }
         },

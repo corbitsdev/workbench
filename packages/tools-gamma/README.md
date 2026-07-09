@@ -20,6 +20,16 @@ Verified against the official docs (https://developers.gamma.app). The REST API 
 
 Gamma creates each generation under the API key's own identity. Without an explicit `sharingOptions`, the deck defaults to private-to-that-identity and never surfaces for the workspace members who own the key (CL-2635). So both generate call sites send `WORKSPACE_SHARING_OPTIONS` (`shared.ts`): `workspaceAccess: "fullAccess"` (visible + editable to the whole workspace) and `externalAccess: "view"` — which Gamma documents as "Access level for external users (via shared link)", i.e. link-gated viewing, not public/indexed. Any future plain `POST /generations` path must send the same constant.
 
+## Deck PDF export
+
+Both from-template generate call sites send `exportAs: GENERATION_EXPORT_FORMAT` (`"pdf"`, `shared.ts`). Gamma runs an automatic export after generation and, on the completed `GET /generations/{id}`, returns an `exportUrl` alongside `gammaUrl`/`gammaId`. `GenerationResultSchema` carries `exportUrl` as optional, so a deck generated without export support (or before this change) still resolves — the field is simply absent.
+
+The `exportUrl` is a **temporary download link that expires after ~1 week** and is not tied to the API key. It is therefore not persisted as-is. The Gamma workflow threads `exportUrl` into `artifact_link_gamma_presentation` as `pdfUrl`; the hub handler downloads the bytes and stores them durably in the `upload` table (BYTEA), referenced from the artifact's `source.upload`, and served by `GET /artifacts/:id/download`. The PDF is supplementary to the deck link: an oversize (> `MAX_UPLOAD_BYTES`), empty, or failed fetch degrades to persisting the deck link without a PDF rather than failing the deck save.
+
+## No live deck-status reflection
+
+Generation status is a synchronous in-tool poll (`pollGeneration`): the render step blocks until the deck is `completed`, surfaced to the user only as the workflow step's own progress. Gamma exposes **no webhook and no API to observe a published deck's later manual edits**, so there is no way to reflect post-generation deck changes back into Workbench. Decks are one-shot: create in the workflow, then edit manually in Gamma.
+
 ## There is no list-templates endpoint
 
 Gamma's REST API has **no** endpoint to list templates — and no endpoint to list gammas/documents at all. A "template" is simply an existing single-page gamma referenced by its `gammaId` (copied from the Gamma app); `POST /generations/from-template` takes that `gammaId` plus a prompt that fills placeholder tokens.

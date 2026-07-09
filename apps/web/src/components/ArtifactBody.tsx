@@ -393,9 +393,16 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       }
       return <PresentationBody url={body} />;
     }
-    // gamma deck — content is JSON.stringify(GammaPresentationContent)
+    // gamma deck — content is JSON.stringify(GammaPresentationContent); a
+    // durable export PDF (source.upload) is offered via the download route.
     case "gamma_presentation":
-      return <GammaPresentationBody content={body} />;
+      return (
+        <GammaPresentationBody
+          content={body}
+          artifactId={artifact.id}
+          hasPdf={uploadFilename !== null}
+        />
+      );
     // research
     case "research": {
       const parsedBrief = parseResearchBrief(brief);

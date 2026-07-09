@@ -262,6 +262,72 @@ describe("gamma_create_from_template", () => {
       externalAccess: "view",
     });
   });
+  it("requests a pdf export via exportAs and returns the exportUrl from the completed generation", async () => {
+    const capturedBodies: string[] = [];
+    const fetcher: GammaFetch = async (_input, init) => {
+      capturedBodies.push(init.body as string);
+      if (capturedBodies.length === 1) {
+        return new Response(JSON.stringify({ generationId: "gen_pdf" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          status: "completed",
+          gammaUrl: "https://gamma.app/docs/pdf",
+          gammaId: "g_pdf",
+          exportUrl: "https://exports.gamma.app/deck.pdf",
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    const tools = createTemplateTools({ ...baseConfig, fetcher });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    const result = await tool.handler(
+      { gammaId: "g_t", prompt: "Make a deck" },
+      new AbortController().signal,
+    );
+    const body = JSON.parse(capturedBodies[0] ?? "{}") as Record<
+      string,
+      unknown
+    >;
+    expect(body["exportAs"]).toBe("pdf");
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed["exportUrl"]).toBe("https://exports.gamma.app/deck.pdf");
+  });
+
+  it("always surfaces an exportUrl key (empty) so the persist argMap resolves when Gamma returns no export link", async () => {
+    const tools = createTemplateTools({
+      ...baseConfig,
+      fetcher: makeFetcher([
+        { status: 200, body: { generationId: "gen_no_export" } },
+        {
+          status: 200,
+          body: {
+            status: "completed",
+            gammaUrl: "https://gamma.app/docs/x",
+            gammaId: "g_x",
+          },
+        },
+      ]),
+    });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    const result = await tool.handler(
+      { gammaId: "g_t", prompt: "Make a deck" },
+      new AbortController().signal,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect("exportUrl" in parsed).toBe(true);
+    expect(parsed["exportUrl"]).toBe("");
+  });
+
   it("throws immediately on unknown generation status rather than exhausting poll attempts", async () => {
     const tools = createTemplateTools({
       ...baseConfig,

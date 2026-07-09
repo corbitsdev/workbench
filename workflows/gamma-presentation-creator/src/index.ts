@@ -103,6 +103,11 @@ function roundSteps(round: number): Record<string, Primitive> {
         url: { from: "gammaUrl" },
         description: { from: "reply" },
         gammaId: { from: "gammaId" },
+        // render-N always emits an exportUrl (empty string when Gamma returns
+        // no export link) so this mapping never hits the harness's absent-field
+        // throw; the persist handler downloads it and stores the PDF durably,
+        // treating an empty value as "no PDF".
+        pdfUrl: { from: "exportUrl" },
       },
     }),
   };

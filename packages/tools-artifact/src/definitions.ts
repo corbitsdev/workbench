@@ -166,6 +166,11 @@ export const ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION: ToolDefinition = {
         type: "string",
         description: "The Gamma deck id.",
       },
+      pdfUrl: {
+        type: "string",
+        description:
+          "Optional temporary Gamma export URL for the deck PDF. When provided, the PDF is downloaded and stored durably so the artifact offers a PDF download.",
+      },
       artifactId: {
         type: "string",
         description:

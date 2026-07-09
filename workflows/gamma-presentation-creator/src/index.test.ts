@@ -196,6 +196,22 @@ describe("artifact → gamma deck workflow", () => {
     });
   });
 
+  test("persist maps the render step's exportUrl to the pdfUrl arg", () => {
+    for (let round = 1; round <= MAX_ROUNDS; round++) {
+      const persist = workflow.steps[`persist-${round}`];
+      if (persist === undefined || persist.kind !== "step") {
+        throw new Error(`expected a step primitive for persist-${round}`);
+      }
+      const rawArgMap = persist.agent.tags?.[STEP_ARGMAP_TAG];
+      if (typeof rawArgMap !== "string") {
+        throw new Error(`persist-${round} is missing an argMap tag`);
+      }
+      expect(JSON.parse(rawArgMap)).toMatchObject({
+        pdfUrl: { from: "exportUrl" },
+      });
+    }
+  });
+
   test("the readers are deterministic, non-fatal, and reshape the intake id", () => {
     for (const [key, tool, arg] of [
       ["fetch-artifact", "artifact_read", "artifactId"],
@@ -257,6 +273,7 @@ describe("artifact → gamma deck workflow", () => {
           url: { from: "gammaUrl" },
           description: { from: "reply" },
           gammaId: { from: "gammaId" },
+          pdfUrl: { from: "exportUrl" },
         },
       );
     }

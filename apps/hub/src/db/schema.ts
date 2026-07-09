@@ -109,6 +109,12 @@ export const upload = pgTable("upload", {
 
 export type UploadRow = typeof upload.$inferSelect;
 
+// Per-file upload ceiling (BYTEA in the `upload` table). 10MB comfortably covers
+// a product-catalog xlsx or a generated deck PDF; larger inputs are out of scope
+// (object storage). Lives with the table so both the upload route and hub tools
+// can share it without a route↔lib import cycle.
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
 export const workflowRun = pgTable("workflow_run", {
   id: uuid("id").primaryKey().defaultRandom(),
   // Native-deploy index column (M6.8): the @intx/workflow-deploy deploymentId

@@ -23,12 +23,12 @@ import {
   artifact,
   artifactStatus,
   artifactVersion,
+  MAX_UPLOAD_BYTES,
   upload,
 } from "../db/schema";
 import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
-import { MAX_UPLOAD_BYTES } from "./uploads";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
 

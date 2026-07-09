@@ -8,8 +8,13 @@ afterEach(() => {
   cleanup();
 });
 
-function renderContent(content: string) {
-  return render(React.createElement(GammaPresentationBody, { content }));
+function renderContent(
+  content: string,
+  props: { artifactId?: string; hasPdf?: boolean } = {},
+) {
+  return render(
+    React.createElement(GammaPresentationBody, { content, ...props }),
+  );
 }
 
 const deck = {
@@ -45,5 +50,24 @@ describe("GammaPresentationBody", () => {
       JSON.stringify({ ...deck, url: "http://gamma.app/docs/abc" }),
     );
     expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("offers a PDF download pointing at the artifact download route when a PDF is present", () => {
+    renderContent(JSON.stringify(deck), {
+      artifactId: "art_9",
+      hasPdf: true,
+    });
+    const link = screen.getByText(/download pdf/i).closest("a");
+    expect(link?.getAttribute("href")).toContain("/artifacts/art_9/download");
+  });
+
+  it("omits the PDF download when no PDF is attached", () => {
+    renderContent(JSON.stringify(deck), { artifactId: "art_9", hasPdf: false });
+    expect(screen.queryByText(/download pdf/i)).toBeNull();
+  });
+
+  it("omits the PDF download when the artifact id is unknown", () => {
+    renderContent(JSON.stringify(deck), { hasPdf: true });
+    expect(screen.queryByText(/download pdf/i)).toBeNull();
   });
 });
