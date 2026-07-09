@@ -20,6 +20,7 @@ import {
   launchFailureLogMessage,
   isAgentAlreadyExistsError,
   launchAgentSession,
+  coalesceInstanceLaunch,
   type LaunchErrorDescription,
 } from "../services/agent-provisioning";
 import { requestBodySchema } from "../lib/openapi";
@@ -474,25 +475,29 @@ export function createAgentProvisioningRouter(
       }
 
       const now = new Date();
+      // Capture the narrowed value: the guard above proved systemPrompt is a
+      // string, but that narrowing is lost inside the launch closure below,
+      // which would widen it back to `string | null`.
+      const systemPrompt = agentRow.systemPrompt;
 
       let launched = false;
       let launchFailure: LaunchErrorDescription | undefined;
 
       try {
-        await launchAgentSession(
-          db,
-          sessionService,
-          grantStore,
-          eventCollectors,
-          {
+        // Coalesce concurrent POSTs for the same instance onto one launch: the
+        // frontend fires this route proactively and sometimes twice, and two
+        // launches racing here let the loser's failure teardown delete the
+        // instance row mid-ack of the winner (503 phase=provision).
+        await coalesceInstanceLaunch(instanceId, () =>
+          launchAgentSession(db, sessionService, grantStore, eventCollectors, {
             agentId: instance.agentId,
             instanceId: instance.id,
             instancePrincipalId: instance.principalId,
             tenantId: instance.tenantId,
             tenantDomain: tenantRow.domain,
-            systemPrompt: agentRow.systemPrompt,
+            systemPrompt,
             now,
-          },
+          }),
         );
         launched = true;
       } catch (err) {
