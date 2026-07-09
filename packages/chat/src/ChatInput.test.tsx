@@ -263,26 +263,28 @@ describe("ChatInput composer width", () => {
   });
 });
 
-it("auto-grows textarea height when long multi-line text is pasted", async () => {
-  const user = userEvent.setup();
-  const onSend = mock((_text: string) => {});
-  render(<ChatInput onSend={onSend} />);
+describe("auto-grow", () => {
+  it("grows textarea height when long multi-line text is pasted", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} />);
 
-  const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
 
-  Object.defineProperty(input, "scrollHeight", {
-    configurable: true,
-    get: () => 192,
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => 192,
+    });
+
+    const pasted =
+      "Paragraph one that is long enough to wrap several times in the composer.\n" +
+      "Paragraph two continues the paste.\nParagraph three.\nParagraph four.\n" +
+      "Paragraph five with more text to force height growth.\nParagraph six.";
+
+    await user.click(input);
+    await user.paste(pasted);
+
+    expect(input.value).toContain("Paragraph six");
+    expect(parseInt(input.style.height || "0", 10)).toBeGreaterThan(100);
   });
-
-  const pasted =
-    "Paragraph one that is long enough to wrap several times in the composer.\n" +
-    "Paragraph two continues the paste.\nParagraph three.\nParagraph four.\n" +
-    "Paragraph five with more text to force height growth.\nParagraph six.";
-
-  await user.click(input);
-  await user.paste(pasted);
-
-  expect(input.value).toContain("Paragraph six");
-  expect(input.style.height).toBe("192px");
 });

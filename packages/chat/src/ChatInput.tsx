@@ -267,11 +267,14 @@ export function ChatInput({
           value={draft}
           disabled={isBlocked}
           placeholder={placeholder ?? "Message Ada…"}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            adjustHeight();
+          }}
           onInput={adjustHeight}
           onPaste={() => requestAnimationFrame(adjustHeight)}
           onKeyDown={handleKeyDown}
-          className="max-h-32 min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
+          className="max-h-32 min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
         <Button
           type="button"
