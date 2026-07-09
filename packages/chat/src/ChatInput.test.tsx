@@ -262,3 +262,27 @@ describe("ChatInput composer width", () => {
     expect(row?.className).not.toContain("max-w-[60vw]");
   });
 });
+
+it("auto-grows textarea height when long multi-line text is pasted", async () => {
+  const user = userEvent.setup();
+  const onSend = mock((_text: string) => {});
+  render(<ChatInput onSend={onSend} />);
+
+  const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+
+  Object.defineProperty(input, "scrollHeight", {
+    configurable: true,
+    get: () => 192,
+  });
+
+  const pasted =
+    "Paragraph one that is long enough to wrap several times in the composer.\n" +
+    "Paragraph two continues the paste.\nParagraph three.\nParagraph four.\n" +
+    "Paragraph five with more text to force height growth.\nParagraph six.";
+
+  await user.click(input);
+  await user.paste(pasted);
+
+  expect(input.value).toContain("Paragraph six");
+  expect(input.style.height).toBe("192px");
+});
