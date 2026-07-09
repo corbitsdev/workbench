@@ -143,6 +143,10 @@ function createMockSessionManager(): SessionManager & {
   destroyed: string[];
   aborted: { address: string; reason: string }[];
   delivered: DeliveredMessage[];
+  inboundMail: { agentAddress: string; rawMessage: Uint8Array }[];
+  wakeable: string[];
+  woken: string[];
+  wakeHook: ((agentAddress: string) => void | Promise<void>) | null;
   addresses: string[];
   provisionedAddresses: string[];
   shouldThrow: string | null;
@@ -153,6 +157,10 @@ function createMockSessionManager(): SessionManager & {
     destroyed: [] as string[],
     aborted: [] as { address: string; reason: string }[],
     delivered: [] as DeliveredMessage[],
+    inboundMail: [] as { agentAddress: string; rawMessage: Uint8Array }[],
+    wakeable: [] as string[],
+    woken: [] as string[],
+    wakeHook: null as ((agentAddress: string) => void | Promise<void>) | null,
     addresses: [] as string[],
     provisionedAddresses: [] as string[],
     shouldThrow: null as string | null,
@@ -190,6 +198,21 @@ function createMockSessionManager(): SessionManager & {
     deliverMessage(agentAddress: string, message: InboundMessage): void {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.delivered.push({ agentAddress, message });
+    },
+    isWakeable(agentAddress: string): boolean {
+      return mock.wakeable.includes(agentAddress);
+    },
+    async wakeAgent(agentAddress: string): Promise<void> {
+      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
+      if (mock.wakeHook !== null) await mock.wakeHook(agentAddress);
+      mock.wakeable = mock.wakeable.filter((a) => a !== agentAddress);
+      mock.woken.push(agentAddress);
+      if (!mock.addresses.includes(agentAddress)) {
+        mock.addresses.push(agentAddress);
+      }
+    },
+    deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void {
+      mock.inboundMail.push({ agentAddress, rawMessage });
     },
     async updateGrants(
       _agentAddress: string,
@@ -477,6 +500,71 @@ describe("sidecar↔hub integration", () => {
     }
   });
 
+  test("session.start retry after a background wake success acks idempotently", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const address = "retry-agent@test.interchange";
+    // Liveness is tracked separately from the mock's routing list so the
+    // first start sees a sleeping agent and the retry sees a live one.
+    let live = false;
+    sessions.hasSession = () => live;
+    // First session.start: the wake's first attempt fails (credential
+    // endpoint unreachable) while retries continue in the background.
+    sessions.wakeHook = () => {
+      throw new Error("first attempt boom");
+    };
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-start-retry",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-start-retry"),
+      );
+
+      // Deploy establishes hub-side routing for the address; the sidecar
+      // then treats it as a sleeping (wakeable) agent.
+      await env.router.sendAgentDeploy(address, TEST_CONFIG);
+      sessions.wakeable.push(address);
+
+      await expect(env.router.sendSessionStart(address)).rejects.toThrow(
+        "first attempt boom",
+      );
+
+      // The background retry succeeds: the agent is now live — no longer
+      // wakeable and never provisioned.
+      sessions.wakeHook = null;
+      sessions.wakeable = [];
+      live = true;
+
+      // The hub deroutes an address on agent.error, so its retry re-runs
+      // the deploy before the next session.start (as launchSession does).
+      await env.router.sendAgentDeploy(address, TEST_CONFIG);
+
+      // The retry must ack against the live session instead of falling
+      // through to startSession ("No provisioned agent").
+      await env.router.sendSessionStart(address);
+
+      // The live session was left untouched: no startSession ran and no
+      // second wake was triggered.
+      expect(sessions.started).toHaveLength(0);
+      expect(sessions.woken).toHaveLength(0);
+      expect(sessions.destroyed).toHaveLength(0);
+    } finally {
+      client.close();
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-start-retry"),
+      );
+    }
+  });
+
   test("session.start failure removes agent from routing table", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
@@ -573,6 +661,11 @@ describe("sidecar↔hub integration", () => {
     );
     const kp = await generateKeyPair();
     transport.register("agent-1@test.interchange", createEd25519Crypto(kp));
+    // A live session delivers straight to the registered mailbox — the
+    // real SessionManager.deliverInboundMail does exactly this.
+    sessions.deliverInboundMail = (addr: string, bytes: Uint8Array) => {
+      transport.deliver(addr, bytes);
+    };
 
     const client = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -679,6 +772,10 @@ describe("sidecar↔hub integration", () => {
     sessionsB.addresses.push("bob@test.interchange");
     const kpB = await generateKeyPair();
     transportB.register("bob@test.interchange", createEd25519Crypto(kpB));
+    // Bob's live session delivers straight to his registered mailbox.
+    sessionsB.deliverInboundMail = (addr: string, bytes: Uint8Array) => {
+      transportB.deliver(addr, bytes);
+    };
 
     const clientA = createHubLink({
       hubURL: `ws://localhost:${env.server.port}/ws`,
@@ -1513,13 +1610,13 @@ describe("sidecar↔hub integration", () => {
       const encoded = base64Encode(VALID_MESSAGE);
       expect(env.router.routeMail(address, encoded)).toBe(true);
 
-      const agentTransport = transport.getTransportFor(address);
-      await waitFor(async () => {
-        const refs = await agentTransport.search("INBOX", {});
-        return refs.length > 0;
-      });
+      // A false return from the router falls through to the legacy path,
+      // which now hands the bytes to `sessions.deliverInboundMail`.
+      await waitFor(() => sessions.inboundMail.length > 0);
 
       expect(consulted).toContain(address);
+      expect(sessions.inboundMail[0]?.agentAddress).toBe(address);
+      expect(sessions.inboundMail[0]?.rawMessage).toEqual(VALID_MESSAGE);
     } finally {
       client.close();
       await waitFor(
