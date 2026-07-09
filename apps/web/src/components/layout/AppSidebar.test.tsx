@@ -76,6 +76,7 @@ const { AppSidebar } = require("./AppSidebar");
 afterEach(() => {
   cleanup();
   sidebarDemoLinks = [];
+  sidebarIsAdmin = false;
 });
 
 function renderSidebar(path = "/", props: Record<string, unknown> = {}) {
@@ -206,19 +207,52 @@ describe("AppSidebar", () => {
     expect(screen.queryByRole("link", { name: /^tools$/i })).toBeNull();
   });
 
-  it("shows the Admin nav item only for an admin", async () => {
+  it("does not put Admin in the main nav list", async () => {
+    sidebarIsAdmin = true;
+    renderSidebar();
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /^admin$/i })).toBeTruthy();
+    });
+    const mainNav = screen.getByRole("navigation", {
+      name: /main navigation/i,
+    });
+    expect(mainNav.querySelector('a[href="/admin"]')).toBeNull();
+  });
+
+  it("shows Admin as a footer icon immediately left of Settings for admins only", async () => {
     sidebarIsAdmin = false;
     renderSidebar();
-    expect(screen.queryByRole("link", { name: /admin/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /^admin$/i })).toBeNull();
+    expect(
+      (
+        screen.getByRole("link", { name: /settings/i }) as HTMLAnchorElement
+      ).getAttribute("href"),
+    ).toBe("/settings");
 
     cleanup();
     sidebarIsAdmin = true;
     renderSidebar();
     await waitFor(() => {
       const admin = screen.getByRole("link", {
-        name: /admin/i,
+        name: /^admin$/i,
       }) as HTMLAnchorElement;
       expect(admin.getAttribute("href")).toBe("/admin");
+      const settings = screen.getByRole("link", {
+        name: /settings/i,
+      }) as HTMLAnchorElement;
+      // Footer cluster: Admin is the immediate previous sibling of Settings.
+      expect(admin.nextElementSibling).toBe(settings);
     });
+  });
+
+  it("does not show Sign out in the sidebar footer", () => {
+    sidebarIsAdmin = false;
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull();
+
+    cleanup();
+    sidebarIsAdmin = true;
+    renderSidebar();
+    expect(screen.queryByRole("button", { name: /sign out/i })).toBeNull();
   });
 });

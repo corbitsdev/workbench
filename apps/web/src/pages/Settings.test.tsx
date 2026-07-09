@@ -54,6 +54,18 @@ mock.module("@workbench/agents/browser", () => ({
   TOOL_SUMMARY_PREVIEW_CALLS: [],
 }));
 
+const signOutMock = mock(() => Promise.resolve());
+
+mock.module("../components/AuthProvider", () => ({
+  useAuth: () => ({
+    session: {
+      status: "authenticated" as const,
+      user: { name: "Alice", email: "alice@example.com" },
+    },
+    signOut: signOutMock,
+  }),
+}));
+
 import { default as Settings } from "./Settings";
 
 const realFetch = globalThis.fetch;
@@ -96,6 +108,7 @@ function renderSettings() {
 
 beforeEach(() => {
   window.happyDOM.setURL("http://localhost/settings");
+  signOutMock.mockClear();
 });
 
 afterEach(() => {
@@ -211,5 +224,22 @@ describe("Settings build version display", () => {
       if (!bodyText().includes("build unknown"))
         throw new Error("unknown not rendered");
     });
+  });
+});
+
+describe("Settings sign out", () => {
+  it("renders a Sign out button", () => {
+    neverResolvingVersion();
+    renderSettings();
+    expect(
+      screen.getByRole("button", { name: /sign out/i }).textContent,
+    ).toMatch(/sign out/i);
+  });
+
+  it("calls signOut when the button is clicked", () => {
+    neverResolvingVersion();
+    renderSettings();
+    fireEvent.click(screen.getByRole("button", { name: /sign out/i }));
+    expect(signOutMock).toHaveBeenCalledTimes(1);
   });
 });

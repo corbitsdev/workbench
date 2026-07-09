@@ -22,8 +22,10 @@ import {
   TOOL_SUMMARY_STYLE_LABELS,
   TOOL_SUMMARY_PREVIEW_CALLS,
 } from "@workbench/agents/browser";
+import { LogOut } from "lucide-react";
 import { fetchBuildSha } from "../lib/api";
 import { getMe, patchMeProfile } from "../lib/hub-api";
+import { useAuth } from "../components/AuthProvider";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -81,6 +83,7 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
 const INITIAL_VALUES: SettingsValues = {};
 
 export default function Settings() {
+  const { signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { compact: compactToolActivity, setCompact: setCompactToolActivity } =
     useCompactToolActivity();
@@ -217,6 +220,16 @@ export default function Settings() {
           // scary error.
           <p className="font-mono text-xs text-text-3">build {buildLabel}</p>
         )}
+      </div>
+      <div className="mx-auto w-full max-w-2xl border-t border-border px-4 pb-8 pt-6">
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
+        >
+          <LogOut size={14} />
+          Sign out
+        </button>
       </div>
     </div>
   );
