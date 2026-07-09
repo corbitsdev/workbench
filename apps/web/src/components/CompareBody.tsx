@@ -6,7 +6,7 @@ import { ComparisonView, Markdown, parseComparisonResult } from "@workbench/ui";
 export default function CompareBody({ content }: { content: string }) {
   const result = parseComparisonResult(content);
   if (result !== null) {
-    return <ComparisonView result={result} />;
+    return <ComparisonView result={result} status="final" />;
   }
   return <Markdown className="max-w-[68ch]">{content}</Markdown>;
 }

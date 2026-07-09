@@ -15,12 +15,61 @@ import {
   type LogRunState,
   type RunRecord,
 } from "../lib/run-state-adapter";
-import { WorkflowRunBlocks } from "./WorkflowRunBlocks";
+import { WorkflowRunBlocks, blockKey } from "./WorkflowRunBlocks";
+import type { UIBlock } from "@workbench/chat";
 
 function makeState(log: LogRunState, status: RunRecord["status"]) {
   const record: RunRecord = { runId: log.runId, kind: "note-picker", status };
   return reconcileRunState(record, runStateFromLog(log));
 }
+
+describe("blockKey", () => {
+  it("keys a comparison block stably as its variant set grows", () => {
+    // The single comparison block updates in place across polls: its key must
+    // NOT change when the streaming variant count / statuses change, or the
+    // block remounts every poll and re-fires its entrance animation.
+    const running: UIBlock = {
+      kind: "comparison",
+      status: "running",
+      blind: true,
+      result: {
+        ranking: [],
+        variants: [{ label: "Variant 1", content: "", status: "streaming" }],
+      },
+    };
+    const final: UIBlock = {
+      kind: "comparison",
+      status: "final",
+      blind: true,
+      result: {
+        ranking: [],
+        variants: [
+          { label: "Variant 1", content: "x", status: "responded" },
+          { label: "Variant 2", content: "y", status: "responded" },
+        ],
+      },
+    };
+    expect(blockKey(running, 0)).toBe(blockKey(final, 0));
+  });
+
+  it("keys distinct block kinds distinctly", () => {
+    const progress: UIBlock = {
+      kind: "progress",
+      steps: [{ state: "running" }],
+    };
+    const error: UIBlock = { kind: "error", message: "boom" };
+    expect(blockKey(progress, 0)).not.toBe(blockKey(error, 1));
+  });
+
+  it("keys gates by their signal name, not their index", () => {
+    const choice: UIBlock = {
+      kind: "choice",
+      signalName: "ab-decision",
+      options: [{ id: "a", label: "A" }],
+    };
+    expect(blockKey(choice, 5)).toBe(blockKey(choice, 9));
+  });
+});
 
 describe("WorkflowRunBlocks", () => {
   afterEach(cleanup);
