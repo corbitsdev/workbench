@@ -3,49 +3,33 @@ import type { ToolDefinition } from "@intx/types/runtime";
 import { type } from "arktype";
 
 // ---------------------------------------------------------------------------
-// ab_comparison_compose — assemble the persisted A/B comparison artifact.
+// A/B-preset workflow helpers (deterministic — no inference, no credentials).
 //
-// A deterministic workflow helper (no inference, no credentials). It reads the
-// whole `{ from: "steps" }` tree and folds three things into ONE structured
-// payload that the artifact renderer (`ComparisonView`) reads back verbatim:
+// The curated preset workflows fix N models at definition time and run each as
+// its own `exec<i>` inline step (a `map` would collapse every variant onto one
+// pinned source). The definition threads the fixed variant metadata in as a
+// literal `__presetVariants` (blind `label` + real `model`), so these helpers
+// read each `exec<i>` output rather than a `config`/`execute`-map tree.
 //
-//   - the variant configs  (steps.config.output.variants — label/provider/model)
-//   - the variant outputs  (steps.execute.output — the text each variant wrote)
-//   - the decision         (who won + why), from EITHER:
-//       * steps.compare.output.reply — an LLM judge's strict JSON  → decidedBy "agent"
-//       * steps.decision.output      — the human's pick payload    → decidedBy "human"
-//
-// Output is `JSON.stringify(ComparisonResult)`; the persist step writes it as
-// the artifact `content`. Keeping the assembly here (not in the persist
-// argMap) is what lets the saved artifact carry the actual variant content
-// side by side, not just the ranking — and lets the same artifact serve both
-// the agent-select and the human-in-the-loop workflows.
+// Two tools:
+//   - `ab_preset_quorum`  — run after all variants, BEFORE the human decision:
+//     throws (fails the run) if fewer than `AB_PRESET_QUORUM` variants produced
+//     an answer, so the human is never shown a pick that cannot stand.
+//   - `ab_preset_compose` — run after the decision: folds the fixed variant
+//     metadata, each variant's output, and the human ranking into the one
+//     `ComparisonResult` the renderer reads back.
 // ---------------------------------------------------------------------------
 
-export const AB_COMPARISON_COMPOSE_DEFINITION: ToolDefinition = {
-  name: "ab_comparison_compose",
-  description:
-    "Internal A/B-comparison workflow helper. Fold the variant configs, the variant outputs, and the ranking decision (agent judge or human pick) from the workflow step outputs into one structured comparison artifact payload.",
-  inputSchema: {
-    type: "object",
-    additionalProperties: true,
-  },
-};
-
-// Step ids both A/B workflows agree on. The compose tool reads the whole steps
-// tree, so it must know where each piece lives.
-const CONFIG_STEP = "config";
-const EXECUTE_STEP = "execute";
-const AGENT_DECISION_STEP = "compare";
-const HUMAN_DECISION_STEP = "decision";
+/** Minimum variants that must produce an answer for the comparison to stand. */
+export const AB_PRESET_QUORUM = 2;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// The workflow runtime passes the steps tree as the tool args. A tool-call
-// transport that can't carry a nested object falls back to a `_raw` JSON
-// string (mirrors the last30days helpers).
+// The workflow runtime passes the merged steps tree as the tool args. A
+// tool-call transport that can't carry a nested object falls back to a `_raw`
+// JSON string (mirrors the last30days helpers).
 function coerceArgsObject(
   args: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -59,7 +43,6 @@ function coerceArgsObject(
   return args;
 }
 
-// Each step entry in the tree is `{ output: <stepOutput> }`.
 function readStepOutput(steps: Record<string, unknown>, id: string): unknown {
   const step = steps[id];
   return isRecord(step) ? step.output : undefined;
@@ -77,7 +60,6 @@ const RankingEntry = type({
 type RankingEntry = typeof RankingEntry.infer;
 
 interface Decision {
-  decidedBy: "agent" | "human";
   summary?: string;
   recommendation?: string;
   ranking: RankingEntry[];
@@ -95,24 +77,19 @@ function coerceRanking(value: unknown): RankingEntry[] {
   return rows;
 }
 
-function readDecisionObject(
-  output: Record<string, unknown>,
-  decidedBy: "agent" | "human",
-): Decision {
+// The human decision (the `decision` gate payload). A top-level `rationale` (the
+// dock choice+prompt-box path) attaches to the winner when the rank-1 row
+// carries none, so the dock and the run-page panel produce equivalent artifacts.
+function readDecision(steps: Record<string, unknown>): Decision {
+  const output = readStepOutput(steps, "decision");
+  if (!isRecord(output)) return { ranking: [] };
   const ranking = coerceRanking(output.ranking);
-  // A top-level `rationale` (the dock choice+prompt-box path, CL-2683) attaches
-  // to the winner when the rank-1 row carries none, so a dock decision composes
-  // the same artifact the run-page panel produces (which nests the rationale on
-  // the winner row directly).
   const topRationale = readString(output.rationale);
   const winner = ranking.find((row) => row.rank === 1);
   if (topRationale !== undefined && winner !== undefined) {
     if (winner.rationale === undefined) winner.rationale = topRationale;
   }
-  const decision: Decision = {
-    decidedBy,
-    ranking,
-  };
+  const decision: Decision = { ranking };
   const summary = readString(output.summary);
   if (summary !== undefined) decision.summary = summary;
   const recommendation = readString(output.recommendation);
@@ -120,108 +97,130 @@ function readDecisionObject(
   return decision;
 }
 
-// Prefer the human decision (HITL) when present; otherwise read the agent
-// judge's strict-JSON reply (Agent Select). Either way produce a uniform
-// Decision so the artifact shape is identical across both workflows.
-function readDecision(steps: Record<string, unknown>): Decision {
-  const human = readStepOutput(steps, HUMAN_DECISION_STEP);
-  if (isRecord(human)) {
-    return readDecisionObject(human, "human");
-  }
-
-  const agent = readStepOutput(steps, AGENT_DECISION_STEP);
-  const reply = isRecord(agent) ? agent.reply : undefined;
-  if (typeof reply === "string") {
-    try {
-      const parsed: unknown = JSON.parse(reply);
-      if (isRecord(parsed)) return readDecisionObject(parsed, "agent");
-    } catch {
-      // A non-JSON judge reply degrades to an empty (agent) decision rather
-      // than failing the run; the renderer still shows the variants.
-    }
-  }
-  return { decidedBy: "agent", ranking: [] };
-}
-
-interface VariantConfig {
-  label: string;
-  providerName?: string;
-  model?: string;
-}
-
-function readVariantConfigs(steps: Record<string, unknown>): VariantConfig[] {
-  const config = readStepOutput(steps, CONFIG_STEP);
-  const variants = isRecord(config) ? config.variants : undefined;
-  if (!Array.isArray(variants)) return [];
-  return variants.map((variant, index) => {
-    const record = isRecord(variant) ? variant : {};
-    const out: VariantConfig = {
-      label: readString(record.label) ?? `Variant ${index + 1}`,
-    };
-    const providerName = readString(record.providerName);
-    if (providerName !== undefined) out.providerName = providerName;
-    const model = readString(record.model);
-    if (model !== undefined) out.model = model;
-    return out;
-  });
-}
-
-// The execute map emits one inner output per variant, in config order. The
-// inner output is `{ reply }`; tolerate an `{ output: { reply } }` wrapping too.
-function readVariantReplies(steps: Record<string, unknown>): string[] {
-  const execute = readStepOutput(steps, EXECUTE_STEP);
-  if (!Array.isArray(execute)) return [];
-  return execute.map((entry) => {
-    if (isRecord(entry)) {
-      const direct = readString(entry.reply);
-      if (direct !== undefined) return direct;
-      const nested = isRecord(entry.output)
-        ? readString(entry.output.reply)
-        : undefined;
-      if (nested !== undefined) return nested;
-    }
-    return "";
-  });
-}
-
 interface ComposedVariant {
   label: string;
-  providerName?: string;
   model?: string;
   content: string;
 }
 
-export function composeComparisonResult(steps: Record<string, unknown>): {
+interface PresetVariantMeta {
+  label: string;
+  model: string;
+}
+
+function readPresetVariantMeta(
+  args: Record<string, unknown>,
+): PresetVariantMeta[] {
+  const raw = args.__presetVariants;
+  if (!Array.isArray(raw)) return [];
+  const metas: PresetVariantMeta[] = [];
+  for (const [index, entry] of raw.entries()) {
+    const record = isRecord(entry) ? entry : {};
+    const model = readString(record.model);
+    if (model === undefined) continue;
+    metas.push({
+      label: readString(record.label) ?? `Variant ${index + 1}`,
+      model,
+    });
+  }
+  return metas;
+}
+
+// Each variant ran as `exec<i>`; its output is `{ reply, isError?, error? }`. A
+// non-fatal skip carries `isError: true` and an empty reply. An empty reply with
+// no error is also treated as a non-answer (it cannot be compared or ranked) —
+// a legitimately-empty completion is rare and would contribute nothing anyway.
+function readPresetVariantOutput(
+  args: Record<string, unknown>,
+  index: number,
+): { content: string; failed: boolean } {
+  const step = args[`exec${index}`];
+  const output = isRecord(step) ? step.output : undefined;
+  if (!isRecord(output)) return { content: "", failed: true };
+  const failed = output.isError === true;
+  const content = readString(output.reply) ?? "";
+  return { content, failed: failed || content.length === 0 };
+}
+
+// The fixed variants folded with each exec output, plus the survivor count. The
+// single source of truth both the quorum gate and the compose step read.
+export function readPresetVariants(args: Record<string, unknown>): {
+  variants: ComposedVariant[];
+  survived: number;
+  total: number;
+} {
+  const metas = readPresetVariantMeta(args);
+  const variants: ComposedVariant[] = [];
+  let survived = 0;
+  for (const [index, meta] of metas.entries()) {
+    const { content, failed } = readPresetVariantOutput(args, index);
+    if (!failed) survived += 1;
+    variants.push({ label: meta.label, model: meta.model, content });
+  }
+  return { variants, survived, total: metas.length };
+}
+
+export const AB_PRESET_QUORUM_DEFINITION: ToolDefinition = {
+  name: "ab_preset_quorum",
+  description:
+    "Internal A/B-preset workflow helper. Fail the run before the human decision when fewer than the required number of variants produced an answer, so a doomed comparison never reaches the winner-pick gate.",
+  inputSchema: { type: "object", additionalProperties: true },
+};
+
+// Throws (fails the run) when too few variants answered. Runs AFTER every
+// variant lane completes and BEFORE the decision gate.
+export function enforcePresetQuorum(args: Record<string, unknown>): {
+  survived: number;
+  total: number;
+} {
+  const { survived, total } = readPresetVariants(args);
+  if (survived < AB_PRESET_QUORUM) {
+    throw new Error(
+      `ab_preset_quorum: only ${survived} of ${total} models produced an answer; a comparison needs at least ${AB_PRESET_QUORUM}`,
+    );
+  }
+  return { survived, total };
+}
+
+export const AB_PRESET_COMPOSE_DEFINITION: ToolDefinition = {
+  name: "ab_preset_compose",
+  description:
+    "Internal A/B-preset workflow helper. Fold the fixed variant metadata, each variant's inline-step output, and the human ranking into one structured comparison artifact payload.",
+  inputSchema: { type: "object", additionalProperties: true },
+};
+
+export function composePresetComparisonResult(args: Record<string, unknown>): {
   summary?: string;
   recommendation?: string;
-  decidedBy: "agent" | "human";
+  decidedBy: "human";
   ranking: RankingEntry[];
   variants: ComposedVariant[];
 } {
-  const configs = readVariantConfigs(steps);
-  const replies = readVariantReplies(steps);
-  const decision = readDecision(steps);
+  const { variants, survived, total } = readPresetVariants(args);
 
-  const variants: ComposedVariant[] = configs.map((config, index) => {
-    const variant: ComposedVariant = {
-      label: config.label,
-      content: replies[index] ?? "",
-    };
-    if (config.providerName !== undefined) {
-      variant.providerName = config.providerName;
-    }
-    if (config.model !== undefined) variant.model = config.model;
-    return variant;
-  });
+  // Defence in depth: the quorum gate already failed the run below quorum, so
+  // reaching compose with too few survivors is a programming error, not a user
+  // outcome. Fail loudly rather than persist a hollow comparison.
+  if (survived < AB_PRESET_QUORUM) {
+    throw new Error(
+      `ab_preset_compose: only ${survived} of ${total} models produced an answer; a comparison needs at least ${AB_PRESET_QUORUM}`,
+    );
+  }
 
+  // The human ranking is a /resume payload — validated for shape at the
+  // boundary, but its labels are free strings. Keep only rows that name a real
+  // variant so a forged/stale label (e.g. "Variant 9") cannot enter the artifact.
+  const knownLabels = new Set(variants.map((v) => v.label));
+  const decision = readDecision(args);
+  const ranking = decision.ranking.filter((row) => knownLabels.has(row.label));
   const result = {
-    decidedBy: decision.decidedBy,
-    ranking: decision.ranking,
+    decidedBy: "human" as const,
+    ranking,
     variants,
   } as {
     summary?: string;
     recommendation?: string;
-    decidedBy: "agent" | "human";
+    decidedBy: "human";
     ranking: RankingEntry[];
     variants: ComposedVariant[];
   };
@@ -232,18 +231,29 @@ export function composeComparisonResult(steps: Record<string, unknown>): {
   return result;
 }
 
-function createComposeTool(): AgentTool {
+function createPresetQuorumTool(): AgentTool {
   return {
     kind: "string",
-    definition: AB_COMPARISON_COMPOSE_DEFINITION,
+    definition: AB_PRESET_QUORUM_DEFINITION,
     handler: async (args) => {
-      const steps = coerceArgsObject(args);
-      return JSON.stringify(composeComparisonResult(steps));
+      return JSON.stringify(enforcePresetQuorum(coerceArgsObject(args)));
+    },
+  };
+}
+
+function createPresetComposeTool(): AgentTool {
+  return {
+    kind: "string",
+    definition: AB_PRESET_COMPOSE_DEFINITION,
+    handler: async (args) => {
+      return JSON.stringify(
+        composePresetComparisonResult(coerceArgsObject(args)),
+      );
     },
   };
 }
 
 /** The stateless A/B-comparison helper tools (no credential, no host context). */
 export function createAbCompareTools(): AgentTool[] {
-  return [createComposeTool()];
+  return [createPresetQuorumTool(), createPresetComposeTool()];
 }

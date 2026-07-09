@@ -29,7 +29,8 @@
           },
           "description": "Emits a fixed line to prove the workflow runtime dispatches a step.",
           "tags": {
-            "credentialName": "opencode-zen"
+            "credentialName": "opencode-zen",
+            "workbench.title": "Emit a test line"
           }
         },
         "drainBehavior": "cancel",

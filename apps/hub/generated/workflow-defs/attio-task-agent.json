@@ -28,7 +28,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_list_workspace_members",
-            "workbench.argMap": "{}"
+            "workbench.argMap": "{}",
+            "workbench.title": "List workspace members"
           }
         },
         "drainBehavior": "cancel",
@@ -62,7 +63,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_list_tasks",
-            "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}"
+            "workbench.argMap": "{\"assignee\":{\"from\":\"assignee\"},\"isCompleted\":{\"literal\":false}}",
+            "workbench.title": "List open tasks"
           }
         },
         "drainBehavior": "cancel",
@@ -99,7 +101,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_get_task",
-            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"}}"
+            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"}}",
+            "workbench.title": "Load the task"
           }
         },
         "drainBehavior": "cancel",
@@ -141,7 +144,8 @@
           },
           "description": "The planner: grounds itself in the Attio task + record and internal context (read-only), then decides the action plan.",
           "tags": {
-            "credentialName": "opencode-zen"
+            "credentialName": "opencode-zen",
+            "workbench.title": "Plan the work"
           }
         },
         "drainBehavior": "cancel",
@@ -189,7 +193,8 @@
           },
           "description": "Inline single-turn inference: attio-task-agent-execute",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Do the work"
           }
         },
         "drainBehavior": "cancel",
@@ -223,7 +228,8 @@
           },
           "description": "Inline single-turn inference: attio-task-agent-review-artifacts",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Check the drafts"
           }
         },
         "drainBehavior": "cancel",
@@ -266,7 +272,8 @@
             "tags": {
               "workbench.stepKind": "deterministic-tool",
               "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"type\"},\"content\":{\"from\":\"content\"}}"
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"type\"},\"content\":{\"from\":\"content\"}}",
+              "workbench.title": "Save each piece"
             }
           },
           "drainBehavior": "cancel",
@@ -291,7 +298,8 @@
           },
           "description": "Inline single-turn inference: attio-task-agent-suggest",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Suggest follow-ups"
           }
         },
         "drainBehavior": "cancel",
@@ -347,7 +355,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_create_note",
-            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}"
+            "workbench.argMap": "{\"parentObject\":{\"from\":\"parentObject\"},\"parentRecordId\":{\"from\":\"parentRecordId\"},\"content\":{\"from\":\"note\"},\"idempotencyKey\":{\"from\":\"taskId\"}}",
+            "workbench.title": "Post the note to Attio"
           }
         },
         "drainBehavior": "cancel",
@@ -375,7 +384,8 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-attio/attio:attio_update_task",
-            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}"
+            "workbench.argMap": "{\"taskId\":{\"from\":\"taskId\"},\"isCompleted\":{\"literal\":true}}",
+            "workbench.title": "Mark the task complete"
           }
         },
         "drainBehavior": "cancel",

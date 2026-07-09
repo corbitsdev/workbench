@@ -27,7 +27,8 @@
           "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_list_notes",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes"
+            "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
+            "workbench.title": "List your call notes"
           }
         },
         "drainBehavior": "cancel",
@@ -60,7 +61,8 @@
           "description": "Deterministic tool call: @workbench/tools-granola/granola:granola_get_note",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note"
+            "workbench.tool": "@workbench/tools-granola/granola:granola_get_note",
+            "workbench.title": "Load the chosen note"
           }
         },
         "drainBehavior": "cancel",
@@ -93,7 +95,8 @@
           },
           "description": "Inline single-turn inference: pain-point-collateral-analyze",
           "tags": {
-            "workbench.stepKind": "inline-inference"
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Find the pain points"
           }
         },
         "drainBehavior": "cancel",
@@ -148,7 +151,8 @@
             },
             "description": "Inline single-turn inference: pain-point-collateral-generate",
             "tags": {
-              "workbench.stepKind": "inline-inference"
+              "workbench.stepKind": "inline-inference",
+              "workbench.title": "Draft each piece"
             }
           },
           "drainBehavior": "cancel",
@@ -192,7 +196,8 @@
             "tags": {
               "workbench.stepKind": "deterministic-tool",
               "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
-              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}"
+              "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"kind\":{\"from\":\"format\"},\"content\":{\"from\":\"content\"}}",
+              "workbench.title": "Save the collateral"
             }
           },
           "drainBehavior": "cancel",

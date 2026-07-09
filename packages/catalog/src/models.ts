@@ -11,6 +11,7 @@ const ALL_MODELS: CatalogModelSpec[] = [
   { canonicalName: "gpt-5.5" },
   { canonicalName: "gpt-5.4" },
   { canonicalName: "gpt-5.4-mini" },
+  { canonicalName: "gpt-5.4-nano" },
   // OpenAI-only models
   { canonicalName: "gpt-4.1" },
   // opencode-zen / Google models
@@ -24,6 +25,10 @@ const ALL_MODELS: CatalogModelSpec[] = [
   { canonicalName: "deepseek-v4-pro" },
   // opencode-zen / Moonshot models
   { canonicalName: "kimi-k2.6" },
+  // opencode-zen / Zhipu models
+  { canonicalName: "glm-5.2" },
+  // opencode-zen / xAI models
+  { canonicalName: "grok-4.5" },
   // near-ai models
   { canonicalName: "deepseek-ai/DeepSeek-V4-Flash" },
   { canonicalName: "near-ai/llama-3.1-70b-instruct" },

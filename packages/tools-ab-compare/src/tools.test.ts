@@ -1,196 +1,137 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseEnv } from "@intx/agent";
 import { abCompare } from "./interchange-tools";
-import { composeComparisonResult, createAbCompareTools } from "./tools";
+import {
+  AB_PRESET_QUORUM,
+  composePresetComparisonResult,
+  createAbCompareTools,
+  enforcePresetQuorum,
+  readPresetVariants,
+} from "./tools";
 
 const env = {} as BaseEnv;
 
-// A realistic steps tree: a config signal, an execute map output, and either a
-// `compare` (agent judge) or a `decision` (human) step.
-function stepsWithAgentJudge() {
+// The merged steps tree the preset compose/quorum steps receive: the fixed
+// variant metadata as a literal `__presetVariants`, each variant's `exec<i>`
+// output, and (for compose) the human `decision` step output.
+function args(overrides: Record<string, unknown> = {}) {
   return {
-    config: {
-      output: {
-        variants: [
-          { label: "Variant 1", providerName: "anthropic", model: "claude" },
-          { label: "Variant 2", providerName: "openai", model: "gpt" },
-        ],
-        input: "rewrite it",
-      },
-    },
-    execute: {
-      output: [{ reply: "Variant one body." }, { reply: "Variant two body." }],
-    },
-    compare: {
-      output: {
-        reply: JSON.stringify({
-          summary: "V1 wins.",
-          recommendation: "Ship V1.",
-          ranking: [
-            { rank: 1, label: "Variant 1", rationale: "Tighter." },
-            { rank: 2, label: "Variant 2", rationale: "Wordier." },
-          ],
-        }),
-      },
-    },
+    __presetVariants: [
+      { label: "Variant 1", model: "claude-opus-4-8" },
+      { label: "Variant 2", model: "gpt-5.5" },
+      { label: "Variant 3", model: "glm-5.2" },
+    ],
+    exec0: { output: { reply: "opus answer" } },
+    exec1: { output: { reply: "gpt answer" } },
+    exec2: { output: { reply: "glm answer" } },
+    ...overrides,
   };
 }
 
-describe("tools-ab-compare interchange.tools entry", () => {
-  test("exports a namespaced keyless tool factory", () => {
-    expect(typeof abCompare).toBe("function");
-    expect(abCompare.id).toBe("@workbench/tools-ab-compare/compose");
-    expect(abCompare.requires).toEqual([]);
-  });
-
-  test("exposes the compose tool", () => {
-    const bundle = abCompare(env);
-    expect(bundle.definitions.map((d) => d.name)).toEqual([
-      "ab_comparison_compose",
+describe("readPresetVariants", () => {
+  test("folds each exec output against the fixed metadata and counts survivors", () => {
+    const { variants, survived, total } = readPresetVariants(
+      args({
+        exec1: { output: { reply: "", isError: true, error: "503" } },
+      }),
+    );
+    expect(total).toBe(3);
+    expect(survived).toBe(2);
+    expect(variants.map((v) => v.content)).toEqual([
+      "opus answer",
+      "",
+      "glm answer",
     ]);
+    // The failed variant still carries its blind label + model for the artifact.
+    expect(variants[1]).toEqual({
+      label: "Variant 2",
+      model: "gpt-5.5",
+      content: "",
+    });
   });
 });
 
-describe("composeComparisonResult", () => {
-  test("folds config, execute, and an agent judge into one payload", () => {
-    const result = composeComparisonResult(stepsWithAgentJudge());
-    expect(result.decidedBy).toBe("agent");
-    expect(result.summary).toBe("V1 wins.");
-    expect(result.recommendation).toBe("Ship V1.");
-    expect(result.ranking).toHaveLength(2);
-    // Variant content is carried side by side with the ranking.
-    expect(result.variants).toEqual([
-      {
-        label: "Variant 1",
-        providerName: "anthropic",
-        model: "claude",
-        content: "Variant one body.",
-      },
-      {
-        label: "Variant 2",
-        providerName: "openai",
-        model: "gpt",
-        content: "Variant two body.",
-      },
-    ]);
+describe("enforcePresetQuorum", () => {
+  test("passes when at least the quorum of variants answered", () => {
+    expect(enforcePresetQuorum(args())).toEqual({ survived: 3, total: 3 });
   });
 
-  test("reads a human decision when a decision step is present (HITL)", () => {
-    const steps = {
-      ...stepsWithAgentJudge(),
-      // The human's pick supersedes any agent judge.
-      decision: {
-        output: {
-          summary: "Reviewer preferred V2.",
-          ranking: [
-            { rank: 1, label: "Variant 2", rationale: "Better close." },
-            { rank: 2, label: "Variant 1" },
-          ],
-        },
-      },
-    };
-    const result = composeComparisonResult(steps);
+  test("throws (fails the run) when fewer than the quorum answered", () => {
+    expect(() =>
+      enforcePresetQuorum(
+        args({
+          exec1: { output: { reply: "", isError: true } },
+          exec2: { output: { reply: "", isError: true } },
+        }),
+      ),
+    ).toThrow(new RegExp(`at least ${AB_PRESET_QUORUM}`));
+  });
+});
+
+describe("composePresetComparisonResult", () => {
+  test("folds survivors + the human ranking into the comparison result", () => {
+    const result = composePresetComparisonResult(
+      args({
+        decision: { output: { ranking: [{ rank: 1, label: "Variant 2" }] } },
+      }),
+    );
     expect(result.decidedBy).toBe("human");
-    expect(result.ranking[0]?.label).toBe("Variant 2");
-    // Variant content still comes from execute, in config order.
-    expect(result.variants[1]?.content).toBe("Variant two body.");
+    expect(result.variants).toHaveLength(3);
+    expect(result.ranking).toEqual([{ rank: 1, label: "Variant 2" }]);
   });
 
-  test("folds a top-level human rationale onto the rank-1 winner (dock parity)", () => {
-    // The dock choice+prompt-box path (CL-2683) delivers the rationale as a
-    // top-level field alongside a ranking that carries none; compose attaches it
-    // to the winner so the artifact matches the run-page panel's nested shape.
-    const steps = {
-      ...stepsWithAgentJudge(),
-      decision: {
-        output: {
-          ranking: [
-            { rank: 1, label: "Variant 2" },
-            { rank: 2, label: "Variant 1" },
-          ],
-          rationale: "Punchier and more memorable.",
+  test("carries a failed variant (empty content) when the quorum still holds", () => {
+    const result = composePresetComparisonResult(
+      args({
+        exec2: { output: { reply: "", isError: true, error: "503" } },
+        decision: { output: { ranking: [{ rank: 1, label: "Variant 1" }] } },
+      }),
+    );
+    expect(result.variants).toHaveLength(3);
+    expect(result.variants[2]?.content).toBe("");
+  });
+
+  test("folds a top-level rationale onto the winning row", () => {
+    const result = composePresetComparisonResult(
+      args({
+        decision: {
+          output: {
+            ranking: [{ rank: 1, label: "Variant 3" }],
+            rationale: "clearest answer",
+          },
         },
-      },
-    };
-    const result = composeComparisonResult(steps);
-    expect(result.decidedBy).toBe("human");
+      }),
+    );
     const winner = result.ranking.find((r) => r.rank === 1);
-    expect(winner?.rationale).toBe("Punchier and more memorable.");
-    // Non-winner rows are untouched.
-    expect(result.ranking.find((r) => r.rank === 2)?.rationale).toBeUndefined();
+    expect(winner?.rationale).toBe("clearest answer");
   });
 
-  test("a per-row winner rationale wins over the top-level fallback", () => {
-    const steps = {
-      ...stepsWithAgentJudge(),
-      decision: {
-        output: {
-          ranking: [{ rank: 1, label: "Variant 2", rationale: "Row note." }],
-          rationale: "Top-level note.",
-        },
-      },
-    };
-    const result = composeComparisonResult(steps);
-    expect(result.ranking[0]?.rationale).toBe("Row note.");
+  test("defensively throws below quorum (the gate should have failed first)", () => {
+    expect(() =>
+      composePresetComparisonResult(
+        args({
+          exec1: { output: { reply: "", isError: true } },
+          exec2: { output: { reply: "", isError: true } },
+          decision: { output: { ranking: [] } },
+        }),
+      ),
+    ).toThrow(/at least 2/);
   });
+});
 
-  test("degrades to an empty ranking on a non-JSON judge reply", () => {
-    const steps = {
-      ...stepsWithAgentJudge(),
-      compare: { output: { reply: "not json at all" } },
-    };
-    const result = composeComparisonResult(steps);
-    expect(result.ranking).toEqual([]);
-    // Variants are still assembled so the renderer shows the outputs.
-    expect(result.variants).toHaveLength(2);
-  });
-
-  test("drops malformed ranking rows but keeps valid ones", () => {
-    const steps = {
-      ...stepsWithAgentJudge(),
-      compare: {
-        output: {
-          reply: JSON.stringify({
-            ranking: [
-              { rank: 1, label: "Variant 1" },
-              { rank: "nope", label: "Variant 2" },
-              { label: "missing rank" },
-            ],
-          }),
-        },
-      },
-    };
-    const result = composeComparisonResult(steps);
-    expect(result.ranking).toEqual([{ rank: 1, label: "Variant 1" }]);
-  });
-
-  test("falls back to positional labels and blank content when steps are thin", () => {
-    const steps = {
-      config: { output: { variants: [{}, {}] } },
-      execute: { output: [{ reply: "only one" }] },
-    };
-    const result = composeComparisonResult(steps);
-    expect(result.variants.map((v) => v.label)).toEqual([
-      "Variant 1",
-      "Variant 2",
+describe("interchange.tools entry", () => {
+  test("exposes the preset quorum + compose tools", () => {
+    const bundle = abCompare(env);
+    expect(bundle.definitions.map((d) => d.name)).toEqual([
+      "ab_preset_quorum",
+      "ab_preset_compose",
     ]);
-    expect(result.variants[0]?.content).toBe("only one");
-    expect(result.variants[1]?.content).toBe("");
-    expect(result.decidedBy).toBe("agent");
-    expect(result.ranking).toEqual([]);
   });
 
-  test("compose tool handler returns a JSON string that round-trips", async () => {
-    const tools = createAbCompareTools();
-    const compose = tools.find(
-      (t) => t.definition.name === "ab_comparison_compose",
-    );
-    if (compose?.kind !== "string") throw new Error("expected a string tool");
-    const out = await compose.handler(
-      stepsWithAgentJudge(),
-      AbortSignal.timeout(1000),
-    );
-    expect(typeof out).toBe("string");
-    expect(JSON.parse(out).variants).toHaveLength(2);
+  test("both tools are stateless (constructed without env or host context)", () => {
+    expect(createAbCompareTools().map((t) => t.definition.name)).toEqual([
+      "ab_preset_quorum",
+      "ab_preset_compose",
+    ]);
   });
 });

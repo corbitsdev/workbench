@@ -13,7 +13,7 @@ import {
 // `stepOutputsFromLog` + `runStateFromLog` decoders — exactly what WorkflowDock
 // does — and only THEN into the block builder, so the test starts from
 // wire-shaped data (inline outputRefs), not a pre-trusted object (CL-2730,
-// mirrors the ab-compare-hitl seam test).
+// mirrors the ab-compare-quality seam test).
 
 function parseLog(raw: unknown): LogRunState {
   const parsed = logRunStateSchema(raw);

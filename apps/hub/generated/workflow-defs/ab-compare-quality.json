@@ -1,0 +1,330 @@
+{
+  "kind": "ab-compare-quality",
+  "version": "0.1.0",
+  "label": "A/B Compare - Quality",
+  "description": "Run one shared prompt blind across four frontier models (Opus, GPT-5.5, GLM-5.2, Grok-4.5), then pick the winner.",
+  "definition": {
+    "id": "ab-compare-quality",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "config": {
+        "kind": "awaitSignal",
+        "id": "config",
+        "name": "ab-config",
+        "drainBehavior": "wait"
+      },
+      "exec0": {
+        "kind": "step",
+        "id": "exec0",
+        "agent": {
+          "id": "exec0",
+          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "claude-opus-4-8"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: exec0",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.nonFatal": "true",
+            "workbench.inlineRetryMaxAttempts": "3",
+            "workbench.title": "Variant 1"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.config.output.input"
+        },
+        "retry": {
+          "maxAttempts": 3,
+          "initialBackoffMs": 1000,
+          "maxBackoffMs": 8000
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "exec1": {
+        "kind": "step",
+        "id": "exec1",
+        "agent": {
+          "id": "exec1",
+          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "gpt-5.5"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: exec1",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.nonFatal": "true",
+            "workbench.inlineRetryMaxAttempts": "3",
+            "workbench.title": "Variant 2"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.config.output.input"
+        },
+        "retry": {
+          "maxAttempts": 3,
+          "initialBackoffMs": 1000,
+          "maxBackoffMs": 8000
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "exec2": {
+        "kind": "step",
+        "id": "exec2",
+        "agent": {
+          "id": "exec2",
+          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "glm-5.2"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: exec2",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.nonFatal": "true",
+            "workbench.inlineRetryMaxAttempts": "3",
+            "workbench.title": "Variant 3"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.config.output.input"
+        },
+        "retry": {
+          "maxAttempts": 3,
+          "initialBackoffMs": 1000,
+          "maxBackoffMs": 8000
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "exec3": {
+        "kind": "step",
+        "id": "exec3",
+        "agent": {
+          "id": "exec3",
+          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "grok-4.5"
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: exec3",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.nonFatal": "true",
+            "workbench.inlineRetryMaxAttempts": "3",
+            "workbench.title": "Variant 4"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.config.output.input"
+        },
+        "retry": {
+          "maxAttempts": 3,
+          "initialBackoffMs": 1000,
+          "maxBackoffMs": 8000
+        },
+        "after": [
+          "config"
+        ]
+      },
+      "quorum": {
+        "kind": "step",
+        "id": "quorum",
+        "agent": {
+          "id": "quorum",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-ab-compare/compose:ab_preset_quorum"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_preset_quorum",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_preset_quorum",
+            "workbench.title": "Check enough models answered"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps"
+            },
+            {
+              "literal": {
+                "__presetVariants": [
+                  {
+                    "label": "Variant 1",
+                    "model": "claude-opus-4-8"
+                  },
+                  {
+                    "label": "Variant 2",
+                    "model": "gpt-5.5"
+                  },
+                  {
+                    "label": "Variant 3",
+                    "model": "glm-5.2"
+                  },
+                  {
+                    "label": "Variant 4",
+                    "model": "grok-4.5"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "after": [
+          "exec0",
+          "exec1",
+          "exec2",
+          "exec3"
+        ]
+      },
+      "decision": {
+        "kind": "awaitSignal",
+        "id": "decision",
+        "name": "ab-decision",
+        "drainBehavior": "wait",
+        "after": [
+          "quorum"
+        ]
+      },
+      "compose": {
+        "kind": "step",
+        "id": "compose",
+        "agent": {
+          "id": "compose",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-ab-compare/compose:ab_preset_compose"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-ab-compare/compose:ab_preset_compose",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-ab-compare/compose:ab_preset_compose",
+            "workbench.title": "Compile the comparison"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps"
+            },
+            {
+              "literal": {
+                "__presetVariants": [
+                  {
+                    "label": "Variant 1",
+                    "model": "claude-opus-4-8"
+                  },
+                  {
+                    "label": "Variant 2",
+                    "model": "gpt-5.5"
+                  },
+                  {
+                    "label": "Variant 3",
+                    "model": "glm-5.2"
+                  },
+                  {
+                    "label": "Variant 4",
+                    "model": "grok-4.5"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "after": [
+          "decision"
+        ]
+      },
+      "persist": {
+        "kind": "step",
+        "id": "persist",
+        "agent": {
+          "id": "persist",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:artifact_create"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:artifact_create",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:artifact_create",
+            "workbench.argMap": "{\"content\":{\"from\":\"content\"},\"title\":{\"literal\":\"A/B Compare - Quality Results\"},\"kind\":{\"literal\":\"ab-comparison\"}}",
+            "workbench.title": "Save the comparison"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.compose.output"
+        },
+        "after": [
+          "compose"
+        ]
+      }
+    },
+    "stepOrder": [
+      "config",
+      "exec0",
+      "exec1",
+      "exec2",
+      "exec3",
+      "quorum",
+      "decision",
+      "compose",
+      "persist"
+    ]
+  }
+}

@@ -72,7 +72,6 @@ import {
   createWorkflowDeployService,
   type ReclaimDeploymentFn,
 } from "./services/workflow-deploy";
-import { createInternalWorkflowSkillsRouter } from "./routes/workflow-skills";
 import {
   createWorkflowReconciler,
   registerAwaitingSupervisorPrewarm,
@@ -1338,14 +1337,6 @@ app.route(
 app.route(
   "/api/internal",
   createToolCredentialsRouter(db, config.sidecarToken),
-);
-app.route(
-  "/api/internal",
-  createInternalWorkflowSkillsRouter(
-    db,
-    repoStore.repoStore,
-    config.sidecarToken,
-  ),
 );
 app.route(
   "/api/internal",

@@ -229,7 +229,7 @@ describe("logNewWorkflowRunFailureIfNeeded", () => {
     expect(() =>
       logNewWorkflowRunFailureIfNeeded("failed", failedProjected(), {
         runId: "wfr_3",
-        kind: "ab-compare-hitl",
+        kind: "ab-compare-quality",
         deploymentId: "ses_dep2",
         version: "0.1.0",
         sha: "def5678",

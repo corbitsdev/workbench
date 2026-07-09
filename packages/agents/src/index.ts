@@ -20,6 +20,7 @@ export {
   STEP_TITLE_TAG,
   STEP_ARGMAP_TAG,
   STEP_NONFATAL_TAG,
+  STEP_INLINE_RETRY_MAX_TAG,
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
   ArgMap,
@@ -33,18 +34,6 @@ export {
   type FlowStepClass,
   type ClassifiedFlowStep,
 } from "./flow-classify";
-export {
-  EPHEMERAL_CHAT_TAG,
-  EphemeralChatPayload,
-  compactEphemeralChatInput,
-  type EphemeralChatCompactResult,
-  type EphemeralChatCompactionMeta,
-} from "./ephemeral-chat/payload";
-export {
-  EPHEMERAL_INPUT_TOKEN_BUDGET,
-  EPHEMERAL_COMPACT_RATIO,
-  EPHEMERAL_COMPACT_THRESHOLD_TOKENS,
-} from "./ephemeral-chat/budget";
 
 // Personal agent
 export { buildPersonalAgentSystemPrompt } from "./personal-agent/prompt";

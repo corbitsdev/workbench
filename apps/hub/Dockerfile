@@ -44,6 +44,7 @@ COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
+COPY packages/ab-compare-presets/package.json packages/ab-compare-presets/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
 COPY packages/tools-catalog/package.json packages/tools-catalog/
@@ -64,7 +65,9 @@ COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
-COPY workflows/ab-compare-hitl/package.json workflows/ab-compare-hitl/
+COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
+COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
+COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
 COPY workflows/last30days-research/package.json workflows/last30days-research/

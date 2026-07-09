@@ -209,3 +209,25 @@ describe("providersForToolPackages", () => {
     ).toEqual([]);
   });
 });
+
+describe("workflow tools round-trip to a package pin (CL-3074 regression)", () => {
+  // A deterministicToolStep names a tool by its bare name; the deploy canonicalizes
+  // it and derives the package pin from the capability. A tool missing from the
+  // registry stays bare, resolves to NO pin, and the sidecar never loads its
+  // package — the step then throws "tool not found" at run time. Guard every tool
+  // a shipped workflow actually names.
+  const WORKFLOW_TOOLS = [
+    "ab_preset_quorum",
+    "ab_preset_compose",
+    "artifact_create",
+  ];
+
+  for (const tool of WORKFLOW_TOOLS) {
+    it(`${tool} canonicalizes to a prefixed name and yields a package pin`, () => {
+      const [canonical] = canonicalizeToolNames([tool]);
+      expect(canonical).toContain(":");
+      expect(canonical).not.toBe(tool);
+      expect(toolPackagesForCapabilities([tool]).length).toBeGreaterThan(0);
+    });
+  }
+});
