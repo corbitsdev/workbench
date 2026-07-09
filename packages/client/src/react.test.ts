@@ -12,10 +12,12 @@ import type { ArtifactWithSession, WorkflowSummary } from "@workbench/shared";
 import {
   artifactsInfiniteQueryKey,
   artifactsListQueryKey,
+  useArchiveArtifact,
   useArtifact,
   useArtifacts,
   useArtifactsInfinite,
   useLibraryResources,
+  useUnarchiveArtifact,
 } from "./react";
 
 type FetchArgs = [input: string | URL | Request, init?: RequestInit];
@@ -342,5 +344,92 @@ describe("useArtifact", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.title).toBe("Detail");
     expect(result.current.data?.id).toBe("art-detail");
+  });
+});
+
+describe("artifactsListQueryKey archived segment", () => {
+  it("keys the Archived view separately from the default view", () => {
+    const defaultKey = artifactsListQueryKey({ tenantId: "tn-9" });
+    const archivedKey = artifactsListQueryKey({
+      tenantId: "tn-9",
+      archived: true,
+    });
+    expect(archivedKey).not.toEqual([...defaultKey]);
+    expect(defaultKey[defaultKey.length - 1]).toBe(false);
+    expect(archivedKey[archivedKey.length - 1]).toBe(true);
+  });
+});
+
+describe("useArchiveArtifact / useUnarchiveArtifact", () => {
+  const archivedRow: ArtifactWithSession = {
+    id: "art-9",
+    parentId: null,
+    kind: "one-pager",
+    title: "T",
+    content: "body",
+    source: { origin: "unknown" },
+    status: "draft",
+    version: 1,
+    ownerPrincipalId: "prn-1",
+    archivedAt: "2026-07-09T12:00:00.000Z",
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    sessionName: null,
+    sessionStatus: null,
+    ownerName: null,
+  };
+
+  it("POSTs the archive route and invalidates the list + detail keys", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: archivedRow })),
+    );
+    const client = newClient();
+    const invalidateSpy = mock(
+      client.invalidateQueries.bind(client),
+    ) as unknown as typeof client.invalidateQueries;
+    client.invalidateQueries = invalidateSpy;
+
+    const { result } = renderHook(
+      () =>
+        useArchiveArtifact({
+          baseUrl: "http://localhost:4000",
+          fetch: fetcher,
+        }),
+      { wrapper: wrapper(client) },
+    );
+    await result.current.mutateAsync({
+      artifactId: "art-9",
+      tenantId: "tenant-1",
+    });
+
+    expect(spy.mock.calls[0]?.[0]).toContain("/artifacts/art-9/archive");
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    const keys = (
+      invalidateSpy as unknown as {
+        mock: { calls: [{ queryKey?: unknown }][] };
+      }
+    ).mock.calls.map((c) => c[0]?.queryKey);
+    expect(keys).toContainEqual(["artifacts"]);
+    expect(keys).toContainEqual(["artifacts", "detail", "tenant-1", "art-9"]);
+  });
+
+  it("POSTs the unarchive route", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ artifact: { ...archivedRow, archivedAt: null } }),
+      ),
+    );
+    const client = newClient();
+    const { result } = renderHook(
+      () =>
+        useUnarchiveArtifact({
+          baseUrl: "http://localhost:4000",
+          fetch: fetcher,
+        }),
+      { wrapper: wrapper(client) },
+    );
+    const updated = await result.current.mutateAsync({ artifactId: "art-9" });
+    expect(spy.mock.calls[0]?.[0]).toContain("/artifacts/art-9/unarchive");
+    expect(updated.archivedAt).toBeNull();
   });
 });

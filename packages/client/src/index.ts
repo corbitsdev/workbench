@@ -148,6 +148,8 @@ export const ListArtifactsParamsSchema = type({
   "createdAfter?": "string",
   /** Date-only `yyyy-mm-dd` upper bound (inclusive end-of-day) or ISO timestamp. */
   "createdBefore?": "string",
+  /** When true, return only archived artifacts (the Archived view). Default hides them. */
+  "archived?": "boolean",
   "cursor?": "string",
   "limit?": "number",
 });
@@ -417,6 +419,7 @@ export async function listArtifacts(
   if (params.creatorKind) qs.set("creatorKind", params.creatorKind);
   if (params.createdAfter) qs.set("createdAfter", params.createdAfter);
   if (params.createdBefore) qs.set("createdBefore", params.createdBefore);
+  if (params.archived) qs.set("archived", "true");
   if (params.cursor) qs.set("cursor", params.cursor);
   if (params.limit !== undefined) qs.set("limit", String(params.limit));
   const search = qs.size > 0 ? `?${qs.toString()}` : "";
@@ -444,6 +447,53 @@ export async function getArtifact(
   const parsed = GetArtifactResponseSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid GET /artifacts/:id response: ${parsed.summary}`);
+  }
+  return parsed.artifact;
+}
+
+/**
+ * Archive (soft-hide) an artifact (`POST /artifacts/:id/archive`). The hub
+ * stamps `archivedAt` so it drops out of default listings; reversible via
+ * {@link unarchiveArtifact}. Idempotent. Returns the updated artifact.
+ */
+export async function archiveArtifact(
+  options: ClientOptions = {},
+  artifactId: string,
+  params: GetArtifactParams = {},
+): Promise<ArtifactWithSession> {
+  return setArtifactArchived(options, artifactId, "archive", params);
+}
+
+/**
+ * Unarchive an artifact (`POST /artifacts/:id/unarchive`), clearing `archivedAt`
+ * so it reappears in default listings. Idempotent. Returns the updated artifact.
+ */
+export async function unarchiveArtifact(
+  options: ClientOptions = {},
+  artifactId: string,
+  params: GetArtifactParams = {},
+): Promise<ArtifactWithSession> {
+  return setArtifactArchived(options, artifactId, "unarchive", params);
+}
+
+async function setArtifactArchived(
+  options: ClientOptions,
+  artifactId: string,
+  action: "archive" | "unarchive",
+  params: GetArtifactParams,
+): Promise<ArtifactWithSession> {
+  const qs = params.tenantId
+    ? `?tenantId=${encodeURIComponent(params.tenantId)}`
+    : "";
+  const raw = await request<unknown>(
+    `artifacts/${encodeURIComponent(artifactId)}/${action}${qs}`,
+    { ...options, init: { ...options.init, method: "POST" } },
+  );
+  const parsed = GetArtifactResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid POST /artifacts/:id/${action} response: ${parsed.summary}`,
+    );
   }
   return parsed.artifact;
 }

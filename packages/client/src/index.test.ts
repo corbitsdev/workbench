@@ -5,11 +5,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import "./test-setup";
 import {
+  archiveArtifact,
   createArtifact,
   getActor,
   getArtifact,
   listArtifacts,
   listWorkflows,
+  unarchiveArtifact,
   uploadArtifacts,
   type Actor,
 } from "./index";
@@ -300,6 +302,83 @@ describe("getArtifact", () => {
     );
     expect(result.id).toBe("art-9");
     expect(result.title).toBe("Deep link");
+  });
+});
+
+describe("archiveArtifact / unarchiveArtifact", () => {
+  const archivedRow = {
+    id: "art-9",
+    parentId: null,
+    kind: "one-pager",
+    title: "Deep link",
+    content: "body",
+    source: { origin: "unknown" },
+    status: "draft",
+    version: 1,
+    ownerPrincipalId: "prn-1",
+    archivedAt: "2026-07-09T12:00:00.000Z",
+    createdAt: "2026-06-20T00:00:00.000Z",
+    updatedAt: "2026-06-20T00:00:00.000Z",
+    sessionName: null,
+    sessionStatus: null,
+    ownerName: null,
+  };
+
+  it("POSTs /artifacts/:id/archive and returns the updated artifact", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse({ artifact: archivedRow })),
+    );
+    const result = await archiveArtifact(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      "art-9",
+      { tenantId: "tenant-1" },
+    );
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts/art-9/archive?tenantId=tenant-1",
+    );
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(result.archivedAt).toBe("2026-07-09T12:00:00.000Z");
+  });
+
+  it("POSTs /artifacts/:id/unarchive", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(
+        jsonResponse({ artifact: { ...archivedRow, archivedAt: null } }),
+      ),
+    );
+    const result = await unarchiveArtifact(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      "art-9",
+    );
+    expect(spy.mock.calls[0]?.[0]).toBe(
+      "http://localhost:4000/api/v1/artifacts/art-9/unarchive",
+    );
+    expect(spy.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(result.archivedAt).toBeNull();
+  });
+});
+
+describe("listArtifacts archived filter", () => {
+  it("sets archived=true in the query string when opting into the Archived view", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
+    await listArtifacts(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { tenantId: "tenant-1", archived: true },
+    );
+    expect(spy.mock.calls[0]?.[0]).toContain("archived=true");
+  });
+
+  it("omits the archived param by default (hides archived)", async () => {
+    const { spy, fetcher } = makeFetch(() =>
+      Promise.resolve(jsonResponse(emptyArtifactsPage)),
+    );
+    await listArtifacts(
+      { baseUrl: "http://localhost:4000", fetch: fetcher },
+      { tenantId: "tenant-1" },
+    );
+    expect(spy.mock.calls[0]?.[0]).not.toContain("archived");
   });
 });
 
