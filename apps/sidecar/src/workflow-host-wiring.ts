@@ -1095,6 +1095,20 @@ export function createSidecarDeployRouter(deps: {
     // supervisor.
     validateWorkflowProjection(projection);
 
+    // WORKBENCH-LOCAL (CL-3104): resident-supervisor self-heal. A hibernate
+    // whose ack path failed leaves the hub believing the deployment is down
+    // (interchange's undeploy timeout unroutes before rejecting) while the
+    // child is still resident here; the wake then re-sends agent.deploy at
+    // the live supervisor. Without this guard the fresh deploy would
+    // overwrite the activeSupervisors entry, leaking the resident child and
+    // leaving two children driving one workflow-run repo. Tear the resident
+    // supervisor down state-preservingly (hibernate semantics — no rm)
+    // before standing the fresh one up.
+    if (activeSupervisors.has(frame.agentAddress)) {
+      logger.warn`deploy for ${frame.agentAddress} found a resident supervisor; shutting it down before re-deploying (CL-3104 self-heal)`;
+      await teardownDeployment(frame.agentAddress, { reclaimDirs: false });
+    }
+
     const deploymentId = deriveTrivialDeploymentId(frame.agentAddress);
 
     // Single-step launched-agent deploy vs. derived multi-step deploy.

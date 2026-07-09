@@ -211,10 +211,18 @@ export interface ProjectedRun {
   // generic RunFailed message with which step(s) failed and why (logged only —
   // the reason is not persisted; the log is the source of truth).
   failedSteps: { stepId: string; message: string }[];
+  // Every SignalReceived signalId observed in the folded events. Read by the
+  // record write to clear a durable pending-signal whose delivery the log now
+  // proves — matched by id, not by the final status, because a multi-gate run
+  // can fold received-then-reparked (status `awaiting` again) in one batch.
+  receivedSignalIds: string[];
 }
 
 // Read an event's ISO `at` timestamp, if present.
 const WithAt = type({ at: "string", "+": "ignore" });
+
+// Read a SignalReceived event's signalId, if present.
+const WithSignalId = type({ signalId: "string", "+": "ignore" });
 function eventAt(event: RunEventEntry["event"]): string | undefined {
   const narrowed = WithAt(event);
   return narrowed instanceof type.errors ? undefined : narrowed.at;
@@ -234,7 +242,7 @@ export function foldRunEvents(
   const ensure = (runId: string): ProjectedRun => {
     let run = runs.get(runId);
     if (run === undefined) {
-      run = { status: "running", failedSteps: [] };
+      run = { status: "running", failedSteps: [], receivedSignalIds: [] };
       runs.set(runId, run);
     }
     return run;
@@ -287,6 +295,10 @@ export function foldRunEvents(
       case "SignalReceived": {
         // Gate cleared; the next StepStarted re-marks the run running.
         run.status = "running";
+        const narrowed = WithSignalId(event);
+        if (!(narrowed instanceof type.errors)) {
+          run.receivedSignalIds.push(narrowed.signalId);
+        }
         break;
       }
       case "RunCompleted": {
@@ -393,6 +405,18 @@ export async function projectWorkflowRunRepo(
     const existing = await loadRunRecord(db, runId);
     if (existing === null) continue;
 
+    // Clear the durable pending-signal record once the log PROVES the signal
+    // landed (its signalId folded as SignalReceived) or the run is past ever
+    // consuming it (terminal). Matched by id — a multi-gate run can fold
+    // received-then-reparked in one batch, ending `awaiting` again with the
+    // prior gate's signal received.
+    const pending = existing.pendingSignal;
+    const clearPendingSignal =
+      pending !== undefined &&
+      (projected.receivedSignalIds.includes(pending.signalId) ||
+        projected.status === "completed" ||
+        projected.status === "failed");
+
     await applyRunProjection(db, runId, {
       status: projected.status,
       ...(projected.startedAt !== undefined
@@ -401,6 +425,7 @@ export async function projectWorkflowRunRepo(
       ...(projected.endedAt !== undefined
         ? { endedAt: projected.endedAt }
         : {}),
+      ...(clearPendingSignal ? { clearPendingSignal: true } : {}),
     });
 
     // Per-step projection (CL-2727): fold the SAME log through the native

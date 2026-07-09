@@ -216,6 +216,7 @@ describe("logNewWorkflowRunFailureIfNeeded", () => {
       status: "failed",
       error,
       failedSteps: [],
+      receivedSignalIds: [],
     };
   }
 
@@ -268,6 +269,7 @@ describe("buildRunFailureReport", () => {
       status: "failed",
       ...(error !== undefined ? { error } : {}),
       failedSteps,
+      receivedSignalIds: [],
     };
   }
 

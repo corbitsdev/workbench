@@ -544,26 +544,41 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   // by the well-known reason marker; tears down runtime residency (routing
   // registrations, supervisor/child, harness session) while preserving every
   // durable on-disk artifact — no state-pack push, no `deleteAgentDir`, no
-  // `forgetAgent`. The ack still fires so the hub's undeploy machinery drops
-  // the address from its routable set; that unroutability is what makes the
-  // next gate signal's `ensureDeploymentRoutable` re-establish the deployment
-  // and resume the parked run. The ack is withheld when the router cannot
-  // hibernate (missing hook / hook failure): acking would make the hub
-  // believe the child is gone while it still runs, and the hub's undeploy
-  // timeout surfaces the failure loudly instead.
+  // `forgetAgent`. The ack drops the address from the hub's routable set;
+  // that unroutability is what makes the next gate signal's
+  // `ensureDeploymentRoutable` re-establish the deployment and resume the
+  // parked run.
+  //
+  // On failure the ack is withheld — NOT to keep the address routable
+  // (interchange's `sendAgentUndeploy` timeout arm removes the address
+  // BEFORE rejecting, so the hub unroutes either way) but to make the
+  // failure LOUD at the hub caller (the reconciler counts the rejection)
+  // instead of a silent fake success. The teardown is idempotent, so a
+  // transient failure is retried once here; a deployment left resident
+  // after both attempts is self-healed by the deploy branch's
+  // resident-supervisor guard when the wake re-deploy arrives
+  // (workflow-host-wiring.ts, CL-3104).
   async function handleAgentHibernate(
     frame: AgentUndeployFrame,
   ): Promise<void> {
-    if (deployRouter.hibernate === undefined) {
+    const hibernate = deployRouter.hibernate;
+    if (hibernate === undefined) {
       logger.error`Hibernate requested for ${frame.agentAddress} but the deploy router has no hibernate hook; leaving the deployment resident (no ack)`;
       return;
     }
     try {
-      await deployRouter.hibernate(frame);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.error`Deploy router hibernate hook failed for ${frame.agentAddress}: ${msg}; leaving the deployment resident (no ack)`;
-      return;
+      await hibernate(frame);
+    } catch (firstErr) {
+      const firstMsg =
+        firstErr instanceof Error ? firstErr.message : String(firstErr);
+      logger.warn`Deploy router hibernate hook failed for ${frame.agentAddress}: ${firstMsg}; retrying once`;
+      try {
+        await hibernate(frame);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error`Deploy router hibernate hook failed again for ${frame.agentAddress}: ${msg}; leaving the deployment resident (no ack)`;
+        return;
+      }
     }
 
     // Same bootstrap-flag prune as the full undeploy: the wiring's hibernate

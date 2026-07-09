@@ -19,6 +19,7 @@ import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { getAncestorChain } from "@intx/db";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
+import { setPendingSignal } from "../workflow-executor/run-store";
 import { getRequestedUserContext } from "../lib/user-context";
 import {
   isWorkflowRunDeniedForTenant,
@@ -753,6 +754,17 @@ export function createWorkflowRunsRouter(deps: {
       }
 
       try {
+        // Durable-before-dispatch: persist the accepted signal on the run
+        // record FIRST — the fire-and-forget delivery below can race a
+        // hibernate/undeploy teardown, and the awaiting reconciler
+        // re-delivers from this record until the run log proves receipt.
+        const signalId = randomUUID();
+        await setPendingSignal(deps.db, body.runId, {
+          signalId,
+          signalName: body.signalName,
+          payload: body.payload,
+          receivedAt: new Date().toISOString(),
+        });
         // A paused run's supervisor may have been dropped from the hub's
         // addressIndex by a restart; re-establish it before delivering so the
         // signal does not throw `agent is unreachable` (CL-2225).
@@ -769,7 +781,7 @@ export function createWorkflowRunsRouter(deps: {
           }),
           runId: body.runId,
           signalName: body.signalName,
-          signalId: randomUUID(),
+          signalId,
           payload: body.payload,
         });
       } catch (err) {

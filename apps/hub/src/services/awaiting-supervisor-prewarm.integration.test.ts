@@ -50,6 +50,7 @@ const WORKFLOW_RUN_RECORD_DDL = `
     status text NOT NULL DEFAULT 'running',
     input jsonb,
     origin_conversation_id text,
+    pending_signal jsonb,
     started_at timestamp,
     ended_at timestamp,
     created_at timestamp NOT NULL DEFAULT now(),
@@ -112,6 +113,7 @@ function makeReconciler(routable: string[]) {
     deploymentDomain: DEPLOYMENT_DOMAIN,
     reclaimDeployment: () => Promise.resolve(),
     sendAgentUndeploy: () => Promise.resolve(),
+    sendSignalDeliver: () => {},
   });
   return { reconciler, calls };
 }

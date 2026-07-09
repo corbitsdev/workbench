@@ -84,6 +84,7 @@ const RECONCILE_ONLY_DEPS = {
   deploymentDomain: "abklabs.com",
   reclaimDeployment: () => Promise.resolve(),
   sendAgentUndeploy: () => Promise.resolve(),
+  sendSignalDeliver: () => {},
 };
 
 type RunRow = {
@@ -350,6 +351,7 @@ describe("failOrphanedRuns", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -371,6 +373,7 @@ describe("failOrphanedRuns", () => {
       getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -403,6 +406,7 @@ describe("failOrphanedRuns", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -429,6 +433,7 @@ describe("failOrphanedRuns", () => {
       getRoutableAddresses: () => [`ins_ses_live@${DOMAIN}`],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -450,6 +455,7 @@ describe("failOrphanedRuns", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => Promise.resolve(),
     });
 
@@ -494,6 +500,7 @@ describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: (args) => {
         calls.push({
           deploymentId: args.deploymentId,
@@ -520,6 +527,7 @@ describe("reclaimOrphanedDeployments (CL-2582 Step D janitor)", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
       reclaimDeployment: () => {
         reclaimCount += 1;
         return Promise.resolve();
@@ -578,6 +586,7 @@ describe("reconcileAwaiting — batch resilience + fail-loud (CL-2756)", () => {
       deploymentDomain: DOMAIN,
       reclaimDeployment: () => Promise.resolve(),
       sendAgentUndeploy: () => Promise.resolve(),
+      sendSignalDeliver: () => {},
     });
 
     const summary = await reconciler.reconcileAwaiting();
@@ -898,7 +907,9 @@ describe("hibernate reason protocol constant stays byte-identical across package
         /WORKFLOW_HIBERNATE_UNDEPLOY_REASON =\s*\n?\s*"([^"]+)"/,
       );
       if (match?.[1] === undefined) {
-        throw new Error(`no WORKFLOW_HIBERNATE_UNDEPLOY_REASON literal in ${file}`);
+        throw new Error(
+          `no WORKFLOW_HIBERNATE_UNDEPLOY_REASON literal in ${file}`,
+        );
       }
       return match[1];
     };
@@ -990,6 +1001,7 @@ describe("registerAwaitingSupervisorPrewarm (CL-2756 periodic backstop)", () => 
             failed: 0,
             hibernated: 0,
             dormant: 0,
+            redelivered: 0,
           });
         },
       },

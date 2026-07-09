@@ -1142,6 +1142,7 @@ const workflowReconciler = createWorkflowReconciler({
   deploymentDomain: config.rootTenant.domain,
   reclaimDeployment,
   sendAgentUndeploy: sidecarRouter.sendAgentUndeploy,
+  sendSignalDeliver: sidecarRouter.sendSignalDeliver,
   hibernationGraceMs: config.workflowHibernationGraceMs,
 });
 workflowReconciler.start();

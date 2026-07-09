@@ -5,7 +5,7 @@ import { getLogger } from "@intx/log";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
-import { setRunStatus } from "../workflow-executor/run-store";
+import { loadRunRecord, setRunStatus } from "../workflow-executor/run-store";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 
@@ -111,6 +111,9 @@ export interface AwaitingPrewarmSummary {
   // wake is signal-driven (`ensureDeploymentRoutable` on the signal path),
   // never the pre-warm.
   dormant: number;
+  // Durable pending signals re-delivered this pass (the 202-accepted signal's
+  // first fire-and-forget delivery was lost or is not yet proven by the log).
+  redelivered: number;
 }
 
 // Well-known `agent.undeploy` reason that selects the sidecar's
@@ -136,6 +139,12 @@ export const WORKFLOW_HIBERNATE_UNDEPLOY_REASON =
 // `WORKFLOW_HIBERNATION_GRACE_MS` in apps/hub/src/config.ts.
 export const DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS = 120_000;
 
+// How long a durable pending signal may sit undelivered-by-the-log before the
+// reconciler re-delivers it. Long enough for the ordinary path (deliver →
+// child commits SignalReceived → pack push → projection clears the record) to
+// complete; short enough that a lost signal wakes its run within a minute.
+export const DEFAULT_SIGNAL_REDELIVERY_DELAY_MS = 30_000;
+
 // How far back the orphan janitor looks for terminated-but-not-torn-down runs.
 // A hub crash between the terminal save and the teardown is recovered on the
 // next boot; 24h covers any realistic restart gap while keeping the scan small.
@@ -153,13 +162,23 @@ export function createWorkflowReconciler(deps: {
   // `sendAgentUndeploy` in index.ts; the reconciler sends it with the
   // hibernate reason marker so the sidecar preserves the parked run's state.
   sendAgentUndeploy: SidecarRouter["sendAgentUndeploy"];
+  // Pending-signal re-delivery sender. Bound to the sidecar router's
+  // `sendSignalDeliver` in index.ts; the reconciler re-delivers a durable
+  // pending signal whose first (fire-and-forget) delivery was lost.
+  sendSignalDeliver: SidecarRouter["sendSignalDeliver"];
   // Hibernation grace (ms). Optional with the exported default so tests and
   // direct constructors need not thread config; production wires the
   // env-validated `config.workflowHibernationGraceMs`.
   hibernationGraceMs?: number;
+  // Minimum age (ms) of a pending signal before it is re-delivered, giving
+  // the in-flight first delivery time to land and its SignalReceived to fold
+  // (which clears the record). Optional with the exported default.
+  signalRedeliveryDelayMs?: number;
 }): WorkflowReconciler {
   const hibernationGraceMs =
     deps.hibernationGraceMs ?? DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS;
+  const signalRedeliveryDelayMs =
+    deps.signalRedeliveryDelayMs ?? DEFAULT_SIGNAL_REDELIVERY_DELAY_MS;
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
   // guard lives in reconcileAll itself (not just the reconnect wrapper) so the
@@ -402,14 +421,96 @@ export function createWorkflowReconciler(deps: {
       failed: 0,
       hibernated: 0,
       dormant: 0,
+      redelivered: 0,
     };
+
+    // PENDING-SIGNAL PASS (runs before the awaiting sweep): a 202-accepted
+    // gate signal is durable on the run record until the log proves receipt.
+    // Any record still carrying one is the delivery backstop's problem, not
+    // hibernation's — wake it if needed and re-deliver, never hibernate it.
+    // Scans `running` too: the resume path optimistically flips the record to
+    // `running` before the signal lands, and a lost signal there leaves a
+    // routable no-progress supervisor the liveness sweep will never fail.
+    const pendingRecords = await deps.db
+      .select({
+        id: workflowRunRecord.id,
+        deploymentId: workflowRunRecord.deploymentId,
+        kind: workflowRunRecord.kind,
+        tenantId: workflowRunRecord.tenantId,
+        pendingSignal: workflowRunRecord.pendingSignal,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          isNotNull(workflowRunRecord.pendingSignal),
+          isNotNull(workflowRunRecord.deploymentId),
+          isNull(workflowRunRecord.deletedAt),
+        ),
+      );
+    const now = Date.now();
+    const routable = new Set(deps.getRoutableAddresses());
+    const deployPrincipalByKind = await loadDeployPrincipalByKind();
+    // Deployments owned by the pending pass; the awaiting sweep below must
+    // not hibernate or dormant-skip them.
+    const pendingHandled = new Set<string>();
+    for (const rec of pendingRecords) {
+      const pending = rec.pendingSignal;
+      if (rec.deploymentId === null || pending === null) continue;
+      if (pending === undefined) continue;
+      pendingHandled.add(rec.deploymentId);
+      const address = deriveDeploymentAddress({
+        deploymentId: rec.deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
+      // Give the in-flight first delivery time to land and its
+      // SignalReceived to fold (which clears the record) before
+      // re-delivering. Re-delivery reuses the SAME signalId, so a duplicate
+      // reaching an already-satisfied gate is inert for that gate; the
+      // narrow same-name-future-gate FIFO hazard is bounded by this delay.
+      const pendingForMs = now - Date.parse(pending.receivedAt);
+      if (pendingForMs < signalRedeliveryDelayMs) continue;
+      const deployPrincipal = deployPrincipalByKind.get(
+        `${rec.kind} ${rec.tenantId}`,
+      );
+      if (deployPrincipal === undefined) {
+        summary.skippedNoPrincipal += 1;
+        continue;
+      }
+      try {
+        await deps.ensureDeploymentRoutable({
+          deploymentId: rec.deploymentId,
+          kind: rec.kind,
+          tenantId: rec.tenantId,
+          creatorPrincipalId: deployPrincipal,
+        });
+        deps.sendSignalDeliver({
+          agentAddress: address,
+          runId: rec.id,
+          signalName: pending.signalName,
+          signalId: pending.signalId,
+          payload: pending.payload,
+        });
+        summary.redelivered += 1;
+      } catch (err) {
+        summary.failed += 1;
+        log.error("pending gate signal re-delivery failed", {
+          runId: rec.id,
+          deploymentId: rec.deploymentId,
+          signalName: pending.signalName,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
 
     const awaitingRecords = await deps.db
       .select({
+        id: workflowRunRecord.id,
         deploymentId: workflowRunRecord.deploymentId,
         kind: workflowRunRecord.kind,
         tenantId: workflowRunRecord.tenantId,
         updatedAt: workflowRunRecord.updatedAt,
+        pendingSignal: workflowRunRecord.pendingSignal,
       })
       .from(workflowRunRecord)
       .where(
@@ -421,14 +522,17 @@ export function createWorkflowReconciler(deps: {
       );
     if (awaitingRecords.length === 0) return summary;
 
-    const routable = new Set(deps.getRoutableAddresses());
-    const deployPrincipalByKind = await loadDeployPrincipalByKind();
-
     const seen = new Set<string>();
-    const now = Date.now();
     for (const rec of awaitingRecords) {
       if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
       seen.add(rec.deploymentId);
+      // Owned by the pending-signal pass above (a signal is in flight or was
+      // just re-delivered) — never hibernated, never dormant-skipped. The
+      // in-JS check also covers a record whose pending signal was written
+      // between the two selects.
+      if (pendingHandled.has(rec.deploymentId) || rec.pendingSignal != null) {
+        continue;
+      }
       summary.candidates += 1;
 
       const address = deriveDeploymentAddress({
@@ -447,6 +551,24 @@ export function createWorkflowReconciler(deps: {
         // undeploy ack drops the address from the routable set, and the next
         // gate signal's `ensureDeploymentRoutable` re-establishes it.
         if (parkedForMs >= hibernationGraceMs) {
+          // CAS: re-read the record immediately before the teardown and only
+          // hibernate if it is STILL the run we decided on — status
+          // `awaiting`, no writes since the decision read, no signal
+          // accepted meanwhile. This shrinks the resume-then-kill race to
+          // the undeploy frame's flight time. The residual (a signal lands
+          // and the run resumes mid-flight, then the teardown kills it
+          // mid-step) leaves a `running` run whose supervisor is gone — the
+          // run liveness sweep fails it visibly; it is not resumable.
+          const fresh = await loadRunRecord(deps.db, rec.id);
+          if (
+            fresh === null ||
+            fresh.status !== "awaiting" ||
+            fresh.pendingSignal != null ||
+            fresh.updatedAt === undefined ||
+            fresh.updatedAt.getTime() !== rec.updatedAt.getTime()
+          ) {
+            continue;
+          }
           try {
             await deps.sendAgentUndeploy(
               address,
@@ -513,7 +635,8 @@ export function createWorkflowReconciler(deps: {
     if (
       summary.reestablished > 0 ||
       summary.failed > 0 ||
-      summary.hibernated > 0
+      summary.hibernated > 0 ||
+      summary.redelivered > 0
     ) {
       log.info("awaiting pre-warm pass complete", {
         candidates: summary.candidates,
@@ -523,6 +646,7 @@ export function createWorkflowReconciler(deps: {
         failed: summary.failed,
         hibernated: summary.hibernated,
         dormant: summary.dormant,
+        redelivered: summary.redelivered,
       });
     }
     return summary;

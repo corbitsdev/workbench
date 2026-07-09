@@ -42,7 +42,23 @@ export interface RunState {
   // The conversation the run was started from (CL-2677); absent for
   // direct-started runs with no chat context.
   originConversationId?: string;
+  // Durable record of a 202-accepted gate signal not yet proven delivered by
+  // the run log; absent once the projection observes its SignalReceived.
+  pendingSignal?: PendingRunSignal;
+  // Last write time of the record row; read by the hibernation CAS.
+  updatedAt?: Date;
 }
+
+// Durable pending gate-signal record. Serialized into the run record's
+// `pending_signal` jsonb column at the accept boundary and validated back out
+// wherever it crosses that boundary.
+export const PendingRunSignalSchema = type({
+  signalId: "string",
+  signalName: "string",
+  payload: "unknown",
+  receivedAt: "string",
+});
+export type PendingRunSignal = typeof PendingRunSignalSchema.infer;
 
 // The run-level projection the bridge writes on every pack (CL-2669): the coarse
 // status plus run wall-clock timing folded from the log's RunStarted / terminal
@@ -52,9 +68,17 @@ export interface RunProjection {
   status: RunState["status"];
   startedAt?: string;
   endedAt?: string;
+  // Clear the durable pending-signal record: the projection sets this once
+  // the folded log proves the signal was received (matching signalId) or the
+  // run left the gate for good (terminal).
+  clearPendingSignal?: boolean;
 }
 
 function rowToState(row: WorkflowRunRecordRow): RunState {
+  const pendingSignal =
+    row.pendingSignal === null || row.pendingSignal === undefined
+      ? undefined
+      : PendingRunSignalSchema(row.pendingSignal);
   return {
     runId: row.id,
     kind: row.kind,
@@ -65,7 +89,25 @@ function rowToState(row: WorkflowRunRecordRow): RunState {
     ...(row.originConversationId !== null
       ? { originConversationId: row.originConversationId }
       : {}),
+    ...(pendingSignal !== undefined && !(pendingSignal instanceof type.errors)
+      ? { pendingSignal }
+      : {}),
+    updatedAt: row.updatedAt,
   };
+}
+
+// Persist a 202-accepted gate signal on the run record BEFORE dispatching it
+// to the sidecar. Last accepted signal wins (a re-signal replaces the prior
+// record); the projection clears it once the log proves receipt.
+export async function setPendingSignal(
+  db: HubDb,
+  runId: string,
+  signal: PendingRunSignal,
+): Promise<void> {
+  await db
+    .update(workflowRunRecord)
+    .set({ pendingSignal: signal })
+    .where(eq(workflowRunRecord.id, runId));
 }
 
 export async function insertRunRecord(
@@ -174,6 +216,9 @@ export async function applyRunProjection(
   }
   if (projection.endedAt !== undefined) {
     patch.endedAt = new Date(projection.endedAt);
+  }
+  if (projection.clearPendingSignal === true) {
+    patch.pendingSignal = null;
   }
   await db
     .update(workflowRunRecord)

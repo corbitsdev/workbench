@@ -22,6 +22,7 @@ import {
   failRunIfStillProvisioning,
   insertRunRecord,
   loadRunRecord,
+  setPendingSignal,
   setRunDeployment,
   type RunState,
 } from "./run-store";
@@ -601,6 +602,17 @@ export async function resumeWorkflowRun(
   }
 
   try {
+    // Durable-before-dispatch: persist the accepted signal on the run record
+    // FIRST, so a teardown racing the fire-and-forget delivery below cannot
+    // lose it — the awaiting reconciler re-delivers from this record until
+    // the run log proves receipt (the projection clears it by signalId).
+    const signalId = randomUUID();
+    await setPendingSignal(deps.db, state.runId, {
+      signalId,
+      signalName: opts.signalName,
+      payload: opts.payload ?? {},
+      receivedAt: new Date().toISOString(),
+    });
     await deps.ensureDeploymentRoutable({
       deploymentId: state.deploymentId,
       kind: state.kind,
@@ -614,7 +626,7 @@ export async function resumeWorkflowRun(
       }),
       runId: state.runId,
       signalName: opts.signalName,
-      signalId: randomUUID(),
+      signalId,
       payload: opts.payload ?? {},
     });
   } catch (err) {
