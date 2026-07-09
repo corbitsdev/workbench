@@ -47,3 +47,11 @@ export {
   usesSocialPostPreview,
   type LinkedInPostArtifactKind,
 } from "./artifact-kinds";
+export {
+  CSV_TABLE_ROW_CAP,
+  parseCsv,
+  parsedCsvIsTabular,
+  capCsvRows,
+  type ParsedCsv,
+  type CappedCsv,
+} from "./parse-csv";
