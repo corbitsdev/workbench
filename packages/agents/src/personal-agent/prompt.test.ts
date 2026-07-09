@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
+import { PERSONAL_AGENT_BASE_TOOLS } from "./definition";
 
 const xmlFormat = { xml: true };
 const markdownFormat = { xml: false };
@@ -170,6 +171,84 @@ describe("buildPersonalAgentSystemPrompt", () => {
     ]) {
       expect(prompt).not.toContain(file);
     }
+  });
+
+  // A capability the user names may be a skill, a workflow, or a loadable tool —
+  // Myra must sweep all three catalogs before claiming absence, rather than
+  // checking the skill library alone and stopping (the reported bug where she said
+  // "no last 30 days skill" while Last30Days exists as a workflow).
+  it("teaches that an empty skill search is not proof a capability is absent", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain(
+      "search_skills will never surface it no matter how you word the query",
+    );
+    expect(prompt).toContain(
+      "an empty skill search is not proof the capability is absent",
+    );
+  });
+
+  it("treats skills, workflows, and tools as one capability space the user names loosely", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain(
+      "may live as a skill, a deployed workflow, or a loadable tool",
+    );
+    expect(prompt).toContain(
+      'a "last 30 days" recap, for example, is a workflow',
+    );
+  });
+
+  it("requires sweeping all three catalogs before claiming a capability is unavailable", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain(
+      "before telling anyone it is unavailable, look across all three catalogs",
+    );
+    expect(prompt).toContain("search_skills");
+    expect(prompt).toContain("workflow_list_kinds");
+    expect(prompt).toContain("search_tools");
+  });
+
+  // The discovery guidance only works if the tools it names are actually
+  // available to Myra. This guards the seam: if a catalog tool is renamed or
+  // dropped from the base toolset, the prompt would keep telling her to call a
+  // tool she no longer has — a re-run of the original bug — while every
+  // substring assertion above stays green. Pin the prompt's named tools to the
+  // resolved base toolset so drift fails a test instead of shipping silently.
+  it("only names catalog tools Myra actually carries in her base toolset", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    // Base tools resolve to canonical `<factoryId>:<tool>` names, so a prose
+    // name matches either verbatim (bare local tools like search_tools) or as
+    // the suffix after the `:` (package tools like search_skills →
+    // @workbench/tools-skills/skills:search_skills).
+    const carries = (tool: string): boolean =>
+      PERSONAL_AGENT_BASE_TOOLS.some(
+        (name) => name === tool || name.endsWith(`:${tool}`),
+      );
+    for (const tool of [
+      "search_skills",
+      "workflow_list_kinds",
+      "search_tools",
+    ]) {
+      expect(prompt).toContain(tool);
+      expect(carries(tool)).toBe(true);
+    }
+  });
+
+  it("scopes the three-catalog sweep to the absence check, not every task", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain("If one of them answers the request, act on it");
+    expect(prompt).toContain(
+      "the full sweep is the bar for concluding something is absent, not a step to run on every task",
+    );
+  });
+
+  it("checks workflow_list_kinds before claiming a workflow does not exist, not only before starting", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain(
+      "call it too before telling anyone a workflow does not exist",
+    );
+    expect(prompt).toContain(
+      "a request that sounds like a skill or a one-off task may be a deployed workflow kind",
+    );
   });
 
   // Per-operator appendix
