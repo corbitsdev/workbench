@@ -328,6 +328,62 @@ describe("gamma_create_from_template", () => {
     expect(parsed["exportUrl"]).toBe("");
   });
 
+  it("emits both gammaUrl and url aliases so a consumer keyed on either resolves", async () => {
+    const tools = createTemplateTools({
+      ...baseConfig,
+      fetcher: makeFetcher([
+        { status: 200, body: { generationId: "gen_alias" } },
+        {
+          status: 200,
+          body: {
+            status: "completed",
+            gammaUrl: "https://gamma.app/docs/alias",
+            gammaId: "g_alias",
+          },
+        },
+      ]),
+    });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    const result = await tool.handler(
+      { gammaId: "g_t", prompt: "Make a deck" },
+      new AbortController().signal,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed["gammaUrl"]).toBe("https://gamma.app/docs/alias");
+    expect(parsed["url"]).toBe("https://gamma.app/docs/alias");
+  });
+
+  it("normalizes a completed generation whose deck URL arrives under `url` into gammaUrl", async () => {
+    const tools = createTemplateTools({
+      ...baseConfig,
+      fetcher: makeFetcher([
+        { status: 200, body: { generationId: "gen_urlkey" } },
+        {
+          status: 200,
+          body: {
+            status: "completed",
+            url: "https://gamma.app/docs/urlkey",
+            gammaId: "g_urlkey",
+          },
+        },
+      ]),
+    });
+    const tool = tools.find(
+      (t) => t.definition.name === "gamma_create_from_template",
+    );
+    if (!tool || tool.kind !== "string") throw new Error("tool not found");
+    const result = await tool.handler(
+      { gammaId: "g_t", prompt: "Make a deck" },
+      new AbortController().signal,
+    );
+    const parsed = JSON.parse(result) as Record<string, unknown>;
+    expect(parsed["gammaUrl"]).toBe("https://gamma.app/docs/urlkey");
+    expect(parsed["url"]).toBe("https://gamma.app/docs/urlkey");
+  });
+
   it("throws immediately on unknown generation status rather than exhausting poll attempts", async () => {
     const tools = createTemplateTools({
       ...baseConfig,
