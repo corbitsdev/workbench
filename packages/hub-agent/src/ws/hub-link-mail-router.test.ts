@@ -177,6 +177,13 @@ function createMockSessionManager(): SessionManager & {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.delivered.push({ agentAddress, message });
     },
+    isWakeable(_agentAddress: string): boolean {
+      return false;
+    },
+    wakeAgent: (_agentAddress: string) => Promise.resolve(),
+    deliverInboundMail(_agentAddress: string, _rawMessage: Uint8Array): void {
+      /* no-op: this test exercises the multi-step mail router path */
+    },
     async updateGrants(
       _agentAddress: string,
       _grants: GrantRule[],
