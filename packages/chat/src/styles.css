@@ -5,3 +5,28 @@
  * package's style entrypoint (`@workbench/chat/styles.css`) for future
  * chat-specific rules.
  */
+
+/*
+ * Subtle, inset scrollbar for the composer textarea.
+ * - thin so it sits inside the padding box rather than overlapping the border/ring
+ * - low-contrast using the existing --border token
+ * - appears only when content actually overflows the 30vh cap
+ */
+.chat-composer-textarea {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.chat-composer-textarea::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-composer-textarea::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 3px;
+}
+
+.chat-composer-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}

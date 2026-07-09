@@ -90,7 +90,10 @@ export function ChatInput({
     const el = textareaRef.current;
     if (el === null) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    const vh = typeof window !== "undefined" ? window.innerHeight : 800;
+    const maxHeight = Math.floor(vh * 0.3);
+    const target = Math.min(el.scrollHeight, maxHeight);
+    el.style.height = `${target}px`;
   }, []);
 
   useLayoutEffect(() => {
@@ -274,7 +277,7 @@ export function ChatInput({
           onInput={adjustHeight}
           onPaste={() => requestAnimationFrame(adjustHeight)}
           onKeyDown={handleKeyDown}
-          className="max-h-32 min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
+          className="chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
         <Button
           type="button"
