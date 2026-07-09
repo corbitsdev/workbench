@@ -52,6 +52,30 @@ const GenerationResultSchema = type({
 
 export type GenerationResult = typeof GenerationResultSchema.infer;
 
+// The deck-generation tools' output shape. `url` mirrors `gammaUrl` and
+// `exportUrl` is always present (empty when Gamma returns no export link) so a
+// downstream argMap keyed on any of these fields resolves without a fallback.
+export const GammaDeckResultSchema = type({
+  gammaUrl: "string",
+  url: "string",
+  gammaId: "string",
+  exportUrl: "string",
+});
+
+export type GammaDeckResult = typeof GammaDeckResultSchema.infer;
+
+// Gamma has returned the completed deck's URL under `gammaUrl` (current shape)
+// and, on some responses / older API surfaces, under `url`. Consumers keyed on
+// `gammaUrl` (e.g. the presentation workflow's persist argMap) throw on a bare
+// `url`, so normalize a `url`-only response up to `gammaUrl` before parsing.
+function normalizeDeckUrlKey(result: Record<string, unknown>): unknown {
+  if (typeof result["gammaUrl"] === "string") return result;
+  if (typeof result["url"] === "string") {
+    return { ...result, gammaUrl: result["url"] };
+  }
+  return result;
+}
+
 export const GenerationStatusSchema = type(
   "'pending' | 'completed' | 'failed'",
 );
@@ -224,7 +248,7 @@ export async function pollGeneration(
     }
 
     if (status === "completed") {
-      const parsed = GenerationResultSchema(result);
+      const parsed = GenerationResultSchema(normalizeDeckUrlKey(result));
       if (parsed instanceof type.errors) {
         throw new Error(
           "Generation completed but gammaUrl or gammaId is missing",

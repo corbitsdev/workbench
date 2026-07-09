@@ -64,7 +64,13 @@ async function duplicatePresentation(
   }
 
   const result = await pollGeneration(config, generationId, signal);
-  return { gammaUrl: result.gammaUrl, gammaId: result.gammaId };
+  // `url` mirrors `gammaUrl` so a consumer keyed on either resolves — see the
+  // from-template tool's note.
+  return {
+    gammaUrl: result.gammaUrl,
+    url: result.gammaUrl,
+    gammaId: result.gammaId,
+  };
 }
 
 export const GAMMA_DUPLICATE_PRESENTATION_DEFINITION: ToolDefinition = {
