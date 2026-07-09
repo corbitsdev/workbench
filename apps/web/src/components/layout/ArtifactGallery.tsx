@@ -76,6 +76,7 @@ export function ArtifactGallery({
     "user" | "agent" | undefined
   >(undefined);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
+  const [archiveError, setArchiveError] = useState(false);
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedArtifactFilter>(
     {},
   );
@@ -136,6 +137,7 @@ export function ArtifactGallery({
 
   function handleArchive(artifact: ArtifactWithSession) {
     setSelected(null);
+    setArchiveError(false);
     const key = artifactsInfiniteQueryKey(currentListParams);
     const previous =
       queryClient.getQueryData<InfiniteData<ArtifactsPage, string | null>>(key);
@@ -155,6 +157,7 @@ export function ArtifactGallery({
       .mutateAsync({ artifactId: artifact.id, tenantId })
       .catch(() => {
         if (previous) queryClient.setQueryData(key, previous);
+        setArchiveError(true);
       });
   }
 
@@ -202,6 +205,24 @@ export function ArtifactGallery({
 
   return (
     <>
+      {archiveError && (
+        <div
+          role="alert"
+          className="mx-4 mt-3 flex items-center justify-between gap-3 rounded border border-red-soft bg-red-soft/20 px-3 py-2 text-sm text-red"
+        >
+          <span>
+            Couldn&apos;t archive that artifact — it&apos;s still here. Try
+            again.
+          </span>
+          <button
+            type="button"
+            onClick={() => setArchiveError(false)}
+            className="text-xs text-text-3 hover:text-text"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <ArtifactGalleryView
         artifacts={artifacts ?? []}
         isLoading={isLoading}

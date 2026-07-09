@@ -283,16 +283,10 @@ export function useArchiveArtifact(
         vars.artifactId,
         vars.tenantId != null ? { tenantId: vars.tenantId } : {},
       ),
-    onSuccess: (_result, vars) => {
+    onSuccess: () => {
+      // Prefix match: invalidating ["artifacts"] also refreshes every
+      // ["artifacts", "detail", ...] entry, so no separate detail invalidation.
       void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "artifacts",
-          "detail",
-          vars.tenantId ?? null,
-          vars.artifactId,
-        ],
-      });
     },
   });
 }
@@ -312,16 +306,8 @@ export function useUnarchiveArtifact(
         vars.artifactId,
         vars.tenantId != null ? { tenantId: vars.tenantId } : {},
       ),
-    onSuccess: (_result, vars) => {
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
-      void queryClient.invalidateQueries({
-        queryKey: [
-          "artifacts",
-          "detail",
-          vars.tenantId ?? null,
-          vars.artifactId,
-        ],
-      });
     },
   });
 }

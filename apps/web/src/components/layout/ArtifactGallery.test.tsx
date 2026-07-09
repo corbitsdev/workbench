@@ -332,7 +332,9 @@ describe("ArtifactGallery", () => {
           }),
         );
         await view.findByRole("dialog");
+        // Archive is confirm-guarded: arm, then confirm.
         fireEvent.click(view.getByRole("button", { name: "Archive" }));
+        fireEvent.click(view.getByRole("button", { name: "Confirm archive" }));
         await waitFor(() =>
           expect(view.queryByText("Sales automation ROI")).toBeNull(),
         );

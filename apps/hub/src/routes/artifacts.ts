@@ -32,6 +32,7 @@ import {
 import { requestBodySchema } from "../lib/openapi";
 import { getRequestedUserContext } from "../lib/user-context";
 import { isAdmin } from "../lib/admin-grant";
+import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import { canActOnSkillDraft } from "../services/skill-library";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 
@@ -325,11 +326,26 @@ export function createArtifactsRouter(
       return c.json({ error: "Forbidden" }, 403);
     }
 
+    // Allowed for: the principal-exact owner (human-created artifact); a member
+    // who owns the agent that produced the artifact (agent-created artifacts are
+    // owned by the agent's synthetic principal — resolve it back to the human
+    // member); or a workspace owner/admin.
     const isArtifactOwner =
       art.ownerPrincipalId !== null &&
       art.ownerPrincipalId === userContext.principalId;
+    let ownsProducingAgent = false;
+    if (!isArtifactOwner && art.ownerPrincipalId !== null) {
+      const agentOwnerMember = await resolveOwnerMemberPrincipalId(db, {
+        tenantId: userContext.tenantId,
+        principalId: art.ownerPrincipalId,
+      });
+      ownsProducingAgent =
+        agentOwnerMember !== null &&
+        agentOwnerMember === userContext.principalId;
+    }
     const allowed =
       isArtifactOwner ||
+      ownsProducingAgent ||
       (await isAdmin(
         grantStore,
         userContext.principalId,
@@ -380,7 +396,7 @@ export function createArtifactsRouter(
       tags: ["artifacts"],
       summary: "Archive (soft-hide) an artifact",
       description:
-        "Sets archived_at so the artifact disappears from default listings. Reversible via unarchive; no data is destroyed. Allowed for the artifact owner or a workspace owner/admin. Idempotent.",
+        "Sets archived_at so the artifact disappears from default listings, search, and agent tools. No data is destroyed and it stays reachable by direct link; reversible via the unarchive route (an in-product Archived view is a follow-up). Allowed for the artifact owner, a member who owns the producing agent, or a workspace owner/admin. Idempotent.",
       parameters: [...archiveRouteParams],
       responses: {
         200: { description: "Artifact archived" },
@@ -397,7 +413,7 @@ export function createArtifactsRouter(
       tags: ["artifacts"],
       summary: "Unarchive an artifact",
       description:
-        "Clears archived_at so the artifact reappears in default listings. Allowed for the artifact owner or a workspace owner/admin. Idempotent.",
+        "Clears archived_at so the artifact reappears in default listings. Allowed for the artifact owner, a member who owns the producing agent, or a workspace owner/admin. Idempotent.",
       parameters: [...archiveRouteParams],
       responses: {
         200: { description: "Artifact unarchived" },
@@ -630,6 +646,10 @@ export function createArtifactsRouter(
 
   // Single artifact for deep links (`/artifacts/:id`) — not limited to the first
   // gallery list page.
+  // Deep-link read intentionally does NOT filter archived: archiving is a
+  // soft-hide from discovery surfaces (gallery, search, agents), not an access
+  // revocation, and the detail page must load an archived artifact to offer
+  // unarchive. Same rationale for the download route below.
   router.get("/artifacts/:id", async (c) => {
     const id = c.req.param("id");
     const userId = c.get("userId");

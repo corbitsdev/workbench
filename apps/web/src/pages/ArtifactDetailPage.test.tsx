@@ -50,6 +50,7 @@ mock.module("@workbench/client/react", () => ({
   useArchiveArtifact: () => ({
     mutate: archiveMutate,
     isPending: false,
+    isError: false,
   }),
 }));
 mock.module("../components/ArtifactBody", () => ({
@@ -147,7 +148,10 @@ describe("ArtifactDetailPage", () => {
     const archiveButton = await view.findByRole("button", {
       name: /archive/i,
     });
+    // Archive is guarded by a confirm: the first click arms, the second fires.
     fireEvent.click(archiveButton);
+    expect(archiveMutate).not.toHaveBeenCalled();
+    fireEvent.click(view.getByRole("button", { name: /confirm archive/i }));
     expect(archiveMutate).toHaveBeenCalledTimes(1);
     expect(archiveMutate.mock.calls[0][0]).toMatchObject({
       artifactId: "art-1",

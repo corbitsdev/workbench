@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button } from "@workbench/ui";
+import { Button, ConfirmButton } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { resolveArtifactClipboardText } from "./linkedin-clipboard";
@@ -258,13 +258,14 @@ export function ArtifactModal({
               onArchive) && (
               <div className="flex items-center gap-2 border-t border-border px-6 py-4">
                 {onArchive && (
-                  <Button
+                  <ConfirmButton
                     variant="ghost"
                     size="sm"
-                    onClick={() => onArchive(artifact)}
+                    confirmLabel="Confirm archive"
+                    onConfirm={() => onArchive(artifact)}
                   >
                     Archive
-                  </Button>
+                  </ConfirmButton>
                 )}
                 <div className="flex-1" />
                 {onOpenInMyra && (

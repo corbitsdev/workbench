@@ -379,7 +379,7 @@ describe("useArchiveArtifact / useUnarchiveArtifact", () => {
     ownerName: null,
   };
 
-  it("POSTs the archive route and invalidates the list + detail keys", async () => {
+  it("POSTs the archive route and invalidates the artifacts prefix once (covers detail)", async () => {
     const { spy, fetcher } = makeFetch(() =>
       Promise.resolve(jsonResponse({ artifact: archivedRow })),
     );
@@ -409,8 +409,9 @@ describe("useArchiveArtifact / useUnarchiveArtifact", () => {
         mock: { calls: [{ queryKey?: unknown }][] };
       }
     ).mock.calls.map((c) => c[0]?.queryKey);
-    expect(keys).toContainEqual(["artifacts"]);
-    expect(keys).toContainEqual(["artifacts", "detail", "tenant-1", "art-9"]);
+    // A single ["artifacts"] invalidation is enough — it prefix-matches every
+    // ["artifacts", "detail", ...] entry, so no separate detail invalidation.
+    expect(keys).toEqual([["artifacts"]]);
   });
 
   it("POSTs the unarchive route", async () => {

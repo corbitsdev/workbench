@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from "react-router";
 import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@workbench/ui";
+import { Button, ConfirmButton } from "@workbench/ui";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
@@ -120,16 +120,24 @@ export function ArtifactDetailPage() {
           </p>
         </div>
         {canArchive && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleArchive}
-            disabled={archiveMutation.isPending}
-            className="flex shrink-0 items-center gap-1.5"
-          >
-            <Archive size={14} />
-            Archive
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {archiveMutation.isError && (
+              <span className="text-xs text-red">
+                Couldn&apos;t archive — try again
+              </span>
+            )}
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              confirmLabel="Confirm archive"
+              disabled={archiveMutation.isPending}
+              onConfirm={handleArchive}
+              className="flex items-center gap-1.5"
+            >
+              <Archive size={14} />
+              {archiveMutation.isPending ? "Archiving…" : "Archive"}
+            </ConfirmButton>
+          </div>
         )}
         <Button
           variant="secondary"

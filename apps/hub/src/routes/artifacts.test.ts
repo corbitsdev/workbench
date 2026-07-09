@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
 import type { HubDb } from "../db";
 
@@ -21,6 +21,14 @@ mock.module("../lib/user-context", () => ({
 let isAdminImpl: () => boolean = () => false;
 mock.module("../lib/admin-grant", () => ({
   isAdmin: () => Promise.resolve(isAdminImpl()),
+}));
+
+// The archive routes resolve an agent-owned artifact back to the human member
+// who owns the producing agent via resolveOwnerMemberPrincipalId; control the
+// verdict per test (default: no owning member, i.e. a human-owned artifact).
+let agentOwnerImpl: () => string | null = () => null;
+mock.module("../lib/artifact-tools", () => ({
+  resolveOwnerMemberPrincipalId: () => Promise.resolve(agentOwnerImpl()),
 }));
 
 import { createArtifactsRouter } from "./artifacts";
@@ -1102,6 +1110,56 @@ describe("GET /artifacts archive filtering (CL-3156)", () => {
 });
 
 describe("POST /artifacts/:id/archive + /unarchive (CL-3156)", () => {
+  // Default: artifact is human-owned (no producing-agent owner) unless a test
+  // opts in, so the owner/admin branches are exercised in isolation.
+  beforeEach(() => {
+    agentOwnerImpl = () => null;
+  });
+
+  it("lets a member archive an artifact produced by their own agent", async () => {
+    // The artifact is owned by the agent's synthetic principal; the caller is
+    // the human member who owns that agent, resolved via member_agent_instance.
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-2" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    agentOwnerImpl = () => "prn-2";
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-agent", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(updated).toHaveLength(1);
+  });
+
+  it("403s when the producing agent belongs to a different member", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-2" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    agentOwnerImpl = () => "prn-3";
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-agent", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+    expect(updated).toHaveLength(0);
+  });
+
   it("lets the owner archive their own artifact, stamping archived_at", async () => {
     contextImpl = () => ({
       context: { tenantId: "tn-1", principalId: "prn-1" },

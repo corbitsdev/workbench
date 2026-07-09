@@ -704,6 +704,12 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
           .limit(1);
 
         if (!existing) throw new Error(`Artifact not found: ${artifactId}`);
+        // Archived artifacts are soft-hidden: an agent holding a stale id must
+        // not silently revise something the user has put away. Presents as
+        // not-found, matching the skill-draft hide below.
+        if (existing.archivedAt) {
+          throw new Error(`Artifact not found: ${artifactId}`);
+        }
         if (existing.kind === "skill-draft") {
           throw new Error(
             "skill-draft artifacts must be updated with the skill_draft tool",

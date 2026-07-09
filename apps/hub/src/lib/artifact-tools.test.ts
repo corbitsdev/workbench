@@ -706,6 +706,32 @@ describe("artifact_write handler", () => {
     expect(context.db.transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses to write an archived artifact, presenting it as not-found", async () => {
+    const { context, updateSets } = makeQueryContext([
+      [
+        {
+          id: "art_1",
+          title: "Old",
+          kind: "note",
+          status: "draft",
+          version: 1,
+          content: "hidden",
+          archivedAt: new Date("2026-06-01T00:00:00.000Z"),
+        },
+      ],
+    ]);
+    await expect(
+      handlerFor(
+        context,
+        "artifact_write",
+      )({
+        artifactId: "art_1",
+        content: "sneaky revision",
+      }),
+    ).rejects.toThrow(/Artifact not found/);
+    expect(updateSets).toHaveLength(0);
+  });
+
   it("keeps the current content when only the title changes", async () => {
     const { context, updateSets } = makeQueryContext([
       [
