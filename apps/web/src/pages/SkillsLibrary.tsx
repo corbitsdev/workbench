@@ -19,8 +19,12 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  useApproveSkillDraft,
+  useDiscardSkillDraft,
+  useSkillDrafts,
   useSkillLibrary,
   useSkillShareTargets,
+  type SkillDraftItem,
   type SkillLibraryItem,
 } from "../hooks/use-skills";
 import { getMe } from "../lib/hub-api";
@@ -93,7 +97,12 @@ export function SkillsLibrary() {
   const { mode: viewMode, setMode: setViewMode } = useViewMode("skills");
 
   const skillsQuery = useSkillLibrary(tenantId);
+  const draftsQuery = useSkillDrafts(tenantId);
   const shareTargetsQuery = useSkillShareTargets(tenantId);
+  const approveDraft = useApproveSkillDraft();
+  const discardDraft = useDiscardSkillDraft();
+  const [expandedDraftId, setExpandedDraftId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const accessLabel = (skill: SkillLibraryItem) => {
     if (skill.scope === "private") return "Private";
@@ -114,7 +123,42 @@ export function SkillsLibrary() {
     );
   }, [query, skillsQuery.data]);
 
+  const filteredDrafts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (draftsQuery.data ?? []).filter(
+      (draft) =>
+        !q ||
+        draft.title.toLowerCase().includes(q) ||
+        (draft.description ?? "").toLowerCase().includes(q),
+    );
+  }, [query, draftsQuery.data]);
+
   const isSearching = query.trim().length > 0;
+
+  const onApprove = (draft: SkillDraftItem, scope: "tenant" | "private") => {
+    setActionError(null);
+    approveDraft
+      .mutateAsync({ draftId: draft.id, scope, tenantId })
+      .then((result) => {
+        navigate(`/skills/${result.skill.id}`);
+      })
+      .catch((err: unknown) => {
+        setActionError(
+          err instanceof Error ? err.message : "Could not approve draft",
+        );
+      });
+  };
+
+  const onDiscard = (draft: SkillDraftItem) => {
+    setActionError(null);
+    discardDraft
+      .mutateAsync({ draftId: draft.id, tenantId })
+      .catch((err: unknown) => {
+        setActionError(
+          err instanceof Error ? err.message : "Could not discard draft",
+        );
+      });
+  };
 
   const skillRowColumns: DataTableColumn<SkillLibraryItem>[] = [
     {
@@ -162,6 +206,101 @@ export function SkillsLibrary() {
       </LibraryPageHeader>
 
       <div className="flex-1 px-4 pb-10 pt-1.5 sm:px-7">
+        {actionError && (
+          <div className="mb-3 rounded-md border border-border bg-surface px-3 py-2 text-[12px] text-text">
+            {actionError}
+          </div>
+        )}
+
+        {filteredDrafts.length > 0 && (
+          <section className="mb-8">
+            <h2 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.04em] text-text-3">
+              Pending drafts ({filteredDrafts.length})
+            </h2>
+            <ul className="flex flex-col gap-2">
+              {filteredDrafts.map((draft) => {
+                const expanded = expandedDraftId === draft.id;
+                const busy =
+                  (approveDraft.isPending || discardDraft.isPending) &&
+                  (approveDraft.variables?.draftId === draft.id ||
+                    discardDraft.variables?.draftId === draft.id);
+                return (
+                  <li
+                    key={draft.id}
+                    className="rounded-md border border-border bg-surface px-3 py-3"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate text-[13.5px] font-semibold text-text">
+                          {draft.title}
+                          {draft.existingSkillId ? (
+                            <span className="ml-2 text-[11px] font-normal text-text-3">
+                              revision
+                            </span>
+                          ) : null}
+                        </div>
+                        {draft.description ? (
+                          <div className="mt-0.5 line-clamp-2 text-[12px] text-text-3">
+                            {draft.description}
+                          </div>
+                        ) : null}
+                        <div className="mt-1 font-mono text-[11px] text-text-3">
+                          Updated {new Date(draft.updatedAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() =>
+                            setExpandedDraftId(expanded ? null : draft.id)
+                          }
+                        >
+                          {expanded ? "Hide" : "Review"}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() => onApprove(draft, "tenant")}
+                        >
+                          Approve shared
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() => onApprove(draft, "private")}
+                        >
+                          Approve private
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="library"
+                          size="library"
+                          disabled={busy}
+                          onClick={() => onDiscard(draft)}
+                        >
+                          Discard
+                        </Button>
+                      </div>
+                    </div>
+                    {expanded && (
+                      <pre className="mt-3 max-h-72 overflow-auto rounded border border-border bg-[rgba(0,0,0,0.18)] p-3 text-[12px] leading-relaxed text-text whitespace-pre-wrap">
+                        {draft.content}
+                      </pre>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {skillsQuery.isLoading && (
           <div className="py-10 text-[13px] text-text-3">Loading skills…</div>
         )}
@@ -176,6 +315,10 @@ export function SkillsLibrary() {
             <div className="py-10 text-[13px] text-text-3">
               {isSearching ? (
                 <>No results for &ldquo;{query.trim()}&rdquo;.</>
+              ) : filteredDrafts.length > 0 ? (
+                <>
+                  Published skills will appear here after you approve a draft.
+                </>
               ) : (
                 <>
                   No skills yet.{" "}

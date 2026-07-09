@@ -248,3 +248,92 @@ export function useRestoreSkillVersion() {
     },
   });
 }
+
+const skillDraftSchema = type({
+  id: "string",
+  title: "string",
+  content: "string",
+  description: "string|null",
+  existingSkillId: "string|null",
+  status: "'draft'|'approved'|'rejected'",
+  updatedAt: "string",
+  createdAt: "string",
+});
+export type SkillDraftItem = typeof skillDraftSchema.infer;
+
+const skillDraftsResponseSchema = type({ drafts: skillDraftSchema.array() });
+const skillDraftResponseSchema = type({ draft: skillDraftSchema });
+const approveDraftResponseSchema = type({
+  skill: skillSchema,
+  draftId: "string",
+});
+
+export function useSkillDrafts(tenantId?: string | null) {
+  return useQuery<SkillDraftItem[]>({
+    queryKey: ["skill-drafts", tenantId ?? null],
+    queryFn: async () => {
+      const raw = await api<unknown>(
+        "GET",
+        `/skills/drafts${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`,
+      );
+      const parsed = skillDraftsResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected skill drafts response: ${parsed.summary}`);
+      }
+      return parsed.drafts;
+    },
+    staleTime: 30_000,
+  });
+}
+
+export function useApproveSkillDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: {
+      draftId: string;
+      scope: SkillAccessScope;
+      tenantId?: string | null;
+    }) => {
+      const raw = await api<unknown>(
+        "POST",
+        `/skills/drafts/${encodeURIComponent(body.draftId)}/approve${body.tenantId ? `?tenantId=${encodeURIComponent(body.tenantId)}` : ""}`,
+        { scope: body.scope },
+      );
+      const parsed = approveDraftResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected approve response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["skill-drafts", variables.tenantId ?? null],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["skills", variables.tenantId ?? null],
+      });
+    },
+  });
+}
+
+export function useDiscardSkillDraft() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { draftId: string; tenantId?: string | null }) => {
+      const raw = await api<unknown>(
+        "POST",
+        `/skills/drafts/${encodeURIComponent(body.draftId)}/discard${body.tenantId ? `?tenantId=${encodeURIComponent(body.tenantId)}` : ""}`,
+      );
+      const parsed = skillDraftResponseSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected discard response: ${parsed.summary}`);
+      }
+      return parsed.draft;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["skill-drafts", variables.tenantId ?? null],
+      });
+    },
+  });
+}
