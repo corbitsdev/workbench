@@ -529,6 +529,11 @@ function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
       const offset = optionalOffset(args) ?? 0;
       const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
       const { base, content } = await resolveArtifactContent(context, args);
+      if (base.kind === WEB_SITE_KIND) {
+        throw new Error(
+          "artifact_read_chunk does not support web_site artifacts; use artifact_read for a summary or pass path to read one file",
+        );
+      }
       return jsonResult(windowContent(base, content, offset, limit));
     },
   };

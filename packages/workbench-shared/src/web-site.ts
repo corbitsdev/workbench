@@ -158,6 +158,54 @@ export function summarizeWebSiteContent(rawJson: string): WebSiteReadSummary {
 
 export type VercelDeployFile = { path: string; content: string };
 
+function mimeTypeForSitePath(path: string): string {
+  if (path.endsWith(".css")) return "text/css";
+  if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".json")) return "application/json";
+  if (path.endsWith(".html") || path.endsWith(".htm")) return "text/html";
+  return "text/plain";
+}
+
+function dataUrlForSiteFile(path: string, fileContent: string): string {
+  const mime = mimeTypeForSitePath(path);
+  return `data:${mime};charset=utf-8,${encodeURIComponent(fileContent)}`;
+}
+
+function inlineSiteAssetRefs(html: string, path: string, dataUrl: string): string {
+  const refs = [path, `./${path}`];
+  let next = html;
+  for (const ref of refs) {
+    next = next.replaceAll(`href="${ref}"`, `href="${dataUrl}"`);
+    next = next.replaceAll(`href='${ref}'`, `href='${dataUrl}'`);
+    next = next.replaceAll(`src="${ref}"`, `src="${dataUrl}"`);
+    next = next.replaceAll(`src='${ref}'`, `src='${dataUrl}'`);
+  }
+  return next;
+}
+
+/** Entry-page HTML with same-bundle link/script src/href inlined for sandboxed srcDoc preview. */
+export function buildWebSitePreviewHtml(content: WebSiteContent): string {
+  const normalized = normalizeWebSiteContent(content);
+  const entry = normalized.entry ?? "index.html";
+  const entryHtml = normalized.files[entry];
+  if (entryHtml === undefined) {
+    throw new WebSiteContentError(
+      `entry file "${entry}" is not present in files`,
+    );
+  }
+  let html = entryHtml;
+  for (const [path, fileContent] of Object.entries(normalized.files)) {
+    if (path === entry) continue;
+    html = inlineSiteAssetRefs(
+      html,
+      path,
+      dataUrlForSiteFile(path, fileContent),
+    );
+  }
+  return html;
+}
+
 export function expandWebArtifactToVercelFiles(
   kind: string,
   rawContent: string,

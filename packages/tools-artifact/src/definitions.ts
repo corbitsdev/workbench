@@ -79,7 +79,7 @@ export const ARTIFACT_READ_DEFINITION: ToolDefinition = {
 export const ARTIFACT_READ_CHUNK_DEFINITION: ToolDefinition = {
   name: "artifact_read_chunk",
   description:
-    "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end.",
+    "Read one bounded chunk of a Workbench artifact's content by character range. Use this to read a large artifact whose content did not fit in a single artifact_read: pass the offset named in the prior result's 'continuation' field, and keep calling with each new offset until the result has no 'continuation' field, which means you have reached the end. Not supported for kind=web_site — use artifact_read (summary or path) instead.",
   inputSchema: {
     type: "object",
     properties: {

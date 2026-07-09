@@ -1,5 +1,6 @@
 import { usesSocialPostPreview } from "@workbench/artifact";
 import {
+  buildWebSitePreviewHtml,
   parseWebSiteContentJson,
   WebSiteContentError,
 } from "@workbench/shared";
@@ -278,12 +279,12 @@ function WebBody({ html }: { html: string }) {
 
 function WebSiteBody({ content }: { content: string }) {
   let entry = "index.html";
-  let entryHtml = "";
+  let previewHtml = "";
   let paths: string[] = [];
   try {
     const site = parseWebSiteContentJson(content);
     entry = site.entry ?? "index.html";
-    entryHtml = site.files[entry] ?? "";
+    previewHtml = buildWebSitePreviewHtml(site);
     paths = Object.keys(site.files).sort((a, b) => a.localeCompare(b));
   } catch (error) {
     const message =
@@ -299,7 +300,7 @@ function WebSiteBody({ content }: { content: string }) {
 
   return (
     <div className="space-y-4">
-      <WebBody html={entryHtml} />
+      <WebBody html={previewHtml} />
       <div className="rounded border border-border bg-surface-2/30 px-4 py-3 text-sm text-text-2">
         <p className="font-medium text-text">Site bundle</p>
         <p className="mt-1 text-text-3">

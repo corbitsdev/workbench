@@ -609,6 +609,29 @@ describe("artifact_read_chunk handler", () => {
       handler({ artifactId: "art_big", offset: -1 }),
     ).rejects.toThrow(/offset must be a non-negative integer/);
   });
+
+  it("rejects web_site artifacts in favor of artifact_read", async () => {
+    const siteJson = JSON.stringify({
+      files: { "index.html": "<html></html>" },
+    });
+    const { context } = makeQueryContext([
+      [
+        {
+          id: "art_site",
+          title: "Site",
+          kind: "web_site",
+          status: "draft",
+          version: 1,
+          content: siteJson,
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_read_chunk");
+
+    await expect(handler({ artifactId: "art_site" })).rejects.toThrow(
+      /artifact_read_chunk does not support web_site/,
+    );
+  });
 });
 
 describe("artifact_write handler", () => {

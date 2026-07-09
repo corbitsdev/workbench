@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  buildWebSitePreviewHtml,
   expandWebArtifactToVercelFiles,
   parseWebSiteContentJson,
   serializeWebSiteContent,
@@ -62,6 +63,23 @@ describe("web_site content", () => {
     expect(() => expandWebArtifactToVercelFiles("web", "   \n")).toThrow(
       WebSiteContentError,
     );
+  });
+
+  test("buildWebSitePreviewHtml inlines same-bundle css and js refs", () => {
+    const html = buildWebSitePreviewHtml({
+      entry: "index.html",
+      files: {
+        "index.html":
+          '<html><link href="app.css" rel="stylesheet"><script src="app.js"></script></html>',
+        "app.css": "body{color:red}",
+        "app.js": "console.log(1)",
+      },
+    });
+    expect(html).toContain("data:text/css");
+    expect(html).toContain("body%7Bcolor%3Ared%7D");
+    expect(html).toContain("data:text/javascript");
+    expect(html).not.toContain('href="app.css"');
+    expect(html).not.toContain('src="app.js"');
   });
 
   test("expand web_site to all paths", () => {
