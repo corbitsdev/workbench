@@ -1,4 +1,5 @@
 import { Fragment, useLayoutEffect, useMemo, useRef } from "react";
+import { cn } from "@workbench/ui";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   fuzzyMatch,
@@ -13,7 +14,15 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
+  CommandShortcut,
 } from "./ui/command";
+import {
+  detectShortcutPlatform,
+  formatChord,
+  PALETTE_GLOBAL_SHORTCUT_HINTS,
+  PALETTE_LOCAL_SHORTCUT_HINTS,
+  type ShortcutPlatform,
+} from "../lib/keyboard-shortcut-display";
 import {
   PALETTE_CATEGORY_LABELS,
   PALETTE_CATEGORY_ORDER,
@@ -22,6 +31,8 @@ import {
 // Opacity-only transition: the palette is keyboard-triggered and used many times
 // a day, so it must never animate scale or position. Exported so a regression
 // test can assert the config carries no transform keys.
+export const PALETTE_PANEL_MAX_WIDTH_CLASS = "max-w-2xl" as const;
+
 export const PALETTE_PANEL_MOTION = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
@@ -91,7 +102,46 @@ function emptyMessage(
   if (loading) return "Searching…";
   if (error) return "Search failed. Please try again.";
   if (trimmed) return `No matches for “${trimmed}”.`;
-  return "Type to search.";
+  return "Search entities or use the shortcuts below.";
+}
+
+function ShortcutChip({ children }: { children: string }) {
+  return (
+    <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-[11px] text-text-2">
+      {children}
+    </kbd>
+  );
+}
+
+function PaletteShortcutFooter({ platform }: { platform: ShortcutPlatform }) {
+  return (
+    <div
+      className="flex flex-col gap-2 border-t border-border px-4 py-3"
+      data-testid="command-palette-footer"
+    >
+      <p className="text-xs text-text-3">
+        Search entities or pick a destination below.
+      </p>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-2">
+        {PALETTE_GLOBAL_SHORTCUT_HINTS.map((hint) => (
+          <span key={hint.keys} className="inline-flex items-center gap-1.5">
+            <span>{hint.label}</span>
+            <ShortcutChip>{formatChord(hint.keys, platform)}</ShortcutChip>
+          </span>
+        ))}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-3">
+        {PALETTE_LOCAL_SHORTCUT_HINTS.map((hint) => (
+          <span key={hint.keys} className="inline-flex items-center gap-1.5">
+            <span>{hint.label}</span>
+            <CommandShortcut className="ml-0 tracking-normal">
+              {hint.keys}
+            </CommandShortcut>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function CommandPalette({
@@ -157,6 +207,7 @@ export function CommandPalette({
   };
 
   const trimmed = query.trim();
+  const shortcutPlatform = useMemo(() => detectShortcutPlatform(undefined), []);
 
   return (
     <AnimatePresence initial={false}>
@@ -170,14 +221,18 @@ export function CommandPalette({
           onClick={onClose}
           data-testid="command-palette-scrim"
         >
-          <div onClick={(e) => e.stopPropagation()} className="w-full max-w-xl">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={cn("w-full", PALETTE_PANEL_MAX_WIDTH_CLASS)}
+            data-testid="command-palette-panel"
+          >
             <Command
               // Results are server-ranked (entities) or ranked here (nav); cmdk
               // must not re-filter or it would drop server rows whose text does
               // not fuzzy-match its own scorer. We own the matching.
               shouldFilter={false}
               aria-label="Search commands and entities"
-              className="max-h-[70vh] border border-border shadow-[var(--shadow)]"
+              className="flex max-h-[70vh] min-h-[min(28rem,55vh)] flex-col border border-border shadow-[var(--shadow)]"
             >
               <CommandInput
                 ref={inputRef}
@@ -224,6 +279,8 @@ export function CommandPalette({
                   </CommandGroup>
                 ))}
               </CommandList>
+
+              <PaletteShortcutFooter platform={shortcutPlatform} />
 
               {hasMore && onLoadMore && (
                 <div className="border-t border-border p-2">
