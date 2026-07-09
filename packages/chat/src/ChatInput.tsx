@@ -1,6 +1,7 @@
 import {
   type DragEvent,
   type KeyboardEvent,
+  useCallback,
   useEffect,
   useId,
   useLayoutEffect,
@@ -85,11 +86,16 @@ export function ChatInput({
   const rowWidth =
     fullWidth === true ? "w-full" : "mx-auto w-full lg:max-w-[60vw]";
 
+  const adjustHeight = useCallback(() => {
+    const el = textareaRef.current;
+    if (el === null) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
   useLayoutEffect(() => {
-    if (textareaRef.current === null) return;
-    textareaRef.current.style.height = "auto";
-    textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-  }, [draft]);
+    adjustHeight();
+  }, [draft, adjustHeight]);
 
   const addFiles = (files: File[]) => {
     if (attachmentPolicy === undefined || files.length === 0) return;
@@ -261,9 +267,14 @@ export function ChatInput({
           value={draft}
           disabled={isBlocked}
           placeholder={placeholder ?? "Message Ada…"}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            adjustHeight();
+          }}
+          onInput={adjustHeight}
+          onPaste={() => requestAnimationFrame(adjustHeight)}
           onKeyDown={handleKeyDown}
-          className="max-h-32 min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-2 focus:ring-orange disabled:opacity-50"
+          className="max-h-32 min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
         <Button
           type="button"
