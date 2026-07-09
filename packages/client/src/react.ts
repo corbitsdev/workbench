@@ -20,11 +20,13 @@ import type {
   WorkflowSummary,
 } from "@workbench/shared";
 import {
+  archiveArtifact,
   createArtifact,
   getArtifact,
   listArtifacts,
   listWorkflows,
   listMembers,
+  unarchiveArtifact,
   uploadArtifacts,
   type ArtifactsPage,
   type ClientOptions,
@@ -84,6 +86,8 @@ export interface UseArtifactsParams {
   creatorKind?: "user" | "agent";
   createdAfter?: string;
   createdBefore?: string;
+  /** When true, list only archived artifacts (the Archived view). */
+  archived?: boolean;
   enabled?: boolean;
 }
 
@@ -102,6 +106,7 @@ export function artifactsListQueryKey(
     params.creatorKind ?? "",
     params.createdAfter ?? "",
     params.createdBefore ?? "",
+    params.archived ?? false,
   ] as const;
 }
 
@@ -130,13 +135,14 @@ function listArtifactsParams(
   if (params.createdBefore !== undefined) {
     out.createdBefore = params.createdBefore;
   }
+  if (params.archived !== undefined) out.archived = params.archived;
   if (cursor !== undefined) out.cursor = cursor;
   return out;
 }
 
-function getArtifactParams(
-  params: Pick<UseArtifactParams, "tenantId">,
-): { tenantId?: string | null } {
+function getArtifactParams(params: Pick<UseArtifactParams, "tenantId">): {
+  tenantId?: string | null;
+} {
   const out: { tenantId?: string | null } = {};
   if (params.tenantId !== undefined) out.tenantId = params.tenantId;
   return out;
@@ -156,8 +162,7 @@ export function useArtifact(
   const artifactId = params.artifactId ?? "";
   return useQuery({
     queryKey: ["artifacts", "detail", params.tenantId ?? null, artifactId],
-    queryFn: () =>
-      getArtifact(options, artifactId, getArtifactParams(params)),
+    queryFn: () => getArtifact(options, artifactId, getArtifactParams(params)),
     enabled:
       params.tenantId != null &&
       artifactId.length > 0 &&
@@ -249,6 +254,58 @@ export function useUploadArtifacts(
   return useMutation({
     mutationFn: (params: UploadArtifactsParams) =>
       uploadArtifacts(options, params),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
+  });
+}
+
+/** Variables for the archive/unarchive mutations. */
+export interface ArchiveArtifactVars {
+  artifactId: string;
+  tenantId?: string | null;
+}
+
+/**
+ * Archive (soft-hide) an artifact and refresh the gallery + its detail view.
+ * Both the list/infinite `["artifacts", ...]` keys and the detail key are
+ * invalidated so the archived row drops out everywhere. Callers must `.catch()`
+ * the returned `mutateAsync` (or use `mutate` with `onError`).
+ */
+export function useArchiveArtifact(
+  options: ClientOptions = {},
+): UseMutationResult<ArtifactWithSession, Error, ArchiveArtifactVars> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: ArchiveArtifactVars) =>
+      archiveArtifact(
+        options,
+        vars.artifactId,
+        vars.tenantId != null ? { tenantId: vars.tenantId } : {},
+      ),
+    onSuccess: () => {
+      // Prefix match: invalidating ["artifacts"] also refreshes every
+      // ["artifacts", "detail", ...] entry, so no separate detail invalidation.
+      void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
+  });
+}
+
+/**
+ * Unarchive an artifact and refresh the gallery + its detail view. Callers must
+ * `.catch()` the returned `mutateAsync` (or use `mutate` with `onError`).
+ */
+export function useUnarchiveArtifact(
+  options: ClientOptions = {},
+): UseMutationResult<ArtifactWithSession, Error, ArchiveArtifactVars> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: ArchiveArtifactVars) =>
+      unarchiveArtifact(
+        options,
+        vars.artifactId,
+        vars.tenantId != null ? { tenantId: vars.tenantId } : {},
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
     },

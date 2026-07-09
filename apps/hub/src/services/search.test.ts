@@ -130,6 +130,24 @@ describe("searchTenant", () => {
     expect(artifactCall!.params).toContain(2 * PER_SOURCE_LIMIT);
   });
 
+  it("excludes archived artifacts from the artifact search source", async () => {
+    toolsImpl = () => Promise.resolve([]);
+    const { db, calls } = makeRecordingDb(() => []);
+    await searchTenant(db, {
+      tenantId: "tn-1",
+      memberPrincipalId: "prn-1",
+      query: "acme",
+      page: 1,
+    });
+    const artifactCall = calls.find((c) => c.query.includes('from "artifact"'));
+    expect(artifactCall).toBeDefined();
+    const q = artifactCall!.query.toLowerCase();
+    // The soft-hide filter (archived_at IS NULL) must be woven into the query,
+    // or archived artifacts would resurface via search.
+    expect(q).toContain("archived_at");
+    expect(q).toContain("is null");
+  });
+
   it("normalizes rows from each source to palette items and computes hasMore", async () => {
     toolsImpl = () =>
       Promise.resolve([

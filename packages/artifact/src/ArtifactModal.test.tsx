@@ -16,6 +16,7 @@ const artifact: ArtifactWithSession = {
   status: "approved",
   version: 2,
   ownerPrincipalId: null,
+  archivedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },
@@ -359,6 +360,38 @@ describe("ArtifactModal", () => {
       expect(
         screen.queryByLabelText("Format for LinkedIn paste"),
       ).not.toBeNull();
+    });
+  });
+
+  describe("CL-3156: Archive action", () => {
+    it("renders an Archive button and calls onArchive only after confirm", () => {
+      const onArchive = mock(() => {});
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+          onArchive,
+        }),
+      );
+      // First click arms the confirm; it must not archive yet.
+      fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+      expect(onArchive).not.toHaveBeenCalled();
+      // Second click confirms.
+      fireEvent.click(screen.getByRole("button", { name: "Confirm archive" }));
+      expect(onArchive).toHaveBeenCalledTimes(1);
+      expect(onArchive).toHaveBeenCalledWith(artifact);
+    });
+
+    it("does not render an Archive button when onArchive is absent", () => {
+      render(
+        React.createElement(ArtifactModal, {
+          open: true,
+          artifact,
+          onClose: () => {},
+        }),
+      );
+      expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
     });
   });
 

@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
 import type { HubDb } from "../db";
 
@@ -15,8 +15,30 @@ mock.module("../lib/user-context", () => ({
   getRequestedUserContext: () => contextImpl(),
 }));
 
+// Control the admin verdict per test. The archive routes call
+// isAdmin(grantStore, principalId, tenantId); default to non-admin so the
+// owner path is exercised unless a test opts into admin.
+let isAdminImpl: () => boolean = () => false;
+mock.module("../lib/admin-grant", () => ({
+  isAdmin: () => Promise.resolve(isAdminImpl()),
+}));
+
+// The archive routes resolve an agent-owned artifact back to the human member
+// who owns the producing agent via resolveOwnerMemberPrincipalId; control the
+// verdict per test (default: no owning member, i.e. a human-owned artifact).
+let agentOwnerImpl: () => string | null = () => null;
+mock.module("../lib/artifact-tools", () => ({
+  resolveOwnerMemberPrincipalId: () => Promise.resolve(agentOwnerImpl()),
+}));
+
 import { createArtifactsRouter } from "./artifacts";
 import { artifact, upload } from "../db/schema";
+
+// The router only forwards this to the mocked isAdmin, so an opaque stand-in is
+// enough for the tests.
+const fakeGrantStore = {} as unknown as Parameters<
+  typeof createArtifactsRouter
+>[1];
 
 // biome-ignore lint/suspicious/noExplicitAny: structural test mock
 type MockDb = any;
@@ -27,6 +49,8 @@ function makeDb(opts: {
   inserted?: Record<string, unknown>[];
   /** Results returned by successive `db.select(...).from(...).where(...)` calls, in call order. */
   selectResults?: unknown[][];
+  /** Captures the `db.update(...).set(values)` payloads, in call order. */
+  updated?: Record<string, unknown>[];
 }): HubDb {
   const selectResults = [...(opts.selectResults ?? [])];
   const select = mock(() => {
@@ -62,6 +86,13 @@ function makeDb(opts: {
       }),
     })),
   };
+  const updated = opts.updated ?? [];
+  const update = mock(() => ({
+    set: mock((values: Record<string, unknown>) => {
+      updated.push(values);
+      return { where: mock(() => Promise.resolve()) };
+    }),
+  }));
   const db: MockDb = {
     query: {
       artifact: {
@@ -70,6 +101,7 @@ function makeDb(opts: {
       },
     },
     select,
+    update,
     transaction: mock((cb: (t: typeof tx) => unknown) => cb(tx)),
   };
   return db as HubDb;
@@ -81,7 +113,7 @@ function appWith(db: HubDb): Hono<{ Variables: { userId: string } }> {
     c.set("userId", "user-1");
     await next();
   });
-  app.route("/", createArtifactsRouter(db));
+  app.route("/", createArtifactsRouter(db, fakeGrantStore));
   return app;
 }
 
@@ -855,7 +887,7 @@ function uploadApp(db: HubDb): Hono<{ Variables: { userId: string } }> {
     c.set("userId", "user-1");
     await next();
   });
-  app.route("/", createArtifactsRouter(db));
+  app.route("/", createArtifactsRouter(db, fakeGrantStore));
   return app;
 }
 
@@ -1005,5 +1037,303 @@ describe("POST /artifacts/upload", () => {
       uploadRequest([new File(["x"], "a.txt", { type: "text/plain" })]),
     );
     expect(res.status).toBe(403);
+  });
+});
+
+// Flatten a drizzle SQL predicate into the literal strings (column names,
+// operator fragments) it carries, so a test can assert which facets reached the
+// query without rendering a dialect.
+function flattenWhere(node: unknown, seen = new Set<unknown>()): string {
+  const parts: string[] = [];
+  const walk = (n: unknown) => {
+    if (n == null || seen.has(n)) return;
+    if (typeof n === "string") {
+      parts.push(n);
+      return;
+    }
+    if (typeof n !== "object") return;
+    seen.add(n);
+    for (const v of Object.values(n as Record<string, unknown>)) walk(v);
+  };
+  walk(node);
+  return parts.join(" ");
+}
+
+describe("GET /artifacts archive filtering (CL-3156)", () => {
+  function captureWhere(db: HubDb): { where: unknown }[] {
+    const calls: { where: unknown }[] = [];
+    const captured = db as unknown as {
+      query: {
+        artifact: {
+          findMany: (opts: { where: unknown }) => Promise<unknown[]>;
+        };
+      };
+    };
+    const inner = captured.query.artifact.findMany;
+    captured.query.artifact.findMany = (opts: { where: unknown }) => {
+      calls.push({ where: opts.where });
+      return inner(opts);
+    };
+    return calls;
+  }
+
+  it("hides archived artifacts by default (archived_at IS NULL)", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const db = makeDb({ findMany: [ROW] });
+    const calls = captureWhere(db);
+    const app = appWith(db);
+    const res = await app.request("/artifacts");
+    expect(res.status).toBe(200);
+    const where = flattenWhere(calls[0]?.where);
+    expect(where).toContain("archived_at");
+    expect(where).toContain("is null");
+    expect(where).not.toContain("is not null");
+  });
+
+  it("shows only archived artifacts under ?archived=true (archived_at IS NOT NULL)", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const db = makeDb({ findMany: [ROW] });
+    const calls = captureWhere(db);
+    const app = appWith(db);
+    const res = await app.request("/artifacts?archived=true");
+    expect(res.status).toBe(200);
+    const where = flattenWhere(calls[0]?.where);
+    expect(where).toContain("archived_at");
+    expect(where).toContain("is not null");
+  });
+});
+
+describe("POST /artifacts/:id/archive + /unarchive (CL-3156)", () => {
+  // Default: artifact is human-owned (no producing-agent owner) unless a test
+  // opts in, so the owner/admin branches are exercised in isolation.
+  beforeEach(() => {
+    agentOwnerImpl = () => null;
+  });
+
+  it("lets a member archive an artifact produced by their own agent", async () => {
+    // The artifact is owned by the agent's synthetic principal; the caller is
+    // the human member who owns that agent, resolved via member_agent_instance.
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-2" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    agentOwnerImpl = () => "prn-2";
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-agent", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(updated).toHaveLength(1);
+  });
+
+  it("403s when the producing agent belongs to a different member", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-2" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    agentOwnerImpl = () => "prn-3";
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-agent", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+    expect(updated).toHaveLength(0);
+  });
+
+  it("lets the owner archive their own artifact, stamping archived_at", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-1", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      artifact: { archivedAt: string | null };
+    };
+    expect(body.artifact.archivedAt).not.toBeNull();
+    expect(updated).toHaveLength(1);
+    expect("archivedAt" in updated[0]!).toBe(true);
+    expect(updated[0]!.archivedAt).toBeInstanceOf(Date);
+  });
+
+  it("lets a workspace admin archive an artifact they do not own", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-admin" },
+      forbidden: false,
+    });
+    isAdminImpl = () => true;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-owner", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(updated).toHaveLength(1);
+  });
+
+  it("403s for a non-owner, non-admin member and does not mutate", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-2" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-1", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+    expect(updated).toHaveLength(0);
+  });
+
+  it("403s cross-tenant even for an admin (tenant guard runs first)", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-admin" },
+      forbidden: false,
+    });
+    isAdminImpl = () => true;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: {
+          ...ROW,
+          tenantId: "tn-other",
+          ownerPrincipalId: "prn-x",
+          archivedAt: null,
+        },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(403);
+    expect(updated).toHaveLength(0);
+  });
+
+  it("404s when the artifact does not exist", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    const app = appWith(makeDb({ findFirst: undefined }));
+    const res = await app.request("/artifacts/nope/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("is idempotent: re-archiving does not overwrite the original archived_at", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    const original = new Date("2026-06-01T00:00:00.000Z");
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-1", archivedAt: original },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/archive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      artifact: { archivedAt: string | null };
+    };
+    expect(body.artifact.archivedAt).toBe(original.toISOString());
+    expect(updated).toHaveLength(0);
+  });
+
+  it("lets the owner unarchive, clearing archived_at", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: {
+          ...ROW,
+          ownerPrincipalId: "prn-1",
+          archivedAt: new Date("2026-06-01T00:00:00.000Z"),
+        },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/unarchive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      artifact: { archivedAt: string | null };
+    };
+    expect(body.artifact.archivedAt).toBeNull();
+    expect(updated).toHaveLength(1);
+    expect(updated[0]!.archivedAt).toBeNull();
+  });
+
+  it("is idempotent: unarchiving a visible artifact is a no-op success", async () => {
+    contextImpl = () => ({
+      context: { tenantId: "tn-1", principalId: "prn-1" },
+      forbidden: false,
+    });
+    isAdminImpl = () => false;
+    const updated: Record<string, unknown>[] = [];
+    const app = appWith(
+      makeDb({
+        findFirst: { ...ROW, ownerPrincipalId: "prn-1", archivedAt: null },
+        updated,
+      }),
+    );
+    const res = await app.request("/artifacts/art-1/unarchive", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(updated).toHaveLength(0);
   });
 });

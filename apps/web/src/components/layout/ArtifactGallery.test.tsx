@@ -39,6 +39,7 @@ const fakeArtifact: ArtifactWithSession = {
   status: "approved",
   version: 1,
   ownerPrincipalId: null,
+  archivedAt: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },
@@ -67,13 +68,28 @@ function renderWithSeededArtifacts(
     },
   });
   client.setQueryData(
-    ["artifacts", tenantId, "", "newest", "", "", "", "", "", "", "infinite"],
+    [
+      "artifacts",
+      tenantId,
+      "",
+      "newest",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      false,
+      "infinite",
+    ],
     {
       pages: [{ artifacts, nextCursor: null }],
       pageParams: [null],
     },
   );
   client.setQueryData(["members", tenantId], []);
+  // Seed the caller identity so the archive-gate query does not hit the network.
+  client.setQueryData(["me"], { isAdmin: false, isOwner: false });
   return render(
     React.createElement(
       ChatLauncherContext.Provider,
@@ -229,6 +245,120 @@ describe("ArtifactGallery", () => {
       await waitFor(() => {
         expect(screen.queryByRole("dialog")).toBeNull();
       });
+    });
+  });
+
+  describe("CL-3156: Archive from the gallery modal", () => {
+    function renderWithMe(
+      me: { isAdmin?: boolean; isOwner?: boolean },
+      artifacts: ArtifactWithSession[],
+    ) {
+      const client = new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+            staleTime: Number.POSITIVE_INFINITY,
+            refetchOnMount: false,
+          },
+        },
+      });
+      client.setQueryData(
+        [
+          "artifacts",
+          "tenant-workbench",
+          "",
+          "newest",
+          "",
+          "",
+          "",
+          "",
+          "",
+          "",
+          false,
+          "infinite",
+        ],
+        { pages: [{ artifacts, nextCursor: null }], pageParams: [null] },
+      );
+      client.setQueryData(["members", "tenant-workbench"], []);
+      client.setQueryData(["me"], me);
+      return render(
+        React.createElement(
+          ChatLauncherContext.Provider,
+          { value: mockContextValue },
+          React.createElement(
+            MemoryRouter,
+            null,
+            React.createElement(
+              QueryClientProvider,
+              { client },
+              React.createElement(ArtifactGallery, {
+                tenantId: "tenant-workbench",
+              }),
+            ),
+          ),
+        ),
+      );
+    }
+
+    it("optimistically removes the card and POSTs the archive route for an admin", async () => {
+      const fetchSpy = mock((input: string | URL | Request) => {
+        if (String(input).includes("/archive")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                artifact: {
+                  ...fakeArtifact,
+                  archivedAt: "2026-07-09T12:00:00.000Z",
+                },
+              }),
+              { status: 200, headers: { "content-type": "application/json" } },
+            ),
+          );
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ artifacts: [], nextCursor: null }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      });
+      const originalFetch = global.fetch;
+      global.fetch = fetchSpy as unknown as typeof fetch;
+      try {
+        const view = renderWithMe({ isAdmin: true }, [fakeArtifact]);
+        fireEvent.click(
+          await view.findByRole("button", {
+            name: /Open Sales automation ROI/i,
+          }),
+        );
+        await view.findByRole("dialog");
+        // Archive is confirm-guarded: arm, then confirm.
+        fireEvent.click(view.getByRole("button", { name: "Archive" }));
+        fireEvent.click(view.getByRole("button", { name: "Confirm archive" }));
+        await waitFor(() =>
+          expect(view.queryByText("Sales automation ROI")).toBeNull(),
+        );
+        expect(
+          fetchSpy.mock.calls.some((c) =>
+            String(c[0]).includes("/artifacts/a-1/archive"),
+          ),
+        ).toBe(true);
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it("does not offer the archive action to a non-owner, non-admin", async () => {
+      const view = renderWithMe({ isAdmin: false, isOwner: false }, [
+        fakeArtifact,
+      ]);
+      fireEvent.click(
+        await view.findByRole("button", {
+          name: /Open Sales automation ROI/i,
+        }),
+      );
+      await view.findByRole("dialog");
+      expect(view.queryByRole("button", { name: "Archive" })).toBeNull();
     });
   });
 });

@@ -3,6 +3,7 @@ import { type } from "arktype";
 import {
   AnalyzeRequestSchema,
   AnalyzeResponseSchema,
+  Artifact,
   GammaPresentationContentSchema,
   GenerateRequestSchema,
   GenerateResponseSchema,
@@ -15,6 +16,41 @@ import {
 } from "./index";
 
 const isErr = (v: unknown): boolean => v instanceof type.errors;
+
+describe("Artifact schema carries the archive marker", () => {
+  const base = {
+    id: "art-1",
+    parentId: null,
+    kind: "document",
+    title: "T",
+    content: "C",
+    status: "draft",
+    version: 1,
+    ownerPrincipalId: null,
+    createdAt: "2026-07-09T00:00:00.000Z",
+    updatedAt: "2026-07-09T00:00:00.000Z",
+    source: { origin: "manual" },
+  };
+
+  test("accepts a null archivedAt (visible artifact)", () => {
+    expect(isErr(Artifact({ ...base, archivedAt: null }))).toBe(false);
+  });
+
+  test("accepts an ISO archivedAt (archived artifact)", () => {
+    const parsed = Artifact({
+      ...base,
+      archivedAt: "2026-07-09T12:00:00.000Z",
+    });
+    expect(isErr(parsed)).toBe(false);
+    expect((parsed as { archivedAt: string | null }).archivedAt).toBe(
+      "2026-07-09T12:00:00.000Z",
+    );
+  });
+
+  test("rejects a payload missing archivedAt entirely", () => {
+    expect(isErr(Artifact(base))).toBe(true);
+  });
+});
 
 describe("GammaPresentationContentSchema", () => {
   test("accepts structured deck content and rejects a bare URL string", () => {

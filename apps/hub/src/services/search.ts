@@ -206,6 +206,7 @@ export async function searchTenant(
         and(
           eq(artifact.tenantId, params.tenantId),
           ne(artifact.status, "rejected"),
+          isNull(artifact.archivedAt),
           ilike(artifact.title, like),
         ),
       )
