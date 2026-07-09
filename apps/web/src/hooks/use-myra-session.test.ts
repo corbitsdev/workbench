@@ -114,6 +114,33 @@ describe("deliverMessage", () => {
     expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
   });
 
+  it("relaunches and retries once on a 502, then succeeds", async () => {
+    let calls = 0;
+    const session = {
+      sendMail: mock(() => {
+        calls++;
+        if (calls === 1) return Promise.reject(new FakeApiError(502));
+        return Promise.resolve();
+      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await deliverMessage(session, "inst-1", "hello");
+    expect(session.sendMail).toHaveBeenCalledTimes(2);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+  });
+
+  it("surfaces a second consecutive 502 instead of relaunching again", async () => {
+    const session = {
+      sendMail: mock(() => Promise.reject(new FakeApiError(502))),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await expect(
+      deliverMessage(session, "inst-1", "hi"),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(session.sendMail).toHaveBeenCalledTimes(2);
+    expect(launchInstanceSession).toHaveBeenCalledTimes(1);
+  });
+
   it("rethrows a non-409 error without relaunching", async () => {
     const session = {
       sendMail: mock(() => Promise.reject(new FakeApiError(500))),
@@ -263,6 +290,49 @@ describe("deliverMessageWithAttachments", () => {
       attachments,
     );
     expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("relaunches and retries once on a 502", async () => {
+    let calls = 0;
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new FakeApiError(502));
+      return Promise.resolve(undefined);
+    });
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await deliverMessageWithAttachments(
+      transport,
+      "tnt-acme",
+      "inst-1",
+      "hi",
+      attachments,
+    );
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a second consecutive 502 instead of relaunching again", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.reject(new FakeApiError(502)),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await expect(
+      deliverMessageWithAttachments(
+        transport,
+        "tnt-acme",
+        "inst-1",
+        "hi",
+        attachments,
+      ),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(launchInstanceSession).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
