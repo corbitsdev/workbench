@@ -65,9 +65,10 @@ export function parseComparisonResult(value: unknown): ComparisonResult | null {
   return parsed;
 }
 
-// Brand spring-ish settle (DESIGN.md `--spring`): a snappy rise for entering
-// cells, shared by the staggered variant grid.
-const SPRING_EASE = [0.22, 1, 0.36, 1] as const;
+// The brand `--spring` curve (styles.css: cubic-bezier(0.34, 1.56, 0.64, 1)) as
+// a keyframe ease — the slight overshoot gives entering cells a spring settle,
+// shared by the staggered variant grid.
+const SPRING_EASE = [0.34, 1.56, 0.64, 1] as const;
 
 function rankForLabel(
   ranking: readonly ComparisonRankingEntry[],
@@ -206,7 +207,7 @@ function VariantCard({
       data-label={variant.label}
       data-status={status}
       data-winner={String(winner)}
-      className={`flex flex-col gap-3 rounded-lg border p-4 ${tone}`}
+      className={`flex flex-col gap-3 rounded-lg border p-4 transition-colors duration-300 motion-reduce:transition-none ${tone}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-0.5">
