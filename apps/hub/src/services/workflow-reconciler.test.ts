@@ -17,8 +17,11 @@ mock.module("../workflow-executor/run-store", () => ({
   },
 }));
 
-const { createWorkflowReconciler, registerAwaitingSupervisorPrewarm } =
-  await import("./workflow-reconciler");
+const {
+  createWorkflowReconciler,
+  registerAwaitingSupervisorPrewarm,
+  WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+} = await import("./workflow-reconciler");
 
 type Row = {
   deploymentId: string | null;
@@ -31,10 +34,14 @@ type Row = {
 // NON-terminal record, keyed by the record's OWN per-run deploymentId + kind +
 // tenant. The mock returns these for the workflowRunRecord query (which the real
 // reconciler filters to running/awaiting — so seed only non-terminal rows here).
+// `status`/`updatedAt` feed the hibernation age gate; rows that omit them model
+// pre-hibernation running records (never age-gated).
 type RecordRow = {
   deploymentId: string | null;
   kind: string;
   tenantId: string;
+  status?: "running" | "awaiting";
+  updatedAt?: Date;
 };
 
 // db whose select(...).from(...).where(...) resolves to the given rows —
@@ -59,6 +66,7 @@ const RECONCILE_ONLY_DEPS = {
   getRoutableAddresses: () => [],
   deploymentDomain: "abklabs.com",
   reclaimDeployment: () => Promise.resolve(),
+  sendAgentUndeploy: () => Promise.resolve(),
 };
 
 type RunRow = {
@@ -524,8 +532,20 @@ describe("reconcileAwaiting — batch resilience + fail-loud (CL-2756)", () => {
           },
         ],
         [
-          { deploymentId: "ses_run_bad", kind: "attio-task", tenantId: "t1" },
-          { deploymentId: "ses_run_ok", kind: "attio-task", tenantId: "t1" },
+          {
+            deploymentId: "ses_run_bad",
+            kind: "attio-task",
+            tenantId: "t1",
+            status: "awaiting" as const,
+            updatedAt: new Date(),
+          },
+          {
+            deploymentId: "ses_run_ok",
+            kind: "attio-task",
+            tenantId: "t1",
+            status: "awaiting" as const,
+            updatedAt: new Date(),
+          },
         ],
       ),
       events: makeEvents().events,
@@ -533,6 +553,7 @@ describe("reconcileAwaiting — batch resilience + fail-loud (CL-2756)", () => {
       getRoutableAddresses: () => [],
       deploymentDomain: DOMAIN,
       reclaimDeployment: () => Promise.resolve(),
+      sendAgentUndeploy: () => Promise.resolve(),
     });
 
     const summary = await reconciler.reconcileAwaiting();
@@ -542,6 +563,190 @@ describe("reconcileAwaiting — batch resilience + fail-loud (CL-2756)", () => {
     expect(calls).toEqual(["ses_run_bad", "ses_run_ok"]);
     expect(summary.failed).toBe(1);
     expect(summary.reestablished).toBe(1);
+  });
+});
+
+describe("reconcileAwaiting — hibernation of long-parked runs", () => {
+  const GRACE_MS = 60_000;
+  const KIND = "deck";
+  const REGISTRY: Row[] = [
+    { deploymentId: "ses_op", kind: KIND, tenantId: "t1", principalId: "dep1" },
+  ];
+
+  function parkedRecord(deploymentId: string, parkedForMs: number): RecordRow {
+    return {
+      deploymentId,
+      kind: KIND,
+      tenantId: "t1",
+      status: "awaiting",
+      updatedAt: new Date(Date.now() - parkedForMs),
+    };
+  }
+
+  function addressOf(deploymentId: string): string {
+    return `ins_${deploymentId}@${DOMAIN}`;
+  }
+
+  function makeHarness(opts: {
+    records: RecordRow[];
+    routable: string[];
+    undeployError?: Error;
+  }) {
+    const ensured: string[] = [];
+    const undeploys: { agentAddress: string; reason: string }[] = [];
+    const reconciler = createWorkflowReconciler({
+      db: makeDb(REGISTRY, opts.records),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: (args) => {
+        ensured.push(args.deploymentId);
+        return Promise.resolve({ reestablished: true });
+      },
+      getRoutableAddresses: () => opts.routable,
+      deploymentDomain: DOMAIN,
+      reclaimDeployment: () => Promise.resolve(),
+      sendAgentUndeploy: (agentAddress, reason) => {
+        undeploys.push({ agentAddress, reason });
+        if (opts.undeployError) return Promise.reject(opts.undeployError);
+        return Promise.resolve();
+      },
+      hibernationGraceMs: GRACE_MS,
+    });
+    return { reconciler, ensured, undeploys };
+  }
+
+  it("hibernates a routable deployment parked past the grace (sends the hibernate undeploy, never a deploy frame)", async () => {
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_old", GRACE_MS * 10)],
+      routable: [addressOf("ses_run_old")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.undeploys).toEqual([
+      {
+        agentAddress: addressOf("ses_run_old"),
+        reason: WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+      },
+    ]);
+    expect(h.ensured).toEqual([]);
+    expect(summary.hibernated).toBe(1);
+    expect(summary.alreadyRoutable).toBe(0);
+  });
+
+  it("leaves a routable deployment parked under the grace alone (no hibernate, no re-establish)", async () => {
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_fresh", GRACE_MS / 2)],
+      routable: [addressOf("ses_run_fresh")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.undeploys).toEqual([]);
+    expect(h.ensured).toEqual([]);
+    expect(summary.alreadyRoutable).toBe(1);
+    expect(summary.hibernated).toBe(0);
+  });
+
+  it("leaves an unroutable deployment parked past the grace dormant — wake is signal-driven, never the pre-warm", async () => {
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_dormant", GRACE_MS * 10)],
+      routable: [],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.ensured).toEqual([]);
+    expect(h.undeploys).toEqual([]);
+    expect(summary.dormant).toBe(1);
+    expect(summary.reestablished).toBe(0);
+  });
+
+  it("still pre-warms an unroutable deployment parked under the grace (crash-recovery backstop)", async () => {
+    const h = makeHarness({
+      records: [parkedRecord("ses_run_young", GRACE_MS / 2)],
+      routable: [],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.ensured).toEqual(["ses_run_young"]);
+    expect(summary.reestablished).toBe(1);
+    expect(summary.dormant).toBe(0);
+  });
+
+  it("surfaces a hibernate teardown failure (counts it) and keeps sweeping the batch", async () => {
+    const h = makeHarness({
+      records: [
+        parkedRecord("ses_run_bad", GRACE_MS * 10),
+        parkedRecord("ses_run_young", GRACE_MS / 2),
+      ],
+      routable: [addressOf("ses_run_bad")],
+      undeployError: new Error("sidecar gone"),
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(summary.failed).toBe(1);
+    expect(summary.hibernated).toBe(0);
+    // The rest of the batch is still swept: the young unroutable record is
+    // pre-warmed despite the earlier hibernate failure.
+    expect(h.ensured).toEqual(["ses_run_young"]);
+  });
+});
+
+describe("reconcileAll — hibernated awaiting deployments stay down on reconnect", () => {
+  const GRACE_MS = 60_000;
+
+  it("skips awaiting records parked past the grace but still re-establishes running ones", async () => {
+    const ensured: string[] = [];
+    const reconciler = createWorkflowReconciler({
+      db: makeDb(
+        [
+          {
+            deploymentId: "ses_op",
+            kind: "k",
+            tenantId: "t",
+            principalId: "p",
+          },
+        ],
+        [
+          {
+            deploymentId: "ses_run_hibernated",
+            kind: "k",
+            tenantId: "t",
+            status: "awaiting",
+            updatedAt: new Date(Date.now() - GRACE_MS * 10),
+          },
+          {
+            deploymentId: "ses_run_fresh_gate",
+            kind: "k",
+            tenantId: "t",
+            status: "awaiting",
+            updatedAt: new Date(),
+          },
+          {
+            deploymentId: "ses_run_running",
+            kind: "k",
+            tenantId: "t",
+            status: "running",
+            updatedAt: new Date(Date.now() - GRACE_MS * 10),
+          },
+        ],
+      ),
+      events: makeEvents().events,
+      ensureDeploymentRoutable: (args) => {
+        ensured.push(args.deploymentId);
+        return Promise.resolve({ reestablished: true });
+      },
+      ...RECONCILE_ONLY_DEPS,
+      hibernationGraceMs: GRACE_MS,
+    });
+
+    await reconciler.reconcileAll();
+
+    // A long-parked awaiting run stays hibernated across reconnect passes; a
+    // freshly-parked gate and a running run are re-established as before.
+    expect(ensured).toEqual(["ses_run_fresh_gate", "ses_run_running"]);
   });
 });
 
@@ -558,6 +763,8 @@ describe("registerAwaitingSupervisorPrewarm (CL-2756 periodic backstop)", () => 
             alreadyRoutable: 0,
             skippedNoPrincipal: 0,
             failed: 0,
+            hibernated: 0,
+            dormant: 0,
           });
         },
       },
