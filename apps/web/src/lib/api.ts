@@ -181,6 +181,35 @@ export async function api<T>(
   return data;
 }
 
+// Text-body sibling of `api()`. Some routes (e.g. GET /artifacts/:id/download)
+// return raw text rather than JSON, so the success body is read with `.text()`.
+// The failure path is identical to `api()` — same status/auth/error-shape
+// handling — only the success decode differs. There is no arktype schema here:
+// the body is opaque text (CSV), validated downstream by the parser, not a shape.
+export async function apiText(method: string, path: string): Promise<string> {
+  const url = buildApiUrl(path);
+  const init: RequestInit = { method, credentials: "include" };
+
+  logger.info("API request", { method, url });
+
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    const apiError = toApiError(res, body);
+    logger.error("API request failed", {
+      method,
+      url,
+      status: res.status,
+      error: apiError.message,
+    });
+    throw apiError;
+  }
+
+  const data = await res.text();
+  logger.info("API response", { method, url, status: res.status });
+  return data;
+}
+
 // Multipart upload seam. `api()` JSON-encodes its body, so a file upload needs
 // its own path: a FormData POST with no explicit Content-Type (the browser sets
 // the multipart boundary). Shares the base-URL and error-handling rules.

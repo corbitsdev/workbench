@@ -7,10 +7,12 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
+import { CsvTable } from "./CsvTable";
 import GammaPresentationBody from "./GammaPresentationBody";
 import PresentationBody from "./PresentationBody";
 import ResearchBody, { parseResearchBrief } from "./ResearchBody";
 import { buildApiUrl } from "../lib/api";
+import { useArtifactDownloadText } from "../hooks/use-artifact-download-text";
 
 interface ArtifactBodyArtifact {
   content: string;
@@ -68,6 +70,20 @@ function OnePagerBody({ body }: { body: string }) {
   return <Markdown className="max-w-[68ch]">{body}</Markdown>;
 }
 
+function DownloadCsvLink({ artifactId }: { artifactId: string }) {
+  // Same-origin download route; the session cookie authorizes it. A plain anchor
+  // is sufficient — no JS fetch needed.
+  return (
+    <a
+      href={buildApiUrl(`/artifacts/${artifactId}/download`)}
+      download
+      className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+    >
+      Download CSV
+    </a>
+  );
+}
+
 function CsvExportBody({
   body,
   artifactId,
@@ -75,22 +91,66 @@ function CsvExportBody({
   body: string;
   artifactId: string;
 }) {
-  // Same-origin download route; the session cookie authorizes it. A plain anchor
-  // is sufficient — no JS fetch needed.
+  // csv-export stores its CSV inline in `artifact.content` — no fetch needed;
+  // parse and render it as a table with the download link alongside.
   return (
     <div className="space-y-3">
-      <a
-        href={buildApiUrl(`/artifacts/${artifactId}/download`)}
-        download
-        className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
-      >
-        Download CSV
-      </a>
-      <pre className="overflow-x-auto rounded border border-border bg-surface-2 p-3 text-xs text-text-2">
-        {body}
-      </pre>
+      <DownloadCsvLink artifactId={artifactId} />
+      <CsvTable csvText={body} />
     </div>
   );
+}
+
+// Uploaded `.csv` files carry kind `file` with empty `content`; their bytes live
+// in the upload table. Fetch the text from the download route, then render the
+// same CSV table. A fetch failure degrades to the plain download link so the
+// file is always retrievable even if the inline preview can't load.
+function UploadedCsvBody({
+  artifactId,
+  filename,
+}: {
+  artifactId: string;
+  filename: string | null;
+}) {
+  const { data, isLoading, isError } = useArtifactDownloadText(
+    artifactId,
+    true,
+  );
+
+  if (isLoading) {
+    return (
+      <div className="rounded border border-border bg-surface-2/40 px-4 py-8 text-center text-sm text-text-3">
+        Loading CSV…
+      </div>
+    );
+  }
+
+  if (isError || data === undefined) {
+    return <FileBody artifactId={artifactId} filename={filename} />;
+  }
+
+  return (
+    <div className="space-y-3">
+      <DownloadCsvLink artifactId={artifactId} />
+      <CsvTable csvText={data} />
+    </div>
+  );
+}
+
+// Uploaded CSVs are detected at render (no upload-time kind change, no
+// migration): the client-supplied mime is a routing hint and the `.csv`
+// extension is a secondary signal for browsers that send a vendor mime or none.
+// The parser, not this check, is the real gate — a mis-routed non-CSV degrades
+// to raw text.
+function isCsvUpload(source: unknown, filename: string | null): boolean {
+  if (typeof source === "object" && source !== null) {
+    const upload = (source as Record<string, unknown>).upload;
+    if (typeof upload === "object" && upload !== null) {
+      const mimeType = (upload as Record<string, unknown>).mimeType;
+      if (mimeType === "text/csv") return true;
+    }
+  }
+  return filename !== null && filename.toLowerCase().endsWith(".csv");
 }
 
 function extractUploadFilename(source: unknown): string | null {
@@ -335,6 +395,11 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     }
     case "file": {
       if (!artifact.id) return <OnePagerBody body={body} />;
+      if (isCsvUpload(artifact.source, uploadFilename)) {
+        return (
+          <UploadedCsvBody artifactId={artifact.id} filename={uploadFilename} />
+        );
+      }
       return <FileBody artifactId={artifact.id} filename={uploadFilename} />;
     }
     // downloadable export

@@ -1,11 +1,38 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import React from "react";
+import { afterEach, describe, expect, it, mock } from "bun:test";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import React, { type ReactNode } from "react";
 import ArtifactBody from "./ArtifactBody";
+
+const originalFetch = globalThis.fetch;
+
+function textResponse(body: string, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: () => null },
+    text: () => Promise.resolve(body),
+    json: () => Promise.resolve(null),
+  } as unknown as Response;
+}
+
+function withQueryClient(node: ReactNode) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(React.createElement(QueryClientProvider, { client }, node));
+}
 
 afterEach(() => {
   cleanup();
+  globalThis.fetch = originalFetch;
 });
 
 const TEST_BODY = "# Hello\n\nThis is test content.";
@@ -116,12 +143,12 @@ describe("ArtifactBody rendering", () => {
     expect(screen.getByText("Hello")).not.toBeNull();
   });
 
-  it("renders a download link for a csv-export artifact", () => {
+  it("renders a csv-export artifact as a table plus a download link", () => {
     render(
       React.createElement(ArtifactBody, {
         artifact: {
           id: "art-9",
-          content: "a,b\n1,2\n",
+          content: "name,city\nAlice,Denver\n",
           kind: "csv-export",
         },
       }),
@@ -133,6 +160,107 @@ describe("ArtifactBody rendering", () => {
     expect(link.getAttribute("href")).toMatch(
       /\/api\/v1\/artifacts\/art-9\/download$/,
     );
+    // The inline text is parsed into a real table with real cells.
+    const table = screen.getByRole("table");
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["name", "city"]);
+    within(table).getByText("Alice");
+    within(table).getByText("Denver");
+  });
+
+  it("fetches and renders an uploaded text/csv file as a table", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(textResponse("region,total\nWest,42\n")),
+    ) as unknown as typeof fetch;
+    withQueryClient(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-csv",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "sales.csv", mimeType: "text/csv" },
+          },
+        },
+      }),
+    );
+    const table = await screen.findByRole("table");
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((h) => h.textContent),
+    ).toEqual(["region", "total"]);
+    within(table).getByText("West");
+    within(table).getByText("42");
+    screen.getByRole("link", { name: /download csv/i });
+  });
+
+  it("routes an uploaded .csv by extension even without a csv mime type", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(textResponse("a,b\n1,2\n")),
+    ) as unknown as typeof fetch;
+    withQueryClient(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-csv2",
+          content: "",
+          kind: "file",
+          source: {
+            upload: {
+              filename: "export.csv",
+              mimeType: "application/vnd.ms-excel",
+            },
+          },
+        },
+      }),
+    );
+    await screen.findByRole("table");
+  });
+
+  it("falls back to a download link when the uploaded CSV bytes fail to load", async () => {
+    globalThis.fetch = mock(() =>
+      Promise.resolve(textResponse("nope", 500)),
+    ) as unknown as typeof fetch;
+    withQueryClient(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-csv3",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "broken.csv", mimeType: "text/csv" },
+          },
+        },
+      }),
+    );
+    const link = await screen.findByRole("link", { name: /download broken/i });
+    expect(link.getAttribute("href")).toMatch(
+      /\/api\/v1\/artifacts\/art-csv3\/download$/,
+    );
+    expect(screen.queryByRole("table")).toBeNull();
+  });
+
+  it("renders a non-CSV uploaded file as a plain download link, not a table", () => {
+    render(
+      React.createElement(ArtifactBody, {
+        artifact: {
+          id: "art-pdf",
+          content: "",
+          kind: "file",
+          source: {
+            upload: { filename: "report.pdf", mimeType: "application/pdf" },
+          },
+        },
+      }),
+    );
+    const link = screen.getByRole("link", { name: /download report/i });
+    expect(link.getAttribute("href")).toMatch(
+      /\/api\/v1\/artifacts\/art-pdf\/download$/,
+    );
+    expect(screen.queryByRole("table")).toBeNull();
   });
 
   it("renders web artifacts in a sandboxed iframe with a full-screen toggle", () => {
