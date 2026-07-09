@@ -172,14 +172,27 @@ function dataUrlForSiteFile(path: string, fileContent: string): string {
   return `data:${mime};charset=utf-8,${encodeURIComponent(fileContent)}`;
 }
 
-function inlineSiteAssetRefs(html: string, path: string, dataUrl: string): string {
+function replaceLiteral(
+  haystack: string,
+  needle: string,
+  replacement: string,
+): string {
+  if (needle.length === 0) return haystack;
+  return haystack.split(needle).join(replacement);
+}
+
+function inlineSiteAssetRefs(
+  html: string,
+  path: string,
+  dataUrl: string,
+): string {
   const refs = [path, `./${path}`];
   let next = html;
   for (const ref of refs) {
-    next = next.replaceAll(`href="${ref}"`, `href="${dataUrl}"`);
-    next = next.replaceAll(`href='${ref}'`, `href='${dataUrl}'`);
-    next = next.replaceAll(`src="${ref}"`, `src="${dataUrl}"`);
-    next = next.replaceAll(`src='${ref}'`, `src='${dataUrl}'`);
+    next = replaceLiteral(next, `href="${ref}"`, `href="${dataUrl}"`);
+    next = replaceLiteral(next, `href='${ref}'`, `href='${dataUrl}'`);
+    next = replaceLiteral(next, `src="${ref}"`, `src="${dataUrl}"`);
+    next = replaceLiteral(next, `src='${ref}'`, `src='${dataUrl}'`);
   }
   return next;
 }
