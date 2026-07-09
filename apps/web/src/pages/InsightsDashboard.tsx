@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import { Link } from "react-router";
 import { BarChart2, Download } from "lucide-react";
-import { priceUsageRows } from "@workbench/pricing";
+
 import { actorHref } from "./insights/ActorActivity";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useModelPricing } from "../hooks/use-model-pricing";
@@ -36,6 +36,8 @@ import { SectionLabel } from "./insights/section-label";
 import {
   fillDailySeries,
   humanizeKey,
+  resolveTenantPricedByModel,
+  sumInferenceTokenClasses,
   tokenDataCaveat,
 } from "./insights/metrics";
 import { TimeRangeControls } from "./insights/TimeRangeControls";
@@ -82,6 +84,9 @@ export type WorkflowKindRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
 };
 
 /**
@@ -107,6 +112,9 @@ export function mergeWorkflowKindRows(
       toolCallCount: u?.toolCallCount ?? 0,
       inputTokens: u?.inputTokens ?? 0,
       outputTokens: u?.outputTokens ?? 0,
+      cacheReadTokens: u?.cacheReadTokens ?? 0,
+      cacheWriteTokens: u?.cacheWriteTokens ?? 0,
+      thinkingTokens: u?.thinkingTokens ?? 0,
     };
   });
 }
@@ -313,10 +321,10 @@ function SortablePersonTable({ people }: { people: UsageByPersonRow[] }) {
       key: "tokens",
       header: "Tokens",
       align: "right",
-      sortValue: (r) => r.inputTokens + r.outputTokens,
+      sortValue: (r) => sumInferenceTokenClasses(r),
       render: (r) => (
         <span className="font-mono tabular-nums">
-          {formatNumber(r.inputTokens + r.outputTokens)}
+          {formatNumber(sumInferenceTokenClasses(r))}
         </span>
       ),
     },
@@ -377,10 +385,10 @@ function SortableWorkflowKindTable({ rows }: { rows: WorkflowKindRow[] }) {
       key: "tokens",
       header: "Tokens",
       align: "right",
-      sortValue: (r) => r.inputTokens + r.outputTokens,
+      sortValue: (r) => sumInferenceTokenClasses(r),
       render: (r) => (
         <span className="font-mono tabular-nums">
-          {formatNumber(r.inputTokens + r.outputTokens)}
+          {formatNumber(sumInferenceTokenClasses(r))}
         </span>
       ),
     },
@@ -468,22 +476,18 @@ export function InsightsDashboard() {
     : [];
 
   const catalog = pricingQuery.data ?? null;
-  const priced =
-    overview && catalog ? priceUsageRows(overview.byModel, catalog) : null;
+  const priced = useMemo(
+    () => (overview ? resolveTenantPricedByModel(overview, catalog) : null),
+    [overview, catalog],
+  );
   const costTokens = overview
-    ? overview.byModel.reduce(
-        (sum, row) =>
-          sum +
-          row.inputTokens +
-          row.outputTokens +
-          row.cacheReadTokens +
-          row.cacheWriteTokens,
-        0,
-      )
+    ? sumInferenceTokenClasses(overview.inference.summary)
     : 0;
   const costUnavailable =
-    pricingQuery.isError ||
-    (pricingQuery.isSuccess && Object.keys(catalog?.models ?? {}).length === 0);
+    !!overview &&
+    overview.byModel.length > 0 &&
+    priced === null &&
+    (pricingQuery.isError || pricingQuery.isFetched);
 
   const canExport = (overview?.metricsSeries.length ?? 0) > 0;
   const exportCsv = () => {
@@ -604,6 +608,10 @@ export function InsightsDashboard() {
                   overview={overview}
                   range={dates}
                   tokenCaveat={tokenCaveat}
+                  priced={priced}
+                  catalog={catalog}
+                  pricingUnavailable={costUnavailable}
+                  pricingLoading={pricingQuery.isLoading}
                 />
               </motion.div>
             )}

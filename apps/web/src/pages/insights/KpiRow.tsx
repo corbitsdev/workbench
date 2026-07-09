@@ -57,8 +57,8 @@ export function KpiRow({
         />
         <Stat
           label="Artifacts"
-          value={formatNumber(data.artifacts.total)}
-          sub={`${formatNumber(data.artifacts.createdInRange)} in range`}
+          value={formatNumber(data.artifacts.createdInRange)}
+          sub={`${formatNumber(data.artifacts.total)} all-time`}
           emphasis
         />
       </div>

@@ -43,6 +43,7 @@ const overviewPayload = {
   ],
   models: [],
   byModel: [],
+  pricedByModel: null,
   tokensRecordedFrom: null,
   byPerson: [],
   byWorkflowType: [],

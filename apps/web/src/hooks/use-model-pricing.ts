@@ -12,5 +12,12 @@ export function useModelPricing(tenantId: string) {
     enabled: tenantId !== "",
     staleTime: 30 * 60_000,
     gcTime: 60 * 60_000,
+    retry: (failureCount, error) => {
+      const status = (error as { status?: number }).status;
+      if (status === 503 && failureCount < 3) {
+        return true;
+      }
+      return failureCount < 1;
+    },
   });
 }

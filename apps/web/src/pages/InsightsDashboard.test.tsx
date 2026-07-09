@@ -161,6 +161,7 @@ const mockOverview = {
       thinkingTokens: 0,
     },
   ],
+  pricedByModel: null,
   tokensRecordedFrom: "2000-01-01",
   byPerson: [
     {
@@ -197,6 +198,9 @@ const mockOverview = {
       toolCallCount: 2,
       inputTokens: 500,
       outputTokens: 90,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
       cost: null,
     },
     {
@@ -205,6 +209,9 @@ const mockOverview = {
       toolCallCount: 1,
       inputTokens: 120,
       outputTokens: 30,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
       cost: null,
     },
   ],
@@ -433,9 +440,9 @@ describe("InsightsDashboard", () => {
     await waitFor(() => {
       screen.getByText("Conversations");
     });
-    screen.getByText("20");
+    screen.getByText("7");
     screen.getByText("Messages");
-    screen.getByText("140");
+    screen.getByText("35");
   });
 
   it("renders the model distribution as mini bars", async () => {
@@ -908,6 +915,9 @@ describe("dashboard data helpers", () => {
           toolCallCount: 15,
           inputTokens: 250,
           outputTokens: 150,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
           cost: null,
         },
         {
@@ -916,6 +926,9 @@ describe("dashboard data helpers", () => {
           toolCallCount: 1,
           inputTokens: 10,
           outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
           cost: null,
         },
       ],

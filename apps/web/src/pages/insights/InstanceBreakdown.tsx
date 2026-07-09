@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ActivityOverview } from "../../lib/hub-api";
+import { sumInferenceTokenClasses } from "./metrics";
 import { formatNumber } from "./stats";
 import { SectionLabel } from "./section-label";
 
@@ -47,7 +48,7 @@ export function InstanceBreakdown({
                   {formatNumber(row.toolCallCount)}
                 </td>
                 <td className="px-4 py-2 text-right font-mono tabular-nums text-text-2">
-                  {formatNumber(row.inputTokens + row.outputTokens)}
+                  {formatNumber(sumInferenceTokenClasses(row))}
                 </td>
               </tr>
             ))}

@@ -1,42 +1,12 @@
 /// <reference types="bun" />
 import "../../test-setup";
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import type { PriceCatalog } from "@workbench/pricing";
 import type { ActivityOverview } from "../../lib/hub-api";
-
-let pricingCatalog: PriceCatalog | null = null;
-let pricingError: Error | null = null;
-
-mock.module("../../hooks/use-model-pricing", () => ({
-  useModelPricing: () => {
-    if (pricingError) {
-      return {
-        data: undefined,
-        isLoading: false,
-        isSuccess: false,
-        isError: true,
-      };
-    }
-    if (pricingCatalog === null) {
-      return {
-        data: undefined,
-        isLoading: true,
-        isSuccess: false,
-        isError: false,
-      };
-    }
-    return {
-      data: pricingCatalog,
-      isLoading: false,
-      isSuccess: true,
-      isError: false,
-    };
-  },
-}));
-
+import { resolveTenantPricedByModel } from "./metrics";
 import { CostInsights } from "./CostInsights";
 
 function catalog(models: PriceCatalog["models"] = {}): PriceCatalog {
@@ -71,6 +41,7 @@ function overview(overrides: Partial<ActivityOverview> = {}): ActivityOverview {
     metricsSeries: [],
     models: [],
     byModel: [],
+    pricedByModel: null,
     tokensRecordedFrom: "2000-01-01",
     byPerson: [],
     byWorkflowType: [],
@@ -95,7 +66,21 @@ function overview(overrides: Partial<ActivityOverview> = {}): ActivityOverview {
   };
 }
 
-function renderCost(data: ActivityOverview, tenantId = "t1") {
+function renderCost(
+  data: ActivityOverview,
+  opts: {
+    tenantId?: string;
+    catalog?: PriceCatalog | null;
+    pricingUnavailable?: boolean;
+    pricingLoading?: boolean;
+  } = {},
+) {
+  const catalog = opts.catalog ?? null;
+  const priced = resolveTenantPricedByModel(data, catalog);
+  const pricingUnavailable =
+    opts.pricingUnavailable ??
+    (data.byModel.length > 0 && priced === null && !opts.pricingLoading);
+  const pricingLoading = opts.pricingLoading ?? false;
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -103,20 +88,19 @@ function renderCost(data: ActivityOverview, tenantId = "t1") {
     <QueryClientProvider client={client}>
       <MemoryRouter>
         <CostInsights
-          tenantId={tenantId}
+          tenantId={opts.tenantId ?? "t1"}
           overview={data}
           range={{ startDate: "2026-06-01", endDate: "2026-06-30" }}
           tokenCaveat={null}
+          priced={priced}
+          catalog={catalog}
+          pricingUnavailable={pricingUnavailable}
+          pricingLoading={pricingLoading}
         />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
-
-beforeEach(() => {
-  pricingCatalog = null;
-  pricingError = null;
-});
 
 afterEach(() => {
   cleanup();
@@ -124,7 +108,7 @@ afterEach(() => {
 
 describe("CostInsights", () => {
   it("computes total dollar cost from byModel usage against a known rate catalog", async () => {
-    pricingCatalog = catalog({
+    const cat = catalog({
       "deepseek-v4-flash": {
         modelId: "deepseek-v4-flash",
         provider: "opencode-zen",
@@ -148,7 +132,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: cat, pricingUnavailable: false });
 
     // input: 1*1 = 1, output: 2*0.5=1, cacheRead: 0.5*2=1, cacheWrite: 1.5*0.1=0.15 -> total 3.15
     await waitFor(() => {
@@ -158,7 +142,7 @@ describe("CostInsights", () => {
   });
 
   it("renders every token class as a separate column in the by-model table", async () => {
-    pricingCatalog = catalog({});
+    const cat = catalog({});
     const data = overview({
       byModel: [
         {
@@ -172,7 +156,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: cat, pricingUnavailable: true });
 
     await waitFor(() => screen.getByText("kimi"));
     const row = screen.getByText("kimi").closest("tr")!;
@@ -183,7 +167,7 @@ describe("CostInsights", () => {
   });
 
   it("shows a no-rate chip and never fabricates a dollar figure for an unpriced model", async () => {
-    pricingCatalog = catalog({
+    const cat = catalog({
       "some-other-model": {
         modelId: "some-other-model",
         provider: "anthropic",
@@ -207,14 +191,13 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: cat, pricingUnavailable: false });
 
     await waitFor(() => screen.getByText("no rate"));
     screen.getByText("Unpriced models");
   });
 
   it("falls back to a token-only layout with no dollar figures when pricing is unavailable", async () => {
-    pricingError = new Error("pricing fetch failed");
     const data = overview({
       byModel: [
         {
@@ -228,7 +211,11 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, {
+      catalog: null,
+      pricingUnavailable: true,
+      pricingLoading: false,
+    });
 
     await waitFor(() => {
       screen.getByText(/Model pricing unavailable/);
@@ -238,7 +225,6 @@ describe("CostInsights", () => {
   });
 
   it("shows the hub-computed per-actor dollar cost (CL-2723)", async () => {
-    pricingCatalog = catalog({});
     const data = overview({
       byPerson: [
         {
@@ -267,7 +253,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
 
     await waitFor(() => screen.getByText("Sawyer"));
     const row = screen.getByText("Sawyer").closest("tr")!;
@@ -280,7 +266,6 @@ describe("CostInsights", () => {
   });
 
   it("shows an explicit not-priced state for a person with no cost computed", async () => {
-    pricingCatalog = catalog({});
     const data = overview({
       byPerson: [
         {
@@ -298,7 +283,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
 
     await waitFor(() => screen.getByText("Dana"));
     const row = screen.getByText("Dana").closest("tr")!;
@@ -307,7 +292,6 @@ describe("CostInsights", () => {
   });
 
   it("shows not-priced (never $0.00) when all of a person's usage is unpriced (CL-2723)", async () => {
-    pricingCatalog = catalog({});
     const data = overview({
       byPerson: [
         {
@@ -336,7 +320,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
 
     await waitFor(() => screen.getByText("Robin"));
     const row = screen.getByText("Robin").closest("tr")!;
@@ -345,7 +329,6 @@ describe("CostInsights", () => {
   });
 
   it("renders the over-time class series chart when dailySeries has data", async () => {
-    pricingCatalog = catalog({});
     const data = overview({
       dailySeries: [
         {
@@ -362,7 +345,7 @@ describe("CostInsights", () => {
         },
       ],
     });
-    renderCost(data);
+    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
 
     await waitFor(() => {
       screen.getByTestId("time-series-chart");
@@ -370,23 +353,20 @@ describe("CostInsights", () => {
   });
 
   it("does not render the over-time chart when dailySeries is empty", () => {
-    pricingCatalog = catalog({});
     const data = overview();
-    renderCost(data);
+    renderCost(data, { catalog: catalog({}), pricingUnavailable: true });
     expect(screen.queryByTestId("time-series-chart")).toBeNull();
   });
 
   it("shows an empty state for the by-model table when there is no usage", async () => {
-    pricingCatalog = catalog({});
-    renderCost(overview());
+    renderCost(overview(), { catalog: catalog({}), pricingUnavailable: true });
     await waitFor(() => {
       screen.getByText("No model usage for this range");
     });
   });
 
   it("shows a loading state for pricing before the catalog resolves", () => {
-    pricingCatalog = null;
-    renderCost(overview());
+    renderCost(overview(), { catalog: null, pricingLoading: true });
     screen.getByTestId("cost-insights-pricing-loading");
   });
 });

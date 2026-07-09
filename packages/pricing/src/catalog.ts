@@ -302,6 +302,25 @@ function resolveViaTenantOfferings(
 
 // --- cost math ------------------------------------------------------------
 
+export type TokenUsageLike = {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  thinkingTokens?: number;
+};
+
+/** Total tokens across all five inference classes (CL-2891). */
+export function sumTokenUsageClasses(row: TokenUsageLike): number {
+  return (
+    (row.inputTokens ?? 0) +
+    (row.outputTokens ?? 0) +
+    (row.cacheReadTokens ?? 0) +
+    (row.cacheWriteTokens ?? 0) +
+    (row.thinkingTokens ?? 0)
+  );
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -408,12 +427,7 @@ export function priceUsageRows(
     const rate = resolveModelRate(catalog, row.model);
     const rowCost = computeCost(row, rate);
     if (rowCost === null) {
-      const usedTokens =
-        row.inputTokens +
-        row.outputTokens +
-        row.cacheReadTokens +
-        row.cacheWriteTokens +
-        row.thinkingTokens;
+      const usedTokens = sumTokenUsageClasses(row);
       if (usedTokens > 0) unpriced.add(row.model);
       continue;
     }

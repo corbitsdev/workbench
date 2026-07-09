@@ -1,4 +1,5 @@
 import type { AnalyticsDateRange } from "@workbench/analytics";
+import { sumTokenUsageClasses } from "@workbench/pricing";
 
 /**
  * Bucket granularity for the Insights daily-metrics series (CL-2836). `day` is
@@ -49,13 +50,7 @@ export type TokenClasses = {
 
 /** Total tokens across all five classes — the `tokensSpent` value per bucket. */
 export function sumTokenClasses(point: TokenClasses): number {
-  return (
-    point.inputTokens +
-    point.outputTokens +
-    point.cacheReadTokens +
-    point.cacheWriteTokens +
-    point.thinkingTokens
-  );
+  return sumTokenUsageClasses(point);
 }
 
 const MS_PER_DAY = 86_400_000;

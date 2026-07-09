@@ -58,6 +58,7 @@ function minimalOverview(
         thinkingTokens: 0,
       },
     ],
+    pricedByModel: null,
     tokensRecordedFrom: null,
     byPerson: [
       {
@@ -92,6 +93,9 @@ function minimalOverview(
         toolCallCount: 0,
         inputTokens: 4,
         outputTokens: 6,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        thinkingTokens: 0,
         cost: null,
       },
     ],

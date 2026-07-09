@@ -1,5 +1,9 @@
 import type { ActivityOverview } from "../../lib/hub-api";
-import { computeDelta, fillDailySeries } from "./metrics";
+import {
+  computeDelta,
+  fillDailySeries,
+  sumInferenceTokenClasses,
+} from "./metrics";
 import { formatNumber } from "./stats";
 import { HudCard, TrendCard } from "./stats";
 import { Heatmap } from "./viz";
@@ -33,7 +37,7 @@ export function TrendsSection({
   const summary = data.inference.summary;
   const turnValues = series.map((d) => d.turnCount);
   const toolValues = series.map((d) => d.toolCallCount);
-  const tokenValues = series.map((d) => d.inputTokens + d.outputTokens);
+  const tokenValues = series.map((d) => sumInferenceTokenClasses(d));
   const heatDays = series.map((d) => ({ date: d.date, value: d.turnCount }));
 
   return (
@@ -57,13 +61,13 @@ export function TrendsSection({
         />
         <TrendCard
           label="Tokens / day"
-          total={formatNumber(summary.inputTokens + summary.outputTokens)}
+          total={formatNumber(sumInferenceTokenClasses(summary))}
           values={tokenValues}
           delta={
             tokenCaveat === null
               ? computeDelta(
-                  summary.inputTokens + summary.outputTokens,
-                  prev ? prev.inputTokens + prev.outputTokens : null,
+                  sumInferenceTokenClasses(summary),
+                  prev ? sumInferenceTokenClasses(prev) : null,
                 )
               : undefined
           }

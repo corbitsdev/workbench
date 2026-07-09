@@ -6,14 +6,14 @@ import {
 } from "@workbench/ui";
 import {
   computeCost,
-  priceUsageRows,
   resolveModelRate,
   type ModelRate,
   type PriceCatalog,
+  type PricedUsage,
   type TokenCost,
 } from "@workbench/pricing";
 import type { ActivityOverview, UsageByPersonRow } from "../../lib/hub-api";
-import { useModelPricing } from "../../hooks/use-model-pricing";
+import { sumInferenceTokenClasses } from "./metrics";
 import { ProviderLogoMark } from "./ProviderLogoMark";
 import { CaveatNote, HudCard, Stat, formatNumber } from "./stats";
 import { SectionLabel } from "./section-label";
@@ -59,20 +59,6 @@ function tokenClassSeries(
 
 function formatDollars(n: number): string {
   return `$${n.toFixed(2)}`;
-}
-
-function totalTokensFor(row: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-}): number {
-  return (
-    row.inputTokens +
-    row.outputTokens +
-    row.cacheReadTokens +
-    row.cacheWriteTokens
-  );
 }
 
 type ModelCostRow = ActivityOverview["byModel"][number] & {
@@ -308,27 +294,23 @@ export function CostInsights({
   tenantId,
   overview,
   tokenCaveat,
+  priced,
+  catalog,
+  pricingUnavailable,
+  pricingLoading,
 }: {
   tenantId: string;
   overview: ActivityOverview;
   range: DateRange;
   tokenCaveat: string | null;
+  priced: PricedUsage | null;
+  catalog: PriceCatalog | null;
+  pricingUnavailable: boolean;
+  pricingLoading: boolean;
 }) {
-  const pricingQuery = useModelPricing(tenantId);
-  const catalog: PriceCatalog | null = pricingQuery.data ?? null;
-  const pricingUnavailable =
-    pricingQuery.isError ||
-    (pricingQuery.isSuccess && Object.keys(catalog?.models ?? {}).length === 0);
-
   const hasDaily = overview.dailySeries.length > 0;
   const classSeries = tokenClassSeries(overview.dailySeries);
-  const totalTokens = overview.byModel.reduce(
-    (sum, row) => sum + totalTokensFor(row),
-    0,
-  );
-
-  const priced =
-    catalog !== null ? priceUsageRows(overview.byModel, catalog) : null;
+  const totalTokens = sumInferenceTokenClasses(overview.inference.summary);
 
   const modelRows: ModelCostRow[] = overview.byModel.map((row) => {
     const rate = catalog !== null ? resolveModelRate(catalog, row.model) : null;
@@ -344,7 +326,7 @@ export function CostInsights({
       </CaveatNote>
       {tokenCaveat !== null && <CaveatNote>{tokenCaveat}</CaveatNote>}
 
-      {pricingQuery.isLoading && (
+      {pricingLoading && (
         <div
           className="grid grid-cols-2 gap-3 sm:grid-cols-4"
           data-testid="cost-insights-pricing-loading"
@@ -358,13 +340,13 @@ export function CostInsights({
         </div>
       )}
 
-      {!pricingQuery.isLoading && pricingUnavailable && (
+      {!pricingLoading && pricingUnavailable && (
         <CaveatNote>
           Model pricing unavailable — showing tokens only, no dollar figures.
         </CaveatNote>
       )}
 
-      {!pricingQuery.isLoading && priced && !pricingUnavailable && (
+      {!pricingLoading && priced && !pricingUnavailable && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-2">
           <Stat
             label="Total cost"

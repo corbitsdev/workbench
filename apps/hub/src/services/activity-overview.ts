@@ -108,6 +108,9 @@ export type UsageByWorkflowTypeRow = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
   /** Dollar cost (CL-2723) — see {@link UsageByPersonRow.cost}. */
   cost: PricedUsage | null;
 };
@@ -193,6 +196,12 @@ export type ActivityOverview = {
    */
   byModel: AnalyticsModelRow[];
   /**
+   * Tenant-wide model usage priced on the hub when a catalog was supplied (CL-2891).
+   * `null` when no catalog was warm at overview time — the UI may fall back to a
+   * client-side catalog fetch for the same `priceUsageRows` math.
+   */
+  pricedByModel: PricedUsage | null;
+  /**
    * Earliest date real token counts exist (null when none). Token and tool-error
    * metrics are zero for pre-subscriber HISTORY buckets, so the UI caveats any
    * range starting before this date.
@@ -254,6 +263,20 @@ export function deriveAgentActivity(
 ): { active: number; idle: number } {
   const active = byInstance.filter((row) => row.turnCount > 0).length;
   return { active, idle: Math.max(0, totalInstances - active) };
+}
+
+/** Range-scoped agent activity for Insights engagement KPIs (CL-2891). */
+export function resolveAgentActivity(
+  byInstance: { turnCount: number }[],
+  allTimeInstanceTotal: number,
+  range?: AnalyticsDateRange,
+): { active: number; idle: number } {
+  if (!rangeHasDateBounds(range)) {
+    return deriveAgentActivity(byInstance, allTimeInstanceTotal);
+  }
+  const active = byInstance.filter((row) => row.turnCount > 0).length;
+  const idle = byInstance.filter((row) => row.turnCount === 0).length;
+  return { active, idle };
 }
 
 function createdInRange(
@@ -681,12 +704,18 @@ export async function getUsageByWorkflowType(args: {
       toolCallCount: 0,
       inputTokens: 0,
       outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
       modelRows: [],
     };
     existing.turnCount += row.turnCount;
     existing.toolCallCount += row.toolCallCount;
     existing.inputTokens += row.inputTokens;
     existing.outputTokens += row.outputTokens;
+    existing.cacheReadTokens += row.cacheReadTokens;
+    existing.cacheWriteTokens += row.cacheWriteTokens;
+    existing.thinkingTokens += row.thinkingTokens;
     // Null-model usage is priced as unpriced under UNKNOWN_MODEL_LABEL rather
     // than dropped — never a silent $0 (CL-2723); see getUsageByPerson.
     existing.modelRows.push({
@@ -707,6 +736,9 @@ export async function getUsageByWorkflowType(args: {
       toolCallCount: agg.toolCallCount,
       inputTokens: agg.inputTokens,
       outputTokens: agg.outputTokens,
+      cacheReadTokens: agg.cacheReadTokens,
+      cacheWriteTokens: agg.cacheWriteTokens,
+      thinkingTokens: agg.thinkingTokens,
       cost:
         priceCatalog !== null
           ? priceUsageRows(agg.modelRows, priceCatalog)
@@ -1142,9 +1174,10 @@ export async function getActivityOverview(args: {
       endedInRange: Number(instanceEndedRow[0]?.count ?? 0),
       total: Number(instanceTotalRow[0]?.count ?? 0),
     },
-    agentActivity: deriveAgentActivity(
+    agentActivity: resolveAgentActivity(
       byInstance,
       Number(instanceTotalRow[0]?.count ?? 0),
+      range,
     ),
     conversations: conversationActivity.conversations,
     messages: conversationActivity.messages,
@@ -1156,6 +1189,8 @@ export async function getActivityOverview(args: {
       count: row.turnCount,
     })),
     byModel: modelRows,
+    pricedByModel:
+      priceCatalog !== null ? priceUsageRows(modelRows, priceCatalog) : null,
     tokensRecordedFrom,
     byPerson,
     byWorkflowType,

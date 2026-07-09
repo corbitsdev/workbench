@@ -54,6 +54,7 @@ const minimalOverview = {
   metricsSeries: [],
   models: [],
   byModel: [],
+  pricedByModel: null,
   tokensRecordedFrom: "2026-01-01",
   byWorkflowType: [],
 } as ActivityOverview;
@@ -93,8 +94,8 @@ describe("KpiRow", () => {
     expect(kpi.getByText("2 active")).toBeDefined();
 
     expect(kpi.getByText("Artifacts")).toBeDefined();
-    expect(kpi.getByText("12")).toBeDefined();
-    expect(kpi.getByText("5 in range")).toBeDefined();
+    expect(kpi.getByText("5")).toBeDefined();
+    expect(kpi.getByText("12 all-time")).toBeDefined();
   });
 
   it("shows unavailable pricing state and null cost", () => {

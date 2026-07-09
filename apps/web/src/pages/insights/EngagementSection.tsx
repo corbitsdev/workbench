@@ -9,23 +9,23 @@ export function EngagementSection({ data }: { data: ActivityOverview }) {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat
           label="Conversations"
-          value={formatNumber(data.conversations.total)}
-          sub={`${formatNumber(data.conversations.createdInRange)} in range`}
+          value={formatNumber(data.conversations.createdInRange)}
+          sub={`${formatNumber(data.conversations.total)} all-time`}
         />
         <Stat
           label="Messages"
-          value={formatNumber(data.messages.total)}
-          sub={`${formatNumber(data.messages.createdInRange)} in range`}
+          value={formatNumber(data.messages.createdInRange)}
+          sub={`${formatNumber(data.messages.total)} all-time`}
         />
         <Stat
           label="Active agents"
           value={formatNumber(data.agentActivity.active)}
-          sub="with activity"
+          sub="with turns in range"
         />
         <Stat
           label="Idle agents"
           value={formatNumber(data.agentActivity.idle)}
-          sub="of total instances"
+          sub="in range, no turns"
         />
       </div>
     </div>
