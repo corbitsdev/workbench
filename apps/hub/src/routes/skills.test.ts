@@ -86,6 +86,39 @@ const mockRestoreSkillVersion = mock(() =>
   }),
 );
 
+const mockApproveSkillDraft = mock(() =>
+  Promise.resolve({
+    skill: { id: "ast-1", name: "test-skill" },
+    draftId: "art-draft-xyz",
+  }),
+);
+const mockListSkillDrafts = mock(() =>
+  Promise.resolve([
+    {
+      id: "art-draft-xyz",
+      title: "draft-skill",
+      content: "# body",
+      description: "a draft",
+      existingSkillId: null,
+      status: "draft" as const,
+      updatedAt: "2026-01-02T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    },
+  ]),
+);
+const mockDiscardSkillDraft = mock(() =>
+  Promise.resolve({
+    id: "art-draft-xyz",
+    title: "draft-skill",
+    content: "# body",
+    description: "a draft",
+    existingSkillId: null,
+    status: "rejected" as const,
+    updatedAt: "2026-01-02T00:00:00.000Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  }),
+);
+
 const mockedSkillLibrary = {
   listSkills: mockListSkills,
   getSkillAsset: mockGetSkillAsset,
@@ -94,7 +127,9 @@ const mockedSkillLibrary = {
   updateSkill: mockUpdateSkill,
   listSkillVersions: mockListSkillVersions,
   restoreSkillVersion: mockRestoreSkillVersion,
-	  approveSkillDraft: mock(() => Promise.resolve({ skill: { id: "ast-1", name: "test-skill" }, draftId: "art-draft-xyz" })),
+  approveSkillDraft: mockApproveSkillDraft,
+  listSkillDrafts: mockListSkillDrafts,
+  discardSkillDraft: mockDiscardSkillDraft,
   listShareTargets: mock(() =>
     Promise.resolve([
       { tenantId: "tenant-1", name: "Acme Org" },
@@ -491,21 +526,72 @@ describe("DELETE /agents/:agentId/skills/:assetId", () => {
   });
 });
 
-describe("POST /skills/drafts/:draftId/approve", () => {
-  it("approves a skill-draft by calling createSkill or updateSkill (based on existingSkillId) and resolves the draft artifact", async () => {
-    // This test will fail until the route + approveSkillDraft impl is added (red step)
+describe("GET /skills/drafts", () => {
+  it("lists pending skill drafts for the caller", async () => {
+    mockListSkillDrafts.mockClear();
     const app = buildApp(makeMockDb(), makeAssetService());
     const res = await app.fetch(
-      new Request("http://localhost/skills/drafts/art-draft-xyz/approve?tenantId=tenant-1", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ scope: "private" }),
-      }),
+      new Request("http://localhost/skills/drafts?tenantId=tenant-1"),
     );
-    // Expect success once implemented; currently will be 404 or unhandled
     expect(res.status).toBe(200);
-    const json = await res.json();
+    const json = (await res.json()) as { drafts: unknown[] };
+    expect(json).toHaveProperty("drafts");
+    expect(json.drafts).toHaveLength(1);
+    expect(mockListSkillDrafts).toHaveBeenCalled();
+  });
+});
+
+describe("POST /skills/drafts/:draftId/approve", () => {
+  it("approves a skill-draft and returns the created skill", async () => {
+    mockApproveSkillDraft.mockClear();
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request(
+        "http://localhost/skills/drafts/art-draft-xyz/approve?tenantId=tenant-1",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ scope: "private" }),
+        },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      skill: unknown;
+      draftId: string;
+    };
     expect(json).toHaveProperty("skill");
     expect(json).toHaveProperty("draftId");
+    expect(mockApproveSkillDraft).toHaveBeenCalled();
+    const calls = mockApproveSkillDraft.mock.calls as unknown as [
+      unknown,
+      unknown,
+      unknown,
+      unknown,
+      Record<string, unknown>,
+    ][];
+    // opts carry authenticated user identity, never a synthetic default
+    expect(calls[0]?.[4]).toMatchObject({
+      scope: "private",
+      ownerUserId: "user-1",
+      ownerName: "Test User",
+    });
+  });
+});
+
+describe("POST /skills/drafts/:draftId/discard", () => {
+  it("discards a skill-draft", async () => {
+    mockDiscardSkillDraft.mockClear();
+    const app = buildApp(makeMockDb(), makeAssetService());
+    const res = await app.fetch(
+      new Request(
+        "http://localhost/skills/drafts/art-draft-xyz/discard?tenantId=tenant-1",
+        { method: "POST" },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { draft: { status: string } };
+    expect(json.draft.status).toBe("rejected");
+    expect(mockDiscardSkillDraft).toHaveBeenCalled();
   });
 });

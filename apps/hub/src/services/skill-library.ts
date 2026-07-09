@@ -4,13 +4,14 @@ import { normalize, sep } from "node:path";
 import nodefs from "node:fs";
 import git from "isomorphic-git";
 import JSZip from "jszip";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { schema as intxSchema, getAncestorChain } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { HubDb } from "../db";
 import { artifact, skillAccess } from "../db/schema";
 import type { AssetService, RepoStore } from "@intx/hub-sessions";
 import { AssetServiceError } from "@intx/hub-sessions";
+import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import type { UserContext } from "../lib/user-context";
 
 const log = getLogger(["skill-library"]);
@@ -1047,48 +1048,218 @@ export async function updateSkill(
   return refreshed;
 }
 
+const SkillDraftSourceFileSchema = type({
+  path: "string",
+  content: "string",
+});
+const SkillDraftSourceFilesSchema = SkillDraftSourceFileSchema.array();
+
+export type SkillDraftItem = {
+  id: string;
+  title: string;
+  content: string;
+  description: string | null;
+  existingSkillId: string | null;
+  status: "draft" | "approved" | "rejected";
+  updatedAt: string;
+  createdAt: string;
+};
+
+export type ApproveSkillDraftOpts = {
+  scope: SkillAccessScope;
+  ownerUserId: string;
+  ownerName: string;
+};
+
+/**
+ * Authorize the human caller against a skill-draft. Stamped ownerPrincipalId is
+ * the sole gate when present; unstamped legacy rows fall back to resolving the
+ * agent principal's owning member (or direct principal match for human-authored).
+ */
+export async function canActOnSkillDraft(
+  db: HubDb,
+  draft: {
+    ownerPrincipalId: string | null;
+    principalId: string | null;
+    tenantId: string | null;
+  },
+  userContext: UserContext,
+): Promise<boolean> {
+  if (draft.ownerPrincipalId != null) {
+    return draft.ownerPrincipalId === userContext.principalId;
+  }
+  if (draft.principalId === userContext.principalId) return true;
+  if (!draft.principalId || !draft.tenantId) return false;
+  const owner = await resolveOwnerMemberPrincipalId(db, {
+    tenantId: draft.tenantId,
+    principalId: draft.principalId,
+  });
+  return owner === userContext.principalId;
+}
+
+async function loadOwnedSkillDraft(
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+): Promise<typeof artifact.$inferSelect> {
+  const rows = await db
+    .select()
+    .from(artifact)
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.tenantId, userContext.tenantId),
+      ),
+    )
+    .limit(1);
+
+  const draft = rows[0];
+  if (!draft) throw new SkillLibraryError("Draft not found", 404);
+  const allowed = await canActOnSkillDraft(db, draft, userContext);
+  if (!allowed) throw new SkillLibraryError("Draft not found", 404);
+  return draft;
+}
+
+function draftSourceDescription(
+  source: Record<string, unknown>,
+): string | null {
+  return typeof source.description === "string" ? source.description : null;
+}
+
+function draftExistingSkillId(source: Record<string, unknown>): string | null {
+  return typeof source.existingSkillId === "string" && source.existingSkillId
+    ? source.existingSkillId
+    : null;
+}
+
+function filesFromSkillDraft(
+  draft: typeof artifact.$inferSelect,
+): SkillBundleFileInput[] {
+  const source = (draft.source ?? {}) as Record<string, unknown>;
+  const files: SkillBundleFileInput[] = [
+    { path: "SKILL.md", content: Buffer.from(draft.content ?? "") },
+  ];
+
+  if (source.files === undefined) return files;
+
+  const parsed = SkillDraftSourceFilesSchema(source.files);
+  if (parsed instanceof type.errors) {
+    throw new SkillLibraryError(`Invalid draft files: ${parsed.summary}`, 400);
+  }
+
+  for (const file of parsed) {
+    const normalizedPath = normalizeBundlePath(file.path);
+    if (!normalizedPath) {
+      throw new SkillLibraryError(`Unsafe skill bundle path: ${file.path}`);
+    }
+    // Body is the SKILL.md entrypoint; skip duplicates from source.files.
+    if (normalizedPath === "SKILL.md") continue;
+    files.push({
+      path: normalizedPath,
+      content: Buffer.from(file.content),
+    });
+  }
+  return files;
+}
+
+function toSkillDraftItem(draft: typeof artifact.$inferSelect): SkillDraftItem {
+  const source = (draft.source ?? {}) as Record<string, unknown>;
+  return {
+    id: draft.id,
+    title: draft.title,
+    content: draft.content ?? "",
+    description: draftSourceDescription(source),
+    existingSkillId: draftExistingSkillId(source),
+    status: draft.status,
+    updatedAt: draft.updatedAt.toISOString(),
+    createdAt: draft.createdAt.toISOString(),
+  };
+}
+
+export async function listSkillDrafts(
+  db: HubDb,
+  userContext: UserContext,
+): Promise<SkillDraftItem[]> {
+  const rows = await db
+    .select()
+    .from(artifact)
+    .where(
+      and(
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+        eq(artifact.status, "draft"),
+        eq(artifact.ownerPrincipalId, userContext.principalId),
+      ),
+    )
+    .orderBy(desc(artifact.updatedAt));
+
+  return rows.map(toSkillDraftItem);
+}
+
+export async function discardSkillDraft(
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+): Promise<SkillDraftItem> {
+  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
+  if (draft.status !== "draft") {
+    throw new SkillLibraryError("Draft is not in draft status", 400);
+  }
+
+  const [updated] = await db
+    .update(artifact)
+    .set({ status: "rejected", updatedAt: new Date() })
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+      ),
+    )
+    .returning();
+
+  if (!updated) throw new SkillLibraryError("Draft not found", 404);
+  return toSkillDraftItem(updated);
+}
+
 export async function approveSkillDraft(
   assetService: AssetService,
   db: HubDb,
   userContext: UserContext,
   draftId: string,
-  opts: { scope?: SkillAccessScope; ownerUserId?: string; ownerName?: string } = {},
+  opts: ApproveSkillDraftOpts,
 ): Promise<{ skill: SkillItem; draftId: string }> {
-  const rows = await db
-    .select()
-    .from(artifact)
-    .where(and(eq(artifact.id, draftId), eq(artifact.kind, "skill-draft")))
-    .limit(1);
+  const ownerUserId = opts.ownerUserId.trim();
+  const ownerName = opts.ownerName.trim();
+  if (!ownerUserId || !ownerName) {
+    throw new SkillLibraryError(
+      "Owner identity is required to approve a draft",
+      400,
+    );
+  }
 
-  const draft = rows[0];
-  if (!draft) throw new SkillLibraryError("Draft not found", 404);
+  const draft = await loadOwnedSkillDraft(db, userContext, draftId);
   if (draft.status !== "draft") {
     throw new SkillLibraryError("Draft is not in draft status", 400);
   }
 
   const source = (draft.source ?? {}) as Record<string, unknown>;
-  const files: SkillBundleFileInput[] = [
-    { path: "SKILL.md", content: Buffer.from(draft.content ?? "") },
-    ...((source.files as any[]) ?? []).map((f) => ({
-      path: f.path,
-      content: Buffer.from(f.content ?? ""),
-    })),
-  ];
-  const description = (source.description as string | null) ?? null;
+  const files = filesFromSkillDraft(draft);
+  const description = draftSourceDescription(source);
   const name = draft.title;
   const scope = opts.scope === "private" ? "private" : "tenant";
-  const ownerUserId = opts.ownerUserId ?? "user-1"; // caller supplies from c.get in routes
-  const ownerName = opts.ownerName ?? "User";
+  const existingSkillId = draftExistingSkillId(source);
 
   let skill: SkillItem;
-  if (typeof source.existingSkillId === "string" && source.existingSkillId) {
+  if (existingSkillId) {
     const actor: SkillActor = {
       tenantId: userContext.tenantId,
       userId: ownerUserId,
       principalId: userContext.principalId,
     };
     skill = await updateSkill(assetService, db, actor, {
-      assetId: source.existingSkillId,
+      assetId: existingSkillId,
       description,
       files,
     });
@@ -1106,7 +1277,13 @@ export async function approveSkillDraft(
   await db
     .update(artifact)
     .set({ status: "approved", updatedAt: new Date() })
-    .where(eq(artifact.id, draftId));
+    .where(
+      and(
+        eq(artifact.id, draftId),
+        eq(artifact.tenantId, userContext.tenantId),
+        eq(artifact.kind, "skill-draft"),
+      ),
+    );
 
   return { skill, draftId };
 }

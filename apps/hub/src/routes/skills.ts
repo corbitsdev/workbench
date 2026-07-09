@@ -9,12 +9,14 @@ import {
   SkillLibraryError,
   approveSkillDraft,
   createSkill,
+  discardSkillDraft,
   updateSkill,
   deleteSkill,
   filesFromZip,
   getSkillAsset,
   getSkillContent,
   listShareTargets,
+  listSkillDrafts,
   listSkills,
   listSkillVersions,
   restoreSkillVersion,
@@ -90,7 +92,7 @@ export function createSkillsRouter(
     return c.json({ skills });
   });
 
-  // Registered before /skills/:assetId so "share-targets" is not captured as an id.
+  // Registered before /skills/:assetId so literal path segments are not captured as ids.
   router.get("/skills/share-targets", async (c) => {
     const { context, forbidden } = await getRequestedUserContext(
       db,
@@ -105,6 +107,22 @@ export function createSkillsRouter(
       context.tenantId,
     );
     return c.json({ targets });
+  });
+
+  router.get("/skills/drafts", async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get("userId"),
+      c.req.query("tenantId"),
+    );
+    if (forbidden) return c.json({ error: "Tenant not accessible" }, 403);
+    if (!context) return c.json({ error: "User context not found" }, 403);
+    try {
+      const drafts = await listSkillDrafts(db, context);
+      return c.json({ drafts }, 200);
+    } catch (err) {
+      return errorResponse(c, err);
+    }
   });
 
   router.get("/skills/:assetId", async (c) => {
@@ -307,6 +325,26 @@ export function createSkillsRouter(
         },
       );
       return c.json({ skill: result.skill, draftId: result.draftId }, 200);
+    } catch (err) {
+      return errorResponse(c, err);
+    }
+  });
+
+  router.post("/skills/drafts/:draftId/discard", async (c) => {
+    const { context, forbidden } = await getRequestedUserContext(
+      db,
+      c.get("userId"),
+      c.req.query("tenantId"),
+    );
+    if (forbidden) return c.json({ error: "Tenant not accessible" }, 403);
+    if (!context) return c.json({ error: "User context not found" }, 403);
+    try {
+      const draft = await discardSkillDraft(
+        db,
+        context,
+        c.req.param("draftId"),
+      );
+      return c.json({ draft }, 200);
     } catch (err) {
       return errorResponse(c, err);
     }
