@@ -11,6 +11,7 @@ import {
   inputFieldClass,
   LiveStatusSlot,
   liveStatusLabel,
+  Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
@@ -92,6 +93,8 @@ const NoteItem = type({ id: "string", "title?": "string | null" });
 const NotesResult = type({ notes: NoteItem.array() });
 
 const GammaResult = type({ "gammaUrl?": "string", "url?": "string" });
+
+const GenerateOutput = type({ reply: "string" });
 
 function peelEnvelope(raw: unknown): unknown {
   const envelope = ToolResultEnvelope(raw);
@@ -202,6 +205,16 @@ function readRenderURL(
   return readString(parsed.gammaUrl) ?? readString(parsed.url);
 }
 
+function readDraftContent(
+  stepOutputs: Record<string, unknown>,
+  round: number,
+): string | undefined {
+  const parsed = GenerateOutput(stepOutputs[`generate-${round}`]);
+  if (parsed instanceof type.errors) return undefined;
+  const reply = parsed.reply.trim();
+  return reply.length > 0 ? reply : undefined;
+}
+
 // ── Routing helpers ───────────────────────────────────────────────────────────
 
 function awaitingPreviewRound(state: RunState | null): number | undefined {
@@ -260,22 +273,6 @@ function LoadingState({ label }: { label: string }) {
         <span>{label}</span>
       </div>
     </Card>
-  );
-}
-
-function DeckFrame({ url }: { url: string }) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-      <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-        <iframe
-          src={url}
-          allow="fullscreen"
-          sandbox="allow-scripts allow-same-origin allow-popups allow-presentation"
-          className="absolute inset-0 h-full w-full border-0"
-          title="Generated Gamma presentation"
-        />
-      </div>
-    </div>
   );
 }
 
@@ -834,28 +831,15 @@ function PreviewScreen({
 }) {
   const url = readRenderURL(stepOutputs, round);
   const safeUrl = isSafePresentationURL(url) ? url : undefined;
+  const draft = readDraftContent(stepOutputs, round);
   const canRefine = round < MAX_ROUNDS;
   const [feedback, setFeedback] = useState("");
   const disabled = !connected || signalPending;
 
-  // Even when the rendered URL is unusable we keep the controls on screen — the
-  // preview gate is still open server-side, so the user must be able to refine
-  // (regenerate) or, on the last round, approve. Returning only an error here
-  // would strand the run at an unanswerable gate.
+  // Gamma blocks in-app iframe embeds, so review is draft text plus an external
+  // link. The preview gate stays answerable even when the link is missing.
   return (
     <div className="space-y-4">
-      {safeUrl ? (
-        <DeckFrame url={safeUrl} />
-      ) : (
-        <Card>
-          <p className="text-sm text-text-2">
-            The deck preview couldn't be loaded.{" "}
-            {canRefine
-              ? "Refine to regenerate it, or open it in Gamma if a link is available."
-              : "You can still approve to save this draft, or open it in Gamma."}
-          </p>
-        </Card>
-      )}
       <Card>
         <CardTitle>
           <span className="tabular-nums">
@@ -863,6 +847,31 @@ function PreviewScreen({
           </span>
         </CardTitle>
         <div className="space-y-3">
+          {draft !== undefined ? (
+            <Markdown className="max-w-[68ch] text-sm">{draft}</Markdown>
+          ) : (
+            <p className="text-sm text-text-2">
+              Draft text isn&apos;t available here yet — open the deck in Gamma
+              when the link appears, or refine to regenerate.
+            </p>
+          )}
+          {safeUrl === undefined ? (
+            <p className="text-sm text-text-3">
+              Gamma link isn&apos;t available for this draft.
+              {canRefine
+                ? " Refine to regenerate, or approve if the draft text looks right."
+                : " You can still approve to save this draft."}
+            </p>
+          ) : (
+            <a
+              href={safeUrl}
+              target="_blank"
+              rel="noreferrer"
+              className={linkButtonClass}
+            >
+              Open in Gamma
+            </a>
+          )}
           <div className="flex items-center gap-3">
             <Button
               variant="primary"
@@ -872,16 +881,6 @@ function PreviewScreen({
             >
               Looks good — approve
             </Button>
-            {safeUrl && (
-              <a
-                href={safeUrl}
-                target="_blank"
-                rel="noreferrer"
-                className={linkButtonClass}
-              >
-                Open in Gamma
-              </a>
-            )}
           </div>
           {canRefine ? (
             <div className="space-y-2">
@@ -933,18 +932,18 @@ function DoneScreen({
   onClose: () => void;
 }) {
   const url = readRenderURL(stepOutputs, round);
+  const safeUrl = isSafePresentationURL(url) ? url : undefined;
   return (
     <div className="space-y-4">
-      {isSafePresentationURL(url) && <DeckFrame url={url} />}
       <Card>
         <p className="text-sm font-medium text-text">Saved to workbench</p>
         <p className="mt-1 text-sm text-text-3">
           The approved deck is saved as a presentation artifact.
         </p>
         <div className="mt-4 flex items-center gap-3">
-          {isSafePresentationURL(url) && (
+          {safeUrl !== undefined && (
             <a
-              href={url}
+              href={safeUrl}
               target="_blank"
               rel="noreferrer"
               className={linkButtonClass}
