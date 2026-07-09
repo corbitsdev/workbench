@@ -50,9 +50,18 @@ export type MyraSessionPhase =
   | { phase: "ready"; session: InstanceSession }
   | { phase: "error"; message: string };
 
-// Send a message to Myra, recovering from a dropped session once. A hub or
-// sidecar restart leaves the instance not running, so the first send 409s;
-// relaunching the session and retrying heals it without losing the message.
+// A dropped or evicted session heals with one relaunch-and-resend. A hub or
+// sidecar restart leaves the instance not running, so the first send 409s; an
+// address evicted from the in-memory index while the DB still says running
+// 502s. The hub emits both before persisting the mail, so a resend cannot
+// duplicate a delivered message; a gateway 502 may not mean eviction, but the
+// cost is bounded to one extra relaunch. Recovery is one-shot per send.
+function isRecoverableDeliveryError(err: unknown): boolean {
+  return err instanceof ApiError && (err.status === 409 || err.status === 502);
+}
+
+// Send a message to Myra, recovering from a dropped session once by relaunching
+// the instance session and retrying, healing it without losing the message.
 export async function deliverMessage(
   session: InstanceSession,
   instanceId: string | null,
@@ -61,7 +70,7 @@ export async function deliverMessage(
   try {
     await session.sendMail(content);
   } catch (err) {
-    if (err instanceof ApiError && err.status === 409 && instanceId !== null) {
+    if (isRecoverableDeliveryError(err) && instanceId !== null) {
       await launchInstanceSession(instanceId);
       await session.sendMail(content);
       return;
@@ -147,7 +156,7 @@ export function attachmentErrorMessage(err: unknown): string {
 }
 
 // Attachments cannot ride the string-only `sendMail`; POST them to the same
-// mail route the session uses, with the one-shot relaunch-on-409 recovery.
+// mail route the session uses, with the one-shot relaunch recovery.
 // Returns the created mail's id so the caller can key optimistic UI (e.g. a
 // document chip) to the transcript bubble that renders from that mail event.
 export async function deliverMessageWithAttachments(
@@ -163,7 +172,7 @@ export async function deliverMessageWithAttachments(
     const res = await transport.fetch<{ id?: string }>("POST", path, body);
     return res?.id ?? null;
   } catch (err) {
-    if (err instanceof ApiError && err.status === 409) {
+    if (isRecoverableDeliveryError(err)) {
       await launchInstanceSession(instanceId);
       const res = await transport.fetch<{ id?: string }>("POST", path, body);
       return res?.id ?? null;

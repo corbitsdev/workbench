@@ -30,7 +30,8 @@ import { getCachedCatalogSources } from "./workflow-model-source-cache";
 
 const log = getLogger(["api", "agents"]);
 
-const { agent, agentInstance, agentSession, grant, tenant } = intxSchema;
+const { agent, agentInstance, agentSession, grant, tenant, sessionAsset } =
+  intxSchema;
 
 export const LAUNCH_RETRY_DELAY_MS = 1_000;
 export const MAX_LAUNCH_ATTEMPTS = 3;
@@ -390,6 +391,16 @@ export async function launchAgentSession(
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
+  // Interchange's sendAttachmentPack inserts into session_asset without an
+  // upsert. Nothing deletes an instance's session_asset rows when its session
+  // ends, so relaunching a previously-stopped instance with the same instanceId
+  // collides on the (instance_id, mount_path) primary key and the launch fails
+  // with phase=pack. Clear any stale rows for this instance ONCE, before the
+  // session is minted (a delete failure must not leave a dangling active
+  // session) and outside the retry loop — a retry must not delete rows the
+  // current launch just wrote.
+  await db.delete(sessionAsset).where(eq(sessionAsset.instanceId, instanceId));
+
   // Resolve the session to launch under. Reuse the instance's existing active
   // session (resume) rather than minting a new one on every call. Minting
   // unconditionally caused session churn (CL-1651): a transient sidecar
@@ -651,6 +662,56 @@ export function launchFailureLogMessage(
 export function isAgentAlreadyExistsError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   return err.message.includes("Agent already exists for address");
+}
+
+// Process-local in-flight map coalescing concurrent explicit session launches
+// for one instance onto a single launch. The frontend fires
+// `POST /instances/:id/sessions` proactively and sometimes twice; both requests
+// pass the routable-set guard (TOCTOU) and each fires its own launch. When the
+// losing launch's failure teardown ends/deletes the instance row while the
+// winning deploy's ack is still in flight, interchange's ack listener throws
+// "No active instance found for deploy ack" and the launch 503s with
+// phase=provision. Coalescing collapses concurrent POSTs through this route
+// onto one launch, so within the route there is no losing attempt to tear the
+// row down. The map is process-local, which holds only while the hub runs
+// single-replica, and it does not cover the wedge sweep's separate relaunch
+// path — a sweep-driven relaunch can still race an explicit POST for the same
+// instance.
+//
+// Separate from the relaunch breaker (`runDedupedRelaunch`): that path is
+// void-typed and carries a failure cooldown suited to its caller, the
+// background wedge sweep. The explicit route needs the launch's result value
+// and must not inherit cooldown suppression — it has its own already-exists /
+// 503 handling and a genuine sequential retry after a failure must be allowed
+// to launch fresh.
+const instanceLaunchInFlight = new Map<string, Promise<unknown>>();
+
+/** Test seam: drop all in-flight launch coalescing state. */
+export function resetInstanceLaunchCoalescer(): void {
+  instanceLaunchInFlight.clear();
+}
+
+/**
+ * Coalesce concurrent launches for one instance. If a launch is already in
+ * flight for `instanceId`, returns the existing promise without invoking
+ * `launch`; both callers observe the same result (or the same failure). The
+ * in-flight entry is cleared once the launch settles, so a subsequent call —
+ * whether after success or failure — launches fresh.
+ */
+export function coalesceInstanceLaunch<T>(
+  instanceId: string,
+  launch: () => Promise<T>,
+): Promise<T> {
+  const existing = instanceLaunchInFlight.get(instanceId) as
+    | Promise<T>
+    | undefined;
+  if (existing) return existing;
+
+  const attempt = launch().finally(() => {
+    instanceLaunchInFlight.delete(instanceId);
+  });
+  instanceLaunchInFlight.set(instanceId, attempt);
+  return attempt;
 }
 
 // A sidecar that fully restarts (every redeploy) reconnects with no agents, so
