@@ -33,8 +33,19 @@ export async function writeArtifactDeduped(params: {
   body: string;
   kind: string;
   source: Record<string, unknown>;
+  /** Human owner principal (e.g. Myra's member). Stamped for skill-drafts. */
+  ownerPrincipalId?: string | null;
 }): Promise<{ artifactId: string; version: number }> {
-  const { db, tenantId, principalId, title, body, kind, source } = params;
+  const {
+    db,
+    tenantId,
+    principalId,
+    title,
+    body,
+    kind,
+    source,
+    ownerPrincipalId,
+  } = params;
   return db.transaction(async (tx) => {
     const existingRows = await tx
       .select({ id: artifact.id })
@@ -62,6 +73,9 @@ export async function writeArtifactDeduped(params: {
         .values({
           tenantId,
           principalId,
+          ...(ownerPrincipalId !== undefined
+            ? { ownerPrincipalId: ownerPrincipalId ?? null }
+            : {}),
           kind,
           title,
           content: body,
@@ -103,6 +117,12 @@ export async function writeArtifactDeduped(params: {
           source,
           version: nextVersion,
           updatedAt: now,
+          // skill-draft re-authoring reopens an approved/rejected row so
+          // approve can run again on the new content.
+          ...(kind === "skill-draft" ? { status: "draft" as const } : {}),
+          ...(ownerPrincipalId !== undefined
+            ? { ownerPrincipalId: ownerPrincipalId ?? null }
+            : {}),
         })
         .where(eq(artifact.id, artifactId));
     }

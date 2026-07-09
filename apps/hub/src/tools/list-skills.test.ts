@@ -32,6 +32,13 @@ mock.module("../services/skill-library", () => ({
   getSkillContent,
 }));
 
+const resolveOwnerMemberPrincipalId = mock(
+  async () => "prn_owner_1" as string | null,
+);
+mock.module("../lib/artifact-tools", () => ({
+  resolveOwnerMemberPrincipalId,
+}));
+
 const capturedDraftWrites: any[] = [];
 mock.module("./write-artifact", () => ({
   writeArtifactDeduped: mock(async (params: any) => {
@@ -79,6 +86,8 @@ beforeEach(() => {
   principals.set("prn_1", { id: "prn_1", tenantId: "ten_1", refId: "usr_1" });
   listSkills.mockClear();
   getSkillAsset.mockClear();
+  resolveOwnerMemberPrincipalId.mockClear();
+  resolveOwnerMemberPrincipalId.mockImplementation(async () => "prn_owner_1");
   getSkillContent.mockClear();
 });
 
@@ -228,11 +237,24 @@ describe("skill_draft", () => {
     expect(capturedDraftWrites[0]).toMatchObject({
       tenantId: "ten_1",
       principalId: "prn_1",
+      ownerPrincipalId: "prn_owner_1",
       title: "my-skill",
       body: "export const run = () => {};",
       kind: "skill-draft",
     });
     expect(capturedDraftWrites[0].source).toEqual({ origin: "skill-draft" });
+  });
+
+  test("fails closed when agent has no owning member principal", async () => {
+    capturedDraftWrites.length = 0;
+    resolveOwnerMemberPrincipalId.mockImplementation(async () => null);
+    await expect(
+      tool("skill_draft").handler(
+        { name: "orphan", body: "body" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("no owning member principal");
+    expect(capturedDraftWrites).toHaveLength(0);
   });
 
   test("includes optional description, files, existingSkillId in source", async () => {

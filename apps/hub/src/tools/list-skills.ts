@@ -16,6 +16,7 @@ import {
 } from "@workbench/tools-skills";
 import { and, eq } from "drizzle-orm";
 import type { HubDb } from "../db";
+import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import {
   getSkillAsset,
   getSkillContent,
@@ -220,6 +221,18 @@ async function skillDraftHandler(
   if (draft.existingSkillId) source.existingSkillId = draft.existingSkillId;
   if (draft.files && draft.files.length > 0) source.files = draft.files;
 
+  // Stamp the human owner (Myra's member principal), not the agent principal.
+  // Approve/list authorize against this id so the human can act on their agent's drafts.
+  const ownerPrincipalId = await resolveOwnerMemberPrincipalId(
+    context.db as DB["db"],
+    { tenantId: context.tenantId, principalId: context.principalId },
+  );
+  if (ownerPrincipalId === null) {
+    throw new Error(
+      "Cannot draft a skill: agent has no owning member principal",
+    );
+  }
+
   const result = await writeArtifactDeduped({
     db: context.db as DB["db"],
     tenantId: context.tenantId,
@@ -228,6 +241,7 @@ async function skillDraftHandler(
     body: draft.body,
     kind: "skill-draft",
     source,
+    ownerPrincipalId,
   });
 
   return JSON.stringify({
