@@ -664,6 +664,56 @@ export function isAgentAlreadyExistsError(err: unknown): boolean {
   return err.message.includes("Agent already exists for address");
 }
 
+// Process-local in-flight map coalescing concurrent explicit session launches
+// for one instance onto a single launch. The frontend fires
+// `POST /instances/:id/sessions` proactively and sometimes twice; both requests
+// pass the routable-set guard (TOCTOU) and each fires its own launch. When the
+// losing launch's failure teardown ends/deletes the instance row while the
+// winning deploy's ack is still in flight, interchange's ack listener throws
+// "No active instance found for deploy ack" and the launch 503s with
+// phase=provision. Coalescing collapses concurrent POSTs through this route
+// onto one launch, so within the route there is no losing attempt to tear the
+// row down. The map is process-local, which holds only while the hub runs
+// single-replica, and it does not cover the wedge sweep's separate relaunch
+// path — a sweep-driven relaunch can still race an explicit POST for the same
+// instance.
+//
+// Separate from the relaunch breaker (`runDedupedRelaunch`): that path is
+// void-typed and carries a failure cooldown suited to its caller, the
+// background wedge sweep. The explicit route needs the launch's result value
+// and must not inherit cooldown suppression — it has its own already-exists /
+// 503 handling and a genuine sequential retry after a failure must be allowed
+// to launch fresh.
+const instanceLaunchInFlight = new Map<string, Promise<unknown>>();
+
+/** Test seam: drop all in-flight launch coalescing state. */
+export function resetInstanceLaunchCoalescer(): void {
+  instanceLaunchInFlight.clear();
+}
+
+/**
+ * Coalesce concurrent launches for one instance. If a launch is already in
+ * flight for `instanceId`, returns the existing promise without invoking
+ * `launch`; both callers observe the same result (or the same failure). The
+ * in-flight entry is cleared once the launch settles, so a subsequent call —
+ * whether after success or failure — launches fresh.
+ */
+export function coalesceInstanceLaunch<T>(
+  instanceId: string,
+  launch: () => Promise<T>,
+): Promise<T> {
+  const existing = instanceLaunchInFlight.get(instanceId) as
+    | Promise<T>
+    | undefined;
+  if (existing) return existing;
+
+  const attempt = launch().finally(() => {
+    instanceLaunchInFlight.delete(instanceId);
+  });
+  instanceLaunchInFlight.set(instanceId, attempt);
+  return attempt;
+}
+
 // A sidecar that fully restarts (every redeploy) reconnects with no agents, so
 // the address it previously routed never re-registers. Interchange's
 // orchestrator only abandons the event collector on sidecar.disconnect and
