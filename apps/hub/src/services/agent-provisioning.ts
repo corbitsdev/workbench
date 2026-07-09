@@ -30,7 +30,8 @@ import { getCachedCatalogSources } from "./workflow-model-source-cache";
 
 const log = getLogger(["api", "agents"]);
 
-const { agent, agentInstance, agentSession, grant, tenant } = intxSchema;
+const { agent, agentInstance, agentSession, grant, tenant, sessionAsset } =
+  intxSchema;
 
 export const LAUNCH_RETRY_DELAY_MS = 1_000;
 export const MAX_LAUNCH_ATTEMPTS = 3;
@@ -389,6 +390,16 @@ export async function launchAgentSession(
   });
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
+
+  // Interchange's sendAttachmentPack inserts into session_asset without an
+  // upsert. Nothing deletes an instance's session_asset rows when its session
+  // ends, so relaunching a previously-stopped instance with the same instanceId
+  // collides on the (instance_id, mount_path) primary key and the launch fails
+  // with phase=pack. Clear any stale rows for this instance ONCE, before the
+  // session is minted (a delete failure must not leave a dangling active
+  // session) and outside the retry loop — a retry must not delete rows the
+  // current launch just wrote.
+  await db.delete(sessionAsset).where(eq(sessionAsset.instanceId, instanceId));
 
   // Resolve the session to launch under. Reuse the instance's existing active
   // session (resume) rather than minting a new one on every call. Minting
