@@ -26,6 +26,10 @@ Both from-template generate call sites send `exportAs: GENERATION_EXPORT_FORMAT`
 
 The `exportUrl` is a **temporary download link that expires after ~1 week** and is not tied to the API key. It is therefore not persisted as-is. The Gamma workflow threads `exportUrl` into `artifact_link_gamma_presentation` as `pdfUrl`; the hub handler downloads the bytes and stores them durably in the `upload` table (BYTEA), referenced from the artifact's `source.upload`, and served by `GET /artifacts/:id/download`. The PDF is supplementary to the deck link: an oversize (> `MAX_UPLOAD_BYTES`), empty, or failed fetch degrades to persisting the deck link without a PDF rather than failing the deck save.
 
+## Deck URL field (`gammaUrl` / `url`)
+
+The completed deck's link has been seen under `url` as well as `gammaUrl` in older packed tool output shapes (the presentation workflow's `blocks.ts` reader already tolerates `gammaUrl ?? url`). `pollGeneration` normalizes a `url`-only completed response up to `gammaUrl` before parsing (and rejects an empty deck link rather than persisting a blank one), and both generate tools return the same validated shape via `toDeckResult` — `gammaUrl`, `url` (a mirror of `gammaUrl`), `gammaId`, and `exportUrl` (empty when there is no PDF). This keeps a downstream consumer keyed on any of those fields resolving without a fallback — notably the presentation workflow's `persist` step, whose `argMap` maps the artifact tool's `url` arg from `gammaUrl` and `pdfUrl` from `exportUrl` with a hard, no-fallback presence check that would otherwise sink the deck save when a field is absent.
+
 ## No live deck-status reflection
 
 Generation status is a synchronous in-tool poll (`pollGeneration`): the render step blocks until the deck is `completed`, surfaced to the user only as the workflow step's own progress. Gamma exposes **no webhook and no API to observe a published deck's later manual edits**, so there is no way to reflect post-generation deck changes back into Workbench. Decks are one-shot: create in the workflow, then edit manually in Gamma.
