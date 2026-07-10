@@ -63,6 +63,24 @@ describe("friendlyToolSummary", () => {
     ).toBe("Reading https://example.com");
   });
 
+  it("interpolates the object type for attio_create_record", () => {
+    expect(
+      friendlyToolSummary(
+        call("@workbench/tools-attio/attio:attio_create_record", {
+          object: "companies",
+        }),
+      ),
+    ).toBe("Creating a CRM companies record");
+  });
+
+  it("falls back to the static record phrase when attio_create_record has no object", () => {
+    expect(
+      friendlyToolSummary(
+        call("@workbench/tools-attio/attio:attio_create_record"),
+      ),
+    ).toBe("Creating a CRM record");
+  });
+
   it("falls back to the static phrase when an interpolating op has no useful arg", () => {
     expect(
       friendlyToolSummary(call("@workbench/tools-exa/exa:exa_search")),

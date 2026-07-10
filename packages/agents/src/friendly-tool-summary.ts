@@ -71,7 +71,12 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   attio_get_task: "Looking up a CRM task",
   attio_update_task: "Updating a CRM task",
   attio_create_note: "Adding a CRM note",
-  attio_create_record: "Creating a CRM record",
+  attio_create_record: (args) => {
+    const object = firstStringArg(args, ["object"]);
+    return object === null
+      ? "Creating a CRM record"
+      : `Creating a CRM ${object} record`;
+  },
 
   // Firecrawl — web scraping / crawling
   firecrawl_scrape: (args) => {
