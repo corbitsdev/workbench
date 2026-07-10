@@ -13,6 +13,12 @@ export {
   toLlmToolName,
 } from "./tool-names";
 export {
+  APPROVAL_REQUIRED_BARE_NAMES,
+  approvalGatedLlmToolNames,
+  isApprovalRequiredBare,
+  type ApprovalRequiredBareName,
+} from "./tool-side-effects";
+export {
   deterministicToolStep,
   inlineInferenceStep,
   STEP_KIND_TAG,
