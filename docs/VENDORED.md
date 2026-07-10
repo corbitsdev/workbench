@@ -178,6 +178,29 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   in-flight wake via a per-wake ownership token, so the doomed build
   discards itself and never tears down a session it did not install. All
   blocks tagged `// WORKBENCH-LOCAL (CL-3102)`.
+- **WORKBENCH-LOCAL change (CL-3103):** idle agent eviction — the inverse of
+  the CL-3102 lazy wake, all in `session-manager.ts` (marked
+  `// WORKBENCH-LOCAL (CL-3103)`). `evictIdleSessions()` tears a live session
+  down (harness `close()` flushes conversation state to the durable repo
+  store, bundle disposers run, transport unregistered, `reclaimHeap`) and
+  returns the agent to the `wakeable` state, so the next inbound message
+  rebuilds it through the existing wake rails with full history — no
+  `deleteAgentDir`, no `endedAt` stamp, no conversation-ended event (idle
+  sleep, not undeploy). Idleness is derived from real seam signals: a
+  per-session `lastActivityAt` (bumped on any inference event, inbound mail,
+  and go-live) plus an `activeRuns` counter bracketed by the harness's
+  `message.run.started` / `message.run.ended` events (a turn — including its
+  tool execution, which emits no inference events — keeps the count above
+  zero). A session is never evicted while a turn is running, an in-process
+  event subscriber is attached (`agentEventListeners`), mail is parked, a
+  wake/build is in flight, or an eviction is already under way; `destroySession`
+  / `abortSession` await an in-flight eviction, and inbound mail parks during
+  one and is replayed by a post-eviction wake. The threshold is
+  `SessionManagerConfig.idleEvictMs` (0 disables), plumbed from the sidecar
+  (`SIDECAR_AGENT_IDLE_EVICT_MS`, default 60s) via `SidecarOrchestratorConfig`;
+  the periodic sweep timer that calls `evictIdleSessions()` lives in
+  `apps/sidecar/src/index.ts` alongside the memory-telemetry timers. Guarded by
+  `src/session-manager-idle-evict.test.ts`.
 - **WORKBENCH-LOCAL (CL-3104) — hibernate undeploy flavor** (`src/ws/hub-link.ts`):
   `DeployRouter.hibernate`, the exported `WORKFLOW_HIBERNATE_UNDEPLOY_REASON`
   protocol constant, and the reason-scoped `handleAgentHibernate` branch in
