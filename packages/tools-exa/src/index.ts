@@ -309,12 +309,14 @@ function createExaToolFor(
  */
 export const EXA_HUB_TOOLS = {
   exa_search: {
+    sideEffect: "read" as const,
     definition: EXA_SEARCH_DEFINITION,
     providerName: "exa" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createExaToolFor({ apiKey: config.apiKey }, EXA_SEARCH_DEFINITION),
   },
   web_search: {
+    sideEffect: "read" as const,
     definition: WEB_SEARCH_DEFINITION,
     providerName: "exa" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

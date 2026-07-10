@@ -20,10 +20,30 @@ import {
 
 const HubToolRunResponse = type({ result: "string", isError: "boolean" });
 
+/** Whether a tool only reads external state (`read`) or mutates it (`write`). */
+export type ToolSideEffect = "read" | "write";
+
 /** A `*_HUB_TOOLS`-style entry whose tools are built from a credential. */
 export type CredentialedToolEntry = {
+  /**
+   * Whether this tool mutates external or durable state. Technical
+   * classification only — forced human approval is a separate product set
+   * (`APPROVAL_REQUIRED_BARE_NAMES` in `@workbench/agents`), a subset of
+   * write tools.
+   */
+  sideEffect: ToolSideEffect;
   createTools: (config: ToolCredential) => AgentTool[];
 };
+
+/** Bare names of entries classified as `write` (for gate / audit tests). */
+export function writeToolNamesFromEntries(
+  entries: Record<string, { sideEffect: ToolSideEffect }>,
+): string[] {
+  return Object.entries(entries)
+    .filter(([, entry]) => entry.sideEffect === "write")
+    .map(([name]) => name)
+    .sort();
+}
 
 /**
  * Build the factory for a credentialed tool package: declares the

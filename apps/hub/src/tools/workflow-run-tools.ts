@@ -323,6 +323,8 @@ export function createWorkflowRunTools(
   ];
 }
 
+const WORKFLOW_WRITE_TOOLS = new Set(["workflow_start", "workflow_signal"]);
+
 function entry(name: string): ContextToolEntry {
   const definitions = {
     workflow_list_kinds: WORKFLOW_LIST_KINDS_DEFINITION,
@@ -331,6 +333,7 @@ function entry(name: string): ContextToolEntry {
     workflow_signal: WORKFLOW_SIGNAL_DEFINITION,
   } as const;
   return {
+    sideEffect: WORKFLOW_WRITE_TOOLS.has(name) ? "write" : "read",
     definition: definitions[name as keyof typeof definitions],
     createTools: (context) => createWorkflowRunTools(context),
   };

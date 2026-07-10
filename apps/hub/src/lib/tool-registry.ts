@@ -85,12 +85,14 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
 };
 
 export type CredentialToolEntry = {
+  sideEffect: "read" | "write";
   definition: ToolDefinition;
   providerName: string;
   createTools: (config: { apiKey: string; baseURL: string }) => AgentTool[];
 };
 
 export type ContextToolEntry = {
+  sideEffect: "read" | "write";
   definition: ToolDefinition;
   createTools: (context: {
     db: HubDb;

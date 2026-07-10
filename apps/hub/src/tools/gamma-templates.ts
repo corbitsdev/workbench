@@ -38,6 +38,7 @@ function createGammaListTemplatesTool(context: {
 
 export const GAMMA_TEMPLATES_HUB_TOOLS: Record<string, ContextToolEntry> = {
   gamma_list_templates: {
+    sideEffect: "read",
     definition: GAMMA_LIST_TEMPLATES_DEFINITION,
     createTools: (context) => [createGammaListTemplatesTool(context)],
   },

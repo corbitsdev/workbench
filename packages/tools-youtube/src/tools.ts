@@ -230,6 +230,7 @@ export function createYouTubeTools(config: YouTubeToolsConfig): AgentTool[] {
 
 export const YOUTUBE_HUB_TOOLS = {
   youtube_search: {
+    sideEffect: "read" as const,
     definition: YOUTUBE_SEARCH_DEFINITION,
     providerName: "youtube",
     createTools: (config: YouTubeToolsConfig) => createYouTubeTools(config),

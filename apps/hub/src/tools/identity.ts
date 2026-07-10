@@ -163,6 +163,7 @@ export function createIdentityTools(context: IdentityToolContext): AgentTool[] {
 
 export const IDENTITY_HUB_TOOLS: Record<string, ContextToolEntry> = {
   identity_get: {
+    sideEffect: "read",
     definition: IDENTITY_GET_DEFINITION,
     createTools: (ctx) =>
       createIdentityTools({
@@ -172,6 +173,7 @@ export const IDENTITY_HUB_TOOLS: Record<string, ContextToolEntry> = {
       }),
   },
   identity_set: {
+    sideEffect: "write",
     definition: IDENTITY_SET_DEFINITION,
     createTools: (ctx) =>
       createIdentityTools({

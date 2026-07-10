@@ -62,10 +62,18 @@ const GAMMA_HUB_DEFINITIONS = GAMMA_DEFINITIONS.filter(
 
 // GammaToolsConfig uses `baseUrl`; the hub registry passes `baseURL` (capital URL)
 // to match the convention of other tool registries. The bridge below aligns them.
+const GAMMA_WRITE_TOOLS = new Set([
+  "gamma_create_from_template",
+  "gamma_duplicate_presentation",
+]);
+
 export const GAMMA_HUB_TOOLS = Object.fromEntries(
   GAMMA_HUB_DEFINITIONS.map((definition) => [
     definition.name,
     {
+      sideEffect: (GAMMA_WRITE_TOOLS.has(definition.name)
+        ? "write"
+        : "read") as "read" | "write",
       definition,
       providerName: "gamma" as const,
       createTools: (config: {

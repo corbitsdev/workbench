@@ -481,6 +481,7 @@ export function createGranolaTools(config: GranolaToolsConfig): AgentTool[] {
  */
 export const GRANOLA_HUB_TOOLS = {
   granola_list_notes: {
+    sideEffect: "read" as const,
     definition: GRANOLA_LIST_NOTES_DEFINITION,
     providerName: "granola" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
@@ -490,6 +491,7 @@ export const GRANOLA_HUB_TOOLS = {
       }),
   },
   granola_get_note: {
+    sideEffect: "read" as const,
     definition: GRANOLA_GET_NOTE_DEFINITION,
     providerName: "granola" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
@@ -499,6 +501,7 @@ export const GRANOLA_HUB_TOOLS = {
       }),
   },
   granola_list_folders: {
+    sideEffect: "read" as const,
     definition: GRANOLA_LIST_FOLDERS_DEFINITION,
     providerName: "granola" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>

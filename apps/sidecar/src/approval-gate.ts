@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
+import { approvalGatedLlmToolNames } from "@workbench/agents";
 import type {
   ToolCall,
   ToolDefinition,
@@ -10,14 +11,14 @@ import type {
 const logger = getLogger(["sidecar", "approval-gate"]);
 
 /**
- * Tools that publish/act irreversibly and so require human approval before
- * they run. This is the harness-side stand-in for an `ask` capability grant;
- * empty it (and flip the grant) once the native gate is wired (CL-2591).
+ * LLM-facing tool names that require human approval before they run.
+ * Derived from `APPROVAL_REQUIRED_BARE_NAMES` (external / hard-to-undo writes —
+ * not every `sideEffect: "write"` tool) via the same CL-2306 name transform
+ * the harness applies (`canonicalizeToolNames` → `toLlmToolName`). Matching
+ * bare names alone is wrong — the model never calls them.
  */
-export const APPROVAL_GATED_TOOLS: ReadonlySet<string> = new Set([
-  "vercel_deploy_static_file",
-  "vercel_deploy_artifact",
-]);
+export const APPROVAL_GATED_TOOLS: ReadonlySet<string> =
+  approvalGatedLlmToolNames();
 
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
