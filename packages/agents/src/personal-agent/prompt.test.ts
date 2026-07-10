@@ -27,6 +27,16 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(prompt).toContain("<style>");
   });
 
+  it("uses canonical Corbits terminology when interpreting source material", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain("<terminology>");
+    expect(prompt).toContain(
+      "Corbits, Corbits.dev, Interchange, and Faremeter",
+    );
+    expect(prompt).toContain("clear speech-to-text or spelling variant");
+    expect(prompt).toContain("ambiguous term");
+  });
+
   // Tools are discovered dynamically from the function list — the prompt must
   // NOT hardcode tool names (which go stale and, when prefixed, fail to
   // round-trip through the model). The prompt instead defers to the function list.

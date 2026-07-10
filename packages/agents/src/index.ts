@@ -12,6 +12,7 @@ export {
   providersForToolPackages,
   toLlmToolName,
 } from "./tool-names";
+export { withCorbitsVocabulary } from "./corbits-vocabulary";
 export {
   deterministicToolStep,
   inlineInferenceStep,
