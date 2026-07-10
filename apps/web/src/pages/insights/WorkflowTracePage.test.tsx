@@ -208,24 +208,26 @@ describe("WorkflowTracePage", () => {
     screen.getByText(/50 in \/ 10 out/);
   });
 
-  it("shows the decoded output payload behind the Output expander", async () => {
+  it("shows the decoded output on the selected step without an extra expander", async () => {
     renderTrace();
     await waitFor(() => {
       screen.getByText(/Intake/);
     });
-    // Collapsed by default — the payload is not dumped inline.
-    expect(screen.queryByTestId("trace-payload")).toBeNull();
-    fireEvent.click(screen.getByText("Output"));
     await waitFor(() => {
       screen.getByTestId("trace-payload");
     });
     const payload = screen.getByTestId("trace-payload");
     expect(payload.textContent).toContain("items");
     expect(payload.textContent).toContain("collected");
+    expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
   });
 
   it("shows the sanitized failure message with the raw error behind Operator details", async () => {
     renderTrace();
+    await waitFor(() => {
+      screen.getByRole("listbox");
+    });
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
     await waitFor(() => {
       screen.getByText(/Curate/);
     });
@@ -280,17 +282,30 @@ describe("WorkflowTracePage", () => {
     await waitFor(() => {
       expect(screen.getAllByTestId("trace-step").length).toBe(2);
     });
-    // The good sibling still decodes and its output opens.
-    fireEvent.click(screen.getByText("Output"));
     await waitFor(() => {
       expect(screen.getByTestId("trace-payload").textContent).toContain(
         "decoded-ok",
       );
     });
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
     // The malformed step is not decoded — it honestly shows the out-of-line note
     // with its raw ref, never a crash or a silent blank.
-    screen.getByText(/Output stored out of line/);
+    await waitFor(() => {
+      screen.getByText(/Output stored out of line/);
+    });
     screen.getByText(/inline:\{not json/);
+  });
+
+  it("steps the run timeline with keyboard and expands only the selected step", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByRole("listbox"));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-1");
+    });
+    expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
   });
 
   it("surfaces the out-of-line note for a blob: (non-inline) outputRef", async () => {

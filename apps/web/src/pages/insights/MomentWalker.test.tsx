@@ -174,6 +174,30 @@ describe("MomentWalker", () => {
     within(panel).getByText("Errored");
   });
 
+  it("surfaces honest attribution gaps on a tool_call moment", async () => {
+    activityEntries = ENTRIES;
+    detailResult = {
+      kind: "tool_call",
+      id: "tc_1",
+      toolCall: {
+        toolName: "attio__list_objects",
+        input: { query: "acme corp" },
+        output: "Found 3 records",
+        isError: false,
+      },
+    };
+    renderWalker();
+
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
+
+    const panel = screen.getByTestId("moment-decomposition");
+    await waitFor(() => within(panel).getByTestId("moment-records-gap"));
+    within(panel).getByTestId("moment-grant-gap");
+    within(panel).getByTestId("moment-tokens-gap");
+    within(panel).getByTestId("moment-cost-gap");
+  });
+
   it("does not mark a successful tool call as errored", async () => {
     activityEntries = ENTRIES;
     detailResult = {
