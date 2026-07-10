@@ -109,20 +109,26 @@ describe("createApprovalGatedRunner", () => {
     expect(inner.calls).toHaveLength(1);
   });
 
-  test("ships write tools as LLM-safe names in the production gated set", () => {
+  test("ships approval-required tools as LLM-safe names in the production gated set", () => {
     // The harness sees call.name after CL-2306 aliasing — bare package names
-    // never match.
+    // never match. This is the product approval set, not every sideEffect:write.
     expect(APPROVAL_GATED_TOOLS.has("vercel__deploy_static_file")).toBe(true);
     expect(
       APPROVAL_GATED_TOOLS.has("deploy-artifact__vercel_deploy_artifact"),
     ).toBe(true);
     expect(APPROVAL_GATED_TOOLS.has("attio__update_task")).toBe(true);
     expect(APPROVAL_GATED_TOOLS.has("attio__create_note")).toBe(true);
+    expect(APPROVAL_GATED_TOOLS.has("gamma__create_from_template")).toBe(true);
+    expect(APPROVAL_GATED_TOOLS.has("gamma__duplicate_presentation")).toBe(
+      true,
+    );
     expect(APPROVAL_GATED_TOOLS.has("vercel_deploy_static_file")).toBe(false);
     expect(APPROVAL_GATED_TOOLS.has("attio_update_task")).toBe(false);
+    expect(APPROVAL_GATED_TOOLS.has("memory_save")).toBe(false);
+    expect(APPROVAL_GATED_TOOLS.has("artifact__write")).toBe(false);
   });
 
-  test("gates an LLM-safe write name end-to-end with the production set", async () => {
+  test("gates an LLM-safe approval-required name end-to-end with the production set", async () => {
     const inner = innerRunner();
     let approved = false;
     const runner = createApprovalGatedRunner(inner, {
