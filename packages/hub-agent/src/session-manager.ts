@@ -737,9 +737,21 @@ export function createSessionManager(
   // load and holds (measured: fresh 422MB → 6.4GB, flat). Force a GC after each
   // full session teardown (reaper eviction, instance delete, redeploy) so memory
   // tracks live agents. Guarded for any non-Bun import context.
-  function reclaimHeap(): void {
+  // WORKBENCH-LOCAL (CL-3233): log rss/heapUsed across the forced GC at the
+  // exact teardown point. Bun/mimalloc can free the JS heap without returning
+  // pages to the OS, so an idle-evicted session may leave RSS pinned at its
+  // high-water-mark. Measuring here is the only reliable classifier: a heapUsed
+  // drop with flat rss = allocator retention (needs a decommit/recycle fix);
+  // both flat = references still held (a disposal leak). The periodic 60s
+  // memory logger cannot attribute a change to a specific eviction.
+  function reclaimHeap(context: string): void {
     const bun = (globalThis as { Bun?: { gc?: (force: boolean) => void } }).Bun;
-    bun?.gc?.(true);
+    if (bun?.gc === undefined) return;
+    const mb = (bytes: number): number => Math.round(bytes / 1024 / 1024);
+    const before = process.memoryUsage();
+    bun.gc(true);
+    const after = process.memoryUsage();
+    logger.info`Reclaim heap (${context}) rss ${String(mb(before.rss))}->${String(mb(after.rss))}MB heapUsed ${String(mb(before.heapUsed))}->${String(mb(after.heapUsed))}MB`;
   }
 
   async function destroySession(agentAddress: string): Promise<void> {
@@ -770,7 +782,7 @@ export function createSessionManager(
     if (session === undefined) {
       throw new Error(`No session exists for agent "${agentAddress}"`);
     }
-    await destroyLiveSession(agentAddress, session);
+    await destroyLiveSession(agentAddress, session, "destroy");
   }
 
   // WORKBENCH-LOCAL (CL-3102): session-only teardown, factored out of
@@ -780,6 +792,7 @@ export function createSessionManager(
   async function destroyLiveSession(
     agentAddress: string,
     session: LiveSession,
+    context: "destroy" | "idle-evict" | "wake-abort",
   ): Promise<void> {
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
@@ -798,7 +811,7 @@ export function createSessionManager(
     } else {
       logger.info`Stopped session for ${agentAddress}`;
     }
-    reclaimHeap();
+    reclaimHeap(`${context} ${agentAddress}`);
   }
 
   // WORKBENCH-LOCAL (CL-3103): idle eviction — the inverse of `wakeAgent`.
@@ -822,7 +835,7 @@ export function createSessionManager(
     // destroyLiveSession flushes conversation state via harness.close(),
     // runs disposers, drains repo ops, unregisters the transport, and
     // reclaims the heap — the same teardown wake will rebuild from.
-    await destroyLiveSession(agentAddress, session);
+    await destroyLiveSession(agentAddress, session, "idle-evict");
     // Only return to wakeable if nothing else claimed the address during the
     // teardown (a racing provision/deploy/undeploy). Clobbering a fresh
     // provisioned/wakeable entry would brick the new deploy.
@@ -932,7 +945,7 @@ export function createSessionManager(
     } else {
       logger.info`Aborted agent ${agentAddress}: ${reason}`;
     }
-    reclaimHeap();
+    reclaimHeap(`abort ${agentAddress}`);
   }
 
   function deliverMessage(agentAddress: string, message: InboundMessage): void {
@@ -1076,7 +1089,7 @@ export function createSessionManager(
         ourSession !== undefined &&
         sessions.get(agentAddress) === ourSession
       ) {
-        await destroyLiveSession(agentAddress, ourSession);
+        await destroyLiveSession(agentAddress, ourSession, "wake-abort");
       }
       throw new WakeAbortedError(
         `Wake aborted for "${agentAddress}": agent was destroyed or superseded during the build`,
