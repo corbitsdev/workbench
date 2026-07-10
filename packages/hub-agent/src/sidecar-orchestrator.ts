@@ -224,6 +224,15 @@ export function createSidecarOrchestrator(
     onDeployApplyError(agentAddress, payload) {
       dispatchDeployApplyError(agentAddress, payload);
     },
+    // WORKBENCH-LOCAL (CL-3149): a mail-triggered wake exhausted its retries
+    // with the sender-acked message still parked. Surface it loudly at the
+    // host boundary so the stuck delivery is observable rather than silent.
+    onMailDeliveryFailed(agentAddress, info) {
+      log.error(
+        "Inbound mail to {agentAddress} is undelivered after wake failure ({parkedCount} parked): {cause}",
+        { agentAddress, parkedCount: info.parkedCount, cause: info.cause },
+      );
+    },
     // WORKBENCH-LOCAL (CL-3103)
     ...(idleEvictMs !== undefined ? { idleEvictMs } : {}),
   });

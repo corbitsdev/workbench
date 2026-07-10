@@ -75,6 +75,18 @@ export type DeployApplyErrorSink = (
   payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
 ) => void;
 
+// WORKBENCH-LOCAL (CL-3149): host-observable signal that a mail-triggered wake
+// terminally failed with the inbound message still parked. The hub acks the
+// sender the instant it routes mail to the sidecar, so a wake that then fails
+// would otherwise drop the parked message with no trace above an internal log.
+// This sink turns that silent drop into a first-class failure the sidecar host
+// owns (mirroring `DeployApplyErrorSink`); the message stays parked for a later
+// trigger.
+export type MailDeliveryFailedSink = (
+  agentAddress: string,
+  info: { parkedCount: number; cause: string },
+) => void;
+
 export type SessionManagerConfig = {
   transport: HubTransport;
   repoStore: AgentRepoStore;
@@ -95,6 +107,13 @@ export type SessionManagerConfig = {
    * distribution can omit this.
    */
   onDeployApplyError?: DeployApplyErrorSink;
+  /**
+   * WORKBENCH-LOCAL (CL-3149): Optional: invoked when a wake triggered by
+   * inbound mail exhausts its retries while the message is still parked, so
+   * the silent drop becomes an observable failure the host can escalate.
+   * Hosts that do not care can omit it.
+   */
+  onMailDeliveryFailed?: MailDeliveryFailedSink;
   // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning. `restoreSessions` no
   // longer builds harnesses; the first inbound message (or explicit
   // session open) builds one on demand via `wakeAgent`, which retries a
@@ -216,9 +235,11 @@ export type SessionManager = {
    * built) agent has the message parked and its harness woken, then the
    * parked messages are replayed into the freshly built harness in arrival
    * order. The trigger survives every in-process failure path (build
-   * failure, retry, concurrent wake); it is lost only if the process
-   * crashes mid-wake or the retries exhaust with no later trigger — the
-   * parked buffer is memory-only.
+   * failure, retry, concurrent wake). If the wake retries exhaust while the
+   * message is still parked, `onMailDeliveryFailed` fires so the failure is
+   * observable to the host rather than silent, and the message stays parked
+   * for a later trigger; it is lost only if the process crashes mid-wake —
+   * the parked buffer is memory-only.
    */
   deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void;
   destroySession(agentAddress: string): Promise<void>;
@@ -319,6 +340,7 @@ export function createSessionManager(
     onEvent,
     onConnectorStateChanged,
     onDeployApplyError,
+    onMailDeliveryFailed,
     // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning.
     sleep = defaultSleep,
     wakeMaxAttempts = DEFAULT_WAKE_MAX_ATTEMPTS,
@@ -827,6 +849,25 @@ export function createSessionManager(
     if (inflight !== undefined) await inflight.catch(() => undefined);
   }
 
+  // WORKBENCH-LOCAL (CL-3149): a wake that drains parked inbound mail can
+  // terminally fail on either wake-triggering path (mail arriving to a
+  // sleeping agent, or the post-eviction replay). A WakeAbortedError means the
+  // agent was destroyed/superseded — not a stuck message, so it is not a
+  // delivery failure. A genuine terminal failure with mail still parked is the
+  // silent-drop case: surface it so the sender-acked message is observably
+  // undelivered rather than lost in a log.
+  function reportTerminalWakeFailure(
+    agentAddress: string,
+    err: unknown,
+  ): void {
+    if (err instanceof WakeAbortedError) return;
+    const parkedCount = parkedMail.get(agentAddress)?.length ?? 0;
+    if (parkedCount > 0) {
+      const cause = err instanceof Error ? err.message : String(err);
+      onMailDeliveryFailed?.(agentAddress, { parkedCount, cause });
+    }
+  }
+
   async function performEvict(
     agentAddress: string,
     session: LiveSession,
@@ -856,6 +897,7 @@ export function createSessionManager(
       void wakeAgent(agentAddress).catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error`Wake after eviction for ${agentAddress} failed: ${msg}`;
+        reportTerminalWakeFailure(agentAddress, err);
       });
     }
   }
@@ -1325,6 +1367,7 @@ export function createSessionManager(
         // Leave the parked batch in place: the agent stays wakeable, so
         // a later inbound message triggers a fresh wake that drains it.
         logger.error`Wake for inbound mail to ${agentAddress} failed: ${msg}`;
+        reportTerminalWakeFailure(agentAddress, err);
       });
       return;
     }

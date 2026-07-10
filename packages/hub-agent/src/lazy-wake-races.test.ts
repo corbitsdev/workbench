@@ -162,7 +162,13 @@ function makeStores(dataDir: string) {
 function makeManager(
   dataDir: string,
   builder: HarnessBuilder,
-  opts: { sleep?: (ms: number) => Promise<void> } = {},
+  opts: {
+    sleep?: (ms: number) => Promise<void>;
+    onMailDeliveryFailed?: (
+      agentAddress: string,
+      info: { parkedCount: number; cause: string },
+    ) => void;
+  } = {},
 ) {
   const { repoStore, keyStore } = makeStores(dataDir);
   const transport = createInMemoryTransport();
@@ -175,6 +181,9 @@ function makeManager(
     onEvent: () => {},
     onConnectorStateChanged: () => {},
     ...(opts.sleep !== undefined ? { sleep: opts.sleep } : {}),
+    ...(opts.onMailDeliveryFailed !== undefined
+      ? { onMailDeliveryFailed: opts.onMailDeliveryFailed }
+      : {}),
   });
   return { manager, transport };
 }
@@ -549,5 +558,259 @@ describe("critique: lazy wake races", () => {
     const agentTransport = transport.getTransportFor(address);
     const refs = await agentTransport.search("INBOX", {});
     expect(refs.length).toBe(1);
+  });
+
+  test("a mail-triggered wake that exhausts its retries surfaces an observable delivery failure", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build() {
+        throw new Error("credential endpoint unreachable");
+      },
+    };
+    const failures: { agentAddress: string; parkedCount: number }[] = [];
+    const { manager, transport } = makeManager(dataDir, builder, {
+      sleep: () => Promise.resolve(),
+      onMailDeliveryFailed: (agentAddress, info) => {
+        failures.push({ agentAddress, parkedCount: info.parkedCount });
+      },
+    });
+    await manager.restoreSessions();
+
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+
+    // Let the wake exhaust its bounded retries.
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+
+    // The terminal wake failure is observable, not silent, and names the
+    // still-parked message.
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+    expect(failures[0]).toEqual({ agentAddress: address, parkedCount: 1 });
+
+    // The message was not delivered: the wake never built a harness, so no
+    // live session exists and the transport was never registered for the
+    // address. The message is retained (parked) for a later trigger rather
+    // than dropped.
+    expect(manager.hasSession(address)).toBe(false);
+    expect(() => transport.getTransportFor(address)).toThrow(
+      /not registered/,
+    );
+  });
+
+  test("a parked message retained after a failed wake is delivered by a later successful wake", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+
+    let fail = true;
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build() {
+        if (fail) throw new Error("credential endpoint unreachable");
+        return makeBundle();
+      },
+    };
+    const failures: string[] = [];
+    const { manager, transport } = makeManager(dataDir, builder, {
+      sleep: () => Promise.resolve(),
+      onMailDeliveryFailed: (agentAddress) => {
+        failures.push(agentAddress);
+      },
+    });
+    await manager.restoreSessions();
+
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+
+    // Recovery: the transient build condition clears. A later trigger drains
+    // the still-parked message into the freshly built harness.
+    fail = false;
+    manager.deliverInboundMail(address, inboundMessage("m2", address));
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+
+    expect(manager.hasSession(address)).toBe(true);
+    const refs = await transport.getTransportFor(address).search("INBOX", {});
+    expect(refs.length).toBe(2);
+  });
+
+  test("a wake aborted by a destroy is not reported as a mail delivery failure", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build() {
+        await gate;
+        return makeBundle();
+      },
+    };
+    const failures: string[] = [];
+    const { manager } = makeManager(dataDir, builder, {
+      sleep: () => Promise.resolve(),
+      onMailDeliveryFailed: (agentAddress) => {
+        failures.push(agentAddress);
+      },
+    });
+    await manager.restoreSessions();
+
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Destroy the agent mid-build: the wake aborts (agent is gone, not a
+    // transient failure), so no delivery-failure signal is emitted.
+    await manager.destroySession(address);
+    release();
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+
+    expect(failures).toEqual([]);
+  });
+
+  test("a wake aborted by a supersede with mail re-parked does not report a delivery failure", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+
+    // Only the wake's build is gated so the supersede can land while the
+    // wake is in flight.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build() {
+        if (first) {
+          first = false;
+          await gate;
+        }
+        return makeBundle();
+      },
+    };
+    const failures: string[] = [];
+    const { manager } = makeManager(dataDir, builder, {
+      sleep: () => Promise.resolve(),
+      onMailDeliveryFailed: (agentAddress) => {
+        failures.push(agentAddress);
+      },
+    });
+    await manager.restoreSessions();
+
+    // Mail triggers a wake; its build is gated.
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // A fresh deploy supersedes the wake: it clears the parked batch and
+    // marks the in-flight wake token superseded.
+    await manager.provisionAgent(makeConfig(address));
+
+    // A second message re-parks against the still-in-flight (now doomed)
+    // wake, so the batch is non-empty when the wake aborts. This is the only
+    // interleaving where the WakeAbortedError guard is load-bearing: the
+    // abort must not be reported as a delivery failure even though mail is
+    // parked, because the superseding deploy owns delivery now.
+    manager.deliverInboundMail(address, inboundMessage("m2", address));
+
+    release();
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+
+    expect(failures).toEqual([]);
+  });
+
+  test("mail parked mid-eviction whose post-eviction replay wake fails terminally surfaces a delivery failure", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    const { repoStore, keyStore } = makeStores(dataDir);
+    const transport = createInMemoryTransport();
+
+    let clock = 1_000_000;
+    let buildCount = 0;
+    let releaseClose!: () => void;
+    const closeGate = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const builder: HarnessBuilder = {
+      canBuildSource() {
+        /* accept every source */
+      },
+      async build() {
+        buildCount += 1;
+        if (buildCount === 1) {
+          // The live session's teardown is gated on close so mail can be
+          // parked while the eviction is in flight.
+          const bundle = makeBundle();
+          bundle.harness = {
+            ...bundle.harness,
+            close: async () => {
+              await closeGate;
+            },
+          } as unknown as Harness;
+          return bundle;
+        }
+        // The post-eviction replay wake fails terminally.
+        throw new Error("credential endpoint unreachable");
+      },
+    };
+
+    const failures: { agentAddress: string; parkedCount: number }[] = [];
+    const manager = createSessionManager({
+      transport,
+      repoStore,
+      keyStore,
+      buildHarness: builder,
+      createAgentCrypto: (kp) => makeCrypto(kp),
+      onEvent: () => {},
+      onConnectorStateChanged: () => {},
+      now: () => clock,
+      idleEvictMs: 60_000,
+      sleep: () => Promise.resolve(),
+      onMailDeliveryFailed: (agentAddress, info) => {
+        failures.push({ agentAddress, parkedCount: info.parkedCount });
+      },
+    });
+
+    await manager.provisionAgent(makeConfig(address));
+    await manager.startSession(address);
+
+    clock += 60_001;
+    const eviction = manager.evictIdleSessions();
+    // Let the sweep reach the gated harness close so `evicting` is set.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Mail arriving mid-eviction parks against the in-flight teardown.
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+
+    releaseClose();
+    await eviction;
+
+    // Let the post-eviction replay wake exhaust its bounded retries.
+    for (let i = 0; i < 40; i++) await Promise.resolve();
+
+    // The terminal replay-wake failure is observable, not silent, and names
+    // the still-parked message — the same guarantee the deliverInboundMail
+    // path already provides.
+    expect(failures.length).toBeGreaterThanOrEqual(1);
+    expect(failures[0]).toEqual({ agentAddress: address, parkedCount: 1 });
+    expect(manager.hasSession(address)).toBe(false);
   });
 });

@@ -1139,8 +1139,10 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         // or parks this message and wakes the agent (building its harness +
         // fetching credentials) then replays the parked message. The parked
         // buffer is memory-only: the trigger survives build failures and
-        // retries but is lost on a process crash mid-wake or if the wake
-        // retries exhaust with no later trigger.
+        // retries. If the wake retries exhaust with the message still parked,
+        // the session manager raises an observable delivery failure (rather
+        // than dropping silently); the message is lost only on a process crash
+        // mid-wake.
         sessions.deliverInboundMail(frame.agentAddress, rawBytes);
         break;
       }
