@@ -594,13 +594,15 @@ export function InsightsDashboard() {
                 tokenCaveat={tokenCaveat}
               />
             </motion.div>
-            <motion.div variants={SECTION_ITEM}>
-              <TrendsSection
-                data={overview}
-                range={dates}
-                tokenCaveat={tokenCaveat}
-              />
-            </motion.div>
+            {overview.dailySeries.length > 0 && (
+              <motion.div variants={SECTION_ITEM}>
+                <TrendsSection
+                  data={overview}
+                  range={dates}
+                  tokenCaveat={tokenCaveat}
+                />
+              </motion.div>
+            )}
             {activeTenantId && (
               <motion.div variants={SECTION_ITEM}>
                 <CostInsights
@@ -669,9 +671,11 @@ export function InsightsDashboard() {
             <motion.div variants={SECTION_ITEM}>
               <OperationalLedger data={overview} />
             </motion.div>
-            <motion.div variants={SECTION_ITEM}>
-              <InstanceBreakdown instances={overview.inference.byInstance} />
-            </motion.div>
+            {overview.inference.byInstance.length > 0 && (
+              <motion.div variants={SECTION_ITEM}>
+                <InstanceBreakdown instances={overview.inference.byInstance} />
+              </motion.div>
+            )}
           </motion.div>
         )}
       </div>
