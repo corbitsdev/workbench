@@ -1234,6 +1234,37 @@ function toSkillDraftItem(draft: typeof artifact.$inferSelect): SkillDraftItem {
   };
 }
 
+/**
+ * Load one of the caller's PENDING drafts as a shaped `SkillDraftItem`. Reachable
+ * exactly when `listSkillDrafts` would surface the row: owned via the stamped
+ * `ownerPrincipalId` and still `draft`-status. Anything else — a missing id, a row
+ * the caller does not own, a legacy unstamped row, or one already approved or
+ * rejected — surfaces as a not-found error naming the id (the `load_skill`
+ * convention), so load and list never disagree on what is a pending draft.
+ */
+export async function getOwnedSkillDraftItem(
+  db: HubDb,
+  userContext: UserContext,
+  draftId: string,
+): Promise<SkillDraftItem> {
+  let draft: typeof artifact.$inferSelect;
+  try {
+    draft = await loadOwnedSkillDraft(db, userContext, draftId);
+  } catch (err) {
+    if (err instanceof SkillLibraryError && err.status === 404) {
+      throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+    }
+    throw err;
+  }
+  if (
+    draft.ownerPrincipalId !== userContext.principalId ||
+    draft.status !== "draft"
+  ) {
+    throw new SkillLibraryError(`Skill draft not found: ${draftId}`, 404);
+  }
+  return toSkillDraftItem(draft);
+}
+
 export async function listSkillDrafts(
   db: HubDb,
   userContext: UserContext,

@@ -258,6 +258,8 @@ describe("Myra loadout partition (CL-3190)", () => {
       "@workbench/tools-workflows/workflows:workflow_start",
       "@workbench/tools-skills/skills:search_skills",
       "@workbench/tools-skills/skills:load_skill",
+      "@workbench/tools-skills/skills:list_skill_drafts",
+      "@workbench/tools-skills/skills:load_skill_draft",
     ]);
   });
 

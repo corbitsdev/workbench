@@ -23,6 +23,8 @@ export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
   "workflow_start",
   "search_skills",
   "load_skill",
+  "list_skill_drafts",
+  "load_skill_draft",
 ];
 
 /**
@@ -62,7 +64,8 @@ const MYRA_CATALOG_PACKAGES: CatalogPackage[] = [
   {
     pin: "@workbench/tools-skills",
     package: "skills",
-    summary: "Skills library — list every skill and draft new ones.",
+    summary:
+      "Skills library — list every skill, read and improve your pending drafts, and draft new ones.",
     tags: ["skills", "guidance", "playbooks", "how-to", "capabilities"],
   },
   {
