@@ -46,9 +46,11 @@ import {
   type TraceNode,
   type TraceRoot,
   TracerFacetNav,
+  traceFacetPanelId,
 } from "./tracer-shell";
 import {
   clampListIndex,
+  listboxShouldHandleKeyDown,
   stepListIndexOnKeyDown,
   useScrollListboxOption,
 } from "./moment-listbox";
@@ -189,7 +191,8 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      onClick={() => {
+      onClick={(event) => {
+        event.stopPropagation();
         void copyText(text).then((ok) => {
           if (!ok) return;
           setCopied(true);
@@ -232,7 +235,10 @@ function PayloadView({ value }: { value: unknown }) {
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setRaw((r) => !r)}
+          onClick={(event) => {
+            event.stopPropagation();
+            setRaw((r) => !r);
+          }}
           aria-pressed={raw}
           className="min-h-[40px] rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
         >
@@ -288,19 +294,19 @@ function TraceStepMoment({
   return (
     <motion.li
       variants={STEP_ITEM}
-      role="option"
-      id={optionId}
-      aria-selected={isSelected}
       data-testid="trace-step"
       data-phase={step.phase}
-      className={`cursor-pointer rounded border bg-surface shadow-[var(--shadow-card)] outline-none transition-[border-color,box-shadow] focus-within:ring-1 focus-within:ring-accent ${
-        isSelected
-          ? "border-accent/50 ring-1 ring-accent/30"
-          : "border-border hover:border-border"
+      className={`rounded border bg-surface shadow-[var(--shadow-card)] ${
+        isSelected ? "border-accent/50 ring-1 ring-accent/30" : "border-border"
       }`}
-      onClick={onSelect}
     >
-      <div className="flex items-start justify-between gap-3 px-4 py-3">
+      <div
+        role="option"
+        id={optionId}
+        aria-selected={isSelected}
+        onClick={onSelect}
+        className="flex cursor-pointer items-start justify-between gap-3 px-4 py-3 outline-none focus-visible:ring-1 focus-visible:ring-accent"
+      >
         <div className="flex min-w-0 items-center gap-2.5">
           <PhaseIndicator phase={step.phase} />
           <div className="min-w-0">
@@ -466,6 +472,28 @@ function truncateStepOutput(raw: unknown): string | undefined {
   }
 }
 
+function stepOutputRevision(
+  step: LogStepState,
+  stepOutputs: Record<string, unknown>,
+): string {
+  if (step.stepId in stepOutputs) {
+    return truncateStepOutput(stepOutputs[step.stepId]) ?? "";
+  }
+  return step.outputRef ?? "";
+}
+
+/** Freshness token for workflow-run active context; exported for tests. */
+export function workflowRunContextFreshness(
+  safeId: string,
+  phase: string | undefined,
+  steps: LogStepState[],
+  stepOutputs: Record<string, unknown>,
+): string {
+  return `${safeId}:${phase ?? ""}:${steps
+    .map((s) => `${s.stepId}=${s.phase}:${stepOutputRevision(s, stepOutputs)}`)
+    .join(",")}`;
+}
+
 /**
  * Execution trace (`/insights/trace/:runId`), rebuilt to the approved Tracer
  * artifact: a Trace-root rail + legend, a compact run header with a status
@@ -505,6 +533,11 @@ export function WorkflowTracePage() {
   const [selectedStep, setSelectedStep] = useState(0);
   const clampedStepIndex = clampListIndex(selectedStep, steps.length);
   useScrollListboxOption(timelineListRef, "run-step-", clampedStepIndex);
+
+  useEffect(() => {
+    setFacetIndex(0);
+    setSelectedStep(0);
+  }, [safeId]);
 
   const stepTokenMap = useMemo(() => {
     const map = new Map<
@@ -586,14 +619,8 @@ export function WorkflowTracePage() {
           })),
         }
       : null,
-    record !== undefined && logState !== undefined
-      ? // Fold the run phase and each step's phase into the freshness token so a
-        // live run re-publishes as steps transition (running → completed/failed)
-        // and outputs fill in — keying on `steps.length` alone kept the first,
-        // stale snapshot for the whole run (CL-2726 review).
-        `${safeId}:${logState.phase ?? ""}:${steps
-          .map((s) => `${s.stepId}=${s.phase}`)
-          .join(",")}`
+    record !== undefined && logState !== undefined && safeId !== null
+      ? workflowRunContextFreshness(safeId, logState.phase, steps, stepOutputs)
       : undefined,
   );
 
@@ -634,7 +661,12 @@ export function WorkflowTracePage() {
             )}
 
             {!loading && !recordQuery.isError && activeFacet === "timeline" && (
-              <div className="flex flex-col gap-3">
+              <div
+                id={traceFacetPanelId("timeline")}
+                role="tabpanel"
+                aria-labelledby="trace-facet-tab-timeline"
+                className="flex flex-col gap-3"
+              >
                 {runError !== null && (
                   <div
                     role="alert"
@@ -675,6 +707,7 @@ export function WorkflowTracePage() {
                       aria-activedescendant={`run-step-${clampedStepIndex}`}
                       tabIndex={0}
                       onKeyDown={(event) => {
+                        if (!listboxShouldHandleKeyDown(event)) return;
                         const next = stepListIndexOnKeyDown(
                           event,
                           clampedStepIndex,
@@ -713,7 +746,11 @@ export function WorkflowTracePage() {
             )}
 
             {!loading && !recordQuery.isError && activeFacet === "cost" && (
-              <div>
+              <div
+                id={traceFacetPanelId("cost")}
+                role="tabpanel"
+                aria-labelledby="trace-facet-tab-cost"
+              >
                 <FacetDesc>
                   Token classes for this run are kept separate and priced
                   independently.
@@ -813,7 +850,11 @@ export function WorkflowTracePage() {
             )}
 
             {!loading && !recordQuery.isError && activeFacet === "grants" && (
-              <div>
+              <div
+                id={traceFacetPanelId("grants")}
+                role="tabpanel"
+                aria-labelledby="trace-facet-tab-grants"
+              >
                 <FacetDesc>
                   Permissions this run exercised, and whether each was allowed.
                 </FacetDesc>

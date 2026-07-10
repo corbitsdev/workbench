@@ -1,5 +1,28 @@
 import { useEffect, type KeyboardEvent, type RefObject } from "react";
 
+const LISTBOX_NAV_KEYS = new Set([
+  "ArrowDown",
+  "ArrowUp",
+  "j",
+  "k",
+  "Home",
+  "End",
+]);
+
+/** Skip listbox stepping when focus is on a nested interactive control. */
+export function listboxShouldHandleKeyDown(
+  event: KeyboardEvent<HTMLElement>,
+): boolean {
+  if (!LISTBOX_NAV_KEYS.has(event.key)) return true;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return true;
+  if (target === event.currentTarget) return true;
+  const nested = target.closest(
+    "a, button, input, textarea, select, [contenteditable='true']",
+  );
+  return nested === null || nested === event.currentTarget;
+}
+
 export function clampListIndex(index: number, length: number): number {
   if (length <= 0) return 0;
   return Math.max(0, Math.min(index, length - 1));

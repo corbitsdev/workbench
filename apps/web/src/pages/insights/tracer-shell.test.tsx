@@ -10,7 +10,12 @@ import {
 } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router";
-import { CopyId, TracerFacetNav, type FacetDef } from "./tracer-shell";
+import {
+  CopyId,
+  FacetTabs,
+  TracerFacetNav,
+  type FacetDef,
+} from "./tracer-shell";
 
 function renderNav(ui: ReactElement) {
   return render(<MemoryRouter>{ui}</MemoryRouter>);
@@ -101,5 +106,25 @@ describe("TracerFacetNav", () => {
       (screen.getByRole("button", { name: "Next facet" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+  });
+
+  it("FacetTabs uses roving tabIndex and arrow keys move focus", () => {
+    const onSelect = mock(() => {});
+    render(
+      <FacetTabs
+        facets={[
+          { id: "a", label: "One" },
+          { id: "b", label: "Two" },
+        ]}
+        activeId="a"
+        onSelect={onSelect}
+      />,
+    );
+    const one = screen.getByRole("tab", { name: /One/ });
+    const two = screen.getByRole("tab", { name: /Two/ });
+    expect(one.tabIndex).toBe(0);
+    expect(two.tabIndex).toBe(-1);
+    fireEvent.keyDown(screen.getByRole("tablist"), { key: "ArrowRight" });
+    expect(onSelect).toHaveBeenCalledWith("b");
   });
 });

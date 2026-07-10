@@ -1,5 +1,5 @@
 import { Link } from "react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, Clipboard, Info } from "lucide-react";
 import { statusToneClass, type StatusTone } from "./status-tone";
 
@@ -158,6 +158,14 @@ export function CompactHeader({
   );
 }
 
+export function traceFacetPanelId(facetId: string): string {
+  return `trace-facet-panel-${facetId}`;
+}
+
+function traceFacetTabId(facetId: string): string {
+  return `trace-facet-tab-${facetId}`;
+}
+
 /** Underlined, numbered facet tab bar with a gap dot on gap-bearing facets. */
 export function FacetTabs({
   facets,
@@ -168,10 +176,33 @@ export function FacetTabs({
   activeId: string;
   onSelect: (id: string) => void;
 }) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  function onTabListKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const currentIndex = facets.findIndex((f) => f.id === activeId);
+    if (currentIndex < 0) return;
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") {
+      nextIndex = (currentIndex + 1) % facets.length;
+    } else if (event.key === "ArrowLeft") {
+      nextIndex = (currentIndex - 1 + facets.length) % facets.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = facets.length - 1;
+    }
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextFacet = facets[nextIndex]!;
+    onSelect(nextFacet.id);
+    tabRefs.current[nextIndex]?.focus();
+  }
+
   return (
     <div
       role="tablist"
       aria-label="Trace facets"
+      onKeyDown={onTabListKeyDown}
       className="flex gap-0.5 overflow-x-auto border-b border-border"
     >
       {facets.map((f, i) => {
@@ -179,9 +210,15 @@ export function FacetTabs({
         return (
           <button
             key={f.id}
+            ref={(el) => {
+              tabRefs.current[i] = el;
+            }}
+            id={traceFacetTabId(f.id)}
             type="button"
             role="tab"
             aria-selected={active}
+            aria-controls={traceFacetPanelId(f.id)}
+            tabIndex={active ? 0 : -1}
             onClick={() => onSelect(f.id)}
             className={`-mb-px flex min-h-[40px] shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-[12.5px] font-semibold outline-none transition-[color,border-color] duration-150 focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97] ${
               active

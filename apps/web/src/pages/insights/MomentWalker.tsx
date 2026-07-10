@@ -16,6 +16,7 @@ import { isPermissionDeniedError } from "./activity-error";
 import { HonestGapChip } from "./tracer-shell";
 import {
   clampListIndex,
+  listboxShouldHandleKeyDown,
   stepListIndexOnKeyDown,
   useScrollListboxOption,
 } from "./moment-listbox";
@@ -402,6 +403,7 @@ export function MomentWalker({
   useScrollListboxOption(listRef, "moment-", clampedSelected);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLUListElement>) {
+    if (!listboxShouldHandleKeyDown(event)) return;
     const next = stepListIndexOnKeyDown(event, clampedSelected, entries.length);
     if (next !== null) setSelected(next);
   }
@@ -502,20 +504,22 @@ export function MomentWalker({
           return (
             <li
               key={`${entry.sourceTable}:${entry.id}`}
-              id={`moment-${index}`}
-              role="option"
-              aria-selected={isSelected}
-              onClick={() => {
-                setSelected(index);
-                listRef.current?.focus();
-              }}
-              className={`cursor-pointer rounded border bg-surface shadow-[var(--shadow-card)] transition-colors ${
-                isSelected
-                  ? "border-accent"
-                  : "border-border hover:bg-row-hover"
+              className={`rounded border bg-surface shadow-[var(--shadow-card)] transition-colors ${
+                isSelected ? "border-accent" : "border-border"
               }`}
             >
-              <div className="flex items-center gap-3 px-3.5 py-3">
+              <div
+                id={`moment-${index}`}
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  setSelected(index);
+                  listRef.current?.focus();
+                }}
+                className={`flex cursor-pointer items-center gap-3 px-3.5 py-3 outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                  !isSelected ? "hover:bg-row-hover" : ""
+                }`}
+              >
                 <span
                   className={`h-2.5 w-2.5 shrink-0 rounded-full ${dotClass(entry)}`}
                   aria-hidden
