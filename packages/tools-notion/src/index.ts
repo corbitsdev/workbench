@@ -592,18 +592,21 @@ export const NOTION_HUB_TOOLS = {
   notion_search: {
     definition: NOTION_SEARCH_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "read" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(resolveBaseUrl(config), NOTION_SEARCH_DEFINITION),
   },
   notion_get_page: {
     definition: NOTION_GET_PAGE_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "read" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(resolveBaseUrl(config), NOTION_GET_PAGE_DEFINITION),
   },
   notion_get_page_content: {
     definition: NOTION_GET_PAGE_CONTENT_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "read" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(
         resolveBaseUrl(config),
@@ -613,6 +616,7 @@ export const NOTION_HUB_TOOLS = {
   notion_get_database: {
     definition: NOTION_GET_DATABASE_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "read" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(
         resolveBaseUrl(config),
@@ -622,6 +626,7 @@ export const NOTION_HUB_TOOLS = {
   notion_query_database: {
     definition: NOTION_QUERY_DATABASE_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "read" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(
         resolveBaseUrl(config),
@@ -631,6 +636,7 @@ export const NOTION_HUB_TOOLS = {
   notion_create_page: {
     definition: NOTION_CREATE_PAGE_DEFINITION,
     providerName: "notion" as const,
+    sideEffect: "write" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createNotionToolFor(
         resolveBaseUrl(config),
