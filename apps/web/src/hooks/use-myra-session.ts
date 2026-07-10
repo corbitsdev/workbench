@@ -303,6 +303,19 @@ export function useMyraSession(
   enabled = true,
 ): MyraSession {
   const [state, setState] = useState<MyraSessionPhase>({ phase: "loading" });
+  // Reset phase to `loading` during render when the identity (instanceId or
+  // tenantId) changes, so `identityKey` (derived below) and `state.phase`
+  // land in the same commit — a stale `ready` from the previous identity
+  // never reaches useReportConnectionStatus, which otherwise saw a one-render
+  // mismatch on a thread switch (CL-3155).
+  const [prevIdentity, setPrevIdentity] = useState({ instanceId, tenantId });
+  if (
+    prevIdentity.instanceId !== instanceId ||
+    prevIdentity.tenantId !== tenantId
+  ) {
+    setPrevIdentity({ instanceId, tenantId });
+    setState({ phase: "loading" });
+  }
   const [, forceUpdate] = useState(0);
   const resolvedInstanceIdRef = useRef<string | null>(null);
   const [resolvedInstanceId, setResolvedInstanceId] = useState<string | null>(

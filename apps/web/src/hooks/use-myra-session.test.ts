@@ -265,6 +265,27 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
     expect(destroyed[0]).toBe(1);
   });
+
+  // CL-3155: identityKey (derived from instanceId/tenantId) must never be
+  // committed alongside the previous identity's stale `ready` phase. The
+  // render-time reset means the very commit that carries the new instanceId
+  // already carries `phase: "loading"` — there is no intermediate commit a
+  // consumer (e.g. useReportConnectionStatus) could observe with the old
+  // `ready` still attached to the new identity.
+  it("commits phase as loading in the same update as an identity change, never a stale ready", async () => {
+    const { rerender, result } = renderHook(
+      ({ id }: { id: string }) => useMyraSession(id, "tnt-acme", true),
+      {
+        initialProps: { id: "inst-1" },
+        wrapper,
+      },
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+
+    rerender({ id: "inst-2" });
+
+    expect(result.current.state.phase).toBe("loading");
+  });
 });
 
 describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {

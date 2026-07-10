@@ -110,26 +110,4 @@ describe("useReportConnectionStatus — overlay visibility", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
-  // Production thread-switch sequence: `identityKey` flips to the new instance one
-  // commit before `useMyraSession` resets its phase to `loading`, so there is a
-  // render where the new identity still carries the previous session's stale
-  // `ready`. That stale `ready` must not be folded as the new session becoming
-  // ready, or its own initial `loading` is misread as a drop and flashes the
-  // overlay on every new chat.
-  it("does not cover the app when a stale ready lingers across a thread switch", () => {
-    const reconnect = mock(() => {});
-    const { rerender } = render(
-      renderHarness({ phase: "ready", reconnect, identity: "t:inst-a" }),
-    );
-    // Identity changes first; phase still reflects the previous ready session.
-    rerender(
-      renderHarness({ phase: "ready", reconnect, identity: "t:inst-b" }),
-    );
-    // The new session then re-enters loading, as every fresh connect does.
-    rerender(
-      renderHarness({ phase: "loading", reconnect, identity: "t:inst-b" }),
-    );
-    advance(5000);
-    expect(screen.queryByRole("status")).toBeNull();
-  });
 });
