@@ -511,7 +511,7 @@ export function InsightsDashboard() {
   };
 
   return (
-    <PagePanel scroll={false} flat>
+    <PagePanel scroll={false} flat fitContent>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3 max-md:px-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <div className="flex items-center gap-2">
