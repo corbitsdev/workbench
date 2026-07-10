@@ -150,6 +150,8 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "list_skills",
     "search_skills",
     "load_skill",
+    "list_skill_drafts",
+    "load_skill_draft",
     "skill_draft",
   ],
   "@workbench/tools-workflows/workflows": [
