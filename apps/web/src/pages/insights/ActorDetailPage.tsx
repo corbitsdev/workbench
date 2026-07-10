@@ -23,6 +23,7 @@ import {
   type StatusPill,
   type TraceRoot,
   TracerFacetNav,
+  traceFacetPanelId,
 } from "./tracer-shell";
 import { actorStatusTone } from "./status-tone";
 
@@ -226,33 +227,71 @@ export function ActorDetailPage() {
             {activeTenantId && principalId !== "" ? (
               <>
                 {activeFacet === "timeline" && (
-                  <MomentWalker
-                    tenantId={activeTenantId}
-                    principalId={principalId}
-                  />
+                  <div
+                    id={traceFacetPanelId("timeline")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-timeline"
+                  >
+                    <MomentWalker
+                      tenantId={activeTenantId}
+                      principalId={principalId}
+                    />
+                  </div>
                 )}
                 {activeFacet === "roster" && (
-                  <RosterFacet
-                    tenantId={activeTenantId}
-                    principalId={principalId}
-                  />
+                  <div
+                    id={traceFacetPanelId("roster")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-roster"
+                  >
+                    <RosterFacet
+                      tenantId={activeTenantId}
+                      principalId={principalId}
+                    />
+                  </div>
                 )}
-                {activeFacet === "grants" && <GrantsFacet entries={entries} />}
+                {activeFacet === "grants" && (
+                  <div
+                    id={traceFacetPanelId("grants")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-grants"
+                  >
+                    <GrantsFacet entries={entries} />
+                  </div>
+                )}
                 {activeFacet === "tools" && (
-                  <ToolsFacet
-                    tenantId={activeTenantId}
-                    principalId={principalId}
-                  />
+                  <div
+                    id={traceFacetPanelId("tools")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-tools"
+                  >
+                    <ToolsFacet
+                      tenantId={activeTenantId}
+                      principalId={principalId}
+                    />
+                  </div>
                 )}
                 {activeFacet === "cost" && (
-                  <CostFacet
-                    tenantId={activeTenantId}
-                    principalId={principalId}
-                    label={name}
-                  />
+                  <div
+                    id={traceFacetPanelId("cost")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-cost"
+                  >
+                    <CostFacet
+                      tenantId={activeTenantId}
+                      principalId={principalId}
+                      label={name}
+                    />
+                  </div>
                 )}
                 {activeFacet === "connections" && (
-                  <ConnectionsFacet entries={entries} />
+                  <div
+                    id={traceFacetPanelId("connections")}
+                    role="tabpanel"
+                    aria-labelledby="trace-facet-tab-connections"
+                  >
+                    <ConnectionsFacet entries={entries} />
+                  </div>
                 )}
               </>
             ) : (
