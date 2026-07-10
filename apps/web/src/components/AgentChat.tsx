@@ -268,7 +268,28 @@ export function AgentChat({
 
     let cancelled = false;
 
-    const transport = createHubTransport();
+    // A stream that never opens (e.g. a 401) gives up after a bounded number
+    // of attempts and reports here rather than retrying forever (CL-3148).
+    // Tear the session down so the failed subscription's last unsubscribe
+    // fires, matching the cleanup below.
+    const transport = createHubTransport({
+      onStreamError: (err) => {
+        if (cancelled) return;
+        setSessionState({ phase: "error", message: err.message });
+        stopRef.current?.();
+        stopRef.current = null;
+        toolNamesRef.current?.stop();
+        toolNamesRef.current = null;
+        liveTextRef.current?.stop();
+        liveTextRef.current = null;
+        reasoningRef.current?.stop();
+        reasoningRef.current = null;
+        imageTrackerRef.current?.stop();
+        imageTrackerRef.current = null;
+        sessionRef.current?.destroy();
+        sessionRef.current = null;
+      },
+    });
     const session = createInstanceSession({
       tenantId,
       instanceId,

@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -24,6 +24,7 @@ class FakeApiError extends Error {
 
 const destroyed: number[] = [];
 const sessionTenantIds: (string | undefined)[] = [];
+const sessionStops: ReturnType<typeof mock>[] = [];
 const launchInstanceSession = mock((_id: string) =>
   Promise.resolve({ launched: true }),
 );
@@ -41,10 +42,12 @@ mock.module("@intx/hub-client", () => ({
     const idx = destroyed.length;
     destroyed.push(0);
     sessionTenantIds.push(opts?.tenantId);
+    const stop = mock();
+    sessionStops.push(stop);
     return {
       events: [],
       activity: null,
-      start: () => () => {},
+      start: () => stop,
       destroy: () => {
         destroyed[idx] = 1;
       },
@@ -61,18 +64,30 @@ mock.module("../lib/hub-api", () => ({
   upsertRating: (prev: unknown) => prev ?? [],
 }));
 
+let capturedOnStreamError: ((err: Error) => void) | null = null;
+
 mock.module("../lib/instance-transport", () => ({
-  createHubTransport: () => ({}),
+  createHubTransport: (opts?: { onStreamError?: (err: Error) => void }) => {
+    capturedOnStreamError = opts?.onStreamError ?? null;
+    return {};
+  },
   fetchBlobObjectUrl: (_tenantId: string, _blobId: string) =>
     Promise.resolve("blob:test"),
 }));
 
+const trackerStops = {
+  toolNames: mock(),
+  liveText: mock(),
+  reasoning: mock(),
+  image: mock(),
+};
+
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: () => ({ messages: [] }),
-  createToolNameTracker: () => ({ stop: () => {}, names: {} }),
-  createLiveTextTracker: () => ({ stop: () => {}, text: "" }),
-  createReasoningTracker: () => ({ stop: () => {}, text: "" }),
-  createImageTracker: () => ({ stop: () => {}, images: [] }),
+  createToolNameTracker: () => ({ stop: trackerStops.toolNames, names: {} }),
+  createLiveTextTracker: () => ({ stop: trackerStops.liveText, text: "" }),
+  createReasoningTracker: () => ({ stop: trackerStops.reasoning, text: "" }),
+  createImageTracker: () => ({ stop: trackerStops.image, images: [] }),
 }));
 
 const {
@@ -92,6 +107,12 @@ beforeEach(() => {
   ensureMeSynced.mockClear();
   destroyed.length = 0;
   sessionTenantIds.length = 0;
+  sessionStops.length = 0;
+  capturedOnStreamError = null;
+  trackerStops.toolNames.mockClear();
+  trackerStops.liveText.mockClear();
+  trackerStops.reasoning.mockClear();
+  trackerStops.image.mockClear();
 });
 
 afterEach(() => {
@@ -242,6 +263,26 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     rerender({ id: "inst-2" });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));
     expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
+    expect(destroyed[0]).toBe(1);
+  });
+});
+
+describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
+  it("stops every sibling tracker subscription, not just the session, on a terminal stream error", async () => {
+    renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
+    await waitFor(() => expect(sessionStops).toHaveLength(1));
+    await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
+
+    await act(async () => {
+      capturedOnStreamError?.(new Error("gave up reconnecting"));
+      await Promise.resolve();
+    });
+
+    expect(sessionStops[0]).toHaveBeenCalled();
+    expect(trackerStops.toolNames).toHaveBeenCalled();
+    expect(trackerStops.liveText).toHaveBeenCalled();
+    expect(trackerStops.reasoning).toHaveBeenCalled();
+    expect(trackerStops.image).toHaveBeenCalled();
     expect(destroyed[0]).toBe(1);
   });
 });
