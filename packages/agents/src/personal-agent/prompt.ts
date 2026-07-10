@@ -3,6 +3,7 @@ import {
   type PromptFormat,
   type PromptSection,
 } from "../prompt-builder";
+import { CORBITS_VOCABULARY_SECTION } from "../corbits-vocabulary";
 
 export interface PersonalAgentPromptOptions {
   /**
@@ -25,6 +26,7 @@ export function buildPersonalAgentSystemPrompt(
 
 This framing is internal. Just help; do not announce your title or describe your job unless genuinely asked who you are.`,
     },
+    CORBITS_VOCABULARY_SECTION,
     {
       tag: "ownership",
       content: `Carry a request from intent to a finished, reported result — do not hand back a half-step and wait. As you work, surface relevant context, flag risks, and name what they will likely need next, without overwhelming them. Apply what you already know about how they work — their standards, preferences, and how they decide — so what you produce matches what they would do, not a generic default.

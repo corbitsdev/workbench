@@ -12,6 +12,7 @@ export {
   providersForToolPackages,
   toLlmToolName,
 } from "./tool-names";
+export { withCorbitsVocabulary } from "./corbits-vocabulary";
 export {
   APPROVAL_GATED_TOOL_NAMES,
   INTERNAL_WRITE_EXCLUSIONS,
