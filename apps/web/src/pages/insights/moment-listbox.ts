@@ -33,13 +33,15 @@ export function stepListIndexOnKeyDown(
 
 export function useScrollListboxOption(
   listRef: RefObject<HTMLElement | null>,
-  optionId: (index: number) => string,
+  optionIdPrefix: string,
   selectedIndex: number,
 ) {
   useEffect(() => {
     const list = listRef.current;
     if (list === null) return;
-    const el = list.querySelector<HTMLElement>(`#${optionId(selectedIndex)}`);
+    const el = list.querySelector<HTMLElement>(
+      `#${optionIdPrefix}${selectedIndex}`,
+    );
     if (el === null || typeof el.scrollIntoView !== "function") return;
     const reduced =
       typeof window.matchMedia === "function" &&
@@ -48,5 +50,5 @@ export function useScrollListboxOption(
       block: "nearest",
       behavior: reduced ? "auto" : "smooth",
     });
-  }, [listRef, optionId, selectedIndex]);
+  }, [listRef, optionIdPrefix, selectedIndex]);
 }

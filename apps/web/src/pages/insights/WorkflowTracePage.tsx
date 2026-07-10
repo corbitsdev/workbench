@@ -253,8 +253,9 @@ function PayloadView({ value }: { value: unknown }) {
 /**
  * One run step, presented as a moment card in the artifact's language: a phase
  * dot/glyph, plain step label + type, an honest duration, and inline
- * decomposition (its sanitized failure, parked signal, and decoded output —
- * each behind an explicit expander). All step behavior and testids are the
+ * decomposition when selected (sanitized failure with operator-details
+ * expander, parked signal, and inline decoded output). All step behavior and
+ * testids are the
  * proven CL-2728 ones; only the surrounding presentation matches the artifact.
  */
 function TraceStepMoment({
@@ -275,6 +276,9 @@ function TraceStepMoment({
   optionId: string;
 }) {
   const [operatorOpen, setOperatorOpen] = useState(false);
+  useEffect(() => {
+    if (!isSelected) setOperatorOpen(false);
+  }, [isSelected]);
   const duration = formatStepDuration(step.startedAt, step.endedAt);
   const classified =
     step.lastError !== undefined
@@ -348,7 +352,10 @@ function TraceStepMoment({
               </p>
               <button
                 type="button"
-                onClick={() => setOperatorOpen((o) => !o)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setOperatorOpen((o) => !o);
+                }}
                 aria-expanded={operatorOpen}
                 className="mt-2 text-[11px] font-medium text-red-deep underline-offset-2 hover:underline focus-visible:outline-none"
               >
@@ -497,11 +504,7 @@ export function WorkflowTracePage() {
   const timelineListRef = useRef<HTMLUListElement>(null);
   const [selectedStep, setSelectedStep] = useState(0);
   const clampedStepIndex = clampListIndex(selectedStep, steps.length);
-  useScrollListboxOption(
-    timelineListRef,
-    (index) => `run-step-${index}`,
-    clampedStepIndex,
-  );
+  useScrollListboxOption(timelineListRef, "run-step-", clampedStepIndex);
 
   const stepTokenMap = useMemo(() => {
     const map = new Map<
@@ -696,7 +699,10 @@ export function WorkflowTracePage() {
                           }
                           stepTokens={stepTokenMap.get(step.stepId) ?? null}
                           isSelected={index === clampedStepIndex}
-                          onSelect={() => setSelectedStep(index)}
+                          onSelect={() => {
+                            setSelectedStep(index);
+                            timelineListRef.current?.focus();
+                          }}
                           optionId={`run-step-${index}`}
                         />
                       ))}

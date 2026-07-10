@@ -232,9 +232,14 @@ export function MomentDecomposition({
         </>
       )}
 
-      {entry.kind === "inference_turn" && moment?.turn !== undefined && (
+      {entry.kind === "inference_turn" && (
         <>
-          {moment.turn.model !== null && (
+          {detailLoading && moment?.turn === undefined && (
+            <DecompRow label="Turn">
+              <Absent>Loading…</Absent>
+            </DecompRow>
+          )}
+          {moment?.turn !== undefined && moment.turn.model !== null && (
             <DecompRow label="Model">
               <span
                 data-testid="moment-turn-model"
@@ -244,7 +249,7 @@ export function MomentDecomposition({
               </span>
             </DecompRow>
           )}
-          {moment.turn.durationMs !== null && (
+          {moment?.turn !== undefined && moment.turn.durationMs !== null && (
             <DecompRow label="Duration">
               <span
                 data-testid="moment-duration"
@@ -254,7 +259,7 @@ export function MomentDecomposition({
               </span>
             </DecompRow>
           )}
-          {moment.turn.parts.length > 0 && (
+          {moment?.turn !== undefined && moment.turn.parts.length > 0 && (
             <DecompRow label="Parts">
               <span
                 data-testid="moment-turn-parts"
@@ -264,27 +269,28 @@ export function MomentDecomposition({
               </span>
             </DecompRow>
           )}
-          {moment.turn.parts.some(
-            (p) =>
-              p.type === "tool" && p.toolName !== null && p.toolName !== "",
-          ) && (
-            <DecompRow label="Tool calls">
-              <span
-                data-testid="moment-turn-tool-calls"
-                className="text-[11.5px] text-text-2"
-              >
-                {moment.turn.parts
-                  .filter(
-                    (p) =>
-                      p.type === "tool" &&
-                      p.toolName !== null &&
-                      p.toolName !== "",
-                  )
-                  .map((p) => p.toolName)
-                  .join(", ")}
-              </span>
-            </DecompRow>
-          )}
+          {moment?.turn !== undefined &&
+            moment.turn.parts.some(
+              (p) =>
+                p.type === "tool" && p.toolName !== null && p.toolName !== "",
+            ) && (
+              <DecompRow label="Tool calls">
+                <span
+                  data-testid="moment-turn-tool-calls"
+                  className="text-[11.5px] text-text-2"
+                >
+                  {moment.turn.parts
+                    .filter(
+                      (p) =>
+                        p.type === "tool" &&
+                        p.toolName !== null &&
+                        p.toolName !== "",
+                    )
+                    .map((p) => p.toolName)
+                    .join(", ")}
+                </span>
+              </DecompRow>
+            )}
           <MomentAttributionGaps />
         </>
       )}
@@ -393,11 +399,7 @@ export function MomentWalker({
 
   const clampedSelected = clampListIndex(selected, entries.length);
 
-  useScrollListboxOption(
-    listRef,
-    (index) => `moment-${index}`,
-    clampedSelected,
-  );
+  useScrollListboxOption(listRef, "moment-", clampedSelected);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLUListElement>) {
     const next = stepListIndexOnKeyDown(event, clampedSelected, entries.length);
@@ -503,7 +505,10 @@ export function MomentWalker({
               id={`moment-${index}`}
               role="option"
               aria-selected={isSelected}
-              onClick={() => setSelected(index)}
+              onClick={() => {
+                setSelected(index);
+                listRef.current?.focus();
+              }}
               className={`cursor-pointer rounded border bg-surface shadow-[var(--shadow-card)] transition-colors ${
                 isSelected
                   ? "border-accent"
