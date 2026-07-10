@@ -23,6 +23,7 @@ describe("createAttioTools", () => {
     const names = tools.map((t) => t.definition.name).sort();
     expect(names).toEqual([
       "attio_create_note",
+      "attio_create_record",
       "attio_get_record",
       "attio_get_task",
       "attio_list_objects",
@@ -1004,6 +1005,152 @@ describe("attio_create_note handler", () => {
     expect(result.content).toContain(
       'format must be "plaintext" or "markdown"',
     );
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+});
+
+describe("attio_create_record handler", () => {
+  it("POSTs /v2/objects/{object}/records with the values wrapped in data", async () => {
+    const fetcher = makeFetchStub({
+      data: { id: { record_id: "rec_new" } },
+    });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: {
+          object: "companies",
+          values: { name: "Tribe Capital", domains: ["tribecap.com"] },
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const call = fetcher.mock.calls[0];
+    expect(call?.[0]).toBe(
+      "https://api.attio.com/v2/objects/companies/records",
+    );
+    expect(call?.[1].method).toBe("POST");
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      data: { values: { name: "Tribe Capital", domains: ["tribecap.com"] } },
+    });
+    expect(JSON.parse(String(result.content))).toEqual({
+      id: { record_id: "rec_new" },
+    });
+  });
+
+  it("url-encodes the object slug", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "deal flow", values: { name: "X" } },
+      },
+      new AbortController().signal,
+    );
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      "https://api.attio.com/v2/objects/deal%20flow/records",
+    );
+  });
+
+  it("PUTs the assert endpoint with matching_attribute for an idempotent upsert", async () => {
+    const fetcher = makeFetchStub({ data: { id: { record_id: "rec_up" } } });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: {
+          object: "companies",
+          values: { domains: ["tribecap.com"], name: "Tribe" },
+          matchingAttribute: "domains",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const call = fetcher.mock.calls[0];
+    const url = new URL(String(call?.[0]));
+    expect(url.pathname).toBe("/v2/objects/companies/records");
+    expect(url.searchParams.get("matching_attribute")).toBe("domains");
+    expect(call?.[1].method).toBe("PUT");
+    expect(JSON.parse(String(call?.[1].body))).toEqual({
+      data: { values: { domains: ["tribecap.com"], name: "Tribe" } },
+    });
+  });
+
+  it("requires object", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { values: { name: "X" } },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("object is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("rejects an array passed as values before hitting the API", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "companies", values: ["Tribe Capital"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("values is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("requires a non-empty values object", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "companies", values: {} },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("values is required");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 });
