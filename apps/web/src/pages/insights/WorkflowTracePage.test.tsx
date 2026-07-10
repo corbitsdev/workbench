@@ -10,7 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useNavigate } from "react-router";
 
 const INTAKE_OUTPUT = { items: 3, note: "collected" };
 
@@ -76,7 +76,10 @@ mock.module("../../lib/api", () => ({
     if (apiError) return Promise.reject(apiError);
     if (path.includes("/state")) return Promise.resolve(logStateResponse);
     if (path.includes("/tokens")) return Promise.resolve(tokensResponse);
-    if (path.includes("/records/")) return Promise.resolve(RECORD);
+    if (path.includes("/records/")) {
+      const runId = path.split("/records/")[1]?.split("/")[0] ?? "run-1";
+      return Promise.resolve({ ...RECORD, runId });
+    }
     return Promise.reject(new Error(`unexpected path ${path}`));
   },
 }));
@@ -96,7 +99,11 @@ mock.module("../../lib/active-workbench-context", () => ({
   }),
 }));
 
-import { WorkflowTracePage, formatStepDuration } from "./WorkflowTracePage";
+import {
+  WorkflowTracePage,
+  formatStepDuration,
+  workflowRunContextFreshness,
+} from "./WorkflowTracePage";
 
 function renderTrace(runId = "run-1") {
   const client = new QueryClient({
@@ -208,24 +215,26 @@ describe("WorkflowTracePage", () => {
     screen.getByText(/50 in \/ 10 out/);
   });
 
-  it("shows the decoded output payload behind the Output expander", async () => {
+  it("shows the decoded output on the selected step without an extra expander", async () => {
     renderTrace();
     await waitFor(() => {
       screen.getByText(/Intake/);
     });
-    // Collapsed by default — the payload is not dumped inline.
-    expect(screen.queryByTestId("trace-payload")).toBeNull();
-    fireEvent.click(screen.getByText("Output"));
     await waitFor(() => {
       screen.getByTestId("trace-payload");
     });
     const payload = screen.getByTestId("trace-payload");
     expect(payload.textContent).toContain("items");
     expect(payload.textContent).toContain("collected");
+    expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
   });
 
   it("shows the sanitized failure message with the raw error behind Operator details", async () => {
     renderTrace();
+    await waitFor(() => {
+      screen.getByRole("listbox");
+    });
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
     await waitFor(() => {
       screen.getByText(/Curate/);
     });
@@ -280,17 +289,30 @@ describe("WorkflowTracePage", () => {
     await waitFor(() => {
       expect(screen.getAllByTestId("trace-step").length).toBe(2);
     });
-    // The good sibling still decodes and its output opens.
-    fireEvent.click(screen.getByText("Output"));
     await waitFor(() => {
       expect(screen.getByTestId("trace-payload").textContent).toContain(
         "decoded-ok",
       );
     });
+    fireEvent.keyDown(screen.getByRole("listbox"), { key: "ArrowDown" });
     // The malformed step is not decoded — it honestly shows the out-of-line note
     // with its raw ref, never a crash or a silent blank.
-    screen.getByText(/Output stored out of line/);
+    await waitFor(() => {
+      screen.getByText(/Output stored out of line/);
+    });
     screen.getByText(/inline:\{not json/);
+  });
+
+  it("steps the run timeline with keyboard and expands only the selected step", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByRole("listbox"));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
+    fireEvent.keyDown(listbox, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-1");
+    });
+    expect(screen.getAllByTestId("trace-step-decomposition").length).toBe(1);
   });
 
   it("surfaces the out-of-line note for a blob: (non-inline) outputRef", async () => {
@@ -378,5 +400,80 @@ describe("WorkflowTracePage", () => {
       screen.getByText(/Parked on signal/);
     });
     screen.getByText("approve-draft");
+  });
+
+  it("workflowRunContextFreshness changes when step output changes without a phase change", () => {
+    const steps = [
+      {
+        stepId: "intake",
+        phase: "completed",
+        stepType: "deterministic",
+        currentAttempt: 1,
+        outputRef: 'inline:{"v":1}',
+      },
+    ];
+    const before = workflowRunContextFreshness("run-1", "running", steps, {});
+    const after = workflowRunContextFreshness("run-1", "running", steps, {
+      intake: { v: 2 },
+    });
+    expect(before).not.toBe(after);
+  });
+
+  it("keeps the same listbox selection when Raw JSON is toggled inside the expanded step", async () => {
+    renderTrace();
+    await waitFor(() => screen.getByRole("listbox"));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
+    fireEvent.click(screen.getByRole("button", { name: "Raw JSON" }));
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
+  });
+
+  it("resets facet and step selection when navigating to a different run", async () => {
+    function TraceNavHarness() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() => navigate("/insights/trace/run-2")}
+          >
+            other-run
+          </button>
+          <WorkflowTracePage />
+        </>
+      );
+    }
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter initialEntries={["/insights/trace/run-1"]}>
+          <Routes>
+            <Route
+              path="/insights/trace/:runId"
+              element={<TraceNavHarness />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => screen.getByRole("listbox"));
+    fireEvent.click(screen.getByRole("tab", { name: /Cost/ }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: /Cost/ }).getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "other-run" }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("tab", { name: /Timeline/ })
+          .getAttribute("aria-selected"),
+      ).toBe("true"),
+    );
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.getAttribute("aria-activedescendant")).toBe("run-step-0");
   });
 });
