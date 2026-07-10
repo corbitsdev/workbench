@@ -22,6 +22,7 @@ import {
   type Stat,
   type StatusPill,
   type TraceRoot,
+  TracerFacetNav,
 } from "./tracer-shell";
 import { actorStatusTone } from "./status-tone";
 
@@ -260,6 +261,13 @@ export function ActorDetailPage() {
               </div>
             )}
           </section>
+
+          <TracerFacetNav
+            backTo={backLink}
+            facets={FACETS}
+            activeIndex={facetIndex}
+            onFacetIndexChange={setFacetIndex}
+          />
         </main>
       </div>
     </PagePanel>

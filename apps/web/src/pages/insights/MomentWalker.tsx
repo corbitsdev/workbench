@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AlertCircle, ArrowRight, ChevronRight, Info } from "lucide-react";
 import { Badge, Skeleton } from "@workbench/ui";
@@ -13,6 +13,12 @@ import {
 } from "./trace-links";
 import { usePrincipalActivity, useMomentDetail } from "./ActorTimeline";
 import { isPermissionDeniedError } from "./activity-error";
+import { HonestGapChip } from "./tracer-shell";
+import {
+  clampListIndex,
+  stepListIndexOnKeyDown,
+  useScrollListboxOption,
+} from "./moment-listbox";
 
 // Kinds the hub detail route enriches (mirrors @workbench/timeline's
 // detailEnrichedKinds). Kept local so the list mock in tests need not stub it,
@@ -81,6 +87,28 @@ function dotClass(entry: TimelineEntry): string {
     return "bg-accent";
   }
   return "bg-blue";
+}
+
+function MomentAttributionGaps() {
+  return (
+    <>
+      <DecompRow label="Grant">
+        <HonestGapChip testId="moment-grant-gap">
+          Grant exercised on this moment is not recorded yet
+        </HonestGapChip>
+      </DecompRow>
+      <DecompRow label="Tokens">
+        <HonestGapChip testId="moment-tokens-gap">
+          Per-moment token attribution is not recorded yet
+        </HonestGapChip>
+      </DecompRow>
+      <DecompRow label="Cost">
+        <HonestGapChip testId="moment-cost-gap">
+          Per-moment cost is not recorded yet
+        </HonestGapChip>
+      </DecompRow>
+    </>
+  );
 }
 
 function DecompRow({
@@ -195,6 +223,12 @@ export function MomentDecomposition({
               </Absent>
             )}
           </DecompRow>
+          <DecompRow label="Records touched">
+            <HonestGapChip testId="moment-records-gap">
+              Which records this call touched is not recorded yet
+            </HonestGapChip>
+          </DecompRow>
+          <MomentAttributionGaps />
         </>
       )}
 
@@ -230,6 +264,28 @@ export function MomentDecomposition({
               </span>
             </DecompRow>
           )}
+          {moment.turn.parts.some(
+            (p) =>
+              p.type === "tool" && p.toolName !== null && p.toolName !== "",
+          ) && (
+            <DecompRow label="Tool calls">
+              <span
+                data-testid="moment-turn-tool-calls"
+                className="text-[11.5px] text-text-2"
+              >
+                {moment.turn.parts
+                  .filter(
+                    (p) =>
+                      p.type === "tool" &&
+                      p.toolName !== null &&
+                      p.toolName !== "",
+                  )
+                  .map((p) => p.toolName)
+                  .join(", ")}
+              </span>
+            </DecompRow>
+          )}
+          <MomentAttributionGaps />
         </>
       )}
 
@@ -335,41 +391,17 @@ export function MomentWalker({
     (e) => e.kind === "grant" || e.kind === "credential",
   );
 
-  const clampedSelected = Math.min(selected, Math.max(entries.length - 1, 0));
+  const clampedSelected = clampListIndex(selected, entries.length);
 
-  useEffect(() => {
-    const list = listRef.current;
-    if (list === null) return;
-    const el = list.querySelector<HTMLElement>(`#moment-${clampedSelected}`);
-    if (el === null || typeof el.scrollIntoView !== "function") return;
-    const reduced =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({
-      block: "nearest",
-      behavior: reduced ? "auto" : "smooth",
-    });
-  }, [clampedSelected]);
-
-  function move(next: number) {
-    const clamped = Math.max(0, Math.min(next, entries.length - 1));
-    setSelected(clamped);
-  }
+  useScrollListboxOption(
+    listRef,
+    (index) => `moment-${index}`,
+    clampedSelected,
+  );
 
   function onKeyDown(event: React.KeyboardEvent<HTMLUListElement>) {
-    if (event.key === "ArrowDown" || event.key === "j") {
-      event.preventDefault();
-      move(clampedSelected + 1);
-    } else if (event.key === "ArrowUp" || event.key === "k") {
-      event.preventDefault();
-      move(clampedSelected - 1);
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      move(0);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      move(entries.length - 1);
-    }
+    const next = stepListIndexOnKeyDown(event, clampedSelected, entries.length);
+    if (next !== null) setSelected(next);
   }
 
   if (activityQuery.isLoading) return <WalkerSkeleton />;

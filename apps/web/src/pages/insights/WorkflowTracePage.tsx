@@ -45,7 +45,13 @@ import {
   type StatusPill,
   type TraceNode,
   type TraceRoot,
+  TracerFacetNav,
 } from "./tracer-shell";
+import {
+  clampListIndex,
+  stepListIndexOnKeyDown,
+  useScrollListboxOption,
+} from "./moment-listbox";
 
 // Light staggered fade for the timeline steps as they mount, matching the
 // dashboard's section entrance. Reduced-motion collapses it to an instant show
@@ -256,13 +262,18 @@ function TraceStepMoment({
   index,
   output,
   stepTokens,
+  isSelected,
+  onSelect,
+  optionId,
 }: {
   step: LogStepState;
   index: number;
   output: { value: unknown } | null;
   stepTokens?: { inputTokens: number; outputTokens: number } | null;
+  isSelected: boolean;
+  onSelect: () => void;
+  optionId: string;
 }) {
-  const [outputOpen, setOutputOpen] = useState(false);
   const [operatorOpen, setOperatorOpen] = useState(false);
   const duration = formatStepDuration(step.startedAt, step.endedAt);
   const classified =
@@ -273,9 +284,17 @@ function TraceStepMoment({
   return (
     <motion.li
       variants={STEP_ITEM}
+      role="option"
+      id={optionId}
+      aria-selected={isSelected}
       data-testid="trace-step"
       data-phase={step.phase}
-      className="rounded border border-border bg-surface shadow-[var(--shadow-card)]"
+      className={`cursor-pointer rounded border bg-surface shadow-[var(--shadow-card)] outline-none transition-[border-color,box-shadow] focus-within:ring-1 focus-within:ring-accent ${
+        isSelected
+          ? "border-accent/50 ring-1 ring-accent/30"
+          : "border-border hover:border-border"
+      }`}
+      onClick={onSelect}
     >
       <div className="flex items-start justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-2.5">
@@ -320,58 +339,56 @@ function TraceStepMoment({
         </div>
       </div>
 
-      <div className="px-4 pb-3">
-        {classified !== null && (
-          <div className="rounded-sm border border-red bg-red-soft p-3">
-            <p className="text-[12px] font-medium text-red-deep">
-              {classified.userMessage}
-            </p>
-            <button
-              type="button"
-              onClick={() => setOperatorOpen((o) => !o)}
-              aria-expanded={operatorOpen}
-              className="mt-2 text-[11px] font-medium text-red-deep underline-offset-2 hover:underline focus-visible:outline-none"
-            >
-              {operatorOpen ? "Hide operator details" : "Operator details"}
-            </button>
-            {operatorOpen && (
-              <pre
-                data-testid="trace-operator-details"
-                className="mt-2 max-h-[280px] overflow-auto rounded-sm border border-red bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-2"
+      {isSelected && (
+        <div className="px-4 pb-3" data-testid="trace-step-decomposition">
+          {classified !== null && (
+            <div className="rounded-sm border border-red bg-red-soft p-3">
+              <p className="text-[12px] font-medium text-red-deep">
+                {classified.userMessage}
+              </p>
+              <button
+                type="button"
+                onClick={() => setOperatorOpen((o) => !o)}
+                aria-expanded={operatorOpen}
+                className="mt-2 text-[11px] font-medium text-red-deep underline-offset-2 hover:underline focus-visible:outline-none"
               >
-                {step.lastError?.message}
-              </pre>
-            )}
-          </div>
-        )}
+                {operatorOpen ? "Hide operator details" : "Operator details"}
+              </button>
+              {operatorOpen && (
+                <pre
+                  data-testid="trace-operator-details"
+                  className="mt-2 max-h-[280px] overflow-auto rounded-sm border border-red bg-surface p-2 font-mono text-[11px] leading-relaxed text-text-2"
+                >
+                  {step.lastError?.message}
+                </pre>
+              )}
+            </div>
+          )}
 
-        {step.awaitingSignalName !== undefined && (
-          <p className="mt-2 text-[12px] text-text-3">
-            Parked on signal:{" "}
-            <span className="font-mono">{step.awaitingSignalName}</span>
-          </p>
-        )}
-
-        {output !== null ? (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={() => setOutputOpen((o) => !o)}
-              aria-expanded={outputOpen}
-              className="text-[12px] font-medium text-text-2 transition-colors hover:text-text focus-visible:outline-none"
-            >
-              {outputOpen ? "Hide output" : "Output"}
-            </button>
-            {outputOpen && <PayloadView value={output.value} />}
-          </div>
-        ) : (
-          step.outputRef !== undefined && (
-            <p className="mt-2 break-all text-[11px] text-text-3">
-              Output stored out of line (too large to display): {step.outputRef}
+          {step.awaitingSignalName !== undefined && (
+            <p className="mt-2 text-[12px] text-text-3">
+              Parked on signal:{" "}
+              <span className="font-mono">{step.awaitingSignalName}</span>
             </p>
-          )
-        )}
-      </div>
+          )}
+
+          {output !== null ? (
+            <div className="mt-2">
+              <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-3">
+                Output
+              </p>
+              <PayloadView value={output.value} />
+            </div>
+          ) : (
+            step.outputRef !== undefined && (
+              <p className="mt-2 break-all text-[11px] text-text-3">
+                Output stored out of line (too large to display):{" "}
+                {step.outputRef}
+              </p>
+            )
+          )}
+        </div>
+      )}
     </motion.li>
   );
 }
@@ -477,6 +494,14 @@ export function WorkflowTracePage() {
 
   const loading = recordQuery.isLoading || runStateQuery.isLoading;
   const steps = logState?.steps ?? [];
+  const timelineListRef = useRef<HTMLUListElement>(null);
+  const [selectedStep, setSelectedStep] = useState(0);
+  const clampedStepIndex = clampListIndex(selectedStep, steps.length);
+  useScrollListboxOption(
+    timelineListRef,
+    (index) => `run-step-${index}`,
+    clampedStepIndex,
+  );
 
   const stepTokenMap = useMemo(() => {
     const map = new Map<
@@ -637,13 +662,24 @@ export function WorkflowTracePage() {
                   <>
                     <p className="flex items-center gap-2 text-[11.5px] text-text-3">
                       <ChevronRight className="h-3 w-3" />
-                      Each step is a moment — open its output or failure to step
-                      into it.
+                      Step through moments with ↑ ↓ — the selected step expands
+                      inline.
                     </p>
-                    <motion.ol
-                      role="status"
-                      aria-live="polite"
-                      className="flex flex-col gap-2.5"
+                    <motion.ul
+                      ref={timelineListRef}
+                      role="listbox"
+                      aria-label="Run steps"
+                      aria-activedescendant={`run-step-${clampedStepIndex}`}
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        const next = stepListIndexOnKeyDown(
+                          event,
+                          clampedStepIndex,
+                          steps.length,
+                        );
+                        if (next !== null) setSelectedStep(next);
+                      }}
+                      className="flex flex-col gap-2.5 outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       variants={STEP_CONTAINER}
                       initial={reduceMotion ? false : "hidden"}
                       animate="show"
@@ -659,9 +695,12 @@ export function WorkflowTracePage() {
                               : null
                           }
                           stepTokens={stepTokenMap.get(step.stepId) ?? null}
+                          isSelected={index === clampedStepIndex}
+                          onSelect={() => setSelectedStep(index)}
+                          optionId={`run-step-${index}`}
                         />
                       ))}
-                    </motion.ol>
+                    </motion.ul>
                   </>
                 )}
               </div>
@@ -729,36 +768,39 @@ export function WorkflowTracePage() {
                   tokensQuery.data?.available === true &&
                   (tokensQuery.data.steps?.length ?? 0) > 0 && (
                     <div className="mt-3">
-                    <FacetCard title="By step">
-                      <table className="w-full text-left text-[12px]">
-                        <thead>
-                          <tr className="font-mono text-[9px] uppercase tracking-[0.09em] text-text-3">
-                            <th className="pb-2 font-normal">Step</th>
-                            <th className="pb-2 text-right font-normal">
-                              Input
-                            </th>
-                            <th className="pb-2 text-right font-normal">
-                              Output
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(tokensQuery.data.steps ?? []).map((row) => (
-                            <tr key={row.stepId} className="border-t border-border">
-                              <td className="py-2 text-text">
-                                {toHumanLabel(row.stepId)}
-                              </td>
-                              <td className="py-2 text-right tabular-nums text-text-2">
-                                {row.inputTokens.toLocaleString()}
-                              </td>
-                              <td className="py-2 text-right tabular-nums text-text-2">
-                                {row.outputTokens.toLocaleString()}
-                              </td>
+                      <FacetCard title="By step">
+                        <table className="w-full text-left text-[12px]">
+                          <thead>
+                            <tr className="font-mono text-[9px] uppercase tracking-[0.09em] text-text-3">
+                              <th className="pb-2 font-normal">Step</th>
+                              <th className="pb-2 text-right font-normal">
+                                Input
+                              </th>
+                              <th className="pb-2 text-right font-normal">
+                                Output
+                              </th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </FacetCard>
+                          </thead>
+                          <tbody>
+                            {(tokensQuery.data.steps ?? []).map((row) => (
+                              <tr
+                                key={row.stepId}
+                                className="border-t border-border"
+                              >
+                                <td className="py-2 text-text">
+                                  {toHumanLabel(row.stepId)}
+                                </td>
+                                <td className="py-2 text-right tabular-nums text-text-2">
+                                  {row.inputTokens.toLocaleString()}
+                                </td>
+                                <td className="py-2 text-right tabular-nums text-text-2">
+                                  {row.outputTokens.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </FacetCard>
                     </div>
                   )}
               </div>
@@ -805,6 +847,13 @@ export function WorkflowTracePage() {
                 </div>
               )}
           </section>
+
+          <TracerFacetNav
+            backTo="/insights"
+            facets={FACETS}
+            activeIndex={facetIndex}
+            onFacetIndexChange={setFacetIndex}
+          />
         </main>
       </div>
     </PagePanel>

@@ -349,3 +349,71 @@ export function NodeGrid({ nodes }: { nodes: TraceNode[] }) {
     </div>
   );
 }
+
+/** Quiet gap chip for moment-level fields the record model does not yet carry. */
+export function HonestGapChip({
+  children,
+  testId,
+}: {
+  children: React.ReactNode;
+  testId?: string;
+}) {
+  return (
+    <span
+      data-testid={testId}
+      className="inline-block rounded-[6px] border border-border bg-surface-2 px-2 py-1 font-mono text-[10.5px] text-text-3"
+    >
+      {children}
+    </span>
+  );
+}
+
+/** Sticky bottom nav: back to Insights roster and previous/next facet. */
+export function TracerFacetNav({
+  backTo,
+  facets,
+  activeIndex,
+  onFacetIndexChange,
+}: {
+  backTo: string;
+  facets: FacetDef[];
+  activeIndex: number;
+  onFacetIndexChange: (index: number) => void;
+}) {
+  const atStart = activeIndex <= 0;
+  const atEnd = activeIndex >= facets.length - 1;
+  return (
+    <nav
+      data-testid="tracer-facet-nav"
+      className="sticky bottom-0 z-10 -mx-1 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface px-1 py-3"
+    >
+      <Link
+        to={backTo}
+        className="inline-flex items-center gap-1 rounded-[8px] px-2 py-1.5 text-[12px] font-medium text-text-3 outline-none transition-colors hover:bg-row-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Back to Insights
+      </Link>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={atStart}
+          onClick={() => onFacetIndexChange(Math.max(0, activeIndex - 1))}
+          className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          Previous facet
+        </button>
+        <button
+          type="button"
+          disabled={atEnd}
+          onClick={() =>
+            onFacetIndexChange(Math.min(facets.length - 1, activeIndex + 1))
+          }
+          className="rounded-[8px] border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-2 outline-none transition-colors hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40 focus-visible:ring-1 focus-visible:ring-accent"
+        >
+          Next facet
+        </button>
+      </div>
+    </nav>
+  );
+}
