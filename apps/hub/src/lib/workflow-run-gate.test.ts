@@ -4,6 +4,7 @@ import type { HubDb } from "../db";
 import {
   filterDeploymentsToRunnable,
   isWorkflowRunDeniedForTenant,
+  seedDenyGrantForNewWorkflowKind,
   workflowRunDenied,
 } from "./workflow-run-gate";
 
@@ -163,6 +164,101 @@ describe("isWorkflowRunDeniedForTenant", () => {
     await expect(
       isWorkflowRunDeniedForTenant(db, ["tn"], "brief-builder"),
     ).resolves.toBe(true);
+  });
+});
+
+// Records grant inserts/lookups so seedDenyGrantForNewWorkflowKind can be
+// driven without Postgres. `existingGrant` models a pre-existing grant row
+// (of either effect) for the (role, resource, action) triple. The seed now
+// runs its check-and-insert inside a transaction under a member-role row lock;
+// the fake `transaction` yields a `tx` carrying the same surface, and the row
+// lock (`select(...).for("update")`) is a no-op the fake simply satisfies.
+function fakeSeedDb(opts: {
+  memberRoleId: string | null;
+  existingGrant: { id: string } | null;
+  inserted: Record<string, unknown>[];
+}): HubDb {
+  const tx = {
+    select: () => ({
+      from: () => ({ where: () => ({ for: async () => [] }) }),
+    }),
+    query: {
+      grant: {
+        findFirst: async () => opts.existingGrant ?? undefined,
+      },
+    },
+    insert: () => ({
+      values: async (row: Record<string, unknown>) => {
+        opts.inserted.push(row);
+      },
+    }),
+  };
+  return {
+    query: {
+      role: {
+        findFirst: async () =>
+          opts.memberRoleId ? { id: opts.memberRoleId } : undefined,
+      },
+    },
+    transaction: async (fn: (tx: unknown) => Promise<void>) => fn(tx),
+  } as unknown as HubDb;
+}
+
+describe("seedDenyGrantForNewWorkflowKind", () => {
+  it("seeds a deny grant when no grant row exists yet for the kind", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = fakeSeedDb({
+      memberRoleId: "rol_member",
+      existingGrant: null,
+      inserted,
+    });
+    await seedDenyGrantForNewWorkflowKind(db, "tn", "brief-builder");
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]).toMatchObject({
+      tenantId: "tn",
+      roleId: "rol_member",
+      resource: "workflow:brief-builder",
+      action: "run",
+      effect: "deny",
+      origin: "system",
+    });
+  });
+
+  it("leaves an existing DENY grant untouched on redeploy (regression)", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = fakeSeedDb({
+      memberRoleId: "rol_member",
+      existingGrant: { id: "grt_existing" },
+      inserted,
+    });
+    await seedDenyGrantForNewWorkflowKind(db, "tn", "brief-builder");
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("leaves an existing ALLOW grant untouched on redeploy (regression)", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    // An owner enable now writes a durable `allow` row (setWorkflowRunGrant).
+    // The seed's existence check is on ANY grant row for the triple, so it sees
+    // that allow and no-ops — the redeploy leaves an owner-enabled kind enabled
+    // rather than re-seeding a deny over it.
+    const db = fakeSeedDb({
+      memberRoleId: "rol_member",
+      existingGrant: { id: "grt_existing_allow" },
+      inserted,
+    });
+    await seedDenyGrantForNewWorkflowKind(db, "tn", "brief-builder");
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("no-ops when the tenant has no system member role yet", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const db = fakeSeedDb({
+      memberRoleId: null,
+      existingGrant: null,
+      inserted,
+    });
+    await seedDenyGrantForNewWorkflowKind(db, "tn", "brief-builder");
+    expect(inserted).toHaveLength(0);
   });
 });
 

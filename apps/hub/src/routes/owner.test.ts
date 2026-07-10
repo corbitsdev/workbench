@@ -305,6 +305,119 @@ describe("owner credentials routes", () => {
   });
 });
 
+// The workflow enablement toggle is grant CRUD on the org member role: enable
+// writes an `allow`, disable writes a `deny`, and either way the prior
+// workflow-run grant for the kind is replaced so exactly one row survives. The
+// fake captures the delete + insert the route drives through setWorkflowRunGrant
+// (which runs them in a transaction under a member-role row lock).
+describe("owner workflow toggle route", () => {
+  function workflowsDb() {
+    const memberRole = [{ id: "rol_member" }];
+    const insertedGrants: Record<string, unknown>[] = [];
+    let deleteCalls = 0;
+
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: async () => [] }) }),
+      }),
+      delete: () => ({
+        where: () => {
+          deleteCalls += 1;
+          return Promise.resolve();
+        },
+      }),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          insertedGrants.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+
+    const db = {
+      query: {
+        role: {
+          findFirst: async () => memberRole[0],
+        },
+      },
+      transaction: async (fn: (t: unknown) => Promise<void>) => fn(tx),
+      // recordAudit fires a best-effort insert on the outer db, not the tx.
+      insert: () => ({ values: () => Promise.resolve() }),
+    };
+    return {
+      db,
+      insertedGrants,
+      deleteCalls: () => deleteCalls,
+    };
+  }
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = workflowsDb();
+    const res = await buildApp(db).request("/owner/workflows/brief-builder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("PUT enable replaces the grant with an allow row", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, insertedGrants, deleteCalls } = workflowsDb();
+    const res = await buildApp(db).request("/owner/workflows/brief-builder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { kind: string; enabled: boolean }).toEqual({
+      kind: "brief-builder",
+      enabled: true,
+    });
+    expect(deleteCalls()).toBe(1);
+    expect(insertedGrants).toHaveLength(1);
+    expect(insertedGrants[0]).toMatchObject({
+      resource: "workflow:brief-builder",
+      action: "run",
+      effect: "allow",
+    });
+  });
+
+  it("PUT disable replaces the grant with a deny row", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, insertedGrants, deleteCalls } = workflowsDb();
+    const res = await buildApp(db).request("/owner/workflows/brief-builder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { kind: string; enabled: boolean }).toEqual({
+      kind: "brief-builder",
+      enabled: false,
+    });
+    expect(deleteCalls()).toBe(1);
+    expect(insertedGrants).toHaveLength(1);
+    expect(insertedGrants[0]).toMatchObject({
+      resource: "workflow:brief-builder",
+      action: "run",
+      effect: "deny",
+    });
+  });
+
+  it("PUT rejects a non-boolean body with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = workflowsDb();
+    const res = await buildApp(db).request("/owner/workflows/brief-builder", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: "yes" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
 // The org-wide demos toggle is grant CRUD on the org member role: enable writes
 // an `allow` for `demos`/`view`, disable removes it. Demos are hidden by default
 // (no grant present). These fakes capture what the route writes so the

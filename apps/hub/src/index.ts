@@ -79,6 +79,7 @@ import {
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
+import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
@@ -1245,11 +1246,18 @@ void publishEmbeddedWorkflowDefs({
   enabled: config.workflowAutopublishOnBoot,
   buildSha: config.buildSha,
   autopublishMap: config.workflowAutopublishMap,
-}).catch((err) => {
-  log.error("workflow autopublish-on-boot failed", {
-    error: err instanceof Error ? err.message : String(err),
+})
+  // Reconcile the whole existing catalog to deny-by-default once the boot
+  // publish has settled: every already-deployed kind with no owner decision is
+  // seeded a deny so it ships disabled, and an owner re-enables per kind. Runs
+  // after the publish so kinds just (re)published are included; idempotent, so
+  // running it on every boot only ever fills zero-row kinds.
+  .then(() => backfillDenyForExistingWorkflowKinds(db))
+  .catch((err) => {
+    log.error("workflow autopublish-on-boot failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
-});
 
 v1.post(
   "/workflows/deploy",
