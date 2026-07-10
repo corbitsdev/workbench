@@ -20,9 +20,9 @@ import {
   launchFailureLogMessage,
   isAgentAlreadyExistsError,
   launchAgentSession,
-  coalesceInstanceLaunch,
   type LaunchErrorDescription,
 } from "../services/agent-provisioning";
+import { coalesceInstanceLaunch } from "../services/instance-launch-coalescer";
 import { requestBodySchema } from "../lib/openapi";
 import {
   reconcileMemberInstanceGrants,

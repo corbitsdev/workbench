@@ -5,6 +5,7 @@ import {
   runDedupedRelaunch,
   setRelaunchBreakerClock,
 } from "./relaunch-breaker";
+import { coalesceInstanceLaunch } from "./instance-launch-coalescer";
 
 afterEach(() => {
   resetRelaunchBreaker();
@@ -56,6 +57,30 @@ describe("runDedupedRelaunch — in-flight dedup", () => {
 
     resolveA();
     await a;
+  });
+
+  it("coalesces onto an explicit-route launch already in flight for the same instance", async () => {
+    let resolveExplicit: () => void = () => {};
+    const explicitLaunch = mock(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveExplicit = resolve;
+        }),
+    );
+    const sweepLaunch = mock(() => Promise.resolve());
+
+    // The explicit route holds an in-flight launch on the shared coalescer.
+    const explicit = coalesceInstanceLaunch("ins-1", explicitLaunch);
+    // A wedge-sweep relaunch for the same instance must join it, not start a
+    // second launch — the whole point of the shared in-flight map (CL-3152).
+    const sweep = runDedupedRelaunch("ins-1", sweepLaunch);
+
+    expect(explicitLaunch).toHaveBeenCalledTimes(1);
+    expect(sweepLaunch).not.toHaveBeenCalled();
+
+    resolveExplicit();
+    await Promise.all([explicit, sweep]);
+    expect(sweepLaunch).not.toHaveBeenCalled();
   });
 });
 

@@ -452,6 +452,58 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(json.launched).toBe(true);
   });
 
+  // CL-3152: the "one launch per instance" invariant lives at the
+  // launchAgentSession boundary (the shared launch coalescer), so two POSTs
+  // racing for the same instance must collapse onto a single launch — no
+  // losing attempt whose failure teardown could delete the row mid-ack of the
+  // winner (503 phase=provision). launchSession is the single sidecar call
+  // launchAgentSession makes, so one invocation proves one launchAgentSession.
+  it("coalesces two concurrent POSTs for one instance onto a single launch", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    // Hold the launch open so the second POST arrives while the first is still
+    // in flight — the window the coalescer must close.
+    let releaseLaunch: () => void = () => {};
+    const launchSession = mock(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseLaunch = resolve;
+        }),
+    );
+    const sessionService = { ...mockSessionService, launchSession };
+
+    const app = buildApp(db, sessionService);
+    const fire = () =>
+      app.fetch(
+        makeRequest("http://localhost/instances/ins-1/sessions", {
+          method: "POST",
+        }),
+      );
+    const first = fire();
+    const second = fire();
+
+    // Wait until a request has reached launchSession (both are in flight by
+    // then), then release it so the coalesced launch settles.
+    while (launchSession.mock.calls.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    releaseLaunch();
+
+    const [resA, resB] = await Promise.all([first, second]);
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+    expect(((await resA.json()) as ResBody).launched).toBe(true);
+    expect(((await resB.json()) as ResBody).launched).toBe(true);
+    expect(launchSession).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 200 with launched:true when the instance is already running (relaunches to recover after sidecar reconnect)", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() =>
