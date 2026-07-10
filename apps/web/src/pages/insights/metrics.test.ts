@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { priceUsageRows, type PriceCatalog } from "@workbench/pricing";
+import type { ActivityOverview } from "../../lib/hub-api";
 import {
   buildMosaic,
   buildSparkline,
@@ -9,8 +11,72 @@ import {
   formatCompact,
   humanizeKey,
   ratePct,
+  resolveTenantPricedByModel,
+  sumInferenceTokenClasses,
   tokenDataCaveat,
 } from "./metrics";
+
+describe("sumInferenceTokenClasses", () => {
+  it("sums all five inference token classes", () => {
+    expect(
+      sumInferenceTokenClasses({
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 3,
+        cacheWriteTokens: 4,
+        thinkingTokens: 5,
+      }),
+    ).toBe(15);
+  });
+});
+
+describe("resolveTenantPricedByModel", () => {
+  const byModel = [
+    {
+      model: "m1",
+      turnCount: 1,
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    },
+  ];
+  const catalog: PriceCatalog = {
+    source: "test",
+    generatedAt: "2026-01-01",
+    models: {
+      m1: {
+        modelId: "m1",
+        provider: "p",
+        providerName: "P",
+        input: 1,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+      },
+    },
+    qualified: {},
+    ambiguous: [],
+  };
+
+  it("prefers hub-priced totals when present", () => {
+    const hubPriced = priceUsageRows(byModel, catalog);
+    const overview = { byModel, pricedByModel: hubPriced } as ActivityOverview;
+    expect(resolveTenantPricedByModel(overview, null)).toEqual(hubPriced);
+  });
+
+  it("falls back to client catalog when hub priced is null", () => {
+    const overview = { byModel, pricedByModel: null } as ActivityOverview;
+    expect(resolveTenantPricedByModel(overview, catalog)?.cost.total).toBe(1);
+  });
+
+  it("returns null when the client catalog has no models", () => {
+    const overview = { byModel, pricedByModel: null } as ActivityOverview;
+    const empty: PriceCatalog = { ...catalog, models: {}, qualified: {} };
+    expect(resolveTenantPricedByModel(overview, empty)).toBeNull();
+  });
+});
 
 describe("humanizeKey", () => {
   it("title-cases kebab-case keys", () => {

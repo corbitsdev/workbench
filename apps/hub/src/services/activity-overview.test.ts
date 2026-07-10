@@ -4,6 +4,7 @@ import type { PriceCatalog } from "@workbench/pricing";
 import {
   computePreviousRange,
   deriveAgentActivity,
+  resolveAgentActivity,
   fetchActiveInstanceDays,
   fetchArtifactCreatedDates,
   fetchInstanceCreatedDates,
@@ -174,6 +175,33 @@ describe("deriveAgentActivity", () => {
 
   it("treats an empty breakdown as all idle", () => {
     expect(deriveAgentActivity([], 4)).toEqual({ active: 0, idle: 4 });
+  });
+});
+
+describe("resolveAgentActivity", () => {
+  it("uses in-range byInstance rows only when the range has date bounds", () => {
+    expect(
+      resolveAgentActivity([{ turnCount: 1 }, { turnCount: 0 }], 99, {
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+      }),
+    ).toEqual({ active: 1, idle: 1 });
+  });
+
+  it("does not treat all-time instance total as idle when range has no in-range rows", () => {
+    expect(
+      resolveAgentActivity([], 4, {
+        startDate: "2026-06-01",
+        endDate: "2026-06-30",
+      }),
+    ).toEqual({ active: 0, idle: 0 });
+  });
+
+  it("falls back to all-time instance total when the range is unbounded", () => {
+    expect(resolveAgentActivity([{ turnCount: 1 }], 5, {})).toEqual({
+      active: 1,
+      idle: 4,
+    });
   });
 });
 

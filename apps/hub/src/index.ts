@@ -111,6 +111,7 @@ import { createPricingRouter } from "./routes/pricing";
 import { prewarmPriceCatalog } from "./lib/pricing";
 import { createPrincipalActivityRouter } from "./routes/principal-activity";
 import { createPrincipalRosterRouter } from "./routes/principal-roster";
+import { createPrincipalAnalyticsRouter } from "./routes/principal-analytics";
 import { createTenantRosterRouter } from "./routes/tenant-roster";
 import { createGammaTemplatesRouter } from "./routes/gamma-templates";
 import {
@@ -663,6 +664,10 @@ hubApp.route(
   "/api/tenants/:tenantId/principals/:principalId/roster",
   createPrincipalRosterRouter({ db }),
 );
+hubApp.route(
+  "/api/tenants/:tenantId/principals/:principalId/analytics",
+  createPrincipalAnalyticsRouter({ db }),
+);
 hubApp.route("/api/tenants/:tenantId/roster", createTenantRosterRouter({ db }));
 hubApp.route("/api/tenants/:tenantId/search", createSearchRouter({ db }));
 hubApp.route(
@@ -1032,7 +1037,7 @@ v1.route(
 );
 v1.route("/", createMembersRouter(db));
 v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
-v1.route("/", createArtifactsRouter(db));
+v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db));
@@ -1141,6 +1146,9 @@ const workflowReconciler = createWorkflowReconciler({
   getRoutableAddresses: sidecarRouter.getRoutableAddresses,
   deploymentDomain: config.rootTenant.domain,
   reclaimDeployment,
+  sendAgentUndeploy: sidecarRouter.sendAgentUndeploy,
+  sendSignalDeliver: sidecarRouter.sendSignalDeliver,
+  hibernationGraceMs: config.workflowHibernationGraceMs,
 });
 workflowReconciler.start();
 // CL-2727: continuous liveness sweep. Where failOrphanedRuns runs ONCE at boot,

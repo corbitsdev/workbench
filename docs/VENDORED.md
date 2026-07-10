@@ -157,6 +157,45 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
 - **Re-sync rule:** do NOT literally re-copy from upstream — that would drop the
   reconnect machinery. Diff deliberately, adopt upstream fixes piecewise, and tag
   any newly-audited divergence with a WORKBENCH-LOCAL token as it is touched.
+- **WORKBENCH-LOCAL change (CL-3102):** lazy agent restore. `restoreSessions`
+  in `session-manager.ts` no longer builds a harness per on-disk agent — it
+  recovers only routing metadata (key cache + a `wakeable` config map) so the
+  reconnect frame still advertises every address, but no tool-package build or
+  credential HTTP fetch runs at boot/reconnect. The harness is built on demand
+  by `wakeAgent` (first inbound message via the new
+  `SessionManager.deliverInboundMail`, or an explicit `session.start`), with
+  concurrent triggers de-duplicated, inbound mail parked during the build and
+  replayed in order, bounded-backoff retries on a failed build (the agent stays
+  wakeable — never a credential-less harness), and an INFO log of wake duration
+  (message received → harness ready). `hub-link.ts`'s `mail.inbound` fallback
+  now delegates to `deliverInboundMail`, and `session.start` routes wakeable
+  agents through `wakeAgent` awaiting only the first attempt (the hub's ack
+  deadline is 30s; later retries continue in the background). Parked-mail
+  bound: the buffer is memory-only, so a parked trigger survives build
+  failures and retries but is lost on a process crash mid-wake or if the
+  wake retries exhaust with no later trigger; overflow past 256 messages
+  drops the oldest with a warning. A fresh `provisionAgent` supersedes an
+  in-flight wake via a per-wake ownership token, so the doomed build
+  discards itself and never tears down a session it did not install. All
+  blocks tagged `// WORKBENCH-LOCAL (CL-3102)`.
+- **WORKBENCH-LOCAL (CL-3104) — hibernate undeploy flavor** (`src/ws/hub-link.ts`):
+  `DeployRouter.hibernate`, the exported `WORKFLOW_HIBERNATE_UNDEPLOY_REASON`
+  protocol constant, and the reason-scoped `handleAgentHibernate` branch in
+  `handleAgentUndeploy`. An `agent.undeploy` frame carrying the hibernate reason
+  tears down runtime residency (bootstrap-flag prune, session stop, router
+  `hibernate` hook) but skips the state-pack push, `deleteAgentDir`, and
+  `forgetAgent`, then acks so the hub drops the address from its routable set.
+  On hook failure the teardown is retried once (it is idempotent); if it still
+  fails the ack is withheld — NOT to keep the address routable (interchange's
+  `sendAgentUndeploy` timeout arm removes the address BEFORE rejecting, so the
+  hub unroutes either way) but to surface the failure loudly at the hub caller
+  instead of a silent fake success. The resident-child orphan this can leave is
+  self-healed by the wiring's deploy-branch resident-supervisor guard (below)
+  when the wake re-deploy arrives. The reason constant has a byte-identical
+  copy in `apps/hub/src/services/workflow-reconciler.ts` (the hub does not
+  depend on this package); a guard test in
+  `apps/hub/src/services/workflow-reconciler.test.ts` pins the two literals
+  byte-identical. Guarded by `src/ws/hub-link-hibernate.test.ts`.
 
 ---
 
@@ -177,6 +216,8 @@ Each row is a WORKBENCH-LOCAL divergence kept on top of the upstream copy.
 | 2026-06-27 | CL-2535 | `bin/workflow-child`                                     | Pass the `recoverParkedRun` hook (uses `recoverParkedRunFromLog` from `src/workflow-resume.ts`) into `@workbench/workflow-host`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 2026-06-30 | CL-2585 | `workflow-host-wiring.ts`                                | `defaultSubprocessSpawner` spawns with `stdio: ["inherit","inherit","inherit","pipe","pipe","pipe"]` and wires the control channel off dedicated fds 4 (down) / 5 (up) instead of child stdin/stdout, so child logs reach container stdout/stderr at correct severity (pairs with the `from-process-env.ts` package change). Removed the interim `console.{log,info,debug}→stderr` redirect from `bin/workflow-child`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | 2026-07-04 | CL-2783 | `workflow-host-wiring.ts`                                | `writeStepGrants` per-step grant writes parallelized with a bounded worker pool (`STEP_GRANTS_WRITE_CONCURRENCY = 12`) instead of a serial `for ... await` loop. Each step writes a DISTINCT `<deploymentId>-<stepId>` repo and `@workbench/storage-isogit` locks per-DIRECTORY (`withRepoDirLock`), so concurrent different-repo writes never contend; the serial loop stacked each step's isogit commit+fsync wait (~254ms/step measured) onto the cold workflow-spawn critical path. `Promise.all` over the pool workers rejects on the first write failure, preserving the serial loop's fail-at-deploy contract (the caller's `finally` unwinds partial state). Guarded by `apps/sidecar/src/workflow-host-wiring-write-step-grants.test.ts`. The supervisor's `assembleCredentialsSnapshot` per-step READ loop (`packages/workflow-host/src/supervisor/credentials.ts`) was audited and deliberately NOT changed — `readStepGrants` is a plain working-tree `fs.readFile` + JSON.parse + sha256, not an isogit commit/fsync, so it is cheap and unlocked; parallelizing it buys nothing. |
+| 2026-07-09 | CL-3104 | `workflow-host-wiring.ts`                                | Resident-supervisor self-heal in `deployMultiStep`: if `activeSupervisors` already holds the address (a hibernate whose ack path failed left the child resident while the hub unrouted it), the deploy branch runs `teardownDeployment(address, { reclaimDirs: false })` before standing the fresh supervisor up — otherwise the old child leaks and two children drive one workflow-run repo. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 2026-07-08 | CL-3104 | `workflow-host-wiring.ts`                                | Hibernate flavor of the deploy-router teardown: the undeploy hook body moved into a shared `teardownDeployment(agentAddress, { reclaimDirs })`, and a new `hibernate` router method calls it with `reclaimDirs: false` — same residency teardown (routers, supervisor/child kill, CL-2340 drain barrier, slug, deployment mapping) but the CL-2231 owned-dirs rm and the `workflow-step-state/<deploymentId>` scratch rm are gated OFF, so a gate-parked run's durable state survives for the signal-driven resume. On a pin-bump re-sync, re-apply upstream undeploy changes INSIDE `teardownDeployment`, preserving both `reclaimDirs` gates. Guarded by `workflow-host-wiring-hibernate.test.ts`.                                                                                                                                                                                                                                                                                                                                                                                           |
 | 2026-07-04 | CL-2780 | `workflow-host-wiring.ts`                                | **TEMPORARY / REMOVABLE** provisioning-path timing instrumentation (marked `// WORKBENCH-LOCAL-TEMP (CL-2780)`): times the multi-step asset write, `writeStepGrants`, and `supervisor.spawn`, emitting one `multistep deploy timing kind=…` INFO line. Log-only, no behavior change. Remove once the 17s workflow-start latency is attributed. Audit token is `WORKBENCH-LOCAL-TEMP`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 The non-vendored helper that backs the CL-2535 hook lives at

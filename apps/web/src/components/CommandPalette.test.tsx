@@ -3,7 +3,11 @@ import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React, { useState } from "react";
-import { CommandPalette, PALETTE_PANEL_MOTION } from "./CommandPalette";
+import {
+  CommandPalette,
+  PALETTE_PANEL_MAX_WIDTH_CLASS,
+  PALETTE_PANEL_MOTION,
+} from "./CommandPalette";
 import type { PaletteResultItem } from "@workbench/shared";
 
 const navItems: PaletteResultItem[] = [
@@ -238,6 +242,26 @@ describe("CommandPalette", () => {
     unmount();
     expect(document.activeElement).toBe(trigger);
     trigger.remove();
+  });
+
+  it("renders an enlarged panel and shortcut footer with global hints", () => {
+    renderPalette();
+    const panel = screen.getByTestId("command-palette-panel");
+    expect(panel.className).toContain(PALETTE_PANEL_MAX_WIDTH_CLASS);
+    const footer = screen.getByTestId("command-palette-footer");
+    expect(footer.textContent).toContain("Open command palette");
+    expect(footer.textContent).toContain("Attach to Myra");
+    expect(footer.textContent).toMatch(/⌘K|Ctrl\+K/);
+    expect(footer.textContent).toMatch(/⌘I|Ctrl\+I/);
+    expect(footer.textContent).toContain("Navigate");
+    expect(footer.textContent).toContain("Esc");
+  });
+
+  it("shows nav groups on idle open so the palette is useful before typing", () => {
+    renderPalette();
+    screen.getByText("Go to");
+    expect(screen.getAllByRole("option").length).toBeGreaterThan(0);
+    screen.getByText(/Search entities or pick a destination below/);
   });
 
   it("uses an opacity-only transition with no scale or translate (brand guard)", () => {

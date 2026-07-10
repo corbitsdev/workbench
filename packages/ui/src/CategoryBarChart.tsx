@@ -96,23 +96,28 @@ export function CategoryBarChart({
           );
         })}
       </div>
-      <table className="sr-only" data-testid="category-bar-table">
-        <caption>{label}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Category</th>
-            <th scope="col">Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.label}>
-              <th scope="row">{row.label}</th>
-              <td>{formatValue(row.value)}</td>
+      {/* sr-only must clamp a block wrapper, not the <table> itself: table
+          layout ignores width/height:1px, so an sr-only table renders at full
+          content height as a position:absolute box (phantom whitespace). */}
+      <div className="sr-only">
+        <table data-testid="category-bar-table">
+          <caption>{label}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Category</th>
+              <th scope="col">Value</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.label}>
+                <th scope="row">{row.label}</th>
+                <td>{formatValue(row.value)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }

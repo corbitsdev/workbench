@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   catalogManagedNames,
+  filterCatalogByAvailableTools,
   resolveLoadRequest,
   searchCatalog,
 } from "./search";
@@ -104,5 +105,40 @@ describe("resolveLoadRequest", () => {
     const result = resolveLoadRequest(catalog, { package: "salesforce" });
     expect(result.resolved).toEqual([]);
     expect(result.unknownPackage).toBe("salesforce");
+  });
+});
+
+describe("filterCatalogByAvailableTools", () => {
+  test("drops a package whose tools did not load (missing credential)", () => {
+    const available = new Set(["attio__query_records", "attio__create_note"]);
+    const filtered = filterCatalogByAvailableTools(catalog, available);
+    expect(filtered.map((e) => e.package)).toEqual(["attio"]);
+  });
+
+  test("keeps a package whose tools all loaded", () => {
+    const available = new Set([
+      "attio__query_records",
+      "attio__create_note",
+      "linear__list_issues",
+    ]);
+    const filtered = filterCatalogByAvailableTools(catalog, available);
+    expect(filtered.map((e) => e.package).sort()).toEqual(["attio", "linear"]);
+  });
+
+  test("keeps only the tools that loaded within a partially-available package", () => {
+    const available = new Set(["attio__query_records"]);
+    const filtered = filterCatalogByAvailableTools(catalog, available);
+    const attio = filtered.find((e) => e.package === "attio");
+    expect(attio?.tools.map((t) => t.name)).toEqual(["attio__query_records"]);
+  });
+
+  test("returns an empty catalog when nothing loaded", () => {
+    expect(filterCatalogByAvailableTools(catalog, new Set())).toEqual([]);
+  });
+
+  test("does not mutate the source catalog", () => {
+    const before = JSON.stringify(catalog);
+    filterCatalogByAvailableTools(catalog, new Set(["attio__query_records"]));
+    expect(JSON.stringify(catalog)).toBe(before);
   });
 });

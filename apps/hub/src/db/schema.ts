@@ -177,6 +177,20 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
     .notNull()
     .default("running"),
   input: jsonb("input").$type<unknown>(),
+  // Durable record of a gate signal the hub 202-accepted but whose delivery
+  // is not yet proven by the run log. Written BEFORE the fire-and-forget
+  // sidecar dispatch; cleared by the projection when the log folds a
+  // matching SignalReceived (or the run reaches terminal). While set, the
+  // reconciler re-delivers it instead of hibernating the run — the invariant
+  // is that an accepted signal is eventually delivered or the run visibly
+  // fails, never silently parked forever. Shape: PendingRunSignalSchema in
+  // workflow-executor/run-store.ts.
+  pendingSignal: jsonb("pending_signal").$type<{
+    signalId: string;
+    signalName: string;
+    payload: unknown;
+    receivedAt: string;
+  } | null>(),
   // The conversation the run was started from (CL-2677); null for
   // direct-started runs with no chat context.
   originConversationId: text("origin_conversation_id"),
@@ -264,6 +278,10 @@ export const artifact = pgTable("artifact", {
   source: jsonb("source").$type<Record<string, unknown>>(),
   status: text("status", { enum: artifactStatus }).notNull().default("draft"),
   version: integer("version").notNull().default(1),
+  // Soft-archive (CL-3156): null = visible, a timestamp = hidden from default
+  // listings. Reversible; distinct from `status` so archiving never clobbers a
+  // draft/approved/rejected state.
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at")
     .notNull()

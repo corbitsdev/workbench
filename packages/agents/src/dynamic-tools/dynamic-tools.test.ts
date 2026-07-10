@@ -9,7 +9,12 @@ import type {
 } from "@intx/types/runtime";
 import type { ToolCatalog, ToolExposureState } from "@workbench/tools-catalog";
 import { createCatalogTools } from "@workbench/tools-catalog";
-import { canonicalizeToolNames, toLlmToolName } from "../tool-names";
+import {
+  canonicalizeToolNames,
+  producibleLlmToolNames,
+  toLlmToolName,
+} from "../tool-names";
+import { catalogManagedNames } from "@workbench/tools-catalog";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
@@ -221,5 +226,24 @@ describe("MYRA_TOOL_CATALOG metadata", () => {
     );
     expect(attio?.tools.some((t) => t.name === expected)).toBe(true);
     expect(expected).toBe("attio__query_records");
+  });
+});
+
+describe("catalog / loaded-tool name invariant", () => {
+  // The sidecar credential-gate advertises a catalog package only when its
+  // tools appear in the loaded tool-name set, matched by exact LLM-facing name.
+  // This pins the catalog against the PACKAGE_TOOLS table (catch a catalog bare
+  // name that no declared package tool backs). It does NOT catch drift between
+  // PACKAGE_TOOLS and a package's real runtime tool-definition names — but that
+  // drift is safe: a loaded tool whose name matches no catalog entry falls into
+  // the director's base set and is always advertised (see director.ts
+  // advertised()), never hidden. So the worst case a mismatch causes is "shown
+  // in the base set instead of via search", not "invisible".
+  test("every MYRA_TOOL_CATALOG tool name is producible by a known package", () => {
+    const producible = producibleLlmToolNames();
+    const orphans = [...catalogManagedNames(MYRA_TOOL_CATALOG)].filter(
+      (name) => !producible.has(name),
+    );
+    expect(orphans).toEqual([]);
   });
 });

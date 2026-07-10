@@ -45,6 +45,24 @@ describe("foldRunEvents (run-level, CL-2669)", () => {
     expect(runs.get("r1")?.status).toBe("running");
   });
 
+  test("SignalReceived surfaces its signalId so the pending-signal record can be cleared", () => {
+    const runs = foldRunEvents([
+      entry("r1", "SignalAwaited", { stepId: "gate1", signalName: "s" }),
+      entry("r1", "SignalReceived", {
+        signalName: "s",
+        signalId: "sig-a",
+        payload: {},
+      }),
+      entry("r1", "SignalAwaited", { stepId: "gate2", signalName: "s" }),
+    ]);
+    const r1 = runs.get("r1");
+    // Re-parked at a later gate, but gate1's signal is durably observed:
+    // the projection can clear a pending-signal record by signalId even
+    // when the final folded status is `awaiting` again.
+    expect(r1?.status).toBe("awaiting");
+    expect(r1?.receivedSignalIds).toContain("sig-a");
+  });
+
   test("RunCompleted is terminal and stamps the end time", () => {
     const runs = foldRunEvents([
       entry("r1", "RunStarted", { at: "2026-01-01T00:00:01.000Z" }),
@@ -198,6 +216,7 @@ describe("logNewWorkflowRunFailureIfNeeded", () => {
       status: "failed",
       error,
       failedSteps: [],
+      receivedSignalIds: [],
     };
   }
 
@@ -250,6 +269,7 @@ describe("buildRunFailureReport", () => {
       status: "failed",
       ...(error !== undefined ? { error } : {}),
       failedSteps,
+      receivedSignalIds: [],
     };
   }
 

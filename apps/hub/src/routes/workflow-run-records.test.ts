@@ -85,6 +85,13 @@ mock.module("../workflow-executor/run-store", () => ({
     const found = runs.get(runId);
     return found ? structuredClone(found) : null;
   },
+  setPendingSignal: async (
+    _db: unknown,
+    runId: string,
+    signal: { signalId: string; signalName: string },
+  ) => {
+    signalOps.push(`persist:${runId}:${signal.signalName}`);
+  },
   loadDeploymentMeta: async (_db: unknown, deploymentId: string) => {
     const found = deploymentMetas.get(deploymentId);
     return found ? structuredClone(found) : null;
@@ -224,6 +231,9 @@ const sentSignals: {
   signalName: string;
   payload: unknown;
 }[] = [];
+// Ordered trace of pending-signal persistence vs. signal dispatch: resume
+// must make the accepted signal durable BEFORE the fire-and-forget send.
+const signalOps: string[] = [];
 const ensureCalls: { deploymentId: string; creatorPrincipalId: string }[] = [];
 const provisionCalls: {
   kind: string;
@@ -251,6 +261,7 @@ function resetCaptures(): void {
   deploymentMetas.clear();
   sentMessages.length = 0;
   sentSignals.length = 0;
+  signalOps.length = 0;
   ensureCalls.length = 0;
   provisionCalls.length = 0;
   reclaimCalls.length = 0;
@@ -298,6 +309,7 @@ const sidecarRouter = {
     signalName: string;
     payload: unknown;
   }) => {
+    signalOps.push(`deliver:${args.runId}:${args.signalName}`);
     sentSignals.push({
       agentAddress: args.agentAddress,
       runId: args.runId,
@@ -589,6 +601,13 @@ describe("workflow runs on the sidecar (records router)", () => {
     expect(ensureCalls).toHaveLength(1);
     expect(ensureCalls[0]?.deploymentId).toBe("ses_run_1");
     expect(ensureCalls[0]?.creatorPrincipalId).toBe("prn-deployer");
+    // Durable-before-dispatch: the accepted signal is persisted on the run
+    // record BEFORE the fire-and-forget delivery, so a hibernate/teardown
+    // race can never lose it — the reconciler re-delivers from the record.
+    expect(signalOps).toEqual([
+      `persist:${runId}:note-selection`,
+      `deliver:${runId}:note-selection`,
+    ]);
   });
 
   test("resume delivers the signal even though the per-run deployment has NO workflow_run registry row (CL-2582 / B1 regression)", async () => {

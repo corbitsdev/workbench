@@ -5,28 +5,53 @@ import {
   cleanup,
   fireEvent,
   render,
+  waitFor,
   type RenderResult,
 } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 let artifactResult: {
-  data?: { id: string; kind: string; title: string };
+  data?: {
+    id: string;
+    kind: string;
+    title: string;
+    ownerPrincipalId?: string | null;
+  };
   isLoading: boolean;
   isError: boolean;
 };
 
+let meResult: { isAdmin?: boolean; isOwner?: boolean } = { isAdmin: true };
+const archiveMutate = mock(
+  (_vars: unknown, opts?: { onSuccess?: () => void }) => {
+    opts?.onSuccess?.();
+  },
+);
+
 const openWithMessage = mock((_message: string) => {});
 
 mock.module("../lib/active-workbench-context", () => ({
-  useActiveWorkbench: () => ({ activeTenantId: "tenant-1" }),
+  useActiveWorkbench: () => ({
+    activeTenantId: "tenant-1",
+    activeWorkbench: { id: "prn-me" },
+  }),
 }));
 mock.module("../lib/chat-launcher-context", () => ({
   useChatLauncher: () => ({ openWithMessage }),
 }));
+mock.module("../lib/hub-api", () => ({
+  getMe: () => Promise.resolve(meResult),
+}));
 mock.module("@workbench/client/react", () => ({
   useArtifact: () => artifactResult,
   useTenantMembers: () => ({ data: [] }),
+  useArchiveArtifact: () => ({
+    mutate: archiveMutate,
+    isPending: false,
+    isError: false,
+  }),
 }));
 mock.module("../components/ArtifactBody", () => ({
   default: (props: { artifact: { title: string } }) =>
@@ -36,17 +61,32 @@ mock.module("../components/ArtifactBody", () => ({
 import { ArtifactDetailPage } from "./ArtifactDetailPage";
 
 function renderAt(id: string): RenderResult {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return render(
     React.createElement(
-      MemoryRouter,
-      { initialEntries: [`/artifacts/${id}`] },
+      QueryClientProvider,
+      { client },
       React.createElement(
-        Routes,
-        null,
-        React.createElement(Route, {
-          path: "/artifacts/:artifactId",
-          element: React.createElement(ArtifactDetailPage),
-        }),
+        MemoryRouter,
+        { initialEntries: [`/artifacts/${id}`] },
+        React.createElement(
+          Routes,
+          null,
+          React.createElement(Route, {
+            path: "/artifacts/:artifactId",
+            element: React.createElement(ArtifactDetailPage),
+          }),
+          React.createElement(Route, {
+            path: "/artifacts",
+            element: React.createElement(
+              "div",
+              { "data-testid": "gallery-redirect" },
+              "gallery",
+            ),
+          }),
+        ),
       ),
     ),
   );
@@ -54,10 +94,17 @@ function renderAt(id: string): RenderResult {
 
 beforeEach(() => {
   artifactResult = {
-    data: { id: "art-1", kind: "one-pager", title: "Acme One-Pager" },
+    data: {
+      id: "art-1",
+      kind: "one-pager",
+      title: "Acme One-Pager",
+      ownerPrincipalId: null,
+    },
     isLoading: false,
     isError: false,
   };
+  meResult = { isAdmin: true };
+  archiveMutate.mockClear();
   openWithMessage.mockClear();
 });
 afterEach(() => cleanup());
@@ -94,5 +141,40 @@ describe("ArtifactDetailPage", () => {
     expect(message).toContain("Acme One-Pager");
     expect(message).toContain("tenant-1");
     expect(message).toContain("artifact_read");
+  });
+
+  it("archives and redirects to the gallery for an admin", async () => {
+    const view = renderAt("art-1");
+    const archiveButton = await view.findByRole("button", {
+      name: /archive/i,
+    });
+    // Archive is guarded by a confirm: the first click arms, the second fires.
+    fireEvent.click(archiveButton);
+    expect(archiveMutate).not.toHaveBeenCalled();
+    fireEvent.click(view.getByRole("button", { name: /confirm archive/i }));
+    expect(archiveMutate).toHaveBeenCalledTimes(1);
+    expect(archiveMutate.mock.calls[0][0]).toMatchObject({
+      artifactId: "art-1",
+      tenantId: "tenant-1",
+    });
+    await waitFor(() =>
+      expect(view.getByTestId("gallery-redirect")).toBeDefined(),
+    );
+  });
+
+  it("hides the archive action from a non-owner, non-admin", () => {
+    meResult = { isAdmin: false, isOwner: false };
+    artifactResult = {
+      data: {
+        id: "art-1",
+        kind: "one-pager",
+        title: "Acme One-Pager",
+        ownerPrincipalId: "someone-else",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    const view = renderAt("art-1");
+    expect(view.queryByRole("button", { name: /archive/i })).toBeNull();
   });
 });

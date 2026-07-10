@@ -27,8 +27,9 @@ The body is a bounded `MAX_ROUNDS` (3) refine loop, each round:
    feedback on later rounds) via an inline inference step.
 2. **render-N** — render the draft into a Gamma deck (`gamma_create_from_template`;
    Gamma cannot edit in place, so each round renders a fresh deck).
-3. **preview-N** — `awaitSignal`, a live iframe preview with **Approve** or
-   **Refine with notes**.
+3. **preview-N** — `awaitSignal`: review the generated draft (markdown) and open
+   the rendered deck in Gamma via an external link; **Approve** or **Refine with
+   notes** (no in-app iframe — Gamma blocks embeds).
 4. **check-N** — a `gate()`: approval routes to `persist-N` and prunes the
    remaining rounds; refusal feeds the draft + notes into the next round. The
    final round has no gate — its preview leads straight to persistence.

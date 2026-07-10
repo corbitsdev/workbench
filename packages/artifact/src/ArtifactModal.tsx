@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Button } from "@workbench/ui";
+import { Button, ConfirmButton } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { resolveArtifactClipboardText } from "./linkedin-clipboard";
@@ -39,6 +39,12 @@ export interface ArtifactModalProps {
   /** When provided, renders a "Use in Workflow" button for eligible artifacts. */
   onUseInWorkflow?: (artifact: ArtifactWithSession) => void;
   /**
+   * When provided, renders an "Archive" button that soft-hides the artifact.
+   * The caller is responsible for the owner/admin permission check — the button
+   * is only shown when this callback is passed.
+   */
+  onArchive?: (artifact: ArtifactWithSession) => void;
+  /**
    * Decides whether the current artifact may be used in a workflow. Eligibility
    * is a workflow product rule, so the caller injects it; absent a predicate the
    * action is offered for any artifact.
@@ -66,6 +72,7 @@ export function ArtifactModal({
   kindLabel,
   onOpenInMyra,
   onUseInWorkflow,
+  onArchive,
   canUseInWorkflow,
 }: ArtifactModalProps) {
   const showUseInWorkflow = Boolean(
@@ -245,8 +252,22 @@ export function ArtifactModal({
               )}
             </div>
 
-            {(actions.length > 0 || onOpenInMyra || showUseInWorkflow) && (
-              <div className="flex items-center justify-end gap-2 border-t border-border px-6 py-4">
+            {(actions.length > 0 ||
+              onOpenInMyra ||
+              showUseInWorkflow ||
+              onArchive) && (
+              <div className="flex items-center gap-2 border-t border-border px-6 py-4">
+                {onArchive && (
+                  <ConfirmButton
+                    variant="ghost"
+                    size="sm"
+                    confirmLabel="Confirm archive"
+                    onConfirm={() => onArchive(artifact)}
+                  >
+                    Archive
+                  </ConfirmButton>
+                )}
+                <div className="flex-1" />
                 {onOpenInMyra && (
                   <Button
                     variant="ghost"

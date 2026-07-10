@@ -17,6 +17,7 @@ import {
   principalsToWorkbenches,
   principalToWorkbenchEntry,
   stopAgentInstance,
+  parseActivityOverview,
   upsertRating,
   type Principal,
   type SavedRating,
@@ -568,5 +569,114 @@ describe("upsertRating", () => {
     const result = upsertRating(prev, next);
     expect(result).toHaveLength(2);
     expect(result.find((r) => r.subjectId === "tp-2")!.rating).toBe(1);
+  });
+});
+
+describe("parseActivityOverview (CL-2891)", () => {
+  const inference = {
+    summary: {
+      tenantId: "t1",
+      turnCount: 0,
+      failedTurnCount: 0,
+      toolCallCount: 0,
+      toolErrorCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
+    },
+    previousSummary: null,
+    byAgent: [],
+    byInstance: [],
+  };
+
+  const base = {
+    tenantId: "t1",
+    range: {},
+    artifacts: {
+      total: 0,
+      createdInRange: 0,
+      byStatus: [],
+      byKind: [],
+    },
+    workflowRuns: {
+      executionRecords: 0,
+      executionsStartedInRange: 0,
+      activeExecutions: 0,
+      byStatus: [],
+      byKind: [],
+      deploymentsIndexed: 0,
+    },
+    agentInstances: { active: 0, startedInRange: 0, endedInRange: 0, total: 0 },
+    agentActivity: { active: 0, idle: 0 },
+    conversations: { total: 0, createdInRange: 0 },
+    messages: { total: 0, createdInRange: 0 },
+    dailySeries: [],
+    metricsBucket: "week" as const,
+    metricsSeries: [],
+    models: [],
+    byModel: [],
+    tokensRecordedFrom: null,
+    byPerson: [],
+    byWorkflowType: [
+      {
+        kind: "demo",
+        turnCount: 1,
+        toolCallCount: 0,
+        inputTokens: 1,
+        outputTokens: 2,
+        cost: null,
+      },
+    ],
+    inference,
+  };
+
+  it("accepts payloads missing pricedByModel and workflow cache fields", () => {
+    const parsed = parseActivityOverview(base);
+    expect(parsed.pricedByModel).toBeNull();
+    expect(parsed.byWorkflowType[0]!.cacheReadTokens).toBe(0);
+    expect(parsed.byWorkflowType[0]!.cacheWriteTokens).toBe(0);
+    expect(parsed.byWorkflowType[0]!.thinkingTokens).toBe(0);
+  });
+
+  it("accepts explicit pricedByModel null and preserves hub-priced payloads", () => {
+    const priced = {
+      cost: {
+        input: 1,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 0,
+        thinking: 0,
+        total: 3,
+      },
+      unpricedModels: [] as string[],
+      hasUnpriced: false,
+    };
+    const withHub = parseActivityOverview({
+      ...base,
+      pricedByModel: priced,
+      byWorkflowType: [
+        {
+          kind: "demo",
+          turnCount: 1,
+          toolCallCount: 0,
+          inputTokens: 1,
+          outputTokens: 2,
+          cacheReadTokens: 3,
+          cacheWriteTokens: 4,
+          thinkingTokens: 5,
+          cost: priced,
+        },
+      ],
+    });
+    expect(withHub.pricedByModel?.cost.total).toBe(3);
+    expect(withHub.byWorkflowType[0]!.cacheWriteTokens).toBe(4);
+
+    const explicitNull = parseActivityOverview({
+      ...base,
+      pricedByModel: null,
+    });
+    expect(explicitNull.pricedByModel).toBeNull();
   });
 });

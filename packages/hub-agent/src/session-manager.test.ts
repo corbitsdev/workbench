@@ -506,8 +506,80 @@ function makeRestoreStores(dataDir: string): {
   };
 }
 
-describe("SessionManager.restoreSessions bounded parallelism", () => {
-  test("rejects a non-positive restoreConcurrency", async () => {
+function inboundMessage(id: string, to: string): Uint8Array {
+  return new TextEncoder().encode(
+    [
+      "From: external@remote.interchange",
+      `To: ${to}`,
+      "Date: Thu, 17 Apr 2026 12:00:00 +0000",
+      `Message-ID: <${id}@remote.interchange>`,
+      "Subject: hi",
+      "Content-Type: text/plain",
+      "",
+      "body",
+    ].join("\r\n"),
+  );
+}
+
+function makeControlledBuilder(opts: {
+  gate?: Promise<void>;
+  failTimes?: Map<string, number>;
+}): { builder: HarnessBuilder; buildStarts: string[] } {
+  const buildStarts: string[] = [];
+  const remaining = opts.failTimes ?? new Map<string, number>();
+  const builder: HarnessBuilder = {
+    canBuildSource() {
+      /* accept every source */
+    },
+    async build(args) {
+      buildStarts.push(args.agentAddress);
+      if (opts.gate !== undefined) await opts.gate;
+      const left = remaining.get(args.agentAddress) ?? 0;
+      if (left > 0) {
+        remaining.set(args.agentAddress, left - 1);
+        throw new Error("build boom");
+      }
+      return makeRestoredBundle();
+    },
+  };
+  return { builder, buildStarts };
+}
+
+function makeLazyManager(
+  dataDir: string,
+  builder: HarnessBuilder,
+  opts: {
+    sleep?: (ms: number) => Promise<void>;
+    wakeMaxAttempts?: number;
+  } = {},
+): {
+  manager: ReturnType<typeof createSessionManager>;
+  transport: ReturnType<typeof createInMemoryTransport>;
+} {
+  const { repoStore, keyStore } = makeRestoreStores(dataDir);
+  const transport = createInMemoryTransport();
+  const manager = createSessionManager({
+    transport,
+    repoStore,
+    keyStore,
+    buildHarness: builder,
+    createAgentCrypto: (kp) => makeCrypto(kp),
+    onEvent: () => {
+      /* no-op */
+    },
+    onConnectorStateChanged: () => {
+      /* no-op */
+    },
+    ...(opts.sleep !== undefined ? { sleep: opts.sleep } : {}),
+    ...(opts.wakeMaxAttempts !== undefined
+      ? { wakeMaxAttempts: opts.wakeMaxAttempts }
+      : {}),
+  });
+  return { manager, transport };
+}
+
+describe("SessionManager.createSessionManager validation", () => {
+  test("rejects a non-positive wakeMaxAttempts", async () => {
     const dataDir = await tempDir();
     const { repoStore, keyStore } = makeRestoreStores(dataDir);
     expect(() =>
@@ -523,114 +595,208 @@ describe("SessionManager.restoreSessions bounded parallelism", () => {
         onConnectorStateChanged: () => {
           /* no-op */
         },
-        restoreConcurrency: 0,
+        wakeMaxAttempts: 0,
       }),
-    ).toThrow(/restoreConcurrency must be a positive integer/);
+    ).toThrow(/wakeMaxAttempts must be a positive integer/);
   });
+});
 
-  test("restores up to restoreConcurrency agents at once, no more", async () => {
+describe("SessionManager.restoreSessions lazy registration", () => {
+  test("registers on-disk agents as wakeable without building a harness", async () => {
     const dataDir = await tempDir();
-    const addresses = ["a@local", "b@local", "c@local"];
+    const addresses = ["a@local", "b@local"];
     await seedAgentsOnDisk(dataDir, addresses);
 
-    // Fresh stores + transport stand in for a restarted process that
-    // restores the seeded agents from disk.
-    const { repoStore, keyStore } = makeRestoreStores(dataDir);
+    const { builder, buildStarts } = makeControlledBuilder({});
+    const { manager } = makeLazyManager(dataDir, builder);
 
-    const buildStarts: string[] = [];
-    let startedCount = 0;
-    let signalBoundReached!: () => void;
-    const boundReached = new Promise<void>((resolve) => {
-      signalBoundReached = resolve;
-    });
-    let releaseBuilds!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseBuilds = resolve;
-    });
-    const builder: HarnessBuilder = {
-      canBuildSource() {
-        /* accept every source */
-      },
-      async build(args) {
-        buildStarts.push(args.agentAddress);
-        startedCount += 1;
-        if (startedCount === 2) signalBoundReached();
-        await gate;
-        return makeRestoredBundle();
-      },
-    };
+    const result = await manager.restoreSessions();
 
-    const manager = createSessionManager({
-      transport: createInMemoryTransport(),
-      repoStore,
-      keyStore,
-      buildHarness: builder,
-      createAgentCrypto: (kp) => makeCrypto(kp),
-      onEvent: () => {
-        /* no-op */
-      },
-      onConnectorStateChanged: () => {
-        /* no-op */
-      },
-      restoreConcurrency: 2,
-    });
-
-    const restorePromise = manager.restoreSessions();
-    // Two builds run at once; the third cannot start until a worker
-    // slot frees, which needs the gate to release. A serial restore
-    // would hold at one started build and this await would never settle.
-    await boundReached;
-    expect(buildStarts.length).toBe(2);
-
-    releaseBuilds();
-    const result = await restorePromise;
-    // All three eventually build once slots free up.
-    expect(buildStarts.length).toBe(3);
+    // No harness was built during restore — the whole point of lazy
+    // restore is to skip the tool-package build + credential fetch.
+    expect(buildStarts).toEqual([]);
     expect(result.failed).toEqual([]);
     expect(result.restored.map((r) => r.address).sort()).toEqual(
       [...addresses].sort(),
     );
+    for (const address of addresses) {
+      expect(manager.isWakeable(address)).toBe(true);
+      expect(manager.hasSession(address)).toBe(false);
+    }
   });
 
-  test("reports a failing agent as failed without blocking the rest", async () => {
+  test("config without a key pair is reported as failed and is not wakeable", async () => {
     const dataDir = await tempDir();
-    const addresses = ["healthy1@local", "wedged@local", "healthy2@local"];
-    await seedAgentsOnDisk(dataDir, addresses);
+    const { manager, repoStore } = makeManagerHarness(dataDir);
 
-    const { repoStore, keyStore } = makeRestoreStores(dataDir);
-
-    const builder: HarnessBuilder = {
-      canBuildSource() {
-        /* accept every source */
-      },
-      async build(args) {
-        if (args.agentAddress === "wedged@local") {
-          throw new Error("registry fetch exceeded the timeout");
-        }
-        return makeRestoredBundle();
-      },
-    };
-
-    const manager = createSessionManager({
-      transport: createInMemoryTransport(),
-      repoStore,
-      keyStore,
-      buildHarness: builder,
-      createAgentCrypto: (kp) => makeCrypto(kp),
-      onEvent: () => {
-        /* no-op */
-      },
-      onConnectorStateChanged: () => {
-        /* no-op */
-      },
-    });
+    await fsp.mkdir(path.join(dataDir, "ghost_at_local"), { recursive: true });
+    await repoStore.persistConfig("ghost@local", makeConfig("ghost@local"));
 
     const result = await manager.restoreSessions();
-    expect(result.failed).toEqual(["wedged@local"]);
-    expect(result.restored.map((r) => r.address).sort()).toEqual([
-      "healthy1@local",
-      "healthy2@local",
-    ]);
+
+    expect(result.failed).toContain("ghost@local");
+    expect(result.restored.map((r) => r.address)).not.toContain("ghost@local");
+    expect(manager.isWakeable("ghost@local")).toBe(false);
+  });
+});
+
+describe("SessionManager.wakeAgent on-demand build", () => {
+  test("builds the harness on the first wake and clears wakeable", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    const { builder, buildStarts } = makeControlledBuilder({});
+    const { manager } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+
+    await manager.wakeAgent("a@local");
+
+    expect(buildStarts).toEqual(["a@local"]);
+    expect(manager.hasSession("a@local")).toBe(true);
+    expect(manager.isWakeable("a@local")).toBe(false);
+  });
+
+  test("concurrent wakes of the same agent build the harness once", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { builder, buildStarts } = makeControlledBuilder({ gate });
+    const { manager } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+
+    const first = manager.wakeAgent("a@local");
+    const second = manager.wakeAgent("a@local");
+    release();
+    await Promise.all([first, second]);
+
+    expect(buildStarts).toEqual(["a@local"]);
+    expect(manager.hasSession("a@local")).toBe(true);
+  });
+
+  test("retries a failing build with bounded backoff, then succeeds", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    const failTimes = new Map<string, number>([["a@local", 2]]);
+    const delays: number[] = [];
+    const sleep = async (ms: number) => {
+      delays.push(ms);
+    };
+    const { builder, buildStarts } = makeControlledBuilder({ failTimes });
+    const { manager } = makeLazyManager(dataDir, builder, { sleep });
+    await manager.restoreSessions();
+
+    await manager.wakeAgent("a@local");
+
+    // Two failed attempts, then a third that lands.
+    expect(buildStarts.length).toBe(3);
+    expect(delays.length).toBe(2);
+    expect(delays[1]).toBeGreaterThan(delays[0]!);
+    expect(manager.hasSession("a@local")).toBe(true);
+  });
+
+  test("a wake that exhausts its retries rejects and leaves the agent wakeable", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    const failTimes = new Map<string, number>([["a@local", 99]]);
+    const sleep = async () => {
+      /* immediate */
+    };
+    const { builder, buildStarts } = makeControlledBuilder({ failTimes });
+    const { manager } = makeLazyManager(dataDir, builder, {
+      sleep,
+      wakeMaxAttempts: 3,
+    });
+    await manager.restoreSessions();
+
+    await expect(manager.wakeAgent("a@local")).rejects.toThrow("build boom");
+
+    expect(buildStarts.length).toBe(3);
+    expect(manager.hasSession("a@local")).toBe(false);
+    // Still wakeable: a failed wake must never leave the agent stuck.
+    expect(manager.isWakeable("a@local")).toBe(true);
+  });
+});
+
+describe("SessionManager lifecycle of a never-woken agent", () => {
+  test("destroySession drops the wakeable entry without a harness teardown", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    const { builder, buildStarts } = makeControlledBuilder({});
+    const { manager } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+
+    await manager.destroySession("a@local");
+
+    expect(buildStarts).toEqual([]);
+    expect(manager.isWakeable("a@local")).toBe(false);
+    // A later wake for the dropped address must fail loudly, not build.
+    await expect(manager.wakeAgent("a@local")).rejects.toThrow(
+      /No wakeable agent/,
+    );
+  });
+
+  test("re-provision supersedes the wakeable entry", async () => {
+    const dataDir = await tempDir();
+    await seedAgentsOnDisk(dataDir, ["a@local"]);
+    const { builder } = makeControlledBuilder({});
+    const { manager } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+
+    await manager.provisionAgent(makeConfig("a@local"));
+
+    expect(manager.isWakeable("a@local")).toBe(false);
+    expect(manager.isProvisioned("a@local")).toBe(true);
+  });
+});
+
+describe("SessionManager.deliverInboundMail lazy delivery", () => {
+  test("parks messages during the build and replays them in order", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { builder, buildStarts } = makeControlledBuilder({ gate });
+    const { manager, transport } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+
+    // Two messages arrive before the harness finishes building. Neither is
+    // delivered yet (the mailbox is not registered until the build runs),
+    // and the second must not start a second build.
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+    manager.deliverInboundMail(address, inboundMessage("m2", address));
+    expect(buildStarts).toEqual([address]);
+    expect(manager.hasSession(address)).toBe(false);
+
+    release();
+    // The wake is already in flight; awaiting it (de-duplicated) waits for
+    // the build, and the parked-mail drain runs before this resolves
+    // because it was attached to the same build promise first.
+    await manager.wakeAgent(address);
+
+    const agentTransport = transport.getTransportFor(address);
+    const refs = await agentTransport.search("INBOX", {});
+    expect(refs.length).toBe(2);
+  });
+
+  test("delivers straight to a live session without parking", async () => {
+    const dataDir = await tempDir();
+    const address = "a@local";
+    await seedAgentsOnDisk(dataDir, [address]);
+    const { builder } = makeControlledBuilder({});
+    const { manager, transport } = makeLazyManager(dataDir, builder);
+    await manager.restoreSessions();
+    await manager.wakeAgent(address);
+
+    manager.deliverInboundMail(address, inboundMessage("m1", address));
+
+    const agentTransport = transport.getTransportFor(address);
+    const refs = await agentTransport.search("INBOX", {});
+    expect(refs.length).toBe(1);
   });
 });
 

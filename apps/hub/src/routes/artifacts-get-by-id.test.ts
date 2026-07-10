@@ -41,7 +41,13 @@ function appWith(db: HubDb): Hono<{ Variables: { userId: string } }> {
     c.set("userId", "user-1");
     await next();
   });
-  app.route("/", createArtifactsRouter(db));
+  app.route(
+    "/",
+    createArtifactsRouter(
+      db,
+      {} as unknown as Parameters<typeof createArtifactsRouter>[1],
+    ),
+  );
   return app;
 }
 

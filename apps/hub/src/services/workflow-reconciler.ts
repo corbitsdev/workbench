@@ -1,11 +1,17 @@
 import { and, eq, gt, inArray, isNotNull, isNull, like } from "drizzle-orm";
+import { type } from "arktype";
 import { deriveDeploymentAddress } from "@intx/workflow-deploy";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import type { SidecarRouter } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun, workflowRunRecord } from "../db/schema";
-import { setRunStatus } from "../workflow-executor/run-store";
+import {
+  loadRunRecord,
+  refreshPendingSignalIfCurrent,
+  setRunStatus,
+} from "../workflow-executor/run-store";
+import { PendingRunSignalSchema } from "../workflow-executor/pending-signal";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import type { ReclaimDeploymentFn } from "./workflow-deploy";
 
@@ -77,6 +83,14 @@ export interface WorkflowReconciler {
   // churn the per-run/eviction model exists to prevent). Idempotent and
   // coalesced through `ensureDeploymentRoutable`; a failure is surfaced and
   // counted, never swallowed, and never aborts the batch.
+  //
+  // Hibernation of long-parked runs: the pre-warm applies only to runs
+  // parked LESS than the hibernation grace. Past the grace the sweep flips
+  // direction — a still-routable deployment is HIBERNATED (state-preserving
+  // undeploy: child killed, workflow-run repo and step state kept) and an
+  // unroutable one is left dormant; the gate signal's own
+  // `ensureDeploymentRoutable` call re-establishes it exactly when the
+  // resume needs it.
   reconcileAwaiting(): Promise<AwaitingPrewarmSummary>;
   // Subscribe to sidecar reconnect events and reconcile on each (coalesced to
   // one in-flight pass). Returns an unsubscribe handle.
@@ -93,9 +107,49 @@ export interface AwaitingPrewarmSummary {
   // Awaiting deployments whose kind has no registry row to recover the deploy
   // principal from — cannot be revived, skipped.
   skippedNoPrincipal: number;
-  // Establish attempts that threw — surfaced (logged + counted), batch continues.
+  // Establish/hibernate attempts that threw — surfaced (logged + counted),
+  // batch continues.
   failed: number;
+  // Routable deployments parked past the hibernation grace this pass tore
+  // down (state-preserving hibernate undeploy sent and acked).
+  hibernated: number;
+  // Unroutable deployments parked past the hibernation grace left down —
+  // wake is signal-driven (`ensureDeploymentRoutable` on the signal path),
+  // never the pre-warm.
+  dormant: number;
+  // Durable pending signals re-delivered this pass (the 202-accepted signal's
+  // first fire-and-forget delivery was lost or is not yet proven by the log).
+  redelivered: number;
 }
+
+// Well-known `agent.undeploy` reason that selects the sidecar's
+// state-PRESERVING teardown for a gate-parked run's deployment: the child
+// subprocess and supervisor residency are freed while the workflow-run repo,
+// step agent-state repos, and per-step scratch all survive for the
+// signal-driven resume.
+//
+// PROTOCOL CONSTANT: `packages/hub-agent/src/ws/hub-link.ts` carries a
+// byte-identical copy (`WORKFLOW_HIBERNATE_UNDEPLOY_REASON`) — the hub does
+// not depend on that package, and the undeploy wire frame carries only
+// `{ agentAddress, reason }`, so the hibernate flavor rides the reason
+// string. Change both together or hibernation silently stops matching on
+// one side.
+export const WORKFLOW_HIBERNATE_UNDEPLOY_REASON =
+  "workbench:hibernate-awaiting-run";
+
+// How long a run may sit parked at an awaitSignal gate before its deployment
+// is hibernated (child killed, durable state preserved). Also the pre-warm
+// horizon: an unroutable awaiting run parked less than this is re-established
+// (crash-recovery backstop); one parked longer stays down until a gate signal
+// wakes it through `ensureDeploymentRoutable`. Mirrored by
+// `WORKFLOW_HIBERNATION_GRACE_MS` in apps/hub/src/config.ts.
+export const DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS = 120_000;
+
+// How long a durable pending signal may sit undelivered-by-the-log before the
+// reconciler re-delivers it. Long enough for the ordinary path (deliver →
+// child commits SignalReceived → pack push → projection clears the record) to
+// complete; short enough that a lost signal wakes its run within a minute.
+export const DEFAULT_SIGNAL_REDELIVERY_DELAY_MS = 30_000;
 
 // How far back the orphan janitor looks for terminated-but-not-torn-down runs.
 // A hub crash between the terminal save and the teardown is recovered on the
@@ -110,7 +164,27 @@ export function createWorkflowReconciler(deps: {
   deploymentDomain: string;
   // CL-2582: tear a terminal run's orphaned deployment down (class 2 janitor).
   reclaimDeployment: ReclaimDeploymentFn;
+  // Hibernation teardown sender. Bound to the sidecar router's
+  // `sendAgentUndeploy` in index.ts; the reconciler sends it with the
+  // hibernate reason marker so the sidecar preserves the parked run's state.
+  sendAgentUndeploy: SidecarRouter["sendAgentUndeploy"];
+  // Pending-signal re-delivery sender. Bound to the sidecar router's
+  // `sendSignalDeliver` in index.ts; the reconciler re-delivers a durable
+  // pending signal whose first (fire-and-forget) delivery was lost.
+  sendSignalDeliver: SidecarRouter["sendSignalDeliver"];
+  // Hibernation grace (ms). Optional with the exported default so tests and
+  // direct constructors need not thread config; production wires the
+  // env-validated `config.workflowHibernationGraceMs`.
+  hibernationGraceMs?: number;
+  // Minimum age (ms) of a pending signal before it is re-delivered, giving
+  // the in-flight first delivery time to land and its SignalReceived to fold
+  // (which clears the record). Optional with the exported default.
+  signalRedeliveryDelayMs?: number;
 }): WorkflowReconciler {
+  const hibernationGraceMs =
+    deps.hibernationGraceMs ?? DEFAULT_WORKFLOW_HIBERNATION_GRACE_MS;
+  const signalRedeliveryDelayMs =
+    deps.signalRedeliveryDelayMs ?? DEFAULT_SIGNAL_REDELIVERY_DELAY_MS;
   // Single-flight guard. A sidecar restart fires one agent.reconnected per
   // restored address, and the hub-startup pass can overlap any of them. The
   // guard lives in reconcileAll itself (not just the reconnect wrapper) so the
@@ -248,6 +322,8 @@ export function createWorkflowReconciler(deps: {
           deploymentId: workflowRunRecord.deploymentId,
           kind: workflowRunRecord.kind,
           tenantId: workflowRunRecord.tenantId,
+          status: workflowRunRecord.status,
+          updatedAt: workflowRunRecord.updatedAt,
         })
         .from(workflowRunRecord)
         .where(
@@ -259,11 +335,27 @@ export function createWorkflowReconciler(deps: {
         );
 
       const seen = new Set<string>();
+      const now = Date.now();
       let reestablished = 0;
       let skippedNoPrincipal = 0;
+      let dormant = 0;
       for (const rec of activeRecords) {
         if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
         seen.add(rec.deploymentId);
+        // A run parked at a gate past the hibernation grace stays down across
+        // reconnect passes — re-establishing it here would resurrect the
+        // child the hibernation sweep just killed. Wake is signal-driven:
+        // the signal path's `ensureDeploymentRoutable` re-establishes it
+        // exactly when the gate resume needs it. A parked run's record is
+        // written only when its run log advances, so `updatedAt` is the
+        // park time (the last fold is SignalAwaited).
+        if (
+          rec.status === "awaiting" &&
+          now - rec.updatedAt.getTime() >= hibernationGraceMs
+        ) {
+          dormant += 1;
+          continue;
+        }
         const deployPrincipal = deployPrincipalByKind.get(
           `${rec.kind} ${rec.tenantId}`,
         );
@@ -290,11 +382,12 @@ export function createWorkflowReconciler(deps: {
           });
         }
       }
-      if (reestablished > 0 || skippedNoPrincipal > 0) {
+      if (reestablished > 0 || skippedNoPrincipal > 0 || dormant > 0) {
         log.info("workflow reconcile pass complete", {
           activeRecords: activeRecords.length,
           reestablished,
           skippedNoPrincipal,
+          dormant,
         });
       }
     } finally {
@@ -332,13 +425,149 @@ export function createWorkflowReconciler(deps: {
       alreadyRoutable: 0,
       skippedNoPrincipal: 0,
       failed: 0,
+      hibernated: 0,
+      dormant: 0,
+      redelivered: 0,
     };
 
-    const awaitingRecords = await deps.db
+    // PENDING-SIGNAL PASS (runs before the awaiting sweep): a 202-accepted
+    // gate signal is durable on the run record until the log proves receipt.
+    // Any record still carrying one is the delivery backstop's problem, not
+    // hibernation's — wake it if needed and re-deliver, never hibernate it.
+    // Scans `running` too: the resume path optimistically flips the record to
+    // `running` before the signal lands, and a lost signal there leaves a
+    // routable no-progress supervisor the liveness sweep will never fail.
+    const pendingRecords = await deps.db
       .select({
+        id: workflowRunRecord.id,
         deploymentId: workflowRunRecord.deploymentId,
         kind: workflowRunRecord.kind,
         tenantId: workflowRunRecord.tenantId,
+        pendingSignal: workflowRunRecord.pendingSignal,
+      })
+      .from(workflowRunRecord)
+      .where(
+        and(
+          inArray(workflowRunRecord.status, ["running", "awaiting"]),
+          isNotNull(workflowRunRecord.pendingSignal),
+          isNotNull(workflowRunRecord.deploymentId),
+          isNull(workflowRunRecord.deletedAt),
+        ),
+      );
+    const now = Date.now();
+    const routable = new Set(deps.getRoutableAddresses());
+    const deployPrincipalByKind = await loadDeployPrincipalByKind();
+    // Deployments owned by the pending pass; the awaiting sweep below must
+    // not hibernate or dormant-skip them.
+    const pendingHandled = new Set<string>();
+    for (const rec of pendingRecords) {
+      const rawPending = rec.pendingSignal;
+      if (rec.deploymentId === null || rawPending === null) continue;
+      if (rawPending === undefined) continue;
+      // Owning the deployment (blocking hibernate) does NOT require a valid
+      // record — the raw column being non-null is the signal that something
+      // is (or claims to be) in flight. Acting on it does: parse through the
+      // same schema `rowToState` uses so the two readers agree.
+      pendingHandled.add(rec.deploymentId);
+      const pending = PendingRunSignalSchema(rawPending);
+      if (pending instanceof type.errors) {
+        log.error(
+          "pending gate signal record is malformed; not re-deliverable",
+          {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            problem: pending.summary,
+          },
+        );
+        continue;
+      }
+      const address = deriveDeploymentAddress({
+        deploymentId: rec.deploymentId,
+        deploymentDomain: deps.deploymentDomain,
+      });
+      // Give the in-flight first delivery time to land and its
+      // SignalReceived to fold (which clears the record) before
+      // re-delivering; the timestamp is REFRESHED on each re-delivery so a
+      // slow pack pipeline gets one re-delivery per delay window, not one
+      // per tick. Re-delivery reuses the SAME signalId, so a duplicate
+      // reaching an already-satisfied gate is inert for that gate. The
+      // same-name-future-gate FIFO hazard is bounded by PROJECTION LAG (the
+      // clear only lands when the receipt folds), not by this delay — a run
+      // whose packs stall keeps receiving one duplicate per window until
+      // the fold catches up.
+      const pendingForMs = now - Date.parse(pending.receivedAt);
+      if (pendingForMs < signalRedeliveryDelayMs) continue;
+      const deployPrincipal = deployPrincipalByKind.get(
+        `${rec.kind} ${rec.tenantId}`,
+      );
+      if (deployPrincipal === undefined) {
+        // Fail loud EVERY pass: this run holds an accepted-but-undeliverable
+        // signal (its kind was undeployed, so the supervisor cannot be
+        // revived) and it is pendingHandled, so it will never be hibernated
+        // either — without this line it would strand invisibly forever.
+        summary.skippedNoPrincipal += 1;
+        log.error(
+          "pending gate signal cannot be delivered: kind has no registry row to revive the supervisor",
+          {
+            runId: rec.id,
+            deploymentId: rec.deploymentId,
+            kind: rec.kind,
+            signalName: pending.signalName,
+          },
+        );
+        continue;
+      }
+      try {
+        await deps.ensureDeploymentRoutable({
+          deploymentId: rec.deploymentId,
+          kind: rec.kind,
+          tenantId: rec.tenantId,
+          creatorPrincipalId: deployPrincipal,
+        });
+        // Refresh BEFORE dispatch: same signalId, new receivedAt — the next
+        // pass backs off for a full window. Ordering matters: refreshing
+        // after a dispatch that wedged would re-deliver every tick. The
+        // refresh is CONDITIONAL on the record still holding this signalId;
+        // zero rows means the projection cleared it (receipt folded) or a
+        // newer signal replaced it mid-pass — skip the dispatch, there is
+        // nothing pending anymore and an unconditional write would have
+        // resurrected the cleared record.
+        const stillPending = await refreshPendingSignalIfCurrent(
+          deps.db,
+          rec.id,
+          {
+            ...pending,
+            receivedAt: new Date().toISOString(),
+          },
+        );
+        if (!stillPending) continue;
+        deps.sendSignalDeliver({
+          agentAddress: address,
+          runId: rec.id,
+          signalName: pending.signalName,
+          signalId: pending.signalId,
+          payload: pending.payload,
+        });
+        summary.redelivered += 1;
+      } catch (err) {
+        summary.failed += 1;
+        log.error("pending gate signal re-delivery failed", {
+          runId: rec.id,
+          deploymentId: rec.deploymentId,
+          signalName: pending.signalName,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      }
+    }
+
+    const awaitingRecords = await deps.db
+      .select({
+        id: workflowRunRecord.id,
+        deploymentId: workflowRunRecord.deploymentId,
+        kind: workflowRunRecord.kind,
+        tenantId: workflowRunRecord.tenantId,
+        updatedAt: workflowRunRecord.updatedAt,
+        pendingSignal: workflowRunRecord.pendingSignal,
       })
       .from(workflowRunRecord)
       .where(
@@ -350,24 +579,88 @@ export function createWorkflowReconciler(deps: {
       );
     if (awaitingRecords.length === 0) return summary;
 
-    const routable = new Set(deps.getRoutableAddresses());
-    const deployPrincipalByKind = await loadDeployPrincipalByKind();
-
     const seen = new Set<string>();
     for (const rec of awaitingRecords) {
       if (rec.deploymentId === null || seen.has(rec.deploymentId)) continue;
       seen.add(rec.deploymentId);
+      // Owned by the pending-signal pass above (a signal is in flight or was
+      // just re-delivered) — never hibernated, never dormant-skipped. The
+      // in-JS check also covers a record whose pending signal was written
+      // between the two selects.
+      if (pendingHandled.has(rec.deploymentId) || rec.pendingSignal != null) {
+        continue;
+      }
       summary.candidates += 1;
 
       const address = deriveDeploymentAddress({
         deploymentId: rec.deploymentId,
         deploymentDomain: deps.deploymentDomain,
       });
-      // Already routable: the healthy case (the supervisor survived, or a
-      // reconnect reconcile already re-established it). Skip — never re-drive a
-      // deploy frame at a live supervisor.
+      // Age of the park. A parked run's record is written only when its run
+      // log advances (the last fold is SignalAwaited), so `updatedAt` is the
+      // park time; each resumed-then-reparked gate refreshes it.
+      const parkedForMs = now - rec.updatedAt.getTime();
+
       if (routable.has(address)) {
+        // Parked past the grace with a live supervisor: hibernate — send the
+        // state-preserving teardown so the child subprocess and supervisor
+        // residency stop burning sidecar RAM for the whole human wait. The
+        // undeploy ack drops the address from the routable set, and the next
+        // gate signal's `ensureDeploymentRoutable` re-establishes it.
+        if (parkedForMs >= hibernationGraceMs) {
+          // CAS: re-read the record immediately before the teardown and only
+          // hibernate if it is STILL the run we decided on — status
+          // `awaiting`, no writes since the decision read, no signal
+          // accepted meanwhile. This shrinks the resume-then-kill race to
+          // the undeploy frame's flight time. Even the residual (a signal
+          // lands and the run resumes mid-flight, then the teardown kills
+          // the child) mostly self-heals through the durable rail: the
+          // pending-signal record is still set unless the receipt already
+          // folded, so the next pass wakes the deployment and re-delivers.
+          // Only the narrow slice where the child packed SignalReceived
+          // (clearing the record) and was then killed mid-step is
+          // unrecoverable — a `running` run with a gone supervisor, failed
+          // visibly by the run liveness sweep.
+          const fresh = await loadRunRecord(deps.db, rec.id);
+          if (
+            fresh === null ||
+            fresh.status !== "awaiting" ||
+            fresh.pendingSignal != null ||
+            fresh.updatedAt === undefined ||
+            fresh.updatedAt.getTime() !== rec.updatedAt.getTime()
+          ) {
+            continue;
+          }
+          try {
+            await deps.sendAgentUndeploy(
+              address,
+              WORKFLOW_HIBERNATE_UNDEPLOY_REASON,
+            );
+            summary.hibernated += 1;
+          } catch (err) {
+            summary.failed += 1;
+            log.error("hibernate teardown failed for parked deployment", {
+              deploymentId: rec.deploymentId,
+              kind: rec.kind,
+              error: err instanceof Error ? err : new Error(String(err)),
+            });
+          }
+          continue;
+        }
+        // Under the grace and routable: the healthy case (the supervisor
+        // survived, or a reconnect reconcile already re-established it).
+        // Skip — never re-drive a deploy frame at a live supervisor.
         summary.alreadyRoutable += 1;
+        continue;
+      }
+
+      // Unroutable and parked past the grace: hibernated (or crashed after
+      // the grace elapsed — indistinguishable, and identically resumable).
+      // Leave it down; wake is signal-driven via the signal path's
+      // `ensureDeploymentRoutable`, so the pre-warm must not fight the
+      // hibernation sweep by resurrecting the child it just killed.
+      if (parkedForMs >= hibernationGraceMs) {
+        summary.dormant += 1;
         continue;
       }
 
@@ -401,13 +694,22 @@ export function createWorkflowReconciler(deps: {
       }
     }
 
-    if (summary.reestablished > 0 || summary.failed > 0) {
+    if (
+      summary.reestablished > 0 ||
+      summary.failed > 0 ||
+      summary.hibernated > 0 ||
+      summary.redelivered > 0 ||
+      summary.skippedNoPrincipal > 0
+    ) {
       log.info("awaiting pre-warm pass complete", {
         candidates: summary.candidates,
         reestablished: summary.reestablished,
         alreadyRoutable: summary.alreadyRoutable,
         skippedNoPrincipal: summary.skippedNoPrincipal,
         failed: summary.failed,
+        hibernated: summary.hibernated,
+        dormant: summary.dormant,
+        redelivered: summary.redelivered,
       });
     }
     return summary;

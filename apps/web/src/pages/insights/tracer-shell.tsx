@@ -1,5 +1,6 @@
 import { Link } from "react-router";
-import { ArrowLeft, ArrowRight, Info } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, Check, Clipboard, Info } from "lucide-react";
 import { statusToneClass, type StatusTone } from "./status-tone";
 
 /**
@@ -22,7 +23,7 @@ export interface TraceRoot {
   kindChip: string;
   /** Plain-language name — the headline. */
   name: string;
-  /** Raw id, shown only as a secondary mono line. */
+  /** Raw id, shown only as a secondary mono line. Click the copy affordance to copy. */
   rawId: string;
   tone: RootTone;
 }
@@ -43,6 +44,51 @@ function initialsOf(name: string): string {
 
 function avatarToneClass(tone: RootTone): string {
   return tone === "run" ? "bg-accent-deep" : "bg-accent";
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.clipboard) {
+    return Promise.resolve(false);
+  }
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => false,
+  );
+}
+
+/** Compact copy affordance for IDs and short strings in trace headers. */
+export function CopyId({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timer.current !== null) clearTimeout(timer.current);
+    };
+  }, []);
+
+  return (
+    <button
+      type="button"
+      aria-label="Copy ID"
+      title="Copy ID"
+      onClick={() => {
+        void copyText(id).then((ok) => {
+          if (!ok) return;
+          setCopied(true);
+          if (timer.current !== null) clearTimeout(timer.current);
+          timer.current = setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+      className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-[3px] text-text-3 transition hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.95]"
+    >
+      {copied ? (
+        <Check className="h-3 w-3 text-green" />
+      ) : (
+        <Clipboard className="h-3 w-3" />
+      )}
+    </button>
+  );
 }
 
 export interface StatusPill {
@@ -93,6 +139,7 @@ export function CompactHeader({
             <span className="font-mono text-[10.5px] text-text-3">
               {root.rawId}
             </span>
+            <CopyId id={root.rawId} />
           </p>
         </div>
         {status !== null && (

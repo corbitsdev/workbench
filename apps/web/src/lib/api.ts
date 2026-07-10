@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { utf8ByteLength } from "@workbench/artifact";
 import { logger } from "./logger";
 
 // Empty string means same-origin (frontend served from the API).
@@ -179,6 +180,57 @@ export async function api<T>(
   const data = (await res.json()) as T;
   logger.info("API response", { method, url, status: res.status });
   return data;
+}
+
+// Outcome of a CSV preview fetch. The viewer already decided this artifact is a
+// CSV (routing on stored mime / .csv extension), so the only boundary concern
+// here is size: hand back the `csv` text to parse, or refuse a `too-large`
+// payload up front. Whether the parsed text is actually tabular is decided
+// downstream by the arktype narrow, not by re-sniffing the Content-Type — the
+// download route echoes the stored upload mime, which for a real .csv is often a
+// vendor mime (application/vnd.ms-excel, application/octet-stream, empty), so a
+// strict text/csv check here would reject common legitimate uploads.
+export type CsvPreviewResult =
+  | { kind: "csv"; text: string }
+  | { kind: "too-large"; bytes: number };
+
+// Fetch an artifact's downloadable CSV text with a size guard. A non-ok response
+// throws (same path as `api()`), so the caller's error branch can fall back to a
+// download link. The declared Content-Length is refused BEFORE the body is read;
+// a chunked response with no length header is read in full, then refused if its
+// true UTF-8 byte length exceeds `maxBytes`.
+export async function fetchCsvPreview(
+  path: string,
+  maxBytes: number,
+): Promise<CsvPreviewResult> {
+  const url = buildApiUrl(path);
+  logger.info("API request", { method: "GET", url });
+
+  const res = await fetch(url, { method: "GET", credentials: "include" });
+  if (!res.ok) {
+    const body: unknown = await res.json().catch(() => null);
+    const apiError = toApiError(res, body);
+    logger.error("API request failed", {
+      method: "GET",
+      url,
+      status: res.status,
+      error: apiError.message,
+    });
+    throw apiError;
+  }
+
+  const lengthHeader = res.headers.get("Content-Length");
+  const declared = lengthHeader === null ? null : Number(lengthHeader);
+  if (declared !== null && Number.isFinite(declared) && declared > maxBytes) {
+    return { kind: "too-large", bytes: declared };
+  }
+
+  const text = await res.text();
+  const bytes = utf8ByteLength(text);
+  if (bytes > maxBytes) {
+    return { kind: "too-large", bytes };
+  }
+  return { kind: "csv", text };
 }
 
 // Multipart upload seam. `api()` JSON-encodes its body, so a file upload needs

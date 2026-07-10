@@ -161,6 +161,7 @@ const mockOverview = {
       thinkingTokens: 0,
     },
   ],
+  pricedByModel: null,
   tokensRecordedFrom: "2000-01-01",
   byPerson: [
     {
@@ -197,6 +198,9 @@ const mockOverview = {
       toolCallCount: 2,
       inputTokens: 500,
       outputTokens: 90,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
       cost: null,
     },
     {
@@ -205,6 +209,9 @@ const mockOverview = {
       toolCallCount: 1,
       inputTokens: 120,
       outputTokens: 30,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      thinkingTokens: 0,
       cost: null,
     },
   ],
@@ -433,9 +440,9 @@ describe("InsightsDashboard", () => {
     await waitFor(() => {
       screen.getByText("Conversations");
     });
-    screen.getByText("20");
+    screen.getByText("7");
     screen.getByText("Messages");
-    screen.getByText("140");
+    screen.getByText("35");
   });
 
   it("renders the model distribution as mini bars", async () => {
@@ -447,6 +454,45 @@ describe("InsightsDashboard", () => {
     const bars = screen.getAllByTestId("mini-bar");
     expect(bars[0].getAttribute("data-label")).toBe("deepseek-v4-flash");
     expect(bars[0].getAttribute("data-value")).toBe("9");
+  });
+
+  // Sections that render nothing for an empty data slice (e.g. the per-instance
+  // breakdown when no instance produced usage) must not leave an empty animated
+  // wrapper behind — a childless flex item still claims a `gap-10` gap and
+  // shows up as a phantom whitespace band (CL-3191, regression of CL-2890).
+  const emptySectionWrappers = () => {
+    const container = document.querySelector(".flex.flex-col.gap-10");
+    if (container === null) throw new Error("sections container not found");
+    return Array.from(container.children).filter(
+      (child) =>
+        child.childElementCount === 0 && (child.textContent ?? "") === "",
+    );
+  };
+
+  it("does not leave an empty wrapper for the instance breakdown when there is no per-instance usage", async () => {
+    // mockOverview.inference.byInstance is [] — the breakdown renders nothing.
+    renderPage();
+
+    await waitFor(() => {
+      screen.getByText("Total turns");
+    });
+    expect(screen.queryByText("By agent instance")).toBeNull();
+    expect(emptySectionWrappers()).toHaveLength(0);
+  });
+
+  it("does not leave an empty wrapper for activity trends when there is no daily series", async () => {
+    const original = mockOverview.dailySeries;
+    mockOverview.dailySeries = [];
+    try {
+      renderPage();
+      await waitFor(() => {
+        screen.getByText("Total turns");
+      });
+      expect(screen.queryByText("Activity trends")).toBeNull();
+      expect(emptySectionWrappers()).toHaveLength(0);
+    } finally {
+      mockOverview.dailySeries = original;
+    }
   });
 
   it("omits zero-turn models from the model distribution", async () => {
@@ -908,6 +954,9 @@ describe("dashboard data helpers", () => {
           toolCallCount: 15,
           inputTokens: 250,
           outputTokens: 150,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
           cost: null,
         },
         {
@@ -916,6 +965,9 @@ describe("dashboard data helpers", () => {
           toolCallCount: 1,
           inputTokens: 10,
           outputTokens: 5,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          thinkingTokens: 0,
           cost: null,
         },
       ],

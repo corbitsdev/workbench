@@ -79,15 +79,76 @@ function errorResult(callId: string, message: string): ToolResult {
   return { callId, content: { error: message }, isError: true };
 }
 
+// Loop guard for search_tools. The seam is advisory — the director cannot force
+// the model — but a non-converging model (e.g. one repeatedly searching for a
+// capability it can never load) must not spin on an identical payload forever.
+// The escalation keys on CONSECUTIVE identical searches with no intervening
+// load_tools: that is exactly the observed loop (search the same thing over and
+// over, never advancing). Counting only consecutive-and-load-free runs means a
+// long-lived session — Myra's persist across days — never accumulates toward a
+// stop on ordinary, progressing use; only a genuine stuck run trips it. A run
+// escalates its hint and then hard-errors. Distinct searches, a load_tools in
+// between, and returned matches never count against or withhold anything.
+const SAME_QUERY_WARN_THRESHOLD = 2;
+const SAME_QUERY_TERMINAL_THRESHOLD = 4;
+
+type SearchGuardState = {
+  lastKey: string | null;
+  consecutive: number;
+};
+
+function searchGuardKey(query: {
+  query: string;
+  package?: string;
+  tags?: string[];
+}): string {
+  return JSON.stringify({
+    query: query.query.trim().toLowerCase(),
+    package: query.package ?? null,
+    tags: (query.tags ?? []).map((t) => t.toLowerCase()).sort(),
+  });
+}
+
+function searchHint(matchCount: number, repeatCount: number): string {
+  if (repeatCount >= SAME_QUERY_WARN_THRESHOLD) {
+    if (matchCount === 0) {
+      return "You already ran this exact search and it has no matches. Do not repeat it — tell the user this capability is not available.";
+    }
+    return "You already ran this exact search. These are the only matches — call load_tools to enable one, or if none fit, tell the user this is not available instead of searching again.";
+  }
+  if (matchCount === 0) {
+    return "No matching tools. The tools already in your function list are all that match.";
+  }
+  return "Call load_tools with the names or package you want, then call the tool.";
+}
+
 function runSearch(
   callId: string,
   catalog: ToolCatalog,
+  guard: SearchGuardState,
   args: unknown,
 ): ToolResult {
   const parsed = SearchToolsArgs(args);
   if (parsed instanceof type.errors) {
     return errorResult(callId, `search_tools: ${parsed.summary}`);
   }
+
+  const key = searchGuardKey(parsed);
+  if (key === guard.lastKey) {
+    guard.consecutive += 1;
+  } else {
+    guard.lastKey = key;
+    guard.consecutive = 1;
+  }
+  const repeatCount = guard.consecutive;
+
+  if (repeatCount >= SAME_QUERY_TERMINAL_THRESHOLD) {
+    return errorResult(
+      callId,
+      `search_tools: you have run this identical search ${repeatCount} times in a row with the same result. Stop searching — enable a listed tool with load_tools, or tell the user this capability is unavailable / ask them for what is needed.`,
+    );
+  }
+
   const matches = searchCatalog(catalog, {
     query: parsed.query,
     ...(parsed.package !== undefined ? { package: parsed.package } : {}),
@@ -106,12 +167,19 @@ function runSearch(
           description: t.description,
         })),
       })),
-      hint:
-        matches.length === 0
-          ? "No matching tools. The tools already in your function list are all that match."
-          : "Call load_tools with the names or package you want, then call the tool.",
+      hint: searchHint(matches.length, repeatCount),
     },
   };
+}
+
+// A load_tools call means the model acted on a search result — real progress,
+// not a loop — so it resets the consecutive-search run. This keeps a legitimate
+// search → load → search → load progression (including one where load_tools
+// fails transiently and the model retries) from ever reaching the hard stop and
+// falsely reporting a capability as unavailable.
+function resetSearchRun(guard: SearchGuardState): void {
+  guard.lastKey = null;
+  guard.consecutive = 0;
 }
 
 function runLoad(
@@ -161,13 +229,15 @@ export function createCatalogTools(opts: {
   exposure: ToolExposureState;
 }): CatalogRunner {
   const { catalog, exposure } = opts;
+  const searchGuard: SearchGuardState = { lastKey: null, consecutive: 0 };
   return {
     definitions: [...CATALOG_TOOL_DEFINITIONS],
     async run(call: ToolCall): Promise<ToolResult> {
       if (call.name === SEARCH_TOOLS_NAME) {
-        return runSearch(call.id, catalog, call.arguments);
+        return runSearch(call.id, catalog, searchGuard, call.arguments);
       }
       if (call.name === LOAD_TOOLS_NAME) {
+        resetSearchRun(searchGuard);
         return runLoad(call.id, catalog, exposure, call.arguments);
       }
       return errorResult(call.id, `Unknown catalog tool "${call.name}"`);

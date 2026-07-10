@@ -11,6 +11,7 @@ export {
 } from "./schema";
 export {
   catalogManagedNames,
+  filterCatalogByAvailableTools,
   searchCatalog,
   resolveLoadRequest,
   type SearchToolsQuery,

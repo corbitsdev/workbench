@@ -741,10 +741,23 @@ export const UsageByWorkflowTypeRowSchema = type({
   toolCallCount: "number",
   inputTokens: "number",
   outputTokens: "number",
+  "cacheReadTokens?": "number",
+  "cacheWriteTokens?": "number",
+  "thinkingTokens?": "number",
   cost: PricedUsageSchema,
 });
 
-export type UsageByWorkflowTypeRow = typeof UsageByWorkflowTypeRowSchema.infer;
+type ParsedUsageByWorkflowTypeRow = typeof UsageByWorkflowTypeRowSchema.infer;
+
+/** Normalized workflow usage row (all five token classes required). */
+export type UsageByWorkflowTypeRow = Omit<
+  ParsedUsageByWorkflowTypeRow,
+  "cacheReadTokens" | "cacheWriteTokens" | "thinkingTokens"
+> & {
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  thinkingTokens: number;
+};
 
 const ActivityOverviewSchema = type({
   tenantId: "string",
@@ -800,6 +813,7 @@ const ActivityOverviewSchema = type({
   metricsSeries: MetricsPointSchema.array(),
   models: ActivityCountRowSchema.array(),
   byModel: UsageByModelRowSchema.array(),
+  "pricedByModel?": PricedUsageSchema,
   tokensRecordedFrom: "string.date | null",
   byPerson: UsageByPersonRowSchema.array(),
   byWorkflowType: UsageByWorkflowTypeRowSchema.array(),
@@ -824,7 +838,54 @@ const ActivityOverviewSchema = type({
   },
 });
 
-export type ActivityOverview = typeof ActivityOverviewSchema.infer;
+type ParsedActivityOverview = typeof ActivityOverviewSchema.infer;
+
+function normalizeWorkflowTypeRow(
+  row: ParsedUsageByWorkflowTypeRow,
+): UsageByWorkflowTypeRow {
+  return {
+    kind: row.kind,
+    turnCount: row.turnCount,
+    toolCallCount: row.toolCallCount,
+    inputTokens: row.inputTokens,
+    outputTokens: row.outputTokens,
+    cacheReadTokens: row.cacheReadTokens ?? 0,
+    cacheWriteTokens: row.cacheWriteTokens ?? 0,
+    thinkingTokens: row.thinkingTokens ?? 0,
+    cost: row.cost,
+  };
+}
+
+function normalizeActivityOverview(
+  parsed: ParsedActivityOverview,
+): ActivityOverview {
+  return {
+    ...parsed,
+    pricedByModel: parsed.pricedByModel ?? null,
+    byWorkflowType: parsed.byWorkflowType.map(normalizeWorkflowTypeRow),
+  };
+}
+
+export type ActivityOverview = Omit<
+  ParsedActivityOverview,
+  "pricedByModel" | "byWorkflowType"
+> & {
+  pricedByModel: PricedUsageValue | null;
+  byWorkflowType: UsageByWorkflowTypeRow[];
+};
+
+/**
+ * Parse an activity overview API payload.
+ * Rolling-deploy back-compat: optional `pricedByModel` and optional cache/thinking
+ * fields on `byWorkflowType` only (other overview sections stay strict).
+ */
+export function parseActivityOverview(raw: unknown): ActivityOverview {
+  const result = ActivityOverviewSchema(raw);
+  if (result instanceof type.errors) {
+    throw new Error(`Invalid activity overview response: ${result.summary}`);
+  }
+  return normalizeActivityOverview(result);
+}
 
 /**
  * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
@@ -945,11 +1006,7 @@ export async function getActivityOverview(
   const qs = params.toString();
   const path = `tenants/${encodeURIComponent(tenantId)}/activity/overview${qs ? `?${qs}` : ""}`;
   const raw = await hubFetch<unknown>("GET", path);
-  const result = ActivityOverviewSchema(raw);
-  if (result instanceof type.errors) {
-    throw new Error(`Invalid activity overview response: ${result.summary}`);
-  }
-  return result;
+  return parseActivityOverview(raw);
 }
 
 /** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */

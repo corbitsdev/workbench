@@ -165,31 +165,36 @@ export function TimeSeriesChart({
         </div>
       )}
 
-      <table id={tableId} className="sr-only" data-testid="time-series-table">
-        <caption>{label}</caption>
-        <thead>
-          <tr>
-            <th scope="col">Bucket</th>
-            {nonEmpty.map((s) => (
-              <th key={s.key} scope="col">
-                {s.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {labels.map((rowLabel, rowIndex) => (
-            <tr key={rowLabel}>
-              <th scope="row">{rowLabel}</th>
+      {/* sr-only must clamp a block wrapper, not the <table> itself: table
+          layout ignores width/height:1px, so an sr-only table renders at full
+          content height as a position:absolute box (phantom whitespace). */}
+      <div className="sr-only">
+        <table id={tableId} data-testid="time-series-table">
+          <caption>{label}</caption>
+          <thead>
+            <tr>
+              <th scope="col">Bucket</th>
               {nonEmpty.map((s) => (
-                <td key={s.key}>
-                  {formatValue(s.points[rowIndex]?.value ?? 0)}
-                </td>
+                <th key={s.key} scope="col">
+                  {s.name}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {labels.map((rowLabel, rowIndex) => (
+              <tr key={rowLabel}>
+                <th scope="row">{rowLabel}</th>
+                {nonEmpty.map((s) => (
+                  <td key={s.key}>
+                    {formatValue(s.points[rowIndex]?.value ?? 0)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }

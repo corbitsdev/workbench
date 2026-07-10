@@ -112,7 +112,34 @@ export interface DeployRouter {
    * the implementation.
    */
   undeploy?: (frame: AgentUndeployFrame) => Promise<void>;
+  /**
+   * WORKBENCH-LOCAL (CL-3104): state-PRESERVING teardown for `deploy`.
+   * The link invokes this instead of `undeploy` when an `agent.undeploy`
+   * frame carries the `WORKFLOW_HIBERNATE_UNDEPLOY_REASON` marker: the
+   * router must release the same per-deployment routing state and shut
+   * the supervisor/child down, but keep every durable on-disk artifact
+   * (workflow-run repo, per-step agent-state repos, step scratch) so a
+   * later re-deploy at the same address resumes the parked run from the
+   * durable log. Optional for routers that never host workflows.
+   */
+  hibernate?: (frame: AgentUndeployFrame) => Promise<void>;
 }
+
+/**
+ * WORKBENCH-LOCAL (CL-3104): well-known `agent.undeploy` reason the hub's
+ * workflow reconciler sends to hibernate a gate-parked (awaiting) run's
+ * deployment. The undeploy frame (`@intx/types/sidecar`) carries only
+ * `{ agentAddress, reason }` and the hub-side sender (`@intx/hub-sessions`
+ * `sendAgentUndeploy`) exposes only those two fields, so the hibernate
+ * flavor rides the reason string — the one hub→sidecar teardown seam that
+ * crosses interchange unmodified.
+ *
+ * PROTOCOL CONSTANT: `apps/hub/src/services/workflow-reconciler.ts`
+ * carries a byte-identical copy (the hub does not depend on this package).
+ * Change both together or hibernate silently degrades on one side.
+ */
+export const WORKFLOW_HIBERNATE_UNDEPLOY_REASON =
+  "workbench:hibernate-awaiting-run";
 
 /**
  * Per-address mail handler registry the link consults on every
@@ -469,7 +496,35 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   async function handleSessionStart(frame: SessionStartFrame): Promise<void> {
     try {
-      await sessions.startSession(frame.agentAddress);
+      // WORKBENCH-LOCAL (CL-3102): an explicit session open for a lazily-
+      // restored agent must build its harness through the wake path (with
+      // backoff), not `startSession` — which expects an already-provisioned
+      // agent. A freshly-deployed (provisioned, never-restored) agent is not
+      // wakeable, so it still takes the direct `startSession` path.
+      //
+      // Only the FIRST wake attempt is awaited: the hub's session.start
+      // ack deadline is DEFAULT_REQUEST_TIMEOUT_MS = 30s
+      // (@intx/hub-sessions ws/sidecar-handler.ts) and the full retry
+      // schedule (up to 5 builds + 3s cumulative backoff) can exceed it
+      // when builds are slow. A first-attempt failure acks as agent.error
+      // within the deadline while the remaining retries continue in the
+      // background — a later hub retry (or inbound mail) finds the agent
+      // live or still wakeable.
+      //
+      // Live session first: a start for an address whose harness is
+      // already running (a hub retry after a background wake succeeded,
+      // or a duplicate frame) acks idempotently — once live, the agent
+      // is neither wakeable nor provisioned, so falling through to
+      // `startSession` would error a perfectly healthy harness.
+      if (sessions.hasSession(frame.agentAddress)) {
+        logger.info`session.start for ${frame.agentAddress}: session already live, acking idempotently`;
+      } else if (sessions.isWakeable(frame.agentAddress)) {
+        await sessions.wakeAgent(frame.agentAddress, {
+          awaitFirstAttemptOnly: true,
+        });
+      } else {
+        await sessions.startSession(frame.agentAddress);
+      }
       send({
         type: "session.start.ack",
         agentAddress: frame.agentAddress,
@@ -485,7 +540,84 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3104): hibernate flavor of agent.undeploy. Selected
+  // by the well-known reason marker; tears down runtime residency (routing
+  // registrations, supervisor/child, harness session) while preserving every
+  // durable on-disk artifact — no state-pack push, no `deleteAgentDir`, no
+  // `forgetAgent`. The ack drops the address from the hub's routable set;
+  // that unroutability is what makes the next gate signal's
+  // `ensureDeploymentRoutable` re-establish the deployment and resume the
+  // parked run.
+  //
+  // On failure the ack is withheld — NOT to keep the address routable
+  // (interchange's `sendAgentUndeploy` timeout arm removes the address
+  // BEFORE rejecting, so the hub unroutes either way) but to make the
+  // failure LOUD at the hub caller (the reconciler counts the rejection)
+  // instead of a silent fake success. The teardown is idempotent, so a
+  // transient failure is retried once here; a deployment left resident
+  // after both attempts is self-healed by the deploy branch's
+  // resident-supervisor guard when the wake re-deploy arrives
+  // (workflow-host-wiring.ts, CL-3104).
+  async function handleAgentHibernate(
+    frame: AgentUndeployFrame,
+  ): Promise<void> {
+    const hibernate = deployRouter.hibernate;
+    if (hibernate === undefined) {
+      logger.error`Hibernate requested for ${frame.agentAddress} but the deploy router has no hibernate hook; leaving the deployment resident (no ack)`;
+      return;
+    }
+    try {
+      await hibernate(frame);
+    } catch (firstErr) {
+      const firstMsg =
+        firstErr instanceof Error ? firstErr.message : String(firstErr);
+      logger.warn`Deploy router hibernate hook failed for ${frame.agentAddress}: ${firstMsg}; retrying once`;
+      try {
+        await hibernate(frame);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error`Deploy router hibernate hook failed again for ${frame.agentAddress}: ${msg}; leaving the deployment resident (no ack)`;
+        return;
+      }
+    }
+
+    // Same bootstrap-flag prune as the full undeploy: the wiring's hibernate
+    // clears the deployment's delta cursor, so the next push after a wake
+    // must re-run the bootstrap-retry arm.
+    const bootstrapped = workflowRunPackBootstrappedByAddress.get(
+      frame.agentAddress,
+    );
+    if (bootstrapped !== undefined) {
+      for (const key of bootstrapped) {
+        workflowRunPackBootstrapped.delete(key);
+      }
+      workflowRunPackBootstrappedByAddress.delete(frame.agentAddress);
+    }
+
+    // Stop any legacy harness session at the deployment address (a no-op for
+    // genuine multi-step deployments, which never start one).
+    try {
+      await sessions.destroySession(frame.agentAddress);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn`Failed to stop session for ${frame.agentAddress}: ${msg}`;
+    }
+
+    send({
+      type: "agent.undeploy.ack",
+      agentAddress: frame.agentAddress,
+      statePushed: false,
+    });
+    logger.info`Hibernated deployment ${frame.agentAddress}: ${frame.reason}`;
+  }
+
   async function handleAgentUndeploy(frame: AgentUndeployFrame): Promise<void> {
+    // WORKBENCH-LOCAL (CL-3104): reason-scoped hibernate branch.
+    if (frame.reason === WORKFLOW_HIBERNATE_UNDEPLOY_REASON) {
+      await handleAgentHibernate(frame);
+      return;
+    }
+
     let statePushed = false;
 
     // Release per-deployment routing state the deploy router installed
@@ -1002,8 +1134,14 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         if (routed) {
           break;
         }
-        deliverLocalMail(frame.agentAddress, rawBytes);
-        void sessions.commitInboundMail(frame.agentAddress, rawBytes);
+        // WORKBENCH-LOCAL (CL-3102): a lazily-restored agent has no harness
+        // yet; `deliverInboundMail` delivers to a live session immediately,
+        // or parks this message and wakes the agent (building its harness +
+        // fetching credentials) then replays the parked message. The parked
+        // buffer is memory-only: the trigger survives build failures and
+        // retries but is lost on a process crash mid-wake or if the wake
+        // retries exhaust with no later trigger.
+        sessions.deliverInboundMail(frame.agentAddress, rawBytes);
         break;
       }
       case "agent.deploy":
@@ -1056,15 +1194,6 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         break;
       default:
         logger.warn`Unknown frame type from hub: ${(frame as { type: string }).type}`;
-    }
-  }
-
-  function deliverLocalMail(agentAddress: string, message: Uint8Array): void {
-    try {
-      transport.deliver(agentAddress, message);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      logger.warn`Failed to deliver inbound mail to ${agentAddress}: ${msg}`;
     }
   }
 

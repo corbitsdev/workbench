@@ -6,6 +6,7 @@ import {
   computeCost,
   priceUsageRows,
   resolveModelRate,
+  sumTokenUsageClasses,
   UNKNOWN_MODEL_LABEL,
   type ModelsDevPayload,
   type PriceCatalog,
@@ -514,5 +515,23 @@ describe("ModelsDevPayloadSchema boundary parse", () => {
     const bad = { anthropic: { id: "anthropic", name: "Anthropic" } };
     const parsed = ModelsDevPayloadSchema(bad);
     expect(parsed instanceof type.errors).toBe(true);
+  });
+});
+
+describe("sumTokenUsageClasses (CL-2891)", () => {
+  test("sums all five classes when present", () => {
+    expect(
+      sumTokenUsageClasses({
+        inputTokens: 1,
+        outputTokens: 2,
+        cacheReadTokens: 3,
+        cacheWriteTokens: 4,
+        thinkingTokens: 5,
+      }),
+    ).toBe(15);
+  });
+
+  test("treats omitted classes as zero", () => {
+    expect(sumTokenUsageClasses({ inputTokens: 10, outputTokens: 5 })).toBe(15);
   });
 });

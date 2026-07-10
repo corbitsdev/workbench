@@ -1,3 +1,36 @@
+import type { ActivityOverview } from "../../lib/hub-api";
+import {
+  priceUsageRows,
+  sumTokenUsageClasses,
+  type PriceCatalog,
+  type PricedUsage,
+  type TokenUsageLike,
+} from "@workbench/pricing";
+
+export function resolveTenantPricedByModel(
+  overview: ActivityOverview,
+  clientCatalog: PriceCatalog | null,
+): PricedUsage | null {
+  if (overview.pricedByModel !== null) {
+    return overview.pricedByModel;
+  }
+  if (
+    clientCatalog === null ||
+    overview.byModel.length === 0 ||
+    Object.keys(clientCatalog.models).length === 0
+  ) {
+    return null;
+  }
+  return priceUsageRows(overview.byModel, clientCatalog);
+}
+
+export type InferenceTokenFields = TokenUsageLike;
+
+/** Same five-class total as hub metrics and InferenceSection (CL-2891). */
+export function sumInferenceTokenClasses(row: InferenceTokenFields): number {
+  return sumTokenUsageClasses(row);
+}
+
 export type DeltaDirection = "up" | "down" | "flat";
 
 export type DeltaResult = {
@@ -41,6 +74,9 @@ export type DailyLike = {
   toolCallCount: number;
   inputTokens: number;
   outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  thinkingTokens?: number;
 };
 
 /**

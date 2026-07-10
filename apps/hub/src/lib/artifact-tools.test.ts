@@ -17,6 +17,21 @@ import { MAX_UPLOAD_BYTES } from "../db/schema";
 
 type InsertedRow = Record<string, unknown>;
 
+// Flatten a drizzle SQL predicate into the literal strings (including column
+// names like "archived_at") it carries, so a test can assert which columns
+// reached the query without rendering a dialect.
+function flattenStrings(node: unknown, seen = new Set<unknown>()): string[] {
+  if (node == null || seen.has(node)) return [];
+  if (typeof node === "string") return [node];
+  if (typeof node !== "object") return [];
+  seen.add(node);
+  const out: string[] = [];
+  for (const value of Object.values(node as Record<string, unknown>)) {
+    out.push(...flattenStrings(value, seen));
+  }
+  return out;
+}
+
 const BASE_CONTEXT = {
   tenantId: "tnt_1",
   principalId: "prn_1",
@@ -98,13 +113,15 @@ function makeQueryContext(resultSets: unknown[][]) {
     orderByCount: 0,
     forUpdateCount: 0,
     limitArg: -1,
+    whereArgs: [] as unknown[],
   };
 
   const makeChain = (rows: unknown[]) => {
     const chain = {
       from: () => chain,
-      where: () => {
+      where: (arg: unknown) => {
         calls.whereCount += 1;
+        calls.whereArgs.push(arg);
         return chain;
       },
       orderBy: () => {
@@ -689,6 +706,32 @@ describe("artifact_write handler", () => {
     expect(context.db.transaction).toHaveBeenCalledTimes(1);
   });
 
+  it("refuses to write an archived artifact, presenting it as not-found", async () => {
+    const { context, updateSets } = makeQueryContext([
+      [
+        {
+          id: "art_1",
+          title: "Old",
+          kind: "note",
+          status: "draft",
+          version: 1,
+          content: "hidden",
+          archivedAt: new Date("2026-06-01T00:00:00.000Z"),
+        },
+      ],
+    ]);
+    await expect(
+      handlerFor(
+        context,
+        "artifact_write",
+      )({
+        artifactId: "art_1",
+        content: "sneaky revision",
+      }),
+    ).rejects.toThrow(/Artifact not found/);
+    expect(updateSets).toHaveLength(0);
+  });
+
   it("keeps the current content when only the title changes", async () => {
     const { context, updateSets } = makeQueryContext([
       [
@@ -818,6 +861,33 @@ describe("artifact_list handler", () => {
     await expect(
       handlerFor(bad.context, "artifact_list")({ status: "archived" }),
     ).rejects.toThrow(/status must be one of/);
+  });
+
+  it("filters out archived artifacts (CL-3156)", async () => {
+    const { context, calls } = makeQueryContext([[]]);
+    await handlerFor(context, "artifact_list")({});
+    expect(flattenStrings(calls.whereArgs[0]).join(" ")).toContain(
+      "archived_at",
+    );
+  });
+});
+
+describe("artifact_find_by_title handler", () => {
+  it("filters out archived artifacts (CL-3156)", async () => {
+    const { context, calls } = makeQueryContext([[]]);
+    await handlerFor(context, "artifact_find_by_title")({ title: "X" });
+    expect(flattenStrings(calls.whereArgs[0]).join(" ")).toContain(
+      "archived_at",
+    );
+  });
+
+  it("returns null when no matching row exists", async () => {
+    const { context } = makeQueryContext([[]]);
+    const result = await handlerFor(
+      context,
+      "artifact_find_by_title",
+    )({ title: "missing" });
+    expect(JSON.parse(result as string)).toBeNull();
   });
 });
 

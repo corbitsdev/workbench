@@ -262,3 +262,59 @@ describe("ChatInput composer width", () => {
     expect(row?.className).not.toContain("max-w-[60vw]");
   });
 });
+
+describe("auto-grow", () => {
+  it("grows textarea height when long multi-line text is pasted", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => 192,
+    });
+
+    const pasted =
+      "Paragraph one that is long enough to wrap several times in the composer.\n" +
+      "Paragraph two continues the paste.\nParagraph three.\nParagraph four.\n" +
+      "Paragraph five with more text to force height growth.\nParagraph six.";
+
+    await user.click(input);
+    await user.paste(pasted);
+
+    expect(input.value).toContain("Paragraph six");
+    expect(parseInt(input.style.height || "0", 10)).toBeGreaterThan(100);
+  });
+
+  it("grows up to ~30vh but caps height and lets internal scroll take over for longer content", () => {
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+
+    // Simulate a ~1000px viewport so 30vh = 300px cap.
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      get: () => 1000,
+    });
+
+    // Very tall content.
+    Object.defineProperty(input, "scrollHeight", {
+      configurable: true,
+      get: () => 600,
+    });
+
+    // Trigger height adjustment by typing (onChange + useLayoutEffect).
+    fireEvent.change(input, { target: { value: "x\ny\nz\nlong\ncontent" } });
+
+    const h = parseInt(input.style.height || "0", 10);
+    const expectedCap = Math.floor(1000 * 0.3);
+    // Must be capped (not the full 600).
+    expect(h).toBeLessThanOrEqual(expectedCap);
+    expect(h).toBeGreaterThan(100); // still grew some
+    // The element's internal scrollHeight (mock) exceeds the rendered height => scroll will appear.
+    expect(input.scrollHeight).toBeGreaterThan(h);
+  });
+});

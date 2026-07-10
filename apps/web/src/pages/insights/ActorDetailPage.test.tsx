@@ -27,10 +27,37 @@ type TimelineEntry = {
   summary: string | null;
 };
 
+type PrincipalAnalytics = {
+  tools: { name: string; calls: number; errors: number }[];
+  cost: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+    thinkingTokens: number;
+    inferenceCalls: number;
+    toolCalls: number;
+  };
+};
+
+const EMPTY_ANALYTICS: PrincipalAnalytics = {
+  tools: [],
+  cost: {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    thinkingTokens: 0,
+    inferenceCalls: 0,
+    toolCalls: 0,
+  },
+};
+
 let actorResult: Actor | null = null;
 let actorCalls: string[] = [];
 let activityEntries: TimelineEntry[] = [];
 let activityError: Error | null = null;
+let analyticsResult: PrincipalAnalytics = EMPTY_ANALYTICS;
 
 mock.module("../../lib/active-workbench-context", () => ({
   useActiveWorkbench: () => ({
@@ -52,6 +79,7 @@ mock.module("@workbench/client", () => ({
       ? Promise.reject(activityError)
       : Promise.resolve({ entries: activityEntries, nextCursor: null }),
   getPrincipalRoster: () => Promise.resolve({ instances: [], runs: [] }),
+  getPrincipalAnalytics: () => Promise.resolve(analyticsResult),
 }));
 
 import { ActorDetailPage } from "./ActorDetailPage";
@@ -80,6 +108,7 @@ beforeEach(() => {
   actorCalls = [];
   activityEntries = [];
   activityError = null;
+  analyticsResult = EMPTY_ANALYTICS;
 });
 afterEach(() => cleanup());
 
@@ -282,39 +311,56 @@ describe("ActorDetailPage", () => {
     expect(within(strip).queryByText("0")).toBeNull();
   });
 
-  it("aggregates repeated tool calls on the Tools facet from the real union", async () => {
+  it("renders the aggregated tool breakdown on the Tools facet from the analytics endpoint", async () => {
     actorResult = {
       id: "prn_u1",
       kind: "user",
       displayName: "Myra Ops",
       status: "active",
     };
-    activityEntries = [
-      {
-        id: "tc1",
-        kind: "tool_call",
-        sourceTable: "analytics_event",
-        timestamp: "2026-07-01T15:00:02.000Z",
-        summary: "attio__list_objects",
-      },
-      {
-        id: "tc2",
-        kind: "tool_call",
-        sourceTable: "analytics_event",
-        timestamp: "2026-07-01T15:00:01.000Z",
-        summary: "attio__list_objects",
-      },
-    ];
+    analyticsResult = {
+      tools: [{ name: "attio__list_objects", calls: 2, errors: 0 }],
+      cost: EMPTY_ANALYTICS.cost,
+    };
     renderAt("prn_u1");
 
-    await waitFor(() => screen.getByRole("listbox"));
-    fireEvent.click(screen.getByRole("tab", { name: /Tools/ }));
+    fireEvent.click(await screen.findByRole("tab", { name: /Tools/ }));
     const facet = await waitFor(() => screen.getByTestId("facet-tools"));
-    // Two calls of one tool collapse into a single row with a call count of 2.
+    // The aggregated call count comes from the durable facts, not the window.
     within(facet).getByText("Attio list objects");
     within(facet).getByText("2");
     // The concrete records touched are an honest gap, never invented.
     within(facet).getByText("which records?");
+  });
+
+  it("renders real token-class totals on the Cost facet from the analytics endpoint", async () => {
+    actorResult = {
+      id: "prn_u1",
+      kind: "user",
+      displayName: "Myra Ops",
+      status: "active",
+    };
+    analyticsResult = {
+      tools: [],
+      cost: {
+        inputTokens: 1234,
+        outputTokens: 567,
+        cacheReadTokens: 89,
+        cacheWriteTokens: 10,
+        thinkingTokens: 0,
+        inferenceCalls: 5,
+        toolCalls: 0,
+      },
+    };
+    renderAt("prn_u1");
+
+    fireEvent.click(await screen.findByRole("tab", { name: /Cost/ }));
+    const facet = await waitFor(() => screen.getByTestId("facet-cost"));
+    within(facet).getByText("1,234");
+    within(facet).getByText("567");
+    within(facet).getByText("Fresh input");
+    // No fabricated "not recorded yet" placeholder once real data is present.
+    expect(within(facet).queryByText("not recorded yet")).toBeNull();
   });
 
   it("cross-links a workflow_run to its own trace on the Connections facet", async () => {

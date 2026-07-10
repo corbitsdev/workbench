@@ -4,11 +4,19 @@
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
 import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useExperimentalArtifactCards, useViewMode } from "@workbench/ui";
 import {
+  artifactsInfiniteQueryKey,
+  useArchiveArtifact,
   useArtifactsInfinite,
   useTenantMembers,
 } from "@workbench/client/react";
+import type { UseArtifactsParams } from "@workbench/client/react";
+import type { ArtifactsPage } from "@workbench/client";
+import { getMe } from "../../lib/hub-api";
+import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import {
   ArtifactGallery as ArtifactGalleryView,
   ArtifactModal,
@@ -51,6 +59,14 @@ export function ArtifactGallery({
   onOpenArtifact,
 }: ArtifactGalleryProps) {
   const { openWithMessage } = useChatLauncher();
+  const queryClient = useQueryClient();
+  const { activeWorkbench } = useActiveWorkbench();
+  const meQuery = useQuery({
+    queryKey: ["me"],
+    queryFn: getMe,
+    staleTime: 5 * 60_000,
+  });
+  const archiveMutation = useArchiveArtifact(clientOptions);
   const [inputQuery, setInputQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -60,6 +76,7 @@ export function ArtifactGallery({
     "user" | "agent" | undefined
   >(undefined);
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
+  const [archiveError, setArchiveError] = useState(false);
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedArtifactFilter>(
     {},
   );
@@ -90,6 +107,59 @@ export function ArtifactGallery({
   const { data: members } = useTenantMembers(clientOptions, { tenantId });
 
   const [selected, setSelected] = useState<ArtifactWithSession | null>(null);
+
+  // Owner-or-admin gate for the archive action. The server re-checks this; the
+  // gate here only decides whether to offer the button. `activeWorkbench.id` is
+  // the caller's principal id in the active tenant.
+  const myPrincipalId = activeWorkbench?.id ?? null;
+  const isAdmin = meQuery.data?.isAdmin === true;
+  const isOwner = meQuery.data?.isOwner === true;
+  function canArchive(artifact: ArtifactWithSession): boolean {
+    if (isAdmin || isOwner) return true;
+    return (
+      artifact.ownerPrincipalId !== null &&
+      artifact.ownerPrincipalId === myPrincipalId
+    );
+  }
+
+  // The infinite query key for the current filter set — used to optimistically
+  // drop the archived card and to roll it back if the request fails.
+  const currentListParams: UseArtifactsParams = {
+    tenantId,
+    query: debouncedQuery || undefined,
+    sort,
+    ownerPrincipalId: ownerFilter,
+    creatorKind: creatorKindFilter,
+    kind: kindFilter,
+    createdAfter: advancedFilter.createdAfter,
+    createdBefore: advancedFilter.createdBefore,
+  };
+
+  function handleArchive(artifact: ArtifactWithSession) {
+    setSelected(null);
+    setArchiveError(false);
+    const key = artifactsInfiniteQueryKey(currentListParams);
+    const previous =
+      queryClient.getQueryData<InfiniteData<ArtifactsPage, string | null>>(key);
+    if (previous) {
+      queryClient.setQueryData<InfiniteData<ArtifactsPage, string | null>>(
+        key,
+        {
+          ...previous,
+          pages: previous.pages.map((page) => ({
+            ...page,
+            artifacts: page.artifacts.filter((a) => a.id !== artifact.id),
+          })),
+        },
+      );
+    }
+    archiveMutation
+      .mutateAsync({ artifactId: artifact.id, tenantId })
+      .catch(() => {
+        if (previous) queryClient.setQueryData(key, previous);
+        setArchiveError(true);
+      });
+  }
 
   const handleQueryChange = (value: string) => {
     setInputQuery(value);
@@ -135,6 +205,24 @@ export function ArtifactGallery({
 
   return (
     <>
+      {archiveError && (
+        <div
+          role="alert"
+          className="mx-4 mt-3 flex items-center justify-between gap-3 rounded border border-red-soft bg-red-soft/20 px-3 py-2 text-sm text-red"
+        >
+          <span>
+            Couldn&apos;t archive that artifact — it&apos;s still here. Try
+            again.
+          </span>
+          <button
+            type="button"
+            onClick={() => setArchiveError(false)}
+            className="text-xs text-text-3 hover:text-text"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
       <ArtifactGalleryView
         artifacts={artifacts ?? []}
         isLoading={isLoading}
@@ -177,6 +265,7 @@ export function ArtifactGallery({
         kindLabel={selected ? resolveKindLabel(selected.kind) : undefined}
         onOpenInMyra={handleOpenInMyra}
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
+        onArchive={selected && canArchive(selected) ? handleArchive : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
       >
         {selected && <ArtifactBody artifact={selected} />}

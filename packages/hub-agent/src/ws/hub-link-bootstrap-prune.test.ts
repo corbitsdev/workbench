@@ -135,6 +135,13 @@ function createMockSessionManager(): SessionManager & {
     deliverMessage(_agentAddress: string, _message: InboundMessage): void {
       /* unused */
     },
+    isWakeable(_agentAddress: string): boolean {
+      return false;
+    },
+    wakeAgent: (_agentAddress: string) => Promise.resolve(),
+    deliverInboundMail(_agentAddress: string, _rawMessage: Uint8Array): void {
+      /* unused */
+    },
     async updateGrants(
       _agentAddress: string,
       _grants: GrantRule[],
