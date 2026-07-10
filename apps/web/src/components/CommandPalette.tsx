@@ -102,15 +102,7 @@ function emptyMessage(
   if (loading) return "Searching…";
   if (error) return "Search failed. Please try again.";
   if (trimmed) return `No matches for “${trimmed}”.`;
-  return "Search entities or use the shortcuts below.";
-}
-
-function ShortcutChip({ children }: { children: string }) {
-  return (
-    <kbd className="rounded border border-border bg-surface-2 px-1.5 py-0.5 font-sans text-[11px] text-text-2">
-      {children}
-    </kbd>
-  );
+  return "Type to search for entities.";
 }
 
 function PaletteShortcutFooter({ platform }: { platform: ShortcutPlatform }) {
@@ -126,7 +118,9 @@ function PaletteShortcutFooter({ platform }: { platform: ShortcutPlatform }) {
         {PALETTE_GLOBAL_SHORTCUT_HINTS.map((hint) => (
           <span key={hint.keys} className="inline-flex items-center gap-1.5">
             <span>{hint.label}</span>
-            <ShortcutChip>{formatChord(hint.keys, platform)}</ShortcutChip>
+            <CommandShortcut className="ml-0 tracking-normal">
+              {formatChord(hint.keys, platform)}
+            </CommandShortcut>
           </span>
         ))}
       </div>
@@ -232,7 +226,7 @@ export function CommandPalette({
               // not fuzzy-match its own scorer. We own the matching.
               shouldFilter={false}
               aria-label="Search commands and entities"
-              className="flex max-h-[70vh] min-h-[min(28rem,55vh)] flex-col border border-border shadow-[var(--shadow)]"
+              className="flex max-h-[70vh] min-h-[min(22rem,48vh)] flex-col border border-border shadow-[var(--shadow)]"
             >
               <CommandInput
                 ref={inputRef}
