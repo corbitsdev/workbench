@@ -1032,7 +1032,9 @@ describe("attio_create_record handler", () => {
 
     expect(result.isError).toBeUndefined();
     const call = fetcher.mock.calls[0];
-    expect(call?.[0]).toBe("https://api.attio.com/v2/objects/companies/records");
+    expect(call?.[0]).toBe(
+      "https://api.attio.com/v2/objects/companies/records",
+    );
     expect(call?.[1].method).toBe("POST");
     expect(JSON.parse(String(call?.[1].body))).toEqual({
       data: { values: { name: "Tribe Capital", domains: ["tribecap.com"] } },
@@ -1109,6 +1111,26 @@ describe("attio_create_record handler", () => {
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("object is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("rejects an array passed as values before hitting the API", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "companies", values: ["Tribe Capital"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("values is required");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
