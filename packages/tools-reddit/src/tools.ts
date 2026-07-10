@@ -394,12 +394,14 @@ export function createRedditTools(config: RedditToolsConfig): AgentTool[] {
 
 export const REDDIT_HUB_TOOLS = {
   reddit_search: {
+    sideEffect: "read" as const,
     definition: REDDIT_SEARCH_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
       createRedditTools(config),
   },
   reddit_subreddit_search: {
+    sideEffect: "read" as const,
     definition: REDDIT_SUBREDDIT_SEARCH_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>

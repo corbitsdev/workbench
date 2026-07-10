@@ -1107,8 +1107,22 @@ export function createArtifactTools(context: ArtifactToolContext): AgentTool[] {
   ];
 }
 
+const ARTIFACT_WRITE_TOOLS = new Set([
+  "artifact_create",
+  "artifact_write",
+  "artifact_link_file",
+  "artifact_link_presentation",
+  "artifact_link_gamma_presentation",
+]);
+
 function artifactToolEntry(definition: ToolDefinition) {
-  return { definition, createTools: createArtifactTools };
+  return {
+    sideEffect: (ARTIFACT_WRITE_TOOLS.has(definition.name)
+      ? "write"
+      : "read") as "read" | "write",
+    definition,
+    createTools: createArtifactTools,
+  };
 }
 
 export const ARTIFACT_HUB_TOOLS = {

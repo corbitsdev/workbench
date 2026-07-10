@@ -336,6 +336,7 @@ export function createXTools(config: XToolsConfig): AgentTool[] {
 
 export const X_HUB_TOOLS = {
   x_search: {
+    sideEffect: "read" as const,
     definition: X_SEARCH_DEFINITION,
     providerName: "xai" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

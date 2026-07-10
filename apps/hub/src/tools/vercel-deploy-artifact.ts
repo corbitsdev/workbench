@@ -181,6 +181,7 @@ export const VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS: Record<
   ContextToolEntry
 > = {
   vercel_deploy_artifact: {
+    sideEffect: "write",
     definition: VERCEL_DEPLOY_ARTIFACT_DEFINITION,
     createTools: (ctx) =>
       createVercelDeployArtifactTools({

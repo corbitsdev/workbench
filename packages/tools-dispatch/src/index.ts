@@ -337,6 +337,7 @@ type DispatchHostContext = Pick<
 
 export const DISPATCH_HUB_TOOLS = {
   dispatch_agent: {
+    sideEffect: "write" as const,
     definition: DISPATCH_AGENT_DEFINITION,
     createTools: (context: DispatchHostContext): AgentTool[] => {
       if (

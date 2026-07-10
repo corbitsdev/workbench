@@ -295,6 +295,7 @@ export function createBlueskyTools(
 
 export const BLUESKY_HUB_TOOLS = {
   bluesky_search: {
+    sideEffect: "read" as const,
     definition: BLUESKY_SEARCH_DEFINITION,
     providerName: "bluesky" as const,
     createTools: (credential: { apiKey: string; baseURL: string }) =>

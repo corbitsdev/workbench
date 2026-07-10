@@ -191,6 +191,7 @@ export function createGitHubTools(config: GitHubToolsConfig): AgentTool[] {
 
 export const GITHUB_HUB_TOOLS = {
   github_activity: {
+    sideEffect: "read" as const,
     definition: GITHUB_ACTIVITY_DEFINITION,
     providerName: "github" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

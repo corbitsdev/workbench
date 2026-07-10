@@ -26,14 +26,17 @@ function toolByName(name: string) {
 
 export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
   last30days_core_extract: {
+    sideEffect: "read",
     definition: LAST30DAYS_CORE_EXTRACT_DEFINITION,
     createTools: toolByName("last30days_core_extract"),
   },
   last30days_core_report: {
+    sideEffect: "read",
     definition: LAST30DAYS_CORE_REPORT_DEFINITION,
     createTools: toolByName("last30days_core_report"),
   },
   last30days_validate: {
+    sideEffect: "read",
     definition: LAST30DAYS_VALIDATE_DEFINITION,
     createTools: toolByName("last30days_validate"),
   },

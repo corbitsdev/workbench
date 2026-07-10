@@ -148,6 +148,7 @@ export function createMemoryTools(context: MemoryToolContext): AgentTool[] {
 
 export const MEMORY_HUB_TOOLS: Record<string, ContextToolEntry> = {
   memory_load: {
+    sideEffect: "read",
     definition: MEMORY_LOAD_DEFINITION,
     createTools: (ctx) =>
       createMemoryTools({
@@ -157,6 +158,7 @@ export const MEMORY_HUB_TOOLS: Record<string, ContextToolEntry> = {
       }),
   },
   memory_save: {
+    sideEffect: "write",
     definition: MEMORY_SAVE_DEFINITION,
     createTools: (ctx) =>
       createMemoryTools({

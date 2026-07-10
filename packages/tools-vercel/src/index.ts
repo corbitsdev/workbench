@@ -336,18 +336,21 @@ export function createVercelTools(config: VercelToolsConfig): AgentTool[] {
 
 export const VERCEL_HUB_TOOLS = {
   vercel_list_projects: {
+    sideEffect: "read" as const,
     definition: VERCEL_LIST_PROJECTS_DEFINITION,
     providerName: "vercel" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createVercelTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
   },
   vercel_list_deployments: {
+    sideEffect: "read" as const,
     definition: VERCEL_LIST_DEPLOYMENTS_DEFINITION,
     providerName: "vercel" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createVercelTools({ apiKey: config.apiKey, baseUrl: config.baseURL }),
   },
   vercel_deploy_static_file: {
+    sideEffect: "write" as const,
     definition: VERCEL_DEPLOY_STATIC_FILE_DEFINITION,
     providerName: "vercel" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

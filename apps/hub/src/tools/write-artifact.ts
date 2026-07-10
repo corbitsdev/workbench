@@ -224,6 +224,7 @@ export function createWriteArtifactTool(
 
 export const WRITE_ARTIFACT_HUB_TOOLS: Record<string, ContextToolEntry> = {
   write_artifact: {
+    sideEffect: "write",
     definition: WRITE_ARTIFACT_DEFINITION,
     createTools: (context) =>
       createWriteArtifactTool({

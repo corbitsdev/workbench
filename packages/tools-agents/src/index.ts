@@ -119,6 +119,7 @@ export const LIST_AGENTS_DEFINITION: ToolDefinition = {
 
 export const AGENTS_HUB_TOOLS = {
   list_principals: {
+    sideEffect: "read" as const,
     definition: LIST_PRINCIPALS_DEFINITION,
     createTools: (context: { db: DB["db"]; tenantId: string }): AgentTool[] =>
       createPrincipalsTools(context),

@@ -346,18 +346,22 @@ function requireSkillContext(context: {
 
 export const SKILLS_HUB_TOOLS: Record<string, ContextToolEntry> = {
   list_skills: {
+    sideEffect: "read",
     definition: LIST_SKILLS_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
   search_skills: {
+    sideEffect: "read",
     definition: SEARCH_SKILLS_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
   load_skill: {
+    sideEffect: "read",
     definition: LOAD_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
   skill_draft: {
+    sideEffect: "write",
     definition: DRAFT_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },

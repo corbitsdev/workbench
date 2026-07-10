@@ -435,6 +435,7 @@ function resolveConfig(config: {
  */
 export const LINEAR_HUB_TOOLS = {
   linear_list_issues: {
+    sideEffect: "read" as const,
     definition: LINEAR_LIST_ISSUES_DEFINITION,
     providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -445,6 +446,7 @@ export const LINEAR_HUB_TOOLS = {
       ),
   },
   linear_get_issue: {
+    sideEffect: "read" as const,
     definition: LINEAR_GET_ISSUE_DEFINITION,
     providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -455,6 +457,7 @@ export const LINEAR_HUB_TOOLS = {
       ),
   },
   linear_list_teams: {
+    sideEffect: "read" as const,
     definition: LINEAR_LIST_TEAMS_DEFINITION,
     providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -465,6 +468,7 @@ export const LINEAR_HUB_TOOLS = {
       ),
   },
   linear_list_users: {
+    sideEffect: "read" as const,
     definition: LINEAR_LIST_USERS_DEFINITION,
     providerName: "linear" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

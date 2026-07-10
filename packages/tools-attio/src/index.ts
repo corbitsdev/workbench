@@ -896,12 +896,14 @@ function resolveBaseUrl(config: {
  */
 export const ATTIO_HUB_TOOLS = {
   attio_list_objects: {
+    sideEffect: "read" as const,
     definition: ATTIO_LIST_OBJECTS_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_OBJECTS_DEFINITION),
   },
   attio_query_records: {
+    sideEffect: "read" as const,
     definition: ATTIO_QUERY_RECORDS_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -911,6 +913,7 @@ export const ATTIO_HUB_TOOLS = {
       ),
   },
   attio_search_records: {
+    sideEffect: "read" as const,
     definition: ATTIO_SEARCH_RECORDS_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -920,12 +923,14 @@ export const ATTIO_HUB_TOOLS = {
       ),
   },
   attio_get_record: {
+    sideEffect: "read" as const,
     definition: ATTIO_GET_RECORD_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_RECORD_DEFINITION),
   },
   attio_list_workspace_members: {
+    sideEffect: "read" as const,
     definition: ATTIO_LIST_WORKSPACE_MEMBERS_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
@@ -935,24 +940,28 @@ export const ATTIO_HUB_TOOLS = {
       ),
   },
   attio_list_tasks: {
+    sideEffect: "read" as const,
     definition: ATTIO_LIST_TASKS_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_LIST_TASKS_DEFINITION),
   },
   attio_get_task: {
+    sideEffect: "read" as const,
     definition: ATTIO_GET_TASK_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_GET_TASK_DEFINITION),
   },
   attio_update_task: {
+    sideEffect: "write" as const,
     definition: ATTIO_UPDATE_TASK_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_UPDATE_TASK_DEFINITION),
   },
   attio_create_note: {
+    sideEffect: "write" as const,
     definition: ATTIO_CREATE_NOTE_DEFINITION,
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

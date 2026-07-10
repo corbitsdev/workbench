@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  APPROVAL_REQUIRED_BARE_NAMES,
+  isApprovalRequiredBare,
+} from "@workbench/agents";
+import {
   buildToolDefinitions,
   getToolNamesFromCapabilities,
+  KNOWN_TOOLS,
   KNOWN_TOOL_SUMMARIES,
 } from "./tool-registry";
 
@@ -54,5 +59,33 @@ describe("tool registry", () => {
         providerName: "workbench",
       }),
     );
+  });
+
+  it("every approval-required tool present in KNOWN_TOOLS is classified write", () => {
+    // Approval ⊆ write. Internal writes (memory, artifacts, …) stay write
+    // without opening ReviewGate — do not invert this to write ⊆ approval.
+    for (const bare of APPROVAL_REQUIRED_BARE_NAMES) {
+      const entry = KNOWN_TOOLS[bare];
+      if (entry === undefined) continue;
+      expect(entry.sideEffect).toBe("write");
+      expect(isApprovalRequiredBare(bare)).toBe(true);
+    }
+  });
+
+  it("does not force approval on internal durable writes", () => {
+    for (const name of [
+      "memory_save",
+      "artifact_create",
+      "artifact_write",
+      "write_artifact",
+      "dispatch_agent",
+      "identity_set",
+      "skill_draft",
+    ] as const) {
+      const entry = KNOWN_TOOLS[name];
+      if (entry === undefined) continue;
+      expect(entry.sideEffect).toBe("write");
+      expect(isApprovalRequiredBare(name)).toBe(false);
+    }
   });
 });
