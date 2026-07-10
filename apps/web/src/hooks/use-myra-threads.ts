@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  invalidateMyraThreads,
+  myraThreadsKey,
+  myraThreadsPrefix,
+} from "./myra-threads-cache";
+import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
 } from "@workbench/shared";
@@ -12,6 +17,7 @@ import {
   renameMyraThread,
   type MyraThread,
   type MyraThreadListItem,
+  type MyraThreadPage,
 } from "../lib/hub-api";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
@@ -20,10 +26,9 @@ export function isDefaultThreadLabel(label: string): boolean {
   return isDefaultMyraThreadLabel(label);
 }
 
-const MYRA_THREADS_KEY = "myra-threads";
-function myraThreadsKey(tenantId: string | null) {
-  return [MYRA_THREADS_KEY, tenantId] as const;
-}
+// Re-exported so existing importers of invalidateMyraThreads from this module
+// keep working; the canonical definition lives in ./myra-threads-cache.
+export { invalidateMyraThreads };
 const LAST_ACTIVE_THREAD_KEY = "myra-last-active-thread";
 const inFlightCreates = new Map<string, Promise<MyraThread>>();
 
@@ -146,15 +151,20 @@ function requireActiveTenant(tenantId: string | null): string {
   return tenantId;
 }
 
-export function useMyraThreads() {
+export function useMyraThreads(opts?: { limit?: number }) {
   const { activeTenantId } = useActiveWorkbench();
-  return useQuery<MyraThreadListItem[]>({
-    queryKey: myraThreadsKey(activeTenantId),
-    queryFn: () => listMyraThreads(requireActiveTenant(activeTenantId)),
+  const limit = opts?.limit;
+  return useQuery<MyraThreadPage>({
+    queryKey: myraThreadsKey(activeTenantId, limit),
+    queryFn: () =>
+      listMyraThreads(
+        requireActiveTenant(activeTenantId),
+        limit !== undefined ? { limit } : undefined,
+      ),
     enabled: !!activeTenantId,
     staleTime: 60_000,
     refetchInterval: (query) =>
-      titlePollInterval(activeTenantId, query.state.data),
+      titlePollInterval(activeTenantId, query.state.data?.threads),
   });
 }
 
@@ -175,16 +185,23 @@ export function useCreateMyraThread() {
     },
     onMutate: () => ({ tenantId: requireActiveTenant(activeTenantId) }),
     onSuccess: (thread, _label, context) => {
-      queryClient.setQueryData<MyraThreadListItem[]>(
-        myraThreadsKey(context.tenantId),
+      // A just-created thread is the most recent activity — insert it at the top
+      // of every cached page for the tenant (sidebar + full list) and bump total.
+      queryClient.setQueriesData<MyraThreadPage>(
+        { queryKey: myraThreadsPrefix(context.tenantId) },
         (existing) => {
           if (!existing) return existing;
-          if (existing.some((item) => item.id === thread.id)) return existing;
-          return [thread, ...existing];
+          if (existing.threads.some((entry) => entry.id === thread.id)) {
+            return existing;
+          }
+          return {
+            threads: [thread, ...existing.threads],
+            total: existing.total + 1,
+          };
         },
       );
       void queryClient.invalidateQueries({
-        queryKey: myraThreadsKey(context.tenantId),
+        queryKey: myraThreadsPrefix(context.tenantId),
       });
     },
   });
@@ -198,7 +215,7 @@ export function useRenameMyraThread() {
       renameMyraThread(requireActiveTenant(activeTenantId), id, label),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: myraThreadsKey(activeTenantId),
+        queryKey: myraThreadsPrefix(activeTenantId),
       });
     },
   });
@@ -212,7 +229,7 @@ export function useDeleteMyraThread() {
       deleteMyraThread(requireActiveTenant(activeTenantId), id),
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: myraThreadsKey(activeTenantId),
+        queryKey: myraThreadsPrefix(activeTenantId),
       });
     },
   });
@@ -234,13 +251,16 @@ export function useGenerateMyraThreadTitle() {
       // The real title lands asynchronously; poll the list until it replaces
       // this optimistic label.
       markTitlingActive(tenantId, id, label);
-      queryClient.setQueryData<MyraThreadListItem[]>(
-        myraThreadsKey(tenantId),
+      queryClient.setQueriesData<MyraThreadPage>(
+        { queryKey: myraThreadsPrefix(tenantId) },
         (existing) => {
           if (!existing) return existing;
-          return existing.map((item) =>
-            item.id === id ? { ...item, label } : item,
-          );
+          return {
+            ...existing,
+            threads: existing.threads.map((item) =>
+              item.id === id ? { ...item, label } : item,
+            ),
+          };
         },
       );
     },

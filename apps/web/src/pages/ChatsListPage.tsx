@@ -59,12 +59,12 @@ function buildGroups(
   now: number,
 ): ThreadGroup[] {
   const sorted = [...threads].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
+    b.lastActivityAt.localeCompare(a.lastActivityAt),
   );
   return GROUP_ORDER.map(({ key, label }) => ({
     key,
     label,
-    threads: sorted.filter((t) => bucketFor(t.createdAt, now) === key),
+    threads: sorted.filter((t) => bucketFor(t.lastActivityAt, now) === key),
   })).filter((group) => group.threads.length > 0);
 }
 
@@ -114,7 +114,8 @@ function CenteredState({
  * threads for quick switching; this is the browse-all surface.
  */
 export function ChatsListPage() {
-  const { data: threads, isLoading, isError, refetch } = useMyraThreads();
+  const { data, isLoading, isError, refetch } = useMyraThreads();
+  const threads = data?.threads;
   const createThread = useCreateMyraThread();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -254,7 +255,7 @@ export function ChatsListPage() {
                     </span>
                     <span className="flex-1" />
                     <span className="shrink-0 text-[12px] tabular-nums text-text-3">
-                      {formatRelativeTime(thread.createdAt, now)}
+                      {formatRelativeTime(thread.lastActivityAt, now)}
                     </span>
                   </button>
                 </div>

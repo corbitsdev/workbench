@@ -40,14 +40,18 @@ mock.module("../AuthProvider", () => ({
 
 mock.module("../../hooks/use-myra-threads", () => ({
   useMyraThreads: () => ({
-    data: [
-      {
-        id: "t1",
-        instanceId: "i1",
-        label: "First chat",
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-    ],
+    data: {
+      threads: [
+        {
+          id: "t1",
+          instanceId: "i1",
+          label: "First chat",
+          createdAt: "2026-01-01T00:00:00Z",
+          lastActivityAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      total: 1,
+    },
     isLoading: false,
   }),
   useCreateMyraThread: () => ({ mutate: () => {}, isPending: false }),

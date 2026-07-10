@@ -1,5 +1,6 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
+  type DB,
   schema as intxSchema,
   resolveCredentialRequirement,
   getAncestorChain,
@@ -38,6 +39,12 @@ export type MyraThreadRow = {
   instanceId: string;
   label: string;
   createdAt: string;
+  /**
+   * Last activity for the thread — bumped on each user message, seeded to
+   * `createdAt`. The sidebar and `/chats` order by this so active chats surface
+   * at the top.
+   */
+  lastActivityAt: string;
 };
 
 export type MyraThreadListRow = MyraThreadRow;
@@ -80,25 +87,67 @@ async function resolveMyraDefinition(
   return best;
 }
 
+export type MyraThreadPage = {
+  threads: MyraThreadListRow[];
+  /** Total threads the member has, independent of `limit` — powers "view all". */
+  total: number;
+};
+
 export async function listMyraThreads(
   db: HubDb,
-  opts: { tenantId: string; memberPrincipalId: string },
-): Promise<MyraThreadListRow[]> {
+  opts: { tenantId: string; memberPrincipalId: string; limit?: number },
+): Promise<MyraThreadPage> {
+  const where = and(
+    eq(memberAgentInstance.tenantId, opts.tenantId),
+    eq(memberAgentInstance.memberPrincipalId, opts.memberPrincipalId),
+    eq(memberAgentInstance.templateKey, MYRA_TEMPLATE_KEY),
+  );
+
   const rows = await db.query.memberAgentInstance.findMany({
-    where: and(
-      eq(memberAgentInstance.tenantId, opts.tenantId),
-      eq(memberAgentInstance.memberPrincipalId, opts.memberPrincipalId),
-      eq(memberAgentInstance.templateKey, MYRA_TEMPLATE_KEY),
-    ),
-    orderBy: [memberAgentInstance.createdAt],
+    where,
+    // createdAt + id break ties so a limited page is deterministic across calls.
+    orderBy: [
+      desc(memberAgentInstance.lastActivityAt),
+      desc(memberAgentInstance.createdAt),
+      desc(memberAgentInstance.id),
+    ],
+    ...(opts.limit !== undefined ? { limit: opts.limit } : {}),
   });
 
-  return rows.map((row, index) => ({
+  const threads = rows.map((row, index) => ({
     id: row.id,
     instanceId: row.instanceId,
     label: row.label?.trim() || defaultThreadLabel(index),
     createdAt: row.createdAt.toISOString(),
+    lastActivityAt: row.lastActivityAt.toISOString(),
   }));
+
+  // An unlimited fetch already returned every row; only a limited page needs a
+  // separate count.
+  const total =
+    opts.limit === undefined
+      ? threads.length
+      : await db.$count(memberAgentInstance, where);
+
+  return { threads, total };
+}
+
+/**
+ * Bump a member-agent instance's `lastActivityAt` to now. Called from the hub
+ * mail middleware on every inbound user message. It matches by `instanceId`
+ * only, so it updates whichever member_agent_instance row owns that instance
+ * (Myra threads and any other member-agent instance) and updates nothing for an
+ * instance that has no such row — safe to call for every agent instance.
+ */
+export async function recordMyraThreadActivity(
+  db: DB["db"],
+  instanceId: string,
+): Promise<void> {
+  const hubDb = db as unknown as HubDb;
+  await hubDb
+    .update(memberAgentInstance)
+    .set({ lastActivityAt: new Date() })
+    .where(eq(memberAgentInstance.instanceId, instanceId));
 }
 
 /**
@@ -246,6 +295,7 @@ export async function createMyraThread(
       instanceId,
       label,
       createdAt: now,
+      lastActivityAt: now,
     });
 
     for (const action of ["read", "write", "manage"] as const) {
@@ -279,6 +329,7 @@ export async function createMyraThread(
       instanceId,
       label,
       createdAt: now.toISOString(),
+      lastActivityAt: now.toISOString(),
     },
   };
 }
@@ -316,6 +367,7 @@ export async function renameMyraThread(
     instanceId: row.instanceId,
     label: row.label?.trim() || label,
     createdAt: row.createdAt.toISOString(),
+    lastActivityAt: row.lastActivityAt.toISOString(),
   };
 }
 

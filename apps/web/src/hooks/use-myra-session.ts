@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
+import { invalidateMyraThreads } from "./myra-threads-cache";
 import {
   ApiError,
   createInstanceSession,
@@ -661,6 +662,9 @@ export function useMyraSession(
       } else {
         releaseChipUrls();
       }
+      // Reorder the thread list to reflect the fresh activity, as the text-only
+      // send path does above.
+      invalidateMyraThreads(queryClient, tenantId);
     } catch (err) {
       releaseChipUrls();
       throw new Error(attachmentErrorMessage(err));
@@ -673,15 +677,19 @@ export function useMyraSession(
   ): void | Promise<void> => {
     if (!session) return;
     if (attachments === undefined || attachments.length === 0) {
-      void deliverMessage(session, resolvedInstanceIdRef.current, text).catch(
-        () => {
+      void deliverMessage(session, resolvedInstanceIdRef.current, text)
+        .then(() => {
+          // The hub bumped this thread's lastActivityAt; refresh the list so it
+          // reorders to the top rather than waiting for the query to go stale.
+          invalidateMyraThreads(queryClient, tenantId);
+        })
+        .catch(() => {
           setState({
             phase: "error",
             message:
               "Could not reach Myra. Check your connection and try again.",
           });
-        },
-      );
+        });
       return;
     }
     // Return the promise so the composer keeps the pending files and surfaces

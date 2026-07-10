@@ -57,7 +57,8 @@ export function PersonalAgentChat() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
 
   const { activeTenantId } = useActiveWorkbench();
-  const { data: threads } = useMyraThreads();
+  const { data: threadPage } = useMyraThreads();
+  const threads = threadPage?.threads;
   const createThread = useCreateMyraThread();
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);

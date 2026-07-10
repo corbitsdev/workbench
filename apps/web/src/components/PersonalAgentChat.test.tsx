@@ -35,7 +35,10 @@ mock.module("../hooks/use-myra-session", () => ({
   }),
 }));
 mock.module("../hooks/use-myra-threads", () => ({
-  useMyraThreads: () => ({ data: threads }),
+  useMyraThreads: () => ({
+    data:
+      threads === undefined ? undefined : { threads, total: threads.length },
+  }),
   useCreateMyraThread: () => ({ mutate: () => {}, isPending: false }),
   useAutoTitleFirstMessage: () => autoTitleSpy,
   resolveActiveThread: (list: Thread[], id: string | null) =>

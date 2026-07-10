@@ -37,6 +37,7 @@ const threadListItem = {
   instanceId: "inst-1",
   label: "Chat",
   createdAt: "2026-01-01T00:00:00.000Z",
+  lastActivityAt: "2026-01-05T00:00:00.000Z",
 };
 
 const thread = {
@@ -44,22 +45,39 @@ const thread = {
   instanceId: "inst-1",
   label: "Chat",
   createdAt: "2026-01-01T00:00:00.000Z",
+  lastActivityAt: "2026-01-05T00:00:00.000Z",
 };
 
 describe("hub-api Myra threads", () => {
   it("lists threads and parses the response", async () => {
     const calls: Call[] = [];
-    stubFetch({ threads: [threadListItem] }, calls);
+    stubFetch({ threads: [threadListItem], total: 1 }, calls);
     const result = await listMyraThreads("tnt_child");
-    expect(result).toEqual([threadListItem]);
+    expect(result).toEqual({ threads: [threadListItem], total: 1 });
     expect(calls[0]?.method).toBe("GET");
     expect(calls[0]?.url).toContain(
       "/api/v1/tenants/tnt_child/me/myra/threads",
     );
   });
 
+  it("appends ?limit= when a limit is given", async () => {
+    const calls: Call[] = [];
+    stubFetch({ threads: [threadListItem], total: 5 }, calls);
+    await listMyraThreads("tnt_child", { limit: 10 });
+    expect(calls[0]?.url).toContain(
+      "/api/v1/tenants/tnt_child/me/myra/threads?limit=10",
+    );
+  });
+
   it("throws on a malformed list response", async () => {
-    stubFetch({ threads: [{ id: "x" }] });
+    stubFetch({ threads: [{ id: "x" }], total: 1 });
+    await expect(listMyraThreads("tnt_child")).rejects.toThrow(
+      /Invalid Myra threads response/,
+    );
+  });
+
+  it("throws when total is missing from the response", async () => {
+    stubFetch({ threads: [threadListItem] });
     await expect(listMyraThreads("tnt_child")).rejects.toThrow(
       /Invalid Myra threads response/,
     );

@@ -26,6 +26,7 @@ const thread = (id: string): MyraThread => ({
   instanceId: `inst-${id}`,
   label: `Chat ${id}`,
   createdAt: "2026-01-01T00:00:00.000Z",
+  lastActivityAt: "2026-01-01T00:00:00.000Z",
 });
 
 const threads = [thread("a"), thread("b"), thread("c")];
@@ -74,6 +75,7 @@ describe("title polling gate (CL-2872)", () => {
     instanceId: "inst-1",
     label,
     createdAt: "2026-01-01T00:00:00.000Z",
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
   });
 
   it("does not poll a tenant with no title in flight", () => {
@@ -147,8 +149,10 @@ describe("useMyraThreads title polling (CL-2872)", () => {
               instanceId: "inst-1",
               label,
               createdAt: "2026-01-01T00:00:00.000Z",
+              lastActivityAt: "2026-01-01T00:00:00.000Z",
             },
           ],
+          total: 1,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -166,11 +170,16 @@ describe("useMyraThreads title polling (CL-2872)", () => {
       createElement(QueryClientProvider, { client }, children);
     const { result } = renderHook(() => useMyraThreads(), { wrapper });
 
-    await waitFor(() => expect(result.current.data?.[0]?.label).toBe("Chat"));
+    await waitFor(() =>
+      expect(result.current.data?.threads?.[0]?.label).toBe("Chat"),
+    );
     // Without polling the label would stay "Chat" forever; the gate drives a
     // second fetch that surfaces the generated title.
     await waitFor(
-      () => expect(result.current.data?.[0]?.label).toBe("Enterprise pricing"),
+      () =>
+        expect(result.current.data?.threads?.[0]?.label).toBe(
+          "Enterprise pricing",
+        ),
       { timeout: 6_000 },
     );
   });
@@ -200,8 +209,10 @@ describe("useMyraThreads title polling (CL-2872)", () => {
                 instanceId: "inst-1",
                 label,
                 createdAt: "2026-01-01T00:00:00.000Z",
+                lastActivityAt: "2026-01-01T00:00:00.000Z",
               },
             ],
+            total: 1,
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         );
@@ -230,7 +241,7 @@ describe("useMyraThreads title polling (CL-2872)", () => {
     );
 
     await waitFor(() =>
-      expect(result.current.list.data?.[0]?.label).toBe("Chat"),
+      expect(result.current.list.data?.threads?.[0]?.label).toBe("Chat"),
     );
     act(() =>
       result.current.title.mutate({
@@ -240,7 +251,9 @@ describe("useMyraThreads title polling (CL-2872)", () => {
     );
     await waitFor(
       () =>
-        expect(result.current.list.data?.[0]?.label).toBe("Enterprise pricing"),
+        expect(result.current.list.data?.threads?.[0]?.label).toBe(
+          "Enterprise pricing",
+        ),
       { timeout: 6_000 },
     );
   });
@@ -252,6 +265,7 @@ describe("useAutoTitleFirstMessage", () => {
     instanceId: "inst-1",
     label: "Chat",
     createdAt: "2026-01-01T00:00:00.000Z",
+    lastActivityAt: "2026-01-01T00:00:00.000Z",
   };
   const fetchMock = mock(
     async (_url: string, _init?: RequestInit) =>
@@ -410,7 +424,10 @@ describe("useAutoTitleFirstMessage", () => {
         mutations: { retry: false },
       },
     });
-    client.setQueryData(["myra-threads", "tnt_child"], [defaultThread]);
+    client.setQueryData(["myra-threads", "tnt_child"], {
+      threads: [defaultThread],
+      total: 1,
+    });
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children);
     const { result } = renderHook(
@@ -422,11 +439,11 @@ describe("useAutoTitleFirstMessage", () => {
 
     act(() => result.current("How should we price Q3?"));
     await waitFor(() => {
-      const threads = client.getQueryData<MyraThread[]>([
+      const page = client.getQueryData<{ threads: MyraThread[] }>([
         "myra-threads",
         "tnt_child",
       ]);
-      expect(threads?.[0]?.label).toBe("How should we price Q3");
+      expect(page?.threads?.[0]?.label).toBe("How should we price Q3");
     });
 
     resolveFetch();

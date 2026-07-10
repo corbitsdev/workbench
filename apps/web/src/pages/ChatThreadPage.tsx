@@ -32,7 +32,8 @@ export function ChatThreadPage() {
   const { threadId } = useParams();
   const navigate = useNavigate();
   const { activeTenantId } = useActiveWorkbench();
-  const { data: threads, isLoading, isError, refetch } = useMyraThreads();
+  const { data, isLoading, isError, refetch } = useMyraThreads();
+  const threads = data?.threads;
   const createThread = useCreateMyraThread();
 
   const active = resolveActiveThread(threads ?? [], threadId);

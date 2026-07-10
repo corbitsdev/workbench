@@ -8,22 +8,22 @@ import { MemoryRouter } from "react-router";
 const renameMutate = mock((_args: { id: string; label: string }) => {});
 const deleteMutate = mock((_id: string) => {});
 
+function makeThread(n: number) {
+  return {
+    id: `t${n}`,
+    instanceId: `i${n}`,
+    label: n === 1 ? "First" : n === 2 ? "Second" : `Chat ${n}`,
+    createdAt: `2026-01-0${n}T00:00:00Z`,
+    lastActivityAt: `2026-01-0${n}T00:00:00Z`,
+  };
+}
+
+let threadsData = [makeThread(1), makeThread(2)];
+let totalCount = 2;
+
 mock.module("../../hooks/use-myra-threads", () => ({
   useMyraThreads: () => ({
-    data: [
-      {
-        id: "t1",
-        instanceId: "i1",
-        label: "First",
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-      {
-        id: "t2",
-        instanceId: "i2",
-        label: "Second",
-        createdAt: "2026-01-02T00:00:00Z",
-      },
-    ],
+    data: { threads: threadsData, total: totalCount },
     isLoading: false,
   }),
   useRenameMyraThread: () => ({ mutate: renameMutate, isPending: false }),
@@ -36,6 +36,8 @@ const { ThreadList } = require("./ThreadList");
 beforeEach(() => {
   renameMutate.mockClear();
   deleteMutate.mockClear();
+  threadsData = [makeThread(1), makeThread(2)];
+  totalCount = 2;
 });
 
 afterEach(() => cleanup());
@@ -55,6 +57,28 @@ describe("ThreadList", () => {
     renderList();
     screen.getByText("First");
     screen.getByText("Second");
+  });
+
+  it("shows no 'View all' link when below the sidebar limit", () => {
+    renderList();
+    expect(screen.queryByText(/view all chats/i)).toBeNull();
+  });
+
+  it("shows no 'View all' link when the total equals what's shown", () => {
+    // Server returned all 10 and reports total 10: nothing hidden, no link.
+    threadsData = Array.from({ length: 10 }, (_, i) => makeThread(i + 1));
+    totalCount = 10;
+    renderList();
+    expect(screen.queryByText(/view all chats/i)).toBeNull();
+  });
+
+  it("links to /chats when the total exceeds the shown page", () => {
+    // Server returned the 10-thread page but reports 15 total.
+    threadsData = Array.from({ length: 10 }, (_, i) => makeThread(i + 1));
+    totalCount = 15;
+    renderList();
+    const link = screen.getByText(/view all chats/i);
+    expect(link.getAttribute("href")).toBe("/chats");
   });
 
   it("renames a thread via the options menu", () => {

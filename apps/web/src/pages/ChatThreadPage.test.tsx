@@ -5,22 +5,33 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
+type ThreadItem = {
+  id: string;
+  instanceId: string;
+  label: string;
+  createdAt: string;
+  lastActivityAt: string;
+};
 type ThreadsResult = {
-  data?: { id: string; instanceId: string; label: string; createdAt: string }[];
+  data?: { threads: ThreadItem[]; total: number };
   isLoading: boolean;
   isError: boolean;
   refetch: () => void;
 };
 
 let threadsResult: ThreadsResult = {
-  data: [
-    {
-      id: "t1",
-      instanceId: "i1",
-      label: "First",
-      createdAt: "2026-01-01T00:00:00Z",
-    },
-  ],
+  data: {
+    threads: [
+      {
+        id: "t1",
+        instanceId: "i1",
+        label: "First",
+        createdAt: "2026-01-01T00:00:00Z",
+        lastActivityAt: "2026-01-01T00:00:00Z",
+      },
+    ],
+    total: 1,
+  },
   isLoading: false,
   isError: false,
   refetch: () => {},
@@ -144,14 +155,18 @@ beforeEach(() => {
   autoTitleArgs = [];
   sessionResult = { state: { phase: "loading" }, messages: [], activity: null };
   threadsResult = {
-    data: [
-      {
-        id: "t1",
-        instanceId: "i1",
-        label: "First",
-        createdAt: "2026-01-01T00:00:00Z",
-      },
-    ],
+    data: {
+      threads: [
+        {
+          id: "t1",
+          instanceId: "i1",
+          label: "First",
+          createdAt: "2026-01-01T00:00:00Z",
+          lastActivityAt: "2026-01-01T00:00:00Z",
+        },
+      ],
+      total: 1,
+    },
     isLoading: false,
     isError: false,
     refetch: () => {},
@@ -191,7 +206,7 @@ describe("ChatThreadPage", () => {
 
   it("offers a create action when there are no threads", () => {
     threadsResult = {
-      data: [],
+      data: { threads: [], total: 0 },
       isLoading: false,
       isError: false,
       refetch: () => {},

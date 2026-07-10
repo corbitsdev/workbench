@@ -27,9 +27,25 @@ const MyraThreadListItem = type({
   instanceId: "string",
   label: "string",
   createdAt: "string",
+  lastActivityAt: "string",
 });
 
-const MyraThreadList = type({ threads: MyraThreadListItem.array() });
+const MyraThreadList = type({
+  threads: MyraThreadListItem.array(),
+  total: "number",
+});
+
+/**
+ * Parse the `?limit=` query param into a positive integer, or `undefined` (no
+ * limit) when it is absent or malformed. A bad value falls back to the full
+ * list rather than erroring — the param is an optional page-size hint.
+ */
+function parseLimit(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) return undefined;
+  return n;
+}
 
 const CreateMyraThreadBody = type({
   label: "string?",
@@ -63,6 +79,12 @@ export function createMyraThreadsRouter(
           required: true,
           schema: { type: "string" },
         },
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 1 },
+        },
       ],
       responses: {
         200: {
@@ -79,11 +101,13 @@ export function createMyraThreadsRouter(
       if (!ctx) {
         return c.json({ error: "Not a member of this tenant" }, 403);
       }
-      const threads = await listMyraThreads(hubDb, {
+      const limit = parseLimit(c.req.query("limit"));
+      const page = await listMyraThreads(hubDb, {
         tenantId: ctx.tenantId,
         memberPrincipalId: ctx.memberPrincipalId,
+        ...(limit !== undefined ? { limit } : {}),
       });
-      return c.json({ threads });
+      return c.json(page);
     },
   );
 
