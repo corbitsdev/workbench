@@ -308,6 +308,27 @@ describe("notion_query_database handler", () => {
     });
   });
 
+  it("drops an array filter instead of forwarding it to the API", async () => {
+    const fetcher = makeFetchStub({ results: [] });
+    const runner = createToolRunner(
+      createNotionTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "notion_query_database",
+        arguments: { databaseId: "db_1", filter: ["not", "an", "object"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1].body))).toEqual({
+      page_size: 25,
+    });
+  });
+
   it("requires the databaseId argument", async () => {
     const fetcher = makeFetchStub({});
     const runner = createToolRunner(
@@ -391,6 +412,34 @@ describe("notion_create_page handler", () => {
       parent: { database_id: "db_1" },
       properties: { Name: { title: [{ text: { content: "Row" } }] } },
       children: [{ object: "block", type: "divider", divider: {} }],
+    });
+  });
+
+  it("falls back to title when properties is an array", async () => {
+    const fetcher = makeFetchStub({ id: "page_new" });
+    const runner = createToolRunner(
+      createNotionTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "notion_create_page",
+        arguments: {
+          parentPageId: "parent_1",
+          title: "Fallback title",
+          properties: ["not", "an", "object"],
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1].body));
+    expect(body.properties).toEqual({
+      title: {
+        title: [{ type: "text", text: { content: "Fallback title" } }],
+      },
     });
   });
 
