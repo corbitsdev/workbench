@@ -28,8 +28,8 @@ export type CredentialedToolEntry = {
   /**
    * Whether this tool mutates external or durable state. Technical
    * classification only — forced human approval is a separate product set
-   * (`APPROVAL_REQUIRED_BARE_NAMES` in `@workbench/agents`), a subset of
-   * write tools.
+   * (`approvalGatedWriteNames` in `@workbench/agents`, write tools minus the
+   * internal-write exclusions), which the hub drives into `ask` grants.
    */
   sideEffect: ToolSideEffect;
   createTools: (config: ToolCredential) => AgentTool[];

@@ -1,48 +1,66 @@
 import { canonicalizeToolNames, toLlmToolName } from "./tool-names";
 
 /**
- * Bare tool names that require forced human approval before they run.
+ * Bare tool names classified `sideEffect: "write"` that must NOT open
+ * ReviewGate. These are internal durable writes the agent owns end-to-end —
+ * its own memory, artifacts, identity, skill drafts, sub-agent dispatch, and
+ * workflow control — not external or hard-to-undo third-party actions.
  *
- * This is a **product** set: external or hard-to-undo mutations (CRM writes,
- * publishes, third-party generation). It is intentionally a *subset* of tools
- * classified `sideEffect: "write"` on package entries — internal durable
- * writes (memory, artifacts, identity, skill drafts) stay write-classified
- * but do not open ReviewGate on every agent turn.
- *
- * The sidecar gate matches LLM-safe names (`toLlmToolName` after
- * `canonicalizeToolNames`) — never these bare strings alone. See
- * {@link approvalGatedLlmToolNames}.
+ * Every other write tool is approval-gated by default, so a newly added
+ * external write auto-gates rather than silently shipping unattended. This is
+ * the product set (a subset of `sideEffect: "write"`); the technical
+ * read/write classification lives on each package's tool entry.
  */
-export const APPROVAL_REQUIRED_BARE_NAMES = [
-  // Attio CRM mutations
-  "attio_update_task",
-  "attio_create_note",
-  // Vercel publishes
-  "vercel_deploy_static_file",
-  "vercel_deploy_artifact",
-  // Gamma third-party generation / duplication
-  "gamma_create_from_template",
-  "gamma_duplicate_presentation",
-] as const;
+export const INTERNAL_WRITE_EXCLUSIONS: ReadonlySet<string> = new Set([
+  "memory_save",
+  "write_artifact",
+  "identity_set",
+  "skill_draft",
+  "dispatch_agent",
+  "artifact_create",
+  "artifact_write",
+  "artifact_link_file",
+  "artifact_link_presentation",
+  "artifact_link_gamma_presentation",
+  "workflow_start",
+  "workflow_signal",
+]);
 
-export type ApprovalRequiredBareName =
-  (typeof APPROVAL_REQUIRED_BARE_NAMES)[number];
-
-const APPROVAL_REQUIRED_BARE_SET: ReadonlySet<string> = new Set(
-  APPROVAL_REQUIRED_BARE_NAMES,
-);
-
-export function isApprovalRequiredBare(name: string): boolean {
-  return APPROVAL_REQUIRED_BARE_SET.has(name);
+/**
+ * The LLM-safe names of the write tools that require human approval: every
+ * `sideEffect: "write"` bare name minus {@link INTERNAL_WRITE_EXCLUSIONS},
+ * mapped through the CL-2306 `canonicalizeToolNames` → `toLlmToolName`
+ * transform the harness applies before it matches a tool call. The model never
+ * calls the bare name, so the gated set must be keyed on the safe name — the
+ * hub stamps these grants `effect: "ask"` and the sidecar resolves the ask.
+ */
+export function approvalGatedWriteNames(
+  allWriteBareNames: readonly string[],
+): Set<string> {
+  const gated = allWriteBareNames.filter(
+    (name) => !INTERNAL_WRITE_EXCLUSIONS.has(name),
+  );
+  return new Set(canonicalizeToolNames(gated).map(toLlmToolName));
 }
 
 /**
- * LLM-facing names the approval gate must match. Package tools are presented
- * as `<pkg>__<short>` after CL-2306; bare names never reach the gate for
- * package tools.
+ * The materialized LLM-safe names the sidecar's approval-gated runner wrapper
+ * matches a tool call against — every external / hard-to-undo write tool.
+ *
+ * This is a STATIC const (no launch-time hub fetch): the sidecar loads tool
+ * tarballs that surface only `ToolDefinition` (no `sideEffect`), so it cannot
+ * derive the set itself. Correctness is enforced by a hub drift test
+ * (`approval-gated-tools.test.ts`) that recomputes the set from every tool's
+ * `sideEffect: "write"` classification via {@link approvalGatedWriteNames} and
+ * asserts it equals this const — so adding a write tool without gating it (or
+ * mis-listing one here) fails CI. Keep in lockstep with that derivation.
  */
-export function approvalGatedLlmToolNames(): ReadonlySet<string> {
-  return new Set(
-    canonicalizeToolNames([...APPROVAL_REQUIRED_BARE_NAMES]).map(toLlmToolName),
-  );
-}
+export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "attio__update_task",
+  "attio__create_note",
+  "gamma__create_from_template",
+  "gamma__duplicate_presentation",
+  "vercel__deploy_static_file",
+  "deploy-artifact__vercel_deploy_artifact",
+  "notion__create_page",
+]);

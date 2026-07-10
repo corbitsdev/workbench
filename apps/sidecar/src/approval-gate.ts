@@ -1,6 +1,5 @@
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
-import { approvalGatedLlmToolNames } from "@workbench/agents";
 import type {
   ToolCall,
   ToolDefinition,
@@ -10,16 +9,6 @@ import type {
 
 const logger = getLogger(["sidecar", "approval-gate"]);
 
-/**
- * LLM-facing tool names that require human approval before they run.
- * Derived from `APPROVAL_REQUIRED_BARE_NAMES` (external / hard-to-undo writes —
- * not every `sideEffect: "write"` tool) via the same CL-2306 name transform
- * the harness applies (`canonicalizeToolNames` → `toLlmToolName`). Matching
- * bare names alone is wrong — the model never calls them.
- */
-export const APPROVAL_GATED_TOOLS: ReadonlySet<string> =
-  approvalGatedLlmToolNames();
-
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
 export type ApprovalDecision = { approved: boolean; message?: string };
@@ -28,10 +17,9 @@ export type ApprovalDecision = { approved: boolean; message?: string };
  * Asks the tenant principal to approve a single gated tool call and resolves
  * the decision. This is the harness-side enforcement of human-in-the-loop:
  * the gated tool cannot run until a human resolves the request in the
- * ReviewGate UI. It is a deliberate stand-in for Interchange's native `ask`
- * grant effect (gate-based approval, not yet wired upstream — CL-2591). When
- * that lands, drop the wrapper and flip the grant to `ask`; the approval
- * record + ReviewGate UI this uses are the same ones the native path will.
+ * ReviewGate UI, which shows the full tool arguments (deploy target, note
+ * body) so the human approves the concrete action — the runner wrapper passes
+ * `call.arguments` into the approval record for exactly this reason.
  */
 export type ApproveFn = (
   call: ToolCall,
@@ -177,9 +165,13 @@ export function createApprovalClient(
 }
 
 /**
- * Wrap a tool runner so that calls to `gatedTools` require human approval
- * before they execute; everything else passes through untouched. The wrapper
- * IS the executor of the gated tool, so the model cannot route around it.
+ * Wrap a tool runner so that calls to `gatedTools` (LLM-safe names) require
+ * human approval before they execute; everything else passes through
+ * untouched. The wrapper IS the executor of the gated tool, so the model
+ * cannot route around it. The approval record carries the concrete
+ * `call.arguments` (via `createApprovalClient`), so ReviewGate shows the human
+ * exactly what will run — the reason approval lives at the runner seam rather
+ * than the argument-blind authz callback.
  */
 export function createApprovalGatedRunner(
   inner: DefinedRunner,
