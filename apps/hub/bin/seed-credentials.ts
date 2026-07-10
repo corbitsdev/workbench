@@ -299,6 +299,17 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  const notionKey = env("NOTION_API_KEY");
+  if (notionKey) {
+    entries.push({
+      providerName: "notion",
+      providerPlugin: "notion",
+      credentialName: "Notion",
+      secret: notionKey,
+      metadata: { baseURL: "https://api.notion.com" },
+    });
+  }
+
   const vercelKey = env("VERCEL_API_KEY");
   if (vercelKey) {
     entries.push({

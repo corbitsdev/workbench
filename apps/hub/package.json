@@ -64,6 +64,7 @@
     "@workbench/tools-hackernews": "workspace:*",
     "@workbench/tools-last30days": "workspace:*",
     "@workbench/tools-linear": "workspace:*",
+    "@workbench/tools-notion": "workspace:*",
     "@workbench/tools-polymarket": "workspace:*",
     "@workbench/tools-reddit": "workspace:*",
     "@workbench/tools-scrapecreators": "workspace:*",
