@@ -51,13 +51,22 @@ export type MyraSessionPhase =
   | { phase: "error"; message: string };
 
 // A dropped or evicted session heals with one relaunch-and-resend. A hub or
-// sidecar restart leaves the instance not running, so the first send 409s; an
-// address evicted from the in-memory index while the DB still says running
-// 502s. The hub emits both before persisting the mail, so a resend cannot
-// duplicate a delivered message; a gateway 502 may not mean eviction, but the
-// cost is bounded to one extra relaunch. Recovery is one-shot per send.
+// sidecar restart leaves the instance not running, so the first send 409s
+// with code "conflict"; an address evicted from the in-memory index while the
+// DB still says running 502s with code "sidecar_unavailable". The hub emits
+// both before persisting the mail, so a resend cannot duplicate a delivered
+// message. Discriminate on the structured code where the hub sends one — a
+// true gateway 502 (no code, or an unrelated code) may mean the mail was
+// already accepted upstream, so it is not treated as recoverable. Bare status
+// is kept only as a fallback for errors that carry no code. Recovery is
+// one-shot per send.
 function isRecoverableDeliveryError(err: unknown): boolean {
-  return err instanceof ApiError && (err.status === 409 || err.status === 502);
+  if (!(err instanceof ApiError)) return false;
+  if (err.code === "conflict" || err.code === "sidecar_unavailable") {
+    return true;
+  }
+  if (err.code !== undefined) return false;
+  return err.status === 409 || err.status === 502;
 }
 
 // Send a message to Myra, recovering from a dropped session once by relaunching
@@ -201,6 +210,9 @@ function parseFailureMessage(err: ApiError): string {
   }
   if (err.status === 415) {
     return "That document type can't be read.";
+  }
+  if (err.status === 502) {
+    return "Could not connect to the document reader. Try again.";
   }
   return "That document couldn't be read. Try again.";
 }

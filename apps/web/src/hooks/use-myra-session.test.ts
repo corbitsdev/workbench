@@ -141,6 +141,37 @@ describe("deliverMessage", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
 
+  it("relaunches on a 502 carrying the structured sidecar_unavailable code", async () => {
+    let calls = 0;
+    const session = {
+      sendMail: mock(() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(new FakeApiError(502, "sidecar_unavailable"));
+        }
+        return Promise.resolve();
+      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await deliverMessage(session, "inst-1", "hello");
+    expect(session.sendMail).toHaveBeenCalledTimes(2);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+  });
+
+  it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
+    const session = {
+      sendMail: mock(() =>
+        Promise.reject(new FakeApiError(502, "upstream_gateway_error")),
+      ),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await expect(
+      deliverMessage(session, "inst-1", "hi"),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(session.sendMail).toHaveBeenCalledTimes(1);
+    expect(launchInstanceSession).not.toHaveBeenCalled();
+  });
+
   it("rethrows a non-409 error without relaunching", async () => {
     const session = {
       sendMail: mock(() => Promise.reject(new FakeApiError(500))),
@@ -335,6 +366,51 @@ describe("deliverMessageWithAttachments", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("relaunches on a 502 carrying the structured sidecar_unavailable code", async () => {
+    let calls = 0;
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject(new FakeApiError(502, "sidecar_unavailable"));
+      }
+      return Promise.resolve(undefined);
+    });
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await deliverMessageWithAttachments(
+      transport,
+      "tnt-acme",
+      "inst-1",
+      "hi",
+      attachments,
+    );
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.reject(new FakeApiError(502, "upstream_gateway_error")),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await expect(
+      deliverMessageWithAttachments(
+        transport,
+        "tnt-acme",
+        "inst-1",
+        "hi",
+        attachments,
+      ),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(launchInstanceSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("document diversion (CL-2628)", () => {
@@ -404,6 +480,22 @@ describe("document diversion (CL-2628)", () => {
     expect(attachmentErrorMessage(err)).toContain("too long");
     // Not the generic connectivity fallback.
     expect(attachmentErrorMessage(err)).not.toContain("connection");
+  });
+
+  it("maps a parse-route 502 to a connection failure, not a content failure", async () => {
+    const transport = {
+      fetch: mock(() => Promise.reject(new FakeApiError(502))),
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    const err = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "big.pdf",
+      mimeType: "application/pdf",
+      data: "AAAA",
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DocumentParseError);
+    expect(attachmentErrorMessage(err)).toContain("connect");
+    // Not the generic content-failure message.
+    expect(attachmentErrorMessage(err)).not.toContain("couldn't be read");
   });
 
   it("surfaces a DocumentParseError's message rather than a connectivity error", () => {
