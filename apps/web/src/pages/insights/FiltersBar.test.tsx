@@ -39,4 +39,22 @@ describe("FiltersBar", () => {
     });
     expect(onKind).toHaveBeenCalledWith("gamma");
   });
+
+  it("calls onActorFilter when actor changes", () => {
+    const onActor = mock(() => {});
+    render(
+      <FiltersBar
+        kinds={[]}
+        kindFilter="all"
+        onKindFilter={mock(() => {})}
+        actorFilter="all"
+        onActorFilter={onActor}
+      />,
+    );
+
+    fireEvent.change(screen.getByTestId("actor-filter"), {
+      target: { value: "me" },
+    });
+    expect(onActor).toHaveBeenCalledWith("me");
+  });
 });
