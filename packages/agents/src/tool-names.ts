@@ -37,6 +37,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "attio_get_task",
     "attio_update_task",
     "attio_create_note",
+    "attio_create_record",
   ],
   "@workbench/tools-artifact/artifact": [
     "artifact_create",

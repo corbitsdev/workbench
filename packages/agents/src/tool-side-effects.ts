@@ -58,6 +58,7 @@ export function approvalGatedWriteNames(
 export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "attio__update_task",
   "attio__create_note",
+  "attio__create_record",
   "gamma__create_from_template",
   "gamma__duplicate_presentation",
   "vercel__deploy_static_file",

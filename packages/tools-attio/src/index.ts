@@ -105,7 +105,7 @@ function attioUrl(config: AttioToolsConfig, path: string): URL {
 async function fetchAttioJSON(
   config: AttioToolsConfig,
   url: URL,
-  init: { method: "GET" | "POST" | "PATCH"; body?: unknown },
+  init: { method: "GET" | "POST" | "PATCH" | "PUT"; body?: unknown },
   signal: AbortSignal,
 ): Promise<unknown> {
   const fetcher = config.fetcher ?? fetch;
@@ -489,6 +489,40 @@ async function createNote(
   );
 }
 
+async function createRecord(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const object = optionalString(args.object);
+  if (object === null) {
+    throw new Error("object is required");
+  }
+  if (!isRecord(args.values) || Object.keys(args.values).length === 0) {
+    throw new Error("values is required (a non-empty attribute map)");
+  }
+
+  const url = attioUrl(
+    config,
+    `/v2/objects/${encodeURIComponent(object)}/records`,
+  );
+  const body = { data: { values: args.values } };
+
+  // With a matchingAttribute, use Attio's assert (upsert) endpoint so a retried
+  // create matches an existing record instead of duplicating it.
+  const matchingAttribute = optionalString(args.matchingAttribute);
+  if (matchingAttribute !== null) {
+    url.searchParams.set("matching_attribute", matchingAttribute);
+    return parseDataResponse(
+      await fetchAttioJSON(config, url, { method: "PUT", body }, signal),
+    );
+  }
+
+  return parseDataResponse(
+    await fetchAttioJSON(config, url, { method: "POST", body }, signal),
+  );
+}
+
 const QUERY_RECORDS_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -672,6 +706,28 @@ const CREATE_NOTE_INPUT_SCHEMA = {
   required: ["parentObject", "parentRecordId", "content"],
 };
 
+const CREATE_RECORD_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    object: {
+      type: "string",
+      description:
+        'The object slug to create a record for, e.g. "companies" or "people".',
+    },
+    values: {
+      type: "object",
+      description:
+        'The attribute values for the new record, keyed by attribute slug. Each value follows the Attio write format for that attribute type — e.g. {"name":"Tribe Capital","domains":["tribecap.com"]}. Must contain at least one attribute.',
+    },
+    matchingAttribute: {
+      type: "string",
+      description:
+        "Optional attribute slug to match on for an idempotent upsert. When set, an existing record whose value for this attribute matches `values` is updated instead of creating a duplicate (Attio assert). Pass a naturally unique attribute (e.g. a domain or email) so retrying a failed create cannot make a duplicate.",
+    },
+  },
+  required: ["object", "values"],
+};
+
 const EMPTY_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {},
@@ -739,6 +795,13 @@ export const ATTIO_CREATE_NOTE_DEFINITION: ToolDefinition = {
   inputSchema: CREATE_NOTE_INPUT_SCHEMA,
 };
 
+export const ATTIO_CREATE_RECORD_DEFINITION: ToolDefinition = {
+  name: "attio_create_record",
+  description:
+    "Create a record for an Attio object (e.g. add a new company or person). Pass `object` (the slug) and `values` (attribute map). WRITES to Attio: use only after explicit human approval. Pass `matchingAttribute` to make the write safe to retry — a record matching that attribute is updated instead of creating a duplicate. Returns the created (or matched) record with its `id` and `values`.",
+  inputSchema: CREATE_RECORD_INPUT_SCHEMA,
+};
+
 function buildListObjectsHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listObjects(config, signal));
@@ -782,6 +845,11 @@ function buildUpdateTaskHandler(config: AttioToolsConfig) {
 function buildCreateNoteHandler(config: AttioToolsConfig) {
   return async (args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await createNote(config, args, signal));
+}
+
+function buildCreateRecordHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await createRecord(config, args, signal));
 }
 
 export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
@@ -833,6 +901,11 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
       definition: ATTIO_CREATE_NOTE_DEFINITION,
       handler: buildCreateNoteHandler(config),
     },
+    {
+      kind: "string",
+      definition: ATTIO_CREATE_RECORD_DEFINITION,
+      handler: buildCreateRecordHandler(config),
+    },
   ];
 }
 
@@ -856,6 +929,8 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildUpdateTaskHandler(config);
     case ATTIO_CREATE_NOTE_DEFINITION.name:
       return buildCreateNoteHandler(config);
+    case ATTIO_CREATE_RECORD_DEFINITION.name:
+      return buildCreateRecordHandler(config);
     default:
       throw new Error(`Unknown attio tool: ${name}`);
   }
@@ -966,5 +1041,15 @@ export const ATTIO_HUB_TOOLS = {
     providerName: "attio" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createAttioToolFor(resolveBaseUrl(config), ATTIO_CREATE_NOTE_DEFINITION),
+  },
+  attio_create_record: {
+    sideEffect: "write" as const,
+    definition: ATTIO_CREATE_RECORD_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(
+        resolveBaseUrl(config),
+        ATTIO_CREATE_RECORD_DEFINITION,
+      ),
   },
 };
