@@ -354,9 +354,9 @@ This is the key property: the tool package and the agent's `toolPackages` pin ar
 
 ### Dynamic tool exposure (advertise on demand, CL-2808)
 
-Pinning controls what an agent _has_; dynamic exposure controls what the model _sees_. An agent that opts in advertises only a base tool set plus two catalog tools on turn one; the long-tail packages stay loaded and dispatchable but hidden until the model asks for them:
+Pinning controls what an agent _has_; dynamic exposure controls what the model _sees_. An agent that opts in advertises only a small **platform** tool set on turn one (`PERSONAL_AGENT_PLATFORM_TOOLS` — `search_tools`/`load_tools`, memory, the core artifact surface, workflow entry points, skill discovery); everything else its pinned packages ship stays loaded and dispatchable but hidden until the model asks for it. Grants and the catalog are **derived** from one source (`MYRA_CATALOG_PACKAGES` in `catalog.ts`): a package's tools are never hand-listed twice, so the catalog, grants, and pins cannot drift (CL-3190). The grant list `PERSONAL_AGENT_BASE_TOOLS` is exactly `platform ∪ catalog`.
 
-- `search_tools({ query, package?, tags? })` — deterministic keyword search over a hand-maintained catalog (`MYRA_TOOL_CATALOG` in `packages/agents/src/dynamic-tools/catalog.ts`), grouped by package.
+- `search_tools({ query, package?, tags? })` — deterministic keyword search over `MYRA_TOOL_CATALOG` in `packages/agents/src/dynamic-tools/catalog.ts`. Per-package search metadata (summary + tags) is hand-authored; the tool names in each entry are **derived** from the package's real tools (`bareToolNamesForPin`) minus the platform set.
 - `load_tools({ names?, package? })` — adds tools (individually or a whole package) to the session's sticky exposure set; they appear in the model's function list on the next inference call of the same turn.
 
 Mechanics: the harness (`apps/sidecar/src/default-harness.ts`) builds one mutable `ToolExposureState`, hands it to the catalog runner (`createCatalogTools` in `@workbench/tools-catalog`) and to the `@workbench/agents/dynamic-tools` director via `env[DYNAMIC_TOOLS_ENV_KEY]`. The director wraps `createDefaultDirector` and rewrites each `infer` to advertise `base ∪ catalog-tools ∪ exposed`. Only advertisement changes — `allowedNames`, grants, and credentials are untouched, so a hidden tool called after `load_tools` executes through the normal rails.
@@ -367,7 +367,7 @@ The catalog runner and env catalog are built _after_ the tool factories run, and
 
 Opt-in is via `resolveDynamicToolConfig(systemPrompt)` (prompt-marker match, like `resolveMailOutboundLimit`); only Myra opts in today. `@workbench/tools-catalog` is a **local in-process runner, not a tarball tool package** — it needs direct access to the exposure state, so it is not registered in the package build, not published to the registry, and not pinned in `toolPackages`. It is keyless (no seed-credentials entry).
 
-When adding a tool to a catalog-managed package, add its catalog entry in `catalog.ts` too — a tool missing from the catalog is always advertised (falls into the base set), silently defeating the hiding for that tool.
+When a catalog-managed package gains or loses a tool, update its entry in `PACKAGE_TOOLS` (`packages/agents/src/tool-names.ts`) — the catalog, grants, and pins all derive from it, so a tool missing from `PACKAGE_TOOLS` is loaded by the sidecar but neither cataloged nor granted: it is advertised on turn one (falls into the base set) yet denied at invoke. To give Myra a new integration, add its package to `MYRA_CATALOG_PACKAGES`; to keep a capability workflow-only (Gamma, last30days), leave its package out entirely.
 
 ---
 

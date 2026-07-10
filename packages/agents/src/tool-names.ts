@@ -62,14 +62,33 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "firecrawl_map",
     "firecrawl_crawl_start",
     "firecrawl_crawl_status",
+    "firecrawl_crawl_active",
+    "firecrawl_crawl_cancel",
+    "firecrawl_crawl_errors",
+    "firecrawl_crawl_params_preview",
     "firecrawl_batch_scrape_start",
     "firecrawl_batch_scrape_status",
+    "firecrawl_batch_scrape_cancel",
+    "firecrawl_batch_scrape_errors",
     "firecrawl_extract_start",
     "firecrawl_extract_status",
     "firecrawl_agent",
     "firecrawl_parse",
     "firecrawl_credit_usage",
     "firecrawl_token_usage",
+    "firecrawl_historical_credit_usage",
+    "firecrawl_historical_token_usage",
+    "firecrawl_activity",
+    "firecrawl_interact",
+    "firecrawl_browser_sessions_list",
+    "firecrawl_browser_session_delete",
+    "firecrawl_monitor_create",
+    "firecrawl_monitor_get",
+    "firecrawl_monitor_list",
+    "firecrawl_monitor_update",
+    "firecrawl_monitor_delete",
+    "firecrawl_monitor_run",
+    "firecrawl_monitor_check",
   ],
   "@workbench/tools-gamma/gamma": [
     "gamma_create_from_template",
@@ -198,6 +217,42 @@ export function producibleLlmToolNames(): Set<string> {
   const names = new Set<string>();
   for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS)) {
     for (const tool of tools) names.add(toLlmToolName(`${factoryId}:${tool}`));
+  }
+  return names;
+}
+
+/**
+ * The bare (unprefixed) tool names a single pinned package ships, across all its
+ * factories. A tarball can ship several factories (`@workbench/tools-vercel/
+ * vercel` and `@workbench/tools-vercel/deploy-artifact`), so a pin name matches
+ * every `PACKAGE_TOOLS` factory it prefixes. This is the one source the Myra
+ * catalog + grants derive from, so a package's tools are never hand-listed
+ * twice (CL-3190).
+ */
+export function bareToolNamesForPin(pinName: string): string[] {
+  const names: string[] = [];
+  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS)) {
+    if (factoryId === pinName || factoryId.startsWith(`${pinName}/`)) {
+      names.push(...tools);
+    }
+  }
+  return names;
+}
+
+/**
+ * The LLM-facing tool names materialized by a set of pinned packages — what the
+ * sidecar actually loads for an agent. The dynamic-tools partition (platform ∪
+ * catalog) must exactly cover this so nothing leaks onto turn-1 advertisement
+ * (CL-3190).
+ */
+export function producibleLlmToolNamesForPins(
+  pins: readonly ToolPackagePin[],
+): Set<string> {
+  const names = new Set<string>();
+  for (const pin of pins) {
+    for (const bare of bareToolNamesForPin(pin.name)) {
+      names.add(toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare));
+    }
   }
   return names;
 }
