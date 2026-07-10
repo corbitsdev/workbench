@@ -35,6 +35,17 @@ describe("TimeSeriesChart", () => {
     expect(table.textContent).toContain("2026-06-02");
   });
 
+  it("clamps the visually-hidden fallback on a block wrapper, not the table", () => {
+    render(<TimeSeriesChart series={SERIES} label="Turns per day" />);
+    const table = screen.getByTestId("time-series-table");
+    // `sr-only` on a <table> is ignored by table layout: width/height:1px do
+    // not constrain a display:table box, so the table renders at full content
+    // height as a position:absolute box — phantom whitespace on the dashboard.
+    // The 1px clamp must live on a non-table (block) wrapper that clips it.
+    expect(table.classList.contains("sr-only")).toBe(false);
+    expect(table.parentElement?.classList.contains("sr-only")).toBe(true);
+  });
+
   it("shows a legend only when there are multiple series", () => {
     const { rerender } = render(
       <TimeSeriesChart series={SERIES} label="one" />,
