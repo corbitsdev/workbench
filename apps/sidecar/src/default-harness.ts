@@ -7,6 +7,7 @@ import {
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
+  APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
   createCatalogTools,
@@ -48,7 +49,6 @@ import { healTurns } from "@workbench/context-repair";
 import { withActiveContext } from "@workbench/prompts";
 import { createGuardedMailRunner } from "./mail-guard";
 import {
-  APPROVAL_GATED_TOOLS,
   createApprovalClient,
   createApprovalGatedRunner,
 } from "./approval-gate";
@@ -448,13 +448,17 @@ export function createDefaultHarnessBuilder({
           ...(catalogRunner !== undefined ? [catalogRunner] : []),
           ...loadedRunners,
         ]);
-        // Enforce human approval for irreversible tools at the composition
-        // seam (the harness-side stand-in for an `ask` grant; see
-        // approval-gate.ts).
-        const gatedTools = createApprovalGatedRunner(
+        // Human approval for irreversible tools is enforced at the runner seam:
+        // the wrapper IS the executor of a gated tool, so the model cannot route
+        // around it, and the approval record carries the concrete tool arguments
+        // (deploy target, note body) shown in ReviewGate. The gated set is the
+        // static `APPROVAL_GATED_TOOL_NAMES` const (every external write); a hub
+        // drift test keeps it in lockstep with the `sideEffect: "write"`
+        // classification of the tool registry, so no launch-time fetch is needed.
+        const gatedRunner = createApprovalGatedRunner(
           allTools as DefinedRunner,
           {
-            gatedTools: APPROVAL_GATED_TOOLS,
+            gatedTools: APPROVAL_GATED_TOOL_NAMES,
             approve: createApprovalClient({
               hubHttpUrl,
               sidecarToken,
@@ -472,7 +476,7 @@ export function createDefaultHarnessBuilder({
             : []),
         ]);
         const tools = filterToolRunner(
-          gatedTools as DefinedRunner,
+          gatedRunner as DefinedRunner,
           allowedNames,
         );
 

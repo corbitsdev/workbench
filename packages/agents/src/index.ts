@@ -13,10 +13,9 @@ export {
   toLlmToolName,
 } from "./tool-names";
 export {
-  APPROVAL_REQUIRED_BARE_NAMES,
-  approvalGatedLlmToolNames,
-  isApprovalRequiredBare,
-  type ApprovalRequiredBareName,
+  APPROVAL_GATED_TOOL_NAMES,
+  INTERNAL_WRITE_EXCLUSIONS,
+  approvalGatedWriteNames,
 } from "./tool-side-effects";
 export {
   deterministicToolStep,

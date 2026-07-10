@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import {
-  APPROVAL_REQUIRED_BARE_NAMES,
-  isApprovalRequiredBare,
+  APPROVAL_GATED_TOOL_NAMES,
+  canonicalizeToolNames,
+  toLlmToolName,
 } from "@workbench/agents";
 import { VERCEL_HUB_TOOLS } from "@workbench/tools-vercel";
 import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
@@ -79,14 +80,25 @@ describe("tool registry", () => {
     );
   });
 
-  it("every approval-required tool is registered and classified write", () => {
+  function gatedLlmName(bare: string): string {
+    return toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare);
+  }
+
+  it("every approval-gated external write is registered, classified write, and in the gated set", () => {
     // Approval ⊆ write. Internal writes (memory, artifacts, …) stay write
     // without opening ReviewGate — do not invert this to write ⊆ approval.
-    for (const bare of APPROVAL_REQUIRED_BARE_NAMES) {
+    for (const bare of [
+      "attio_update_task",
+      "attio_create_note",
+      "gamma_create_from_template",
+      "gamma_duplicate_presentation",
+      "vercel_deploy_static_file",
+      "vercel_deploy_artifact",
+    ] as const) {
       const entry = resolveClassifiedEntry(bare);
       expect(entry).toBeDefined();
       expect(entry?.sideEffect).toBe("write");
-      expect(isApprovalRequiredBare(bare)).toBe(true);
+      expect(APPROVAL_GATED_TOOL_NAMES.has(gatedLlmName(bare))).toBe(true);
     }
   });
 
@@ -103,7 +115,7 @@ describe("tool registry", () => {
       const entry = resolveClassifiedEntry(name);
       expect(entry).toBeDefined();
       expect(entry?.sideEffect).toBe("write");
-      expect(isApprovalRequiredBare(name)).toBe(false);
+      expect(APPROVAL_GATED_TOOL_NAMES.has(gatedLlmName(name))).toBe(false);
     }
   });
 });
