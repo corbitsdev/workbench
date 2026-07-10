@@ -1,135 +1,237 @@
 import type { ToolCatalog, ToolCatalogEntry } from "@workbench/tools-catalog";
-import { canonicalizeToolNames, toLlmToolName } from "../tool-names";
+import {
+  bareToolNamesForPin,
+  canonicalizeToolNames,
+  toLlmToolName,
+} from "../tool-names";
 
 /**
- * Build a catalog entry from bare tool names (e.g. `attio_query_records`),
- * converting each to the LLM-facing name the sidecar advertises
- * (`canonicalizeToolNames` → `toLlmToolName`, e.g. `attio__query_records`) so
- * the director and `load_tools` match live definitions without transformation.
+ * Myra's turn-1 advertised platform tools, as bare names. `search_tools` and
+ * `load_tools` are catalog-runner locals added in the agent definition; the
+ * rest come from pinned packages. This is the ONLY tool-name list maintained by
+ * hand — everything a pinned package ships beyond these is catalog-managed,
+ * derived (never re-listed) so the catalog, grants, and pins cannot drift.
  */
-function entry(
-  pkg: string,
-  summary: string,
-  tags: string[],
-  tools: { bare: string; description: string }[],
-): ToolCatalogEntry {
+export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
+  "memory_load",
+  "memory_save",
+  "artifact_create",
+  "artifact_read",
+  "artifact_write",
+  "artifact_list",
+  "workflow_list_kinds",
+  "workflow_start",
+  "search_skills",
+  "load_skill",
+];
+
+/**
+ * The packages Myra pins, with the hand-authored search metadata each needs
+ * (summary + tags). Tool NAMES are never listed here — they are derived from
+ * the package's real tools (`bareToolNamesForPin`) minus the platform set, so
+ * one edit to a package's tool list flows to the catalog, grants, and pins
+ * automatically.
+ *
+ * To give Myra a new integration: add its package here. To keep a capability
+ * workflow-only (Gamma, last30days): leave its package out — never pinned,
+ * never granted, never advertised.
+ */
+type CatalogPackage = {
+  /** The `@scope/package` pin name (one published tarball). */
+  pin: string;
+  /** Catalog display key; also the `load_tools({ package })` argument. */
+  package: string;
+  summary: string;
+  tags: string[];
+};
+
+const MYRA_CATALOG_PACKAGES: CatalogPackage[] = [
+  {
+    pin: "@workbench/tools-artifact",
+    package: "artifacts",
+    summary:
+      "Advanced artifact tools — chunked reads, lookup by title, linking.",
+    tags: ["artifact", "deliverable", "chunk", "link", "presentation"],
+  },
+  {
+    pin: "@workbench/tools-workflows",
+    package: "workflows",
+    summary: "Workflow run controls — list runs and signal awaiting gates.",
+    tags: ["workflow", "runs", "signal", "gate", "control"],
+  },
+  {
+    pin: "@workbench/tools-skills",
+    package: "skills",
+    summary: "Skills library — list every skill and draft new ones.",
+    tags: ["skills", "guidance", "playbooks", "how-to", "capabilities"],
+  },
+  {
+    pin: "@workbench/tools-agents",
+    package: "identity",
+    summary: "Directory and identity — agents, principals, per-tool identity.",
+    tags: ["identity", "directory", "agents", "principals", "accounts", "who"],
+  },
+  {
+    pin: "@workbench/tools-exa",
+    package: "exa",
+    summary: "Exa — semantic web search and general web search.",
+    tags: ["exa", "web", "search", "research"],
+  },
+  {
+    pin: "@workbench/tools-attio",
+    package: "attio",
+    summary: "Attio CRM — companies, people, deals, tasks, and notes.",
+    tags: ["crm", "attio", "companies", "people", "deals", "contacts", "tasks"],
+  },
+  {
+    pin: "@workbench/tools-linear",
+    package: "linear",
+    summary: "Linear — issues, teams, and users for product/engineering work.",
+    tags: ["linear", "issues", "tickets", "engineering", "product", "tasks"],
+  },
+  {
+    pin: "@workbench/tools-granola",
+    package: "granola",
+    summary: "Granola — meeting notes, transcripts, and folders.",
+    tags: ["granola", "meetings", "notes", "transcripts", "calls"],
+  },
+  {
+    pin: "@workbench/tools-vercel",
+    package: "vercel",
+    summary: "Vercel — projects, deployments, and static/artifact deploys.",
+    tags: ["vercel", "deploy", "deployment", "hosting", "projects"],
+  },
+  {
+    pin: "@workbench/tools-fileparser",
+    package: "fileparser",
+    summary: "Document parsing — read PDFs, documents, and images as text.",
+    tags: ["file", "parse", "pdf", "document", "ocr", "attachment"],
+  },
+  {
+    pin: "@workbench/tools-notion",
+    package: "notion",
+    summary: "Notion — search, read, and create workspace pages and databases.",
+    tags: [
+      "notion",
+      "pages",
+      "databases",
+      "docs",
+      "notes",
+      "wiki",
+      "knowledge",
+    ],
+  },
+  {
+    pin: "@workbench/tools-firecrawl",
+    package: "firecrawl",
+    summary:
+      "Firecrawl — scrape, search, map, crawl, extract, and monitor the web.",
+    tags: [
+      "firecrawl",
+      "web",
+      "scrape",
+      "crawl",
+      "search",
+      "research",
+      "extract",
+    ],
+  },
+  {
+    pin: "@workbench/tools-github",
+    package: "github",
+    summary: "GitHub — public repository activity and release signals.",
+    tags: ["github", "code", "repos", "releases", "engineering"],
+  },
+  {
+    pin: "@workbench/tools-youtube",
+    package: "youtube",
+    summary: "YouTube — search videos and channels.",
+    tags: ["youtube", "video", "social", "content"],
+  },
+  {
+    pin: "@workbench/tools-scrapecreators",
+    package: "scrapecreators",
+    summary:
+      "ScrapeCreators — TikTok, Instagram, Threads, and Pinterest search.",
+    tags: [
+      "social",
+      "tiktok",
+      "instagram",
+      "threads",
+      "pinterest",
+      "scrapecreators",
+    ],
+  },
+  {
+    pin: "@workbench/tools-reddit",
+    package: "reddit",
+    summary: "Reddit — search posts and subreddits.",
+    tags: ["reddit", "social", "community", "discussions"],
+  },
+  {
+    pin: "@workbench/tools-bluesky",
+    package: "bluesky",
+    summary: "Bluesky — search public posts.",
+    tags: ["bluesky", "social", "posts"],
+  },
+  {
+    pin: "@workbench/tools-x",
+    package: "x",
+    summary: "X (Twitter) — search posts and accounts.",
+    tags: ["x", "twitter", "social", "posts"],
+  },
+  {
+    pin: "@workbench/tools-hackernews",
+    package: "hackernews",
+    summary: "Hacker News — search stories and discussions.",
+    tags: ["hackernews", "hn", "news", "tech", "community"],
+  },
+  {
+    pin: "@workbench/tools-polymarket",
+    package: "polymarket",
+    summary: "Polymarket — prediction market odds.",
+    tags: ["polymarket", "markets", "odds", "predictions"],
+  },
+];
+
+const PLATFORM = new Set(MYRA_PLATFORM_BARE_TOOL_NAMES);
+
+/** The catalog (search + hide) tools a package contributes: all it ships minus platform. */
+function catalogBareToolsFor(pkg: CatalogPackage): string[] {
+  return bareToolNamesForPin(pkg.pin).filter((bare) => !PLATFORM.has(bare));
+}
+
+function entry(pkg: CatalogPackage): ToolCatalogEntry {
   return {
-    package: pkg,
-    summary,
-    tags,
-    tools: tools.map((t) => ({
-      name: toLlmToolName(canonicalizeToolNames([t.bare])[0] ?? t.bare),
-      description: t.description,
+    package: pkg.package,
+    summary: pkg.summary,
+    tags: pkg.tags,
+    tools: catalogBareToolsFor(pkg).map((bare) => ({
+      name: toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare),
+      description: bare.replaceAll("_", " "),
     })),
   };
 }
 
 /**
- * The long-tail tool packages Myra loads on demand. Everything Myra has
- * loaded stays dispatchable; these packages are simply not advertised to the
- * model until `load_tools` enables them. Base packages Myra uses in most
- * chats (skills, artifact/memory, exa/web search, workflows, agents/identity)
- * are always advertised and are NOT listed here.
+ * The dynamic catalog Myra advertises through `search_tools` — every tool her
+ * pinned packages ship except the platform set, grouped by package for
+ * `load_tools({ package })`. Packages that contribute no non-platform tool are
+ * omitted (none today).
  */
-export const MYRA_TOOL_CATALOG: ToolCatalog = [
-  entry(
-    "attio",
-    "Attio CRM — companies, people, deals, tasks, and notes.",
-    ["crm", "attio", "companies", "people", "deals", "contacts", "tasks"],
-    [
-      { bare: "attio_list_objects", description: "List the CRM object types." },
-      {
-        bare: "attio_query_records",
-        description: "Query records of an object.",
-      },
-      { bare: "attio_search_records", description: "Search records by text." },
-      { bare: "attio_get_record", description: "Fetch one record by id." },
-      {
-        bare: "attio_list_workspace_members",
-        description: "List workspace members.",
-      },
-      { bare: "attio_list_tasks", description: "List CRM tasks." },
-      { bare: "attio_get_task", description: "Fetch one task by id." },
-      { bare: "attio_update_task", description: "Update a task." },
-      { bare: "attio_create_note", description: "Create a note on a record." },
-    ],
-  ),
-  entry(
-    "linear",
-    "Linear — issues, teams, and users for product/engineering work.",
-    ["linear", "issues", "tickets", "engineering", "product", "tasks"],
-    [
-      { bare: "linear_list_issues", description: "List/filter Linear issues." },
-      { bare: "linear_get_issue", description: "Fetch one issue by id." },
-      { bare: "linear_list_teams", description: "List Linear teams." },
-      { bare: "linear_list_users", description: "List Linear users." },
-    ],
-  ),
-  entry(
-    "notion",
-    "Notion — search, read, and create workspace pages and databases.",
-    ["notion", "pages", "databases", "docs", "notes", "wiki", "knowledge"],
-    [
-      {
-        bare: "notion_search",
-        description: "Search pages and databases by title.",
-      },
-      { bare: "notion_get_page", description: "Fetch one page's properties." },
-      {
-        bare: "notion_get_page_content",
-        description: "Read a page's body blocks.",
-      },
-      {
-        bare: "notion_get_database",
-        description: "Fetch a database's schema.",
-      },
-      {
-        bare: "notion_query_database",
-        description: "Query rows of a database.",
-      },
-      { bare: "notion_create_page", description: "Create a page or db row." },
-    ],
-  ),
-  entry(
-    "granola",
-    "Granola — meeting notes, transcripts, and folders.",
-    ["granola", "meetings", "notes", "transcripts", "calls"],
-    [
-      { bare: "granola_list_notes", description: "List meeting notes." },
-      { bare: "granola_get_note", description: "Fetch one note/transcript." },
-      { bare: "granola_list_folders", description: "List note folders." },
-    ],
-  ),
-  entry(
-    "vercel",
-    "Vercel — projects, deployments, and static file deploys.",
-    ["vercel", "deploy", "deployment", "hosting", "projects"],
-    [
-      { bare: "vercel_list_projects", description: "List Vercel projects." },
-      {
-        bare: "vercel_list_deployments",
-        description: "List deployments for a project.",
-      },
-      {
-        bare: "vercel_deploy_static_file",
-        description: "Deploy a static file to Vercel.",
-      },
-      {
-        bare: "vercel_deploy_artifact",
-        description:
-          "Deploy a web or web_site artifact to a public Vercel URL.",
-      },
-    ],
-  ),
-  entry(
-    "fileparser",
-    "Document parsing — read PDFs, documents, and images as text.",
-    ["file", "parse", "pdf", "document", "ocr", "attachment"],
-    [
-      {
-        bare: "parse_file",
-        description: "Parse a PDF/document/image and return its text.",
-      },
-    ],
-  ),
-];
+export const MYRA_TOOL_CATALOG: ToolCatalog = MYRA_CATALOG_PACKAGES.map(
+  entry,
+).filter((e) => e.tools.length > 0);
+
+/** The `@scope/package` names Myra pins, derived from the catalog packages. */
+export const MYRA_TOOL_PACKAGES: string[] = MYRA_CATALOG_PACKAGES.map(
+  (pkg) => pkg.pin,
+);
+
+/**
+ * Bare names of every catalog tool — the integration half of
+ * `PERSONAL_AGENT_BASE_TOOLS`. Grants derive from this so a package's tools are
+ * granted exactly when they are cataloged (single source of truth, CL-3190).
+ */
+export const MYRA_CATALOG_BARE_TOOL_NAMES: string[] =
+  MYRA_CATALOG_PACKAGES.flatMap(catalogBareToolsFor);

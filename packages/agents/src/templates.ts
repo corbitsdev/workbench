@@ -8,6 +8,7 @@ import {
   PERSONAL_AGENT_MODEL_CONFIG,
   buildPersonalAgentGrantRequirements,
 } from "./personal-agent/definition";
+import { MYRA_TOOL_PACKAGES } from "./dynamic-tools/catalog";
 import {
   LOOP_DEPLOY_PROMPT,
   LOOP_CREDENTIAL_REQUIREMENTS,
@@ -122,7 +123,7 @@ export interface AgentTemplate {
  * per-agent prompt / credential / grant / capability constants — no duplication.
  *
  * Base tool sources:
- *   - Myra:   PERSONAL_AGENT_BASE_TOOLS (empty today; single source of truth)
+ *   - Myra:   PERSONAL_AGENT_BASE_TOOLS (platform ∪ catalog; single source of truth)
  *   - Loop:   LOOP_DEPLOY_DESCRIPTOR.defaultTools
  *   - Oat:    GRANOLA_CAPABILITIES.tools
  *   - Freddy: FIRECRAWL_CAPABILITIES.tools (Firecrawl agent)
@@ -151,19 +152,13 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
     modelConfig: PERSONAL_AGENT_MODEL_CONFIG,
     kind: "personal",
-    toolPackages: [
-      { name: "@workbench/tools-exa", version: "^0.1.0" },
-      { name: "@workbench/tools-linear", version: "^0.1.0" },
-      { name: "@workbench/tools-attio", version: "^0.1.0" },
-      { name: "@workbench/tools-notion", version: "^0.1.0" },
-      { name: "@workbench/tools-granola", version: "^0.1.0" },
-      { name: "@workbench/tools-artifact", version: "^0.1.0" },
-      { name: "@workbench/tools-fileparser", version: "^0.1.0" },
-      { name: "@workbench/tools-vercel", version: "^0.1.0" },
-      { name: "@workbench/tools-agents", version: "^0.1.0" },
-      { name: "@workbench/tools-skills", version: "^0.1.0" },
-      { name: "@workbench/tools-workflows", version: "^0.1.0" },
-    ],
+    // Pins derive from MYRA_CATALOG_PACKAGES (one source of truth) so a package
+    // added to the catalog is pinned, granted, and searchable together — never
+    // hand-listed twice. Only a small platform subset is advertised on turn 1
+    // (PERSONAL_AGENT_PLATFORM_TOOLS); everything else stays hidden until
+    // search_tools/load_tools. No gamma/last30days: those run through workflows
+    // only. Version "*": latest on the registry at deploy assembly (CL-3190).
+    toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
   },
   {
     key: "oat",
