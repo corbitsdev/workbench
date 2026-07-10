@@ -43,6 +43,10 @@ let lastCatalogSurfaceProps: {
   tenantId: string | null;
   onWorkflowStarted: (runId: string) => void;
 } | null = null;
+mock.module("../components/ActiveWorkflowRuns", () => ({
+  ActiveWorkflowRuns: () => null,
+}));
+
 mock.module("../components/WorkflowCatalog", () => ({
   WorkflowCatalog: (props: {
     tenantId: string | null;
