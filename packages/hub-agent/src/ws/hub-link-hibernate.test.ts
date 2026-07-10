@@ -162,6 +162,12 @@ function createMockSessionManager(): SessionManager & {
     commitInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) =>
       Promise.resolve(),
     getSessionId: (_agentAddress: string) => undefined,
+    wakeAgent: (_agentAddress: string) => Promise.resolve(),
+    isWakeable: (_agentAddress: string) => false,
+    deliverInboundMail: (_agentAddress: string, _rawMessage: Uint8Array) => {
+      /* unused */
+    },
+    evictIdleSessions: () => Promise.resolve(),
     onAgentEvent:
       (_agentAddress: string, _listener: AgentEventListener) => () => {
         /* unused */
@@ -413,8 +419,7 @@ describe("hub-link hibernate undeploy flavor", () => {
     } finally {
       client.close();
       await waitFor(
-        () =>
-          !env.router.getConnectedSidecars().includes("sc-hibernate-retry"),
+        () => !env.router.getConnectedSidecars().includes("sc-hibernate-retry"),
       );
     }
   });
@@ -552,8 +557,7 @@ describe("hub-link hibernate withholds the ack when it cannot hibernate", () => 
     } finally {
       client.close();
       await waitFor(
-        () =>
-          !shortEnv.router.getConnectedSidecars().includes("sc-hook-fails"),
+        () => !shortEnv.router.getConnectedSidecars().includes("sc-hook-fails"),
       );
     }
   });

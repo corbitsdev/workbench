@@ -133,6 +133,10 @@ export type SidecarOrchestratorConfig = {
   maxReconnectDelayMs?: number;
   maxOutboundQueue?: number;
   scheduleReconnect?: ReconnectScheduler;
+  // WORKBENCH-LOCAL (CL-3103): idle-eviction threshold (ms) forwarded to
+  // SessionManager. `0` disables eviction. The host also drives the periodic
+  // sweep timer that calls `sessions.evictIdleSessions()`.
+  idleEvictMs?: number;
 };
 
 export type SidecarOrchestrator = {
@@ -169,6 +173,8 @@ export function createSidecarOrchestrator(
     maxReconnectDelayMs,
     maxOutboundQueue,
     scheduleReconnect,
+    // WORKBENCH-LOCAL (CL-3103)
+    idleEvictMs,
   } = config;
 
   const repoStore = createAgentRepoStore({ dataDir });
@@ -218,6 +224,8 @@ export function createSidecarOrchestrator(
     onDeployApplyError(agentAddress, payload) {
       dispatchDeployApplyError(agentAddress, payload);
     },
+    // WORKBENCH-LOCAL (CL-3103)
+    ...(idleEvictMs !== undefined ? { idleEvictMs } : {}),
   });
 
   const deployRouter = createDeployRouter({

@@ -180,6 +180,7 @@ function createMockSessionManager(): SessionManager & {
     isWakeable(_agentAddress: string): boolean {
       return false;
     },
+    evictIdleSessions: () => Promise.resolve(),
     wakeAgent: (_agentAddress: string) => Promise.resolve(),
     deliverInboundMail(_agentAddress: string, _rawMessage: Uint8Array): void {
       /* no-op: this test exercises the multi-step mail router path */

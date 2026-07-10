@@ -19,6 +19,7 @@ import {
   resolveAgentGCPolicy,
   resolveSidecarHeartbeat,
   resolveSidecarHubLinkQueue,
+  resolveSidecarIdleEviction,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
 } from "./config";
@@ -69,6 +70,7 @@ const hubLinkQueue = resolveSidecarHubLinkQueue(process.env);
 const dataDir = requireEnv("SIDECAR_DATA_DIR");
 const toolPackageCache = resolveToolPackageCache(process.env, dataDir);
 const agentGCPolicy = resolveAgentGCPolicy(process.env);
+const idleEviction = resolveSidecarIdleEviction(process.env);
 
 // Operator-configured custom inference adapters, resolved once at the
 // boot edge. `buildWorkbenchAdapterRegistry` merges the statically-linked
@@ -276,6 +278,7 @@ const orchestrator = createSidecarOrchestrator({
   reconnectDelayMs: heartbeat.reconnectDelayMs,
   maxReconnectDelayMs: heartbeat.maxReconnectDelayMs,
   maxOutboundQueue: hubLinkQueue.maxOutboundQueue,
+  idleEvictMs: idleEviction.idleEvictMs,
   transport,
   buildHarness: createDefaultHarnessBuilder({
     hubHttpUrl: wsUrlToHttp(hubWsUrl),
@@ -364,3 +367,20 @@ startMemoryTelemetry(dataDir);
 // agent's turn memory stays in RSS until a GC is forced. Periodically force one
 // so memory tracks live load instead of the peak high-water-mark (CL-2813).
 startPeriodicGc();
+
+// CL-3103: periodically evict idle agent sessions so a conversation that has
+// gone quiet spins down and its heap is reclaimed; the next message rebuilds
+// the harness with full history from the durable repo store. Disabled when the
+// threshold is 0. No `.unref()` — matches the memory timers above so the sweep
+// keeps the event loop alive.
+if (idleEviction.sweepIntervalMs > 0) {
+  setInterval(() => {
+    void orchestrator.sessions.evictIdleSessions().catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      getLogger(["sidecar", "idle-evict"]).warn(
+        "idle eviction sweep failed: {msg}",
+        { msg },
+      );
+    });
+  }, idleEviction.sweepIntervalMs);
+}

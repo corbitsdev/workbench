@@ -4,9 +4,55 @@ import {
   readAdapterManifest,
   resolveAgentGCPolicy,
   resolveSidecarHeartbeat,
+  resolveSidecarIdleEviction,
   resolveToolPackageCache,
   resolveWorkflowRunPackLimits,
 } from "./config";
+
+describe("resolveSidecarIdleEviction", () => {
+  it("defaults to a 60s threshold with a bounded sweep cadence", () => {
+    const cfg = resolveSidecarIdleEviction({});
+    expect(cfg.idleEvictMs).toBe(60_000);
+    // Sweep is clamped to at most 15s so eviction latency tracks the threshold.
+    expect(cfg.sweepIntervalMs).toBe(15_000);
+  });
+
+  it("treats 0 as disabled and yields a 0 sweep interval", () => {
+    const cfg = resolveSidecarIdleEviction({
+      SIDECAR_AGENT_IDLE_EVICT_MS: "0",
+    });
+    expect(cfg.idleEvictMs).toBe(0);
+    expect(cfg.sweepIntervalMs).toBe(0);
+  });
+
+  it("derives the sweep cadence from a small threshold", () => {
+    const cfg = resolveSidecarIdleEviction({
+      SIDECAR_AGENT_IDLE_EVICT_MS: "4000",
+    });
+    expect(cfg.idleEvictMs).toBe(4_000);
+    expect(cfg.sweepIntervalMs).toBe(4_000);
+  });
+
+  it("floors the sweep cadence for a very small threshold", () => {
+    const cfg = resolveSidecarIdleEviction({
+      SIDECAR_AGENT_IDLE_EVICT_MS: "200",
+    });
+    expect(cfg.idleEvictMs).toBe(200);
+    expect(cfg.sweepIntervalMs).toBe(1_000);
+  });
+
+  it("rejects a negative threshold", () => {
+    expect(() =>
+      resolveSidecarIdleEviction({ SIDECAR_AGENT_IDLE_EVICT_MS: "-1" }),
+    ).toThrow(/non-negative integer/);
+  });
+
+  it("rejects a non-integer threshold", () => {
+    expect(() =>
+      resolveSidecarIdleEviction({ SIDECAR_AGENT_IDLE_EVICT_MS: "abc" }),
+    ).toThrow(/non-negative integer/);
+  });
+});
 
 describe("resolveSidecarHeartbeat", () => {
   it("uses fast defaults when env is unset", () => {
