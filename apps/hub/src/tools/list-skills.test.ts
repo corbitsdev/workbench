@@ -55,12 +55,41 @@ function matchSkillIdByDraftName(
   return match?.id ?? null;
 }
 
+type DraftItem = {
+  id: string;
+  title: string;
+  content: string;
+  description: string | null;
+  existingSkillId: string | null;
+  files: { path: string; content: string }[];
+  status: "draft" | "approved" | "rejected";
+  updatedAt: string;
+  createdAt: string;
+};
+
+const draftsByOwner = new Map<string, DraftItem[]>();
+const draftByOwnerAndId = new Map<string, DraftItem>();
+
+const listSkillDrafts = mock(
+  async (_db: unknown, ctx: { principalId: string }) =>
+    draftsByOwner.get(ctx.principalId) ?? [],
+);
+const getOwnedSkillDraftItem = mock(
+  async (_db: unknown, ctx: { principalId: string }, draftId: string) => {
+    const draft = draftByOwnerAndId.get(`${ctx.principalId}:${draftId}`);
+    if (!draft) throw new Error(`Skill draft not found: ${draftId}`);
+    return draft;
+  },
+);
+
 mock.module("../services/skill-library", () => ({
   listSkills,
   getSkillAsset,
   getSkillContent,
   matchSkillIdByDraftName,
   toAssetName,
+  listSkillDrafts,
+  getOwnedSkillDraftItem,
 }));
 
 const resolveOwnerMemberPrincipalId = mock(
@@ -128,6 +157,8 @@ beforeEach(() => {
   assetByIdForUser.clear();
   filesByAsset.clear();
   priorDraftSources.clear();
+  draftsByOwner.clear();
+  draftByOwnerAndId.clear();
   principals.clear();
   principals.set("prn_1", { id: "prn_1", tenantId: "ten_1", refId: "usr_1" });
   listSkills.mockClear();
@@ -135,6 +166,139 @@ beforeEach(() => {
   resolveOwnerMemberPrincipalId.mockClear();
   resolveOwnerMemberPrincipalId.mockImplementation(async () => "prn_owner_1");
   getSkillContent.mockClear();
+  listSkillDrafts.mockClear();
+  getOwnedSkillDraftItem.mockClear();
+});
+
+function draftFixture(over: Partial<DraftItem> = {}): DraftItem {
+  return {
+    id: "art_d1",
+    title: "Deck Builder",
+    content: "# Deck Builder\nBuild a deck.",
+    description: "Turns notes into a deck",
+    existingSkillId: null,
+    files: [],
+    status: "draft",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    ...over,
+  };
+}
+
+describe("list_skill_drafts", () => {
+  test("returns a body-less index of the owner's pending drafts", async () => {
+    draftsByOwner.set("prn_owner_1", [
+      draftFixture({ id: "art_d1", title: "Deck Builder" }),
+      draftFixture({
+        id: "art_d2",
+        title: "Humanizer",
+        description: null,
+      }),
+    ]);
+    const result = await tool("list_skill_drafts").handler(
+      {},
+      new AbortController().signal,
+    );
+    expect(JSON.parse(result)).toEqual({
+      drafts: [
+        {
+          id: "art_d1",
+          name: "Deck Builder",
+          description: "Turns notes into a deck",
+        },
+        { id: "art_d2", name: "Humanizer", description: null },
+      ],
+    });
+    // Authorized against the resolved OWNER member principal, not the agent id.
+    expect(listSkillDrafts).toHaveBeenCalledWith(expect.anything(), {
+      tenantId: "ten_1",
+      principalId: "prn_owner_1",
+    });
+  });
+
+  test("fails closed to an empty list when there is no owning member principal", async () => {
+    resolveOwnerMemberPrincipalId.mockImplementation(async () => null);
+    draftsByOwner.set("prn_owner_1", [draftFixture()]);
+    const result = await tool("list_skill_drafts").handler(
+      {},
+      new AbortController().signal,
+    );
+    expect(JSON.parse(result)).toEqual({ drafts: [] });
+    expect(listSkillDrafts).not.toHaveBeenCalled();
+  });
+});
+
+describe("load_skill_draft", () => {
+  test("returns the draft body and support files for an owned draft", async () => {
+    draftByOwnerAndId.set(
+      "prn_owner_1:art_d1",
+      draftFixture({
+        id: "art_d1",
+        title: "Deck Builder",
+        content: "# Deck Builder\nBuild a deck.",
+        files: [{ path: "examples/sample.md", content: "# sample" }],
+      }),
+    );
+    const result = await tool("load_skill_draft").handler(
+      { id: "art_d1" },
+      new AbortController().signal,
+    );
+    expect(JSON.parse(result)).toMatchObject({
+      id: "art_d1",
+      name: "Deck Builder",
+      description: "Turns notes into a deck",
+      body: "# Deck Builder\nBuild a deck.",
+      files: [{ path: "examples/sample.md", content: "# sample" }],
+    });
+    expect(getOwnedSkillDraftItem).toHaveBeenCalledWith(
+      expect.anything(),
+      { tenantId: "ten_1", principalId: "prn_owner_1" },
+      "art_d1",
+    );
+  });
+
+  test("truncates an oversized draft body and flags it with a notice", async () => {
+    const huge = "x".repeat(2 * 1024 * 1024);
+    draftByOwnerAndId.set(
+      "prn_owner_1:art_big",
+      draftFixture({ id: "art_big", content: huge }),
+    );
+    const parsed = JSON.parse(
+      await tool("load_skill_draft").handler(
+        { id: "art_big" },
+        new AbortController().signal,
+      ),
+    );
+    expect(parsed.body.length).toBeLessThan(huge.length);
+    expect(parsed.notice).toBeDefined();
+  });
+
+  test("errors when the draft is not owned by the caller", async () => {
+    await expect(
+      tool("load_skill_draft").handler(
+        { id: "art_someone_else" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Skill draft not found: art_someone_else");
+  });
+
+  test("errors when there is no owning member principal", async () => {
+    resolveOwnerMemberPrincipalId.mockImplementation(async () => null);
+    draftByOwnerAndId.set("prn_owner_1:art_d1", draftFixture());
+    await expect(
+      tool("load_skill_draft").handler(
+        { id: "art_d1" },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Skill draft not found: art_d1");
+    expect(getOwnedSkillDraftItem).not.toHaveBeenCalled();
+  });
+
+  test("rejects a missing id", async () => {
+    await expect(
+      tool("load_skill_draft").handler({}, new AbortController().signal),
+    ).rejects.toThrow("load_skill_draft");
+  });
 });
 
 describe("list_skills", () => {
