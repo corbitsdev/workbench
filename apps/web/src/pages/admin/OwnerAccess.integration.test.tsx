@@ -32,6 +32,9 @@ mock.module("../../lib/hub-api", () => ({
     }),
   getTenantProviders,
   getTenantModels,
+  getOwnerCredentials: () => Promise.resolve([]),
+  setOwnerCredential: () => Promise.reject(new Error("not used in this test")),
+  clearOwnerCredential: () => Promise.reject(new Error("not used in this test")),
 }));
 
 const { OwnerLayout } = await import("./OwnerLayout");
