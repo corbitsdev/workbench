@@ -143,7 +143,7 @@ function validateConfig(config: ResolvedGranolaConfig): void {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function errorMessageFromBody(text: string): string | null {
