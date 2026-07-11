@@ -19,34 +19,45 @@ import {
  * spawn and draft-persistence wiring lands with the auto-triage work.
  */
 
-/**
- * Bare tool names excluded from the triage loadout because they mutate state.
- * The subset is derived by filtering the base toolset (below) so the mailbox
- * loadout can never advertise a tool Myra does not otherwise carry, and adding
- * a write tool to the base list keeps it out of triage automatically.
- */
-const MAILBOX_EXCLUDED_TOOLS = [
-  "memory_save",
-  "artifact_create",
-  "artifact_write",
-  "attio_update_task",
-  "attio_create_note",
-  "identity_set",
-  "skill_draft",
-  "workflow_start",
-  "workflow_signal",
-  "vercel_deploy_static_file",
-  "vercel_deploy_artifact",
-];
+// Read verbs a bare tool name must carry (as a whole `_`-separated segment)
+// to enter the triage loadout. Anything else — create/update/set/send/deploy/
+// draft/start/signal and every verb not listed here — defaults OUT.
+const READ_ONLY_NAME_PATTERN =
+  /(^|_)(search|list|get|read|load|query|find)(_|$)/;
 
-function mutatesState(toolName: string): boolean {
-  return MAILBOX_EXCLUDED_TOOLS.some(
-    (bare) => toolName === bare || toolName.endsWith(`:${bare}`),
-  );
+// Read-only grounding tools whose names carry no read verb. Kept deliberately
+// short: a tool earns a place here only after a manual read-only audit.
+const READ_ONLY_EXTRA_TOOLS = new Set([
+  "parse_file",
+  "firecrawl_scrape",
+  "github_activity",
+  "polymarket_odds",
+  "scrapecreators_tiktok",
+  "scrapecreators_instagram",
+  "scrapecreators_threads",
+  "scrapecreators_pinterest",
+]);
+
+/**
+ * Allow predicate for the triage loadout: a tool is admitted only when its
+ * bare name (the segment after any `<factoryId>:` prefix) names a read
+ * operation or sits on the audited read-only extras list. Because this is an
+ * ALLOW-list, any new base tool defaults out of triage until its name matches
+ * a read verb or it is explicitly audited in — a new write tool can never
+ * leak in by omission.
+ */
+export function isMailboxReadOnlyTool(toolName: string): boolean {
+  const bare = toolName.slice(toolName.lastIndexOf(":") + 1);
+  return READ_ONLY_NAME_PATTERN.test(bare) || READ_ONLY_EXTRA_TOOLS.has(bare);
 }
 
+/**
+ * The triage loadout: the base toolset intersected with the read-only allow
+ * predicate, so the mailbox persona can never advertise a tool Myra does not
+ * otherwise carry.
+ */
 export const MAILBOX_PERSONA_TOOLS: string[] = PERSONAL_AGENT_BASE_TOOLS.filter(
-  (name) => !mutatesState(name),
+  isMailboxReadOnlyTool,
 );
 
 export function buildMailboxTriagePrompt(name: string): string {
