@@ -18,6 +18,8 @@ import {
   DemoLinkSchema,
   WorkflowCatalogSchema,
   type WorkflowCatalog,
+  PreferenceSettingsResponseSchema,
+  type PreferenceSetting,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -288,6 +290,19 @@ export async function getWorkflowsCatalog(
     throw new Error(`Unexpected workflows catalog response: ${parsed.summary}`);
   }
   return parsed;
+}
+
+/** The registry-driven settings with the caller's resolved values, parsed at
+ * the boundary through the shared schema. */
+export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences/settings");
+  const parsed = PreferenceSettingsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Unexpected preference settings response: ${parsed.summary}`,
+    );
+  }
+  return parsed.settings;
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */

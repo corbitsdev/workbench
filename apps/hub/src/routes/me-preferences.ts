@@ -1,7 +1,12 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { MemberPreferences } from "@workbench/shared";
+import {
+  MemberPreferences,
+  PreferenceSettingsResponseSchema,
+  resolvePreferenceSettings,
+  validatePreferencePatch,
+} from "@workbench/shared";
 import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
 import {
   readMemberPreferences,
@@ -51,6 +56,37 @@ export function createMePreferencesRouter(
     },
   );
 
+  app.get(
+    "/me/preferences/settings",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Get the registry-driven settings with the caller's values",
+      description:
+        "Every registered preference merged with the caller's stored value, falling back to the registry default. Drives the settings surface so the UI hardcodes no individual setting.",
+      responses: {
+        200: {
+          description: "Resolved settings",
+          content: {
+            "application/json": {
+              schema: resolver(PreferenceSettingsResponseSchema),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const rootTenantId = await getRootTenantId(db);
+      const member = rootTenantId
+        ? await lookupMember(db, { tenantId: rootTenantId, userId })
+        : null;
+      const stored = member
+        ? await readMemberPreferences(db, member.tenantId, member.principalId)
+        : {};
+      return c.json({ settings: resolvePreferenceSettings(stored) });
+    },
+  );
+
   app.patch(
     "/me/preferences",
     describeRoute({
@@ -87,6 +123,11 @@ export function createMePreferencesRouter(
       const patch = MemberPreferences(raw);
       if (patch instanceof type.errors) {
         return c.json({ error: patch.summary }, 400);
+      }
+
+      const registryError = validatePreferencePatch(patch);
+      if (registryError) {
+        return c.json({ error: registryError }, 400);
       }
 
       const rootTenantId = await getRootTenantId(db);

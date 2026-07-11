@@ -14,6 +14,7 @@ export * from "./scheduled-trigger";
 export * from "./webhook-trigger";
 export * from "./pain-point-collateral";
 export * from "./web-site";
+export * from "./preferences-registry";
 export { toHumanLabel } from "./tool-labels";
 
 export type Severity = "low" | "medium" | "high" | "critical";

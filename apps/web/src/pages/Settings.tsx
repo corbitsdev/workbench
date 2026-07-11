@@ -26,6 +26,7 @@ import { LogOut } from "lucide-react";
 import { fetchBuildSha } from "../lib/api";
 import { getMe, patchMeProfile } from "../lib/hub-api";
 import { useAuth } from "../components/AuthProvider";
+import { PreferencesPanel } from "../components/PreferencesPanel";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -171,6 +172,9 @@ export default function Settings() {
         onChange={handleChange}
         description="Manage your workbench preferences."
       />
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <PreferencesPanel />
+      </div>
       <div
         className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? "" : " opacity-50"}`}
       >
