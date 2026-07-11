@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
@@ -76,4 +76,30 @@ export async function callerCanResolveApproval(
 
   const owner = await resolveInstanceOwner(db, instance.id, userId);
   return owner !== null;
+}
+
+/**
+ * The set of principal ids whose approvals a caller may see in a tenant: their
+ * own user principal, plus the synthetic per-instance principals of every agent
+ * instance they own. Used to scope the approvals list so one tenant member does
+ * not see another member's pending tool-call arguments.
+ */
+export async function resolveOwnedApprovalPrincipalIds(
+  db: HubDb,
+  tenantId: string,
+  callerPrincipalId: string,
+): Promise<string[]> {
+  const memberships = await db.query.memberAgentInstance.findMany({
+    where: eq(memberAgentInstance.memberPrincipalId, callerPrincipalId),
+  });
+  if (memberships.length === 0) return [callerPrincipalId];
+
+  const instanceIds = memberships.map((m) => m.instanceId);
+  const instances = await db.query.agentInstance.findMany({
+    where: and(
+      inArray(agentInstance.id, instanceIds),
+      eq(agentInstance.tenantId, tenantId),
+    ),
+  });
+  return [callerPrincipalId, ...instances.map((i) => i.principalId)];
 }

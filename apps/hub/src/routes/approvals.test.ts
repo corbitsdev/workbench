@@ -31,6 +31,12 @@ function makeMockDb(overrides: Record<string, any> = {}) {
       principal: {
         findFirst: mock(() => Promise.resolve(undefined)),
       },
+      memberAgentInstance: {
+        findMany: mock(() => Promise.resolve([])),
+      },
+      agentInstance: {
+        findMany: mock(() => Promise.resolve([])),
+      },
     },
     select: mock(() => ({
       from: mock(() => ({

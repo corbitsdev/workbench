@@ -1,12 +1,15 @@
 import { Hono } from "hono";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { type } from "arktype";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { approval } from "../db/schema";
 import type { HubDb } from "../db";
-import { callerCanResolveApproval } from "../lib/instance-ownership";
+import {
+  callerCanResolveApproval,
+  resolveOwnedApprovalPrincipalIds,
+} from "../lib/instance-ownership";
 
 const log = getLogger(["api", "approvals"]);
 
@@ -64,11 +67,22 @@ export function createApprovalsRouter(
     });
     if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
 
+    // Scope to approvals the caller owns so one tenant member never sees another
+    // member's pending tool-call arguments.
+    const ownedPrincipalIds = await resolveOwnedApprovalPrincipalIds(
+      db,
+      tenantId,
+      callerPrincipal.id,
+    );
     const rows = await db
       .select()
       .from(approval)
       .where(
-        and(eq(approval.tenantId, tenantId), eq(approval.status, "pending")),
+        and(
+          eq(approval.tenantId, tenantId),
+          eq(approval.status, "pending"),
+          inArray(approval.principalId, ownedPrincipalIds),
+        ),
       );
     return c.json(rows.map(formatApproval));
   });
