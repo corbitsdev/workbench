@@ -37,6 +37,15 @@ const SYSTEM_SENDER_LOCAL_PARTS = new Set(["hub", "myra"]);
 
 const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 
+/**
+ * Cap on in-flight-plus-queued triage items. Triage is single-flight and
+ * strictly sequential, so a burst of inbound mail (or a stuck upstream
+ * sender) can otherwise grow the queue without bound. On overflow the
+ * oldest queued item is dropped rather than the persist path being blocked
+ * or the newest arrival being refused.
+ */
+const MAX_QUEUE = 50;
+
 export type MailboxTriageDeps = {
   db: HubDb;
   sessionService: SessionService;
@@ -332,6 +341,13 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
   return {
     enqueue(item) {
       if (!getConfig().triageEnabled) return;
+      if (queue.length >= MAX_QUEUE) {
+        const dropped = queue.shift();
+        log.error("Mailbox triage queue full; dropped oldest item", {
+          droppedRowId: dropped?.rowId,
+          maxQueue: MAX_QUEUE,
+        });
+      }
       queue.push(item);
       pump();
     },
