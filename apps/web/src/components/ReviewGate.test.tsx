@@ -29,11 +29,13 @@ const mockRejectRequest = mock<() => Promise<Approval>>();
 // approval event. subscribeApprovals returns an unsubscribe function.
 let capturedOnEvent: ((event: ApprovalEvent) => void) | null = null;
 const subscribeCalls: string[] = [];
+let unsubscribeCalls = 0;
 const mockSubscribeApprovals = mock(
   (tenantId: string, onEvent: (event: ApprovalEvent) => void) => {
     subscribeCalls.push(tenantId);
     capturedOnEvent = onEvent;
     return () => {
+      unsubscribeCalls += 1;
       capturedOnEvent = null;
     };
   },
@@ -86,6 +88,7 @@ afterEach(() => {
   mockRejectRequest.mockClear();
   mockSubscribeApprovals.mockClear();
   subscribeCalls.length = 0;
+  unsubscribeCalls = 0;
   capturedOnEvent = null;
 });
 
@@ -436,5 +439,25 @@ describe("ReviewGate — resolved items reduced opacity", () => {
     screen.getByText("approved");
     expect(screen.queryByTestId(`approve-${resolved.id}`)).toBeNull();
     expect(screen.queryByTestId(`reject-${resolved.id}`)).toBeNull();
+  });
+});
+
+describe("ReviewGate — subscription teardown", () => {
+  it("unsubscribes from the stream on unmount", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    const view = renderGate();
+    // Let the initial list query settle before unmounting so no in-flight
+    // promise resolves against an unmounted tree and bleeds into later tests.
+    await waitFor(() => {
+      expect(mockListApprovals).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(mockSubscribeApprovals).toHaveBeenCalled();
+    });
+    expect(unsubscribeCalls).toBe(0);
+
+    view.unmount();
+
+    expect(unsubscribeCalls).toBe(1);
   });
 });

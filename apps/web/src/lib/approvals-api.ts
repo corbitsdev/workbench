@@ -61,19 +61,27 @@ const APPROVALS_STREAM_EVENT = "approvals";
 /**
  * Subscribe to the tenant's approval change notifications over SSE. Shares one
  * ref-counted EventSource per stream URL (see shared-event-stream). Each valid
- * event invokes `onEvent`; malformed frames are dropped. Returns an unsubscribe
- * function that closes the connection when the last subscriber leaves.
+ * event invokes `onEvent`; malformed frames are dropped. `onError` fires once if
+ * the connection never opens (terminal failure) so the caller can react instead
+ * of silently going quiet. Returns an unsubscribe function that closes the
+ * connection when the last subscriber leaves.
  */
 export function subscribeApprovals(
   tenantId: string,
   onEvent: (event: ApprovalEvent) => void,
+  onError?: (error: Error) => void,
 ): () => void {
   const url = buildEventSourceUrl(`tenants/${tenantId}/approvals/stream`);
-  return subscribeSharedEventStream(url, APPROVALS_STREAM_EVENT, (raw) => {
-    const parsed = ApprovalEventSchema(raw);
-    if (parsed instanceof type.errors) return;
-    onEvent(parsed);
-  });
+  return subscribeSharedEventStream(
+    url,
+    APPROVALS_STREAM_EVENT,
+    (raw) => {
+      const parsed = ApprovalEventSchema(raw);
+      if (parsed instanceof type.errors) return;
+      onEvent(parsed);
+    },
+    onError,
+  );
 }
 
 /**

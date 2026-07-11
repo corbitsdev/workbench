@@ -105,6 +105,12 @@ export function createApprovalsRouter(
       if (!member) return c.json({ error: "Forbidden" }, 403);
 
       return streamSSE(c, async (stream) => {
+        // The notification is tenant-broadcast: every member of the tenant with
+        // an open stream receives every created/resolved signal, including one
+        // for an approval they do not own. That is safe by design — the frame
+        // carries no approval rows or tool-call arguments, only a change signal,
+        // and each client reacts by refetching the ownership-scoped list route,
+        // which re-gates what that caller may actually see.
         const unsubscribe = bus.subscribe(tenantId, (event) => {
           void stream.writeSSE({
             event: "approvals",
@@ -115,12 +121,13 @@ export function createApprovalsRouter(
         stream.onAbort(() => unsubscribe());
 
         try {
-          // Keep the connection warm through idle-proxy timeouts. A comment
-          // frame is ignored by EventSource but resets the proxy idle clock.
+          // Keep the connection warm through idle-proxy timeouts (Railway). A
+          // real SSE comment frame (`: ...`) is never dispatched to any
+          // EventSource listener but still resets the proxy idle clock.
           while (!stream.aborted) {
             await stream.sleep(HEARTBEAT_INTERVAL_MS);
             if (stream.aborted) break;
-            await stream.writeSSE({ event: "heartbeat", data: "" });
+            await stream.write(": heartbeat\n\n");
           }
         } catch (err) {
           log.warn("approvals stream ended", {

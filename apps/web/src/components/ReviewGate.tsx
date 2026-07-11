@@ -10,6 +10,7 @@ import {
   subscribeApprovals,
 } from "../lib/approvals-api";
 import type { Approval } from "../lib/approvals-api";
+import { logger } from "../lib/logger";
 
 export type ReviewGateProps = {
   /** Interchange tenant ID used to scope approval requests. */
@@ -86,12 +87,23 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
   // than trusting the broadcast payload.
   useEffect(() => {
     if (!enabled) return;
-    const unsubscribe = subscribeApprovals(tenantId, (event) => {
-      if (sessionId && event.sessionId && event.sessionId !== sessionId) return;
-      void queryClient.invalidateQueries({
-        queryKey: ["approvals", tenantId, sessionId],
-      });
-    });
+    const unsubscribe = subscribeApprovals(
+      tenantId,
+      (event) => {
+        if (sessionId && event.sessionId && event.sessionId !== sessionId) {
+          return;
+        }
+        void queryClient.invalidateQueries({
+          queryKey: ["approvals", tenantId, sessionId],
+        });
+      },
+      // A terminally-failed stream (never opened) would otherwise leave the gate
+      // silently stale until the next window-focus refetch. Log it so the drop
+      // is at least visible to operators rather than swallowed.
+      (error) => {
+        logger.warn("Approvals stream connection failed", error.message);
+      },
+    );
     return unsubscribe;
   }, [enabled, tenantId, sessionId, queryClient]);
 

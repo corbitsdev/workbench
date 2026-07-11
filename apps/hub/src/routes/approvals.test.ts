@@ -800,6 +800,78 @@ describe("createInternalApprovalsRouter", () => {
   });
 });
 
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ms: number,
+): Promise<string> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("stream read timed out")), ms),
+  );
+  const { value } = await Promise.race([reader.read(), timeout]);
+  return value ? new TextDecoder().decode(value) : "";
+}
+
+describe("GET /tenants/:tenantId/approvals/stream", () => {
+  it("returns 403 for a caller who is not a tenant member", async () => {
+    const db = makeMockDb(); // principal.findFirst → undefined
+    const app = buildApp(db);
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/stream"),
+    );
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as ResBody;
+    expect(json.error).toContain("Forbidden");
+  });
+
+  it("streams a published change frame to a member and unsubscribes on abort", async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+
+    // Wrap a real bus so the test can observe that abort tears the subscription
+    // down (the bus itself exposes no listener count).
+    const realBus = createApprovalsEventBus();
+    let unsubscribed = false;
+    const bus = {
+      publish: (event: ApprovalEvent) => realBus.publish(event),
+      subscribe: (tenantId: string, listener: (e: ApprovalEvent) => void) => {
+        const off = realBus.subscribe(tenantId, listener);
+        return () => {
+          unsubscribed = true;
+          off();
+        };
+      },
+    };
+
+    const app = buildApp(db, "user-1", bus);
+    const controller = new AbortController();
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/stream", {
+        signal: controller.signal,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const reader =
+      res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+    // Let the streamSSE callback register its bus subscription before publishing.
+    await new Promise((r) => setTimeout(r, 10));
+    bus.publish({ tenantId: "tenant-1", sessionId: "sess-1", kind: "created" });
+
+    const frame = await readWithTimeout(reader, 1000);
+    expect(frame).toContain("event: approvals");
+    expect(frame).toContain('"kind":"created"');
+    expect(frame).not.toContain("resource");
+
+    await reader.cancel().catch(() => {});
+    controller.abort();
+    for (let i = 0; i < 50 && !unsubscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(unsubscribed).toBe(true);
+  });
+});
+
 describe("approval lifecycle events", () => {
   const TOKEN = "sidecar-secret";
 
