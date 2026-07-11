@@ -23,6 +23,7 @@ import {
 } from "./hub-link";
 import type { AgentKeyStore } from "../agent-key-store";
 import type { AgentEventListener, SessionManager } from "../session-manager";
+import { NoActiveTurnError } from "../session-manager";
 
 /**
  * Test-only deploy router that mirrors the pre-supervisor inline
@@ -142,6 +143,8 @@ function createMockSessionManager(): SessionManager & {
   started: string[];
   destroyed: string[];
   aborted: { address: string; reason: string }[];
+  turnAborted: string[];
+  noActiveTurn: boolean;
   delivered: DeliveredMessage[];
   inboundMail: { agentAddress: string; rawMessage: Uint8Array }[];
   wakeable: string[];
@@ -156,6 +159,8 @@ function createMockSessionManager(): SessionManager & {
     started: [] as string[],
     destroyed: [] as string[],
     aborted: [] as { address: string; reason: string }[],
+    turnAborted: [] as string[],
+    noActiveTurn: false,
     delivered: [] as DeliveredMessage[],
     inboundMail: [] as { agentAddress: string; rawMessage: Uint8Array }[],
     wakeable: [] as string[],
@@ -193,6 +198,13 @@ function createMockSessionManager(): SessionManager & {
     async abortSession(agentAddress: string, reason: string): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.aborted.push({ address: agentAddress, reason });
+      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
+    },
+    async abortTurn(agentAddress: string): Promise<void> {
+      if (mock.noActiveTurn) {
+        throw new NoActiveTurnError(agentAddress);
+      }
+      mock.turnAborted.push(agentAddress);
       mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
     },
     deliverMessage(agentAddress: string, message: InboundMessage): void {
@@ -1944,6 +1956,109 @@ describe("routability decoupled from restore", () => {
     } finally {
       client.close();
       await server.stop(true);
+    }
+  });
+});
+
+describe("session.abort routing — user turn abort vs terminal kill", () => {
+  test("reason user_disconnect routes to abortTurn (non-terminal), not abortSession", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-abort-turn",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-abort-turn"),
+      );
+      const address = "abort-turn@test.interchange";
+      await env.router.sendAgentDeploy(address, TEST_CONFIG);
+      await env.router.sendSessionStart(address);
+
+      await env.router.sendSessionAbort(address, "user_disconnect");
+
+      expect(sessions.turnAborted).toEqual([address]);
+      expect(sessions.aborted).toHaveLength(0);
+    } finally {
+      client.close();
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-abort-turn"),
+      );
+    }
+  });
+
+  test("terminal reasons still route to abortSession", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-abort-kill",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-abort-kill"),
+      );
+      const address = "abort-kill@test.interchange";
+      await env.router.sendAgentDeploy(address, TEST_CONFIG);
+      await env.router.sendSessionStart(address);
+
+      await env.router.sendSessionAbort(address, "admin_kill");
+
+      expect(sessions.aborted).toEqual([
+        { address, reason: "admin_kill" },
+      ]);
+      expect(sessions.turnAborted).toHaveLength(0);
+    } finally {
+      client.close();
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-abort-kill"),
+      );
+    }
+  });
+
+  test("no running turn surfaces the sentinel over session.error", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+    sessions.noActiveTurn = true;
+    const client = createHubLink({
+      hubURL: `ws://localhost:${env.server.port}/ws`,
+      sidecarId: "sc-abort-none",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        env.router.getConnectedSidecars().includes("sc-abort-none"),
+      );
+      const address = "abort-none@test.interchange";
+      await env.router.sendAgentDeploy(address, TEST_CONFIG);
+      await env.router.sendSessionStart(address);
+
+      await expect(
+        env.router.sendSessionAbort(address, "user_disconnect"),
+      ).rejects.toThrow("no-active-turn");
+    } finally {
+      client.close();
+      await waitFor(
+        () => !env.router.getConnectedSidecars().includes("sc-abort-none"),
+      );
     }
   });
 });
