@@ -35,10 +35,16 @@ function makeDb(opts: {
   const inserted: Record<string, unknown>[][] = [];
   const values = mock((rows: Record<string, unknown>[]) => {
     if (opts.insertThrows) {
-      return Promise.reject(new Error("principal_mailbox insert failed"));
+      return {
+        returning: () =>
+          Promise.reject(new Error("principal_mailbox insert failed")),
+      };
     }
     inserted.push(rows);
-    return Promise.resolve();
+    return {
+      returning: () =>
+        Promise.resolve(rows.map((_, index) => ({ id: `pm-${index}` }))),
+    };
   });
   const principalFindFirst = mock(
     async (_args: { where: unknown }) => opts.memberPrincipal,

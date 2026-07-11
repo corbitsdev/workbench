@@ -12,7 +12,7 @@ export type MailboxScope = {
 
 const SNIPPET_MAX_CHARS = 160;
 
-type DecodedFrame = {
+export type DecodedFrame = {
   headers: Map<string, string>;
   body: string;
 };
@@ -21,7 +21,7 @@ type DecodedFrame = {
 // expected case this catch handles: the read path degrades to the cached
 // list headers written alongside the raw bytes rather than failing the
 // whole inbox for one malformed row.
-function decodeFrame(raw: Uint8Array): DecodedFrame | null {
+export function decodeMailFrame(raw: Uint8Array): DecodedFrame | null {
   try {
     const { headers, bodyOffset } = parseHeaderSection(raw);
     const body = new TextDecoder().decode(raw.subarray(bodyOffset)).trim();
@@ -32,7 +32,7 @@ function decodeFrame(raw: Uint8Array): DecodedFrame | null {
 }
 
 function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
-  const decoded = decodeFrame(row.raw);
+  const decoded = decodeMailFrame(row.raw);
   const headers = decoded?.headers;
 
   const toHeader = headers?.get("to");

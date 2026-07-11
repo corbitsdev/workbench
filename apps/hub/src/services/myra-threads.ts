@@ -63,7 +63,7 @@ function defaultThreadLabel(index: number): string {
  * specific one (nearest to the active tenant). Returns null when no Myra
  * definition exists anywhere in the chain.
  */
-async function resolveMyraDefinition(
+export async function resolveMyraDefinition(
   db: HubDb,
   tenantId: string,
 ): Promise<typeof agent.$inferSelect | null> {
@@ -153,8 +153,8 @@ export async function recordMyraThreadActivity(
 
 /**
  * Delete the rows a Myra thread owns in one transaction. Shared by the
- * create-launch-failure rollback and the explicit delete path so both tear a
- * thread down identically.
+ * create-launch-failure rollback, the explicit delete path, and the ephemeral
+ * mailbox-triage teardown so all tear a thread down identically.
  *
  * Order is FK-dictated: `agentInstance.sessionId → agentSession` and
  * `agentSession.principalId → principal` are both RESTRICT. `launchAgentSession`
@@ -164,7 +164,7 @@ export async function recordMyraThreadActivity(
  * principal while the ended session still references it raises an FK violation
  * (aborting the rollback and leaving the orphan it was meant to remove).
  */
-async function teardownThreadRows(
+export async function teardownThreadRows(
   db: HubDb,
   opts: { instanceId: string; mappingId: string; instancePrincipalId: string },
 ): Promise<void> {

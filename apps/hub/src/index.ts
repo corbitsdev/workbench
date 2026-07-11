@@ -111,6 +111,10 @@ import {
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { recordMyraThreadActivity } from "./services/myra-threads";
+import {
+  createMailboxTriage,
+  type MailboxTriage,
+} from "./services/mailbox-triage";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
@@ -401,9 +405,18 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
   );
 }
 
+// Late-bound: constructed below once sessionService exists. The persist hook
+// and the turn-finalized fan-out both fire only after boot completes, so the
+// brief window where this is undefined can never drop a real event.
+let mailboxTriage: MailboxTriage | undefined;
+
 const lookups: SidecarLookups = {
   ...baseLookups,
-  persistMail: createPrincipalMailboxPersist(db, baseLookups.persistMail),
+  persistMail: createPrincipalMailboxPersist(db, baseLookups.persistMail, {
+    onUserMailboxRow(event) {
+      mailboxTriage?.enqueue(event);
+    },
+  }),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(
@@ -490,6 +503,7 @@ const eventCollectors = createEventCollectorRegistry({
     });
 
     fatalErrorRecovery(agentAddress, turn);
+    mailboxTriage?.handleTurnFinalized(agentAddress, turn);
   },
 });
 
@@ -531,6 +545,17 @@ const sessionService = createSessionService({
     httpRegistries: new Map(),
     defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
+});
+
+// Ephemeral Myra triage of external inbound user mail (kill switch:
+// TRIAGE_ENABLED). Fed by the persistMail hook above; turn results arrive via
+// the event-collector onTurnFinalized fan-out above.
+mailboxTriage = createMailboxTriage({
+  db,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  cryptoProvider: createEd25519Crypto(registry.active),
 });
 
 // The disconnect reconciler above only ENDS a stale session; nothing re-registers

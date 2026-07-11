@@ -323,6 +323,10 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // Kill switch for ephemeral Myra triage of external inbound user mail
+    // (per-item session, prepare-only by default). Default OFF; opt in per
+    // environment.
+    triageEnabled: parseBooleanEnv("TRIAGE_ENABLED"),
     // Global override for the Demos sidebar section (hidden by default). When
     // true the demo links are served to every client regardless of the org-wide
     // owner toggle; absent/false leaves demos to the owner grant.

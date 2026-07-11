@@ -160,10 +160,48 @@ function readCachedHeaders(raw: Uint8Array): {
  * before propagating, and a mailbox-insert failure is logged loudly but
  * never rejects a persist upstream already completed.
  */
+/**
+ * One durable user-mailbox row, announced to the triage hook right after its
+ * insert. `memberPrincipalId` is the recipient member; `senderAddress` is the
+ * transport sender (an agent-instance address), while `fromAddress` is the
+ * frame's From header.
+ */
+export type UserMailboxRowEvent = {
+  rowId: string;
+  tenantId: string;
+  memberPrincipalId: string;
+  recipientAddress: string;
+  senderAddress: string;
+  subject: string | null;
+  fromAddress: string | null;
+  raw: Uint8Array;
+};
+
+export type PrincipalMailboxHooks = {
+  /**
+   * Fired once per inserted mailbox row, after the insert commits. Strictly
+   * best-effort: a hook failure is logged and never affects mail persistence.
+   */
+  onUserMailboxRow?: (event: UserMailboxRowEvent) => void;
+};
+
 export function createPrincipalMailboxPersist(
   db: HubDb,
   upstream: PersistMailFn,
+  hooks?: PrincipalMailboxHooks,
 ): PersistMailFn {
+  function announceRow(event: UserMailboxRowEvent): void {
+    if (!hooks?.onUserMailboxRow) return;
+    try {
+      hooks.onUserMailboxRow(event);
+    } catch (err) {
+      logger.error("principal_mailbox row hook failed for {rowId}", {
+        rowId: event.rowId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
+
   async function writeUserMailboxRows(
     senderAddress: string,
     recipients: string[],
@@ -231,17 +269,36 @@ export function createPrincipalMailboxPersist(
     if (userRecipients.length === 0) return;
 
     const cached = readCachedHeaders(raw);
-    await db.insert(principalMailbox).values(
-      userRecipients.map((recipient) => ({
+    const insertedRows = await db
+      .insert(principalMailbox)
+      .values(
+        userRecipients.map((recipient) => ({
+          tenantId: sender.tenantId,
+          principalId: recipient.principalId,
+          address: recipient.address,
+          direction: "inbound" as const,
+          raw: Buffer.from(raw),
+          subject: cached.subject,
+          fromAddress: cached.from,
+        })),
+      )
+      .returning({ id: principalMailbox.id });
+
+    // `returning` preserves VALUES order, so row ids line up with recipients.
+    for (const [index, recipient] of userRecipients.entries()) {
+      const insertedRow = insertedRows[index];
+      if (!insertedRow) continue;
+      announceRow({
+        rowId: insertedRow.id,
         tenantId: sender.tenantId,
-        principalId: recipient.principalId,
-        address: recipient.address,
-        direction: "inbound" as const,
-        raw: Buffer.from(raw),
+        memberPrincipalId: recipient.principalId,
+        recipientAddress: recipient.address,
+        senderAddress,
         subject: cached.subject,
         fromAddress: cached.from,
-      })),
-    );
+        raw,
+      });
+    }
   }
 
   async function attemptUserMailboxWrite(
