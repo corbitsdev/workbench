@@ -54,7 +54,8 @@ export {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "./sidebar";
-export { cn, toHumanLabel } from "./utils";
+export { cn } from "./utils";
+export { toHumanLabel } from "@workbench/shared";
 export { inputFieldClass } from "./input-field";
 export {
   useTheme,
