@@ -195,6 +195,20 @@ export type ProjectRunFactsFn = (args: {
   tenantId: string;
 }) => void;
 
+// Fired when a run first parks on an awaitSignal gate — the running -> awaiting
+// transition (CL-3301) — so the caller can deliver a "needs you" mailbox item to
+// the run owner. Also fires on a re-park within one pack (a SignalReceived
+// folded ahead of a fresh SignalAwaited), since the owner must be notified of the
+// NEW gate; the mailbox layer dedupes by (runId, signalName). Best-effort: the
+// callback owns its errors and must not block pack receipt.
+export type OnNewlyAwaitingFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string;
+}) => void;
+
 export interface RunEventEntry {
   runId: string;
   event: { type: string } & Record<string, unknown>;
@@ -396,6 +410,7 @@ export async function projectWorkflowRunRepo(
   repoId: RepoId,
   onTerminalRun?: ReclaimRunDeploymentFn,
   onRunFacts?: ProjectRunFactsFn,
+  onNewlyAwaiting?: OnNewlyAwaitingFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -474,6 +489,31 @@ export async function projectWorkflowRunRepo(
         deploymentId: existing.deploymentId,
         tenantId: existing.tenantId,
         runId,
+      });
+    }
+
+    // Gate mail (CL-3301): notify the owner's mailbox when a run FIRST parks on
+    // an awaitSignal gate, or re-parks on a new gate within a single pack (a
+    // SignalReceived folded ahead of a fresh SignalAwaited, which keeps the
+    // folded status `awaiting`). Guarded to the transition so a run sitting
+    // parked across packs is not re-read every pack; the mailbox layer dedupes
+    // by (runId, signalName) as the durable backstop. Requires a deployment (the
+    // gate log is addressed by it). Best-effort — the callback owns its errors.
+    const newlyAwaiting =
+      projected.status === "awaiting" &&
+      (existing.status !== "awaiting" ||
+        projected.receivedSignalIds.length > 0);
+    if (
+      onNewlyAwaiting !== undefined &&
+      newlyAwaiting &&
+      existing.deploymentId
+    ) {
+      onNewlyAwaiting({
+        runId,
+        kind: existing.kind,
+        tenantId: existing.tenantId,
+        principalId: existing.principalId,
+        deploymentId: existing.deploymentId,
       });
     }
 
@@ -567,6 +607,14 @@ export function wrapRepoStoreWithProjection(
       kind: string;
       tenantId: string;
     }) => void;
+    // CL-3301: deliver a "needs you" mailbox item when a run parks on a gate.
+    // The RepoStore is injected here (as `projectRunFacts` does) so the
+    // implementation can read the run's open gates. Best-effort, fire-and-forget.
+    deliverGateMail?: (
+      args: {
+        repoStore: RepoStore;
+      } & Parameters<OnNewlyAwaitingFn>[0],
+    ) => void;
   },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
@@ -580,6 +628,9 @@ export function wrapRepoStoreWithProjection(
         deps.projectRunFacts === undefined
           ? undefined
           : (a) => deps.projectRunFacts?.({ repoStore: base, repoId, ...a }),
+        deps.deliverGateMail === undefined
+          ? undefined
+          : (a) => deps.deliverGateMail?.({ repoStore: base.repoStore, ...a }),
       );
     } catch (err) {
       log.error("workflow projection failed", {

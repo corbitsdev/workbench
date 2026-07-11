@@ -550,7 +550,10 @@ export type AdminAuditRow = typeof adminAudit.$inferSelect;
 // here instead, keyed by the recipient's member principal so the inbox
 // read path is a direct equality filter. `raw` is the RFC 2822 frame
 // verbatim; `subject`/`from_address` are cached list headers parsed at
-// write time.
+// write time. `message_key` is an optional idempotency key for
+// programmatically-delivered items (workflow gate mail, `gate:<runId>:<signal>`)
+// — the partial unique index below dedupes keyed inserts while leaving the
+// keyless human/agent mail unconstrained.
 export const principalMailboxDirections = ["inbound", "outbound"] as const;
 
 export const principalMailbox = pgTable(
@@ -566,6 +569,7 @@ export const principalMailbox = pgTable(
     raw: bytea("raw").notNull(),
     subject: text("subject"),
     fromAddress: text("from_address"),
+    messageKey: text("message_key"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     readAt: timestamp("read_at"),
   },
@@ -573,6 +577,11 @@ export const principalMailbox = pgTable(
     principalMailboxPrincipalCreatedIdx: index(
       "principal_mailbox_principal_created_idx",
     ).on(t.tenantId, t.principalId, t.createdAt),
+    principalMailboxMessageKeyUniq: uniqueIndex(
+      "principal_mailbox_message_key_uniq",
+    )
+      .on(t.messageKey)
+      .where(sql`${t.messageKey} IS NOT NULL`),
   }),
 );
 

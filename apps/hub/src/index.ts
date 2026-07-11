@@ -67,6 +67,7 @@ import {
   backfillMissingWorkflowFacts,
   projectWorkflowRunFacts,
 } from "./workflow-executor/workflow-run-facts";
+import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
@@ -353,6 +354,30 @@ const repoStore = wrapRepoStoreWithProjection(
         // The boot backfill (backfillMissingWorkflowFacts) recovers it on next
         // restart, but the failure must be Sentry-visible now (CL-2670 review).
         log.error("workflow analytics fact projection failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
+    // CL-3301: deliver a "a workflow needs you" mailbox item to the run owner
+    // when a run parks on an awaitSignal gate. Fire-and-forget; the deliverer
+    // owns its errors and must never block pack receipt.
+    deliverGateMail: (args) => {
+      void deliverPendingGateMail(
+        {
+          db,
+          repoStore: args.repoStore,
+          deploymentDomain: config.rootTenant.domain,
+        },
+        {
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+          principalId: args.principalId,
+          deploymentId: args.deploymentId,
+        },
+      ).catch((err: unknown) => {
+        log.error("workflow gate mail delivery failed", {
           runId: args.runId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
