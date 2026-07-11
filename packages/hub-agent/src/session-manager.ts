@@ -46,6 +46,10 @@ import type { AgentKeyEntry, AgentKeyStore } from "./agent-key-store";
 import type { AgentRepoStore } from "./agent-repo-store";
 import type { HarnessBuilder, HarnessBundle } from "./harness-builder";
 import { applyAssetPack as applyAssetPackFn } from "./apply-asset-pack";
+import {
+  createAssistantLoopGuard,
+  extractAssistantText,
+} from "./assistant-loop-guard";
 
 const logger = getLogger(["interchange", "hub-agent", "session"]);
 
@@ -437,6 +441,71 @@ export function createSessionManager(
   // before the handler reads it.
   const lastCheckpointHashes = new Map<string, string>();
 
+  // WORKBENCH-LOCAL (CL-3340): assistant output loop guard.
+  //   `assistantLoopGuard` — per-agent run of consecutive identical
+  //                          normalized assistant outputs; reset by any
+  //                          inbound user message and at session go-live.
+  //   `currentRuns`        — the open message-run bracket per agent, so an
+  //                          interrupt can end the correct turn.
+  //   `loopInterrupted`    — agents whose turn was interrupted; remaining
+  //                          events from the aborting reactor are dropped so
+  //                          the synthetic run-ended stays the turn's last
+  //                          word. Cleared when a session goes live again.
+  const assistantLoopGuard = createAssistantLoopGuard();
+  const currentRuns = new Map<
+    string,
+    { messageRunId: string; messageId: string }
+  >();
+  const loopInterrupted = new Set<string>();
+
+  // WORKBENCH-LOCAL (CL-3340): stop the turn on a detected output loop. The
+  // reactor exposes no per-cycle cancellation, so the stop lever is the
+  // eviction teardown: the harness close aborts the reactor and flushes
+  // conversation state, and the agent returns to `wakeable` — the next user
+  // message rebuilds it with full history, so the session stays usable. A
+  // synthetic failed run-ended (kind "assistant_loop_interrupted") settles
+  // the turn hub-side with the explanation.
+  function interruptAssistantLoop(
+    agentAddress: string,
+    sessionId: string,
+    seq: number,
+    message: string,
+  ): void {
+    loopInterrupted.add(agentAddress);
+    const run = currentRuns.get(agentAddress);
+    currentRuns.delete(agentAddress);
+    activeRuns.delete(agentAddress);
+    if (run !== undefined) {
+      const ended: InferenceEvent = {
+        type: "message.run.ended",
+        seq,
+        data: {
+          messageRunId: run.messageRunId,
+          messageId: run.messageId,
+          status: "failed",
+          error: { message, kind: "assistant_loop_interrupted" },
+        },
+      };
+      const set = agentEventListeners.get(agentAddress);
+      if (set !== undefined) {
+        for (const listener of set) {
+          try {
+            listener(ended);
+          } catch (err: unknown) {
+            logger.error`agent-event listener for ${agentAddress} threw during loop interrupt: ${String(err)}`;
+          }
+        }
+      }
+      onEvent(agentAddress, sessionId, ended);
+    }
+    const session = sessions.get(agentAddress);
+    if (session === undefined) return;
+    logger.warn`Assistant output loop detected for ${agentAddress}; interrupting the turn and putting the session to sleep`;
+    void evictSession(agentAddress, session).catch((err: unknown) => {
+      logger.error`Loop-interrupt eviction for ${agentAddress} failed: ${String(err)}`;
+    });
+  }
+
   // Per-agent promise chain that serializes the operations against an agent's
   // on-disk directory that can be in flight during a live session -- mail-audit
   // commits, state-pack and deploy-ref reads, and deploy/asset-pack applies all
@@ -637,6 +706,10 @@ export function createSessionManager(
         agentTransport,
         crypto,
         onEvent(event: InferenceEvent) {
+          // WORKBENCH-LOCAL (CL-3340): a loop-interrupted agent's reactor is
+          // being torn down; drop its remaining events so the synthetic
+          // run-ended is the last thing the hub sees for the turn.
+          if (loopInterrupted.has(agentAddress)) return;
           // WORKBENCH-LOCAL (CL-3103): every event is activity, and the
           // message-run bracket is the turn-in-progress signal the idle
           // sweep consults. `message.run.started` / `message.run.ended`
@@ -658,6 +731,32 @@ export function createSessionManager(
             event.data.checkpointHash !== undefined
           ) {
             lastCheckpointHashes.set(agentAddress, event.data.checkpointHash);
+          }
+          // WORKBENCH-LOCAL (CL-3340): track the open run bracket and check
+          // each finalized inference cycle for a stuck identical response.
+          // The tripping duplicate is swallowed — the interrupt's synthetic
+          // run-ended settles the turn instead.
+          if (event.type === "message.run.started") {
+            currentRuns.set(agentAddress, {
+              messageRunId: event.data.messageRunId,
+              messageId: event.data.messageId,
+            });
+          } else if (event.type === "message.run.ended") {
+            currentRuns.delete(agentAddress);
+          } else if (event.type === "inference.done") {
+            const interrupt = assistantLoopGuard.recordAssistantOutput(
+              agentAddress,
+              extractAssistantText(event.data.turn.content),
+            );
+            if (interrupt !== undefined) {
+              interruptAssistantLoop(
+                agentAddress,
+                sessionId,
+                event.seq,
+                interrupt,
+              );
+              return;
+            }
           }
           // Per-agent listeners fire before the global sink so an
           // in-process consumer (the workflow-host trivial-launch
@@ -701,6 +800,10 @@ export function createSessionManager(
         bundle,
         keyPair,
       });
+      // WORKBENCH-LOCAL (CL-3340): a fresh harness starts with a clean loop
+      // run, and a rebuilt (woken) session must forward events again.
+      loopInterrupted.delete(agentAddress);
+      assistantLoopGuard.reset(agentAddress);
       // WORKBENCH-LOCAL (CL-3103): seed the idle clock at go-live so a
       // session that never sees mail is still eligible for eviction once the
       // threshold elapses.
@@ -856,10 +959,7 @@ export function createSessionManager(
   // delivery failure. A genuine terminal failure with mail still parked is the
   // silent-drop case: surface it so the sender-acked message is observably
   // undelivered rather than lost in a log.
-  function reportTerminalWakeFailure(
-    agentAddress: string,
-    err: unknown,
-  ): void {
+  function reportTerminalWakeFailure(agentAddress: string, err: unknown): void {
     if (err instanceof WakeAbortedError) return;
     const parkedCount = parkedMail.get(agentAddress)?.length ?? 0;
     if (parkedCount > 0) {
@@ -997,6 +1097,8 @@ export function createSessionManager(
     }
     // WORKBENCH-LOCAL (CL-3103): a direct harness delivery is activity.
     markActivity(agentAddress);
+    // WORKBENCH-LOCAL (CL-3340): a user message resets the loop run.
+    assistantLoopGuard.reset(agentAddress);
     session.harness.deliver(message);
   }
 
@@ -1298,6 +1400,8 @@ export function createSessionManager(
   // caller; the commit is enqueued only for a live session so it cannot
   // reject unobserved.
   function deliverLive(agentAddress: string, rawMessage: Uint8Array): void {
+    // WORKBENCH-LOCAL (CL-3340): a user message resets the loop run.
+    assistantLoopGuard.reset(agentAddress);
     try {
       transport.deliver(agentAddress, rawMessage);
     } catch (err) {
