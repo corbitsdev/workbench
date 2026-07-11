@@ -224,17 +224,20 @@ function ToolRow({
     !pending && formatResult !== undefined ? formatResult(call) : null;
   const hasFriendly = friendlyOutcome !== null && friendlyOutcome.trim() !== "";
   const resultBlock =
-    !humanized &&
-    call.result !== undefined &&
-    call.result !== "" &&
-    !call.isError
+    call.result !== undefined && call.result !== "" && !call.isError
       ? parseToolResult(call.result)
       : null;
-  // Humanized mode: expand for a friendly outcome or an error message, never
-  // for raw JSON dumps. Legacy mode keeps the previous expand contract.
+  // Structured interactive blocks (form/document/…) stay available even when
+  // the host humanizes outcomes. Plain `text` blocks are raw dumps in practice
+  // (parseToolResult wraps any non-UIBlock string) and only show in legacy mode.
+  const structuredBlock =
+    resultBlock !== null && resultBlock.kind !== "text" ? resultBlock : null;
+  // Humanized mode: expand for a friendly outcome, structured UI, or an error
+  // message — never for raw JSON dumps. Legacy mode keeps the previous contract.
   const expandable = humanized
     ? !pending &&
       (hasFriendly ||
+        structuredBlock !== null ||
         (call.isError === true &&
           call.result !== undefined &&
           call.result !== ""))
@@ -284,7 +287,16 @@ function ToolRow({
         <div className="mt-1.5 ml-[26px] space-y-2 text-xs">
           {humanized ? (
             <>
-              {hasFriendly && (
+              {structuredBlock !== null && (
+                <div className="text-sm">
+                  <UIBlockView
+                    block={structuredBlock}
+                    {...(onRespond !== undefined ? { onRespond } : {})}
+                    {...(onAction !== undefined ? { onAction } : {})}
+                  />
+                </div>
+              )}
+              {structuredBlock === null && hasFriendly && (
                 <p
                   className={cn(
                     "leading-relaxed",
@@ -294,7 +306,8 @@ function ToolRow({
                   {friendlyOutcome}
                 </p>
               )}
-              {!hasFriendly &&
+              {structuredBlock === null &&
+                !hasFriendly &&
                 call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (

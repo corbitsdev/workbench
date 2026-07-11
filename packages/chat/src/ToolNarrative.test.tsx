@@ -195,6 +195,34 @@ describe("ToolNarrative", () => {
     expect(screen.queryByText(/"object"/)).toBeNull();
   });
 
+  it("still expands structured UI blocks when formatResult is set", () => {
+    const documentResult = JSON.stringify({
+      kind: "document",
+      title: "Outreach draft",
+      source: "Hello Acme,",
+    });
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "draft_document",
+        arguments: {},
+        result: documentResult,
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Drafting a document"}
+        formatResult={() => "Done"}
+      />,
+    );
+    fireEvent.click(screen.getByText("Drafting a document"));
+    screen.getByText("Outreach draft");
+    // Structured UI wins over the short friendly outcome.
+    expect(screen.queryByText("Done")).toBeNull();
+  });
+
   it('summarizes a non-priority arg as "key: value" when no known key is present', () => {
     const calls: ToolCall[] = [
       { id: "c1", name: "fetch_rows", arguments: { limit: 10 }, result: "ok" },
