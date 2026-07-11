@@ -1,7 +1,16 @@
 /// <reference types="bun" />
 import "../test-setup";
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+  mock,
+} from "bun:test";
+import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -10,16 +19,31 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Approval } from "../lib/approvals-api";
+import type { Approval, ApprovalEvent } from "../lib/approvals-api";
 
 const mockListApprovals = mock<() => Promise<Approval[]>>();
 const mockApproveRequest = mock<() => Promise<Approval>>();
 const mockRejectRequest = mock<() => Promise<Approval>>();
 
+// Captures the ReviewGate's event handler so a test can simulate an SSE
+// approval event. subscribeApprovals returns an unsubscribe function.
+let capturedOnEvent: ((event: ApprovalEvent) => void) | null = null;
+const subscribeCalls: string[] = [];
+const mockSubscribeApprovals = mock(
+  (tenantId: string, onEvent: (event: ApprovalEvent) => void) => {
+    subscribeCalls.push(tenantId);
+    capturedOnEvent = onEvent;
+    return () => {
+      capturedOnEvent = null;
+    };
+  },
+);
+
 mock.module("../lib/approvals-api", () => ({
   listApprovals: mockListApprovals,
   approveRequest: mockApproveRequest,
   rejectRequest: mockRejectRequest,
+  subscribeApprovals: mockSubscribeApprovals,
 }));
 
 function makeApproval(overrides: Partial<Approval> = {}): Approval {
@@ -60,6 +84,88 @@ afterEach(() => {
   mockListApprovals.mockClear();
   mockApproveRequest.mockClear();
   mockRejectRequest.mockClear();
+  mockSubscribeApprovals.mockClear();
+  subscribeCalls.length = 0;
+  capturedOnEvent = null;
+});
+
+describe("ReviewGate — event-driven refresh", () => {
+  it("subscribes to the approvals event stream for the tenant on mount", async () => {
+    mockListApprovals.mockResolvedValue([]);
+    renderGate("tenant-42");
+    await waitFor(() => {
+      expect(mockSubscribeApprovals).toHaveBeenCalled();
+    });
+    expect(subscribeCalls).toContain("tenant-42");
+  });
+
+  it("does not poll on an interval — an idle gate fetches once", async () => {
+    jest.useFakeTimers();
+    try {
+      mockListApprovals.mockResolvedValue([]);
+      renderGate();
+      // Flush the initial query's microtasks so the first fetch lands.
+      for (let i = 0; i < 10; i += 1) {
+        await act(async () => {
+          await Promise.resolve();
+        });
+      }
+      expect(mockListApprovals).toHaveBeenCalledTimes(1);
+      // Advance well past any legacy poll interval (3s / 8s). Event-driven code
+      // schedules no refetch, so the count must not move.
+      await act(async () => {
+        jest.advanceTimersByTime(60_000);
+      });
+      expect(mockListApprovals).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("refetches when a created event arrives, surfacing a new approval", async () => {
+    const pending = makeApproval();
+    mockListApprovals.mockResolvedValue([]);
+    renderGate();
+    await waitFor(() => {
+      expect(mockListApprovals).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+
+    mockListApprovals.mockResolvedValue([pending]);
+    act(() => {
+      capturedOnEvent?.({
+        tenantId: "tenant-1",
+        sessionId: null,
+        kind: "created",
+      });
+    });
+
+    await waitFor(() => {
+      screen.getByTestId(`approval-${pending.id}`);
+    });
+  });
+
+  it("refetches when a resolved event arrives, clearing the gate", async () => {
+    const pending = makeApproval();
+    mockListApprovals.mockResolvedValue([pending]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${pending.id}`);
+    });
+
+    mockListApprovals.mockResolvedValue([]);
+    act(() => {
+      capturedOnEvent?.({
+        tenantId: "tenant-1",
+        sessionId: null,
+        kind: "resolved",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("review-gate")).toBeNull();
+    });
+  });
 });
 
 describe("ReviewGate — empty state", () => {
