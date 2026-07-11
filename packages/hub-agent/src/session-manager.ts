@@ -47,8 +47,8 @@ import type { AgentRepoStore } from "./agent-repo-store";
 import type { HarnessBuilder, HarnessBundle } from "./harness-builder";
 import { applyAssetPack as applyAssetPackFn } from "./apply-asset-pack";
 import {
+  assistantCycleFingerprint,
   createAssistantLoopGuard,
-  extractAssistantText,
 } from "./assistant-loop-guard";
 
 const logger = getLogger(["interchange", "hub-agent", "session"]);
@@ -501,9 +501,11 @@ export function createSessionManager(
     const session = sessions.get(agentAddress);
     if (session === undefined) return;
     logger.warn`Assistant output loop detected for ${agentAddress}; interrupting the turn and putting the session to sleep`;
-    void evictSession(agentAddress, session).catch((err: unknown) => {
-      logger.error`Loop-interrupt eviction for ${agentAddress} failed: ${String(err)}`;
-    });
+    void evictSession(agentAddress, session, "loop-interrupt").catch(
+      (err: unknown) => {
+        logger.error`Loop-interrupt eviction for ${agentAddress} failed: ${String(err)}`;
+      },
+    );
   }
 
   // Per-agent promise chain that serializes the operations against an agent's
@@ -746,7 +748,7 @@ export function createSessionManager(
           } else if (event.type === "inference.done") {
             const interrupt = assistantLoopGuard.recordAssistantOutput(
               agentAddress,
-              extractAssistantText(event.data.turn.content),
+              assistantCycleFingerprint(event.data.turn.content),
             );
             if (interrupt !== undefined) {
               interruptAssistantLoop(
@@ -917,7 +919,7 @@ export function createSessionManager(
   async function destroyLiveSession(
     agentAddress: string,
     session: LiveSession,
-    context: "destroy" | "idle-evict" | "wake-abort",
+    context: "destroy" | "idle-evict" | "wake-abort" | "loop-interrupt",
   ): Promise<void> {
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
@@ -971,12 +973,13 @@ export function createSessionManager(
   async function performEvict(
     agentAddress: string,
     session: LiveSession,
+    reason: EvictReason,
   ): Promise<void> {
     const { config: evictedConfig, keyPair } = session;
     // destroyLiveSession flushes conversation state via harness.close(),
     // runs disposers, drains repo ops, unregisters the transport, and
     // reclaims the heap — the same teardown wake will rebuild from.
-    await destroyLiveSession(agentAddress, session, "idle-evict");
+    await destroyLiveSession(agentAddress, session, reason);
     // Only return to wakeable if nothing else claimed the address during the
     // teardown (a racing provision/deploy/undeploy). Clobbering a fresh
     // provisioned/wakeable entry would brick the new deploy.
@@ -989,7 +992,13 @@ export function createSessionManager(
       return;
     }
     wakeable.set(agentAddress, { config: evictedConfig, keyPair });
-    logger.info`Evicted idle agent ${agentAddress}`;
+    // WORKBENCH-LOCAL (CL-3340): name the eviction cause — a loop interrupt
+    // must not read as idle sleep in the logs.
+    if (reason === "loop-interrupt") {
+      logger.warn`Evicted agent ${agentAddress} after assistant output loop interrupt`;
+    } else {
+      logger.info`Evicted idle agent ${agentAddress}`;
+    }
     // Mail parked while the eviction was in flight (or arriving between the
     // wakeable.set above and the evicting-map clear) is replayed by a wake.
     const parked = parkedMail.get(agentAddress);
@@ -1002,13 +1011,19 @@ export function createSessionManager(
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3340): the eviction teardown is shared by the idle
+  // sweep and the assistant-loop interrupt; the reason is threaded through
+  // for log attribution only.
+  type EvictReason = "idle-evict" | "loop-interrupt";
+
   function evictSession(
     agentAddress: string,
     session: LiveSession,
+    reason: EvictReason = "idle-evict",
   ): Promise<void> {
     const existing = evicting.get(agentAddress);
     if (existing !== undefined) return existing;
-    const done = performEvict(agentAddress, session).finally(() => {
+    const done = performEvict(agentAddress, session, reason).finally(() => {
       if (evicting.get(agentAddress) === done) evicting.delete(agentAddress);
     });
     evicting.set(agentAddress, done);
