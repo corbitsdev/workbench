@@ -30,9 +30,13 @@ function makeDb(opts: {
   sender: typeof SENDER | undefined;
   tenantDomain?: string | null;
   memberPrincipal?: { id: string } | undefined;
+  insertThrows?: boolean;
 }) {
   const inserted: Record<string, unknown>[][] = [];
   const values = mock((rows: Record<string, unknown>[]) => {
+    if (opts.insertThrows) {
+      return Promise.reject(new Error("principal_mailbox insert failed"));
+    }
     inserted.push(rows);
     return Promise.resolve();
   });
@@ -137,13 +141,13 @@ describe("createPrincipalMailboxPersist", () => {
     expect(params).toContain("usr_alice");
   });
 
-  it("drops mail from a sender that is not an active agent instance", async () => {
+  it("skips only the mailbox write for an unauthorized sender and still delegates upstream", async () => {
     const { db, inserted } = makeDb({
       sender: undefined,
       tenantDomain: "tenant.example",
       memberPrincipal: { id: "pri-alice" },
     });
-    const { upstream, calls } = makeUpstream();
+    const { upstream, calls, rows } = makeUpstream();
     const persist = createPrincipalMailboxPersist(db, upstream);
 
     const result = await persist({
@@ -152,8 +156,55 @@ describe("createPrincipalMailboxPersist", () => {
       raw: RAW,
     });
 
-    expect(result).toEqual([]);
-    expect(calls).toEqual([]);
+    expect(result).toEqual(rows);
+    expect(calls).toHaveLength(1);
+    expect(inserted).toEqual([]);
+  });
+
+  it("still writes the mailbox row and propagates the rejection when upstream throws", async () => {
+    const { db, inserted } = makeDb({
+      sender: SENDER,
+      tenantDomain: "tenant.example",
+      memberPrincipal: { id: "pri-alice" },
+    });
+    const upstream = mock(async () => {
+      throw new Error(
+        'Instance ins_dep-heartbeat has no session for address "ins_dep-heartbeat@tenant.example"',
+      );
+    });
+    const persist = createPrincipalMailboxPersist(db, upstream);
+
+    await expect(
+      persist({
+        senderAddress: SENDER.address,
+        recipients: ["usr_alice@tenant.example"],
+        raw: RAW,
+      }),
+    ).rejects.toThrow("has no session");
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0]?.[0]).toMatchObject({
+      principalId: "pri-alice",
+      direction: "inbound",
+    });
+  });
+
+  it("returns the upstream result when the mailbox insert itself fails", async () => {
+    const { db, inserted } = makeDb({
+      sender: SENDER,
+      tenantDomain: "tenant.example",
+      memberPrincipal: { id: "pri-alice" },
+      insertThrows: true,
+    });
+    const { upstream, rows } = makeUpstream();
+    const persist = createPrincipalMailboxPersist(db, upstream);
+
+    const result = await persist({
+      senderAddress: SENDER.address,
+      recipients: ["usr_alice@tenant.example"],
+      raw: RAW,
+    });
+
+    expect(result).toEqual(rows);
     expect(inserted).toEqual([]);
   });
 
