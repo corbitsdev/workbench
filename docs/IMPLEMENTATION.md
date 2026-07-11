@@ -417,10 +417,13 @@ The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`
 - `DELETE /api/tenants/:tenantId/credentials/:credentialId` — Interchange-native (manage grant created at write time enables this)
 - `POST /v1/instances/:instanceId/sessions` — launch session for existing instance (no credential IDs; Interchange resolves from agent's credentialRequirements)
 - `POST /v1/workspaces`, `GET /v1/agents`, etc.
+- `GET /api/v1/tenants/:tenantId/approvals/stream` — SSE stream of workbench-owned approval **change notifications** (`created` / `resolved`), keyed by tenant. Carries only a change signal (`tenantId`, optional `sessionId`, `kind`) — never approval rows or tool-call arguments; the web `ReviewGate` refetches the ownership-scoped `GET .../approvals` list on each event instead of polling on an interval. Backed by an in-process pub/sub (`apps/hub/src/lib/approvals-events.ts`) injected into both the user-facing and internal approvals routers; the internal create route emits `created`, the approve/reject routes emit `resolved`. No `@intx/*` changes.
+  - **Single-hub-replica scope.** The bus is in-process: emitter and SSE subscriber must share one process. The hub is deliberately single-replica (see the Railway deploy-overlap note), so this holds — **except during a deploy-overlap window** (~120s, two replicas live), when an approval created on replica A won't wake a stream pinned to replica B. It self-heals: the stream stays up, and the next event or the client's `refetchOnWindowFocus` backstop re-fetches. Scaling the hub past one replica permanently would silently drop cross-replica notifications — tracked as a follow-up to move the bus to a shared pub/sub before that ever happens.
+  - **No fallback poll.** The interval poll was removed, so a terminally-failed SSE connection (never opens after the shared registry's retry cap) leaves the gate stale until the next window-focus refetch (TanStack's `refetchOnWindowFocus` default is the sole backstop). The terminal failure is surfaced to `onError` and logged rather than swallowed.
 
 **Internal routes** (sidecarToken auth, mounted under `/api/internal/`):
 
-- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool)
+- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool); emits a `created` notification on the approvals event bus
 - `POST /api/internal/tools/run` — hub-proxied tool execution. Body: `{ tenantId, toolName, args }`. Hub resolves the tenant credential for the tool's provider from Interchange, calls the tool package handler, returns `{ result: string, isError: boolean }`. Credentials are decrypted before use; never stored in sidecar.
 
 ### Deploy Prompts

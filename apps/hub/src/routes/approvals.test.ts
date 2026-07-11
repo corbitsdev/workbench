@@ -4,6 +4,20 @@ import {
   createApprovalsRouter,
   createInternalApprovalsRouter,
 } from "./approvals";
+import {
+  createApprovalsEventBus,
+  type ApprovalEvent,
+} from "../lib/approvals-events";
+
+// Captures every approval event published to the bus during a test so the
+// emit-on-mutation contract can be asserted. Subscribes to the tenant under
+// test (the routers publish keyed by the row's tenantId).
+function captureBus(tenantId = "tenant-1") {
+  const bus = createApprovalsEventBus();
+  const events: ApprovalEvent[] = [];
+  bus.subscribe(tenantId, (e) => events.push(e));
+  return { bus, events };
+}
 
 // Response.json() is Promise<unknown> under lib ESNext; assertions cast to the
 // expected body shape — a wrong shape fails the expect() at runtime.
@@ -60,13 +74,17 @@ function makeMockDb(overrides: Record<string, any> = {}) {
   return base;
 }
 
-function buildApp(db: ReturnType<typeof makeMockDb>, userId = "user-1") {
+function buildApp(
+  db: ReturnType<typeof makeMockDb>,
+  userId = "user-1",
+  bus = createApprovalsEventBus(),
+) {
   const parent = new Hono<{ Variables: { userId: string } }>();
   parent.use("*", async (c, next) => {
     c.set("userId", userId);
     await next();
   });
-  parent.route("/", createApprovalsRouter(db));
+  parent.route("/", createApprovalsRouter(db, bus));
   return parent;
 }
 
@@ -445,9 +463,12 @@ describe("POST /tenants/:tenantId/approvals/:approvalId/reject", () => {
 describe("createInternalApprovalsRouter", () => {
   const TOKEN = "sidecar-secret";
 
-  function buildInternalApp(db: ReturnType<typeof makeMockDb>) {
+  function buildInternalApp(
+    db: ReturnType<typeof makeMockDb>,
+    bus = createApprovalsEventBus(),
+  ) {
     const parent = new Hono();
-    parent.route("/", createInternalApprovalsRouter(db, TOKEN));
+    parent.route("/", createInternalApprovalsRouter(db, TOKEN, bus));
     return parent;
   }
 
@@ -776,5 +797,218 @@ describe("createInternalApprovalsRouter", () => {
     const json = (await res.json()) as ResBody;
     expect(json.id).toBe("apr-1");
     expect(json.sessionId).toBe("sess-1");
+  });
+});
+
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ms: number,
+): Promise<string> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("stream read timed out")), ms),
+  );
+  const { value } = await Promise.race([reader.read(), timeout]);
+  return value ? new TextDecoder().decode(value) : "";
+}
+
+describe("GET /tenants/:tenantId/approvals/stream", () => {
+  it("returns 403 for a caller who is not a tenant member", async () => {
+    const db = makeMockDb(); // principal.findFirst → undefined
+    const app = buildApp(db);
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/stream"),
+    );
+    expect(res.status).toBe(403);
+    const json = (await res.json()) as ResBody;
+    expect(json.error).toContain("Forbidden");
+  });
+
+  it("streams a published change frame to a member and unsubscribes on abort", async () => {
+    const db = makeMockDb();
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+
+    // Wrap a real bus so the test can observe that abort tears the subscription
+    // down (the bus itself exposes no listener count).
+    const realBus = createApprovalsEventBus();
+    let subscribed = false;
+    let unsubscribed = false;
+    const bus = {
+      publish: (event: ApprovalEvent) => realBus.publish(event),
+      subscribe: (tenantId: string, listener: (e: ApprovalEvent) => void) => {
+        const off = realBus.subscribe(tenantId, listener);
+        subscribed = true;
+        return () => {
+          unsubscribed = true;
+          off();
+        };
+      },
+    };
+
+    const app = buildApp(db, "user-1", bus);
+    const controller = new AbortController();
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/stream", {
+        signal: controller.signal,
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const reader =
+      res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+    // Wait until the streamSSE callback has actually registered its bus
+    // subscription before publishing, rather than a fixed sleep — a published
+    // event before subscribe would be lost, and a fixed delay flakes under load.
+    for (let i = 0; i < 100 && !subscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(subscribed).toBe(true);
+    bus.publish({ tenantId: "tenant-1", sessionId: "sess-1", kind: "created" });
+
+    const frame = await readWithTimeout(reader, 1000);
+    expect(frame).toContain("event: approvals");
+    // Parse the frame's data line and assert the payload is EXACTLY the change
+    // notification — no approval rows or tool-call arguments leak onto the wire.
+    const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+    const payload = JSON.parse(dataLine!.replace(/^data:\s*/, "")) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toEqual({
+      tenantId: "tenant-1",
+      sessionId: "sess-1",
+      kind: "created",
+    });
+    expect(Object.keys(payload).sort()).toEqual([
+      "kind",
+      "sessionId",
+      "tenantId",
+    ]);
+
+    await reader.cancel().catch(() => {});
+    controller.abort();
+    for (let i = 0; i < 50 && !unsubscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(unsubscribed).toBe(true);
+  });
+});
+
+describe("approval lifecycle events", () => {
+  const TOKEN = "sidecar-secret";
+
+  it("publishes a created event on the internal create route", async () => {
+    const { bus, events } = captureBus();
+    const db = makeMockDb();
+    db.insert = mock(() => ({
+      values: mock(() => ({
+        returning: mock(() =>
+          Promise.resolve([
+            {
+              id: "apr-new",
+              tenantId: "tenant-1",
+              principalId: "prn-1",
+              agentId: "agt-1",
+              sessionId: "sess-1",
+              resource: "r",
+              action: "a",
+              status: "pending",
+              context: null,
+              message: null,
+              resolvedAt: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ]),
+        ),
+      })),
+    }));
+
+    const parent = new Hono();
+    parent.route("/", createInternalApprovalsRouter(db, TOKEN, bus));
+    const res = await parent.fetch(
+      new Request("http://localhost/approvals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${TOKEN}`,
+        },
+        body: JSON.stringify({
+          tenantId: "tenant-1",
+          agentId: "agt-1",
+          principalId: "prn-1",
+          action: "a",
+          resource: "r",
+          sessionId: "sess-1",
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(events).toEqual([
+      { tenantId: "tenant-1", sessionId: "sess-1", kind: "created" },
+    ]);
+  });
+
+  it("publishes a resolved event on approve", async () => {
+    const { bus, events } = captureBus();
+    const db = resolveDb({
+      row: OWNED_APPROVAL,
+      callerPrincipal: OWNER_PRINCIPAL,
+      instance: OWNED_INSTANCE,
+      ownership: OWNERSHIP,
+      updated: resolvedRow("approved"),
+    });
+
+    const app = buildApp(db, "user-1", bus);
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/apr-1/approve", {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(events).toEqual([
+      { tenantId: "tenant-1", sessionId: "ses-1", kind: "resolved" },
+    ]);
+  });
+
+  it("publishes a resolved event on reject", async () => {
+    const { bus, events } = captureBus();
+    const db = resolveDb({
+      row: OWNED_APPROVAL,
+      callerPrincipal: OWNER_PRINCIPAL,
+      instance: OWNED_INSTANCE,
+      ownership: OWNERSHIP,
+      updated: resolvedRow("rejected", "no"),
+    });
+
+    const app = buildApp(db, "user-1", bus);
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/apr-1/reject", {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(events).toEqual([
+      { tenantId: "tenant-1", sessionId: "ses-1", kind: "resolved" },
+    ]);
+  });
+
+  it("does not publish a resolved event when authorization fails", async () => {
+    // A non-owner approve returns 403 before any update — no event.
+    const { bus, events } = captureBus();
+    const db = resolveDb({
+      row: OWNED_APPROVAL,
+      callerPrincipal: { id: "other-prn" },
+      instance: OWNED_INSTANCE,
+      ownership: null,
+    });
+    const app = buildApp(db, "user-1", bus);
+    const res = await app.fetch(
+      new Request("http://localhost/tenants/tenant-1/approvals/apr-1/approve", {
+        method: "POST",
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(events).toEqual([]);
   });
 });

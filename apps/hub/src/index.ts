@@ -120,6 +120,7 @@ import {
   createApprovalsRouter,
   createInternalApprovalsRouter,
 } from "./routes/approvals";
+import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -765,6 +766,11 @@ app.route("/", hubApp);
 
 // ─── Workbench routes ──────────────────────────────────────────────
 
+// Workbench-owned approvals change bus (CL-3285). One in-process instance shared
+// by the user-facing router (SSE stream + resolve emits) and the internal router
+// (create emit) so a sidecar-created approval reaches an open browser stream.
+const approvalsEventBus = createApprovalsEventBus();
+
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
 v1.use("*", async (c, next) => {
@@ -1050,7 +1056,7 @@ v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
-v1.route("/", createApprovalsRouter(db));
+v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createMeProfileRouter(auth));
@@ -1339,7 +1345,7 @@ app.route("/api/v1", v1);
 
 app.route(
   "/api/internal",
-  createInternalApprovalsRouter(db, config.sidecarToken),
+  createInternalApprovalsRouter(db, config.sidecarToken, approvalsEventBus),
 );
 app.route(
   "/api/internal",

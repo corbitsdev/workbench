@@ -8,7 +8,8 @@
 // these functions.
 
 import { type } from "arktype";
-import { api } from "./api";
+import { api, buildEventSourceUrl } from "./api";
+import { subscribeSharedEventStream } from "./shared-event-stream";
 
 export const ApprovalSchema = type({
   id: "string",
@@ -43,6 +44,44 @@ function parseApprovals(raw: unknown): Approval[] {
     throw new Error(`Invalid approvals response: ${parsed.summary}`);
   }
   return parsed;
+}
+
+// A change notification pushed over the workbench-owned approvals SSE stream —
+// never the approval data itself. The client refetches the ownership-scoped
+// list route on each event.
+export const ApprovalEventSchema = type({
+  tenantId: "string",
+  sessionId: "string | null",
+  kind: "'created' | 'resolved'",
+});
+export type ApprovalEvent = typeof ApprovalEventSchema.infer;
+
+const APPROVALS_STREAM_EVENT = "approvals";
+
+/**
+ * Subscribe to the tenant's approval change notifications over SSE. Shares one
+ * ref-counted EventSource per stream URL (see shared-event-stream). Each valid
+ * event invokes `onEvent`; malformed frames are dropped. `onError` fires once if
+ * the connection never opens (terminal failure) so the caller can react instead
+ * of silently going quiet. Returns an unsubscribe function that closes the
+ * connection when the last subscriber leaves.
+ */
+export function subscribeApprovals(
+  tenantId: string,
+  onEvent: (event: ApprovalEvent) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const url = buildEventSourceUrl(`tenants/${tenantId}/approvals/stream`);
+  return subscribeSharedEventStream(
+    url,
+    APPROVALS_STREAM_EVENT,
+    (raw) => {
+      const parsed = ApprovalEventSchema(raw);
+      if (parsed instanceof type.errors) return;
+      onEvent(parsed);
+    },
+    onError,
+  );
 }
 
 /**
