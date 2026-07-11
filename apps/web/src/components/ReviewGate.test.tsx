@@ -268,6 +268,46 @@ describe("ReviewGate — sessionId filter", () => {
   });
 });
 
+describe("ReviewGate — background poll failure", () => {
+  beforeEach(() => {
+    mockListApprovals.mockRejectedValue(new Error("network is down"));
+  });
+
+  it("renders nothing when the approvals poll fails and there are none", async () => {
+    const { container } = renderGate();
+    await waitFor(() => {
+      expect(mockListApprovals).toHaveBeenCalledTimes(1);
+    });
+    // A failed background poll must degrade quietly: no gate container, and
+    // crucially no red error banner painted over the composer.
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+    expect(container.querySelector(".bg-red-soft")).toBeNull();
+    expect(container.textContent).not.toContain("network is down");
+  });
+});
+
+describe("ReviewGate — user-initiated action failure", () => {
+  const pending = makeApproval();
+
+  beforeEach(() => {
+    mockListApprovals.mockResolvedValue([pending]);
+    mockApproveRequest.mockRejectedValue(new Error("could not approve"));
+  });
+
+  it("surfaces a per-item error when the user's approve action fails", async () => {
+    renderGate("tenant-1");
+    await waitFor(() => {
+      screen.getByTestId(`approve-${pending.id}`);
+    });
+
+    fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
+
+    await waitFor(() => {
+      screen.getByText("could not approve");
+    });
+  });
+});
+
 describe("ReviewGate — resolved items reduced opacity", () => {
   const resolved = makeApproval({
     status: "approved",
