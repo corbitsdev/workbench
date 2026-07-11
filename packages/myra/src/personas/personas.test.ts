@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { threadPersona } from "./thread";
-import { isMailboxReadOnlyTool, mailboxPersona } from "./mailbox";
+import {
+  isMailboxReadOnlyTool,
+  mailboxPersona,
+  resolveMailboxLoadout,
+} from "./mailbox";
 import { MyraPersonaSchema } from "./persona";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
@@ -90,6 +94,24 @@ describe("mailboxPersona", () => {
     for (const tool of mailboxPersona.toolNames) {
       expect(PERSONAL_AGENT_BASE_TOOLS).toContain(tool);
     }
+  });
+
+  it("resolves the prepare-only loadout to the persona verbatim", () => {
+    const loadout = resolveMailboxLoadout("prepare_only");
+    expect(loadout.systemPrompt).toBe(mailboxPersona.systemPrompt);
+    expect(loadout.toolNames).toEqual(mailboxPersona.toolNames);
+  });
+
+  it("resolves execute_with_gates to the full base toolset", () => {
+    const loadout = resolveMailboxLoadout("execute_with_gates");
+    expect(loadout.toolNames).toEqual(PERSONAL_AGENT_BASE_TOOLS);
+  });
+
+  it("swaps the prepare-only prohibition for the approval rail under execute_with_gates", () => {
+    const loadout = resolveMailboxLoadout("execute_with_gates");
+    expect(loadout.systemPrompt).not.toContain("You are prepare-only");
+    expect(loadout.systemPrompt).toContain("approval");
+    expect(loadout.systemPrompt).toContain(PERSONAL_AGENT_NAME);
   });
 
   it("still carries the discovery and read tools it needs to gather context", () => {
