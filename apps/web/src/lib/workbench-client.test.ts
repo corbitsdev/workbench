@@ -13,7 +13,12 @@ describe("@workbench/client artifacts", () => {
   it("passes tenantId as a query parameter when provided", async () => {
     const fetchMock = mock(
       (_url: string | URL | Request, _init?: RequestInit) =>
-        Promise.resolve(new Response(JSON.stringify([]), { status: 200 })),
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ artifacts: [], nextCursor: null }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        ),
     );
     const fetcher: typeof fetch = Object.assign(
       (url: string | URL | Request, init?: RequestInit) => fetchMock(url, init),
