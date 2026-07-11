@@ -495,3 +495,79 @@ describe("0048 creates workflow_trigger (CL-3300)", () => {
     }
   });
 });
+
+describe("0049 creates task and task_external_ref", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0049_task.sql"),
+    "utf-8",
+  );
+
+  it("creates the task table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?task"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_principal_id",
+      "created_by_principal_id",
+      "title",
+      "body",
+      "status",
+      "source",
+      "source_ref",
+      "due",
+      "links",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("creates the task_external_ref table with attribution and sync columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?task_external_ref"?/i);
+    for (const col of [
+      "task_id",
+      "adapter_id",
+      "external_id",
+      "external_url",
+      "sync_state",
+      "actor_principal_id",
+      "last_synced_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("adds the (task_id, adapter_id) unique constraint — the create idempotency backstop", () => {
+    expect(sql).toMatch(
+      /UNIQUE \("task_id", "adapter_id"\)/i,
+    );
+  });
+
+  it("indexes the inbox query on (tenant_id, owner_principal_id, status)", () => {
+    expect(sql).toMatch(
+      /"task_tenant_owner_status_idx"[\s\S]*"tenant_id", "owner_principal_id", "status"/i,
+    );
+  });
+
+  it("cascades external refs to their parent task", () => {
+    expect(sql).toMatch(/REFERENCES "task"\s*\("id"\)\s*ON DELETE CASCADE/i);
+  });
+
+  it("touches NO interchange-owned table — the task store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
