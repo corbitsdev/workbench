@@ -54,8 +54,6 @@ export type ApprovalStatus = Approval["status"];
 
 const ApprovalArraySchema = ApprovalSchema.array();
 
-export type ApproveScope = "once" | "always";
-
 function parseApproval(raw: unknown): Approval {
   const parsed = ApprovalSchema(raw);
   if (parsed instanceof type.errors) {
@@ -81,20 +79,16 @@ export async function listApprovals(tenantId: string): Promise<Approval[]> {
 }
 
 /**
- * Approve a pending approval request.
- *
- * `scope: 'once'` — one-time approval.
- * `scope: 'always'` — creates a persistent grant so the agent won't ask again.
+ * Approve a pending approval request. The approve endpoint reads no request
+ * body — the approval is resolved as a one-time grant server-side.
  */
 export async function approveRequest(
   tenantId: string,
   approvalId: string,
-  scope: ApproveScope,
 ): Promise<Approval> {
   const raw = await approvalsApiFetch<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/approve`,
-    { scope },
   );
   return parseApproval(raw);
 }

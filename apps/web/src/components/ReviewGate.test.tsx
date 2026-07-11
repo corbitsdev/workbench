@@ -102,6 +102,44 @@ describe("ReviewGate — pending approvals", () => {
   });
 });
 
+describe("ReviewGate — humanized context", () => {
+  const withContext = makeApproval({
+    resource: "tool:notion__create_page",
+    action: "Run notion__create_page",
+    context: { document_title: "Q3 report", draft: true },
+  });
+
+  beforeEach(() => {
+    mockListApprovals.mockResolvedValue([withContext]);
+  });
+
+  it("renders context arguments as humanized key/value rows, not raw JSON", async () => {
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${withContext.id}`);
+    });
+
+    // Snake_case keys are humanized into readable labels and values shown plainly.
+    screen.getByText("Document Title");
+    screen.getByText("Q3 report");
+    screen.getByText("Draft");
+    screen.getByText("true");
+    // The raw JSON stringification must not leak into the DOM.
+    expect(container.textContent).not.toContain('"document_title"');
+  });
+
+  it("renders a friendly humanized headline for a known tool resource", async () => {
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${withContext.id}`);
+    });
+    // friendlyToolSummary maps notion create_page to a human verb phrase; the
+    // raw operation id must not be the headline.
+    expect(screen.queryByText("Run notion__create_page")).not.toBeNull();
+    screen.getByText(/notion page/i);
+  });
+});
+
 describe("ReviewGate — approve action", () => {
   const pending = makeApproval();
   const approved = makeApproval({
@@ -117,7 +155,7 @@ describe("ReviewGate — approve action", () => {
     });
   });
 
-  it("calls approveRequest with correct tenantId, approvalId and scope once", async () => {
+  it("calls approveRequest with only tenantId and approvalId", async () => {
     renderGate("tenant-1");
     await waitFor(() => {
       screen.getByTestId(`approve-${pending.id}`);
@@ -126,12 +164,10 @@ describe("ReviewGate — approve action", () => {
     fireEvent.click(screen.getByTestId(`approve-${pending.id}`));
 
     await waitFor(() => {
-      expect(mockApproveRequest).toHaveBeenCalledWith(
-        "tenant-1",
-        pending.id,
-        "once",
-      );
+      expect(mockApproveRequest).toHaveBeenCalledWith("tenant-1", pending.id);
     });
+    const call = mockApproveRequest.mock.calls[0];
+    expect(call).toHaveLength(2);
   });
 
   it("shows the approved status badge after a successful approval", async () => {
@@ -223,12 +259,17 @@ describe("ReviewGate — resolved items reduced opacity", () => {
     mockListApprovals.mockResolvedValue([resolved]);
   });
 
-  it("renders resolved approvals with reduced opacity class", async () => {
+  it("presents resolved approvals as dimmed, action-free status only", async () => {
     renderGate();
     await waitFor(() => {
       screen.getByTestId(`approval-${resolved.id}`);
     });
     const el = screen.getByTestId(`approval-${resolved.id}`);
-    expect(el.className).toContain("opacity-50");
+    // The dead Tailwind dimming class was removed; opacity is the animate target.
+    expect(el.className).not.toContain("opacity-50");
+    // Resolved rows show the status badge and expose no approve/reject actions.
+    screen.getByText("approved");
+    expect(screen.queryByTestId(`approve-${resolved.id}`)).toBeNull();
+    expect(screen.queryByTestId(`reject-${resolved.id}`)).toBeNull();
   });
 });

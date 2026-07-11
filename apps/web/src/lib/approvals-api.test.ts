@@ -71,7 +71,7 @@ describe("approveRequest", () => {
   it("throws when the single-approval response is malformed", async () => {
     stubFetch({ ...VALID_ROW, sessionId: 42 });
 
-    await expect(approveRequest("tenant-1", "apr-1", "once")).rejects.toThrow(
+    await expect(approveRequest("tenant-1", "apr-1")).rejects.toThrow(
       "Invalid approval response",
     );
   });
