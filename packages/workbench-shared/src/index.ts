@@ -300,8 +300,24 @@ export const GammaTemplateBodySchema = type({
 });
 export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
 
+// How far a member's Myra may go autonomously (CL-3304). `prepare_only` is the
+// default posture: classify, plan, draft, read-only grounding — no writes.
+// `execute_with_gates` lets Myra attempt tool writes, each still flowing
+// through the existing approval rail; it never bypasses gates.
+export const AgentAutonomySchema = type(
+  "'prepare_only' | 'execute_with_gates'",
+);
+export type AgentAutonomy = typeof AgentAutonomySchema.infer;
+
+// Resolves the effective autonomy for a member. The absent-value decision
+// lives here, at the shared boundary, so every consumer agrees on the default.
+export function resolveAgentAutonomy(prefs: MemberPreferences): AgentAutonomy {
+  return prefs.agentAutonomy ?? "prepare_only";
+}
+
 export const MemberPreferences = type({
   "theme?": ThemeSchema,
+  "agentAutonomy?": AgentAutonomySchema,
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": ToolSummaryStyleSchema,
   "experimentalArtifactCards?": "boolean",
