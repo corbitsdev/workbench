@@ -152,6 +152,7 @@
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+        "@workbench/workflow-heartbeat": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
@@ -1438,6 +1439,29 @@
         "react": "*",
       },
     },
+    "workflows/heartbeat": {
+      "name": "@workbench/workflow-heartbeat",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
+      },
+      "devDependencies": {
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
     "workflows/last30days-research": {
       "name": "@workbench/workflow-last30days-research",
       "version": "0.1.0",
@@ -2505,6 +2529,8 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-heartbeat": ["@workbench/workflow-heartbeat@workspace:workflows/heartbeat"],
 
     "@workbench/workflow-host": ["@workbench/workflow-host@workspace:packages/workflow-host"],
 
