@@ -115,7 +115,7 @@ export async function getMailboxMessage(
   });
   if (!row) return null;
 
-  const decoded = decodeFrame(row.raw);
+  const decoded = decodeMailFrame(row.raw);
   if (decoded === null) {
     logger.error("stored mailbox frame failed to parse; serving empty body", {
       messageId: row.id,
