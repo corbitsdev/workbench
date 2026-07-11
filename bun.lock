@@ -54,6 +54,7 @@
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
+        "@workbench/tasks": "workspace:*",
         "@workbench/timeline": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",

@@ -7,6 +7,7 @@ const log = getLogger(["tasks", "push-service"]);
 
 export type ResolveAdapterCredential = (
   providerName: string,
+  tenantId: string,
 ) => Promise<{ apiKey: string; baseURL: string } | null>;
 
 export type ResolveAssignee = (
@@ -80,7 +81,10 @@ export function createTaskPushService(deps: {
       };
     }
 
-    const credential = await deps.resolveCredential(adapter.providerName);
+    const credential = await deps.resolveCredential(
+      adapter.providerName,
+      task.tenantId,
+    );
     if (credential === null) {
       log.warn("task push left pending: no credential for adapter provider", {
         taskId: request.taskId,

@@ -80,6 +80,7 @@ import {
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createScheduler } from "./services/scheduler";
+import { createTaskReconcilerService } from "./services/task-reconciler";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
 import {
   ensureOwnerSchedule,
@@ -145,6 +146,7 @@ import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
 import { createInboxRouter } from "./routes/inbox";
+import { createMeTasksRouter } from "./routes/me-tasks";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
 import { createToolManifestRouter } from "./routes/tool-manifest";
@@ -1125,6 +1127,7 @@ v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createInboxRouter(db));
+v1.route("/", createMeTasksRouter(db));
 
 // Resolves a member principal to the user mail identity trigger payloads
 // carry (`${refId}@${domain}` via deriveUserMailAddress). Shared by the
@@ -1356,6 +1359,14 @@ const scheduler = createScheduler({
 });
 scheduler.start();
 
+// Native-task pending-ref reconciler (CL-3313). Gated by TASKS_RECONCILER_ENABLED
+// (default OFF); retries downstream pushes left pending, failures server-side.
+const taskReconciler = createTaskReconcilerService({
+  enabled: config.tasksReconciler.enabled,
+  db,
+});
+taskReconciler.start();
+
 // Idempotent boot seed so the morning brief works out of the box: one heartbeat
 // schedule per Myra member. Gated by the same enable flag; detached so a slow
 // seed never blocks startup.
@@ -1584,6 +1595,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
     try {
       log.info("Received {signal}, draining", { signal });
       scheduler.stop();
+      taskReconciler.stop();
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
       log.info("Closing sidecar connections", {

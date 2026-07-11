@@ -420,6 +420,13 @@ export function loadConfig() {
       heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
       heartbeatKind: "heartbeat",
     },
+    // Native-task pending-ref reconciler (CL-3313). Opt-in kill switch, default
+    // OFF. When enabled, the hub periodically retries task_external_ref rows a
+    // push left `pending` (adapter threw, credential missing) with a bounded
+    // per-ref budget; failures stay server-side and never surface to the user.
+    tasksReconciler: {
+      enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
+    },
   };
 
   log.info("Configuration loaded", {

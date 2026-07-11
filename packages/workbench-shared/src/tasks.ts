@@ -72,3 +72,46 @@ export const TaskSchema = type({
   updatedAt: "string",
 });
 export type Task = typeof TaskSchema.infer;
+
+// The caller's task list, newest-relevant first. Bare array (like the schedules
+// list), parsed at the boundary by the web client.
+export const TaskListResponseSchema = TaskSchema.array();
+export type TaskListResponse = typeof TaskListResponseSchema.infer;
+
+// Request body for POST /me/tasks. The server owns tenancy, ownership,
+// attribution, and `source` — the client only describes the work.
+export const CreateTaskBodySchema = type({
+  title: "string > 0",
+  "body?": "string",
+  "due?": "string",
+  "links?": TaskLinkSchema.array(),
+});
+export type CreateTaskBody = typeof CreateTaskBodySchema.infer;
+
+// Request body for PATCH /me/tasks/:id. Every field optional; an empty patch is
+// rejected by the route.
+export const UpdateTaskBodySchema = type({
+  "title?": "string > 0",
+  "body?": "string",
+  "status?": TaskStatusSchema,
+  "due?": "string | null",
+});
+export type UpdateTaskBody = typeof UpdateTaskBodySchema.infer;
+
+// Request body for POST /me/tasks/:id/push. The session-authed human's click is
+// the approval; `operation` defaults to `create`.
+export const PushTaskBodySchema = type({
+  adapterId: "string > 0",
+  "operation?": "'create' | 'update' | 'close' | 'comment'",
+});
+export type PushTaskBody = typeof PushTaskBodySchema.infer;
+
+// Two user-visible push outcomes: linked ("synced") or still sending
+// ("pending"). Failure never appears here.
+export const PushTaskResponseSchema = type({
+  status: "'synced' | 'pending'",
+  "externalId?": "string",
+  "externalUrl?": "string",
+  "deduped?": "boolean",
+});
+export type PushTaskResponse = typeof PushTaskResponseSchema.infer;
