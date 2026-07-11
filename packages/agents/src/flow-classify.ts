@@ -14,6 +14,18 @@ export interface ClassifiedFlowStep {
   kind: FlowStepClass;
 }
 
+// A workflow author's declaration of one user-facing step in the display flow:
+// a label plus the runtime step ids it clusters. This is the serializable,
+// browser-safe subset the catalog classifier needs — it is structurally
+// satisfied by `DisplayStep` from `@workbench/ui` (which adds a UI-only
+// `activityLabel`), so a workflow's `DISPLAY_STEPS` export can be passed here
+// directly without importing the UI package into this server-safe module.
+export interface DisplayFlowStep {
+  key: string;
+  label: string;
+  stepIds: readonly string[];
+}
+
 type Primitive = WorkflowDefinition["steps"][string];
 
 function humanize(raw: string): string {
@@ -76,12 +88,50 @@ function titleForPrimitive(id: string, primitive: Primitive): string {
   return humanize(id);
 }
 
+// The strongest classification wins when a display group clusters several
+// runtime steps: a group containing a human gate reads as human, one with a
+// reasoning step reads as agent, otherwise auto.
+function aggregateKind(kinds: readonly FlowStepClass[]): FlowStepClass {
+  if (kinds.includes("human")) return "human";
+  if (kinds.includes("agent")) return "agent";
+  return "auto";
+}
+
+// Projects the workflow onto the author's declared display flow: one classified
+// entry per display group, titled by the declared label, in declared order. The
+// group's kind aggregates its runtime steps so the preview colours the grouped
+// node the same way the flow actually behaves.
+function projectDisplayFlow(
+  definition: WorkflowDefinition,
+  displayFlow: readonly DisplayFlowStep[],
+): ClassifiedFlowStep[] {
+  return displayFlow.map((group) => {
+    const kinds: FlowStepClass[] = [];
+    for (const stepId of group.stepIds) {
+      const primitive = definition.steps[stepId];
+      if (primitive !== undefined) kinds.push(classifyPrimitive(primitive));
+    }
+    return {
+      id: group.key,
+      title: group.label,
+      kind: aggregateKind(kinds),
+    };
+  });
+}
+
 // Projects a deployed workflow definition into the ordered, classified steps the
-// catalog preview renders. Follows `stepOrder` so the flow reads in author order;
-// each step is typed auto / agent / human from its primitive and authoring tag.
+// catalog preview renders. When the author declares a `displayFlow`, the preview
+// is grouped and labelled by that single declaration — the same one the client
+// run stepper consumes — so the two surfaces stay in sync. Otherwise it falls
+// back to one entry per runtime step in `stepOrder`, each typed auto / agent /
+// human from its primitive and authoring tag.
 export function classifyWorkflowSteps(
   definition: WorkflowDefinition,
+  displayFlow?: readonly DisplayFlowStep[],
 ): ClassifiedFlowStep[] {
+  if (displayFlow !== undefined && displayFlow.length > 0) {
+    return projectDisplayFlow(definition, displayFlow);
+  }
   const steps: ClassifiedFlowStep[] = [];
   for (const id of definition.stepOrder) {
     const primitive = definition.steps[id];

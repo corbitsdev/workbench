@@ -4,7 +4,6 @@ import {
   activeDisplayStepIndex,
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
@@ -14,6 +13,7 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
+import { DISPLAY_STEPS } from "./display-steps";
 import {
   parseAnalyze,
   parseFetchedNote,
@@ -28,43 +28,9 @@ import {
 // -------------------------------------------------------------------------
 // Step configuration
 // -------------------------------------------------------------------------
-
-// Each stepper entry clusters the internal workflow steps it represents, in run
-// order. The shared helpers compute stepper status / active step from this with
-// the robust "passed = completed OR a later step progressed" rule, so a gate
-// whose output is missing from the synthesized record can't rewind the panel,
-// and fmtSelection naturally advances to Review once generate starts (CL-2506).
-// `activityLabel` drives the live line from the in-flight machine work, never
-// the stepper noun: while `generate` runs the line reads "Generating
-// collateral", not the gate noun "Review". Gate-only groups (Transcript,
-// Context, Generate=fmtSelection) carry none.
-const DISPLAY_STEPS: DisplayStep[] = [
-  {
-    key: "transcript",
-    label: "Transcript",
-    stepIds: ["intake", "select", "fetch"],
-  },
-  { key: "context", label: "Context", stepIds: ["context"] },
-  {
-    key: "painPoints",
-    label: "Pain Points",
-    stepIds: ["analyze", "ppSelection"],
-    activityLabel: "Analyzing the call",
-  },
-  { key: "formats", label: "Generate", stepIds: ["fmtSelection"] },
-  {
-    key: "review",
-    label: "Review",
-    stepIds: ["generate", "review"],
-    activityLabel: "Generating collateral",
-  },
-  {
-    key: "done",
-    label: "Done",
-    stepIds: ["persist"],
-    activityLabel: "Saving to workbench",
-  },
-];
+// The display flow (order, labels, grouping, activity lines) is declared once in
+// the browser-safe ./display-steps module and shared with the server catalog
+// preview so the two surfaces cannot drift.
 
 type StepPhase = NonNullable<ReturnType<RunState["steps"]["get"]>>["phase"];
 

@@ -5,7 +5,6 @@ import {
   activeDisplayStep,
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   FailedRunNotice,
   HorizontalStepper,
   inputFieldClass,
@@ -16,48 +15,17 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import type { RunState, StepState } from "@intx/workflow";
-// From ./constants, NOT ./index: importing the server-only workflow definition
-// here would pull @intx/agent into the browser `/ui` chunk and break panel load.
+// From ./constants and ./display-steps, NOT ./index: importing the server-only
+// workflow definition here would pull @intx/agent into the browser `/ui` chunk
+// and break panel load. ./display-steps is browser-safe and is the single
+// source of truth shared with the server catalog preview.
 import { MAX_ROUNDS } from "./constants";
+import { DISPLAY_STEPS } from "./display-steps";
 import { readGenerateReply } from "./generate-output";
 
 type StepPhase = StepState["phase"];
 
 const ROUNDS = Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1);
-
-// Four display steps cluster the repeating per-round runtime steps. The
-// machine-work groups carry a verb `activityLabel` for the live status line;
-// the source and review groups carry none (they wait on the user).
-const DISPLAY_STEPS: DisplayStep[] = [
-  {
-    key: "source",
-    label: "Source",
-    stepIds: [
-      "list-artifacts",
-      "list-notes",
-      "intake",
-      "fetch-artifact",
-      "fetch-note",
-    ],
-  },
-  {
-    key: "draft",
-    label: "Draft",
-    stepIds: ROUNDS.flatMap((r) => [`generate-${r}`, `render-${r}`]),
-    activityLabel: "Building the deck",
-  },
-  {
-    key: "review",
-    label: "Review",
-    stepIds: ROUNDS.map((r) => `preview-${r}`),
-  },
-  {
-    key: "done",
-    label: "Done",
-    stepIds: ROUNDS.map((r) => `persist-${r}`),
-    activityLabel: "Saving to workbench",
-  },
-];
 
 function phaseFor(
   state: RunState | null,
