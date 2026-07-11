@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn, ComparisonView, Markdown } from "@workbench/ui";
 import {
   MAX_UI_BLOCK_NEST_DEPTH,
@@ -652,6 +652,68 @@ function fieldToPayload(field: FormField, value: FieldValue): unknown {
   });
 }
 
+/**
+ * A textarea that grows with its content, then scrolls. On each value change it
+ * collapses to `auto` to remeasure true content height and pins the inline
+ * height to `scrollHeight`; a CSS `max-h` clamps the visible box, so once the
+ * content exceeds the ceiling the box stops growing and scrolls internally
+ * instead of pushing the page past the viewport (CL-3234).
+ */
+function AutoGrowTextarea({
+  value,
+  onChange,
+  placeholder,
+  minRows,
+  className,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string | undefined;
+  minRows: number;
+  className: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  const lastWidth = useRef<number>(0);
+  // Collapse to remeasure, then grow to fit. `minHeight` holds the floor at
+  // `minRows`, so an empty box never shrinks below its initial rows.
+  const fit = useCallback(() => {
+    const el = ref.current;
+    if (el === null) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+    lastWidth.current = el.clientWidth;
+  }, []);
+  useLayoutEffect(() => {
+    fit();
+  }, [value, fit]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el === null || typeof ResizeObserver === "undefined") return;
+    // Width changes (window/container resize) rewrap the text and change the
+    // content height, so remeasure on resize. Gate on width only — our own
+    // height writes must not re-trigger a fit and loop the observer.
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth.current) return;
+      fit();
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [fit]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      placeholder={placeholder}
+      rows={minRows}
+      onChange={(event) => onChange(event.target.value)}
+      // Floor at `minRows`, derived from the shared `text-sm` (1.25rem line
+      // height) + `py-2` (1rem) + 1px border box the input class renders.
+      style={{ minHeight: `calc(${minRows} * 1.25rem + 1rem + 2px)` }}
+      className={cn(className, "max-h-[40vh] resize-none overflow-y-auto")}
+    />
+  );
+}
+
 function LeafFieldInput({
   field,
   value,
@@ -675,12 +737,12 @@ function LeafFieldInput({
     return (
       <label className="block">
         {labelNode}
-        <textarea
+        <AutoGrowTextarea
           value={value as string}
           placeholder={field.placeholder}
-          rows={3}
-          onChange={(event) => onChange(event.target.value)}
-          className={cn(inputClass, "resize-none")}
+          minRows={3}
+          onChange={onChange}
+          className={inputClass}
         />
       </label>
     );
@@ -1326,12 +1388,12 @@ function ChoiceBlock({
         <p className="text-sm text-text-2">{block.prompt}</p>
       )}
       {block.promptBox !== undefined && (
-        <textarea
+        <AutoGrowTextarea
           value={promptText}
-          onChange={(event) => setPromptText(event.target.value)}
+          onChange={setPromptText}
           placeholder={block.promptBox.placeholder}
-          rows={2}
-          className="w-full resize-none rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
+          minRows={2}
+          className="w-full rounded-lg border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange/40"
         />
       )}
       {error !== null && <SubmitError message={error} />}
