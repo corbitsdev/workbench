@@ -181,10 +181,13 @@ export default function Settings() {
         <button
           type="button"
           onClick={startTour}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
+          className="rounded-[10px] border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
         >
           Take the tour
         </button>
+        <p className="mt-1 text-xs text-text-3">
+          Replay the five-step introduction.
+        </p>
       </div>
       <div
         className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? "" : " opacity-50"}`}
@@ -209,8 +212,8 @@ export default function Settings() {
               {saveMutation.isPending ? "Saving…" : "Save display name"}
             </button>
             {saveMutation.isError && (
-              <span className="text-sm text-red-500">
-                Failed to save. Please try again.
+              <span className="text-sm text-red">
+                Couldn't save. Try again.
               </span>
             )}
           </div>
@@ -218,7 +221,7 @@ export default function Settings() {
       )}
       {saveMutation.isSuccess && (
         <div className="mx-auto w-full max-w-2xl px-4 pb-4">
-          <p className="text-sm text-green-600">Display name saved.</p>
+          <p className="text-sm text-green">Display name saved.</p>
         </div>
       )}
       <div className="mx-auto w-full max-w-2xl px-4 pb-6">

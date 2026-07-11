@@ -136,9 +136,9 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 rounded-[10px] border px-3.5 py-2 text-[13px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
+        className={`inline-flex items-center gap-1.5 rounded-[10px] border px-3.5 py-2 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong ${
           existing && existing.enabled
-            ? "border-accent text-accent"
+            ? "border-orange text-orange"
             : "border-border text-text-2 hover:bg-surface-2"
         }`}
       >
@@ -167,20 +167,20 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
                 reduceMotion ? undefined : { opacity: 0, y: -6, scale: 0.98 }
               }
               transition={{ type: "spring", stiffness: 420, damping: 30 }}
-              className="absolute right-0 z-20 mt-2 w-[280px] rounded-[14px] border border-border bg-surface p-4 shadow-[0_12px_40px_rgba(0,0,0,0.18)]"
+              className="absolute right-0 z-20 mt-2 w-[280px] rounded-[14px] border border-border bg-surface p-4 shadow-[var(--shadow)]"
             >
-              <p className="mb-1 text-[13.5px] font-bold text-text">
-                {existing ? "Daily schedule" : "Run this daily"}
+              <p className="mb-1 text-sm font-semibold text-text">
+                Daily schedule
               </p>
-              <p className="mb-3 text-[11.5px] leading-relaxed text-text-3">
+              <p className="mb-3 text-xs leading-relaxed text-text-3">
                 {existing
                   ? "Runs every day at the time below, in your local time."
-                  : `Put “${label}” on autopilot at a time that suits you.`}
+                  : `Run "${label}" every day at a time you pick.`}
               </p>
 
               <label
                 htmlFor={`sched-hour-${kind}`}
-                className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.05em] text-text-3"
+                className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.05em] text-text-3"
               >
                 Time (your local time)
               </label>
@@ -190,9 +190,7 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
                 onChange={handleHourChange}
               />
 
-              {error && (
-                <p className="mt-2 text-[12px] text-orange-deep">{error}</p>
-              )}
+              {error && <p className="mt-2 text-xs text-red">{error}</p>}
 
               <div className="mt-4 flex items-center justify-between gap-2">
                 {existing ? (

@@ -142,7 +142,7 @@ export function Panel(props: WorkflowPanelProps) {
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
         <div className="min-w-0">
           <p className="truncate text-[14px] font-semibold text-text">
-            Company heartbeat
+            Morning brief
           </p>
           <p className="mt-px text-[11px] text-text-3">
             {connected ? "Live" : "Reconnecting…"}

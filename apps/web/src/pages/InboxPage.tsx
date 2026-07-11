@@ -220,9 +220,9 @@ function MessageRow({
             {!message.read && (
               <motion.span
                 key="unread-dot"
-                initial={reduceMotion ? false : { scale: 0 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0 }}
+                initial={reduceMotion ? false : { scale: 0.4, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.4, opacity: 0 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
                 className="h-2 w-2 rounded-full bg-orange"
                 aria-hidden="true"
@@ -289,7 +289,7 @@ function MessageBody({
       </p>
     );
   }
-  // Briefs and hand-offs are markdown text, so the pane renders through the
+  // Briefs and handoffs are markdown text, so the pane renders through the
   // shared Markdown component rather than pre-wrapped plain text.
   return <Markdown>{detail.body}</Markdown>;
 }
@@ -340,9 +340,9 @@ function RailEmptyState() {
         <InboxIcon size={20} aria-hidden="true" />
       </span>
       <div>
-        <p className="text-sm font-medium text-text">Your inbox is clear</p>
+        <p className="text-sm font-medium text-text">You're all caught up</p>
         <p className="mt-1 text-xs text-text-3">
-          Briefs and hand-offs from Myra and your workflows land here.
+          Briefs and handoffs from Myra and your workflows land here.
         </p>
       </div>
     </div>

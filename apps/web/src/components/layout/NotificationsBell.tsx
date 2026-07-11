@@ -196,7 +196,7 @@ function BellEmptyState() {
       </span>
       <p className="text-sm font-medium text-text">You're all caught up</p>
       <p className="text-xs text-text-3">
-        New mail and hand-offs will show up here.
+        New mail and handoffs will show up here.
       </p>
     </div>
   );

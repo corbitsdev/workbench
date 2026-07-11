@@ -174,7 +174,9 @@ describe("InboxPage", () => {
   it("shows a friendly empty state when the inbox has no messages", () => {
     mailbox = { data: [], isLoading: false, isError: false };
     renderInbox();
-    screen.getByText("Your inbox is clear");
+    expect(screen.getAllByText("You're all caught up").length).toBeGreaterThan(
+      0,
+    );
   });
 
   it("renders every message in the list, not just the first", () => {
@@ -407,7 +409,7 @@ describe("InboxPage Now feed", () => {
       isError: false,
     };
     renderInbox();
-    screen.getByText("You're all caught up.");
+    screen.getByText("You're all caught up");
     expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
   });
 
@@ -437,6 +439,6 @@ describe("InboxPage Now feed", () => {
     tasksState = { data: undefined, isLoading: true, isError: false };
     runsState = { data: undefined, isLoading: true, isError: false };
     renderInbox();
-    expect(screen.queryByText("You're all caught up.")).toBeNull();
+    expect(screen.queryByText("You're all caught up")).toBeNull();
   });
 });

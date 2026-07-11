@@ -95,7 +95,7 @@ describe("MySchedules", () => {
   it("shows the empty state when the member has no schedules", async () => {
     globalThis.fetch = makeFetch([]) as unknown as typeof fetch;
     renderList();
-    await waitFor(() => screen.getByText("Nothing scheduled yet"));
+    await waitFor(() => screen.getByText("No schedules yet"));
   });
 
   it("renders a schedule with its workflow label resolved from the catalog", async () => {

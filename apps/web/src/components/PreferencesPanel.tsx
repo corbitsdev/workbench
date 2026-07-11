@@ -49,7 +49,7 @@ function PreferenceRow({ setting, status, onChange }: RowProps) {
                 exit={{ opacity: 0 }}
                 className={cn(
                   "text-xs",
-                  status === "Couldn't save" ? "text-red-500" : "text-text-3",
+                  status === "Couldn't save" ? "text-red" : "text-text-3",
                 )}
               >
                 {status}

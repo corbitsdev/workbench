@@ -17,10 +17,24 @@ interface NowSectionProps {
 }
 
 // The inbox-as-dashboard "Now" feed: one prioritized list of everything that
-// needs the user right now — gate asks first, then unread mail, then open
+// needs the user right now — approvals first, then unread mail, then open
 // tasks — each row deep-linking to where it gets handled.
 export function NowSection({ items, ready, reduceMotion }: NowSectionProps) {
-  if (!ready) return null;
+  if (!ready) {
+    return (
+      <div className="mx-auto max-w-[720px] px-8 py-8" role="status">
+        <p className="text-xs text-text-3">Loading your day…</p>
+        <div className="mt-5 flex flex-col gap-1">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="h-[52px] animate-pulse rounded-[10px] bg-surface"
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (
@@ -31,10 +45,10 @@ export function NowSection({ items, ready, reduceMotion }: NowSectionProps) {
           </span>
           <div>
             <p className="text-sm font-medium text-text">
-              You're all caught up.
+              You're all caught up
             </p>
             <p className="mt-1 text-xs text-text-3">
-              Gate asks, new mail, and open tasks will show up here as they
+              Approvals, new mail, and open tasks will show up here as they
               arrive.
             </p>
           </div>
@@ -105,7 +119,7 @@ function MailRow({ item }: { item: NowMailItem }) {
   return (
     <RowShell
       href={`/inbox/${item.message.id}`}
-      accent="bg-blue"
+      accent="bg-border-strong"
       title={item.message.subject ?? "(no subject)"}
       note={collapsedNote ?? item.message.snippet}
       source={item.message.from}
@@ -125,7 +139,7 @@ function TaskRow({ item }: { item: NowTaskItem }) {
   return (
     <RowShell
       href={href}
-      accent="bg-green"
+      accent="bg-border-strong"
       title={item.task.title}
       note={item.task.body}
       source="Task"

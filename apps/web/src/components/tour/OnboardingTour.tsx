@@ -151,6 +151,7 @@ function TourOverlay({
   const rect = useTargetRect(step);
   const reduceMotion = useReducedMotion() ?? false;
   const isLast = index === total - 1;
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -162,9 +163,20 @@ function TourOverlay({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [onSkip, onNext, onBack]);
 
+  useEffect(() => {
+    popoverRef.current?.focus();
+  }, [step]);
+
   return (
     <div className="fixed inset-0 z-[90]">
-      {rect ? (
+      <button
+        type="button"
+        aria-label="Dismiss tour"
+        onClick={onSkip}
+        className="fixed inset-0 z-0 cursor-default bg-black/55"
+        tabIndex={-1}
+      />
+      {rect && (
         <div
           aria-hidden="true"
           className="pointer-events-none absolute rounded-lg"
@@ -176,12 +188,12 @@ function TourOverlay({
             boxShadow: "0 0 0 9999px rgba(0, 0, 0, 0.55)",
           }}
         />
-      ) : (
-        <div aria-hidden="true" className="absolute inset-0 bg-black/55" />
       )}
       <AnimatePresence mode="wait">
         <motion.div
           key={step.id}
+          ref={popoverRef}
+          tabIndex={-1}
           role="dialog"
           aria-label={step.title}
           aria-modal="true"
@@ -189,7 +201,7 @@ function TourOverlay({
           animate={{ opacity: 1, y: 0 }}
           exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
           transition={{ duration: reduceMotion ? 0 : 0.18 }}
-          className="fixed rounded-xl border border-border bg-surface p-4 shadow-xl"
+          className="fixed z-10 rounded-xl border border-border bg-surface p-4 shadow-xl focus:outline-none"
           style={popoverStyle(rect, step)}
         >
           <p className="text-xs font-medium text-text-3">

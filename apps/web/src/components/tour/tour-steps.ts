@@ -20,7 +20,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     route: "/",
     targetSelector: '[data-tour="myra-chat"]',
     title: "Meet Myra",
-    body: "Myra is your personal agent. Ask her to research an account, draft collateral, or kick off any of the work you see in this tour.",
+    body: "Myra is your personal agent. Ask her to research an account, draft collateral, or start a workflow.",
     placement: "top",
   },
   {
@@ -36,7 +36,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     route: "/inbox",
     targetSelector: '[data-tour="notifications-bell"]',
     title: "Notifications",
-    body: "The bell lights up the moment an agent needs your attention, so you never have to poll the Inbox.",
+    body: "The bell lights up the moment an agent needs your attention, so you don't have to keep checking the Inbox.",
     placement: "bottom",
   },
   {
@@ -52,7 +52,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     route: "/settings",
     targetSelector: '[data-tour="preference-agentAutonomy"]',
     title: "Set your autonomy",
-    body: "Settings holds your preferences, including how far Myra may go on your behalf: prepare work for review, or execute with approval gates.",
+    body: "Settings holds your preferences, including how much Myra does on her own: prepare work for you to review, or run it and pause only when your approval is needed.",
     placement: "top",
   },
 ];
