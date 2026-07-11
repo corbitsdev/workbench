@@ -92,6 +92,20 @@ Each step is a separate commit.
 - One logical change per commit; messages describe the change, not the task
 - Never auto-commit; present the message and wait for confirmation
 
+## Versioning
+
+Deployed release semver lives in the **root** `package.json` only. Workspace members keep their own versions unless a package is independently published.
+
+| Merge target | When | Bump |
+| ------------ | ---- | ---- |
+| **`staging`** (feature/fix PR) | Last commit on the PR branch, **before** merge | **patch** — `npm version patch --no-git-tag-version` at repo root |
+| **`main`** (staging → main promotion) | On `staging` before the release PR merges | **minor** — `npm version minor --no-git-tag-version` at repo root |
+| **`main`** (hotfix) | Last commit on the hotfix branch, **before** merge | **patch** only — do **not** bump minor |
+
+- Commit message for any version-only change: `chore: release <version>`.
+- Do not create git tags unless release ops explicitly asks; the version field is what production builds read.
+- Staging → main release PRs should name the target version in the title and body (and link Linear issues), consistent with prior promotion PRs.
+
 ## Testing
 
 **Coverage is a floor, never the goal. We want the highest _meaningful_ coverage — never coverage for its own number.** A test earns its place by being able to fail when the behavior breaks. If a test cannot fail for a real reason, it is worse than no test: it is green noise that hides the gap. So:
