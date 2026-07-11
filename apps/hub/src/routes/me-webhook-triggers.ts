@@ -15,10 +15,9 @@ import {
   listOwnerWebhookTriggers,
   toApiWebhookTrigger,
 } from "../lib/webhook-triggers";
-import { requestBodySchema } from "../lib/openapi";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 
-const ErrorResponse = type({ error: "string" });
 const WebhookTriggerList = WebhookTriggerSchema.array();
 
 // Owner-scoped CRUD over the caller's webhook triggers (CL-3300). Every read

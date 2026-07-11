@@ -12,10 +12,8 @@ import {
   readMemberPreferences,
   mergeMemberPreferences,
 } from "../lib/member-preferences";
-import { requestBodySchema } from "../lib/openapi";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
-
-const ErrorResponse = type({ error: "string" });
 
 // Read/write the caller's own server-persisted UI preferences. Reads are also
 // folded into GET /v1/me so the bootstrap needs no extra round-trip; this GET

@@ -20,11 +20,10 @@ import {
   updateOwnerTask,
 } from "../lib/task-store";
 import { createDrizzleTaskPushStore } from "../lib/task-push-store";
-import { requestBodySchema } from "../lib/openapi";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { UuidParam } from "../lib/uuid";
 import type { HubDb } from "../db";
 
-const ErrorResponse = type({ error: "string" });
 
 // Owner-scoped CRUD over the caller's native tasks plus a downstream push. Every
 // read and write is bound to the caller's own member principal, so a member can

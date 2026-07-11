@@ -9,9 +9,9 @@ import {
   markMailboxMessageRead,
 } from "../lib/mailbox-read";
 import { UuidParam } from "../lib/uuid";
+import { ErrorResponse } from "../lib/openapi";
 import type { HubDb } from "../db";
 
-const ErrorResponse = type({ error: "string" });
 const MarkReadResponse = type({ id: "string", read: "boolean" });
 
 const DEFAULT_INBOX_LIMIT = 50;

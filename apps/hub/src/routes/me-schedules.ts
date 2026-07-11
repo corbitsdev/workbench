@@ -16,10 +16,9 @@ import {
   toApiSchedule,
   updateOwnerSchedule,
 } from "../lib/scheduled-triggers";
-import { requestBodySchema } from "../lib/openapi";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import type { HubDb } from "../db";
 
-const ErrorResponse = type({ error: "string" });
 const ScheduledTriggerList = ScheduledTriggerSchema.array();
 
 // Payload keys the server owns. A trigger payload becomes the workflow's input
