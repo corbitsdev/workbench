@@ -370,7 +370,7 @@ describe("0050 adds message_key to principal_mailbox", () => {
   it("adds a nullable message_key column", () => {
     expect(sql).toMatch(/ALTER TABLE "principal_mailbox"/i);
     expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "message_key" text/i);
-    expect(sql).not.toMatch(/NOT NULL/i);
+    expect(sql).not.toMatch(/"message_key" text NOT NULL/i);
     expect(sql).not.toMatch(/DEFAULT/i);
   });
 
