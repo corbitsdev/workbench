@@ -42,17 +42,9 @@ export {
   type DisplayFlowStep,
 } from "./flow-classify";
 
-// Personal agent (Myra) — extracted to @workbench/myra; re-exported here for
-// consumers that still reach Myra through the agents barrel.
-export {
-  buildPersonalAgentSystemPrompt,
-  buildPersonalAgentGrantRequirements,
-  PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
-  PERSONAL_AGENT_DEPLOY_PROMPT,
-  PERSONAL_AGENT_BASE_TOOLS,
-  PERSONAL_AGENT_NAME,
-  createPersonalAgentDirector,
-} from "@workbench/myra";
+// Personal agent (Myra) lives in @workbench/myra. Myra's chat prompt, tools,
+// director, and seed-marker resolver are imported from there directly, not
+// re-exported through this barrel.
 export {
   DYNAMIC_TOOLS_DIRECTOR_ID,
   MYRA_TOOL_CATALOG,
@@ -62,13 +54,6 @@ export {
   dynamicToolsDirector,
   type DynamicToolConfig,
 } from "./dynamic-tools";
-export {
-  PERSONAL_AGENT_SEED_FILES,
-  buildSeedMarker,
-  parseSeedMarker,
-  type SeedWorkspaceFile,
-  type SeedMarkerParse,
-} from "@workbench/myra";
 
 // Loop agent
 export { buildLoopAgentSystemPrompt } from "./loop/prompt";

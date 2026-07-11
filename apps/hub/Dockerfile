@@ -28,6 +28,7 @@ COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/myra/package.json packages/myra/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
@@ -82,6 +83,7 @@ COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
+COPY packages/myra/ packages/myra/
 COPY packages/analytics/ packages/analytics/
 COPY packages/pricing/ packages/pricing/
 COPY packages/catalog/ packages/catalog/

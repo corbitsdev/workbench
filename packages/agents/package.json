@@ -34,10 +34,6 @@
     "./constants": {
       "types": "./src/constants.ts",
       "default": "./src/constants.ts"
-    },
-    "./seed": {
-      "types": "./src/seed.ts",
-      "default": "./src/seed.ts"
     }
   },
   "scripts": {

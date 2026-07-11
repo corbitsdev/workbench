@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getLogger } from "@intx/log";
-import type { SeedWorkspaceFile } from "@workbench/agents/seed";
+import type { SeedWorkspaceFile } from "@workbench/myra/seed";
 
 const logger = getLogger(["sidecar", "seed-workspace-files"]);
 
