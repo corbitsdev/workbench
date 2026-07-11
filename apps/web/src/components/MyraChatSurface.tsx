@@ -484,6 +484,7 @@ export function MyraChatSurface({
       key="review-gate"
       tenantId={tenantId}
       sessionId={session.sessionId ?? undefined}
+      sessionScope="session"
     />
   ) : null;
 

@@ -325,6 +325,37 @@ describe("MyraChatSurface", () => {
     expect(screen.queryByTestId("review-gate")).toBeNull();
   });
 
+  it("does not surface tenant-wide approvals before the chat session id is known", () => {
+    approvalsResult = [
+      {
+        id: "apr-tenant",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-other",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "other" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: readySession(() => {}),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+
   it("mounts the approval gate and surfaces a pending approval for the tenant", async () => {
     approvalsResult = [
       {
@@ -332,7 +363,7 @@ describe("MyraChatSurface", () => {
         tenantId: "tenant-1",
         principalId: "prn-1",
         agentId: "agt-1",
-        sessionId: null,
+        sessionId: "sess-chat",
         resource: "tool:notion__create_page",
         action: "Run notion__create_page",
         context: { title: "demo" },
@@ -348,7 +379,13 @@ describe("MyraChatSurface", () => {
         QueryClientProvider,
         { client },
         React.createElement(MyraChatSurface, {
-          session: readySession(() => {}),
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-chat",
+            send: () => {},
+          }),
           tenantId: "tenant-1",
         }),
       ),

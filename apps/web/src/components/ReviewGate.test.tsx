@@ -375,6 +375,26 @@ describe("ReviewGate — sessionId filter", () => {
     });
     expect(screen.queryByTestId("approval-appr-other")).toBeNull();
   });
+
+  it("shows nothing when session scope is required but sessionId is unknown", async () => {
+    const { ReviewGate } =
+      require("./ReviewGate") as typeof import("./ReviewGate");
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(ReviewGate, {
+          tenantId: "tenant-1",
+          sessionScope: "session",
+        }),
+      ),
+    );
+    await waitFor(() => expect(mockListApprovals).not.toHaveBeenCalled());
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
 });
 
 describe("ReviewGate — large context values", () => {

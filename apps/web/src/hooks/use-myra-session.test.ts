@@ -478,10 +478,13 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
   });
 
   it("does not mark a dead session live if the stream drops during the launch window", async () => {
-    let resolveLaunch: (v: { launched: boolean }) => void = () => {};
+    let resolveLaunch: (v: {
+      launched: boolean;
+      sessionId?: string;
+    }) => void = () => {};
     launchInstanceSession.mockImplementation(
       () =>
-        new Promise<{ launched: boolean }>((res) => {
+        new Promise<{ launched: boolean; sessionId?: string }>((res) => {
           resolveLaunch = res;
         }),
     );
@@ -503,7 +506,7 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     // The launch then reports success — but the session it would mark live was
     // already torn down, so it must NOT flip live (CL-3280).
     await act(async () => {
-      resolveLaunch({ launched: true });
+      resolveLaunch({ launched: true, sessionId: "ses-mid-launch" });
       await Promise.resolve();
     });
 
@@ -511,6 +514,7 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     // Never reached a live session, so the notice is "connecting", not
     // "reconnecting".
     expect(result.current.connectionNotice).toBe("connecting");
+    expect(result.current.sessionId).toBe("ses-mid-launch");
   });
 
   it("surfaces a terminal fatal state on a fatal launch failure and does not relaunch", async () => {

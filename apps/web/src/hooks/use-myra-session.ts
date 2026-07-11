@@ -591,21 +591,22 @@ export function useMyraSession(
         const launch = await launchInstanceSession(targetInstanceId);
         if (cancelled) return;
         if (launch.launched) {
-          // The stream may have dropped during the launch window, in which case
-          // handleConnectionLoss already tore the session down and scheduled a
-          // reconnect. Don't mark a now-dead session live or clear that timer —
-          // let the reconnect rebuild it (CL-3280).
-          if (sessionRef.current === null) {
-            scheduleReconnect();
-            return;
-          }
-          clearReconnectTimer();
           if (
             typeof launch.sessionId === "string" &&
             launch.sessionId.length > 0
           ) {
             setSessionId(launch.sessionId);
           }
+          // The stream may have dropped during the launch window, in which case
+          // handleConnectionLoss already tore the session down and scheduled a
+          // reconnect. Don't mark a now-dead session live or clear that timer —
+          // let the reconnect rebuild it (CL-3280). sessionId is still captured
+          // above so ReviewGate stays scoped across reconnect (CL-3286).
+          if (sessionRef.current === null) {
+            scheduleReconnect();
+            return;
+          }
+          clearReconnectTimer();
           setLive(true);
           setHasBeenLive(true);
           void flushQueue();

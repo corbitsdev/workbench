@@ -16,11 +16,17 @@ export type ReviewGateProps = {
   /** Interchange tenant ID used to scope approval requests. */
   tenantId: string;
   /**
-   * Optional Interchange session ID. When provided, only approvals whose
-   * sessionId matches are shown. When omitted, all tenant-level pending
-   * approvals are shown.
+   * Interchange session ID. When `sessionScope` is `"session"`, only approvals
+   * whose sessionId matches are shown. When `sessionScope` is `"tenant"`, a
+   * provided id filters; when omitted, all tenant pending approvals are shown.
    */
   sessionId?: string;
+  /**
+   * `"session"` (Myra chat): show nothing until `sessionId` is known, then
+   * filter to that session. `"tenant"`: fall back to all tenant approvals when
+   * `sessionId` is omitted.
+   */
+  sessionScope?: "tenant" | "session";
 };
 
 type RequestState = "idle" | "approving" | "rejecting";
@@ -173,17 +179,26 @@ function ContextValue({ value }: { value: unknown }) {
   );
 }
 
-export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
+export function ReviewGate({
+  tenantId,
+  sessionId,
+  sessionScope = "tenant",
+}: ReviewGateProps) {
   const queryClient = useQueryClient();
   const prefersReducedMotion = useReducedMotion();
   const enabled = tenantId !== "";
+  const sessionFilterReady =
+    sessionScope === "tenant" || (sessionId !== undefined && sessionId !== "");
   const { data: approvals = [] } = useQuery({
-    queryKey: ["approvals", tenantId, sessionId],
+    queryKey: ["approvals", tenantId, sessionId, sessionScope],
+    enabled: enabled && sessionFilterReady,
     queryFn: async () => {
       const all = await listApprovals(tenantId);
+      if (sessionScope === "session" && sessionId) {
+        return all.filter((a) => a.sessionId === sessionId);
+      }
       return sessionId ? all.filter((a) => a.sessionId === sessionId) : all;
     },
-    enabled,
   });
 
   // Event-driven refresh replaces the former unconditional poll (CL-3285): the
@@ -250,7 +265,7 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
       await approveRequest(tenantId, id);
       patchItemState(id, { requestState: "idle" });
       await queryClient.invalidateQueries({
-        queryKey: ["approvals", tenantId, sessionId],
+        queryKey: ["approvals", tenantId, sessionId, sessionScope],
       });
     } catch (err) {
       patchItemState(id, {
@@ -266,7 +281,7 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
       await rejectRequest(tenantId, id);
       patchItemState(id, { requestState: "idle" });
       await queryClient.invalidateQueries({
-        queryKey: ["approvals", tenantId, sessionId],
+        queryKey: ["approvals", tenantId, sessionId, sessionScope],
       });
     } catch (err) {
       patchItemState(id, {
