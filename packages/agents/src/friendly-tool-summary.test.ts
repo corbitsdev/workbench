@@ -4,10 +4,12 @@ import {
   friendlyToolSummary,
   friendlyToolSummaryKnown,
   isCatalogMetaTool,
+  isExternalIntegrationTool,
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
 import { MYRA_TOOL_CATALOG } from "./dynamic-tools/catalog";
+import { canonicalizeToolNames, toLlmToolName } from "./tool-names";
 import type { ToolSummaryCall } from "./friendly-tool-summary";
 
 function call(
@@ -186,6 +188,39 @@ describe("friendlyToolSummary", () => {
     expect(isCatalogMetaTool("search_tools")).toBe(true);
     expect(isCatalogMetaTool("load_tools")).toBe(true);
     expect(isCatalogMetaTool("attio__create_record")).toBe(false);
+  });
+
+  it("classifies outside-service tools as external and workbench plumbing as internal", () => {
+    expect(isExternalIntegrationTool("attio__create_record")).toBe(true);
+    expect(isExternalIntegrationTool("exa__search")).toBe(true);
+    expect(
+      isExternalIntegrationTool("@workbench/tools-exa/exa:exa_search"),
+    ).toBe(true);
+    expect(isExternalIntegrationTool("artifact__memory_save")).toBe(false);
+    expect(
+      isExternalIntegrationTool(
+        "@workbench/tools-artifact/artifact:memory_save",
+      ),
+    ).toBe(false);
+    // Provider-less bare names are local runners / plumbing.
+    expect(isExternalIntegrationTool("read_file")).toBe(false);
+    expect(isExternalIntegrationTool("ask_principal")).toBe(false);
+    // Identity/roster and compose presets are workbench plumbing too.
+    expect(isExternalIntegrationTool("agents__list_agents")).toBe(false);
+    expect(isExternalIntegrationTool("compose__ab_preset_compose")).toBe(false);
+  });
+
+  it("classifies the LLM-facing runtime names of internal plumbing as internal", () => {
+    // The chat surface sees toLlmToolName(canonicalizeToolNames(...)) output,
+    // not bare definition names — the classifier must hold at that seam.
+    const internal = ["memory_save", "write_artifact", "workflow_start"];
+    for (const llmName of canonicalizeToolNames(internal).map(toLlmToolName)) {
+      expect(isExternalIntegrationTool(llmName)).toBe(false);
+    }
+    const external = ["attio_create_record", "exa_search", "linear_get_issue"];
+    for (const llmName of canonicalizeToolNames(external).map(toLlmToolName)) {
+      expect(isExternalIntegrationTool(llmName)).toBe(true);
+    }
   });
 
   it("falls back to the static phrase when an interpolating op has no useful arg", () => {

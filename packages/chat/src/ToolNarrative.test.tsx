@@ -223,6 +223,113 @@ describe("ToolNarrative", () => {
     expect(screen.queryByText("Done")).toBeNull();
   });
 
+  it("never renders a checkmark for settled tool calls", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "attio__query_records",
+        arguments: { query: "acme" },
+        result: "[]",
+        isError: false,
+      },
+    ];
+    const { container } = render(<ToolNarrative toolCalls={calls} />);
+    expect(
+      container.querySelector('polyline[points="20 6 9 17 4 12"]'),
+    ).toBeNull();
+  });
+
+  it("marks settled external tools with a bullet and internal tools with none", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "e1",
+        name: "attio__query_records",
+        result: "[]",
+        isError: false,
+      },
+      { id: "i1", name: "memory_save", result: "ok", isError: false },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={(c) =>
+          c.name === "memory_save" ? "Saving a memory" : "Searching Attio"
+        }
+        isExternalTool={(name) => name.includes("__")}
+      />,
+    );
+    expect(screen.getAllByTestId("tool-marker-bullet")).toHaveLength(1);
+    // Internal row still renders (and stays expandable), just without a marker.
+    const internal = screen.getByText("Saving a memory");
+    expect(
+      internal
+        .closest("button")
+        ?.querySelector('[data-testid="tool-marker-bullet"]') ?? null,
+    ).toBeNull();
+  });
+
+  it("keeps a distinct error marker on failed tool calls", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "attio__create_record",
+        result: "boom",
+        isError: true,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        isExternalTool={(name) => name.includes("__")}
+      />,
+    );
+    expect(screen.getByTestId("tool-marker-error")).toBeDefined();
+    expect(screen.queryByTestId("tool-marker-bullet")).toBeNull();
+  });
+
+  it("uses a bullet, not a checkmark, on the collapsed summary line", () => {
+    const calls = [
+      settled("c1", "attio__get_record"),
+      settled("c2", "attio__get_record"),
+      settled("c3", "linear__get_issue"),
+    ];
+    const { container } = render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did a bunch of things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+        isExternalTool={(name) => name.includes("__")}
+      />,
+    );
+    screen.getByText("Did a bunch of things");
+    expect(
+      container.querySelector('polyline[points="20 6 9 17 4 12"]'),
+    ).toBeNull();
+    expect(screen.getAllByTestId("tool-marker-bullet").length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  it("renders the collapsed summary plain when every call is internal", () => {
+    const calls = [
+      settled("c1", "memory_save"),
+      settled("c2", "write_artifact"),
+      settled("c3", "workflow_start"),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did internal things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+        isExternalTool={(name) => name.includes("__")}
+      />,
+    );
+    screen.getByText("Did internal things");
+    expect(screen.queryByTestId("tool-marker-bullet")).toBeNull();
+  });
+
   it('summarizes a non-priority arg as "key: value" when no known key is present', () => {
     const calls: ToolCall[] = [
       { id: "c1", name: "fetch_rows", arguments: { limit: 10 }, result: "ok" },
