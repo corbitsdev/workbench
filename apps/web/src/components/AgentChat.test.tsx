@@ -140,13 +140,16 @@ describe("AgentChat — fatal launch error", () => {
   it("does not leak raw error strings to the user", async () => {
     defaultLaunch = { launched: false, launchError: "502 Bad Gateway" };
 
-    const view = renderAgentChat();
+    const view = renderAgentChat({ retryDelayMs: 10_000 });
 
     await waitFor(() => {
-      expect(view.getByText(/could not be reached/i)).toBeTruthy();
+      expect(
+        view.getByText(/waiting for loop to become available/i),
+      ).toBeTruthy();
     });
 
     expect(view.queryByText(/502 Bad Gateway/)).toBeNull();
+    expect(view.queryByText(/Bad Gateway/)).toBeNull();
   });
 });
 
