@@ -830,11 +830,13 @@ describe("GET /tenants/:tenantId/approvals/stream", () => {
     // Wrap a real bus so the test can observe that abort tears the subscription
     // down (the bus itself exposes no listener count).
     const realBus = createApprovalsEventBus();
+    let subscribed = false;
     let unsubscribed = false;
     const bus = {
       publish: (event: ApprovalEvent) => realBus.publish(event),
       subscribe: (tenantId: string, listener: (e: ApprovalEvent) => void) => {
         const off = realBus.subscribe(tenantId, listener);
+        subscribed = true;
         return () => {
           unsubscribed = true;
           off();
@@ -854,14 +856,34 @@ describe("GET /tenants/:tenantId/approvals/stream", () => {
 
     const reader =
       res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
-    // Let the streamSSE callback register its bus subscription before publishing.
-    await new Promise((r) => setTimeout(r, 10));
+    // Wait until the streamSSE callback has actually registered its bus
+    // subscription before publishing, rather than a fixed sleep — a published
+    // event before subscribe would be lost, and a fixed delay flakes under load.
+    for (let i = 0; i < 100 && !subscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(subscribed).toBe(true);
     bus.publish({ tenantId: "tenant-1", sessionId: "sess-1", kind: "created" });
 
     const frame = await readWithTimeout(reader, 1000);
     expect(frame).toContain("event: approvals");
-    expect(frame).toContain('"kind":"created"');
-    expect(frame).not.toContain("resource");
+    // Parse the frame's data line and assert the payload is EXACTLY the change
+    // notification — no approval rows or tool-call arguments leak onto the wire.
+    const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+    const payload = JSON.parse(dataLine!.replace(/^data:\s*/, "")) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toEqual({
+      tenantId: "tenant-1",
+      sessionId: "sess-1",
+      kind: "created",
+    });
+    expect(Object.keys(payload).sort()).toEqual([
+      "kind",
+      "sessionId",
+      "tenantId",
+    ]);
 
     await reader.cancel().catch(() => {});
     controller.abort();
