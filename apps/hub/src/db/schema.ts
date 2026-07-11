@@ -14,7 +14,14 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { adminAuditActions, feedbackSubjectKinds } from "@workbench/shared";
+import {
+  type TaskLink,
+  adminAuditActions,
+  feedbackSubjectKinds,
+  taskSources,
+  taskStatuses,
+  taskSyncStates,
+} from "@workbench/shared";
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -339,6 +346,79 @@ export const artifactVersion = pgTable(
     ),
   }),
 );
+
+// Native Workbench tasks (CL-3302): a pointer to work with a state machine and
+// downstream mirrors. Workbench-owned — text principal/tenant columns held by
+// value, no FK to any interchange table. The (tenant, owner, status) index
+// serves the inbox query.
+export const task = pgTable(
+  "task",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    ownerPrincipalId: text("owner_principal_id").notNull(),
+    createdByPrincipalId: text("created_by_principal_id").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    status: text("status", { enum: taskStatuses }).notNull().default("open"),
+    source: text("source", { enum: taskSources }).notNull(),
+    sourceRef: text("source_ref"),
+    due: timestamp("due"),
+    links: jsonb("links").$type<TaskLink[]>().notNull().default([]),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    taskTenantOwnerStatusIdx: index("task_tenant_owner_status_idx").on(
+      t.tenantId,
+      t.ownerPrincipalId,
+      t.status,
+    ),
+  }),
+);
+
+export type TaskRow = typeof task.$inferSelect;
+
+// A task's mirror in a downstream system (Attio, ...). One row per
+// (task, adapter) — the unique constraint is the create-idempotency backstop.
+// `actorPrincipalId` attributes the external write; `syncState = 'pending'` is
+// what the reconciler scans for. Failure detail never leaves the server.
+export const taskExternalRef = pgTable(
+  "task_external_ref",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => task.id, { onDelete: "cascade" }),
+    adapterId: text("adapter_id").notNull(),
+    externalId: text("external_id"),
+    externalUrl: text("external_url"),
+    syncState: text("sync_state", { enum: taskSyncStates })
+      .notNull()
+      .default("pending"),
+    actorPrincipalId: text("actor_principal_id").notNull(),
+    lastSyncedAt: timestamp("last_synced_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    taskExternalRefUniq: unique("task_external_ref_task_id_adapter_id_uniq").on(
+      t.taskId,
+      t.adapterId,
+    ),
+    taskExternalRefSyncStateIdx: index("task_external_ref_sync_state_idx").on(
+      t.syncState,
+    ),
+  }),
+);
+
+export type TaskExternalRefRow = typeof taskExternalRef.$inferSelect;
 
 // Tracks which workflow kinds are enabled within a tenant.
 //

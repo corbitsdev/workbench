@@ -68,9 +68,9 @@ describe("TaskLinkSchema", () => {
   });
 
   it("rejects an unknown link kind", () => {
-    expect(
-      TaskLinkSchema({ kind: "database", ref: "x" }),
-    ).toBeInstanceOf(type.errors);
+    expect(TaskLinkSchema({ kind: "database", ref: "x" })).toBeInstanceOf(
+      type.errors,
+    );
   });
 });
 
@@ -95,12 +95,20 @@ describe("TaskExternalRefSchema", () => {
     ).toBeInstanceOf(type.errors);
   });
 
-  it("does not surface an actor or error field at the boundary", () => {
+  it("treats externalUrl and lastSyncedAt as optional so a pending ref validates", () => {
+    const pending = TaskExternalRefSchema({
+      adapterId: "attio",
+      externalId: "",
+      syncState: "pending",
+    });
+    expect(pending).not.toBeInstanceOf(type.errors);
+  });
+
+  it("does not declare an actor field — attribution stays server-side", () => {
     const ref = TaskExternalRefSchema({
       adapterId: "attio",
       externalId: "task_abc",
       syncState: "synced",
-      actorPrincipalId: "principal-owner",
     });
     expect(ref).not.toBeInstanceOf(type.errors);
     if (!(ref instanceof type.errors)) {
