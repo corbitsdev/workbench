@@ -68,7 +68,12 @@ const AgentTemplate = type({
 });
 const AgentTemplateListResponse = type({ data: AgentTemplate.array() });
 
-const LaunchSessionResponse = type({ launched: "boolean" });
+const LaunchSessionResponse = type({
+  launched: "boolean",
+  // Interchange agent session id so the client can scope Action Requests to
+  // this chat (CL-3286). Null when the instance has no session row yet.
+  sessionId: "string | null",
+});
 
 const ReconcileGrantsResponse = type({
   templateKey: "string",
@@ -439,7 +444,13 @@ export function createAgentProvisioningRouter(
           },
           { sidecarRouter, grantStore },
         );
-        return c.json({ launched: true });
+        // Steady-state path for a live Myra instance (reload / reopen / proactive
+        // launch). Still return sessionId so ReviewGate can stay chat-scoped
+        // rather than falling open to the whole tenant (CL-3286).
+        return c.json({
+          launched: true,
+          sessionId: instance.sessionId ?? null,
+        });
       }
 
       // A stopped instance with endedAt set was explicitly deleted — it cannot be
