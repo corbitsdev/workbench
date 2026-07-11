@@ -2,7 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
-import type { ToolNarrativeProps } from "./ToolNarrative";
+import { ActivityPulse, type ToolNarrativeProps } from "./ToolNarrative";
 import { AgentTurn } from "./AgentTurn";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
@@ -287,7 +287,7 @@ export function ChatThread({
           data-testid="busy-indicator"
         >
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
-            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
+            <ActivityPulse />
             {busyLabel}
           </span>
         </div>

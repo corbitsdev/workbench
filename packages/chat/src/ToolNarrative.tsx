@@ -13,7 +13,7 @@ function ErrorIcon() {
   return (
     <span
       data-testid="tool-marker-error"
-      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red"
     >
       <svg
         className="h-2.5 w-2.5 text-white"
@@ -56,7 +56,7 @@ function SettledMarker({
   return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
-function ActiveIcon() {
+export function ActivityPulse() {
   const reduceMotion = useReducedMotion();
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -286,7 +286,7 @@ function ToolRow({
       >
         <span className="mt-0.5">
           {pending ? (
-            <ActiveIcon />
+            <ActivityPulse />
           ) : (
             <SettledMarker
               isError={call.isError === true}
@@ -297,11 +297,7 @@ function ToolRow({
         <span
           className={cn(
             "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            pending
-              ? "text-text-2"
-              : call.isError
-                ? "text-red-600"
-                : "text-text-3",
+            pending ? "text-text-2" : call.isError ? "text-red" : "text-text-3",
           )}
         >
           <span className="shrink-0">{summary}</span>
@@ -328,7 +324,7 @@ function ToolRow({
                 <p
                   className={cn(
                     "leading-relaxed",
-                    call.isError === true ? "text-red-600" : "text-text-2",
+                    call.isError === true ? "text-red" : "text-text-2",
                   )}
                 >
                   {friendlyOutcome}
@@ -339,7 +335,7 @@ function ToolRow({
                 call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -354,7 +350,7 @@ function ToolRow({
               {call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -480,7 +476,7 @@ function CollapsedToolSummary({
         <span
           className={cn(
             "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            hasError ? "text-red-600" : "text-text-3",
+            hasError ? "text-red" : "text-text-3",
           )}
         >
           <span className="min-w-0 truncate">{summary}</span>
