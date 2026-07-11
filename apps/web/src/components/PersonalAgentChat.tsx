@@ -157,6 +157,7 @@ export function PersonalAgentChat() {
       <div className="min-h-0 flex-1">
         <MyraChatSurface
           session={session}
+          tenantId={activeTenantId}
           headerLeft={switcher}
           onUserSend={maybeTitleFromFirstMessage}
           dockState={dockState}

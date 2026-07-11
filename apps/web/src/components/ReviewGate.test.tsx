@@ -33,6 +33,7 @@ function makeApproval(overrides: Partial<Approval> = {}): Approval {
     action: "Send an email to acme@example.com",
     context: null,
     status: "pending",
+    message: null,
     createdAt: new Date().toISOString(),
     resolvedAt: null,
     ...overrides,
