@@ -111,6 +111,7 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "linear_get_issue",
     "linear_list_teams",
     "linear_list_users",
+    "linear_create_issue",
   ],
   "@workbench/tools-notion/notion": [
     "notion_search",

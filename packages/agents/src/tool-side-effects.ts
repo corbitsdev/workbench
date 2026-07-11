@@ -64,4 +64,5 @@ export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "vercel__deploy_static_file",
   "deploy-artifact__vercel_deploy_artifact",
   "notion__create_page",
+  "linear__create_issue",
 ]);
