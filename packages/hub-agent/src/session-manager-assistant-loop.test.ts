@@ -84,7 +84,7 @@ function makeCrypto(kp: KeyPair): CryptoProvider {
   };
 }
 
-function makeBundle(): HarnessBundle {
+function makeBundle(opts: { failClose?: boolean } = {}): HarnessBundle {
   const harness = {
     start: () => {
       /* no-op */
@@ -93,7 +93,7 @@ function makeBundle(): HarnessBundle {
       /* no-op */
     },
     close: async () => {
-      /* no-op: eviction closes the harness */
+      if (opts.failClose === true) throw new Error("close boom");
     },
     deliver: () => {
       /* no-op */
@@ -127,7 +127,10 @@ type Fixture = {
   emit: (event: InferenceEvent) => void;
 };
 
-async function makeFixture(address: string): Promise<Fixture> {
+async function makeFixture(
+  address: string,
+  opts: { failClose?: boolean } = {},
+): Promise<Fixture> {
   const dataDir = await tempDir();
   const buildCalls: BuildHarnessArgs[] = [];
   const builder: HarnessBuilder = {
@@ -136,7 +139,7 @@ async function makeFixture(address: string): Promise<Fixture> {
     },
     async build(args) {
       buildCalls.push(args);
-      return makeBundle();
+      return makeBundle(opts);
     },
   };
   const forwarded: InferenceEvent[] = [];
@@ -170,11 +173,15 @@ async function makeFixture(address: string): Promise<Fixture> {
   };
 }
 
-function runStarted(seq: number): InferenceEvent {
+function runStarted(
+  seq: number,
+  messageRunId = "run-1",
+  messageId = "msg-1",
+): InferenceEvent {
   return {
     type: "message.run.started",
     seq,
-    data: { messageId: "msg-1", messageRunId: "run-1", receivedAt: 0 },
+    data: { messageId, messageRunId, receivedAt: 0 },
   };
 }
 
@@ -362,6 +369,60 @@ describe("SessionManager assistant output loop guard", () => {
     expect(ended.data.status).toBe("failed");
     expect(ended.data.error?.kind).toBe("assistant_loop_interrupted");
     await until(() => !fx.manager.hasSession(address), "session eviction");
+  });
+
+  test("every open run bracket is settled with the interrupted ended", async () => {
+    const address = "interleaved@local";
+    const fx = await makeFixture(address);
+
+    fx.emit(runStarted(1, "run-1", "msg-1"));
+    fx.emit(runStarted(2, "run-2", "msg-2"));
+    fx.emit(inferenceDone(3, "Same answer."));
+    fx.emit(inferenceDone(4, "Same answer."));
+    fx.emit(inferenceDone(5, "Same answer."));
+
+    const endeds = fx.forwarded.filter((e) => e.type === "message.run.ended");
+    expect(endeds).toHaveLength(2);
+    const settled = new Map(
+      endeds.flatMap((e) =>
+        e.type === "message.run.ended"
+          ? [[e.data.messageRunId, e.data] as const]
+          : [],
+      ),
+    );
+    expect([...settled.keys()].sort()).toEqual(["run-1", "run-2"]);
+    expect(settled.get("run-1")?.messageId).toBe("msg-1");
+    expect(settled.get("run-2")?.messageId).toBe("msg-2");
+    for (const data of settled.values()) {
+      expect(data.status).toBe("failed");
+      expect(data.error?.kind).toBe("assistant_loop_interrupted");
+    }
+    await until(() => !fx.manager.hasSession(address), "session eviction");
+  });
+
+  test("a failed loop-interrupt eviction unmutes the still-live session", async () => {
+    const address = "zombie@local";
+    const fx = await makeFixture(address, { failClose: true });
+
+    fx.emit(runStarted(1));
+    fx.emit(inferenceDone(2, "Same answer."));
+    fx.emit(inferenceDone(3, "Same answer."));
+    fx.emit(inferenceDone(4, "Same answer."));
+
+    expect(
+      fx.forwarded.filter((e) => e.type === "message.run.ended"),
+    ).toHaveLength(1);
+
+    // The eviction rejects (harness close fails); the session must come
+    // back to life instead of staying muted until the idle sweep.
+    let probe = 0;
+    await until(() => {
+      const countBefore = fx.forwarded.length;
+      probe += 1;
+      fx.emit(inferenceDone(100 + probe, `probe ${String(probe)}`));
+      return fx.forwarded.length > countBefore;
+    }, "event forwarding resumes after failed eviction");
+    expect(fx.manager.hasSession(address)).toBe(true);
   });
 
   test("a user message resets the counter", async () => {
