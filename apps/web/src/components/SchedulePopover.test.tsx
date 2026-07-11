@@ -42,7 +42,8 @@ function makeFetch(
   return mock((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     if (url.includes("/me/schedules")) {
-      if (method === "GET") return Promise.resolve(jsonResponse(schedules));
+      if (method === "GET")
+        return Promise.resolve(jsonResponse({ items: schedules }));
       onMutate?.(url, init as RequestInit);
       return Promise.resolve(jsonResponse(existingSchedule, 201));
     }
