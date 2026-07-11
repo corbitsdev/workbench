@@ -25,11 +25,19 @@ describe("AgentTurn", () => {
     const message = agentMessage({
       reasoning: "I weighed the options",
       toolCalls: [
-        { id: "c1", name: "attio__query_records", result: "[]", isError: false },
+        {
+          id: "c1",
+          name: "attio__query_records",
+          result: "[]",
+          isError: false,
+        },
       ],
     });
     const { container } = render(
-      <AgentTurn message={message} formatToolSummary={() => "Searching Attio"} />,
+      <AgentTurn
+        message={message}
+        formatToolSummary={() => "Searching Attio"}
+      />,
     );
     const text = container.textContent ?? "";
     const reasoningAt = text.indexOf("Reasoning");
@@ -65,7 +73,11 @@ describe("AgentTurn", () => {
       />,
     );
     // Answer text arrived: the disclosure collapses back to its label.
-    expect(screen.queryByText("Working through it")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /Reasoning/i })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
   });
 
   it("a manual toggle sticks over the auto behavior", () => {
@@ -76,7 +88,11 @@ describe("AgentTurn", () => {
     });
     render(<AgentTurn message={message} />);
     fireEvent.click(screen.getByRole("button", { name: /Reasoning/i }));
-    expect(screen.queryByText("Working through it")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: /Reasoning/i })
+        .getAttribute("aria-expanded"),
+    ).toBe("false");
   });
 
   it("renders feedback once, after the tool narrative, keyed on feedbackId", () => {
@@ -84,7 +100,12 @@ describe("AgentTurn", () => {
     const message = agentMessage({
       feedbackId: "t1",
       toolCalls: [
-        { id: "c1", name: "attio__query_records", result: "[]", isError: false },
+        {
+          id: "c1",
+          name: "attio__query_records",
+          result: "[]",
+          isError: false,
+        },
       ],
     });
     const { container } = render(
