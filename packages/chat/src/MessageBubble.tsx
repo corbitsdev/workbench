@@ -151,7 +151,7 @@ function FileChip({
         <span className="text-text-3">{formatBytes(attachment.size)}</span>
       </button>
       {failed && (
-        <span role="alert" className="text-xs text-red-500">
+        <span role="alert" className="text-xs text-red">
           Couldn't download — try again
         </span>
       )}

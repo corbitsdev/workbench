@@ -14,19 +14,22 @@ type Thread = {
 
 const sendSpy = mock((_text: string) => {});
 const autoTitleSpy = mock((_text: string) => {});
+const clearPendingSpy = mock(() => {});
 let threads: Thread[];
+let pendingMessageValue: string | null = null;
+let sessionState: { phase: string; message?: string } = { phase: "ready" };
 
 mock.module("../lib/chat-launcher-context", () => ({
   useChatLauncher: () => ({
     hidden: false,
     registerReconnect: () => {},
-    pendingMessage: null,
-    clearPendingMessage: () => {},
+    pendingMessage: pendingMessageValue,
+    clearPendingMessage: clearPendingSpy,
   }),
 }));
 mock.module("../hooks/use-myra-session", () => ({
   useMyraSession: () => ({
-    state: { phase: "ready" },
+    state: sessionState,
     messages: [],
     activity: null,
     send: sendSpy,
@@ -124,6 +127,9 @@ function renderAt(pathname: string) {
 beforeEach(() => {
   sendSpy.mockClear();
   autoTitleSpy.mockClear();
+  clearPendingSpy.mockClear();
+  pendingMessageValue = null;
+  sessionState = { phase: "ready" };
   threads = [
     {
       id: "thr-other",
@@ -142,6 +148,17 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("PersonalAgentChat dock", () => {
+  it("drops a pending Open-in-Myra message on a fatal launch instead of delivering it later", () => {
+    // A fatal launch is terminal like error/credential-error: the queued
+    // "Open in Myra" message must be cleared, not held to be delivered when a
+    // later manual retry reaches `ready` (CL-3292).
+    pendingMessageValue = "open in myra text";
+    sessionState = { phase: "fatal", message: "Forbidden" };
+    renderAt("/artifacts/art-1");
+    expect(clearPendingSpy).toHaveBeenCalled();
+    expect(sendSpy).not.toHaveBeenCalled();
+  });
+
   it("auto-titles when the user sends the first message via the dock surface", () => {
     // The bug being fixed: the dock surface must wire onUserSend so a typed
     // first message titles the thread, not just the programmatic handoff paths.

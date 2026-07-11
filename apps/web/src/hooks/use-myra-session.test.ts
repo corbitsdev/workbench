@@ -348,8 +348,8 @@ describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
     );
     await waitFor(() => expect(result.current.state.phase).toBe("ready"));
     await waitFor(() => expect(result.current.live).toBe(true));
-    // A healthy first connect is never "reconnecting".
-    expect(result.current.reconnecting).toBe(false);
+    // A healthy live session shows no connection notice.
+    expect(result.current.connectionNotice).toBe(null);
     await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
 
     await act(async () => {
@@ -359,9 +359,9 @@ describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
 
     expect(result.current.state.phase).toBe("ready");
     expect(result.current.live).toBe(false);
-    // A drop after a live session is reconnecting; the first-connect window is
-    // not (guards the misleading-notice regression).
-    expect(result.current.reconnecting).toBe(true);
+    // A drop after a live session is "reconnecting"; the first-connect window is
+    // "connecting" (guards the misleading-notice regression).
+    expect(result.current.connectionNotice).toBe("reconnecting");
   });
 });
 
@@ -384,9 +384,10 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
 
     await waitFor(() => expect(result.current.state.phase).toBe("ready"));
     expect(result.current.live).toBe(false);
-    // Never been live, so this is a first-connect window, not a reconnect — the
-    // misleading "Reconnecting" notice must not show (CL-3280).
-    expect(result.current.reconnecting).toBe(false);
+    // Never been live and the sidecar is down: a first-connect window shows the
+    // "connecting" notice (not "reconnecting"), so the stuck-send state is
+    // explained rather than silent (CL-3292).
+    expect(result.current.connectionNotice).toBe("connecting");
     expect(result.current.messages.map((m) => m.content)).toContain(
       "hello from history",
     );
@@ -493,7 +494,33 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     });
 
     expect(result.current.live).toBe(false);
-    expect(result.current.reconnecting).toBe(false);
+    // Never reached a live session, so the notice is "connecting", not
+    // "reconnecting".
+    expect(result.current.connectionNotice).toBe("connecting");
+  });
+
+  it("surfaces a terminal fatal state on a fatal launch failure and does not relaunch", async () => {
+    // "Forbidden" is neither transient nor a missing-config error, so
+    // classifyLaunchState returns `fatal`.
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({ launched: false, launchError: "Forbidden" }),
+    );
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    // A fatal launch is terminal, not an outage: the surface goes to `fatal` and
+    // the live subscriptions are torn down (CL-3292).
+    await waitFor(() => expect(result.current.state.phase).toBe("fatal"));
+    expect(result.current.live).toBe(false);
+    await waitFor(() => expect(destroyed[0]).toBe(1));
+
+    // Terminal means the connection reporter must NOT re-drive a relaunch loop;
+    // only one session is ever created. (An `error` phase would relaunch here.)
+    await new Promise((r) => setTimeout(r, 30));
+    expect(destroyed.length).toBe(1);
   });
 
   it("does not resend a queued message that fails non-recoverably during flush", async () => {

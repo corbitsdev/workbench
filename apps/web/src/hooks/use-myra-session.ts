@@ -48,7 +48,12 @@ export type MyraSessionPhase =
   | { phase: "provisioning" }
   | { phase: "credential-error" }
   | { phase: "ready"; session: InstanceSession }
-  | { phase: "error"; message: string };
+  // A transient connection failure — the reconnecting overlay retries this for
+  // a bounded window before giving up to a manual retry.
+  | { phase: "error"; message: string }
+  // A non-recoverable launch failure (e.g. auth). Terminal: not auto-retried, so
+  // it does not spin the reconnecting overlay (CL-3292).
+  | { phase: "fatal"; message: string };
 
 // A text send made while the sidecar was unreachable, awaiting flush on
 // reconnect. `failed` is set after a delivery attempt failed. `permanent` marks
@@ -307,11 +312,12 @@ export type MyraSession = {
   /** A queued send failed transiently and is awaiting a retry on reconnect. */
   queuedFailed: boolean;
   /**
-   * A previously-live session has dropped and is reconnecting. False during a
-   * normal first-connect (never-yet-live) window, so "reconnecting" copy is
-   * only shown after a real drop.
+   * Why the live connection is not up while the transcript is shown, so the UI
+   * can explain the deferred-send state with the right copy: `"connecting"` on a
+   * never-yet-live first connect, `"reconnecting"` after a live session drops,
+   * `null` once live.
    */
-  reconnecting: boolean;
+  connectionNotice: "connecting" | "reconnecting" | null;
   send: (
     text: string,
     attachments?: PendingAttachment[],
@@ -602,6 +608,16 @@ export function useMyraSession(
           setState({ phase: "credential-error" });
           return;
         }
+        if (classified.kind === "fatal") {
+          // A non-recoverable, non-transient launch failure (e.g. an auth
+          // error) is by definition not an outage — surface a terminal `fatal`
+          // state and tear down, instead of reconnecting forever. `fatal` (not
+          // `error`) so the reconnecting overlay does not auto-retry it (CL-3292).
+          teardownSubscriptions();
+          setLive(false);
+          setState({ phase: "fatal", message: classified.message });
+          return;
+        }
         scheduleReconnect();
       } catch {
         if (!cancelled) scheduleReconnect();
@@ -810,9 +826,13 @@ export function useMyraSession(
   const queuedFailed = pendingQueueRef.current.some(
     (q) => q.failed && !q.permanent,
   );
-  // Only a drop *after* a live session counts as reconnecting; the first-connect
-  // launch window is not (CL-3280).
-  const reconnecting = hasBeenLive && !live;
+  // While the transcript is shown but the live connection is not up, explain the
+  // deferred-send state: a drop after a live session is "reconnecting"; a
+  // never-yet-live first connect is "connecting" (CL-3280, CL-3292).
+  let connectionNotice: "connecting" | "reconnecting" | null = null;
+  if (!live) {
+    connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
+  }
 
   const activity = activeSession
     ? toChatActivity(activeSession.activity)
@@ -994,7 +1014,7 @@ export function useMyraSession(
     activity,
     live,
     queuedFailed,
-    reconnecting,
+    connectionNotice,
     send,
     reconnect,
     instanceId: resolvedInstanceId,

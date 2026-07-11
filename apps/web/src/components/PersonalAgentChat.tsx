@@ -95,7 +95,8 @@ export function PersonalAgentChat() {
     setOpen(true);
     if (
       session.state.phase === "error" ||
-      session.state.phase === "credential-error"
+      session.state.phase === "credential-error" ||
+      session.state.phase === "fatal"
     ) {
       clearPendingMessage();
       return;

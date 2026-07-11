@@ -11,6 +11,7 @@ mock.module("../lib/approvals-api", () => ({
   listApprovals: mock(async () => approvalsResult),
   approveRequest: mock(async () => ({})),
   rejectRequest: mock(async () => ({})),
+  subscribeApprovals: mock(() => () => {}),
 }));
 
 mock.module("@workbench/chat", () => ({
@@ -120,7 +121,7 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
     activity: null,
     live: true,
     queuedFailed: false,
-    reconnecting: false,
+    connectionNotice: null,
     send: () => {},
     reconnect: () => {},
     instanceId: null,
@@ -166,6 +167,26 @@ describe("MyraChatSurface", () => {
     expect(reconnected).toBe(1);
   });
 
+  it("shows a terminal notice with a manual retry on a fatal launch", () => {
+    let reconnected = 0;
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          state: { phase: "fatal", message: "Forbidden" },
+          reconnect: () => reconnected++,
+        }),
+      }),
+    );
+    expect(screen.getByTestId("notice").textContent).toMatch(
+      /Myra couldn't start/,
+    );
+    // The composer is disabled (nothing can be sent to a session that can't
+    // start), but a manual Try again re-attempts.
+    screen.getByTestId("disabled");
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(reconnected).toBe(1);
+  });
+
   it("renders messages and wires send when ready", () => {
     const sendSpy = mock((_t: string) => {});
     const session = makeSession({
@@ -184,14 +205,14 @@ describe("MyraChatSurface", () => {
     expect(sendSpy.mock.calls[0]?.[0]).toBe("hello");
   });
 
-  it("shows a reconnecting notice and keeps the composer enabled while reconnecting", () => {
+  it("shows a reconnecting notice and keeps the composer enabled after a drop", () => {
     render(
       React.createElement(MyraChatSurface, {
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
-          reconnecting: true,
+          connectionNotice: "reconnecting",
         }),
       }),
     );
@@ -202,14 +223,31 @@ describe("MyraChatSurface", () => {
     expect(screen.queryByTestId("disabled")).toBeNull();
   });
 
-  it("hides the reconnecting notice during a normal first-connect window (not-yet-live but not reconnecting)", () => {
+  it("shows a connecting notice on a first connect before the session is live", () => {
     render(
       React.createElement(MyraChatSurface, {
         session: makeSession({
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
-          reconnecting: false,
+          connectionNotice: "connecting",
+        }),
+      }),
+    );
+    expect(screen.getByTestId("accessory").textContent).toMatch(
+      /Connecting to Myra/,
+    );
+    expect(screen.queryByTestId("disabled")).toBeNull();
+  });
+
+  it("hides the connection notice once the session is live", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: true,
+          connectionNotice: null,
         }),
       }),
     );
@@ -224,7 +262,7 @@ describe("MyraChatSurface", () => {
           // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
           state: { phase: "ready", session: {} as any },
           live: false,
-          reconnecting: true,
+          connectionNotice: "reconnecting",
           queuedFailed: true,
           reconnect: () => reconnected++,
         }),
