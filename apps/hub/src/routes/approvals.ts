@@ -5,6 +5,8 @@ import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { approval } from "../db/schema";
+import type { HubDb } from "../db";
+import { callerCanResolveApproval } from "../lib/instance-ownership";
 
 const log = getLogger(["api", "approvals"]);
 
@@ -20,11 +22,31 @@ export const InternalApprovalCreateSchema = type({
   "context?": "Record<string, unknown>",
 });
 
+export const RejectBodySchema = type({ "message?": "string" });
+
 // ─── User-facing routes (BetterAuth session) ───────────────────────
 // Mounted under /api/v1 with the existing auth middleware.
 
+// Confirms the caller has a user principal in the tenant. Checked before the
+// approval is fetched so a non-member cannot probe whether a given approval id
+// exists (a 404 vs 403 existence oracle).
+async function isTenantMember(
+  db: HubDb,
+  tenantId: string,
+  userId: string,
+): Promise<boolean> {
+  const member = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.tenantId, tenantId),
+      eq(principal.kind, "user"),
+      eq(principal.refId, userId),
+    ),
+  });
+  return member !== undefined;
+}
+
 export function createApprovalsRouter(
-  db: DB["db"],
+  db: HubDb,
 ): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
 
@@ -55,18 +77,21 @@ export function createApprovalsRouter(
     const userId = c.get("userId");
     const { tenantId, approvalId } = c.req.param();
 
-    // Resolve the BetterAuth userId to an Interchange principalId before
-    // comparing against approval.principalId, which stores the Interchange ID.
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, tenantId),
-        eq(principal.kind, "user"),
-        eq(principal.refId, userId),
-      ),
-    });
-    if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
+    const member = await isTenantMember(db, tenantId, userId);
+    if (!member) return c.json({ error: "Forbidden" }, 403);
 
-    const principalId = callerPrincipal.id;
+    const [row] = await db
+      .select()
+      .from(approval)
+      .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+      .limit(1);
+    if (!row) return c.json({ error: "Not found" }, 404);
+
+    const canResolve = await callerCanResolveApproval(db, row, userId);
+    if (!canResolve) return c.json({ error: "Forbidden" }, 403);
+
+    if (row.status !== "pending")
+      return c.json({ error: "Already resolved" }, 409);
 
     const [updated] = await db
       .update(approval)
@@ -75,26 +100,11 @@ export function createApprovalsRouter(
         and(
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
-          eq(approval.principalId, principalId),
           eq(approval.status, "pending"),
         ),
       )
       .returning();
-
-    if (!updated) {
-      const row = await db
-        .select()
-        .from(approval)
-        .where(
-          and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)),
-        )
-        .limit(1)
-        .then((rows: { id: string; principalId: string }[]) => rows[0]);
-      if (!row) return c.json({ error: "Not found" }, 404);
-      if (row.principalId !== principalId)
-        return c.json({ error: "Forbidden" }, 403);
-      return c.json({ error: "Already resolved" }, 409);
-    }
+    if (!updated) return c.json({ error: "Already resolved" }, 409);
 
     log.info("Approval approved", { approvalId, tenantId });
     return c.json(formatApproval(updated));
@@ -103,52 +113,56 @@ export function createApprovalsRouter(
   router.post("/tenants/:tenantId/approvals/:approvalId/reject", async (c) => {
     const userId = c.get("userId");
     const { tenantId, approvalId } = c.req.param();
-    const body = (await c.req.json().catch(() => ({}))) as { message?: string };
 
-    // Resolve the BetterAuth userId to an Interchange principalId before
-    // comparing against approval.principalId, which stores the Interchange ID.
-    const callerPrincipal = await db.query.principal.findFirst({
-      where: and(
-        eq(principal.tenantId, tenantId),
-        eq(principal.kind, "user"),
-        eq(principal.refId, userId),
-      ),
-    });
-    if (!callerPrincipal) return c.json({ error: "Forbidden" }, 403);
+    // The reject body is optional — an empty body is a valid no-message reject,
+    // so it is parsed leniently. Non-empty content must still be valid JSON of
+    // the expected shape rather than being silently dropped.
+    const rawText = await c.req.text();
+    let rawBody: unknown = {};
+    if (rawText.trim() !== "") {
+      try {
+        rawBody = JSON.parse(rawText);
+      } catch {
+        return c.json({ error: "Invalid JSON" }, 400);
+      }
+    }
+    const body = RejectBodySchema(rawBody);
+    if (body instanceof type.errors) {
+      return c.json({ error: body.summary }, 400);
+    }
 
-    const principalId = callerPrincipal.id;
+    const member = await isTenantMember(db, tenantId, userId);
+    if (!member) return c.json({ error: "Forbidden" }, 403);
+
+    const [row] = await db
+      .select()
+      .from(approval)
+      .where(and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)))
+      .limit(1);
+    if (!row) return c.json({ error: "Not found" }, 404);
+
+    const canResolve = await callerCanResolveApproval(db, row, userId);
+    if (!canResolve) return c.json({ error: "Forbidden" }, 403);
+
+    if (row.status !== "pending")
+      return c.json({ error: "Already resolved" }, 409);
 
     const [updated] = await db
       .update(approval)
       .set({
         status: "rejected",
-        message: typeof body.message === "string" ? body.message : null,
+        message: body.message ?? null,
         resolvedAt: new Date(),
       })
       .where(
         and(
           eq(approval.id, approvalId),
           eq(approval.tenantId, tenantId),
-          eq(approval.principalId, principalId),
           eq(approval.status, "pending"),
         ),
       )
       .returning();
-
-    if (!updated) {
-      const row = await db
-        .select()
-        .from(approval)
-        .where(
-          and(eq(approval.id, approvalId), eq(approval.tenantId, tenantId)),
-        )
-        .limit(1)
-        .then((rows: { id: string; principalId: string }[]) => rows[0]);
-      if (!row) return c.json({ error: "Not found" }, 404);
-      if (row.principalId !== principalId)
-        return c.json({ error: "Forbidden" }, 403);
-      return c.json({ error: "Already resolved" }, 409);
-    }
+    if (!updated) return c.json({ error: "Already resolved" }, 409);
 
     log.info("Approval rejected", { approvalId, tenantId });
     return c.json(formatApproval(updated));

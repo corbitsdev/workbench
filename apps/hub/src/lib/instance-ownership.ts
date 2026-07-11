@@ -42,3 +42,38 @@ export async function resolveInstanceOwner(
 
   return { principalId: callerPrincipal.id, tenantId: instance.tenantId };
 }
+
+/**
+ * Whether the calling user may resolve (approve/reject) an approval. True when
+ * the approval targets the caller's own principal directly, or when it was
+ * created by an agent instance the caller owns. The instance path is what makes
+ * agent-created approvals resolvable at all: the sidecar records the agent's
+ * synthetic per-instance principal, not the owning user's principal, so a
+ * direct principal comparison never matches for a Myra approval.
+ */
+export async function callerCanResolveApproval(
+  db: HubDb,
+  approval: { principalId: string; tenantId: string },
+  userId: string,
+): Promise<boolean> {
+  const callerPrincipal = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.tenantId, approval.tenantId),
+      eq(principal.kind, "user"),
+      eq(principal.refId, userId),
+    ),
+  });
+  if (!callerPrincipal) return false;
+  if (approval.principalId === callerPrincipal.id) return true;
+
+  const instance = await db.query.agentInstance.findFirst({
+    where: and(
+      eq(agentInstance.principalId, approval.principalId),
+      eq(agentInstance.tenantId, approval.tenantId),
+    ),
+  });
+  if (!instance) return false;
+
+  const owner = await resolveInstanceOwner(db, instance.id, userId);
+  return owner !== null;
+}
