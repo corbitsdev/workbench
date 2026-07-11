@@ -453,6 +453,19 @@ export function isCatalogMetaTool(name: string): boolean {
 }
 
 /**
+ * The recognized friendly phrase for a tool call, or null when the tool id is
+ * not in the catalog (or a hand-authored interpolator declines). Lets a caller
+ * choose its own fallback — e.g. a backend-supplied action sentence — instead of
+ * the soft "Working on …" label, and without pattern-matching that label's text.
+ */
+export function friendlyToolSummaryKnown(call: ToolSummaryCall): string | null {
+  const phrase = PHRASES[toolOperationKey(call.name)];
+  if (phrase === undefined) return null;
+  if (typeof phrase === "string") return phrase;
+  return phrase(call.arguments ?? {}, call);
+}
+
+/**
  * A host `formatToolSummary`: renders a friendly action verb for a tool call.
  * Unknown operations fall back to a soft present-participle label — never the raw id.
  */

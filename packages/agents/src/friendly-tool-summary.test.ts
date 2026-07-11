@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   friendlyToolResult,
   friendlyToolSummary,
+  friendlyToolSummaryKnown,
   isCatalogMetaTool,
   summarizeToolCalls,
   toolOperationKey,
@@ -127,6 +128,21 @@ describe("friendlyToolSummary", () => {
     );
     expect(friendlyToolSummary(call("exa__search", { query: "hello" }))).toBe(
       "Searching the web for hello",
+    );
+  });
+
+  it("exposes the recognized phrase and null for unknown tools via friendlyToolSummaryKnown", () => {
+    // Recognized tool: returns the same phrase friendlyToolSummary renders.
+    expect(friendlyToolSummaryKnown(call("attio__list_objects"))).toBe(
+      "Browsing Attio objects",
+    );
+    // Unrecognized tool: null (not the soft "Working on …" fallback), so callers
+    // can choose their own fallback without pattern-matching the label text.
+    expect(
+      friendlyToolSummaryKnown(call("totally_unknown_xyz_tool")),
+    ).toBeNull();
+    expect(friendlyToolSummary(call("totally_unknown_xyz_tool"))).toBe(
+      "Working on totally unknown xyz tool",
     );
   });
 

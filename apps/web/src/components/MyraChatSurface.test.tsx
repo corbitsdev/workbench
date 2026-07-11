@@ -2,8 +2,16 @@
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import type { MyraSession } from "../hooks/use-myra-session";
+
+let approvalsResult: unknown[] = [];
+mock.module("../lib/approvals-api", () => ({
+  listApprovals: mock(async () => approvalsResult),
+  approveRequest: mock(async () => ({})),
+  rejectRequest: mock(async () => ({})),
+}));
 
 mock.module("@workbench/chat", () => ({
   ChatPanel: (props: {
@@ -96,6 +104,7 @@ mock.module("@workbench/chat", () => ({
 
 mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummary: () => "",
+  friendlyToolSummaryKnown: () => null,
   friendlyToolResult: () => null,
   isCatalogMetaTool: () => false,
   summarizeToolCalls: () => "",
@@ -213,6 +222,48 @@ describe("MyraChatSurface", () => {
       }),
     );
     expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
+  });
+
+  it("does not mount the approval gate when no tenant is set", () => {
+    approvalsResult = [];
+    render(
+      React.createElement(MyraChatSurface, { session: readySession(() => {}) }),
+    );
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+
+  it("mounts the approval gate and surfaces a pending approval for the tenant", async () => {
+    approvalsResult = [
+      {
+        id: "apr-1",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: null,
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "demo" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: readySession(() => {}),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    const gate = await screen.findByTestId("review-gate");
+    expect(gate.textContent).toContain("Run notion__create_page");
+    await screen.findByTestId("approve-apr-1");
+    await screen.findByTestId("reject-apr-1");
   });
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {

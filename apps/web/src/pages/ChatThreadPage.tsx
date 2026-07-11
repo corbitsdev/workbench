@@ -190,6 +190,7 @@ export function ChatThreadPage() {
         <div className="h-full min-w-0 flex-1">
           <MyraChatSurface
             session={session}
+            tenantId={activeTenantId}
             threadLabel={active?.label}
             onUserSend={maybeTitleFromFirstMessage}
             signalRouting={signalRouting}

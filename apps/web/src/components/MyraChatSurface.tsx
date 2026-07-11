@@ -31,6 +31,7 @@ import { useActiveContext } from "../lib/active-context-store";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { ActiveContextPills } from "./ActiveContextPills";
+import { ReviewGate } from "./ReviewGate";
 
 /**
  * Near-full-screen overlay wrapping the whole chat panel while expanded so the
@@ -118,6 +119,11 @@ const hideMyraSelfManagement = (call: { name: string }): boolean =>
 
 type MyraChatSurfaceProps = {
   session: MyraSession;
+  /**
+   * Active Interchange tenant. When present, an inline approval gate is mounted
+   * so a side-effect tool call parked on approval can be resolved from the chat.
+   */
+  tenantId?: string | null;
   /** Optional thread label shown as the agent tagline (multi-thread chat). */
   threadLabel?: string;
   /**
@@ -168,6 +174,7 @@ type MyraChatSurfaceProps = {
 
 export function MyraChatSurface({
   session,
+  tenantId,
   threadLabel,
   headerLeft,
   onUserSend,
@@ -396,11 +403,18 @@ export function MyraChatSurface({
       </p>
     ) : null;
 
+  // Mounted (not conditionally rendered) whenever a tenant is known so its poll
+  // runs; it renders nothing until a pending approval exists. Placed first so
+  // the actionable approval interrupt sits above the transient hints.
+  const reviewGate = tenantId ? <ReviewGate tenantId={tenantId} /> : null;
+
   const inputAccessory =
+    reviewGate !== null ||
     multiGateHint !== null ||
     attachedPills !== null ||
     resumeErrorNotice !== null ? (
       <div className="space-y-1.5">
+        {reviewGate}
         {resumeErrorNotice}
         {multiGateHint}
         {attachedPills}
