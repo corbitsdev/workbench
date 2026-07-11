@@ -173,6 +173,10 @@ function createMockSessionManager(): SessionManager & {
       mock.aborted.push({ address: agentAddress, reason });
       mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
     },
+    async abortTurn(agentAddress: string): Promise<void> {
+      if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
+      mock.addresses = mock.addresses.filter((a) => a !== agentAddress);
+    },
     deliverMessage(agentAddress: string, message: InboundMessage): void {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       mock.delivered.push({ agentAddress, message });

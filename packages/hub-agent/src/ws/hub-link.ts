@@ -40,6 +40,19 @@ import type {
   SessionEventSink,
   SessionManager,
 } from "../session-manager";
+import { USER_STOP_TURN_REASON } from "../session-manager";
+
+// WORKBENCH-LOCAL (CL-3339): the user-initiated turn abort rides the
+// session.abort frame shape with an extended reason that upstream's closed
+// AbortReason enum (and therefore the HubFrame union) rejects. Decoded
+// locally in handleMessage before the upstream union runs.
+const TurnAbortFrame = type({
+  type: "'session.abort'",
+  requestId: "string",
+  agentAddress: "string",
+  reason: `'${USER_STOP_TURN_REASON}'`,
+});
+type TurnAbortFrame = typeof TurnAbortFrame.infer;
 
 const logger = getLogger(["interchange", "hub-agent", "ws"]);
 
@@ -778,6 +791,25 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3339): the user-initiated "stop this turn" abort.
+  // Same frame shape as session.abort but with the extended reason
+  // `user_stop_turn`, which the upstream frame union rejects — decoded by
+  // TurnAbortFrame in handleMessage before HubFrame runs. Non-terminal:
+  // abortTurn settles the open runs and puts the agent to sleep (wakeable).
+  async function handleTurnAbort(frame: TurnAbortFrame): Promise<void> {
+    try {
+      await sessions.abortTurn(frame.agentAddress);
+      send({ type: "session.ack", requestId: frame.requestId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      send({
+        type: "session.error",
+        requestId: frame.requestId,
+        error: message,
+      });
+    }
+  }
+
   async function handleGrantsUpdate(frame: GrantsUpdateFrame): Promise<void> {
     try {
       await sessions.updateGrants(frame.agentAddress, frame.grants);
@@ -1096,6 +1128,13 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
     const validated = HubFrame(raw);
     if (validated instanceof type.errors) {
+      // WORKBENCH-LOCAL (CL-3339): the extended `user_stop_turn` abort is not
+      // in the upstream frame union — give it its own decode before rejecting.
+      const turnAbort = TurnAbortFrame(raw);
+      if (!(turnAbort instanceof type.errors)) {
+        await handleTurnAbort(turnAbort);
+        return;
+      }
       logger.warn`Invalid hub frame: ${validated.summary}`;
       return;
     }

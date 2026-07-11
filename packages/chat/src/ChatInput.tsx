@@ -8,7 +8,14 @@ import {
   useRef,
   useState,
 } from "react";
-import { ArrowUp, File as FileIcon, Paperclip, Plus, X } from "lucide-react";
+import {
+  ArrowUp,
+  File as FileIcon,
+  Paperclip,
+  Plus,
+  Square,
+  X,
+} from "lucide-react";
 import { Menu, MenuContent, MenuItem, MenuTrigger, cn } from "@workbench/ui";
 import {
   formatBytes,
@@ -32,6 +39,13 @@ export interface ChatInputProps {
     text: string,
     attachments?: PendingAttachment[],
   ) => void | Promise<void>;
+  /**
+   * Stops the agent's in-flight turn. While `busy` (and not disabled) the
+   * send control becomes an enabled stop button that fires this; when it
+   * returns a promise the button disables until the abort settles, and a
+   * rejection surfaces as a composer error.
+   */
+  onAbort?: () => void | Promise<void>;
   placeholder?: string;
   disabled?: boolean;
   /** When true the agent is processing; submission is blocked and a visual indicator is shown. */
@@ -58,6 +72,7 @@ export interface ChatInputProps {
  */
 export function ChatInput({
   onSend,
+  onAbort,
   placeholder,
   disabled,
   busy,
@@ -70,11 +85,16 @@ export function ChatInput({
   const [errors, setErrors] = useState<string[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [sending, setSending] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputId = useId();
 
   const isBlocked = disabled === true || busy === true || sending;
   const showBusy = busy === true || sending;
+  // While the agent works, the send control becomes a stop control (only the
+  // host-signalled `busy` counts — a local optimistic `sending` has nothing
+  // server-side to stop yet).
+  const showStop = busy === true && disabled !== true && onAbort !== undefined;
   const attachmentsEnabled =
     attachmentPolicy !== undefined &&
     attachmentPolicy.acceptedMimeTypes.length > 0;
@@ -146,6 +166,27 @@ export function ChatInput({
       return;
     }
     clearComposer();
+  };
+
+  const handleAbort = () => {
+    if (onAbort === undefined || aborting) return;
+    const result = onAbort();
+    if (!(result instanceof Promise)) return;
+    setAborting(true);
+    result.then(
+      () => {
+        setAborting(false);
+      },
+      (err: unknown) => {
+        setAborting(false);
+        setErrors((prev) => [
+          ...prev,
+          err instanceof Error && err.message.trim().length > 0
+            ? err.message
+            : "Couldn't stop. Try again.",
+        ]);
+      },
+    );
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -276,32 +317,50 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           className="chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
-        <button
-          type="button"
-          aria-label={showBusy ? "Waiting for agent" : "Send"}
-          aria-busy={showBusy}
-          onClick={submit}
-          disabled={
-            isBlocked || (draft.trim().length === 0 && pending.length === 0)
-          }
-          className={cn(
-            CIRCLE_BUTTON,
-            "bg-orange text-white transition-[background-color,transform] hover:bg-orange-deep active:scale-[0.97] disabled:active:scale-100",
-            // Busy keeps full color — the spinner reads as active work, not a
-            // greyed-out control the user might think is broken.
-            showBusy ? "disabled:opacity-100" : "disabled:opacity-50",
-          )}
-        >
-          {showBusy ? (
-            <span
-              data-testid="composer-busy-spinner"
-              aria-hidden="true"
-              className="block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
-            />
-          ) : (
-            <ArrowUp className="h-4 w-4" aria-hidden="true" />
-          )}
-        </button>
+        {showStop ? (
+          <button
+            type="button"
+            aria-label="Stop"
+            aria-busy={aborting}
+            onClick={handleAbort}
+            disabled={aborting}
+            className={cn(
+              CIRCLE_BUTTON,
+              // Full color like the busy spinner — stopping is an active,
+              // available action, not a greyed-out control.
+              "bg-orange text-white transition-[background-color,transform] hover:bg-orange-deep active:scale-[0.97] disabled:active:scale-100 disabled:opacity-100",
+            )}
+          >
+            <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label={showBusy ? "Waiting for agent" : "Send"}
+            aria-busy={showBusy}
+            onClick={submit}
+            disabled={
+              isBlocked || (draft.trim().length === 0 && pending.length === 0)
+            }
+            className={cn(
+              CIRCLE_BUTTON,
+              "bg-orange text-white transition-[background-color,transform] hover:bg-orange-deep active:scale-[0.97] disabled:active:scale-100",
+              // Busy keeps full color — the spinner reads as active work, not a
+              // greyed-out control the user might think is broken.
+              showBusy ? "disabled:opacity-100" : "disabled:opacity-50",
+            )}
+          >
+            {showBusy ? (
+              <span
+                data-testid="composer-busy-spinner"
+                aria-hidden="true"
+                className="block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+              />
+            ) : (
+              <ArrowUp className="h-4 w-4" aria-hidden="true" />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );
