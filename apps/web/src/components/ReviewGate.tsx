@@ -71,9 +71,21 @@ const CONTEXT_VALUE_TRUNCATE_AT = 240;
 // allow-same-origin), scripts only — same posture as web artifact previews.
 const CONTEXT_HTML_SANDBOX = "allow-scripts";
 
+function isHTMLAtDocumentStart(sample: string): boolean {
+  const head = sample.trimStart().slice(0, 256).toLowerCase();
+  if (head.startsWith("<!doctype html")) return true;
+  return /^<html[\s>/]/.test(head);
+}
+
 function isHTMLDocument(value: string): boolean {
-  const head = value.trimStart().slice(0, 64).toLowerCase();
-  return head.startsWith("<!doctype html") || head.startsWith("<html");
+  if (isHTMLAtDocumentStart(value)) return true;
+  const withoutLeadingComment = value
+    .trimStart()
+    .replace(/^<!--[\s\S]*?-->\s*/, "");
+  if (withoutLeadingComment !== value.trimStart()) {
+    return isHTMLAtDocumentStart(withoutLeadingComment);
+  }
+  return false;
 }
 
 function formatSizeLabel(charCount: number): string {

@@ -121,7 +121,7 @@ describe("AgentChat — fatal launch error", () => {
   });
 
   it("attempts to launch deployed agents instead of treating them as dead", async () => {
-    launchQueue = [{ launched: true }];
+    launchQueue = [{ launched: true, sessionId: null }];
 
     renderAgentChat({ instanceStatus: "deployed" });
 
@@ -195,7 +195,7 @@ describe("AgentChat — transient launch errors", () => {
         launched: false,
         launchError: 'No sidecar available for agent "ins_123"',
       },
-      { launched: true },
+      { launched: true, sessionId: null },
     ];
 
     const view = renderAgentChat({ retryDelayMs: 10 });

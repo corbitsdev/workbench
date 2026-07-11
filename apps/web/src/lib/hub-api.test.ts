@@ -384,11 +384,23 @@ describe("hub-api network helpers", () => {
   });
 
   it("launchInstanceSession POSTs an empty object body", async () => {
-    const calls = installFetch(() => ({ body: { launched: true } }));
+    const calls = installFetch(() => ({
+      body: { launched: true, sessionId: "ses-9" },
+    }));
 
-    expect(await launchInstanceSession("inst-9")).toEqual({ launched: true });
+    expect(await launchInstanceSession("inst-9")).toEqual({
+      launched: true,
+      sessionId: "ses-9",
+    });
     expect(calls[0]!.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]!.init?.body))).toEqual({});
+  });
+
+  it("launchInstanceSession rejects a success body missing sessionId", async () => {
+    installFetch(() => ({ body: { launched: true } }));
+    await expect(launchInstanceSession("inst-9")).rejects.toThrow(
+      /Invalid launch instance session response/,
+    );
   });
 
   it("stopAgentInstance DELETEs the instance", async () => {

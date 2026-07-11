@@ -458,6 +458,24 @@ describe("ReviewGate — large context values", () => {
     expect(preview.textContent).toMatch(/HTML/i);
     expect(preview.textContent).toMatch(/KB|chars/i);
   });
+
+  it("detects HTML after a leading comment and uses the preview path", async () => {
+    const html = `<html><body><p>deploy</p></body></html>`;
+    const approval = makeApproval({
+      resource: "tool:vercel__deploy_static_file",
+      action: "Run vercel__deploy_static_file",
+      context: {
+        html: `<!-- generated -->\n${html}`,
+        projectName: "demo",
+      },
+    });
+    mockListApprovals.mockResolvedValue([approval]);
+    renderGate();
+    await waitFor(() => {
+      screen.getByTestId("context-html-preview");
+    });
+    expect(screen.queryByTestId("context-truncated-value")).toBeNull();
+  });
 });
 
 describe("ReviewGate — background poll failure", () => {

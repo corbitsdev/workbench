@@ -502,25 +502,37 @@ export async function deleteAgentInstance(
   );
 }
 
-export type LaunchInstanceSessionResponse = {
-  launched: boolean;
-  launchError?: string;
-  /**
-   * Interchange agent session id for the launched (or already-live) instance.
-   * Present on success so the client can scope Action Requests to this chat
-   * (CL-3286). Null when the instance has no session row yet.
-   */
-  sessionId?: string | null;
-};
+const LaunchInstanceSessionSuccessSchema = type({
+  launched: "true",
+  sessionId: "string | null",
+});
+
+const LaunchInstanceSessionFailureSchema = type({
+  launched: "false",
+  "launchError?": "string",
+});
+
+export const LaunchInstanceSessionResponseSchema =
+  LaunchInstanceSessionSuccessSchema.or(LaunchInstanceSessionFailureSchema);
+
+export type LaunchInstanceSessionResponse =
+  typeof LaunchInstanceSessionResponseSchema.infer;
 
 export async function launchInstanceSession(
   instanceId: string,
 ): Promise<LaunchInstanceSessionResponse> {
-  return hubFetch<LaunchInstanceSessionResponse>(
+  const raw = await hubFetch<unknown>(
     "POST",
     `v1/instances/${instanceId}/sessions`,
     {},
   );
+  const parsed = LaunchInstanceSessionResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid launch instance session response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
 }
 
 export async function stopAgentInstance(
