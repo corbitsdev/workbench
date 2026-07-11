@@ -2,9 +2,13 @@ import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Inbox as InboxIcon } from "lucide-react";
-import { cn } from "@workbench/ui";
-import type { MailboxMessage } from "@workbench/shared";
-import { useMailbox, useMarkMailboxRead } from "../hooks/use-mailbox";
+import { cn, Markdown } from "@workbench/ui";
+import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
+import {
+  useMailbox,
+  useMailboxMessage,
+  useMarkMailboxRead,
+} from "../hooks/use-mailbox";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 
@@ -24,6 +28,7 @@ export function InboxPage() {
 
   const messages = data ?? [];
   const selected = messages.find((m) => m.id === messageId) ?? null;
+  const detail = useMailboxMessage(selected?.id ?? null);
 
   // Reading a message clears its unread state. Driving this from the selected
   // resource (not the click handler) marks read on a deep-link open too, and
@@ -64,6 +69,9 @@ export function InboxPage() {
         <ErrorBoundary>
           <ReadingPane
             message={selected}
+            detail={detail.data}
+            detailLoading={detail.isLoading}
+            detailError={detail.isError}
             hasMessages={messages.length > 0}
             reduceMotion={reduceMotion ?? false}
           />
@@ -214,11 +222,48 @@ function MessageRow({
 
 interface ReadingPaneProps {
   message: MailboxMessage | null;
+  detail: MailboxMessageDetail | undefined;
+  detailLoading: boolean;
+  detailError: boolean;
   hasMessages: boolean;
   reduceMotion: boolean;
 }
 
-function ReadingPane({ message, hasMessages, reduceMotion }: ReadingPaneProps) {
+function MessageBody({
+  detail,
+  detailLoading,
+  detailError,
+}: Pick<ReadingPaneProps, "detail" | "detailLoading" | "detailError">) {
+  if (detailLoading) {
+    return (
+      <p className="text-sm text-text-3" role="status">
+        Loading message…
+      </p>
+    );
+  }
+  if (detailError) {
+    return <p className="text-sm text-text-3">Couldn't load this message.</p>;
+  }
+  if (!detail || detail.body.length === 0) {
+    return (
+      <p className="text-sm italic text-text-3">
+        No content available for this message.
+      </p>
+    );
+  }
+  // Briefs and hand-offs are markdown text, so the pane renders through the
+  // shared Markdown component rather than pre-wrapped plain text.
+  return <Markdown>{detail.body}</Markdown>;
+}
+
+function ReadingPane({
+  message,
+  detail,
+  detailLoading,
+  detailError,
+  hasMessages,
+  reduceMotion,
+}: ReadingPaneProps) {
   if (!message) {
     return (
       <div className="grid h-full place-items-center px-6 text-center">
@@ -252,15 +297,11 @@ function ReadingPane({ message, hasMessages, reduceMotion }: ReadingPaneProps) {
           </time>
         </div>
         <div className="mt-6 border-t border-border pt-6">
-          {message.snippet ? (
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-text">
-              {message.snippet}
-            </p>
-          ) : (
-            <p className="text-sm italic text-text-3">
-              No preview available for this message.
-            </p>
-          )}
+          <MessageBody
+            detail={detail}
+            detailLoading={detailLoading}
+            detailError={detailError}
+          />
         </div>
       </motion.article>
     </AnimatePresence>

@@ -1,9 +1,13 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { MailboxListResponse } from "@workbench/shared";
+import { MailboxListResponse, MailboxMessageDetail } from "@workbench/shared";
 import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
-import { listUserMailbox, markMailboxMessageRead } from "../lib/mailbox-read";
+import {
+  getMailboxMessage,
+  listUserMailbox,
+  markMailboxMessageRead,
+} from "../lib/mailbox-read";
 import type { HubDb } from "../db";
 
 const ErrorResponse = type({ error: "string" });
@@ -65,7 +69,10 @@ export function createInboxRouter(
       const userId = c.get("userId");
       const limit = parseLimit(c.req.query("limit"));
       if (limit === null) {
-        return c.json({ error: "limit must be an integer between 1 and 200" }, 400);
+        return c.json(
+          { error: "limit must be an integer between 1 and 200" },
+          400,
+        );
       }
       const rootTenantId = await getRootTenantId(db);
       const member = rootTenantId
@@ -80,6 +87,65 @@ export function createInboxRouter(
         limit,
       });
       return c.json({ messages });
+    },
+  );
+
+  app.get(
+    "/me/inbox/:id",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Read one of the caller's mailbox messages with its full body",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The message with its full text body",
+          content: {
+            "application/json": { schema: resolver(MailboxMessageDetail) },
+          },
+        },
+        400: {
+          description: "Invalid message id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such message in the caller's mailbox",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const id = MessageId(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Message id must be a UUID" }, 400);
+      }
+      const rootTenantId = await getRootTenantId(db);
+      const member = rootTenantId
+        ? await lookupMember(db, { tenantId: rootTenantId, userId })
+        : null;
+      if (!member) {
+        return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const message = await getMailboxMessage(db, {
+        tenantId: member.tenantId,
+        principalId: member.principalId,
+        id,
+      });
+      if (!message) {
+        return c.json({ error: "Message not found" }, 404);
+      }
+      return c.json(message);
     },
   );
 

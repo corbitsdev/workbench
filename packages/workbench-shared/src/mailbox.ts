@@ -15,6 +15,14 @@ export const MailboxMessage = type({
 });
 export type MailboxMessage = typeof MailboxMessage.infer;
 
+// The /me/inbox/:id contract: the list fields plus the full text body
+// extracted from the stored raw frame. An unparseable frame degrades to an
+// empty body rather than failing the read.
+export const MailboxMessageDetail = MailboxMessage.and(
+  type({ body: "string" }),
+);
+export type MailboxMessageDetail = typeof MailboxMessageDetail.infer;
+
 export const MailboxListResponse = type({
   messages: MailboxMessage.array(),
 });

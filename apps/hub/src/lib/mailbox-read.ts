@@ -1,8 +1,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { getLogger } from "@intx/log";
 import { parseHeaderSection } from "@intx/mime";
-import type { MailboxMessage } from "@workbench/shared";
+import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
+
+const logger = getLogger("mailbox-read");
 
 export type MailboxScope = {
   tenantId: string;
@@ -31,6 +34,15 @@ export function decodeMailFrame(raw: Uint8Array): DecodedFrame | null {
   }
 }
 
+// The UI never parses RFC-2822: an unparseable (or absent) Date header falls
+// back to the row's created_at so the wire value is always ISO.
+function toISODate(dateHeader: string | undefined, createdAt: Date): string {
+  if (dateHeader === undefined) return createdAt.toISOString();
+  const parsed = new Date(dateHeader);
+  if (Number.isNaN(parsed.getTime())) return createdAt.toISOString();
+  return parsed.toISOString();
+}
+
 function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   const decoded = decodeMailFrame(row.raw);
   const headers = decoded?.headers;
@@ -48,7 +60,7 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
     id: row.id,
     from: headers?.get("from") ?? row.fromAddress ?? "",
     to,
-    date: headers?.get("date") ?? row.createdAt.toISOString(),
+    date: toISODate(headers?.get("date"), row.createdAt),
     messageId: headers?.get("message-id") ?? row.id,
     read: row.readAt !== null,
   };
@@ -81,6 +93,35 @@ export async function listUserMailbox(
     limit: scope.limit,
   });
   return rows.map(toMailboxMessage);
+}
+
+/**
+ * Read one mailbox message with its full text body, scoped to the caller's
+ * principal so a member can never read another member's mail. Returns null
+ * when no row matches the caller's scope. A frame the MIME parser rejects
+ * degrades to an empty body (with an error log) — never a 500.
+ */
+export async function getMailboxMessage(
+  db: HubDb,
+  args: { tenantId: string; principalId: string; id: string },
+): Promise<MailboxMessageDetail | null> {
+  const row = await db.query.principalMailbox.findFirst({
+    where: and(
+      eq(principalMailbox.id, args.id),
+      eq(principalMailbox.tenantId, args.tenantId),
+      eq(principalMailbox.principalId, args.principalId),
+      eq(principalMailbox.direction, "inbound"),
+    ),
+  });
+  if (!row) return null;
+
+  const decoded = decodeFrame(row.raw);
+  if (decoded === null) {
+    logger.error("stored mailbox frame failed to parse; serving empty body", {
+      messageId: row.id,
+    });
+  }
+  return { ...toMailboxMessage(row), body: decoded?.body ?? "" };
 }
 
 /**

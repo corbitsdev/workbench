@@ -1,9 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
-import { MailboxListResponse, type MailboxMessage } from "@workbench/shared";
+import {
+  MailboxListResponse,
+  MailboxMessageDetail,
+  type MailboxMessage,
+} from "@workbench/shared";
 import { api } from "../lib/api";
 
-export type { MailboxMessage };
+export type { MailboxMessage, MailboxMessageDetail };
 
 // One shared cache entry so the /inbox page and the app-frame notifications bell
 // read the SAME mailbox — the bell's unread badge and the page's list can never
@@ -39,6 +43,30 @@ export function useMailbox(options?: {
         throw new Error(`Unexpected mailbox response: ${parsed.summary}`);
       }
       return parsed.messages;
+    },
+  });
+}
+
+// The reading pane's full-body fetch. Keyed under the mailbox root so a
+// sweep of ["mailbox"] clears details too; enabled only while a message
+// is selected.
+export function useMailboxMessage(id: string | null) {
+  return useQuery<MailboxMessageDetail>({
+    queryKey: [...MAILBOX_QUERY_KEY, "message", id],
+    enabled: id !== null,
+    queryFn: async () => {
+      if (id === null) {
+        throw new Error("No message selected");
+      }
+      const raw = await api<unknown>(
+        "GET",
+        `/me/inbox/${encodeURIComponent(id)}`,
+      );
+      const parsed = MailboxMessageDetail(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected mailbox message: ${parsed.summary}`);
+      }
+      return parsed;
     },
   });
 }
