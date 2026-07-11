@@ -114,6 +114,52 @@ export const myTools = defineCredentialedToolPackage({
   tool→provider mapping for the credential rail (`run-credential-tool`); it is not
   an execution registry.
 
+### 3b. Register a friendly chat phrase (CL-3268)
+
+Chat never surfaces wire tool ids (`attio__create_record`, snake_case bare names).
+Every tool the user can see in Myra (or any chat host that wires
+`friendlyToolSummary`) needs a hand-authored progressive phrase in
+`packages/agents/src/friendly-tool-summary.ts` → `PHRASES`.
+
+```ts
+// packages/agents/src/friendly-tool-summary.ts
+const PHRASES: Record<string, Phrase> = {
+  // bare operation key (after package prefix stripping)
+  my_tool_do_thing: (args) => {
+    const target = firstStringArg(args, ["name", "query"]);
+    return target === null
+      ? "Doing the thing"
+      : `Doing the thing for ${truncate(target)}`;
+  },
+  // or a static string when no useful arg exists
+  my_tool_list: "Listing my things",
+};
+```
+
+Rules:
+
+- **Key = bare operation key**, not the LLM form. `attio__create_record` and
+  `attio_create_record` both resolve to `attio_create_record`. For tools whose
+  bare name has no package prefix (`search_skills`), key the bare name.
+- **Phrase = progressive action English** the user can read mid-flight:
+  `"Creating an Attio record for Acme"`, never `"Attio Create Record"` or the
+  wire id. Prefer brand names (`Attio`, `Linear`) over generic labels (`CRM`).
+- **Interpolate a high-signal arg** when one exists (`name`, `query`, `url`,
+  issue id). Fall back to a static phrase when args are empty — do not invent
+  values.
+- **Myra catalog tools** also pick up this phrase as the `search_tools`
+  description (via `MYRA_TOOL_CATALOG`). Adding a package to
+  `MYRA_CATALOG_PACKAGES` without a `PHRASES` entry fails the
+  `CL-3268 catalog phrase coverage` test in
+  `friendly-tool-summary.test.ts`.
+- Unknown tools still soft-fall back to sentence-case words (`"Mystery do thing"`)
+  so the UI never shows snake_case — but that is a safety net, not a substitute
+  for a hand-authored phrase on a known tool.
+- **Platform meta-tools** (`search_tools`, `load_tools`) are not user-facing
+  capabilities. Flag them with `isCatalogMetaTool` so chat hosts render quiet
+  reasoning-style lines (no checkmark / tool chrome) and exclude them from
+  roll-up counts. Wire `isQuietTool={isCatalogMetaTool}` on Myra chat surfaces.
+
 ### 4. Build and push
 
 Per environment, copy `.env.tools.example` to `.env.staging` / `.env.production`
