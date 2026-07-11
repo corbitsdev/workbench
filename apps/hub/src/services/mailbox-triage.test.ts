@@ -312,6 +312,60 @@ describe("createMailboxTriage", () => {
     expect(session.endSession).toHaveBeenCalled();
     expect(teardownMock).toHaveBeenCalledTimes(1);
   });
+
+  it("caps the queue at 50 and drops the oldest item on overflow, never blocking enqueue", async () => {
+    const MAX_QUEUE = 50;
+    const OVERFLOW = 6;
+    let unblockFirst: (() => void) | undefined;
+    const blockGate = new Promise<void>((resolve) => {
+      unblockFirst = resolve;
+    });
+    let firstCallStarted = false;
+    const findFirst = mock(async () => {
+      if (!firstCallStarted) {
+        firstCallStarted = true;
+        await blockGate;
+      }
+      return { id: "ins_self", principalId: "pri-alice" };
+    });
+
+    const db = {
+      query: {
+        agentInstance: { findFirst },
+        memberAgentInstance: { findFirst: mock(async () => undefined) },
+        tenant: {
+          findFirst: mock(async () => ({
+            id: "ten-1",
+            domain: "tenant.example",
+          })),
+        },
+      },
+      transaction: mock(async () => undefined),
+    } as unknown as HubDb;
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    // The head-of-line item blocks inside isEligible, so it stays "in
+    // flight" (already shifted out of the internal queue array) while the
+    // pushes below accumulate behind it. enqueue() itself never awaits, so a
+    // slow head-of-line item cannot block a caller from enqueuing more.
+    triage.enqueue({ ...ITEM, rowId: "row-block" });
+    for (let i = 0; i < MAX_QUEUE + OVERFLOW; i++) {
+      triage.enqueue({ ...ITEM, rowId: `row-${i}` });
+    }
+
+    // Only the blocked head-of-line item has reached the DB so far — proof
+    // that enqueuing the rest above did not need it to unblock first.
+    expect(findFirst).toHaveBeenCalledTimes(1);
+
+    unblockFirst?.();
+    await triage.waitForDrain();
+
+    // 1 head-of-line item + (MAX_QUEUE + OVERFLOW) pushed, capped at
+    // MAX_QUEUE queued: the oldest OVERFLOW queued items are dropped, so
+    // only 1 + MAX_QUEUE ever reach the DB.
+    expect(findFirst).toHaveBeenCalledTimes(1 + MAX_QUEUE);
+  });
 });
 
 describe("persistMail trigger seam", () => {
