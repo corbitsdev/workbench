@@ -61,6 +61,10 @@ mock.module("../components/WorkflowCatalog", () => ({
   },
 }));
 
+mock.module("../components/MySchedules", () => ({
+  MySchedules: () => null,
+}));
+
 const { WorkflowsPage } = require("./WorkflowsPage");
 
 afterEach(() => {

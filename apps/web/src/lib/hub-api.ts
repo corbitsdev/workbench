@@ -20,7 +20,13 @@ import {
   type WorkflowCatalog,
   PreferenceSettingsResponseSchema,
   type PreferenceSetting,
+  ScheduledTriggerSchema,
+  type ScheduledTrigger,
+  type CreateScheduledTriggerBody,
+  type UpdateScheduledTriggerBody,
 } from "@workbench/shared";
+
+const ScheduledTriggerListSchema = ScheduledTriggerSchema.array();
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
@@ -290,6 +296,52 @@ export async function getWorkflowsCatalog(
     throw new Error(`Unexpected workflows catalog response: ${parsed.summary}`);
   }
   return parsed;
+}
+
+/** The caller's own automation schedules, parsed at the boundary. */
+export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/schedules");
+  const parsed = ScheduledTriggerListSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedules response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+function parseSchedule(raw: unknown): ScheduledTrigger {
+  const parsed = ScheduledTriggerSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedule response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Create a schedule that fires the given workflow at a UTC hour. */
+export async function createMeSchedule(
+  body: CreateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>("POST", "v1/me/schedules", body),
+  );
+}
+
+/** Update the caller's schedule (enablement and/or fire hour). */
+export async function updateMeSchedule(
+  id: string,
+  body: UpdateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>(
+      "PATCH",
+      `v1/me/schedules/${encodeURIComponent(id)}`,
+      body,
+    ),
+  );
+}
+
+/** Delete the caller's schedule. */
+export async function deleteMeSchedule(id: string): Promise<void> {
+  await hubFetch<void>("DELETE", `v1/me/schedules/${encodeURIComponent(id)}`);
 }
 
 /** The registry-driven settings with the caller's resolved values, parsed at

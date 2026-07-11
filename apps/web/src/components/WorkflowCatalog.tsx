@@ -6,6 +6,7 @@ import {
   useWorkflowsCatalog,
 } from "../hooks/use-workflows-catalog";
 import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
+import { SchedulePopover } from "./SchedulePopover";
 
 export interface WorkflowCatalogProps {
   tenantId: string | null;
@@ -186,6 +187,7 @@ function PreviewPanel({
         >
           {starting ? "Starting…" : "Start run"}
         </button>
+        <SchedulePopover kind={entry.kind} label={entry.label} />
       </div>
     </div>
   );
