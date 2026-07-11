@@ -93,6 +93,70 @@ describe("PATCH /api/v1/me/preferences", () => {
     const res = await mountApp().request(patch({ theme: "tkww" }));
     expect(res.status).toBe(409);
   });
+
+  it("persists a valid registry setting", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    mergeMemberPreferences.mockClear();
+    const res = await mountApp().request(
+      patch({ agentAutonomy: "execute_with_gates" }),
+    );
+    expect(res.status).toBe(200);
+    expect((mergeMemberPreferences.mock.calls[0] as unknown[])[3]).toEqual({
+      agentAutonomy: "execute_with_gates",
+    });
+  });
+
+  it("returns 400 on an unknown registry key", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    mergeMemberPreferences.mockClear();
+    const res = await mountApp().request(patch({ bogusSetting: true }));
+    expect(res.status).toBe(400);
+    expect(mergeMemberPreferences).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 on a wrong-typed registry value", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    mergeMemberPreferences.mockClear();
+    const res = await mountApp().request(patch({ briefHourUtc: 99 }));
+    expect(res.status).toBe(400);
+    expect(mergeMemberPreferences).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/v1/me/preferences/settings", () => {
+  function settingsRequest(): Request {
+    return new Request("http://localhost/api/v1/me/preferences/settings", {
+      headers: { "x-test-user-id": "user-1" },
+    });
+  }
+
+  it("returns registry entries merged with the caller's stored values", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    readMemberPreferences.mockResolvedValueOnce({
+      agentAutonomy: "execute_with_gates",
+    });
+    const res = await mountApp().request(settingsRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      settings: { key: string; value: unknown }[];
+    };
+    const autonomy = body.settings.find((s) => s.key === "agentAutonomy");
+    expect(autonomy?.value).toBe("execute_with_gates");
+    const brief = body.settings.find((s) => s.key === "briefHourUtc");
+    expect(brief?.value).toBe(13);
+  });
+
+  it("returns registry defaults when the caller has no membership", async () => {
+    member = null;
+    const res = await mountApp().request(settingsRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      settings: { key: string; value: unknown }[];
+    };
+    expect(body.settings.find((s) => s.key === "agentAutonomy")?.value).toBe(
+      "prepare_only",
+    );
+  });
 });
 
 describe("GET /api/v1/me/preferences", () => {
