@@ -499,7 +499,7 @@ export async function ensureSystemPrincipal(
  * Every seeded definition is owned by the dedicated system principal (decision:
  * templates are org-owned, never owned by a human member). Only STATIC grant
  * requirements are stored — dynamic per-workbench grants are computed at
- * instance launch, not baked into the definition (CL-1530).
+ * instance launch, not baked into the definition.
  *
  * This is additive to the existing per-user Myra provisioning; the two coexist.
  * Throws if the global tenant has not been seeded — it must run after
@@ -637,7 +637,7 @@ function jsonEqual(a: unknown, b: unknown): boolean {
  * every field `seedAgentTemplateIntoTenant` would write (modelConfig excluded —
  * the seed preserves it with `?? existing`). Keeps the reseed idempotent so the
  * hot paths (new-thread creation, login sync) can call it unconditionally without
- * churning `updatedAt` (and therefore without a needless relaunch). (CL-2517)
+ * churning `updatedAt` (and therefore without a needless relaunch).
  */
 export function agentDefMatchesTemplate(
   def: typeof agent.$inferSelect,
@@ -655,8 +655,8 @@ export function agentDefMatchesTemplate(
 }
 
 /**
- * Reseed a tenant's agent definition from its template only when it has drifted
- * (CL-2517). Returns whether a reseed happened. No-op when the def is absent or
+ * Reseed a tenant's agent definition from its template only when it has
+ * drifted. Returns whether a reseed happened. No-op when the def is absent or
  * already current, so callers on the hot path can invoke it unconditionally.
  *
  * This is what makes every NEW Myra thread launch with the latest tools: the
@@ -703,7 +703,7 @@ const ENABLED_AGENT_TEMPLATES_CONFIG_KEY = "enabledAgentTemplates";
 /**
  * Default enablement when the global tenant's config is unset, empty, or has no
  * `enabledAgentTemplates` entry. Every member gets Myra on join; other templates
- * are opt-in by an admin (CL-1531).
+ * are opt-in by an admin.
  */
 const DEFAULT_ENABLED_TEMPLATE_KEYS = ["myra"] as const;
 
@@ -715,7 +715,7 @@ const DEFAULT_ENABLED_TEMPLATE_KEYS = ["myra"] as const;
  * an array, or missing — Myra is always enabled for new members. Unknown keys
  * (no matching `AGENT_TEMPLATES` entry) are dropped with a warning.
  *
- * Returns the resolved `AgentTemplate[]`. CL-1532's join path iterates this list
+ * Returns the resolved `AgentTemplate[]`. The join path iterates this list
  * to create one per-user agent instance per enabled template.
  */
 export async function getEnabledTemplateKeys(
@@ -806,13 +806,13 @@ export type MemberInstance = { templateKey: string; instanceId: string };
 
 /**
  * Create, for a joining member, one per-user agent INSTANCE of each enabled
- * org-level template definition (CL-1532). The shared definitions are seeded
- * once at boot by `seedAgentTemplates` (CL-1530) and owned by the system
+ * org-level template definition. The shared definitions are seeded
+ * once at boot by `seedAgentTemplates` and owned by the system
  * principal; members never get their own definitions — only instances that
  * reference the shared one, so systemPrompt / credentialRequirements /
  * capabilities all come from the org definition.
  *
- * Enabled templates come from `getEnabledTemplateKeys` (CL-1531), defaulting to
+ * Enabled templates come from `getEnabledTemplateKeys`, defaulting to
  * `['myra']`. Per-user attribution is recorded in the workbench
  * `member_agent_instance` table, keyed `(tenantId, memberPrincipalId,
  * templateKey)` — Interchange's `agent_instance` has no owner-user column.
@@ -855,7 +855,7 @@ export async function provisionMemberInstances(
   // the root (staging: `abklabs`=`abklabs.com`); for a subtenant (prod:
   // `abk-labs`=`abk-labs.localhost`) it stamps the wrong domain and orphans the
   // agent — registered/looked-up at `@root`, but launched + routed at
-  // `@subtenant` → deploy-ack "no active instance" and mail 502 (CL-2832).
+  // `@subtenant` → deploy-ack "no active instance" and mail 502.
   const tenantRow = await db.query.tenant.findFirst({
     where: eq(tenant.id, tenantId),
     columns: { domain: true },
@@ -867,7 +867,7 @@ export async function provisionMemberInstances(
   const results: MemberInstance[] = [];
 
   for (const template of templates) {
-    // The shared org definition seeded by CL-1530, keyed on (tenantId, name).
+    // The shared org definition seeded by, keyed on (tenantId, name).
     const def = await db.query.agent.findFirst({
       where: and(eq(agent.tenantId, tenantId), eq(agent.name, template.name)),
     });
@@ -962,7 +962,7 @@ export async function provisionMemberInstances(
         // to operate their own personal instance: read powers the chat event
         // stream (`GET /instances/:id/events`), write sends mail, manage aborts a
         // turn. Scoped to this instance id alone — it grants nothing about any
-        // other member's instances in the shared tenant (CL-1635).
+        // other member's instances in the shared tenant.
         for (const action of ["read", "write", "manage"] as const) {
           await tx.insert(grant).values({
             id: generateId("grant"),
