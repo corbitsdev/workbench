@@ -569,6 +569,8 @@ export const principalMailbox = pgTable(
     raw: bytea("raw").notNull(),
     subject: text("subject"),
     fromAddress: text("from_address"),
+    // Dedupe key for hub-written rows (gate:<runId>:<signal>, triage:<row id>);
+    // NULL for delivered external mail, unconstrained by the partial index.
     messageKey: text("message_key"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     readAt: timestamp("read_at"),
@@ -580,7 +582,7 @@ export const principalMailbox = pgTable(
     principalMailboxMessageKeyUniq: uniqueIndex(
       "principal_mailbox_message_key_uniq",
     )
-      .on(t.messageKey)
+      .on(t.tenantId, t.principalId, t.messageKey)
       .where(sql`${t.messageKey} IS NOT NULL`),
   }),
 );

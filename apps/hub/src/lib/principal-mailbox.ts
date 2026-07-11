@@ -83,7 +83,11 @@ export async function insertGateMailboxItem(
       messageKey: item.messageKey,
     })
     .onConflictDoNothing({
-      target: principalMailbox.messageKey,
+      target: [
+        principalMailbox.tenantId,
+        principalMailbox.principalId,
+        principalMailbox.messageKey,
+      ],
       where: sql`${principalMailbox.messageKey} IS NOT NULL`,
     })
     .returning({ id: principalMailbox.id });
