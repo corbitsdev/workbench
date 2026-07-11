@@ -77,7 +77,10 @@ class NoopEventSource {
 }
 
 let launchQueue: LaunchInstanceSessionResponse[] = [];
-let defaultLaunch: LaunchInstanceSessionResponse = { launched: true };
+let defaultLaunch: LaunchInstanceSessionResponse = {
+  launched: true,
+  sessionId: null,
+};
 
 function jsonResponse(body: unknown): Response {
   return {
@@ -95,7 +98,7 @@ beforeEach(() => {
     }
   ).window.happyDOM.setURL("http://localhost/");
   launchQueue = [];
-  defaultLaunch = { launched: true };
+  defaultLaunch = { launched: true, sessionId: null };
   capturedOnStreamError = null;
   globalThis.fetch = mock((url: string) => {
     if (String(url).includes("/sessions")) {

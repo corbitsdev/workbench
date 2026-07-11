@@ -390,6 +390,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     address: "ins-1@tenant-1.localhost",
     status: "deployed",
     principalId: "prn-agent-1",
+    sessionId: "ses-live-1",
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -431,7 +432,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 200 with launched:true on successful session start", async () => {
+  it("returns 200 with launched:true and sessionId on successful session start", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
@@ -448,8 +449,11 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as ResBody;
+    const json = (await res.json()) as ResBody & { sessionId?: string | null };
     expect(json.launched).toBe(true);
+    // Client scopes Action Requests to this session (CL-3286).
+    expect(typeof json.sessionId).toBe("string");
+    expect(json.sessionId!.length).toBeGreaterThan(0);
   });
 
   // CL-3152: the "one launch per instance" invariant lives at the
@@ -660,7 +664,11 @@ describe("POST /instances/:instanceId/sessions", () => {
 
   it("returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar", async () => {
     const db = makeMockDb();
-    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    // First read is the route's ownership check; second is the already-exists
+    // re-read that recovers sessionId for ReviewGate scoping (CL-3286).
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ ...INSTANCE, sessionId: "ses-already-exists" }),
+    );
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
     db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
     db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
@@ -686,8 +694,9 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as ResBody;
+    const json = (await res.json()) as ResBody & { sessionId?: string | null };
     expect(json.launched).toBe(true);
+    expect(json.sessionId).toBe("ses-already-exists");
     expect("launchError" in json).toBe(false);
     // Provision-phase failures must not be retried — one attempt only.
     expect(sessionService.launchSession).toHaveBeenCalledTimes(1);
@@ -1326,6 +1335,7 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
     address: "ins-1@tenant-1.localhost",
     status: "deployed",
     principalId: "prn-agent-1",
+    sessionId: "ses-live-1",
     endedAt: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -1366,7 +1376,11 @@ describe("POST /instances/:instanceId/sessions — branches", () => {
       }),
     );
     expect(res.status).toBe(200);
-    expect(((await res.json()) as ResBody).launched).toBe(true);
+    const json = (await res.json()) as ResBody & { sessionId?: string | null };
+    expect(json.launched).toBe(true);
+    // Steady-state live path must still hand the client a sessionId so
+    // ReviewGate stays chat-scoped after reload/reopen (CL-3286).
+    expect(json.sessionId).toBe("ses-live-1");
     expect(sessionService.launchSession).not.toHaveBeenCalled();
   });
 

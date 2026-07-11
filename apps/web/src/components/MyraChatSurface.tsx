@@ -480,7 +480,12 @@ export function MyraChatSurface({
   // limits what the caller sees. Placed first so the actionable approval
   // interrupt sits above the transient hints.
   const reviewGate = tenantId ? (
-    <ReviewGate key="review-gate" tenantId={tenantId} />
+    <ReviewGate
+      key="review-gate"
+      tenantId={tenantId}
+      sessionId={session.sessionId ?? undefined}
+      sessionScope="session"
+    />
   ) : null;
 
   // Single source of truth for the composer accessories: render order and the

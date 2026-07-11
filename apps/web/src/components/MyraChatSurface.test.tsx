@@ -122,6 +122,7 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
     live: true,
     queuedFailed: false,
     connectionNotice: null,
+    sessionId: null,
     send: () => {},
     reconnect: () => {},
     instanceId: null,
@@ -324,17 +325,17 @@ describe("MyraChatSurface", () => {
     expect(screen.queryByTestId("review-gate")).toBeNull();
   });
 
-  it("mounts the approval gate and surfaces a pending approval for the tenant", async () => {
+  it("does not surface tenant-wide approvals before the chat session id is known", () => {
     approvalsResult = [
       {
-        id: "apr-1",
+        id: "apr-tenant",
         tenantId: "tenant-1",
         principalId: "prn-1",
         agentId: "agt-1",
-        sessionId: null,
+        sessionId: "sess-other",
         resource: "tool:notion__create_page",
         action: "Run notion__create_page",
-        context: { title: "demo" },
+        context: { title: "other" },
         status: "pending",
         message: null,
         createdAt: "2026-07-10T00:00:00.000Z",
@@ -352,10 +353,99 @@ describe("MyraChatSurface", () => {
         }),
       ),
     );
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+
+  it("mounts the approval gate and surfaces a pending approval for the tenant", async () => {
+    approvalsResult = [
+      {
+        id: "apr-1",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-chat",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "demo" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-chat",
+            send: () => {},
+          }),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
     const gate = await screen.findByTestId("review-gate");
     expect(gate.textContent).toContain("Run notion__create_page");
     await screen.findByTestId("approve-apr-1");
     await screen.findByTestId("reject-apr-1");
+  });
+
+  it("scopes the approval gate to the chat session when sessionId is known", async () => {
+    approvalsResult = [
+      {
+        id: "apr-this",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-this",
+        resource: "tool:vercel__deploy_static_file",
+        action: "Run vercel__deploy_static_file",
+        context: { projectName: "this-chat" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+      {
+        id: "apr-other",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-other",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "other chat" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-this",
+            send: () => {},
+          }),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    await screen.findByTestId("approval-apr-this");
+    expect(screen.queryByTestId("approval-apr-other")).toBeNull();
   });
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {

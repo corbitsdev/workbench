@@ -79,7 +79,9 @@ beforeEach(() => {
   globalThis.fetch = mock((url: string) => {
     const u = String(url);
     if (u.includes("/sessions")) {
-      return Promise.resolve(jsonResponse({ launched: true }));
+      return Promise.resolve(
+        jsonResponse({ launched: true, sessionId: null }),
+      );
     }
     if (u.includes("/feedback")) {
       return Promise.resolve(jsonResponse({ ratings: [] }));

@@ -318,6 +318,12 @@ export type MyraSession = {
    * `null` once live.
    */
   connectionNotice: "connecting" | "reconnecting" | null;
+  /**
+   * Interchange agent session id from the latest successful launch. Used to
+   * scope Action Requests (ReviewGate) to this chat rather than the whole
+   * tenant (CL-3286). Null until launch returns a session id.
+   */
+  sessionId: string | null;
   send: (
     text: string,
     attachments?: PendingAttachment[],
@@ -365,6 +371,8 @@ export function useMyraSession(
   // first-connect window (`ready` but not yet `live`) — where "reconnecting"
   // copy would be wrong — from a genuine drop after a live session (CL-3280).
   const [hasBeenLive, setHasBeenLive] = useState(false);
+  // Interchange session id from launch — scopes ReviewGate to this chat (CL-3286).
+  const [sessionId, setSessionId] = useState<string | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
@@ -378,6 +386,7 @@ export function useMyraSession(
     setState({ phase: "loading" });
     setLive(false);
     setHasBeenLive(false);
+    setSessionId(null);
     // Drop the previous thread's queued sends and history snapshot so a new
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
@@ -582,10 +591,17 @@ export function useMyraSession(
         const launch = await launchInstanceSession(targetInstanceId);
         if (cancelled) return;
         if (launch.launched) {
+          if (
+            typeof launch.sessionId === "string" &&
+            launch.sessionId.length > 0
+          ) {
+            setSessionId(launch.sessionId);
+          }
           // The stream may have dropped during the launch window, in which case
           // handleConnectionLoss already tore the session down and scheduled a
           // reconnect. Don't mark a now-dead session live or clear that timer —
-          // let the reconnect rebuild it (CL-3280).
+          // let the reconnect rebuild it (CL-3280). sessionId is still captured
+          // above so ReviewGate stays scoped across reconnect (CL-3286).
           if (sessionRef.current === null) {
             scheduleReconnect();
             return;
@@ -1015,6 +1031,7 @@ export function useMyraSession(
     live,
     queuedFailed,
     connectionNotice,
+    sessionId,
     send,
     reconnect,
     instanceId: resolvedInstanceId,

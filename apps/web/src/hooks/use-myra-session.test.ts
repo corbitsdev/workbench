@@ -275,6 +275,20 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
 
+  it("exposes the Interchange sessionId returned by launch for ReviewGate scoping", async () => {
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({ launched: true, sessionId: "ses-from-launch" }),
+    );
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(result.current.sessionId).toBe("ses-from-launch"),
+    );
+    expect(result.current.live).toBe(true);
+  });
+
   it("opens the session against the active workbench tenant, not the working/root tenant", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(sessionTenantIds).toHaveLength(1));
@@ -464,10 +478,13 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
   });
 
   it("does not mark a dead session live if the stream drops during the launch window", async () => {
-    let resolveLaunch: (v: { launched: boolean }) => void = () => {};
+    let resolveLaunch: (v: {
+      launched: boolean;
+      sessionId?: string;
+    }) => void = () => {};
     launchInstanceSession.mockImplementation(
       () =>
-        new Promise<{ launched: boolean }>((res) => {
+        new Promise<{ launched: boolean; sessionId?: string }>((res) => {
           resolveLaunch = res;
         }),
     );
@@ -489,7 +506,7 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     // The launch then reports success — but the session it would mark live was
     // already torn down, so it must NOT flip live (CL-3280).
     await act(async () => {
-      resolveLaunch({ launched: true });
+      resolveLaunch({ launched: true, sessionId: "ses-mid-launch" });
       await Promise.resolve();
     });
 
@@ -497,6 +514,7 @@ describe("useMyraSession — history + queued send while disconnected (CL-3280)"
     // Never reached a live session, so the notice is "connecting", not
     // "reconnecting".
     expect(result.current.connectionNotice).toBe("connecting");
+    expect(result.current.sessionId).toBe("ses-mid-launch");
   });
 
   it("surfaces a terminal fatal state on a fatal launch failure and does not relaunch", async () => {
