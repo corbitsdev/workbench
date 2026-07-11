@@ -143,7 +143,7 @@ describe("OwnerCatalog", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
         {
-          providerName: "bifrost",
+          providerName: "corbits-default-bifrost",
           label: "Bifrost",
           kind: "inference",
           configured: false,
@@ -188,7 +188,7 @@ describe("OwnerCatalog", () => {
 
   it("shows base URL field for bifrost when opening the set form", () => {
     const bifrostCred: OwnerCredentialState = {
-      providerName: "bifrost",
+      providerName: "corbits-default-bifrost",
       label: "Bifrost",
       kind: "inference",
       configured: false,
@@ -209,7 +209,7 @@ describe("OwnerCatalog", () => {
     fireEvent.click(setBtn);
     // base url input appears with prefilled value from credential
     const baseInput = view.getByPlaceholderText(
-      "https://your-bifrost.example.com/v1",
+      "https://corbits-ai-gateway.up.railway.app/v1",
     ) as HTMLInputElement;
     expect(baseInput).toBeDefined();
     expect(baseInput.value).toBe("https://bifrost.test/v1");

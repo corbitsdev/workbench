@@ -32,6 +32,86 @@ describe("FULL_CATALOG integrity", () => {
   });
 });
 
+describe("Bifrost is the primary inference source", () => {
+  const offerings = FULL_CATALOG.offerings;
+  const isBifrost = (provider: string) =>
+    provider.startsWith("corbits-default-bifrost");
+
+  const bifrostOfferingsFor = (model: string) =>
+    offerings.filter((o) => o.model === model && isBifrost(o.provider));
+
+  // Direct providers Bifrost proxies (near-ai is Bifrost-independent).
+  const PROXYABLE_DIRECT = new Set([
+    "opencode-zen",
+    "anthropic-api",
+    "google-ai",
+    "OpenAI",
+  ]);
+
+  it("gives every model at most one Bifrost offering", () => {
+    const models = [...new Set(offerings.map((o) => o.model))];
+    for (const model of models) {
+      expect(bifrostOfferingsFor(model).length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("gives every Bifrost-proxyable model exactly one Bifrost head", () => {
+    const models = [
+      ...new Set(
+        offerings
+          .filter((o) => PROXYABLE_DIRECT.has(o.provider))
+          .map((o) => o.model),
+      ),
+    ];
+    expect(models.length).toBeGreaterThan(0);
+    for (const model of models) {
+      expect(bifrostOfferingsFor(model).length).toBe(1);
+    }
+  });
+
+  it("orders the openai-compatible direct ahead of the native direct in the fallback tail", () => {
+    const OPENAI_COMPAT_DIRECT = new Set(["opencode-zen", "near-ai"]);
+    const NATIVE_DIRECT = new Set(["anthropic-api", "OpenAI", "google-ai"]);
+    let comparedPairs = 0;
+    for (const offering of offerings) {
+      if (!OPENAI_COMPAT_DIRECT.has(offering.provider)) continue;
+      const natives = offerings.filter(
+        (o) => o.model === offering.model && NATIVE_DIRECT.has(o.provider),
+      );
+      for (const native of natives) {
+        comparedPairs += 1;
+        expect(offering.priority as number).toBeLessThan(
+          native.priority as number,
+        );
+      }
+    }
+    expect(comparedPairs).toBeGreaterThan(0);
+  });
+
+  it("orders the Bifrost head ahead of every direct provider for the same model", () => {
+    for (const offering of offerings) {
+      if (!isBifrost(offering.provider)) continue;
+      expect(offering.priority).toBeDefined();
+      const fallbacks = offerings.filter(
+        (o) => o.model === offering.model && !isBifrost(o.provider),
+      );
+      expect(fallbacks.length).toBeGreaterThan(0);
+      for (const fallback of fallbacks) {
+        expect(fallback.priority).toBeDefined();
+        expect(offering.priority as number).toBeLessThan(
+          fallback.priority as number,
+        );
+      }
+    }
+  });
+
+  it("assigns an explicit priority to every offering", () => {
+    for (const offering of offerings) {
+      expect(typeof offering.priority).toBe("number");
+    }
+  });
+});
+
 describe("buildAgentCatalog", () => {
   it("returns empty providers/models/offerings for empty templates", () => {
     const result = buildAgentCatalog([]);

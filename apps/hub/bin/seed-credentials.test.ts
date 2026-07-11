@@ -226,31 +226,148 @@ describe("seed-credentials buildEntries", () => {
     ).toBeUndefined();
   });
 
-  it("includes bifrost entry with baseURL and model when BIFROST_API_KEY is set", () => {
+  it("includes the corbits-default-bifrost entry with baseURL and model when BIFROST_API_KEY is set", () => {
     process.env["BIFROST_API_KEY"] = "vk-test123";
     process.env["BIFROST_BASE_URL"] = "http://bifrost.example:8080/v1";
     process.env["BIFROST_MODEL"] = "openai/gpt-4o-mini";
-    process.env["BIFROST_CREDENTIAL_NAME"] = "Bifrost LLM";
+    process.env["BIFROST_CREDENTIAL_NAME"] = "Corbits Default Bifrost LLM";
 
     const entries = buildEntries();
 
-    const bifrost = entries.find((e) => e.providerName === "bifrost");
+    const bifrost = entries.find(
+      (e) => e.providerName === "corbits-default-bifrost",
+    );
     expect(bifrost).toBeDefined();
     expect(bifrost?.secret).toBe("vk-test123");
     expect(bifrost?.providerPlugin).toBe("openai-compatible");
-    expect(bifrost?.credentialName).toBe("Bifrost LLM");
+    expect(bifrost?.credentialName).toBe("Corbits Default Bifrost LLM");
     expect(bifrost?.metadata).toEqual({
       model: "openai/gpt-4o-mini",
       baseURL: "http://bifrost.example:8080/v1",
     });
   });
 
-  it("omits bifrost entry when BIFROST_API_KEY is not set", () => {
+  it("defaults the corbits-default-bifrost credential name to 'Corbits Default Bifrost'", () => {
+    process.env["BIFROST_API_KEY"] = "vk-test123";
+    process.env["BIFROST_BASE_URL"] = "http://bifrost.example:8080/v1";
+    delete process.env["BIFROST_CREDENTIAL_NAME"];
+
+    const bifrost = buildEntries().find(
+      (e) => e.providerName === "corbits-default-bifrost",
+    );
+    expect(bifrost?.credentialName).toBe("Corbits Default Bifrost");
+  });
+
+  it("omits the corbits-default-bifrost entry when BIFROST_API_KEY is not set", () => {
     delete process.env["BIFROST_API_KEY"];
 
     const entries = buildEntries();
 
-    expect(entries.find((e) => e.providerName === "bifrost")).toBeUndefined();
+    expect(
+      entries.find((e) => e.providerName === "corbits-default-bifrost"),
+    ).toBeUndefined();
+  });
+
+  it("omits the corbits-default-bifrost entry when BIFROST_BASE_URL is not set (no default for a self-hosted gateway)", () => {
+    process.env["BIFROST_API_KEY"] = "vk-test123";
+    delete process.env["BIFROST_BASE_URL"];
+
+    const entries = buildEntries();
+
+    expect(
+      entries.find((e) => e.providerName === "corbits-default-bifrost"),
+    ).toBeUndefined();
+  });
+
+  it("adds the native /anthropic and /genai Bifrost surfaces sharing the one virtual key", () => {
+    process.env["BIFROST_API_KEY"] = "vk-shared";
+    process.env["BIFROST_BASE_URL"] = "http://bifrost.example:8080/v1";
+    process.env["BIFROST_ANTHROPIC_BASE_URL"] =
+      "http://bifrost.example:8080/anthropic";
+    process.env["BIFROST_GENAI_BASE_URL"] = "http://bifrost.example:8080/genai";
+
+    const entries = buildEntries();
+
+    const anthropic = entries.find(
+      (e) => e.providerName === "corbits-default-bifrost-anthropic",
+    );
+    expect(anthropic).toBeDefined();
+    expect(anthropic?.secret).toBe("vk-shared");
+    expect(anthropic?.providerPlugin).toBe("anthropic");
+    expect(anthropic?.credentialName).toBe("Corbits Default Bifrost Anthropic");
+    expect(anthropic?.metadata?.["baseURL"]).toBe(
+      "http://bifrost.example:8080/anthropic",
+    );
+
+    const genai = entries.find(
+      (e) => e.providerName === "corbits-default-bifrost-genai",
+    );
+    expect(genai).toBeDefined();
+    expect(genai?.secret).toBe("vk-shared");
+    expect(genai?.providerPlugin).toBe("google-genai");
+    expect(genai?.credentialName).toBe("Corbits Default Bifrost GenAI");
+    expect(genai?.metadata?.["baseURL"]).toBe(
+      "http://bifrost.example:8080/genai",
+    );
+  });
+
+  it("gates each Bifrost surface independently — a native surface seeds without the /v1 base URL", () => {
+    process.env["BIFROST_API_KEY"] = "vk-shared";
+    delete process.env["BIFROST_BASE_URL"];
+    process.env["BIFROST_GENAI_BASE_URL"] = "http://bifrost.example:8080/genai";
+    delete process.env["BIFROST_ANTHROPIC_BASE_URL"];
+
+    const entries = buildEntries();
+
+    // The /v1 surface is skipped (its base URL is unset)...
+    expect(
+      entries.find((e) => e.providerName === "corbits-default-bifrost"),
+    ).toBeUndefined();
+    // ...but the /genai surface still seeds on its own base URL.
+    const genai = entries.find(
+      (e) => e.providerName === "corbits-default-bifrost-genai",
+    );
+    expect(genai).toBeDefined();
+    expect(genai?.secret).toBe("vk-shared");
+    expect(genai?.metadata?.["baseURL"]).toBe(
+      "http://bifrost.example:8080/genai",
+    );
+  });
+
+  it("omits the native Bifrost surfaces when their base URL is unset even if the key is set", () => {
+    process.env["BIFROST_API_KEY"] = "vk-shared";
+    process.env["BIFROST_BASE_URL"] = "http://bifrost.example:8080/v1";
+    delete process.env["BIFROST_ANTHROPIC_BASE_URL"];
+    delete process.env["BIFROST_GENAI_BASE_URL"];
+
+    const entries = buildEntries();
+
+    expect(
+      entries.find(
+        (e) => e.providerName === "corbits-default-bifrost-anthropic",
+      ),
+    ).toBeUndefined();
+    expect(
+      entries.find((e) => e.providerName === "corbits-default-bifrost-genai"),
+    ).toBeUndefined();
+  });
+
+  it("omits the native Bifrost surfaces when the virtual key is unset even if base URLs are set", () => {
+    delete process.env["BIFROST_API_KEY"];
+    process.env["BIFROST_ANTHROPIC_BASE_URL"] =
+      "http://bifrost.example:8080/anthropic";
+    process.env["BIFROST_GENAI_BASE_URL"] = "http://bifrost.example:8080/genai";
+
+    const entries = buildEntries();
+
+    expect(
+      entries.find(
+        (e) => e.providerName === "corbits-default-bifrost-anthropic",
+      ),
+    ).toBeUndefined();
+    expect(
+      entries.find((e) => e.providerName === "corbits-default-bifrost-genai"),
+    ).toBeUndefined();
   });
 
   it("keeps the unnumbered openai-compatible entry on the canonical provider", () => {

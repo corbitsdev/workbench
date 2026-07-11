@@ -136,21 +136,65 @@ export function buildEntries(): CredentialEntry[] {
     });
   }
 
+  // Bifrost gateway, one credential per wire format on the SAME virtual key
+  // (BIFROST_API_KEY). Each surface is gated independently on its own base URL
+  // (there is no universal default for a self-hosted gateway), so one VK powers
+  // any subset. Provider names are owner-prefixed (corbits-default-*).
   const bifrostKey = env("BIFROST_API_KEY");
   if (bifrostKey) {
-    entries.push({
-      providerName: "bifrost",
-      providerPlugin: "openai-compatible",
-      credentialName: env("BIFROST_CREDENTIAL_NAME", "Bifrost"),
-      secret: bifrostKey,
-      metadata: {
-        model: env("BIFROST_MODEL", "gpt-4o"),
-        baseURL: env("BIFROST_BASE_URL", "http://localhost:8080/v1"),
-        ...(env("BIFROST_MAX_TOKENS")
-          ? { maxTokens: Number(env("BIFROST_MAX_TOKENS")) }
-          : {}),
-      },
-    });
+    const bifrostBaseURL = env("BIFROST_BASE_URL");
+    if (bifrostBaseURL) {
+      entries.push({
+        providerName: "corbits-default-bifrost",
+        providerPlugin: "openai-compatible",
+        credentialName: env(
+          "BIFROST_CREDENTIAL_NAME",
+          "Corbits Default Bifrost",
+        ),
+        secret: bifrostKey,
+        metadata: {
+          model: env("BIFROST_MODEL", "gpt-4o"),
+          baseURL: bifrostBaseURL,
+          ...(env("BIFROST_MAX_TOKENS")
+            ? { maxTokens: Number(env("BIFROST_MAX_TOKENS")) }
+            : {}),
+        },
+      });
+    }
+
+    const bifrostAnthropicBaseURL = env("BIFROST_ANTHROPIC_BASE_URL");
+    if (bifrostAnthropicBaseURL) {
+      entries.push({
+        providerName: "corbits-default-bifrost-anthropic",
+        providerPlugin: "anthropic",
+        credentialName: env(
+          "BIFROST_ANTHROPIC_CREDENTIAL_NAME",
+          "Corbits Default Bifrost Anthropic",
+        ),
+        secret: bifrostKey,
+        metadata: {
+          model: env("BIFROST_ANTHROPIC_MODEL", "claude-haiku-4-5"),
+          baseURL: bifrostAnthropicBaseURL,
+        },
+      });
+    }
+
+    const bifrostGenaiBaseURL = env("BIFROST_GENAI_BASE_URL");
+    if (bifrostGenaiBaseURL) {
+      entries.push({
+        providerName: "corbits-default-bifrost-genai",
+        providerPlugin: "google-genai",
+        credentialName: env(
+          "BIFROST_GENAI_CREDENTIAL_NAME",
+          "Corbits Default Bifrost GenAI",
+        ),
+        secret: bifrostKey,
+        metadata: {
+          model: env("BIFROST_GENAI_MODEL", "gemini-2.5-flash"),
+          baseURL: bifrostGenaiBaseURL,
+        },
+      });
+    }
   }
 
   // Optional cheap model dedicated to auto-titling Myra chat threads. When unset,

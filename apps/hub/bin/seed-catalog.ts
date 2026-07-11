@@ -10,10 +10,13 @@
  * catalog ancestor walk.
  *
  * Each provider's baseURL is read from its already-seeded credential's
- * metadata, so run AFTER seed-credentials. Create-or-skip per row (409 = no-op);
- * a changed baseURL/credential is NOT reconciled — delete + re-seed to change a
- * provider binding. Fails loudly and stops on the first unexpected status; a
- * mid-run failure leaves a partial catalog — re-run (create-or-skip) to complete.
+ * metadata, so run AFTER seed-credentials. Providers/models are create-or-skip;
+ * offerings are create-or-reconcile — an existing offering's priority is PATCHed
+ * in place so a re-seed reorders the source head/tail without a destructive
+ * delete. A changed provider baseURL/credential binding is still NOT reconciled
+ * (it lives on the provider row) — delete + re-seed to change that. Fails loudly
+ * and stops on the first unexpected status; a mid-run failure leaves a partial
+ * catalog — re-run to complete.
  */
 
 import { FULL_CATALOG } from "@workbench/catalog";
@@ -123,7 +126,7 @@ function fail(label: string, status: number, data: unknown): never {
   process.exit(1);
 }
 
-async function seedCatalog(
+export async function seedCatalog(
   tenantId: string,
   cookies: CookieJar,
 ): Promise<void> {
@@ -216,7 +219,11 @@ async function seedCatalog(
     log(`Created model: ${model.canonicalName}`);
   }
 
-  // Offerings — create or skip, keyed by (modelId, providerId).
+  // Offerings — create new, or reconcile the priority of an existing one. The
+  // priority is what makes a source the head vs the failover tail, so a re-seed
+  // over an already-seeded tenant (whose rows predate the priority scheme, all
+  // at 0) MUST update it in place — otherwise the intended ordering silently
+  // never takes effect. Keyed by (modelId, providerId).
   const offRes = await api(
     "GET",
     `/api/tenants/${tenantId}/catalog/offerings`,
@@ -225,10 +232,13 @@ async function seedCatalog(
   );
   if (offRes.status !== 200)
     fail("list catalog offerings", offRes.status, offRes.data);
-  const existingOfferings = new Set(
-    listData<{ modelId: string; providerId: string }>(offRes.data).map(
-      (o) => `${o.modelId} ${o.providerId}`,
-    ),
+  const existingOfferings = new Map(
+    listData<{
+      id: string;
+      modelId: string;
+      providerId: string;
+      priority: number;
+    }>(offRes.data).map((o) => [`${o.modelId} ${o.providerId}`, o]),
   );
   for (const offering of FULL_CATALOG.offerings) {
     if (skippedProviders.has(offering.provider)) {
@@ -246,14 +256,34 @@ async function seedCatalog(
         "model or provider id missing after seed",
       );
     }
-    if (existingOfferings.has(`${modelId} ${providerId}`)) {
-      log(`Offering exists: ${offering.model} via ${offering.provider}`);
+    const priority = offering.priority ?? 0;
+    const existing = existingOfferings.get(`${modelId} ${providerId}`);
+    if (existing) {
+      if (existing.priority === priority) {
+        log(`Offering exists: ${offering.model} via ${offering.provider}`);
+        continue;
+      }
+      const res = await api(
+        "PATCH",
+        `/api/tenants/${tenantId}/catalog/offerings/${existing.id}`,
+        { priority },
+        cookies,
+      );
+      if (res.status !== 200)
+        fail(
+          `reprioritize offering (${offering.model}/${offering.provider})`,
+          res.status,
+          res.data,
+        );
+      log(
+        `Reprioritized offering: ${offering.model} via ${offering.provider} → ${priority}`,
+      );
       continue;
     }
     const res = await api(
       "POST",
       `/api/tenants/${tenantId}/catalog/offerings`,
-      { modelId, providerId, priority: 0 },
+      { modelId, providerId, priority },
       cookies,
     );
     if (res.status !== 201)
