@@ -8,8 +8,8 @@ export interface HeartbeatSeederDeps {
   hourUtc: number;
   // Members with a Myra instance — the users a morning heartbeat targets.
   listMyraTargets: () => Promise<{ memberPrincipalId: string }[]>;
-  // EPIC-INTEGRATION: swap to deriveUserMailAddress from @workbench/hub-agent.
-  // Resolves the member principal's user mail address (`${refId}@${domain}`).
+  // Resolves the member principal's user mail address (`${refId}@${domain}`,
+  // via deriveUserMailAddress at the wiring site).
   resolveUserAddress: (memberPrincipalId: string) => Promise<string>;
   // Idempotent upsert (does not overwrite an existing schedule).
   ensureSchedule: (args: {

@@ -133,6 +133,7 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
@@ -1240,13 +1241,12 @@ void workflowReconciler
     });
   });
 
-// Automation scheduler (CL-2609): fire durable scheduled_trigger rows on a
+// Automation scheduler: fire durable scheduled_trigger rows on a
 // daily UTC-hour cadence by calling the run-start service directly (no HTTP
 // self-call). Single-replica assumption — like the disconnect reconciler, N
 // replicas would fire N runs/schedule/day; a DB-backed fire-lock is the
 // multi-replica follow-up. resolveUserAddress derives the user mail address the
 // heartbeat payload targets.
-// EPIC-INTEGRATION: swap to deriveUserMailAddress from @workbench/hub-agent.
 const resolveUserAddress = async (
   memberPrincipalId: string,
 ): Promise<string> => {
@@ -1256,7 +1256,10 @@ const resolveUserAddress = async (
   if (!member) {
     throw new Error(`principal not found: ${memberPrincipalId}`);
   }
-  return `${member.refId}@${config.rootTenant.domain}`;
+  return deriveUserMailAddress({
+    userRefId: member.refId,
+    domain: config.rootTenant.domain,
+  });
 };
 
 const listMyraTargets = async () => {

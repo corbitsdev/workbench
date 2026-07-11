@@ -358,9 +358,9 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
   });
 });
 
-describe("0046 creates scheduled_trigger (CL-2609)", () => {
+describe("0047 creates scheduled_trigger", () => {
   const sql = readFileSync(
-    join(import.meta.dir, "../../migrations/0046_scheduled_trigger.sql"),
+    join(import.meta.dir, "../../migrations/0047_scheduled_trigger.sql"),
     "utf-8",
   );
 
