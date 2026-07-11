@@ -178,6 +178,84 @@ describe("POST /hub-tools/run", () => {
     expect(res.status).toBe(403);
   });
 
+  // Repeating an IDENTICAL failing call (same tool + same args) must escalate:
+  // a corrective hint on the 2nd consecutive failure, a hard stop on the 3rd,
+  // and the call blocked before execution afterwards. artifact_create with a
+  // missing title is exactly the observed production loop.
+  describe("identical failing call loop guard", () => {
+    const failingCall = {
+      ...baseCall,
+      toolName: "artifact_create",
+      args: { kind: "note", content: "c" },
+    };
+
+    async function runToolBody(
+      router: ReturnType<typeof createHubToolsRouter>,
+      body: unknown,
+    ): Promise<{ result: string; isError: boolean }> {
+      const res = await post(router, body);
+      expect(res.status).toBe(200);
+      return (await res.json()) as { result: string; isError: boolean };
+    }
+
+    test("appends an escalating hint on the 2nd identical failure and blocks on the 3rd", async () => {
+      const router = makeRouter(["artifact_create", "artifact_list"]);
+
+      const first = await runToolBody(router, failingCall);
+      expect(first.isError).toBe(true);
+      expect(first.result).not.toContain("times in a row");
+
+      const second = await runToolBody(router, failingCall);
+      expect(second.isError).toBe(true);
+      expect(second.result).toContain("title is required");
+      expect(second.result).toContain("2 times in a row");
+
+      const third = await runToolBody(router, failingCall);
+      expect(third.isError).toBe(true);
+      expect(third.result).toContain("blocked");
+
+      // Past the ceiling the call is refused without executing the tool.
+      const fourth = await runToolBody(router, failingCall);
+      expect(fourth.isError).toBe(true);
+      expect(fourth.result).toContain("blocked");
+    });
+
+    test("different args reset the run", async () => {
+      const router = makeRouter(["artifact_create"]);
+      await runToolBody(router, failingCall);
+      await runToolBody(router, {
+        ...failingCall,
+        args: { kind: "other", content: "c" },
+      });
+      const next = await runToolBody(router, failingCall);
+      expect(next.result).not.toContain("times in a row");
+    });
+
+    test("a success resets the run", async () => {
+      const router = makeRouter(["artifact_create", "artifact_list"]);
+      await runToolBody(router, failingCall);
+      const ok = await runToolBody(router, {
+        ...baseCall,
+        toolName: "artifact_list",
+        args: {},
+      });
+      expect(ok.isError).toBe(false);
+      const next = await runToolBody(router, failingCall);
+      expect(next.isError).toBe(true);
+      expect(next.result).not.toContain("times in a row");
+    });
+
+    test("sessions are tracked independently", async () => {
+      const router = makeRouter(["artifact_create"]);
+      await runToolBody(router, failingCall);
+      const otherSession = await runToolBody(router, {
+        ...failingCall,
+        sessionId: "s2",
+      });
+      expect(otherSession.result).not.toContain("times in a row");
+    });
+  });
+
   test("allows deterministic workflow step agents without an instance row", async () => {
     const res = await post(
       makeRouter(["artifact_list"], { instanceMatches: false }),
