@@ -13,6 +13,12 @@ export * from "./pain-point-collateral";
 export * from "./web-site";
 export { toHumanLabel } from "./tool-labels";
 export { unwrapArgsEnvelope } from "./tool-args";
+export {
+  createToolLoopGuard,
+  TOOL_LOOP_HINT_THRESHOLD,
+  TOOL_LOOP_BLOCK_THRESHOLD,
+  type ToolLoopGuard,
+} from "./tool-loop-guard";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

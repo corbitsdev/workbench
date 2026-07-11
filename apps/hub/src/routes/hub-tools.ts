@@ -23,6 +23,7 @@ import type {
   ProvisionRunDeploymentFn,
 } from "./workflow-runs";
 import { requestBodySchema } from "../lib/openapi";
+import { createToolLoopGuard } from "@workbench/shared";
 
 const log = getLogger(["api", "hub-tools"]);
 
@@ -68,6 +69,9 @@ export function createHubToolsRouter(
   },
 ): Hono {
   const router = new Hono();
+  // Every hub-backed tool call flows through this route per session, so it is
+  // the widest hub-side seam for the identical-failing-call loop guard.
+  const loopGuard = createToolLoopGuard();
 
   router.use("*", async (c, next) => {
     const auth = c.req.header("Authorization") ?? "";
@@ -258,10 +262,15 @@ export function createHubToolsRouter(
           500,
         );
       }
+      const blocked = loopGuard.checkBlocked(sessionId, toolName, args);
+      if (blocked !== undefined) {
+        return c.json({ result: blocked, isError: true });
+      }
       try {
         const controller = new AbortController();
         c.req.raw.signal.addEventListener("abort", () => controller.abort());
         const result = await tool.handler(args, controller.signal);
+        loopGuard.recordSuccess(sessionId);
         return c.json({ result, isError: false });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -270,7 +279,10 @@ export function createHubToolsRouter(
           toolName,
           error: message,
         });
-        return c.json({ result: message, isError: true });
+        const escalation = loopGuard.recordFailure(sessionId, toolName, args);
+        const result =
+          escalation === undefined ? message : `${message}\n\n${escalation}`;
+        return c.json({ result, isError: true });
       }
     },
   );
