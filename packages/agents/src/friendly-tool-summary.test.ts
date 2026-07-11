@@ -183,20 +183,21 @@ describe("friendlyToolSummary", () => {
     ).toBe("Searching the web");
   });
 
-  it("falls back to soft sentence-case without snake_case or Title Case tool ids", () => {
+  it("falls back to a present-participle phrase without snake_case or Title Case tool ids", () => {
     const result = friendlyToolSummary(
       call("@workbench/tools-mystery/mystery:mystery_do_thing"),
     );
-    expect(result).toBe("Mystery do thing");
+    expect(result).toBe("Working on mystery do thing");
     expect(result).not.toMatch(/_/);
     expect(result).not.toBe("Mystery Do Thing");
+    expect(result).not.toBe("Mystery do thing");
   });
 
   it("falls back using the operation key, not the full name", () => {
     const result = friendlyToolSummary(
       call("@workbench/tools-x/unknown:some_new_op"),
     );
-    expect(result).toBe("Some new op");
+    expect(result).toBe("Working on some new op");
     expect(result).not.toContain("@workbench");
     expect(result).not.toContain("/");
     expect(result).not.toMatch(/_/);
@@ -210,12 +211,12 @@ describe("friendlyToolSummary", () => {
 function softFallbackSentence(name: string): string {
   const key = toolOperationKey(name);
   const words = key
-    .replaceAll("__", "_")
+    .split("__")
+    .join("_")
     .split(/[-_]+/u)
     .filter((w) => w.length > 0);
   if (words.length === 0) return "Working on a task";
-  const sentence = words.join(" ");
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return `Working on ${words.join(" ").toLowerCase()}`;
 }
 
 describe("friendlyToolResult", () => {

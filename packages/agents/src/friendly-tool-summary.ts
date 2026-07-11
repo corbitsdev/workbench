@@ -421,8 +421,9 @@ export function toolOperationKey(name: string): string {
 }
 
 /**
- * Soft sentence-case fallback that never surfaces snake_case or Title Case tool ids.
- * `mystery_do_thing` → "Mystery do thing"
+ * Soft present-participle fallback that never surfaces snake_case or Title Case
+ * tool ids. Unknown ops keep a calm action frame rather than reading like a name.
+ * `mystery_do_thing` → "Working on mystery do thing"
  */
 function softFallback(key: string): string {
   const words = key
@@ -431,8 +432,7 @@ function softFallback(key: string): string {
     .split(/[-_]+/u)
     .filter((w: string) => w.length > 0);
   if (words.length === 0) return "Working on a task";
-  const sentence = words.join(" ");
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return `Working on ${words.join(" ").toLowerCase()}`;
 }
 
 /**
@@ -448,15 +448,17 @@ export function isCatalogMetaTool(name: string): boolean {
 
 /**
  * A host `formatToolSummary`: renders a friendly action verb for a tool call.
- * Unknown operations fall back to a soft sentence-case label — never the raw id.
+ * Unknown operations fall back to a soft present-participle label — never the raw id.
  */
 export function friendlyToolSummary(call: ToolCall): string {
   const key = toolOperationKey(call.name);
   const phrase = PHRASES[key];
   if (phrase === undefined) return softFallback(key);
   if (typeof phrase === "string") return phrase;
+  // Hand-authored interpolators always return a static phrase when args are
+  // thin; null is only a defensive escape and must not reintroduce wire-id words.
   const interpolated = phrase(call.arguments ?? {}, call);
-  return interpolated ?? softFallback(key);
+  return interpolated ?? "Working on a task";
 }
 
 /**

@@ -152,13 +152,15 @@ Rules:
   `MYRA_CATALOG_PACKAGES` without a `PHRASES` entry fails the
   `CL-3268 catalog phrase coverage` test in
   `friendly-tool-summary.test.ts`.
-- Unknown tools still soft-fall back to sentence-case words (`"Mystery do thing"`)
-  so the UI never shows snake_case — but that is a safety net, not a substitute
-  for a hand-authored phrase on a known tool.
+- Unknown tools still soft-fall back to a present-participle frame
+  (`"Working on mystery do thing"`) so the UI never shows snake_case or a Title
+  Case tool id — but that is a safety net, not a substitute for a hand-authored
+  phrase on a known tool.
 - **Platform meta-tools** (`search_tools`, `load_tools`) are not user-facing
   capabilities. Flag them with `isCatalogMetaTool` so chat hosts render quiet
-  reasoning-style lines (no checkmark / tool chrome) and exclude them from
-  roll-up counts. Wire `isQuietTool={isCatalogMetaTool}` on Myra chat surfaces.
+  reasoning-style lines (no checkmark / tool chrome), exclude them from roll-up
+  counts, and keep the activity pill generic (`Myra is thinking`). Wire
+  `isQuietTool={isCatalogMetaTool}` on Myra chat surfaces.
 
 ### 4. Build and push
 

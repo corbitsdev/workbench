@@ -24,12 +24,18 @@ function formatActivityLabel(
   activity: ChatActivity,
   agentName: string,
   formatToolName?: (name: string) => string,
+  isQuietTool?: (name: string) => boolean,
 ): string {
   switch (activity.type) {
     case "thinking":
       return `${agentName} is thinking`;
     case "tool_call":
     case "tool_running": {
+      // Platform meta-tools stay quiet in the narrative — keep the pill generic
+      // too so users never see "Myra is searching Workbench…" for plumbing.
+      if (isQuietTool?.(activity.name) === true) {
+        return `${agentName} is thinking`;
+      }
       if (formatToolName !== undefined) {
         return `${agentName} is ${lowerFirst(formatToolName(activity.name))}`;
       }
@@ -265,7 +271,12 @@ export function ChatThread({
         <div className="flex items-start" aria-live="polite">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
             <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange" />
-            {formatActivityLabel(activity, agentName, formatToolName)}
+            {formatActivityLabel(
+              activity,
+              agentName,
+              formatToolName,
+              isQuietTool,
+            )}
           </span>
         </div>
       )}

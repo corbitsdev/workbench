@@ -200,6 +200,21 @@ describe("ChatThread", () => {
     expect(screen.queryByText(/is thinking/)).toBeNull();
   });
 
+  it("keeps quiet meta-tools generic on the activity pill", () => {
+    render(
+      <ChatThread
+        messages={messages}
+        agentName="Myra"
+        activity={{ type: "tool_running", name: "search_tools" }}
+        formatToolName={() => "Searching Workbench…"}
+        isQuietTool={(name) => name === "search_tools"}
+      />,
+    );
+    expect(screen.getByText("Myra is thinking")).toBeDefined();
+    expect(screen.queryByText(/Searching Workbench/)).toBeNull();
+    expect(screen.queryByText(/search_tools/)).toBeNull();
+  });
+
   it("runs the scroll handler against the new scroll position and keeps messages rendered", () => {
     render(<ChatThread messages={messages} />);
     const log = screen.getByRole("log", { name: "Chat messages" });
