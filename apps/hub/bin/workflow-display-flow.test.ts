@@ -22,10 +22,15 @@ async function loadModule(kind: string): Promise<WorkflowModule> {
   return mod as WorkflowModule;
 }
 
-// Every workflow that ships a client run panel declares a DISPLAY_STEPS flow;
-// this test binds the server catalog preview to that same declaration so the two
-// surfaces cannot drift. A workflow with no declaration (generic STEP_ORDER path)
-// is exercised by the fallback case below.
+// Every workflow that ships a client run panel declares a DISPLAY_STEPS flow.
+// This test pins the classifier's projection contract that the server catalog
+// path depends on: handed a workflow's real definition and its declared flow,
+// `classifyWorkflowSteps` reproduces the declared labels/grouping and every
+// declared stepId maps to a real execution step. The end-to-end wiring — the
+// flow actually reaching the /workflows route from the committed embedded def —
+// is covered by workflows-catalog-display-flow.integration.test.ts. A workflow
+// with no declaration (generic STEP_ORDER path) is exercised by the fallback
+// case below.
 const kinds = workflowKinds();
 
 describe("workflow display-flow declaration ↔ catalog preview", () => {

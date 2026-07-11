@@ -3,6 +3,51 @@
   "version": "0.1.0",
   "label": "Gamma Presentation Creator",
   "description": "Turn any artifact, call, or pasted text into a Gamma deck, refining it round by round until you approve it.",
+  "displayFlow": [
+    {
+      "key": "source",
+      "label": "Source",
+      "stepIds": [
+        "list-artifacts",
+        "list-notes",
+        "intake",
+        "fetch-artifact",
+        "fetch-note"
+      ]
+    },
+    {
+      "key": "draft",
+      "label": "Draft",
+      "stepIds": [
+        "generate-1",
+        "render-1",
+        "generate-2",
+        "render-2",
+        "generate-3",
+        "render-3"
+      ],
+      "activityLabel": "Building the deck"
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "stepIds": [
+        "preview-1",
+        "preview-2",
+        "preview-3"
+      ]
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "persist-1",
+        "persist-2",
+        "persist-3"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
   "definition": {
     "id": "gamma-presentation-creator",
     "triggers": [

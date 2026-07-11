@@ -8,6 +8,7 @@ import {
   classifyWorkflowSteps,
   countHumanGates,
   type ClassifiedFlowStep,
+  type DisplayFlowStep,
 } from "@workbench/agents";
 import {
   orderCatalogEntries,
@@ -22,6 +23,7 @@ import {
 } from "../lib/workflow-run-gate";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { readMemberPreferences } from "../lib/member-preferences";
+import { loadWorkflowDisplayFlows } from "../lib/workflow-catalog";
 import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
 
 const log = getLogger("workflows-catalog");
@@ -57,9 +59,13 @@ async function readFavoriteKinds(db: HubDb, userId: string): Promise<string[]> {
 async function classifyKindSteps(
   repoStore: AgentRepoStore,
   kind: string,
+  displayFlow: readonly DisplayFlowStep[] | undefined,
 ): Promise<ClassifiedFlowStep[]> {
   try {
-    return classifyWorkflowSteps(await readWorkflowDefinition(repoStore, kind));
+    return classifyWorkflowSteps(
+      await readWorkflowDefinition(repoStore, kind),
+      displayFlow,
+    );
   } catch (err) {
     // A runnable kind whose definition cannot be read still belongs in the
     // catalog (it is startable); it just has no preview. Surface, do not drop.
@@ -126,10 +132,19 @@ export function createWorkflowsCatalogRouter(deps: {
       const kinds = distinctRunnableKindsFromDeployments(deployments);
       const favoriteKinds = await readFavoriteKinds(deps.db, userId);
       const favoriteSet = new Set(favoriteKinds);
+      // The declared display flow per kind (when the workflow ships one) — the
+      // same DISPLAY_STEPS the client run stepper consumes — so the preview
+      // groups and labels steps identically. Absent kinds fall back to the
+      // per-step stepOrder projection.
+      const displayFlows = await loadWorkflowDisplayFlows();
 
       const entries: WorkflowCatalogEntry[] = [];
       for (const entry of kinds) {
-        const steps = await classifyKindSteps(deps.repoStore, entry.kind);
+        const steps = await classifyKindSteps(
+          deps.repoStore,
+          entry.kind,
+          displayFlows.get(entry.kind),
+        );
         entries.push({
           kind: entry.kind,
           label: entry.label ?? humanizeKind(entry.kind),

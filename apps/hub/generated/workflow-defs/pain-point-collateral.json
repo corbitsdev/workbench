@@ -3,6 +3,57 @@
   "version": "0.1.0",
   "label": "Pain Point Collateral Generation",
   "description": "Analyze a call transcript for customer pain points and generate targeted sales collateral.",
+  "displayFlow": [
+    {
+      "key": "transcript",
+      "label": "Transcript",
+      "stepIds": [
+        "intake",
+        "select",
+        "fetch"
+      ]
+    },
+    {
+      "key": "context",
+      "label": "Context",
+      "stepIds": [
+        "context"
+      ]
+    },
+    {
+      "key": "painPoints",
+      "label": "Pain Points",
+      "stepIds": [
+        "analyze",
+        "ppSelection"
+      ],
+      "activityLabel": "Analyzing the call"
+    },
+    {
+      "key": "formats",
+      "label": "Generate",
+      "stepIds": [
+        "fmtSelection"
+      ]
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "stepIds": [
+        "generate",
+        "review"
+      ],
+      "activityLabel": "Generating collateral"
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "persist"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
   "definition": {
     "id": "pain-point-collateral",
     "triggers": [

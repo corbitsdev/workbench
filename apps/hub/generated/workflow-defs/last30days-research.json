@@ -3,6 +3,55 @@
   "version": "0.1.0",
   "label": "Last30Days Research Report",
   "description": "Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.",
+  "displayFlow": [
+    {
+      "key": "intake",
+      "label": "Topic",
+      "stepIds": [
+        "intake"
+      ]
+    },
+    {
+      "key": "research",
+      "label": "Research",
+      "stepIds": [
+        "ground",
+        "groundQueries",
+        "web",
+        "webB",
+        "webC",
+        "hackernews",
+        "github",
+        "reddit",
+        "x",
+        "youtube",
+        "polymarket",
+        "entities",
+        "entityQueries",
+        "web2",
+        "reddit2",
+        "x2",
+        "youtube2",
+        "collect",
+        "curate",
+        "brief"
+      ]
+    },
+    {
+      "key": "report",
+      "label": "Report",
+      "stepIds": [
+        "write"
+      ]
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "persist"
+      ]
+    }
+  ],
   "definition": {
     "id": "last30days-research",
     "triggers": [

@@ -3,6 +3,69 @@
   "version": "0.1.0",
   "label": "Reddit Opportunity Scanner",
   "description": "Scan a website, review keyword and subreddit recommendations, then rank Reddit opportunities for follow-up.",
+  "displayFlow": [
+    {
+      "key": "intake",
+      "label": "Website",
+      "stepIds": [
+        "intake"
+      ]
+    },
+    {
+      "key": "scrape",
+      "label": "Crawl",
+      "stepIds": [
+        "scrape"
+      ],
+      "activityLabel": "Reading the website"
+    },
+    {
+      "key": "analyze",
+      "label": "Strategy",
+      "stepIds": [
+        "analyze"
+      ],
+      "activityLabel": "Building the search plan"
+    },
+    {
+      "key": "review",
+      "label": "Search plan",
+      "stepIds": [
+        "review"
+      ]
+    },
+    {
+      "key": "collect",
+      "label": "Collect",
+      "stepIds": [
+        "collect"
+      ],
+      "activityLabel": "Searching Reddit"
+    },
+    {
+      "key": "curate",
+      "label": "Opportunities",
+      "stepIds": [
+        "curate"
+      ],
+      "activityLabel": "Curating opportunities"
+    },
+    {
+      "key": "selection",
+      "label": "Select",
+      "stepIds": [
+        "selection"
+      ]
+    },
+    {
+      "key": "persist",
+      "label": "Done",
+      "stepIds": [
+        "persist"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
   "definition": {
     "id": "reddit-opportunity-scanner",
     "triggers": [
