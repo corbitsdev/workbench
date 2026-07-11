@@ -7,7 +7,7 @@ import {
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
 } from "@workbench/shared";
-import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
+import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { listRunnableWorkflowKinds } from "../lib/workflow-run-gate";
 import {
   createOwnerSchedule,
@@ -43,12 +43,6 @@ export function createMeSchedulesRouter(
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
-  async function resolveCaller(userId: string) {
-    const rootTenantId = await getRootTenantId(db);
-    if (!rootTenantId) return null;
-    return lookupMember(db, { tenantId: rootTenantId, userId });
-  }
-
   app.get(
     "/me/schedules",
     describeRoute({
@@ -65,7 +59,7 @@ export function createMeSchedulesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) return c.json([]);
       const rows = await listOwnerSchedules(
         db,
@@ -113,7 +107,7 @@ export function createMeSchedulesRouter(
         return c.json({ error: body.summary }, 400);
       }
 
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -201,7 +195,7 @@ export function createMeSchedulesRouter(
         return c.json({ error: "no fields to update" }, 400);
       }
 
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -238,7 +232,7 @@ export function createMeSchedulesRouter(
     async (c) => {
       const userId = c.get("userId");
       const id = c.req.param("id");
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

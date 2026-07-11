@@ -7,7 +7,7 @@ import {
   CreateWebhookTriggerResponseSchema,
   WebhookTriggerSchema,
 } from "@workbench/shared";
-import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
+import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { listRunnableWorkflowKinds } from "../lib/workflow-run-gate";
 import { isUuid } from "../lib/uuid";
 import {
@@ -30,12 +30,6 @@ export function createMeWebhookTriggersRouter(
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
-  async function resolveCaller(userId: string) {
-    const rootTenantId = await getRootTenantId(db);
-    if (!rootTenantId) return null;
-    return lookupMember(db, { tenantId: rootTenantId, userId });
-  }
-
   app.get(
     "/me/webhook-triggers",
     describeRoute({
@@ -52,7 +46,7 @@ export function createMeWebhookTriggersRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) return c.json([]);
       const rows = await listOwnerWebhookTriggers(
         db,
@@ -103,7 +97,7 @@ export function createMeWebhookTriggersRouter(
         return c.json({ error: body.summary }, 400);
       }
 
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -151,7 +145,7 @@ export function createMeWebhookTriggersRouter(
         return c.json({ error: "malformed trigger id" }, 400);
       }
 
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

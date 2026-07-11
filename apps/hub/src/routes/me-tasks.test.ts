@@ -11,9 +11,8 @@ const memberByUser: Record<
   "user-none": null,
 };
 mock.module("../lib/tenant-provisioning", () => ({
-  getRootTenantId: async () => "tenant-root",
-  lookupMember: async (_db: unknown, opts: { userId: string }) =>
-    memberByUser[opts.userId] ?? null,
+  resolveCallerMember: async (_db: unknown, userId: string) =>
+    memberByUser[userId] ?? null,
 }));
 
 mock.module("../lib/member-identity", () => ({

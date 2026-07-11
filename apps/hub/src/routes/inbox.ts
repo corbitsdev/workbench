@@ -2,7 +2,7 @@ import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import { MailboxListResponse, MailboxMessageDetail } from "@workbench/shared";
-import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
+import { resolveCallerMember } from "../lib/tenant-provisioning";
 import {
   getMailboxMessage,
   listUserMailbox,
@@ -74,10 +74,7 @@ export function createInboxRouter(
           400,
         );
       }
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -130,10 +127,7 @@ export function createInboxRouter(
       if (id instanceof type.errors) {
         return c.json({ error: "Message id must be a UUID" }, 400);
       }
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -189,10 +183,7 @@ export function createInboxRouter(
       if (id instanceof type.errors) {
         return c.json({ error: "Message id must be a UUID" }, 400);
       }
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

@@ -10,7 +10,7 @@ import {
   UpdateTaskBodySchema,
 } from "@workbench/shared";
 import { createTaskPushService, TASK_ADAPTERS } from "@workbench/tasks";
-import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
+import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { resolveAdapterCredential } from "../lib/task-credential";
 import { getIdentityAccounts } from "../lib/member-identity";
 import {
@@ -34,12 +34,6 @@ export function createMeTasksRouter(
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
-  async function resolveCaller(userId: string) {
-    const rootTenantId = await getRootTenantId(db);
-    if (!rootTenantId) return null;
-    return lookupMember(db, { tenantId: rootTenantId, userId });
-  }
-
   app.get(
     "/me/tasks",
     describeRoute({
@@ -56,7 +50,7 @@ export function createMeTasksRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) return c.json([]);
       const tasks = await listOwnerTasks(db, {
         tenantId: member.tenantId,
@@ -100,7 +94,7 @@ export function createMeTasksRouter(
       if (body instanceof type.errors) {
         return c.json({ error: body.summary }, 400);
       }
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -168,7 +162,7 @@ export function createMeTasksRouter(
       ) {
         return c.json({ error: "no fields to update" }, 400);
       }
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
@@ -235,7 +229,7 @@ export function createMeTasksRouter(
       if (TASK_ADAPTERS[body.adapterId] === undefined) {
         return c.json({ error: `unknown adapter "${body.adapterId}"` }, 400);
       }
-      const member = await resolveCaller(userId);
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

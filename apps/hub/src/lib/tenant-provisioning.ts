@@ -333,6 +333,21 @@ export async function lookupMember(
 }
 
 /**
+ * Resolve the session caller to their member principal in the root tenant.
+ * Returns `null` when the root tenant is unseeded or the caller has no
+ * membership yet — the two cases the `/me/*` routes collapse into the same
+ * "no membership" response (409 or empty list, per route).
+ */
+export async function resolveCallerMember(
+  db: ProductionDB,
+  userId: string,
+): Promise<{ tenantId: string; principalId: string } | null> {
+  const rootTenantId = await getRootTenantId(db);
+  if (!rootTenantId) return null;
+  return lookupMember(db, { tenantId: rootTenantId, userId });
+}
+
+/**
  * @deprecated Back-compat shim for the one-off global-tenant migration only,
  * which is coupled to the root tenant by design. New code must call
  * `ensureMember(db, { tenantId, userId })` with an explicit tenant.

@@ -7,7 +7,7 @@ import {
   resolvePreferenceSettings,
   validatePreferencePatch,
 } from "@workbench/shared";
-import { lookupMember, getRootTenantId } from "../lib/tenant-provisioning";
+import { resolveCallerMember } from "../lib/tenant-provisioning";
 import {
   readMemberPreferences,
   mergeMemberPreferences,
@@ -42,10 +42,7 @@ export function createMePreferencesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       if (!member) return c.json({});
       const prefs = await readMemberPreferences(
         db,
@@ -76,10 +73,7 @@ export function createMePreferencesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       const stored = member
         ? await readMemberPreferences(db, member.tenantId, member.principalId)
         : {};
@@ -130,10 +124,7 @@ export function createMePreferencesRouter(
         return c.json({ error: registryError }, 400);
       }
 
-      const rootTenantId = await getRootTenantId(db);
-      const member = rootTenantId
-        ? await lookupMember(db, { tenantId: rootTenantId, userId })
-        : null;
+      const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }

@@ -10,8 +10,7 @@ let member: { tenantId: string; principalId: string } | null = null;
 
 mock.module("../config", () => ({ getConfig: () => ({}) }));
 mock.module("../lib/tenant-provisioning", () => ({
-  getRootTenantId: mock(async () => "ten-1"),
-  lookupMember: mock(async () => member),
+  resolveCallerMember: mock(async () => member),
 }));
 
 const canned: MailboxMessage = {
