@@ -7,13 +7,13 @@ import {
   toolOperationKey,
 } from "./friendly-tool-summary";
 import { MYRA_TOOL_CATALOG } from "./dynamic-tools/catalog";
-import type { ToolCall } from "@workbench/chat/types";
+import type { ToolSummaryCall } from "./friendly-tool-summary";
 
 function call(
   name: string,
   args?: Record<string, unknown>,
-  extra?: Partial<ToolCall>,
-): ToolCall {
+  extra?: Partial<ToolSummaryCall>,
+): ToolSummaryCall {
   return {
     id: "tc_1",
     name,
@@ -309,7 +309,7 @@ describe("CL-3268 catalog phrase coverage", () => {
 });
 
 describe("summarizeToolCalls", () => {
-  const q = (name: string): ToolCall => call(name);
+  const q = (name: string): ToolSummaryCall => call(name);
 
   it("returns an empty string for no calls", () => {
     expect(summarizeToolCalls([])).toBe("");
@@ -398,19 +398,19 @@ describe("summarizeToolCalls", () => {
 });
 
 describe("summarizeToolCalls styles", () => {
-  const attio = (n: number): ToolCall[] =>
+  const attio = (n: number): ToolSummaryCall[] =>
     Array.from({ length: n }, (_, i) => ({
       id: `a${i}`,
       name: "@workbench/tools-attio/attio:attio_get_record",
       result: "ok",
     }));
-  const notes = (n: number): ToolCall[] =>
+  const notes = (n: number): ToolSummaryCall[] =>
     Array.from({ length: n }, (_, i) => ({
       id: `g${i}`,
       name: "@workbench/tools-granola/granola:granola_get_note",
       result: "ok",
     }));
-  const linear = (result: string): ToolCall => ({
+  const linear = (result: string): ToolSummaryCall => ({
     id: "l1",
     name: "@workbench/tools-linear/linear:linear_list_issues",
     result,

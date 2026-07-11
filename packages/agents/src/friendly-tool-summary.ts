@@ -1,12 +1,18 @@
 import { type } from "arktype";
-import { toHumanLabel } from "@workbench/ui";
-import type { ToolSummaryStyle } from "@workbench/ui";
-import type { ToolCall } from "@workbench/chat/types";
+import { toHumanLabel, type ToolSummaryStyle } from "@workbench/shared";
 
-// `ToolSummaryStyle` is owned by @workbench/ui (the foundation both this package
-// and the preference hook depend on); re-exported here so callers can keep
-// importing it from @workbench/agents.
 export type { ToolSummaryStyle };
+
+/** Minimal tool-call shape for summary phrasing (sidecar-safe; no chat package). */
+export const ToolSummaryCallSchema = type({
+  id: "string",
+  name: "string",
+  "label?": "string",
+  "arguments?": "Record<string, unknown>",
+  "result?": "string",
+  "isError?": "boolean",
+});
+export type ToolSummaryCall = typeof ToolSummaryCallSchema.infer;
 
 /**
  * Maps a tool operation to a friendly present-participle action phrase shown in
@@ -19,7 +25,7 @@ export type { ToolSummaryStyle };
  */
 type FriendlyPhrase =
   | string
-  | ((args: Record<string, unknown>, call?: ToolCall) => string | null);
+  | ((args: Record<string, unknown>, call?: ToolSummaryCall) => string | null);
 
 function firstStringArg(
   args: Record<string, unknown>,
@@ -450,7 +456,7 @@ export function isCatalogMetaTool(name: string): boolean {
  * A host `formatToolSummary`: renders a friendly action verb for a tool call.
  * Unknown operations fall back to a soft present-participle label — never the raw id.
  */
-export function friendlyToolSummary(call: ToolCall): string {
+export function friendlyToolSummary(call: ToolSummaryCall): string {
   const key = toolOperationKey(call.name);
   const phrase = PHRASES[key];
   if (phrase === undefined) return softFallback(key);
@@ -465,7 +471,7 @@ export function friendlyToolSummary(call: ToolCall): string {
  * Short human outcome for a settled tool call. Returns null when there is nothing
  * useful to say (pending, empty, or unparseable). Never returns raw JSON.
  */
-export function friendlyToolResult(call: ToolCall): string | null {
+export function friendlyToolResult(call: ToolSummaryCall): string | null {
   if (call.isError === true) {
     if (typeof call.result === "string" && call.result.trim() !== "") {
       return truncate(call.result.trim(), 160);
@@ -611,7 +617,7 @@ interface FamilyDef {
   noun?: { one: string; many: string };
   // Best-effort richer clause built from the calls' results, used by the
   // `detail`/`mixed` styles. Returns null to fall back to the plain clause.
-  detail?: (calls: ToolCall[]) => string | null;
+  detail?: (calls: ToolSummaryCall[]) => string | null;
 }
 
 function pluralize(count: number, one: string, many: string): string {
@@ -648,7 +654,7 @@ function isHighPriority(
 
 // Detects how many issues a Linear turn pulled and whether any are high-stakes,
 // degrading to null when a result does not match the expected shape.
-function linearDetail(calls: ToolCall[]): string | null {
+function linearDetail(calls: ToolSummaryCall[]): string | null {
   let issues = 0;
   let high = 0;
   for (const call of calls) {
@@ -732,7 +738,7 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
 
 function familyClause(
   family: string,
-  calls: ToolCall[],
+  calls: ToolSummaryCall[],
   count: number,
   style: ToolSummaryStyle,
 ): string {
@@ -773,14 +779,14 @@ function capitalize(text: string): string {
  * for no calls.
  */
 export function summarizeToolCalls(
-  calls: ToolCall[],
+  calls: ToolSummaryCall[],
   style: ToolSummaryStyle = "symbols",
 ): string {
   // Catalog meta-tools are internal plumbing — never count them in the roll-up.
   const real = calls.filter((c) => !isCatalogMetaTool(c.name));
   if (real.length === 0) return "";
   const order: string[] = [];
-  const byFamily = new Map<string, ToolCall[]>();
+  const byFamily = new Map<string, ToolSummaryCall[]>();
   for (const call of real) {
     const family = toolFamilyKey(call.name);
     const existing = byFamily.get(family);
@@ -801,7 +807,7 @@ export function summarizeToolCalls(
 // A representative turn used to render a live example of each style in Settings,
 // so the preview always matches real output (including detail extraction). The
 // Linear result is shaped so the `detail`/`mixed` styles surface the priority.
-export const TOOL_SUMMARY_PREVIEW_CALLS: ToolCall[] = [
+export const TOOL_SUMMARY_PREVIEW_CALLS: ToolSummaryCall[] = [
   {
     id: "p1",
     name: "@workbench/tools-attio/attio:attio_search_records",
