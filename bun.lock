@@ -46,6 +46,7 @@
         "@workbench/analytics": "workspace:*",
         "@workbench/catalog": "workspace:*",
         "@workbench/event-collector": "workspace:*",
+        "@workbench/hub-agent": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
         "@workbench/myra": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
