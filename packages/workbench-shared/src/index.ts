@@ -12,6 +12,7 @@ export * from "./reddit-opportunity-scanner";
 export * from "./pain-point-collateral";
 export * from "./web-site";
 export { toHumanLabel } from "./tool-labels";
+export { unwrapArgsEnvelope } from "./tool-args";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 

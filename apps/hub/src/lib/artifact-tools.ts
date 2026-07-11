@@ -20,6 +20,7 @@ import {
   WEB_SITE_KIND,
   normalizeWebSitePath,
   summarizeWebSiteContent,
+  unwrapArgsEnvelope,
 } from "@workbench/shared";
 import { getLogger } from "@intx/log";
 import { and, desc, eq, isNull, ne } from "drizzle-orm";
@@ -175,10 +176,20 @@ async function fetchGammaPresentationPdf(
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
 
+// Next-step guidance appended to a missing-required error where a better
+// follow-up exists than "supply the field" — keeps a looping model actionable.
+const REQUIRED_FIELD_NEXT_STEPS: Record<string, string> = {
+  artifactId:
+    " (the id returned by artifact_create or artifact_list); to make a new artifact use artifact_create",
+};
+
 function requiredString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${key} is required`);
+    const nextStep = REQUIRED_FIELD_NEXT_STEPS[key] ?? "";
+    throw new Error(
+      `${key} is required — pass a top-level string field "${key}"${nextStep}`,
+    );
   }
   return value.trim();
 }
@@ -349,7 +360,8 @@ function createLinkFileHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_LINK_FILE_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = unwrapArgsEnvelope(rawArgs, ["title", "kind", "path"]);
       const title = requiredString(args, "title");
       const kind = requiredString(args, "kind");
       const path = requiredString(args, "path");
@@ -411,7 +423,8 @@ function createCreateHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_CREATE_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = unwrapArgsEnvelope(rawArgs, ["title", "kind", "content"]);
       const title = requiredString(args, "title");
       const kind = requiredString(args, "kind");
       if (kind === "skill-draft") {
@@ -551,8 +564,9 @@ async function ownerIsMemberOfTenant(
 
 async function resolveArtifactContent(
   context: ArtifactToolContext,
-  args: Record<string, unknown>,
+  rawArgs: Record<string, unknown>,
 ): Promise<{ base: Omit<ReadResult, "content">; content: string }> {
+  const args = unwrapArgsEnvelope(rawArgs, ["artifactId"]);
   const artifactId = requiredString(args, "artifactId");
   const version = optionalVersion(args);
   const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
@@ -676,7 +690,8 @@ function createWriteHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_WRITE_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = unwrapArgsEnvelope(rawArgs, ["artifactId"]);
       const artifactId = requiredString(args, "artifactId");
       const nextContent = optionalNonEmptyString(args, "content");
       const nextTitle = optionalNonEmptyString(args, "title");
@@ -950,7 +965,8 @@ function createLinkPresentationHandler(
   return {
     kind: "string",
     definition: ARTIFACT_LINK_PRESENTATION_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = unwrapArgsEnvelope(rawArgs, ["url", "title"]);
       const url = requiredString(args, "url");
       validatePresentationUrl(url);
       const title = requiredString(args, "title");
@@ -974,7 +990,13 @@ function createLinkGammaPresentationHandler(
   return {
     kind: "string",
     definition: ARTIFACT_LINK_GAMMA_PRESENTATION_DEFINITION,
-    handler: async (args, signal) => {
+    handler: async (rawArgs, signal) => {
+      const args = unwrapArgsEnvelope(rawArgs, [
+        "url",
+        "title",
+        "description",
+        "gammaId",
+      ]);
       const url = requiredString(args, "url");
       validatePresentationUrl(url);
       const title = requiredString(args, "title");
@@ -1019,7 +1041,8 @@ function createFindByTitleHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_FIND_BY_TITLE_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = unwrapArgsEnvelope(rawArgs, ["title"]);
       const title = requiredString(args, "title");
       const kind = optionalString(args, "kind");
 

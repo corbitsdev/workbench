@@ -580,7 +580,9 @@ describe("write_artifact tool", () => {
 
     await expect(
       handler({ body: "B", kind: "report", citations: [] }, SIGNAL),
-    ).rejects.toThrow('title is required — pass a top-level string field "title"');
+    ).rejects.toThrow(
+      'title is required — pass a top-level string field "title"',
+    );
   });
 
   it("unwraps a single-level args envelope", async () => {
