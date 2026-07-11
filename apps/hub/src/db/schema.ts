@@ -615,6 +615,23 @@ export const scheduledTrigger = pgTable(
 
 export type ScheduledTriggerRow = typeof scheduledTrigger.$inferSelect;
 
+// Webhook-triggered workflow runs (CL-3300): a durable per-trigger secret lets
+// an external system fire a workflow run over HTTP, without a session.
+// `secretHash` is a SHA-256 hash of the trigger secret -- the plaintext is
+// returned to the owner exactly once, at creation, and never persisted.
+export const workflowTrigger = pgTable("workflow_trigger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: text("tenant_id").notNull(),
+  ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
+  workflowKind: text("workflow_kind").notNull(),
+  secretHash: text("secret_hash").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastFiredAt: timestamp("last_fired_at"),
+});
+
+export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
+
 export {
   analyticsEvent,
   analyticsRollupDaily,

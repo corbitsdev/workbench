@@ -11,6 +11,7 @@ export * from "./last30days";
 export * from "./mailbox";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
+export * from "./webhook-trigger";
 export * from "./pain-point-collateral";
 export * from "./web-site";
 export { toHumanLabel } from "./tool-labels";

@@ -133,6 +133,8 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
+import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
+import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
@@ -1097,6 +1099,7 @@ const resolveUserIdentity = async (
 };
 
 v1.route("/", createMeSchedulesRouter(db, resolveUserIdentity));
+v1.route("/", createMeWebhookTriggersRouter(db));
 v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
@@ -1154,6 +1157,11 @@ const runStarter = createWorkflowRunStarter({
   deploymentDomain: config.rootTenant.domain,
   cryptoProvider: createEd25519Crypto(registry.active),
 });
+
+// Public webhook firing surface (CL-3300): no session, authenticated only by
+// the per-trigger secret. Mounted directly on the parent app, outside the v1
+// session-auth wall.
+app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
 
 v1.route(
   "/",
