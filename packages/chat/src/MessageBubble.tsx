@@ -9,15 +9,12 @@ import { File as FileIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
 import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
 import { formatBytes } from "./attachments";
-import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import {
   extractUIBlockFromText,
   UIBlockView,
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
-import { MessageFeedback } from "./MessageFeedback";
-import type { FeedbackSubjectKind } from "./feedback-types";
 
 class UIBlockErrorBoundary extends Component<
   { children: ReactNode },
@@ -52,20 +49,6 @@ export interface MessageBubbleProps {
     action: "copy" | "download" | "save-artifact",
     block: UIBlock,
   ) => void;
-  /**
-   * When provided, a thumbs up/down row is shown below settled agent messages.
-   * The host supplies the save function so the chat package stays transport-free.
-   */
-  onRate?: (
-    subjectId: string,
-    subjectKind: FeedbackSubjectKind,
-    rating: 1 | -1,
-  ) => Promise<void>;
-  /** Returns the server-fetched rating for a subject, if one is available. */
-  getRating?: (
-    subjectId: string,
-    subjectKind: FeedbackSubjectKind,
-  ) => 1 | -1 | null | undefined;
   /**
    * Resolves an attachment's stored blob to a displayable/downloadable object
    * URL. The chat package stays transport-free: the host supplies this and owns
@@ -258,8 +241,6 @@ export function MessageBubble({
   message,
   onRespond,
   onAction,
-  onRate,
-  getRating,
   resolveAttachmentUrl,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -276,14 +257,16 @@ export function MessageBubble({
   // empty rather than rendering a blank bubble.
   const hasBody = message.content.trim() !== "";
 
-  // Nothing to show: no body, not streaming, no reasoning, no images, no
-  // renderable attachments.
+  // Nothing to show: no body, no images, no renderable attachments — and
+  // either settled, or streaming with reasoning carrying the live state (the
+  // AgentTurn trace renders reasoning; an empty wrapper here would only add
+  // dead space under it). A reasoning-less stream keeps the bubble as the
+  // typing placeholder.
   if (
     !hasBody &&
-    message.status !== "sending" &&
-    !hasReasoning &&
     !hasImages &&
-    !hasAttachments
+    !hasAttachments &&
+    (message.status !== "sending" || hasReasoning)
   )
     return null;
 
@@ -326,12 +309,6 @@ export function MessageBubble({
       {message.senderLabel !== undefined && message.senderLabel !== "" && (
         <span className="text-xs text-text-3">From: {message.senderLabel}</span>
       )}
-      {hasReasoning && (
-        <ReasoningDisclosure
-          reasoning={message.reasoning ?? ""}
-          streaming={isStreaming && message.content === ""}
-        />
-      )}
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
           className={cn(
@@ -358,21 +335,6 @@ export function MessageBubble({
           resolveAttachmentUrl={resolveAttachmentUrl!}
         />
       )}
-      {message.role === "agent" &&
-        message.status !== "sending" &&
-        onRate !== undefined && (
-          <MessageFeedback
-            subjectId={message.feedbackId ?? message.id}
-            subjectKind="turn_part"
-            savedRating={
-              getRating !== undefined
-                ? (getRating(message.feedbackId ?? message.id, "turn_part") ??
-                  null)
-                : null
-            }
-            onRate={onRate}
-          />
-        )}
       {isUser && message.status === "sending" && (
         <span className="text-xs text-text-3">Sending…</span>
       )}

@@ -13,7 +13,7 @@ function ErrorIcon() {
   return (
     <span
       data-testid="tool-marker-error"
-      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red"
     >
       <svg
         className="h-2.5 w-2.5 text-white"
@@ -56,7 +56,7 @@ function SettledMarker({
   return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
-function ActiveIcon() {
+export function ActivityPulse() {
   const reduceMotion = useReducedMotion();
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -194,12 +194,20 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function QuietToolLine({ summary }: { summary: string }) {
   return (
-    <p
-      className="text-xs italic leading-snug text-text-3/80"
-      data-testid="quiet-tool-line"
-    >
-      {summary}
-    </p>
+    <div className="flex items-start gap-2.5" data-testid="quiet-tool-row">
+      {/* Empty marker slot keeps quiet lines column-aligned with tool rows. */}
+      <span
+        className="h-4 w-4 shrink-0"
+        aria-hidden="true"
+        data-testid="tool-marker-spacer"
+      />
+      <p
+        className="mt-0.5 text-xs italic leading-snug text-text-3/80"
+        data-testid="quiet-tool-line"
+      >
+        {summary}
+      </p>
+    </div>
   );
 }
 
@@ -278,7 +286,7 @@ function ToolRow({
       >
         <span className="mt-0.5">
           {pending ? (
-            <ActiveIcon />
+            <ActivityPulse />
           ) : (
             <SettledMarker
               isError={call.isError === true}
@@ -289,11 +297,7 @@ function ToolRow({
         <span
           className={cn(
             "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            pending
-              ? "text-text-2"
-              : call.isError
-                ? "text-red-600"
-                : "text-text-3",
+            pending ? "text-text-2" : call.isError ? "text-red" : "text-text-3",
           )}
         >
           <span className="shrink-0">{summary}</span>
@@ -320,7 +324,7 @@ function ToolRow({
                 <p
                   className={cn(
                     "leading-relaxed",
-                    call.isError === true ? "text-red-600" : "text-text-2",
+                    call.isError === true ? "text-red" : "text-text-2",
                   )}
                 >
                   {friendlyOutcome}
@@ -331,7 +335,7 @@ function ToolRow({
                 call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -346,7 +350,7 @@ function ToolRow({
               {call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -472,7 +476,7 @@ function CollapsedToolSummary({
         <span
           className={cn(
             "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            hasError ? "text-red-600" : "text-text-3",
+            hasError ? "text-red" : "text-text-3",
           )}
         >
           <span className="min-w-0 truncate">{summary}</span>
@@ -501,14 +505,12 @@ export function ToolNarrative({
 }: ToolNarrativeProps) {
   if (toolCalls.length === 0) return null;
 
+  // Real (non-quiet) calls drive the collapse threshold and the roll-up
+  // summary; rendering stays chronological over the full list.
   const realCalls =
     isQuietTool === undefined
       ? toolCalls
       : toolCalls.filter((c) => !isQuietTool(c.name));
-  const quietCalls =
-    isQuietTool === undefined
-      ? []
-      : toolCalls.filter((c) => isQuietTool(c.name));
 
   const anyPending = toolCalls.some(
     (c) => c.result === undefined && c.isError !== true,
@@ -520,31 +522,22 @@ export function ToolNarrative({
     !anyPending &&
     realCalls.length >= COLLAPSE_THRESHOLD;
 
-  const quietRows =
-    quietCalls.length === 0 ? null : (
-      <ToolRows
-        toolCalls={quietCalls}
-        {...(formatSummary !== undefined ? { formatSummary } : {})}
-        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-      />
-    );
-
-  const realRows =
-    realCalls.length === 0 ? null : (
-      <ToolRows
-        toolCalls={realCalls}
-        {...(formatSummary !== undefined ? { formatSummary } : {})}
-        {...(formatResult !== undefined ? { formatResult } : {})}
-        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
-        {...(onRespond !== undefined ? { onRespond } : {})}
-        {...(onAction !== undefined ? { onAction } : {})}
-      />
-    );
+  // One chronological pass over every call — quiet lines render inline where
+  // they happened, so the narrative reads in the agent's actual order.
+  const allRows = (
+    <ToolRows
+      toolCalls={toolCalls}
+      {...(formatSummary !== undefined ? { formatSummary } : {})}
+      {...(formatResult !== undefined ? { formatResult } : {})}
+      {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+      {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+      {...(onRespond !== undefined ? { onRespond } : {})}
+      {...(onAction !== undefined ? { onAction } : {})}
+    />
+  );
 
   return (
     <div className={cn(ROW_GAP, className)} data-testid="tool-narrative">
-      {quietRows}
       {shouldCollapse ? (
         <CollapsedToolSummary
           summary={summarizeCalls(realCalls)}
@@ -554,10 +547,10 @@ export function ToolNarrative({
             (c) => isExternalTool === undefined || isExternalTool(c.name),
           )}
         >
-          {realRows}
+          {allRows}
         </CollapsedToolSummary>
       ) : (
-        realRows
+        allRows
       )}
     </div>
   );

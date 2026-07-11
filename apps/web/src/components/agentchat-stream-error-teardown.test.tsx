@@ -34,6 +34,7 @@ mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummary: mock(() => ""),
   friendlyToolResult: mock(() => null),
   isCatalogMetaTool: mock(() => false),
+  isExternalIntegrationTool: mock(() => false),
   summarizeToolCalls: mock(() => []),
   createToolNameTracker: mock(() => ({
     names: {},

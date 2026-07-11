@@ -1,6 +1,12 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ChatInput } from "./ChatInput";
@@ -117,9 +123,11 @@ describe("ChatInput", () => {
     expect(screen.getByPlaceholderText("Ask anything")).toBeDefined();
   });
 
-  it("falls back to the default placeholder", () => {
+  it("falls back to an agent-neutral placeholder", () => {
+    // The fallback must never name a specific agent — hosts pass the bound
+    // agent's name via `placeholder`.
     render(<ChatInput onSend={() => {}} />);
-    expect(screen.getByPlaceholderText("Message Ada…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Message…")).toBeDefined();
   });
 
   it("hides the attach control when no attachment policy is given", () => {
@@ -325,5 +333,83 @@ describe("auto-grow", () => {
     expect(h).toBeGreaterThan(100); // still grew some
     // The element's internal scrollHeight (mock) exceeds the rendered height => scroll will appear.
     expect(input.scrollHeight).toBeGreaterThan(h);
+  });
+});
+
+describe("ChatInput abort (stop button)", () => {
+  it("shows an enabled Stop control instead of the disabled spinner while busy with onAbort", () => {
+    render(<ChatInput onSend={() => {}} onAbort={() => {}} busy />);
+
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    // The stop control replaces the spinner — it reads as an action, not a wait.
+    expect(screen.queryByTestId("composer-busy-spinner")).toBeNull();
+  });
+
+  it("keeps the plain send control when idle even with onAbort provided", () => {
+    render(<ChatInput onSend={() => {}} onAbort={() => {}} />);
+    expect(screen.getByRole("button", { name: "Send" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("keeps the busy spinner when no onAbort is provided", () => {
+    render(<ChatInput onSend={() => {}} busy />);
+    expect(screen.getByTestId("composer-busy-spinner")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("fires onAbort when the stop button is clicked", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() => {});
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onAbort).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the stop button while an abort is in flight and re-enables after it settles", async () => {
+    const user = userEvent.setup();
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const onAbort = mock(() => gate);
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
+    await user.click(stop);
+    expect(stop.disabled).toBe(true);
+    // A second click while pending must not double-fire.
+    fireEvent.click(stop);
+    expect(onAbort).toHaveBeenCalledTimes(1);
+
+    release();
+    await gate;
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
+  it("surfaces a rejected abort as a composer error and re-enables the stop button", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() =>
+      Promise.reject(new Error("Couldn't stop. Try again.")),
+    );
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't stop. Try again.");
+    expect(
+      (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 });
