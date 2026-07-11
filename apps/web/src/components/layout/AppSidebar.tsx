@@ -177,6 +177,7 @@ export function AppSidebar({
             to={to}
             end={end}
             onClick={onNavigate}
+            data-tour={to === "/inbox" ? "nav-inbox" : undefined}
             className={({ isActive }) => navItemClass(isActive)}
           >
             <Icon size={17} />

@@ -54,6 +54,12 @@ mock.module("@workbench/agents/browser", () => ({
   TOOL_SUMMARY_PREVIEW_CALLS: [],
 }));
 
+const startTourMock = mock(() => {});
+
+mock.module("../components/tour/OnboardingTour", () => ({
+  useTourLauncher: () => ({ startTour: startTourMock }),
+}));
+
 const signOutMock = mock(() => Promise.resolve());
 
 mock.module("../components/AuthProvider", () => ({
@@ -224,6 +230,15 @@ describe("Settings build version display", () => {
       if (!bodyText().includes("build unknown"))
         throw new Error("unknown not rendered");
     });
+  });
+});
+
+describe("Settings onboarding tour", () => {
+  it("relaunches the tour from the Take the tour button", () => {
+    neverResolvingVersion();
+    renderSettings();
+    fireEvent.click(screen.getByRole("button", { name: "Take the tour" }));
+    expect(startTourMock).toHaveBeenCalledTimes(1);
   });
 });
 

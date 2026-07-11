@@ -59,6 +59,7 @@ export function NotificationsBell() {
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         aria-label={label}
+        data-tour="notifications-bell"
         aria-haspopup="true"
         aria-expanded={open}
         aria-controls={open ? panelId : undefined}

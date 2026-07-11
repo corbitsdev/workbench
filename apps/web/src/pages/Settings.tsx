@@ -27,6 +27,7 @@ import { fetchBuildSha } from "../lib/api";
 import { getMe, patchMeProfile } from "../lib/hub-api";
 import { useAuth } from "../components/AuthProvider";
 import { PreferencesPanel } from "../components/PreferencesPanel";
+import { useTourLauncher } from "../components/tour/OnboardingTour";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -85,6 +86,7 @@ const INITIAL_VALUES: SettingsValues = {};
 
 export default function Settings() {
   const { signOut } = useAuth();
+  const { startTour } = useTourLauncher();
   const { theme, setTheme } = useTheme();
   const { compact: compactToolActivity, setCompact: setCompactToolActivity } =
     useCompactToolActivity();
@@ -174,6 +176,15 @@ export default function Settings() {
       />
       <div className="mx-auto w-full max-w-2xl px-4 pb-6">
         <PreferencesPanel />
+      </div>
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <button
+          type="button"
+          onClick={startTour}
+          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
+        >
+          Take the tour
+        </button>
       </div>
       <div
         className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? "" : " opacity-50"}`}

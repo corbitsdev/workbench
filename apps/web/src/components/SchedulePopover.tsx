@@ -132,6 +132,7 @@ export function SchedulePopover({ kind, label }: SchedulePopoverProps) {
     <div className="relative">
       <button
         type="button"
+        data-tour="workflow-schedule"
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}

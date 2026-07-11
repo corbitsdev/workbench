@@ -17,10 +17,11 @@ export const PREFERENCE_CATEGORIES = [
   "Automations",
   "Notifications",
   "Inbox",
+  "General",
 ] as const;
 
 export const PreferenceCategorySchema = type(
-  "'Agent' | 'Automations' | 'Notifications' | 'Inbox'",
+  "'Agent' | 'Automations' | 'Notifications' | 'Inbox' | 'General'",
 );
 export type PreferenceCategory = typeof PreferenceCategorySchema.infer;
 
@@ -74,6 +75,15 @@ export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
     label: "New inbox mail",
     description: "Notify me when a new message lands in my inbox.",
     category: "Notifications",
+  },
+  {
+    key: "onboardingTourDone",
+    type: "boolean",
+    default: false,
+    label: "Onboarding tour completed",
+    description:
+      "Turn this off to see the guided tour again on your next visit.",
+    category: "General",
   },
   {
     key: "notifyGateAsks",

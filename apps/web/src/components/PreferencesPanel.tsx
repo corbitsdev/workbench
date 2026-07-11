@@ -31,7 +31,10 @@ interface RowProps {
 function PreferenceRow({ setting, status, onChange }: RowProps) {
   const controlId = `preference-${setting.key}`;
   return (
-    <div className="flex flex-col gap-1.5 border-b border-border py-3 last:border-b-0">
+    <div
+      data-tour={`preference-${setting.key}`}
+      className="flex flex-col gap-1.5 border-b border-border py-3 last:border-b-0"
+    >
       <div className="flex items-center justify-between gap-4">
         <label htmlFor={controlId} className="text-sm font-medium text-text">
           {setting.label}
