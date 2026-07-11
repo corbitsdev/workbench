@@ -10,7 +10,12 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
+import type {
+  MailboxMessage,
+  MailboxMessageDetail,
+  NowRun,
+  Task,
+} from "@workbench/shared";
 
 type MailboxState = {
   data: MailboxMessage[] | undefined;
@@ -24,13 +29,35 @@ type DetailState = {
   isError: boolean;
 };
 
+type ListState<T> = {
+  data: T[] | undefined;
+  isLoading: boolean;
+  isError: boolean;
+};
+
 let mailbox: MailboxState;
 let detail: DetailState;
+let tasksState: ListState<Task>;
+let runsState: ListState<NowRun>;
 let refetchCalls = 0;
 const markReadIds: string[] = [];
 const detailQueryIds: (string | null)[] = [];
 
+mock.module("../hooks/use-tasks", () => ({
+  TASKS_QUERY_KEY: ["tasks"],
+  useTasks: () => tasksState,
+}));
+
+mock.module("../hooks/use-workflow", () => ({
+  useWorkflowRuns: () => runsState,
+}));
+
+mock.module("../lib/active-workbench-context", () => ({
+  useActiveWorkbench: () => ({ activeTenantId: null }),
+}));
+
 mock.module("../hooks/use-mailbox", () => ({
+  MAILBOX_POLL_MS: 30_000,
   useMailbox: () => ({
     data: mailbox.data,
     isLoading: mailbox.isLoading,
@@ -68,11 +95,42 @@ function makeMessage(over: Partial<MailboxMessage>): MailboxMessage {
   };
 }
 
+function makeTask(over: Partial<Task>): Task {
+  return {
+    id: "task-x",
+    tenantId: "ten-1",
+    ownerPrincipalId: "prn-1",
+    createdByPrincipalId: "prn-2",
+    title: "Follow up",
+    status: "open",
+    source: "user",
+    links: [],
+    externalRefs: [],
+    createdAt: "2026-07-11T08:00:00.000Z",
+    updatedAt: "2026-07-11T08:00:00.000Z",
+    ...over,
+  };
+}
+
+function makeRun(over: Partial<NowRun>): NowRun {
+  return {
+    runId: "run-x",
+    kind: "call-to-collateral",
+    status: "awaiting",
+    createdAt: "2026-07-11T07:00:00.000Z",
+    ...over,
+  };
+}
+
 function renderInbox(initialPath = "/inbox") {
   const router = createMemoryRouter(
     [
       { path: "/inbox", element: React.createElement(InboxPage) },
       { path: "/inbox/:messageId", element: React.createElement(InboxPage) },
+      {
+        path: "/workflows/:workflowId",
+        element: React.createElement("div", null, "Workflow run surface"),
+      },
     ],
     { initialEntries: [initialPath] },
   );
@@ -80,18 +138,23 @@ function renderInbox(initialPath = "/inbox") {
   return router;
 }
 
-afterEach(() => {
-  cleanup();
+function resetStates() {
   mailbox = { data: undefined, isLoading: false, isError: false };
   detail = { data: undefined, isLoading: false, isError: false };
+  tasksState = { data: [], isLoading: false, isError: false };
+  runsState = { data: [], isLoading: false, isError: false };
+}
+
+afterEach(() => {
+  cleanup();
+  resetStates();
   refetchCalls = 0;
   markReadIds.length = 0;
   detailQueryIds.length = 0;
 });
 
 // Reset before the first test too.
-mailbox = { data: undefined, isLoading: false, isError: false };
-detail = { data: undefined, isLoading: false, isError: false };
+resetStates();
 
 describe("InboxPage", () => {
   it("shows a loading state while the mailbox query is pending", () => {
@@ -124,10 +187,11 @@ describe("InboxPage", () => {
       isError: false,
     };
     renderInbox();
-    screen.getByText("Morning brief");
-    screen.getByText("Deck ready");
-    screen.getByText("Myra");
-    screen.getByText("Oat");
+    const rail = screen.getByRole("list", { name: "Messages" });
+    within(rail).getByText("Morning brief");
+    within(rail).getByText("Deck ready");
+    within(rail).getByText("Myra");
+    within(rail).getByText("Oat");
   });
 
   it("opens a message on row click and shows its full body in the reading pane", () => {
@@ -152,7 +216,8 @@ describe("InboxPage", () => {
       isError: false,
     };
     const router = renderInbox();
-    fireEvent.click(screen.getByText("Deck ready"));
+    const rail = screen.getByRole("list", { name: "Messages" });
+    fireEvent.click(within(rail).getByText("Deck ready"));
     expect(router.state.location.pathname).toBe("/inbox/msg-2");
     // The reading pane renders the subject as a heading (rows use a span), so
     // this proves the detail opened — not merely that the row exists.
@@ -252,5 +317,126 @@ describe("InboxPage", () => {
     };
     renderInbox("/inbox/msg-1");
     expect(markReadIds).toEqual([]);
+  });
+});
+
+describe("InboxPage Now feed", () => {
+  it("orders awaiting gates before unread mail before open tasks", () => {
+    runsState = {
+      data: [makeRun({ runId: "run-1", kind: "call-to-collateral" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Call Acme back" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    const rows = within(feed).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    within(rows[0]!).getByText("call-to-collateral");
+    within(rows[1]!).getByText("Morning brief");
+    within(rows[2]!).getByText("Call Acme back");
+  });
+
+  it("deep-links a gate row to the run's respond surface", () => {
+    runsState = {
+      data: [makeRun({ runId: "run-1" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailbox = { data: [], isLoading: false, isError: false };
+    const router = renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("call-to-collateral"));
+    expect(router.state.location.pathname).toBe("/workflows/run-1");
+  });
+
+  it("deep-links a mail row into the reading pane", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Morning brief"));
+    expect(router.state.location.pathname).toBe("/inbox/msg-1");
+  });
+
+  it("deep-links a task row through its workflow_run link", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [
+        makeTask({
+          id: "task-1",
+          title: "Approve the deck",
+          links: [{ kind: "workflow_run", ref: "run-9" }],
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Approve the deck"));
+    expect(router.state.location.pathname).toBe("/workflows/run-9");
+  });
+
+  it("drops responded gates, read mail, and done tasks, showing the caught-up state", () => {
+    runsState = {
+      data: [makeRun({ runId: "run-1", status: "completed" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Old news", read: true })],
+      isLoading: false,
+      isError: false,
+    };
+    tasksState = {
+      data: [makeTask({ id: "task-1", status: "done" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    screen.getByText("You're all caught up.");
+    expect(screen.queryByRole("list", { name: "Now" })).toBeNull();
+  });
+
+  it("shows the triage handoff as the primary row with the raw item collapsed", () => {
+    mailbox = {
+      data: [
+        makeMessage({ id: "msg-raw", subject: "Pricing question from Acme" }),
+        makeMessage({
+          id: "msg-handoff",
+          subject: "Myra triaged: Pricing question from Acme",
+          date: "2026-07-11T10:00:00.000Z",
+        }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    const rows = within(feed).getAllByRole("listitem");
+    expect(rows).toHaveLength(1);
+    within(rows[0]!).getByText("Myra triaged: Pricing question from Acme");
+    within(rows[0]!).getByText("1 earlier item handled by Myra");
+  });
+
+  it("does not claim caught-up while the sources are still loading", () => {
+    mailbox = { data: undefined, isLoading: true, isError: false };
+    tasksState = { data: undefined, isLoading: true, isError: false };
+    runsState = { data: undefined, isLoading: true, isError: false };
+    renderInbox();
+    expect(screen.queryByText("You're all caught up.")).toBeNull();
   });
 });
