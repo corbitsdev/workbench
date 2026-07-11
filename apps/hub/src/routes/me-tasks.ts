@@ -21,10 +21,10 @@ import {
 } from "../lib/task-store";
 import { createDrizzleTaskPushStore } from "../lib/task-push-store";
 import { requestBodySchema } from "../lib/openapi";
+import { UuidParam } from "../lib/uuid";
 import type { HubDb } from "../db";
 
 const ErrorResponse = type({ error: "string" });
-const TaskId = type("string.uuid");
 
 // Owner-scoped CRUD over the caller's native tasks plus a downstream push. Every
 // read and write is bound to the caller's own member principal, so a member can
@@ -145,7 +145,7 @@ export function createMeTasksRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = TaskId(c.req.param("id"));
+      const id = UuidParam(c.req.param("id"));
       if (id instanceof type.errors) {
         return c.json({ error: "Task id must be a UUID" }, 400);
       }
@@ -217,7 +217,7 @@ export function createMeTasksRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = TaskId(c.req.param("id"));
+      const id = UuidParam(c.req.param("id"));
       if (id instanceof type.errors) {
         return c.json({ error: "Task id must be a UUID" }, 400);
       }

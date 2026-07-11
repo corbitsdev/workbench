@@ -8,11 +8,11 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "../lib/mailbox-read";
+import { UuidParam } from "../lib/uuid";
 import type { HubDb } from "../db";
 
 const ErrorResponse = type({ error: "string" });
 const MarkReadResponse = type({ id: "string", read: "boolean" });
-const MessageId = type("string.uuid");
 
 const DEFAULT_INBOX_LIMIT = 50;
 const MAX_INBOX_LIMIT = 200;
@@ -123,7 +123,7 @@ export function createInboxRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = MessageId(c.req.param("id"));
+      const id = UuidParam(c.req.param("id"));
       if (id instanceof type.errors) {
         return c.json({ error: "Message id must be a UUID" }, 400);
       }
@@ -179,7 +179,7 @@ export function createInboxRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = MessageId(c.req.param("id"));
+      const id = UuidParam(c.req.param("id"));
       if (id instanceof type.errors) {
         return c.json({ error: "Message id must be a UUID" }, 400);
       }

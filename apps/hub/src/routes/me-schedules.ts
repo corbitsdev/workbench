@@ -8,6 +8,7 @@ import {
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
+import { UuidParam } from "../lib/uuid";
 import {
   createOwnerSchedule,
   deleteOwnerSchedule,
@@ -182,7 +183,10 @@ export function createMeSchedulesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = c.req.param("id");
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Schedule id must be a UUID" }, 400);
+      }
       const raw = await c.req.json().catch(() => null);
       const body = UpdateScheduledTriggerBodySchema(raw);
       if (body instanceof type.errors) {
@@ -216,6 +220,10 @@ export function createMeSchedulesRouter(
       summary: "Delete the caller's schedule",
       responses: {
         204: { description: "Deleted" },
+        400: {
+          description: "Malformed schedule id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         404: {
           description: "No such schedule owned by the caller",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
@@ -228,7 +236,10 @@ export function createMeSchedulesRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const id = c.req.param("id");
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Schedule id must be a UUID" }, 400);
+      }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);

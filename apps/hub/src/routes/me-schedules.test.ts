@@ -129,6 +129,9 @@ function req(
   return new Request(`http://local/api/v1${path}`, { ...rest, headers });
 }
 
+const SCHED_ID = "11111111-1111-4111-8111-111111111111";
+const SCHED_ID_A = "22222222-2222-4222-8222-222222222222";
+
 describe("GET /me/schedules", () => {
   it("returns the caller's own schedules, scoped to their principal", async () => {
     storeCalls.length = 0;
@@ -278,9 +281,20 @@ describe("POST /me/schedules", () => {
 });
 
 describe("PATCH /me/schedules/:id", () => {
+  it("rejects a malformed (non-UUID) id with 400", async () => {
+    const res = await mountApp().fetch(
+      req("/me/schedules/not-a-uuid", {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({ enabled: true }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("rejects an empty patch", async () => {
     const res = await mountApp().fetch(
-      req("/me/schedules/sch-1", {
+      req(`/me/schedules/${SCHED_ID}`, {
         method: "PATCH",
         user: "user-a",
         body: JSON.stringify({}),
@@ -292,7 +306,7 @@ describe("PATCH /me/schedules/:id", () => {
   it("updates the caller's schedule and returns it", async () => {
     storeCalls.length = 0;
     updateResult = {
-      id: "sch-1",
+      id: SCHED_ID,
       workflowKind: "heartbeat",
       hourUtc: 7,
       enabled: false,
@@ -300,7 +314,7 @@ describe("PATCH /me/schedules/:id", () => {
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     };
     const res = await mountApp().fetch(
-      req("/me/schedules/sch-1", {
+      req(`/me/schedules/${SCHED_ID}`, {
         method: "PATCH",
         user: "user-a",
         body: JSON.stringify({ enabled: false, hourUtc: 7 }),
@@ -311,7 +325,7 @@ describe("PATCH /me/schedules/:id", () => {
     expect(update?.args).toEqual({
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-a",
-      id: "sch-1",
+      id: SCHED_ID,
       enabled: false,
       hourUtc: 7,
     });
@@ -320,7 +334,7 @@ describe("PATCH /me/schedules/:id", () => {
   it("404s when no schedule matches the caller (missing or another member's)", async () => {
     updateResult = null;
     const res = await mountApp().fetch(
-      req("/me/schedules/sch-1", {
+      req(`/me/schedules/${SCHED_ID}`, {
         method: "PATCH",
         user: "user-a",
         body: JSON.stringify({ enabled: true }),
@@ -331,10 +345,17 @@ describe("PATCH /me/schedules/:id", () => {
 });
 
 describe("DELETE /me/schedules/:id", () => {
+  it("rejects a malformed (non-UUID) id with 400", async () => {
+    const res = await mountApp().fetch(
+      req("/me/schedules/not-a-uuid", { method: "DELETE", user: "user-a" }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("deletes the caller's schedule", async () => {
     deleteResult = true;
     const res = await mountApp().fetch(
-      req("/me/schedules/sch-1", { method: "DELETE", user: "user-a" }),
+      req(`/me/schedules/${SCHED_ID}`, { method: "DELETE", user: "user-a" }),
     );
     expect(res.status).toBe(204);
   });
@@ -342,7 +363,7 @@ describe("DELETE /me/schedules/:id", () => {
   it("404s when the schedule is not the caller's", async () => {
     deleteResult = false;
     const res = await mountApp().fetch(
-      req("/me/schedules/sch-1", { method: "DELETE", user: "user-a" }),
+      req(`/me/schedules/${SCHED_ID}`, { method: "DELETE", user: "user-a" }),
     );
     expect(res.status).toBe(404);
   });
@@ -354,7 +375,7 @@ describe("cross-member isolation", () => {
     // The store, scoped by owner, finds no row of A owned by B -> null -> 404.
     updateResult = null;
     const res = await mountApp().fetch(
-      req("/me/schedules/schedule-owned-by-a", {
+      req(`/me/schedules/${SCHED_ID_A}`, {
         method: "PATCH",
         user: "user-b",
         body: JSON.stringify({ enabled: false }),
@@ -364,14 +385,14 @@ describe("cross-member isolation", () => {
     const update = storeCalls.find((c) => c.fn === "update");
     expect(update?.args["ownerPrincipalId"]).toBe("principal-b");
     expect(update?.args["ownerPrincipalId"]).not.toBe("principal-a");
-    expect(update?.args["id"]).toBe("schedule-owned-by-a");
+    expect(update?.args["id"]).toBe(SCHED_ID_A);
   });
 
   it("scopes member B's DELETE to B's principal", async () => {
     storeCalls.length = 0;
     deleteResult = false;
     const res = await mountApp().fetch(
-      req("/me/schedules/schedule-owned-by-a", {
+      req(`/me/schedules/${SCHED_ID_A}`, {
         method: "DELETE",
         user: "user-b",
       }),
