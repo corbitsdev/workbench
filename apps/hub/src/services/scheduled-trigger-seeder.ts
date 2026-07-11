@@ -1,4 +1,6 @@
+import { type } from "arktype";
 import { getLogger } from "@intx/log";
+import { HeartbeatTriggerPayloadSchema } from "@workbench/shared";
 
 const log = getLogger(["services", "scheduled-trigger-seeder"]);
 
@@ -9,8 +11,11 @@ export interface HeartbeatSeederDeps {
   // Members with a Myra instance — the users a morning heartbeat targets.
   listMyraTargets: () => Promise<{ memberPrincipalId: string }[]>;
   // Resolves the member principal's user mail address (`${refId}@${domain}`,
-  // via deriveUserMailAddress at the wiring site).
-  resolveUserAddress: (memberPrincipalId: string) => Promise<string>;
+  // via deriveUserMailAddress at the wiring site) together with the refId it
+  // was derived from.
+  resolveUserIdentity: (
+    memberPrincipalId: string,
+  ) => Promise<{ userAddress: string; userRefId: string }>;
   // Idempotent upsert (does not overwrite an existing schedule).
   ensureSchedule: (args: {
     ownerPrincipalId: string;
@@ -47,18 +52,22 @@ export async function seedHeartbeatSchedules(
   let seeded = 0;
   for (const target of targets) {
     try {
-      const userAddress = await deps.resolveUserAddress(
+      const { userAddress, userRefId } = await deps.resolveUserIdentity(
         target.memberPrincipalId,
       );
-      // The address is `${refId}@${domain}` by construction, so the refId is
-      // the segment before the final `@` (lastIndexOf tolerates an email refId).
-      const at = userAddress.lastIndexOf("@");
-      const userRefId = at > 0 ? userAddress.slice(0, at) : userAddress;
+      const payload = HeartbeatTriggerPayloadSchema({
+        reason: "scheduled-heartbeat",
+        userAddress,
+        userRefId,
+      });
+      if (payload instanceof type.errors) {
+        throw new Error(`invalid heartbeat payload: ${payload.summary}`);
+      }
       await deps.ensureSchedule({
         ownerPrincipalId: target.memberPrincipalId,
         kind: deps.kind,
         hourUtc: deps.hourUtc,
-        payload: { reason: "scheduled-heartbeat", userAddress, userRefId },
+        payload,
       });
       seeded += 1;
     } catch (err) {

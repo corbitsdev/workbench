@@ -1073,7 +1073,30 @@ v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createInboxRouter(db));
-v1.route("/", createMeSchedulesRouter(db));
+
+// Resolves a member principal to the user mail identity trigger payloads
+// carry (`${refId}@${domain}` via deriveUserMailAddress). Shared by the
+// schedules route (server-side identity, never client-supplied) and the
+// boot-time heartbeat seeder.
+const resolveUserIdentity = async (
+  memberPrincipalId: string,
+): Promise<{ userAddress: string; userRefId: string }> => {
+  const member = await db.query.principal.findFirst({
+    where: eq(intxSchema.principal.id, memberPrincipalId),
+  });
+  if (!member) {
+    throw new Error(`principal not found: ${memberPrincipalId}`);
+  }
+  return {
+    userAddress: deriveUserMailAddress({
+      userRefId: member.refId,
+      domain: config.rootTenant.domain,
+    }),
+    userRefId: member.refId,
+  };
+};
+
+v1.route("/", createMeSchedulesRouter(db, resolveUserIdentity));
 v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
@@ -1245,23 +1268,7 @@ void workflowReconciler
 // daily UTC-hour cadence by calling the run-start service directly (no HTTP
 // self-call). Single-replica assumption — like the disconnect reconciler, N
 // replicas would fire N runs/schedule/day; a DB-backed fire-lock is the
-// multi-replica follow-up. resolveUserAddress derives the user mail address the
-// heartbeat payload targets.
-const resolveUserAddress = async (
-  memberPrincipalId: string,
-): Promise<string> => {
-  const member = await db.query.principal.findFirst({
-    where: eq(intxSchema.principal.id, memberPrincipalId),
-  });
-  if (!member) {
-    throw new Error(`principal not found: ${memberPrincipalId}`);
-  }
-  return deriveUserMailAddress({
-    userRefId: member.refId,
-    domain: config.rootTenant.domain,
-  });
-};
-
+// multi-replica follow-up.
 const listMyraTargets = async () => {
   const rows = await db.query.memberAgentInstance.findMany({
     where: and(
@@ -1299,7 +1306,7 @@ void seedHeartbeatSchedules({
   kind: config.scheduler.heartbeatKind,
   hourUtc: config.scheduler.heartbeatHourUtc,
   listMyraTargets,
-  resolveUserAddress,
+  resolveUserIdentity,
   ensureSchedule: (args) =>
     ensureOwnerSchedule(db, {
       tenantId: rootTenantId,

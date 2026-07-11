@@ -22,11 +22,24 @@ import type { HubDb } from "../db";
 const ErrorResponse = type({ error: "string" });
 const ScheduledTriggerList = ScheduledTriggerSchema.array();
 
+// Payload keys the server owns. A trigger payload becomes the workflow's input
+// verbatim, so client-supplied identity here would let a member address another
+// member's mailbox — these keys are always derived from the caller's own
+// member principal, never accepted from the request body.
+const RESERVED_PAYLOAD_KEYS = new Set(["userAddress", "userRefId"]);
+
+const MAX_PAYLOAD_BYTES = 8192;
+
+export type ResolveUserIdentity = (
+  memberPrincipalId: string,
+) => Promise<{ userAddress: string; userRefId: string }>;
+
 // Owner-scoped CRUD over the caller's automation triggers. Every read and write
 // is scoped to the caller's own member principal, so a member can never see or
 // mutate another member's schedule. Unblocks the scheduling UI (CL-2297).
 export function createMeSchedulesRouter(
   db: HubDb,
+  resolveUserIdentity: ResolveUserIdentity,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -111,12 +124,33 @@ export function createMeSchedulesRouter(
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 
+      const clientPayload = Object.fromEntries(
+        Object.entries(body.payload ?? {}).filter(
+          ([key]) => !RESERVED_PAYLOAD_KEYS.has(key),
+        ),
+      );
+      const identity = await resolveUserIdentity(member.principalId);
+      const payload = {
+        ...clientPayload,
+        userAddress: identity.userAddress,
+        userRefId: identity.userRefId,
+      };
+      const payloadBytes = new TextEncoder().encode(
+        JSON.stringify(payload),
+      ).byteLength;
+      if (payloadBytes > MAX_PAYLOAD_BYTES) {
+        return c.json(
+          { error: `payload exceeds ${MAX_PAYLOAD_BYTES} bytes` },
+          400,
+        );
+      }
+
       const created = await createOwnerSchedule(db, {
         tenantId: member.tenantId,
         ownerPrincipalId: member.principalId,
         kind: body.kind,
         hourUtc: body.hourUtc,
-        payload: body.payload ?? {},
+        payload,
       });
       return c.json(toApiSchedule(created), 201);
     },

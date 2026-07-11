@@ -25,6 +25,19 @@ export const CreateScheduledTriggerBodySchema = type({
 export type CreateScheduledTriggerBody =
   typeof CreateScheduledTriggerBodySchema.infer;
 
+// The trigger payload a heartbeat schedule fires with. The seeder validates
+// every payload through this before writing, and the workflow reads it as its
+// trigger input. `userAddress`/`userRefId` are server-derived identity — never
+// accepted from a client.
+export const HeartbeatTriggerPayloadSchema = type({
+  reason: "'scheduled-heartbeat'",
+  userAddress: "string > 0",
+  userRefId: "string > 0",
+  "createdAfter?": "string",
+});
+export type HeartbeatTriggerPayload =
+  typeof HeartbeatTriggerPayloadSchema.infer;
+
 // Update body: toggle enablement and/or move the fire hour. At least one field
 // is required; an empty patch is a no-op the route rejects.
 export const UpdateScheduledTriggerBodySchema = type({
