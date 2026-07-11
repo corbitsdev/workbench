@@ -20,9 +20,11 @@ import { createAgent, defineTool } from "@intx/agent";
 import type { Agent, AgentDefinition, BaseEnv } from "@intx/agent";
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/authz";
+import { createHarnessRuntimeCapabilities } from "@intx/harness";
 import { getLogger } from "@intx/log";
 import { createBlobReader } from "@intx/types/runtime";
-import type { ContextStore } from "@intx/types/runtime";
+import type { ContextStore, MessageTransport } from "@intx/types/runtime";
+import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
 import {
   HUB_RPC_ENV_KEY,
@@ -36,6 +38,7 @@ import {
   mergeToolRunners,
   type DefinedRunner,
 } from "./agent-tools";
+import { createGuardedMailRunner } from "./mail-guard";
 
 const logger = getLogger(["sidecar", "step-tool-harness"]);
 
@@ -355,15 +358,41 @@ async function buildStepTools(args: {
     });
   }
 
+  const runners: DefinedRunner[] = [posixTools, ...loadedRunners];
+
+  // The workflow substrate injects an in-process mail transport on the step
+  // env (env.transport) whenever the deployment has a mailbox. Mail is a
+  // local runner, never a pinned package, so it must be merged here for a
+  // deterministic `mail_send` step to resolve — mirroring the live agent
+  // harness. Guard on presence: pure-inference deployments and test seams
+  // inject no transport and get no mail tools. The env value is constructed
+  // in-process by the substrate this same run and never crosses a trust
+  // boundary, so a plain narrowing cast is sound (same reasoning as
+  // readStepToolContext).
+  const transport = (args.env as unknown as Record<string, unknown>).transport;
+  if (transport !== undefined) {
+    const mailTools = createMailTools({
+      capabilities: createHarnessRuntimeCapabilities({
+        transport: transport as MessageTransport,
+      }),
+    });
+    // A deterministic step performs exactly one declared send; anything more
+    // is a fault the guard should block.
+    runners.push(
+      createGuardedMailRunner(mailTools as DefinedRunner, {
+        maxOutboundPerTurn: 1,
+      }),
+    );
+    disposers.push(() => mailTools.dispose());
+    for (const def of mailTools.definitions) loadedToolNames.add(def.name);
+  }
+
   // Steps expose every materialized native tool plus local posix tools; the
   // grants-backed `authorize` the factory installs is the real per-call gate,
   // and the hub gates which packages were resolvable at all via the step's
   // pins. No name-filter is applied here — it would be a no-op (every loaded
   // tool name is already in the merged set).
-  const merged = mergeToolRunners([
-    posixTools,
-    ...loadedRunners,
-  ]) as DefinedRunner;
+  const merged = mergeToolRunners(runners) as DefinedRunner;
   return {
     runner: merged,
     loadedToolNames,
