@@ -22,7 +22,7 @@
     },
     {
       "key": "painPoints",
-      "label": "Pain Points",
+      "label": "Pain points",
       "stepIds": [
         "analyze",
         "ppSelection"

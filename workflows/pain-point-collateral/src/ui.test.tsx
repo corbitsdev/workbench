@@ -1286,7 +1286,7 @@ describe("Panel — error and close", () => {
       />,
     );
 
-    screen.getByText("Run failed at Pain Points");
+    screen.getByText("Run failed at Pain points");
     screen.getByText(/No error details are available/);
   });
 
@@ -1315,7 +1315,7 @@ describe("Panel — error and close", () => {
       />,
     );
 
-    screen.getByText("Run failed at Pain Points");
+    screen.getByText("Run failed at Pain points");
     screen.getByText(/Something went wrong inside this workflow run/);
     expect(screen.queryByText(/ins_/)).toBeNull();
     expect(screen.queryByText(/ses_/)).toBeNull();

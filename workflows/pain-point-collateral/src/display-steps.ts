@@ -21,7 +21,7 @@ export const DISPLAY_STEPS: DisplayStep[] = [
   { key: "context", label: "Context", stepIds: ["context"] },
   {
     key: "painPoints",
-    label: "Pain Points",
+    label: "Pain points",
     stepIds: ["analyze", "ppSelection"],
     activityLabel: "Analyzing the call",
   },
