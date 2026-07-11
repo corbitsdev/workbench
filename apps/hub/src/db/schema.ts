@@ -578,6 +578,43 @@ export const principalMailbox = pgTable(
 
 export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 
+// Automation triggers: durable per-member schedules that fire a
+// workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
+// rows each tick and starts a run for any whose target hour has arrived and has
+// not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
+// floor(ms / 86_400_000)). `cron` is reserved for a future arbitrary-cadence
+// field; only `hour_utc` is honored today. Unique per (tenant, owner, kind) so
+// the boot heartbeat seeder is idempotent.
+export const scheduledTrigger = pgTable(
+  "scheduled_trigger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
+    workflowKind: text("workflow_kind").notNull(),
+    hourUtc: integer("hour_utc").notNull(),
+    cron: text("cron"),
+    triggerPayload: jsonb("trigger_payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    enabled: boolean("enabled").notNull().default(true),
+    lastFiredDayUtc: integer("last_fired_day_utc"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    scheduledTriggerOwnerKindUniq: unique(
+      "scheduled_trigger_owner_kind_uniq",
+    ).on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind),
+  }),
+);
+
+export type ScheduledTriggerRow = typeof scheduledTrigger.$inferSelect;
+
 export {
   analyticsEvent,
   analyticsRollupDaily,

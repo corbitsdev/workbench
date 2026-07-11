@@ -357,3 +357,52 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
     }
   });
 });
+
+describe("0046 creates scheduled_trigger (CL-2609)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0046_scheduled_trigger.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?scheduled_trigger"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_member_principal_id",
+      "workflow_kind",
+      "hour_utc",
+      "cron",
+      "trigger_payload",
+      "enabled",
+      "last_fired_day_utc",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("adds the (tenant, owner, kind) unique constraint so the seeder is idempotent", () => {
+    expect(sql).toMatch(
+      /CONSTRAINT "scheduled_trigger_owner_kind_uniq" UNIQUE \("tenant_id", "owner_member_principal_id", "workflow_kind"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the schedule store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
