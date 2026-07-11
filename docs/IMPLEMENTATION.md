@@ -417,10 +417,11 @@ The `CredentialPicker` component (`apps/web/src/components/CredentialPicker.tsx`
 - `DELETE /api/tenants/:tenantId/credentials/:credentialId` — Interchange-native (manage grant created at write time enables this)
 - `POST /v1/instances/:instanceId/sessions` — launch session for existing instance (no credential IDs; Interchange resolves from agent's credentialRequirements)
 - `POST /v1/workspaces`, `GET /v1/agents`, etc.
+- `GET /api/v1/tenants/:tenantId/approvals/stream` — SSE stream of workbench-owned approval **change notifications** (`created` / `resolved`), keyed by tenant. Carries only a change signal (`tenantId`, optional `sessionId`, `kind`) — never approval rows or tool-call arguments; the web `ReviewGate` refetches the ownership-scoped `GET .../approvals` list on each event instead of polling on an interval. Backed by an in-process pub/sub (`apps/hub/src/lib/approvals-events.ts`) injected into both the user-facing and internal approvals routers; the internal create route emits `created`, the approve/reject routes emit `resolved`. Single-hub-replica scope (emitter and SSE subscriber share one process). No `@intx/*` changes.
 
 **Internal routes** (sidecarToken auth, mounted under `/api/internal/`):
 
-- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool)
+- `POST /api/internal/approvals` — human approval callback from sidecar (ask_principal tool); emits a `created` notification on the approvals event bus
 - `POST /api/internal/tools/run` — hub-proxied tool execution. Body: `{ tenantId, toolName, args }`. Hub resolves the tenant credential for the tool's provider from Interchange, calls the tool package handler, returns `{ result: string, isError: boolean }`. Credentials are decrypted before use; never stored in sidecar.
 
 ### Deploy Prompts
