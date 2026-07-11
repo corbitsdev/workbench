@@ -12,6 +12,7 @@ import type {
   EventCollectorRegistry,
 } from "@intx/hub-sessions";
 import type { GrantStore } from "@intx/types/authz";
+import { matchPattern } from "@intx/authz";
 import { AGENT_TEMPLATES } from "@workbench/agents";
 import { memberAgentInstance } from "../db/schema";
 import type { HubDb } from "../db";
@@ -346,6 +347,124 @@ export function createAgentProvisioningRouter(
           });
         });
 
+      return c.body(null, 204);
+    },
+  );
+
+  // Abort the in-flight chat turn for an instance the caller can manage. The
+  // sidecar (the workbench @workbench/hub-agent fork) treats the resulting
+  // `session.abort` frame with reason `user_disconnect` as non-terminal: the
+  // running inference/tool call is cancelled via the reactor abort path and
+  // the agent goes to sleep (wakeable), so the conversation survives and the
+  // next message resumes it with full history.
+  //
+  // `no-active-turn` is the sidecar's sentinel for "nothing is running"
+  // (NoActiveTurnError in @workbench/hub-agent, delivered verbatim over the
+  // session.error frame); the hub does not depend on that package, so the
+  // string contract is pinned by tests on both sides.
+  const NO_ACTIVE_TURN_SENTINEL = "no-active-turn";
+  app.post(
+    "/instances/:instanceId/abort-turn",
+    describeRoute({
+      tags: ["Agents"],
+      summary: "Abort the running chat turn",
+      description:
+        "Stops the instance's in-flight turn (inference or tool execution) without ending the conversation. Requires a manage grant on the instance. The session stays usable; the next message resumes it.",
+      parameters: [
+        {
+          name: "instanceId",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        204: { description: "Turn aborted" },
+        403: {
+          description: "Caller lacks a manage grant on the instance",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description:
+            "Instance not found, or caller is not a user principal of its tenant",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        409: {
+          description: "No turn is currently running",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        502: {
+          description: "Sidecar unavailable",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const instanceId = c.req.param("instanceId");
+
+      const instance = await db.query.agentInstance.findFirst({
+        where: eq(agentInstance.id, instanceId),
+      });
+      if (!instance) {
+        return c.json({ error: "Instance not found" }, 404);
+      }
+
+      const callerPrincipal = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, instance.tenantId),
+          eq(principal.kind, "user"),
+          eq(principal.refId, userId),
+        ),
+      });
+      if (!callerPrincipal) {
+        // Identical to the not-found case so instance ids in other tenants
+        // cannot be enumerated (same contract as the session-launch route).
+        return c.json({ error: "Instance not found" }, 404);
+      }
+
+      // The owning member is minted read/write/manage grants on the instance
+      // at deploy time; manage is the abort action. collectGrants resolves
+      // direct and role-inherited grants.
+      const grants = await grantStore.collectGrants(
+        callerPrincipal.id,
+        instance.tenantId,
+      );
+      const resource = `instance:${instanceId}`;
+      const canManage = grants.some(
+        (g) =>
+          g.effect === "allow" &&
+          matchPattern(g.resource, resource) &&
+          matchPattern(g.action, "manage"),
+      );
+      if (!canManage) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+
+      try {
+        await sidecarRouter.sendSessionAbort(
+          instance.address,
+          "user_disconnect",
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes(NO_ACTIVE_TURN_SENTINEL)) {
+          return c.json({ error: "No running turn" }, 409);
+        }
+        log.warn("Turn abort failed to reach the sidecar", {
+          instanceId,
+          userId,
+          error: message,
+        });
+        return c.json({ error: "Failed to reach the agent to stop it" }, 502);
+      }
+
+      log.info("Aborted running turn", {
+        instanceId,
+        tenantId: instance.tenantId,
+        userId,
+        principalId: callerPrincipal.id,
+      });
       return c.body(null, 204);
     },
   );

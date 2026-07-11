@@ -31,6 +31,7 @@ import { createArtifact } from "@workbench/client";
 import { type AgentActivity } from "@intx/hub-client";
 import { clientOptions } from "../lib/client-options";
 import {
+  abortInstanceTurn,
   getOutputFeedback,
   launchInstanceSession,
   saveOutputFeedback,
@@ -153,6 +154,27 @@ export function AgentChat({
       );
     },
   });
+
+  // Same suppression rationale as use-myra-session: an aborted turn settles
+  // by putting the agent to sleep, which emits no further agent events, so
+  // the stale "thinking" activity is cleared locally; the next send lets the
+  // live signal drive the indicator again.
+  const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const { mutateAsync: abortMutateAsync } = useMutation({
+    mutationFn: () => abortInstanceTurn(instanceId),
+  });
+  const abortTurn = useCallback(async (): Promise<void> => {
+    try {
+      await abortMutateAsync();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : `Couldn't stop ${agentName}. Try again.`;
+      throw new Error(message);
+    }
+    setActivitySuppressed(true);
+  }, [abortMutateAsync, agentName]);
 
   // Feedback line for document block actions (copy / save-artifact).
   // Successes auto-dismiss; failures stay until the user dismisses them or a
@@ -500,9 +522,13 @@ export function AgentChat({
     return a as ChatActivity;
   }
 
-  const activity: ChatActivity | null = toChatActivity(session.activity);
+  const activity: ChatActivity | null = activitySuppressed
+    ? null
+    : toChatActivity(session.activity);
 
   const sendText = (text: string) => {
+    // A new turn is starting — let its real events drive the busy indicator.
+    setActivitySuppressed(false);
     void session.sendMail(text).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       setSessionState({ phase: "error", message });
@@ -535,6 +561,7 @@ export function AgentChat({
       agent={identity}
       messages={messages}
       onSend={sendText}
+      onAbort={abortTurn}
       // Structured gate blocks (form/multiSelect/choice payload) need
       // resolveResumePayload + workflow resume — see docs/WORKFLOWS.md.
       onRespond={(response: UIResponse) => sendText(response.value)}

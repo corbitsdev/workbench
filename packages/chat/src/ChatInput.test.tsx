@@ -1,6 +1,12 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ChatInput } from "./ChatInput";
@@ -334,7 +340,9 @@ describe("ChatInput abort (stop button)", () => {
   it("shows an enabled Stop control instead of the disabled spinner while busy with onAbort", () => {
     render(<ChatInput onSend={() => {}} onAbort={() => {}} busy />);
 
-    const stop = screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement;
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
     expect(stop.disabled).toBe(false);
     // The stop control replaces the spinner — it reads as an action, not a wait.
     expect(screen.queryByTestId("composer-busy-spinner")).toBeNull();
@@ -370,7 +378,9 @@ describe("ChatInput abort (stop button)", () => {
     const onAbort = mock(() => gate);
     render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
 
-    const stop = screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement;
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
     await user.click(stop);
     expect(stop.disabled).toBe(true);
     // A second click while pending must not double-fire.
@@ -379,16 +389,19 @@ describe("ChatInput abort (stop button)", () => {
 
     release();
     await gate;
-    await Promise.resolve();
-    expect(
-      (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(false);
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
   });
 
   it("surfaces a rejected abort as a composer error and re-enables the stop button", async () => {
     const user = userEvent.setup();
-    const onAbort = mock(() => Promise.reject(new Error("Couldn't stop. Try again.")));
+    const onAbort = mock(() =>
+      Promise.reject(new Error("Couldn't stop. Try again.")),
+    );
     render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
 
     await user.click(screen.getByRole("button", { name: "Stop" }));

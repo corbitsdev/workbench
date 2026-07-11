@@ -18,6 +18,8 @@ export type {
 } from "./harness-builder";
 export {
   createSessionManager,
+  NoActiveTurnError,
+  NO_ACTIVE_TURN,
   type SessionManager,
   type SessionManagerConfig,
   type SessionEventSink,

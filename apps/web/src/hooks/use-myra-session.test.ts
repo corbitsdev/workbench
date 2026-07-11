@@ -78,6 +78,7 @@ mock.module("@intx/hub-client", () => ({
 mock.module("../lib/hub-api", () => ({
   launchInstanceSession,
   ensureMeSynced,
+  abortInstanceTurn: () => Promise.resolve(),
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],

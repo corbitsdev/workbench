@@ -28,6 +28,8 @@ export interface ChatPanelProps {
     text: string,
     attachments?: PendingAttachment[],
   ) => void | Promise<void>;
+  /** Stops the agent's running turn; while busy the composer's send control becomes a stop button. */
+  onAbort?: () => void | Promise<void>;
   typing?: boolean;
   /** What the agent is currently doing, shown as a contextual status label. */
   activity?: ChatActivity | null;
@@ -111,6 +113,7 @@ export function ChatPanel({
   messages,
   inserts,
   onSend,
+  onAbort,
   typing,
   activity,
   quickReplies,
@@ -248,6 +251,7 @@ export function ChatPanel({
 
       <ChatInput
         onSend={onSend}
+        {...(onAbort !== undefined ? { onAbort } : {})}
         placeholder={`Message ${agent.name}…`}
         busy={busy}
         {...(composerFullWidth === true ? { fullWidth: true } : {})}

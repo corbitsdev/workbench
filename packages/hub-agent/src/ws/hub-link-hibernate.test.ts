@@ -116,6 +116,9 @@ function createMockSessionManager(): SessionManager & {
     async abortSession(_agentAddress: string, _reason: string): Promise<void> {
       /* unused */
     },
+    async abortTurn(_agentAddress: string): Promise<void> {
+      /* unused */
+    },
     deliverMessage(_agentAddress: string, _message: InboundMessage): void {
       /* unused */
     },

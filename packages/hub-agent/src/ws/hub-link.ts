@@ -766,7 +766,15 @@ export function createHubLink(config: HubLinkConfig): HubLink {
 
   async function handleSessionAbort(frame: SessionAbortFrame): Promise<void> {
     try {
-      await sessions.abortSession(frame.agentAddress, frame.reason);
+      // WORKBENCH-LOCAL (CL-3339): `user_disconnect` is the user-initiated
+      // stop (the hub abort routes send it) — abort the running turn but keep
+      // the conversation alive (evict-to-wakeable). Every other reason
+      // (admin_kill, wallet_exhaustion, …) keeps terminal kill semantics.
+      if (frame.reason === "user_disconnect") {
+        await sessions.abortTurn(frame.agentAddress);
+      } else {
+        await sessions.abortSession(frame.agentAddress, frame.reason);
+      }
       send({ type: "session.ack", requestId: frame.requestId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

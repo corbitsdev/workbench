@@ -169,6 +169,19 @@ const defaultSleep = (ms: number): Promise<void> =>
 // Never retried — the agent is gone, not transiently failing.
 class WakeAbortedError extends Error {}
 
+// WORKBENCH-LOCAL (CL-3339): thrown by `abortTurn` when the agent has no
+// message run in flight (live-but-idle, sleeping, or unknown). The message
+// carries the `no-active-turn` sentinel verbatim over the `session.error`
+// frame so the hub can map it to a 409 rather than a gateway failure.
+export const NO_ACTIVE_TURN = "no-active-turn";
+
+export class NoActiveTurnError extends Error {
+  constructor(agentAddress: string) {
+    super(`${NO_ACTIVE_TURN}: no running turn for agent "${agentAddress}"`);
+    this.name = "NoActiveTurnError";
+  }
+}
+
 export type ProvisionResult = {
   publicKey: string;
   keyPair: KeyPair;
@@ -244,6 +257,15 @@ export type SessionManager = {
   deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void;
   destroySession(agentAddress: string): Promise<void>;
   abortSession(agentAddress: string, reason: string): Promise<void>;
+  /**
+   * WORKBENCH-LOCAL (CL-3339): abort the in-flight turn without ending the
+   * conversation. Closing the harness fires the reactor's abort path, which
+   * cancels the running inference/tool call; the teardown is the idle-evict
+   * one, so the agent returns to `wakeable` and the next message rebuilds it
+   * with full history. Rejects with NoActiveTurnError when no turn is
+   * running (the session, live or sleeping, is left untouched).
+   */
+  abortTurn(agentAddress: string): Promise<void>;
   deliverMessage(agentAddress: string, message: InboundMessage): void;
   updateGrants(agentAddress: string, grants: GrantRule[]): Promise<void>;
   /**
@@ -856,10 +878,7 @@ export function createSessionManager(
   // delivery failure. A genuine terminal failure with mail still parked is the
   // silent-drop case: surface it so the sender-acked message is observably
   // undelivered rather than lost in a log.
-  function reportTerminalWakeFailure(
-    agentAddress: string,
-    err: unknown,
-  ): void {
+  function reportTerminalWakeFailure(agentAddress: string, err: unknown): void {
     if (err instanceof WakeAbortedError) return;
     const parkedCount = parkedMail.get(agentAddress)?.length ?? 0;
     if (parkedCount > 0) {
@@ -944,6 +963,20 @@ export function createSessionManager(
       pendingEvicts.push(evictSession(agentAddress, session));
     }
     await Promise.allSettled(pendingEvicts);
+  }
+
+  // WORKBENCH-LOCAL (CL-3339): user-initiated turn abort. Reuses the evict
+  // teardown (harness close → reactor abort → durable flush → wakeable), so
+  // stopping a turn is a sleep, not a kill: no `endedAt`, no deleteAgentDir,
+  // and the very next message wakes the agent with full history.
+  async function abortTurn(agentAddress: string): Promise<void> {
+    await awaitEviction(agentAddress);
+    const session = sessions.get(agentAddress);
+    if (session === undefined || (activeRuns.get(agentAddress) ?? 0) === 0) {
+      throw new NoActiveTurnError(agentAddress);
+    }
+    await evictSession(agentAddress, session);
+    logger.info`Aborted running turn for ${agentAddress}`;
   }
 
   async function abortSession(
@@ -1535,6 +1568,7 @@ export function createSessionManager(
     deliverInboundMail,
     destroySession,
     abortSession,
+    abortTurn,
     deliverMessage,
     updateGrants,
     onAgentEvent,
