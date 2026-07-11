@@ -505,6 +505,12 @@ export async function deleteAgentInstance(
 export type LaunchInstanceSessionResponse = {
   launched: boolean;
   launchError?: string;
+  /**
+   * Interchange agent session id for the launched (or already-live) instance.
+   * Present on success so the client can scope Action Requests to this chat
+   * (CL-3286). Null when the instance has no session row yet.
+   */
+  sessionId?: string | null;
 };
 
 export async function launchInstanceSession(

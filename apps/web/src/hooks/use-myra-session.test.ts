@@ -275,6 +275,20 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
 
+  it("exposes the Interchange sessionId returned by launch for ReviewGate scoping", async () => {
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({ launched: true, sessionId: "ses-from-launch" }),
+    );
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(result.current.sessionId).toBe("ses-from-launch"),
+    );
+    expect(result.current.live).toBe(true);
+  });
+
   it("opens the session against the active workbench tenant, not the working/root tenant", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(sessionTenantIds).toHaveLength(1));

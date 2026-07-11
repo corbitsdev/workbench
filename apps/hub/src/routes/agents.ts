@@ -481,6 +481,7 @@ export function createAgentProvisioningRouter(
       const systemPrompt = agentRow.systemPrompt;
 
       let launched = false;
+      let sessionId: string | null = null;
       let launchFailure: LaunchErrorDescription | undefined;
 
       try {
@@ -488,7 +489,7 @@ export function createAgentProvisioningRouter(
         // frontend fires this route proactively and sometimes twice, and two
         // launches racing here let the loser's failure teardown delete the
         // instance row mid-ack of the winner (503 phase=provision).
-        await coalesceInstanceLaunch(instanceId, () =>
+        const result = await coalesceInstanceLaunch(instanceId, () =>
           launchAgentSession(db, sessionService, grantStore, eventCollectors, {
             agentId: instance.agentId,
             instanceId: instance.id,
@@ -499,6 +500,7 @@ export function createAgentProvisioningRouter(
             now,
           }),
         );
+        sessionId = result.sessionId;
         launched = true;
       } catch (err) {
         // If the sidecar already has the agent provisioned (e.g. a race between
@@ -509,6 +511,12 @@ export function createAgentProvisioningRouter(
             .update(agentInstance)
             .set({ status: "running", updatedAt: new Date() })
             .where(eq(agentInstance.id, instanceId));
+          // launchAgentSession threw after minting/resuming the session row —
+          // re-read so the client can still scope ReviewGate to this session.
+          const refreshed = await db.query.agentInstance.findFirst({
+            where: eq(agentInstance.id, instanceId),
+          });
+          sessionId = refreshed?.sessionId ?? instance.sessionId ?? null;
           launched = true;
         } else {
           launchFailure = describeLaunchError(err);
@@ -545,7 +553,9 @@ export function createAgentProvisioningRouter(
         );
       }
 
-      return c.json({ launched: true });
+      // sessionId lets the client scope Action Requests to this chat session
+      // (CL-3286) instead of showing every pending approval in the tenant.
+      return c.json({ launched: true, sessionId });
     },
   );
 

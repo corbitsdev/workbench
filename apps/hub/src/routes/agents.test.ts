@@ -431,7 +431,7 @@ describe("POST /instances/:instanceId/sessions", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 200 with launched:true on successful session start", async () => {
+  it("returns 200 with launched:true and sessionId on successful session start", async () => {
     const db = makeMockDb();
     db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
     db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
@@ -448,8 +448,11 @@ describe("POST /instances/:instanceId/sessions", () => {
       }),
     );
     expect(res.status).toBe(200);
-    const json = (await res.json()) as ResBody;
+    const json = (await res.json()) as ResBody & { sessionId?: string | null };
     expect(json.launched).toBe(true);
+    // Client scopes Action Requests to this session (CL-3286).
+    expect(typeof json.sessionId).toBe("string");
+    expect(json.sessionId!.length).toBeGreaterThan(0);
   });
 
   // CL-3152: the "one launch per instance" invariant lives at the
