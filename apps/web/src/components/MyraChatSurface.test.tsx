@@ -108,6 +108,7 @@ mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummaryKnown: () => null,
   friendlyToolResult: () => null,
   isCatalogMetaTool: () => false,
+  isExternalIntegrationTool: () => false,
   summarizeToolCalls: () => "",
   attachmentPolicyForAgent: () => undefined,
 }));

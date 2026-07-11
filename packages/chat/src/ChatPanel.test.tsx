@@ -371,3 +371,22 @@ describe("ChatLauncher", () => {
     expect(screen.getByText("3")).toBeDefined();
   });
 });
+
+describe("ChatPanel abort forwarding", () => {
+  it("forwards onAbort to the composer so a busy panel shows the stop control", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() => {});
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        typing
+        onAbort={onAbort}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onAbort).toHaveBeenCalledTimes(1);
+  });
+});

@@ -2,6 +2,7 @@ import type { AgentTool } from "@intx/agent";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { parseReport } from "@workbench/last30days-core";
+import { unwrapArgsEnvelope } from "@workbench/shared";
 import { WRITE_ARTIFACT_DEFINITION } from "@workbench/tools-artifact";
 import { and, eq, max } from "drizzle-orm";
 import { artifact, artifactVersion } from "../db/schema";
@@ -20,7 +21,9 @@ type WriteArtifactContext = {
 function requireString(args: Record<string, unknown>, key: string): string {
   const value = args[key];
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`${key} is required`);
+    throw new Error(
+      `${key} is required — pass a top-level string field "${key}"`,
+    );
   }
   return value.trim();
 }
@@ -138,7 +141,8 @@ export function createWriteArtifactTool(
     {
       kind: "string",
       definition: WRITE_ARTIFACT_DEFINITION,
-      handler: async (args, _signal) => {
+      handler: async (rawArgs, _signal) => {
+        const args = unwrapArgsEnvelope(rawArgs, ["title", "body", "kind"]);
         const title = requireString(args, "title");
         const body = requireString(args, "body");
         const kind = requireString(args, "kind");

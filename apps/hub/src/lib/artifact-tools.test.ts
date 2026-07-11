@@ -355,6 +355,45 @@ describe("artifact_create handler", () => {
       /content is required/,
     );
   });
+
+  it("unwraps a single-level args envelope", async () => {
+    const { context, artifactInsertValues } = makeContext();
+    const handler = handlerFor(context, "artifact_create");
+
+    const raw = await handler({
+      artifact: { title: "Enveloped", kind: "note", content: "body" },
+    });
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: "art_123",
+      title: "Enveloped",
+      kind: "note",
+      version: 1,
+    });
+    expect(artifactInsertValues[0]?.content).toBe("body");
+  });
+
+  it("reports a missing title with a model-actionable message", async () => {
+    const { context } = makeContext();
+    const handler = handlerFor(context, "artifact_create");
+    await expect(handler({ kind: "note", content: "c" })).rejects.toThrow(
+      'title is required — pass a top-level string field "title"',
+    );
+  });
+});
+
+describe("artifact_link_file envelope handling", () => {
+  it("unwraps an `input` envelope", async () => {
+    const { context, artifactInsertValues } = makeContext();
+    const handler = handlerFor(context, "artifact_link_file");
+
+    await handler({
+      input: { title: "Doc", kind: "document", path: "a/b.md" },
+    });
+
+    expect(artifactInsertValues[0]?.title).toBe("Doc");
+    expect(artifactInsertValues[0]?.content).toBe("Linked file: a/b.md");
+  });
 });
 
 describe("artifact_read handler", () => {
@@ -672,6 +711,39 @@ describe("artifact_read_chunk handler", () => {
   });
 });
 
+describe("artifact_read_chunk envelope with sibling params", () => {
+  const noteRows = () => [
+    [
+      {
+        id: "art_1",
+        title: "N",
+        kind: "note",
+        status: "draft",
+        version: 1,
+        content: "0123456789",
+      },
+    ],
+  ];
+
+  it("flat args: offset is honored", async () => {
+    const { context } = makeQueryContext(noteRows());
+    const handler = handlerFor(context, "artifact_read_chunk");
+    const raw = await handler({ artifactId: "art_1", offset: 5 });
+    expect(JSON.parse(raw as string).content).toBe("56789");
+  });
+
+  it("enveloped args: sibling params ride along with artifactId", async () => {
+    const { context } = makeQueryContext(noteRows());
+    const handler = handlerFor(context, "artifact_read_chunk");
+    const raw = await handler({
+      input: { artifactId: "art_1", offset: 5 },
+    });
+    // The unwrap happens at the handler entry, so the enveloped offset is
+    // honored — not silently dropped while artifactId alone is unwrapped.
+    expect(JSON.parse(raw as string).content).toBe("56789");
+  });
+});
+
 describe("artifact_write handler", () => {
   it("bumps the version under a locked read, updates the row, and appends an authored version", async () => {
     const { context, updateSets, versionInsertValues, calls } =
@@ -751,6 +823,41 @@ describe("artifact_write handler", () => {
 
     expect(updateSets[0]?.title).toBe("Renamed");
     expect(updateSets[0]?.content).toBe("keep");
+  });
+
+  it("unwraps a single-level args envelope", async () => {
+    const { context, updateSets } = makeQueryContext([
+      [
+        {
+          id: "art_1",
+          title: "Old",
+          kind: "note",
+          status: "draft",
+          version: 2,
+          content: "old",
+        },
+      ],
+    ]);
+    const handler = handlerFor(context, "artifact_write");
+
+    const raw = await handler({
+      args: { artifactId: "art_1", content: "new body" },
+    });
+
+    expect(JSON.parse(raw as string)).toEqual({
+      artifactId: "art_1",
+      version: 3,
+      title: "Old",
+    });
+    expect(updateSets[0]?.content).toBe("new body");
+  });
+
+  it("reports a missing artifactId with the next step to take", async () => {
+    const { context } = makeQueryContext([[]]);
+    const handler = handlerFor(context, "artifact_write");
+    await expect(handler({ content: "x" })).rejects.toThrow(
+      'artifactId is required — pass a top-level string field "artifactId" (the id returned by artifact_create or artifact_list); to make a new artifact use artifact_create',
+    );
   });
 
   it("throws when no field is provided or the artifact is absent", async () => {

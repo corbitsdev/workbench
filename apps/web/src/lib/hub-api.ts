@@ -602,6 +602,27 @@ export async function launchInstanceSession(
   return parsed;
 }
 
+/**
+ * Stops the instance's in-flight chat turn without ending the conversation.
+ * 409 (no turn running) is treated as success — the desired end state
+ * ("nothing running") already holds, e.g. the turn finished as the user
+ * clicked stop.
+ */
+export async function abortInstanceTurn(instanceId: string): Promise<void> {
+  try {
+    await hubFetch<void>("POST", `v1/instances/${instanceId}/abort-turn`);
+  } catch (err) {
+    if (err instanceof Error && hasStatus(err) && err.status === 409) {
+      return;
+    }
+    throw err;
+  }
+}
+
+function hasStatus(err: Error): err is Error & { status: number } {
+  return typeof (err as { status?: unknown }).status === "number";
+}
+
 export async function stopAgentInstance(
   tenantId: string,
   instanceId: string,

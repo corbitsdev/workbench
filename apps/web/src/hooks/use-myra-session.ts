@@ -27,6 +27,7 @@ import type {
   PendingAttachment,
 } from "@workbench/chat";
 import {
+  abortInstanceTurn,
   ensureMeSynced,
   getOutputFeedback,
   launchInstanceSession,
@@ -328,6 +329,12 @@ export type MyraSession = {
     text: string,
     attachments?: PendingAttachment[],
   ) => void | Promise<void>;
+  /**
+   * Stops the in-flight turn server-side. Resolves once the sidecar has
+   * settled the turn (the conversation stays usable); rejects with a
+   * user-facing message on failure.
+   */
+  abortTurn: () => Promise<void>;
   reconnect: () => void;
   instanceId: string | null;
   onRate?: (
@@ -373,6 +380,16 @@ export function useMyraSession(
   const [hasBeenLive, setHasBeenLive] = useState(false);
   // Interchange session id from launch — scopes ReviewGate to this chat (CL-3286).
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // The sidecar settles an aborted turn by putting the agent to sleep, which
+  // emits no further agent events — the live activity signal would otherwise
+  // linger as "thinking" forever. Suppress it locally after a successful
+  // abort. The suppression clears on the next send AND on the first
+  // genuinely-new activity event (compared by identity against the value
+  // captured at abort time), so a new turn started elsewhere — e.g. a
+  // parked-mail replay wake — is never hidden and the stop button stays
+  // reachable.
+  const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
@@ -387,6 +404,7 @@ export function useMyraSession(
     setLive(false);
     setHasBeenLive(false);
     setSessionId(null);
+    setActivitySuppressed(false);
     // Drop the previous thread's queued sends and history snapshot so a new
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
@@ -765,6 +783,27 @@ export function useMyraSession(
     },
   });
 
+  const { mutateAsync: abortMutateAsync } = useMutation({
+    mutationFn: (iid: string) => abortInstanceTurn(iid),
+  });
+  const abortTurn = useCallback(async (): Promise<void> => {
+    const iid = resolvedInstanceIdRef.current;
+    if (iid === null) {
+      throw new Error("Not connected yet. Try again in a moment.");
+    }
+    try {
+      await abortMutateAsync(iid);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : "Couldn't stop Myra. Try again.";
+      throw new Error(message);
+    }
+    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
+    setActivitySuppressed(true);
+  }, [abortMutateAsync]);
+
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
   // Feed this session's phase to the app-level reconnecting overlay so a
@@ -850,9 +889,17 @@ export function useMyraSession(
     connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
   }
 
-  const activity = activeSession
-    ? toChatActivity(activeSession.activity)
-    : null;
+  // Render-phase adjustment (same pattern as prevIdentity above): the first
+  // activity value that differs from the one captured at abort time is a new
+  // turn — stop hiding it.
+  const rawActivity = activeSession ? activeSession.activity : null;
+  if (activitySuppressed && rawActivity !== suppressedActivityRef.current) {
+    setActivitySuppressed(false);
+  }
+  const suppressed =
+    activitySuppressed && rawActivity === suppressedActivityRef.current;
+  const activity =
+    activeSession && !suppressed ? toChatActivity(rawActivity) : null;
 
   const sendWithAttachments = async (
     text: string,
@@ -937,6 +984,9 @@ export function useMyraSession(
     text: string,
     attachments?: PendingAttachment[],
   ): void | Promise<void> => {
+    // A new turn is starting — let its real activity events drive the busy
+    // indicator again after an earlier abort suppressed a stale one.
+    setActivitySuppressed(false);
     const hasAttachments = attachments !== undefined && attachments.length > 0;
     if (hasAttachments) {
       // Attachments are not queued in v1 — they need the parse/mail transport,
@@ -1033,6 +1083,7 @@ export function useMyraSession(
     connectionNotice,
     sessionId,
     send,
+    abortTurn,
     reconnect,
     instanceId: resolvedInstanceId,
     resolveAttachmentUrl,
