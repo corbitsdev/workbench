@@ -87,9 +87,9 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Schedule trigger
   // -------------------------------------------------------------------------
-  test("declares a schedule trigger with a cron expression", () => {
+  test("declares a daily schedule trigger matching the hub scheduler's cadence", () => {
     expect(workflow.triggers).toEqual([
-      { type: "schedule", cron: "0 13 * * 1" },
+      { type: "schedule", cron: "0 13 * * *" },
     ]);
   });
 

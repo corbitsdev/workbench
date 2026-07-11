@@ -7,10 +7,12 @@ export const description =
   "On a schedule, pull recent Granola calls, synthesize a morning brief, mail it to the user, and save it as an artifact.";
 export const kind = "heartbeat";
 
-// Mondays at 13:00 UTC. The T2 scheduler fires the run from this cron; the run's
-// `trigger.payload` carries the target user ({ reason, userAddress, userRefId,
-// createdAfter? }) resolved by the scheduler, so nothing here is user-specific.
-const BRIEF_CRON = "0 13 * * 1";
+// Firing is owned ENTIRELY by the hub's scheduled_trigger table (daily at each
+// member's hour_utc) — the runtime never reads this trigger declaration; it is
+// descriptive metadata only. The run's `trigger.payload` carries the target
+// user ({ reason, userAddress, userRefId, createdAfter? }) resolved by the
+// scheduler, so nothing here is user-specific.
+const BRIEF_CRON = "0 13 * * *";
 
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended

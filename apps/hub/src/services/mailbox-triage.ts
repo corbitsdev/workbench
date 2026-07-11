@@ -322,6 +322,12 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     try {
       let next = queue.shift();
       while (next !== undefined) {
+        // Re-check at dequeue so flipping the flag off also stops the backlog,
+        // not just new arrivals.
+        if (!getConfig().triageEnabled) {
+          queue.length = 0;
+          break;
+        }
         try {
           await runOne(next);
         } catch (err) {
