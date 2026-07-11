@@ -886,6 +886,21 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tasks": {
+      "name": "@workbench/tasks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/tools-attio": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/test-utils": {
       "name": "@workbench/test-utils",
       "devDependencies": {
@@ -2476,6 +2491,8 @@
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 
     "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
+
+    "@workbench/tasks": ["@workbench/tasks@workspace:packages/tasks"],
 
     "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
 
