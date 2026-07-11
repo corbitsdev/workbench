@@ -72,7 +72,7 @@ function formatValue(value: unknown): string {
 export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
   const queryClient = useQueryClient();
   const prefersReducedMotion = useReducedMotion();
-  const { data: approvals = [], error: fetchError } = useQuery({
+  const { data: approvals = [] } = useQuery({
     queryKey: ["approvals", tenantId, sessionId],
     queryFn: async () => {
       const all = await listApprovals(tenantId);
@@ -114,7 +114,7 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
     });
   }
 
-  if (approvals.length === 0 && !fetchError) return null;
+  if (approvals.length === 0) return null;
 
   async function handleApprove(id: string) {
     patchItemState(id, { requestState: "approving", error: null });
@@ -150,13 +150,6 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
 
   return (
     <div className="flex flex-col gap-2" data-testid="review-gate">
-      {fetchError !== null && (
-        <p className="rounded-sm bg-red-soft px-3 py-2 text-[13px] text-red">
-          {fetchError instanceof Error
-            ? fetchError.message
-            : "Failed to load approval requests."}
-        </p>
-      )}
       <AnimatePresence initial={false}>
         {approvals.map((approval: Approval) => {
           const { requestState, error } = getItemState(approval.id);
