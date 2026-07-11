@@ -36,7 +36,9 @@ function makeDb(opts: {
     inserted.push(rows);
     return Promise.resolve();
   });
-  const principalFindFirst = mock(async () => opts.memberPrincipal);
+  const principalFindFirst = mock(
+    async (_args: { where: unknown }) => opts.memberPrincipal,
+  );
   const db = {
     query: {
       agentInstance: { findFirst: mock(async () => opts.sender) },
@@ -125,9 +127,7 @@ describe("createPrincipalMailboxPersist", () => {
       raw: RAW,
     });
 
-    const arg = principalFindFirst.mock.calls[0]?.[0] as
-      | { where: unknown }
-      | undefined;
+    const arg = principalFindFirst.mock.calls[0]?.[0];
     const { sql, params } = renderWhere(arg?.where);
     expect(sql).toContain("tenant_id");
     expect(sql).toContain("kind");

@@ -1,0 +1,138 @@
+import { and, eq, isNull } from "drizzle-orm";
+import { agentInstance, principal, tenant } from "@intx/db/schema";
+import type { SidecarLookups } from "@intx/hub-sessions";
+import { getLogger } from "@intx/log";
+import { parseHeaderSection } from "@intx/mime";
+import { principalMailbox } from "../db/schema";
+import type { HubDb } from "../db";
+
+const logger = getLogger(["hub", "principal-mailbox"]);
+
+export type PersistMailFn = NonNullable<SidecarLookups["persistMail"]>;
+
+const USER_ADDRESS_PREFIX = "usr_";
+
+function splitAddress(
+  address: string,
+): { local: string; domain: string } | null {
+  const at = address.indexOf("@");
+  if (at <= 0 || at === address.length - 1) return null;
+  return { local: address.slice(0, at), domain: address.slice(at + 1) };
+}
+
+// Cached list headers, parsed once at write. A frame whose header section
+// the MIME parser rejects still persists — `raw` stays authoritative and
+// the read path re-derives what it can — so the parse failure is the
+// expected case this catch handles, not a swallowed fault.
+function readCachedHeaders(raw: Uint8Array): {
+  subject: string | null;
+  from: string | null;
+} {
+  try {
+    const { headers } = parseHeaderSection(raw);
+    return {
+      subject: headers.get("subject") ?? null,
+      from: headers.get("from") ?? null,
+    };
+  } catch {
+    return { subject: null, from: null };
+  }
+}
+
+/**
+ * Wrap the upstream `persistMail` lookup so mail addressed to a human
+ * user (`usr_<refId>@<tenant domain>`) lands in the workbench-owned
+ * `principal_mailbox` table. Upstream persists the sender's outbound
+ * record and inbound rows for agent-instance recipients, but skips human
+ * addresses — without this seam a workflow's mail to a user is delivered
+ * only as a live SSE and never durably readable.
+ *
+ * Interim sender authorization also lives at this seam: only an active
+ * agent instance may deliver mail, and user recipients are resolved
+ * strictly within the sender's tenant (refId + `kind: "user"` + the
+ * tenant's domain), so cross-tenant delivery is impossible by
+ * construction. An unauthorized sender is logged and dropped.
+ */
+export function createPrincipalMailboxPersist(
+  db: HubDb,
+  upstream: PersistMailFn,
+): PersistMailFn {
+  return async ({ senderAddress, recipients, raw }) => {
+    const sender = await db.query.agentInstance.findFirst({
+      where: and(
+        eq(agentInstance.address, senderAddress),
+        isNull(agentInstance.endedAt),
+      ),
+    });
+    if (!sender) {
+      logger.error(
+        "Dropping mail from unauthorized sender {senderAddress}: not an active agent instance",
+        { senderAddress },
+      );
+      return [];
+    }
+
+    const results = await upstream({ senderAddress, recipients, raw });
+
+    const candidates = recipients
+      .map(splitAddress)
+      .filter(
+        (parts): parts is NonNullable<typeof parts> =>
+          parts !== null && parts.local.startsWith(USER_ADDRESS_PREFIX),
+      );
+    if (candidates.length === 0) return results;
+
+    const senderTenant = await db.query.tenant.findFirst({
+      where: eq(tenant.id, sender.tenantId),
+    });
+    if (!senderTenant) {
+      logger.error(
+        "No tenant row for sender tenant {tenantId}; skipping user mailbox delivery",
+        { tenantId: sender.tenantId },
+      );
+      return results;
+    }
+
+    const userRecipients: { principalId: string; address: string }[] = [];
+    for (const parts of candidates) {
+      const address = `${parts.local}@${parts.domain}`;
+      if (parts.domain !== senderTenant.domain) {
+        logger.warn(
+          "Skipping user recipient {address}: domain does not match tenant {tenantId}",
+          { address, tenantId: sender.tenantId },
+        );
+        continue;
+      }
+      const member = await db.query.principal.findFirst({
+        where: and(
+          eq(principal.tenantId, sender.tenantId),
+          eq(principal.kind, "user"),
+          eq(principal.refId, parts.local),
+        ),
+      });
+      if (!member) {
+        logger.warn(
+          "Skipping user recipient {address}: no member principal with refId {refId} in tenant {tenantId}",
+          { address, refId: parts.local, tenantId: sender.tenantId },
+        );
+        continue;
+      }
+      userRecipients.push({ principalId: member.id, address });
+    }
+    if (userRecipients.length === 0) return results;
+
+    const cached = readCachedHeaders(raw);
+    await db.insert(principalMailbox).values(
+      userRecipients.map((recipient) => ({
+        tenantId: sender.tenantId,
+        principalId: recipient.principalId,
+        address: recipient.address,
+        direction: "inbound" as const,
+        raw: Buffer.from(raw),
+        subject: cached.subject,
+        fromAddress: cached.from,
+      })),
+    );
+    return results;
+  };
+}

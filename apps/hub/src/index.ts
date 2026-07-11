@@ -126,6 +126,7 @@ import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
+import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
 import { createToolManifestRouter } from "./routes/tool-manifest";
@@ -364,6 +365,7 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
 
 const lookups: SidecarLookups = {
   ...baseLookups,
+  persistMail: createPrincipalMailboxPersist(db, baseLookups.persistMail),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(

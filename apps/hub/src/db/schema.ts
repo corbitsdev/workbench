@@ -541,6 +541,43 @@ export const adminAudit = pgTable(
 
 export type AdminAuditRow = typeof adminAudit.$inferSelect;
 
+// ─── Principal mailbox ─────────────────────────────────────────────
+//
+// Durable per-principal mailbox for mail addressed to human users (usr_
+// addresses). Interchange's session_mail persists inbound rows only for
+// agent-instance recipients and skips human addresses; the workbench
+// persistMail override (lib/principal-mailbox.ts) writes those frames
+// here instead, keyed by the recipient's member principal so the inbox
+// read path is a direct equality filter. `raw` is the RFC 2822 frame
+// verbatim; `subject`/`from_address` are cached list headers parsed at
+// write time.
+export const principalMailboxDirections = ["inbound", "outbound"] as const;
+
+export const principalMailbox = pgTable(
+  "principal_mailbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    address: text("address").notNull(),
+    direction: text("direction", {
+      enum: principalMailboxDirections,
+    }).notNull(),
+    raw: bytea("raw").notNull(),
+    subject: text("subject"),
+    fromAddress: text("from_address"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    readAt: timestamp("read_at"),
+  },
+  (t) => ({
+    principalMailboxPrincipalCreatedIdx: index(
+      "principal_mailbox_principal_created_idx",
+    ).on(t.tenantId, t.principalId, t.createdAt),
+  }),
+);
+
+export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
+
 export {
   analyticsEvent,
   analyticsRollupDaily,
