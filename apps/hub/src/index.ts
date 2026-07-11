@@ -365,7 +365,7 @@ const repoStore = wrapRepoStoreWithProjection(
         });
       });
     },
-    // CL-3301: deliver a "a workflow needs you" mailbox item to the run owner
+    // Deliver a "a workflow needs you" mailbox item to the run owner
     // when a run parks on an awaitSignal gate. Fire-and-forget; the deliverer
     // owns its errors and must never block pack receipt.
     deliverGateMail: (args) => {
@@ -1200,8 +1200,8 @@ const provisionRunDeployment: ProvisionRunDeploymentFn = (args) =>
     hubPublicKey: hubPublicKeyHex,
   });
 
-// Callable run-start (CL-2606): shared by the HTTP start handler and the
-// scheduler (CL-2609), so a scheduled run fires through the same resolution +
+// Callable run-start: shared by the HTTP start handler and the
+// scheduler, so a scheduled run fires through the same resolution +
 // routability + mail-trigger delivery as an HTTP-initiated one.
 const runStarter = createWorkflowRunStarter({
   db,
@@ -1211,7 +1211,7 @@ const runStarter = createWorkflowRunStarter({
   cryptoProvider: createEd25519Crypto(registry.active),
 });
 
-// Public webhook firing surface (CL-3300): no session, authenticated only by
+// Public webhook firing surface: no session, authenticated only by
 // the per-trigger secret. Mounted directly on the parent app, outside the v1
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
@@ -1359,7 +1359,7 @@ const scheduler = createScheduler({
 });
 scheduler.start();
 
-// Native-task pending-ref reconciler (CL-3313). Gated by TASKS_RECONCILER_ENABLED
+// Native-task pending-ref reconciler. Gated by TASKS_RECONCILER_ENABLED
 // (default OFF); retries downstream pushes left pending, failures server-side.
 const taskReconciler = createTaskReconcilerService({
   enabled: config.tasksReconciler.enabled,

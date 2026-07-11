@@ -1,4 +1,4 @@
--- Webhook-triggered workflow runs (CL-3300): a durable per-trigger secret lets
+-- Webhook-triggered workflow runs: a durable per-trigger secret lets
 -- an external system fire a workflow run over HTTP without a session.
 -- secret_hash is a SHA-256 hash of the trigger secret -- the plaintext is
 -- returned to the owner exactly once, at creation, and never stored.

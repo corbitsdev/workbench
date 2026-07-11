@@ -411,7 +411,7 @@ export function loadConfig() {
         "milliseconds",
       ),
     },
-    // Automation scheduler (CL-2609). Opt-in kill switch, default OFF (mirrors
+    // Automation scheduler. Opt-in kill switch, default OFF (mirrors
     // workflowAutopublishOnBoot). When enabled, the hub fires durable
     // scheduled_trigger rows on a daily UTC-hour cadence and seeds one
     // heartbeat schedule per Myra member at `heartbeatHourUtc` on boot.
@@ -420,7 +420,7 @@ export function loadConfig() {
       heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
       heartbeatKind: "heartbeat",
     },
-    // Native-task pending-ref reconciler (CL-3313). Opt-in kill switch, default
+    // Native-task pending-ref reconciler. Opt-in kill switch, default
     // OFF. When enabled, the hub periodically retries task_external_ref rows a
     // push left `pending` (adapter threw, credential missing) with a bounded
     // per-ref budget; failures stay server-side and never surface to the user.

@@ -1,7 +1,7 @@
 import { type } from "arktype";
 import type { Task, TaskExternalRef } from "@workbench/shared";
 
-// A self-describing downstream task adapter (CL-3302). The registry mirrors the
+// A self-describing downstream task adapter. The registry mirrors the
 // hub tool-registry house pattern: a static, hand-merged, name-keyed map of
 // descriptors — not a dynamic plugin system. Adding a system is registration
 // (one descriptor + one credential-catalog line), not a core change.

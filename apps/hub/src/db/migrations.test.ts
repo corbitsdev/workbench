@@ -447,7 +447,7 @@ describe("0047 creates scheduled_trigger", () => {
   });
 });
 
-describe("0048 creates workflow_trigger (CL-3300)", () => {
+describe("0048 creates workflow_trigger", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0048_workflow_trigger.sql"),
     "utf-8",

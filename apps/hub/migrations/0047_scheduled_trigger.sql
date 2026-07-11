@@ -1,4 +1,4 @@
--- Automation triggers (CL-2609): durable per-member schedules that fire a
+-- Automation triggers: durable per-member schedules that fire a
 -- workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
 -- rows each tick and starts a run for any whose target hour has arrived and has
 -- not fired today (tracked by last_fired_day_utc, the integer UTC day index).

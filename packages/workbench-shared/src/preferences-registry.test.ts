@@ -121,6 +121,16 @@ describe("validatePreferencePatch", () => {
     expect(validatePreferencePatch({ theme: "notion" })).toBeNull();
     expect(validatePreferencePatch({ favoriteWorkflows: ["a"] })).toBeNull();
   });
+
+  test("accepts legacy per-page view-mode keys riding the index signature", () => {
+    expect(
+      validatePreferencePatch({
+        artifactsViewMode: "rows",
+        toolsViewMode: "grid",
+        skillsViewMode: "rows",
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("resolvePreferenceSettings", () => {

@@ -15,8 +15,6 @@ export {
 export { createPersonalAgentDirector } from "./core/director";
 export {
   PERSONAL_AGENT_SEED_FILES,
-  RETIRED_SEED_FILES,
-  buildSeedMarker,
   parseSeedMarker,
   resolveSeedMarker,
   stripSeedMarker,
@@ -29,8 +27,6 @@ export {
 // Mailbox triage loadout — prompt + read-only tool posture mounted on an
 // ephemeral, per-item Myra triage session.
 export {
-  buildMailboxTriagePrompt,
   resolveMailboxLoadout,
-  MAILBOX_PERSONA_TOOLS,
   type MailboxLoadout,
 } from "./personas/mailbox";

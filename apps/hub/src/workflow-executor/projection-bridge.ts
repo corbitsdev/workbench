@@ -196,7 +196,7 @@ export type ProjectRunFactsFn = (args: {
 }) => void;
 
 // Fired when a run first parks on an awaitSignal gate — the running -> awaiting
-// transition (CL-3301) — so the caller can deliver a "needs you" mailbox item to
+// transition — so the caller can deliver a "needs you" mailbox item to
 // the run owner. Also fires on a re-park within one pack (a SignalReceived
 // folded ahead of a fresh SignalAwaited), since the owner must be notified of the
 // NEW gate; the mailbox layer dedupes by (runId, signalName). Best-effort: the
@@ -492,7 +492,7 @@ export async function projectWorkflowRunRepo(
       });
     }
 
-    // Gate mail (CL-3301): notify the owner's mailbox when a run FIRST parks on
+    // Gate mail: notify the owner's mailbox when a run FIRST parks on
     // an awaitSignal gate, or re-parks on a new gate within a single pack (a
     // SignalReceived folded ahead of a fresh SignalAwaited, which keeps the
     // folded status `awaiting`). Guarded to the transition so a run sitting
@@ -607,7 +607,7 @@ export function wrapRepoStoreWithProjection(
       kind: string;
       tenantId: string;
     }) => void;
-    // CL-3301: deliver a "needs you" mailbox item when a run parks on a gate.
+    // Deliver a "needs you" mailbox item when a run parks on a gate.
     // The RepoStore is injected here (as `projectRunFacts` does) so the
     // implementation can read the run's open gates. Best-effort, fire-and-forget.
     deliverGateMail?: (

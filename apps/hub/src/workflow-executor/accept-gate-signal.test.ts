@@ -51,7 +51,7 @@ mock.module("./run-awaiting-signals", () => ({
   },
 }));
 
-// CL-3301: an accepted gate signal resolves the gate's "needs you" mailbox
+// An accepted gate signal resolves the gate's "needs you" mailbox
 // item. Spy at the module boundary so the test asserts run-exec calls it with
 // the accepted run + signal, and only on the accept path.
 const markedRead: { runId: string; signalName: string }[] = [];
@@ -200,7 +200,7 @@ describe("acceptGateSignal — the durable pending-signal rail is guarded", () =
     expect(sent).toEqual([
       { runId: "run_ok", signalName: "approval", payload: { approved: true } },
     ]);
-    // The gate's "needs you" mailbox item is resolved on accept (CL-3301).
+    // The gate's "needs you" mailbox item is resolved on accept.
     expect(markedRead).toEqual([{ runId: "run_ok", signalName: "approval" }]);
   });
 

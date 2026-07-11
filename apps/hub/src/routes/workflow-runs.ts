@@ -137,7 +137,7 @@ const ErrorResponse = type({ error: "string" });
 // address (hub/sidecar restart). Pre-bound in index.ts over deploymentDomain +
 // hubPublicKey; idempotent (a no-op when already routable) and coalesced per
 // deploymentId in the deploy service. The start/signal handlers await it before
-// delivering so a run never dead-ends on `agent is unreachable` (CL-2225).
+// delivering so a run never dead-ends on `agent is unreachable`.
 export type EnsureDeploymentRoutableFn = (args: {
   deploymentId: string;
   kind: string;

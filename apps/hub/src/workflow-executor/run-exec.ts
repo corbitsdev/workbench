@@ -127,7 +127,7 @@ function mintRunId(): string {
   return `wfr_${randomBytes(16).toString("hex")}`;
 }
 
-// Resolve a gate's "needs you" mailbox item once its signal is accepted (CL-3301):
+// Resolve a gate's "needs you" mailbox item once its signal is accepted:
 // stamp read_at if the item is still unread. Best-effort — the run resume must
 // never fail because the inbox bookkeeping did, so a failure is logged and
 // swallowed.

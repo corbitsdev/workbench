@@ -302,7 +302,7 @@ export const GammaTemplateBodySchema = type({
 });
 export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
 
-// How far a member's Myra may go autonomously (CL-3304). `prepare_only` is the
+// How far a member's Myra may go autonomously. `prepare_only` is the
 // default posture: classify, plan, draft, read-only grounding — no writes.
 // `execute_with_gates` lets Myra attempt tool writes, each still flowing
 // through the existing approval rail; it never bypasses gates.

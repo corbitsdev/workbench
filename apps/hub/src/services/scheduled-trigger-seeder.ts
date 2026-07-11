@@ -27,7 +27,7 @@ export interface HeartbeatSeederDeps {
 
 // Boot-time idempotent seed so the morning brief works out of the box: ensure
 // one heartbeat schedule per member with a Myra instance. Members can later
-// customize hour/enablement via /me/schedules (CL-2297); the underlying upsert
+// customize hour/enablement via /me/schedules; the underlying upsert
 // never overwrites an existing row, so customization survives reboots. Gated by
 // the scheduler enable flag. Best-effort per target: one member's failure is
 // logged and never aborts the sweep.

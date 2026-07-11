@@ -347,7 +347,7 @@ export const artifactVersion = pgTable(
   }),
 );
 
-// Native Workbench tasks (CL-3302): a pointer to work with a state machine and
+// Native Workbench tasks: a pointer to work with a state machine and
 // downstream mirrors. Workbench-owned — text principal/tenant columns held by
 // value, no FK to any interchange table. The (tenant, owner, status) index
 // serves the inbox query.
@@ -706,7 +706,7 @@ export const scheduledTrigger = pgTable(
 
 export type ScheduledTriggerRow = typeof scheduledTrigger.$inferSelect;
 
-// Webhook-triggered workflow runs (CL-3300): a durable per-trigger secret lets
+// Webhook-triggered workflow runs: a durable per-trigger secret lets
 // an external system fire a workflow run over HTTP, without a session.
 // `secretHash` is a SHA-256 hash of the trigger secret -- the plaintext is
 // returned to the owner exactly once, at creation, and never persisted.

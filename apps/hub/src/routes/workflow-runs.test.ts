@@ -554,7 +554,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     return parent;
   }
 
-  it("re-establishes the supervisor before delivering, and does not deliver if that fails (CL-2225)", async () => {
+  it("re-establishes the supervisor before delivering, and does not deliver if that fails", async () => {
     userContextImpl = () =>
       Promise.resolve({
         context: { tenantId: "tenant-1", principalId: "p-1" },

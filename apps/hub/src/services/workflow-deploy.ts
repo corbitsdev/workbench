@@ -142,8 +142,7 @@ export interface WorkflowDeployService {
   // (CL-2217/2222), then re-sends the supervisor deploy frame. Concurrent calls
   // for the same
   // deploymentId coalesce onto one re-establishment. The shared engine behind
-  // the deployment reconciler (CL-2224) and run-start/signal resilience
-  // (CL-2225).
+  // the deployment reconciler and run-start/signal resilience.
   ensureDeploymentRoutable(
     args: EnsureDeploymentRoutableArgs,
   ): Promise<EnsureDeploymentRoutableResult>;

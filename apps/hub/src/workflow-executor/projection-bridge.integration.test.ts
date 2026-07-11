@@ -382,7 +382,7 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     expect(factsCalls).toBe(0);
   });
 
-  // CL-3301: the gate-mail hook fires when a run FIRST parks on an awaitSignal
+  // The gate-mail hook fires when a run FIRST parks on an awaitSignal
   // gate, carrying the run's owner + identity so the caller can deliver mail.
   test("fires onNewlyAwaiting once when a run first parks on a gate", async () => {
     const runId = "wfr-gatemail";

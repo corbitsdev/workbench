@@ -123,8 +123,9 @@ export function preferenceValueSchema(entry: PreferenceEntry) {
  * Keys the write path accepts that are NOT registry-managed — they are owned by
  * the `@workbench/ui` preference store (appearance) or written by workflows
  * (Attio member, favorites). Kept in lockstep with the explicit fields of the
- * `MemberPreferences` schema so the registry can reject genuinely unknown keys
- * without breaking those subsystems.
+ * `MemberPreferences` schema, plus the legacy keys that ride its index
+ * signature (per-page view-mode toggles), so the registry can reject
+ * genuinely unknown keys without breaking those subsystems.
  */
 export const NON_REGISTRY_PREFERENCE_KEYS = [
   "theme",
@@ -133,6 +134,9 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "experimentalArtifactCards",
   "attioMemberId",
   "favoriteWorkflows",
+  "artifactsViewMode",
+  "toolsViewMode",
+  "skillsViewMode",
 ] as const;
 
 function isNonRegistryKey(key: string): boolean {

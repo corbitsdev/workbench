@@ -1,4 +1,4 @@
--- Native Workbench tasks (CL-3302): a first-class task object with a state
+-- Native Workbench tasks: a first-class task object with a state
 -- machine and downstream mirrors. Both tables are workbench-owned; they hold
 -- interchange principal/tenant ids by value only and reference NO
 -- interchange-owned table. `task_external_ref` carries one row per

@@ -14,7 +14,7 @@ const log = getLogger(["services", "workflow-run-starter"]);
 // Callable run-start: resolves a deployed workflow by kind along the tenant
 // chain, ensures its supervisor is routable, and delivers the trigger payload as
 // the mail-trigger message that begins a run. Extracted from the HTTP handler so
-// the hub scheduler can fire runs without an HTTP self-call (CL-2606/CL-2609).
+// the hub scheduler can fire runs without an HTTP self-call.
 // HTTP-only concerns (user context, 403, JSON parse, StartRunBody validation,
 // status codes) stay in the route; this service takes an already-resolved
 // tenantId + validated trigger input and returns a discriminated result.
@@ -22,9 +22,9 @@ export type StartRunInput = {
   kind: string;
   tenantId: string;
   input: Record<string, unknown>;
-  // Attribution for the run (CL-2609): the principal on whose behalf the run
+  // Attribution for the run: the principal on whose behalf the run
   // fires. The HTTP route omits it and the resolved deployment's own principal
-  // is used (preserving pre-CL-2609 behavior); the scheduler passes the
+  // is used (preserving prior behavior); the scheduler passes the
   // schedule's owning member principal so a scheduled run is attributed to its
   // owner, not to the shared deployment.
   creatorPrincipalId?: string;
@@ -92,7 +92,7 @@ export function createWorkflowRunStarter(deps: {
       // The supervisor may have been dropped from the hub's addressIndex by a
       // restart since deploy; re-establish it before delivering the trigger so
       // the run does not dead-end on `agent is unreachable` with zero events
-      // (CL-2223/CL-2225).
+      // to avoid dead-ending on `agent is unreachable` with zero events.
       await deps.ensureDeploymentRoutable({
         deploymentId: deployment.deploymentId,
         kind: deployment.kind,
