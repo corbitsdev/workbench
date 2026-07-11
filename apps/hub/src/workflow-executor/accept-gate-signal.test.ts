@@ -51,6 +51,20 @@ mock.module("./run-awaiting-signals", () => ({
   },
 }));
 
+// CL-3301: an accepted gate signal resolves the gate's "needs you" mailbox
+// item. Spy at the module boundary so the test asserts run-exec calls it with
+// the accepted run + signal, and only on the accept path.
+const markedRead: { runId: string; signalName: string }[] = [];
+mock.module("../lib/principal-mailbox", () => ({
+  markGateMailboxItemRead: async (
+    _db: unknown,
+    runId: string,
+    signalName: string,
+  ) => {
+    markedRead.push({ runId, signalName });
+  },
+}));
+
 const { acceptGateSignal } = await import("./run-exec");
 
 function makeDeps() {
@@ -95,6 +109,7 @@ function seedRun(runId: string, deploymentId: string): void {
 function reset(): void {
   runsById.clear();
   persisted.length = 0;
+  markedRead.length = 0;
   cannedAwaitingSignals = [];
 }
 
@@ -185,5 +200,26 @@ describe("acceptGateSignal — the durable pending-signal rail is guarded", () =
     expect(sent).toEqual([
       { runId: "run_ok", signalName: "approval", payload: { approved: true } },
     ]);
+    // The gate's "needs you" mailbox item is resolved on accept (CL-3301).
+    expect(markedRead).toEqual([{ runId: "run_ok", signalName: "approval" }]);
+  });
+
+  it("does not touch the mailbox when the accept is rejected", async () => {
+    reset();
+    seedRun("run_parked", "ses_dep");
+    cannedAwaitingSignals = ["some-other-gate"];
+    const { deps } = makeDeps();
+
+    await acceptGateSignal(deps, {
+      deploymentId: "ses_dep",
+      kind: "deck",
+      tenantId: "t1",
+      creatorPrincipalId: "prn-deployer",
+      runId: "run_parked",
+      signalName: "approval",
+      payload: {},
+    });
+
+    expect(markedRead).toEqual([]);
   });
 });

@@ -358,6 +358,44 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
   });
 });
 
+describe("0050 adds message_key to principal_mailbox (CL-3301)", () => {
+  const sql = readFileSync(
+    join(
+      import.meta.dir,
+      "../../migrations/0050_principal_mailbox_message_key.sql",
+    ),
+    "utf-8",
+  );
+
+  it("adds a nullable message_key column", () => {
+    expect(sql).toMatch(/ALTER TABLE "principal_mailbox"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "message_key" text/i);
+  });
+
+  it("creates a partial unique index on message_key", () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "principal_mailbox_message_key_uniq"\s+ON "principal_mailbox" \("message_key"\)\s+WHERE "message_key" IS NOT NULL/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the mailbox is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
 describe("0047 creates scheduled_trigger", () => {
   const sql = readFileSync(
     join(import.meta.dir, "../../migrations/0047_scheduled_trigger.sql"),
