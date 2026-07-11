@@ -83,9 +83,144 @@ describe("ToolNarrative", () => {
       { id: "c1", name: "Exa Search", arguments: { query: "x" } },
     ];
     render(<ToolNarrative toolCalls={calls} />);
-    fireEvent.click(screen.getByText("Exa Search"));
+    // defaultSummary sentence-cases the label; pending rows stay non-expandable.
+    fireEvent.click(screen.getByText("Exa search"));
     // No result to show; the args pre block must not appear.
     expect(screen.queryByText(/"query"/)).toBeNull();
+  });
+
+  it("uses formatSummary for pending rows instead of the raw wire name", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "attio__create_record",
+        arguments: {
+          object: "companies",
+          values: { name: "Acme" },
+        },
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Creating an Attio record for Acme"}
+      />,
+    );
+    screen.getByText("Creating an Attio record for Acme");
+    expect(screen.queryByText("attio__create_record")).toBeNull();
+    expect(screen.queryByText(/attio__/)).toBeNull();
+  });
+
+  it("renders quiet tools as reasoning-style text without checkmarks or expand chrome", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "q1",
+        name: "search_tools",
+        arguments: { query: "crm" },
+        result: "[]",
+        isError: false,
+      },
+      {
+        id: "r1",
+        name: "attio__query_records",
+        result: "[]",
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={(c) =>
+          c.name === "search_tools" ? "Searching Workbench…" : "Searching Attio"
+        }
+        isQuietTool={(name) => name === "search_tools"}
+      />,
+    );
+    const quiet = screen.getByTestId("quiet-tool-line");
+    expect(quiet.textContent).toBe("Searching Workbench…");
+    // Quiet line is plain text — not a button with a checkmark.
+    expect(quiet.closest("button")).toBeNull();
+    screen.getByText("Searching Attio");
+  });
+
+  it("excludes quiet tools from the collapsed tool count", () => {
+    const calls: ToolCall[] = [
+      { id: "q1", name: "search_tools", result: "[]", isError: false },
+      { id: "q2", name: "load_tools", result: "ok", isError: false },
+      {
+        id: "r1",
+        name: "attio__query_records",
+        result: "[]",
+        isError: false,
+      },
+      { id: "r2", name: "exa__search", result: "[]", isError: false },
+      { id: "r3", name: "linear__get_issue", result: "{}", isError: false },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        formatSummary={(c) => c.name}
+        summarizeCalls={() => "Did three things"}
+        isQuietTool={(name) => name === "search_tools" || name === "load_tools"}
+      />,
+    );
+    // Collapse threshold is 3 real tools — quiet ones do not pad the count.
+    screen.getByText("Did three things");
+    screen.getByText(/· 3 tools/);
+    // Quiet phrases still render above the collapsed summary.
+    expect(screen.getAllByTestId("quiet-tool-line")).toHaveLength(2);
+  });
+
+  it("shows a friendly result and never dumps raw JSON when formatResult is set", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "attio__create_record",
+        arguments: { object: "companies", values: { name: "Acme" } },
+        result: JSON.stringify({ id: { record_id: "rec_1" }, values: {} }),
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Creating an Attio record for Acme"}
+        formatResult={() => "Done"}
+      />,
+    );
+    fireEvent.click(screen.getByText("Creating an Attio record for Acme"));
+    screen.getByText("Done");
+    expect(screen.queryByText(/record_id/)).toBeNull();
+    expect(screen.queryByText(/"object"/)).toBeNull();
+  });
+
+  it("still expands structured UI blocks when formatResult is set", () => {
+    const documentResult = JSON.stringify({
+      kind: "document",
+      title: "Outreach draft",
+      source: "Hello Acme,",
+    });
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "draft_document",
+        arguments: {},
+        result: documentResult,
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Drafting a document"}
+        formatResult={() => "Done"}
+      />,
+    );
+    fireEvent.click(screen.getByText("Drafting a document"));
+    screen.getByText("Outreach draft");
+    // Structured UI wins over the short friendly outcome.
+    expect(screen.queryByText("Done")).toBeNull();
   });
 
   it('summarizes a non-priority arg as "key: value" when no known key is present', () => {

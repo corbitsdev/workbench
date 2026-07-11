@@ -13,7 +13,9 @@ import {
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
+  friendlyToolResult,
   summarizeToolCalls,
+  isCatalogMetaTool,
   attachmentPolicyForAgent,
 } from "@workbench/agents/browser";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
@@ -424,8 +426,11 @@ export function MyraChatSurface({
         : {})}
       hideToolCall={hideMyraSelfManagement}
       formatToolSummary={friendlyToolSummary}
+      formatToolResult={friendlyToolResult}
+      formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
+      isQuietTool={isCatalogMetaTool}
     />
   );
 }

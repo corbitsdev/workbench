@@ -68,10 +68,16 @@ export interface ChatPanelProps {
   hideToolCall?: ChatThreadProps["hideToolCall"];
   /** Host formatter turning a tool call into a friendly narrative summary line. */
   formatToolSummary?: ChatThreadProps["formatToolSummary"];
+  /** Host formatter for settled tool outcomes (suppresses raw JSON dumps). */
+  formatToolResult?: ChatThreadProps["formatToolResult"];
+  /** Host formatter for the activity pill's tool name. */
+  formatToolName?: ChatThreadProps["formatToolName"];
   /** When true, completed turns with many tool calls collapse to a summary line. */
   compactToolActivity?: ChatThreadProps["compactToolActivity"];
   /** Rolls a turn's tool calls into one summary line for the collapsed view. */
   summarizeToolCalls?: ChatThreadProps["summarizeToolCalls"];
+  /** Platform-internal tools as quiet reasoning-style text (no tool chrome). */
+  isQuietTool?: ChatThreadProps["isQuietTool"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -120,8 +126,11 @@ export function ChatPanel({
   resolveAttachmentUrl,
   hideToolCall,
   formatToolSummary,
+  formatToolResult,
+  formatToolName,
   compactToolActivity,
   summarizeToolCalls,
+  isQuietTool,
   className,
   notice,
   headerLeft,
@@ -214,8 +223,11 @@ export function ChatPanel({
           : {})}
         {...(hideToolCall !== undefined ? { hideToolCall } : {})}
         {...(formatToolSummary !== undefined ? { formatToolSummary } : {})}
+        {...(formatToolResult !== undefined ? { formatToolResult } : {})}
+        {...(formatToolName !== undefined ? { formatToolName } : {})}
         {...(compactToolActivity !== undefined ? { compactToolActivity } : {})}
         {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
+        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
       />
 
       {quickReplies !== undefined &&
