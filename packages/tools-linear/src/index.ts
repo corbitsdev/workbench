@@ -169,6 +169,18 @@ const GET_ISSUE_QUERY = `query GetIssue($id: String!) {
   }
 }`;
 
+const CREATE_ISSUE_MUTATION = `mutation CreateIssue($input: IssueCreateInput!) {
+  issueCreate(input: $input) {
+    success
+    issue {
+      id
+      identifier
+      title
+      url
+    }
+  }
+}`;
+
 const LIST_TEAMS_QUERY = `query ListTeams($first: Int!) {
   teams(first: $first) {
     nodes { id name key }
@@ -252,6 +264,52 @@ async function getIssue(
   return data.issue;
 }
 
+function optionalPriority(value: unknown): number | null {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < 0 ||
+    value > 4
+  ) {
+    return null;
+  }
+  return value;
+}
+
+async function createIssue(
+  config: LinearToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const teamId = optionalString(args.teamId);
+  if (teamId === null) {
+    throw new Error("teamId is required");
+  }
+  const title = optionalString(args.title);
+  if (title === null) {
+    throw new Error("title is required");
+  }
+  const input: Record<string, unknown> = { teamId, title };
+  const description = optionalString(args.description);
+  if (description !== null) {
+    input.description = description;
+  }
+  const priority = optionalPriority(args.priority);
+  if (priority !== null) {
+    input.priority = priority;
+  }
+  const data = await fetchLinearGraphQL(
+    config,
+    CREATE_ISSUE_MUTATION,
+    { input },
+    signal,
+  );
+  if (!isRecord(data.issueCreate) || !isRecord(data.issueCreate.issue)) {
+    throw new Error("Linear did not return the created issue");
+  }
+  return data.issueCreate.issue;
+}
+
 async function listTeams(
   config: LinearToolsConfig,
   args: Record<string, unknown>,
@@ -325,6 +383,31 @@ const GET_ISSUE_INPUT_SCHEMA = {
   required: ["id"],
 };
 
+const CREATE_ISSUE_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    teamId: {
+      type: "string",
+      description:
+        "Team id the issue belongs to (required). Get one from linear_list_teams.",
+    },
+    title: {
+      type: "string",
+      description: "Issue title (required).",
+    },
+    description: {
+      type: "string",
+      description: "Optional issue body in markdown.",
+    },
+    priority: {
+      type: "number",
+      description:
+        "Optional priority: 0 (none), 1 (urgent), 2 (high), 3 (medium), 4 (low).",
+    },
+  },
+  required: ["teamId", "title"],
+};
+
 const LIST_LIMIT_INPUT_SCHEMA = {
   type: "object" as const,
   properties: {
@@ -348,6 +431,13 @@ export const LINEAR_GET_ISSUE_DEFINITION: ToolDefinition = {
   description:
     'Get a single Linear issue by UUID or identifier (e.g. "ENG-123"). Read-only. Returns id, identifier, title, description, state, assignee, team, priority, url, createdAt, and updatedAt.',
   inputSchema: GET_ISSUE_INPUT_SCHEMA,
+};
+
+export const LINEAR_CREATE_ISSUE_DEFINITION: ToolDefinition = {
+  name: "linear_create_issue",
+  description:
+    "Create a real Linear issue in the workspace. This is a write: it persists a new issue in Linear and requires human approval before it runs. Requires teamId (get one from linear_list_teams) and title; description (markdown) and priority (0-4) are optional. Returns the created issue's id, identifier, title, and url.",
+  inputSchema: CREATE_ISSUE_INPUT_SCHEMA,
 };
 
 export const LINEAR_LIST_TEAMS_DEFINITION: ToolDefinition = {
@@ -397,6 +487,11 @@ export function createLinearTools(config: LinearToolsConfig): AgentTool[] {
       kind: "string",
       definition: LINEAR_LIST_USERS_DEFINITION,
       handler: buildLinearHandler(config, listUsers),
+    },
+    {
+      kind: "string",
+      definition: LINEAR_CREATE_ISSUE_DEFINITION,
+      handler: buildLinearHandler(config, createIssue),
     },
   ];
 }
@@ -476,6 +571,17 @@ export const LINEAR_HUB_TOOLS = {
         resolveConfig(config),
         LINEAR_LIST_USERS_DEFINITION,
         listUsers,
+      ),
+  },
+  linear_create_issue: {
+    sideEffect: "write" as const,
+    definition: LINEAR_CREATE_ISSUE_DEFINITION,
+    providerName: "linear" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createLinearToolFor(
+        resolveConfig(config),
+        LINEAR_CREATE_ISSUE_DEFINITION,
+        createIssue,
       ),
   },
 };
