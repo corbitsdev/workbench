@@ -431,9 +431,13 @@ export function MyraChatSurface({
     </div>
   ) : null;
 
-  // Mounted (not conditionally rendered) whenever a tenant is known so its poll
-  // runs; it renders nothing until a pending approval exists. Placed first so
-  // the actionable approval interrupt sits above the transient hints.
+  // Mounted (not conditionally rendered) whenever a tenant is known so its SSE
+  // subscription is live; it renders nothing until a pending approval exists.
+  // Event-driven (CL-3285) — no interval poll. Tenant-scoped: the interchange
+  // runtime sessionId that approvals carry is not exposed on MyraSession, so the
+  // client cannot session-filter yet; the ownership-scoped list route already
+  // limits what the caller sees. Placed first so the actionable approval
+  // interrupt sits above the transient hints.
   const reviewGate = tenantId ? (
     <ReviewGate key="review-gate" tenantId={tenantId} />
   ) : null;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
@@ -7,13 +7,9 @@ import {
   approveRequest,
   listApprovals,
   rejectRequest,
+  subscribeApprovals,
 } from "../lib/approvals-api";
 import type { Approval } from "../lib/approvals-api";
-
-// Polling interval while there are pending approvals.
-const POLL_INTERVAL_MS = 3000;
-// Polling interval when idle (no pending approvals visible).
-const POLL_IDLE_MS = 8000;
 
 export type ReviewGateProps = {
   /** Interchange tenant ID used to scope approval requests. */
@@ -72,19 +68,32 @@ function formatValue(value: unknown): string {
 export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
   const queryClient = useQueryClient();
   const prefersReducedMotion = useReducedMotion();
+  const enabled = tenantId !== "";
   const { data: approvals = [] } = useQuery({
     queryKey: ["approvals", tenantId, sessionId],
     queryFn: async () => {
       const all = await listApprovals(tenantId);
       return sessionId ? all.filter((a) => a.sessionId === sessionId) : all;
     },
-    refetchInterval: (query) => {
-      const data = query.state.data ?? [];
-      return data.some((a) => a.status === "pending")
-        ? POLL_INTERVAL_MS
-        : POLL_IDLE_MS;
-    },
+    enabled,
   });
+
+  // Event-driven refresh replaces the former unconditional poll (CL-3285): the
+  // gate fetches once on mount, then refetches only when the hub pushes an
+  // approval change. An idle chat with no pending approvals issues no repeating
+  // requests. The event is a change notification, so we always invalidate and
+  // let the ownership-scoped list route decide what the caller may see rather
+  // than trusting the broadcast payload.
+  useEffect(() => {
+    if (!enabled) return;
+    const unsubscribe = subscribeApprovals(tenantId, (event) => {
+      if (sessionId && event.sessionId && event.sessionId !== sessionId) return;
+      void queryClient.invalidateQueries({
+        queryKey: ["approvals", tenantId, sessionId],
+      });
+    });
+    return unsubscribe;
+  }, [enabled, tenantId, sessionId, queryClient]);
 
   const [itemStates, setItemStates] = useState<
     Map<string, { requestState: RequestState; error: string | null }>
