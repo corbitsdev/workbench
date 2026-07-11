@@ -406,3 +406,52 @@ describe("0047 creates scheduled_trigger", () => {
     }
   });
 });
+
+describe("0048 creates workflow_trigger (CL-3300)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0048_workflow_trigger.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?workflow_trigger"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_member_principal_id",
+      "workflow_kind",
+      "secret_hash",
+      "enabled",
+      "created_at",
+      "last_fired_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("never stores the plaintext secret, only its hash", () => {
+    expect(sql).not.toMatch(/"secret"\s/i);
+    expect(sql).toMatch(/"secret_hash" text NOT NULL/i);
+  });
+
+  it("keeps last_fired_at nullable", () => {
+    expect(sql).toMatch(/"last_fired_at" timestamp\s*\n?\)/i);
+  });
+
+  it("touches NO interchange-owned table — the trigger store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
