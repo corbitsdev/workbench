@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { TurnFinalized } from "@workbench/event-collector";
-import { mailboxPersona, PERSONAL_AGENT_BASE_TOOLS } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_BASE_TOOLS,
+  resolveMailboxLoadout,
+} from "@workbench/myra";
+
+const prepareOnlyLoadout = resolveMailboxLoadout("prepare_only");
 import type { MemberPreferences } from "@workbench/shared";
 import type { HubDb } from "../db";
 
@@ -226,9 +231,9 @@ describe("createMailboxTriage", () => {
     await untilCalled(session.sendUserMessage);
 
     const launchOpts = launchMock.mock.calls[0]![4] as Record<string, unknown>;
-    expect(launchOpts.systemPrompt).toBe(mailboxPersona.systemPrompt);
+    expect(launchOpts.systemPrompt).toBe(prepareOnlyLoadout.systemPrompt);
     expect(launchOpts.persona).toEqual({
-      toolNames: mailboxPersona.toolNames,
+      toolNames: prepareOnlyLoadout.toolNames,
     });
     expect(launchOpts.agentId).toBe(MYRA_DEF.id);
 

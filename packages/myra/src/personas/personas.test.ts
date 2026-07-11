@@ -1,16 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { threadPersona } from "./thread";
 import {
+  buildMailboxTriagePrompt,
   isMailboxReadOnlyTool,
-  mailboxPersona,
+  MAILBOX_PERSONA_TOOLS,
   resolveMailboxLoadout,
 } from "./mailbox";
-import { MyraPersonaSchema } from "./persona";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
 } from "../core/definition";
-import { buildPersonalAgentSystemPrompt } from "../core/prompt";
 
 // Canonical catalogue of known write/mutating tools across Myra's base
 // toolset. The mailbox triage persona is prepare-only, so none of these may
@@ -42,64 +40,46 @@ const WRITE_TOOLS = [
 const carriesTool = (toolNames: readonly string[], tool: string): boolean =>
   toolNames.some((name) => name === tool || name.endsWith(`:${tool}`));
 
-describe("threadPersona", () => {
-  it("conforms to the MyraPersona shape", () => {
-    const parsed = MyraPersonaSchema(threadPersona);
-    expect(parsed).toEqual(threadPersona);
-  });
-
-  it("is keyed 'thread'", () => {
-    expect(threadPersona.key).toBe("thread");
-  });
-
-  it("exposes the exact current chat system prompt", () => {
-    expect(threadPersona.systemPrompt).toBe(
-      buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, { xml: true }),
-    );
-  });
-
-  it("carries Myra's full base toolset unchanged", () => {
-    expect(threadPersona.toolNames).toEqual(PERSONAL_AGENT_BASE_TOOLS);
-  });
-});
-
-describe("mailboxPersona", () => {
-  it("conforms to the MyraPersona shape", () => {
-    const parsed = MyraPersonaSchema(mailboxPersona);
-    expect(parsed).toEqual(mailboxPersona);
-  });
-
-  it("is keyed 'mailbox'", () => {
-    expect(mailboxPersona.key).toBe("mailbox");
-  });
-
-  it("carries a non-empty triage system prompt", () => {
-    expect(mailboxPersona.systemPrompt.length).toBeGreaterThan(0);
-    expect(mailboxPersona.systemPrompt).toContain(PERSONAL_AGENT_NAME);
-  });
-
+describe("MAILBOX_PERSONA_TOOLS", () => {
   it("carries only tools the read-only allow predicate admits", () => {
-    for (const tool of mailboxPersona.toolNames) {
+    for (const tool of MAILBOX_PERSONA_TOOLS) {
       expect(isMailboxReadOnlyTool(tool)).toBe(true);
     }
   });
 
   it("carries none of the known write tools", () => {
     for (const write of WRITE_TOOLS) {
-      expect(carriesTool(mailboxPersona.toolNames, write)).toBe(false);
+      expect(carriesTool(MAILBOX_PERSONA_TOOLS, write)).toBe(false);
     }
   });
 
   it("draws every tool from Myra's base toolset", () => {
-    for (const tool of mailboxPersona.toolNames) {
+    for (const tool of MAILBOX_PERSONA_TOOLS) {
       expect(PERSONAL_AGENT_BASE_TOOLS).toContain(tool);
     }
   });
 
-  it("resolves the prepare-only loadout to the persona verbatim", () => {
+  it("still carries the discovery and read tools it needs to gather context", () => {
+    for (const read of [
+      "search_tools",
+      "load_tools",
+      "memory_load",
+      "artifact_read",
+      "artifact_list",
+    ]) {
+      expect(carriesTool(MAILBOX_PERSONA_TOOLS, read)).toBe(true);
+    }
+  });
+});
+
+describe("resolveMailboxLoadout", () => {
+  it("resolves prepare_only to the read-only prompt and tool posture", () => {
     const loadout = resolveMailboxLoadout("prepare_only");
-    expect(loadout.systemPrompt).toBe(mailboxPersona.systemPrompt);
-    expect(loadout.toolNames).toEqual(mailboxPersona.toolNames);
+    expect(loadout.systemPrompt).toBe(
+      buildMailboxTriagePrompt(PERSONAL_AGENT_NAME),
+    );
+    expect(loadout.toolNames).toEqual(MAILBOX_PERSONA_TOOLS);
+    expect(loadout.systemPrompt).toContain("You are prepare-only");
   });
 
   it("resolves execute_with_gates to the full base toolset", () => {
@@ -112,17 +92,5 @@ describe("mailboxPersona", () => {
     expect(loadout.systemPrompt).not.toContain("You are prepare-only");
     expect(loadout.systemPrompt).toContain("approval");
     expect(loadout.systemPrompt).toContain(PERSONAL_AGENT_NAME);
-  });
-
-  it("still carries the discovery and read tools it needs to gather context", () => {
-    for (const read of [
-      "search_tools",
-      "load_tools",
-      "memory_load",
-      "artifact_read",
-      "artifact_list",
-    ]) {
-      expect(carriesTool(mailboxPersona.toolNames, read)).toBe(true);
-    }
   });
 });

@@ -26,11 +26,9 @@ export {
   type SeedMarkerResolution,
 } from "./core/seed-files";
 
-// Persona API — postures mounted on an ephemeral, thread-style session
-export { MyraPersonaSchema, type MyraPersona } from "./personas/persona";
-export { threadPersona } from "./personas/thread";
+// Mailbox triage loadout — prompt + read-only tool posture mounted on an
+// ephemeral, per-item Myra triage session.
 export {
-  mailboxPersona,
   buildMailboxTriagePrompt,
   resolveMailboxLoadout,
   MAILBOX_PERSONA_TOOLS,

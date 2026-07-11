@@ -1,23 +1,18 @@
 import { buildSystemPrompt, type PromptSection } from "@workbench/prompts";
 import { CORBITS_VOCABULARY_SECTION } from "@workbench/agents/corbits-vocabulary";
 import type { AgentAutonomy } from "@workbench/shared";
-import type { MyraPersona } from "./persona";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
 } from "../core/definition";
 
 /**
- * The mailbox persona is Myra triaging one inbound external message. It is
- * prepare-only: it classifies the message, plans a response, and prepares a
- * draft, but takes no external or irreversible action — its tool loadout is a
- * strict read-only subset of Myra's base toolset (no memory writes, no CRM
- * mutations, no sends, no workflow starts).
- *
- * The spawn path — a per-item, thread-style session launched from the hub's
- * inbound-mail hook, one Myra thread per inbox item — is not yet wired. This
- * module defines the persona shape only (prompt, rules, tool posture); the
- * spawn and draft-persistence wiring lands with the auto-triage work.
+ * Myra's inbound-mail triage loadout: the prompt and read-only tool posture a
+ * per-item triage session mounts to classify one external message, plan a
+ * response, and prepare a draft without taking irreversible action. The hub's
+ * mailbox-triage service spawns an ephemeral Myra session per inbox item and
+ * mounts `resolveMailboxLoadout(autonomy)` — prepare-only by default, or the
+ * gated full toolset when the member opts into `execute_with_gates`.
  */
 
 // Read verbs a bare tool name must carry (as a whole `_`-separated segment)
@@ -108,14 +103,6 @@ ${actionRules}`,
   return buildSystemPrompt(sections, { xml: true });
 }
 
-export const mailboxPersona: MyraPersona = {
-  key: "mailbox",
-  description:
-    "Myra's inbound-mail triage persona: classify, plan, and prepare a draft response for one external message, read-only and prepare-only.",
-  systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME),
-  toolNames: MAILBOX_PERSONA_TOOLS,
-};
-
 export type MailboxLoadout = {
   systemPrompt: string;
   toolNames: string[];
@@ -123,7 +110,7 @@ export type MailboxLoadout = {
 
 /**
  * The prompt + tool loadout a triage session mounts for a member's autonomy
- * setting. `prepare_only` is the persona verbatim (read-only allow-list);
+ * setting. `prepare_only` is read-only (the audited allow-list);
  * `execute_with_gates` mounts the full base toolset with the gated-action
  * prompt — writes still flow through the approval rail, never around it.
  */
@@ -135,7 +122,7 @@ export function resolveMailboxLoadout(autonomy: AgentAutonomy): MailboxLoadout {
     };
   }
   return {
-    systemPrompt: mailboxPersona.systemPrompt,
-    toolNames: mailboxPersona.toolNames,
+    systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME),
+    toolNames: MAILBOX_PERSONA_TOOLS,
   };
 }
