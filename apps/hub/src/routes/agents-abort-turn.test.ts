@@ -131,7 +131,7 @@ describe("POST /instances/:instanceId/abort-turn", () => {
     expect(router.sendSessionAbort).not.toHaveBeenCalled();
   });
 
-  it("sends a user_disconnect abort for the instance address and 204s", async () => {
+  it("sends the extended user_stop_turn abort for the instance address and 204s", async () => {
     const router = makeSidecarRouter();
     const grantStore = makeGrantStore([MANAGE_GRANT]);
     const app = buildApp(
@@ -142,9 +142,11 @@ describe("POST /instances/:instanceId/abort-turn", () => {
     const res = await app.fetch(abortRequest(INSTANCE.id));
     expect(res.status).toBe(204);
     expect(router.sendSessionAbort).toHaveBeenCalledTimes(1);
+    // Never user_disconnect (or any upstream AbortReason) — those stay
+    // terminal on the sidecar; only the workbench extension is non-terminal.
     expect(router.sendSessionAbort.mock.calls[0]).toEqual([
       INSTANCE.address,
-      "user_disconnect",
+      "user_stop_turn",
     ]);
   });
 

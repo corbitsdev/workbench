@@ -32,6 +32,10 @@ let nextSessionEvents: StubEvent[] = [];
 const sentMails: string[] = [];
 // Force the next sendMail(s) to reject, to exercise send-failure paths.
 let sendMailShouldFail: "recoverable" | "permanent" | null = null;
+// Live activity the session mock reports; tests mutate it and fire
+// capturedOnChange to simulate a new agent event arriving.
+let sessionActivity: unknown = null;
+let capturedOnChange: (() => void) | null = null;
 const launchInstanceSession = mock(
   (_id: string): Promise<{ launched: boolean; launchError?: string }> =>
     Promise.resolve({ launched: true }),
@@ -46,16 +50,22 @@ const ensureMeSynced = mock(() =>
 
 mock.module("@intx/hub-client", () => ({
   ApiError: FakeApiError,
-  createInstanceSession: (opts: { tenantId?: string }) => {
+  createInstanceSession: (opts: {
+    tenantId?: string;
+    onChange?: () => void;
+  }) => {
     const idx = destroyed.length;
     destroyed.push(0);
     sessionTenantIds.push(opts?.tenantId);
+    capturedOnChange = opts?.onChange ?? null;
     const events = nextSessionEvents;
     const stop = mock();
     sessionStops.push(stop);
     return {
       events,
-      activity: null,
+      get activity() {
+        return sessionActivity;
+      },
       hydrated: true,
       start: () => stop,
       destroy: () => {
@@ -141,6 +151,8 @@ beforeEach(() => {
   nextSessionEvents = [];
   sentMails.length = 0;
   sendMailShouldFail = null;
+  sessionActivity = null;
+  capturedOnChange = null;
   capturedOnStreamError = null;
   trackerStops.toolNames.mockClear();
   trackerStops.liveText.mockClear();
@@ -846,5 +858,38 @@ describe("document diversion (CL-2628)", () => {
         new DocumentParseError("That document couldn't be read."),
       ),
     ).toBe("That document couldn't be read.");
+  });
+});
+
+describe("useMyraSession abortTurn activity suppression (stop-turn UX)", () => {
+  it("suppresses stale activity after an abort and clears it on the first new activity event", async () => {
+    sessionActivity = { type: "inferring" };
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("ready");
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
+
+    // Stop the turn: the sidecar sleeps the agent and emits nothing more, so
+    // the stale activity must be hidden locally.
+    await act(async () => {
+      await result.current.abortTurn();
+    });
+    expect(result.current.activity).toBeNull();
+
+    // A genuinely-new activity event (e.g. a parked-mail replay wake starting
+    // a new turn) must surface — the stop button has to stay reachable.
+    act(() => {
+      sessionActivity = { type: "inferring" };
+      capturedOnChange?.();
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
   });
 });

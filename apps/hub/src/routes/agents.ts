@@ -352,16 +352,25 @@ export function createAgentProvisioningRouter(
   );
 
   // Abort the in-flight chat turn for an instance the caller can manage. The
-  // sidecar (the workbench @workbench/hub-agent fork) treats the resulting
-  // `session.abort` frame with reason `user_disconnect` as non-terminal: the
-  // running inference/tool call is cancelled via the reactor abort path and
-  // the agent goes to sleep (wakeable), so the conversation survives and the
-  // next message resumes it with full history.
+  // sidecar (the workbench @workbench/hub-agent fork) treats a
+  // `session.abort` frame with the extended reason `user_stop_turn` as
+  // non-terminal: the running inference/tool call is cancelled via the
+  // reactor abort path and the agent goes to sleep (wakeable), so the
+  // conversation survives and the next message resumes it with full history.
+  // Every upstream AbortReason — including `user_disconnect`, which the
+  // native interchange abort route defaults to — keeps its terminal kill
+  // semantics on the sidecar, so that route and the ops kill switch are
+  // unchanged.
   //
+  // `user_stop_turn` is a deliberate workbench extension of the closed
+  // upstream AbortReason enum (USER_STOP_TURN_REASON in
+  // @workbench/hub-agent); the cast at the send site widens the known
+  // constant into the upstream parameter type — not an untrusted-data cast.
   // `no-active-turn` is the sidecar's sentinel for "nothing is running"
-  // (NoActiveTurnError in @workbench/hub-agent, delivered verbatim over the
-  // session.error frame); the hub does not depend on that package, so the
-  // string contract is pinned by tests on both sides.
+  // (NoActiveTurnError), delivered verbatim over the session.error frame.
+  // The hub does not depend on that package, so both string contracts are
+  // pinned by tests on both sides.
+  const USER_STOP_TURN_REASON = "user_stop_turn";
   const NO_ACTIVE_TURN_SENTINEL = "no-active-turn";
   app.post(
     "/instances/:instanceId/abort-turn",
@@ -444,7 +453,11 @@ export function createAgentProvisioningRouter(
       try {
         await sidecarRouter.sendSessionAbort(
           instance.address,
-          "user_disconnect",
+          // Deliberate protocol extension of the closed upstream enum — see
+          // the USER_STOP_TURN_REASON comment above.
+          USER_STOP_TURN_REASON as Parameters<
+            typeof sidecarRouter.sendSessionAbort
+          >[1],
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

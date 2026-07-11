@@ -157,9 +157,11 @@ export function AgentChat({
 
   // Same suppression rationale as use-myra-session: an aborted turn settles
   // by putting the agent to sleep, which emits no further agent events, so
-  // the stale "thinking" activity is cleared locally; the next send lets the
-  // live signal drive the indicator again.
+  // the stale "thinking" activity is cleared locally. Cleared on the next
+  // send AND on the first genuinely-new activity event, so a new turn is
+  // never hidden and the stop button stays reachable.
   const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   const { mutateAsync: abortMutateAsync } = useMutation({
     mutationFn: () => abortInstanceTurn(instanceId),
   });
@@ -173,6 +175,7 @@ export function AgentChat({
           : `Couldn't stop ${agentName}. Try again.`;
       throw new Error(message);
     }
+    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
     setActivitySuppressed(true);
   }, [abortMutateAsync, agentName]);
 
@@ -522,7 +525,17 @@ export function AgentChat({
     return a as ChatActivity;
   }
 
-  const activity: ChatActivity | null = activitySuppressed
+  // Render-phase adjustment: the first activity value that differs from the
+  // one captured at abort time is a new turn — stop hiding it.
+  if (
+    activitySuppressed &&
+    session.activity !== suppressedActivityRef.current
+  ) {
+    setActivitySuppressed(false);
+  }
+  const suppressed =
+    activitySuppressed && session.activity === suppressedActivityRef.current;
+  const activity: ChatActivity | null = suppressed
     ? null
     : toChatActivity(session.activity);
 

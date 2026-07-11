@@ -23,7 +23,13 @@ import {
 } from "./hub-link";
 import type { AgentKeyStore } from "../agent-key-store";
 import type { AgentEventListener, SessionManager } from "../session-manager";
-import { NoActiveTurnError } from "../session-manager";
+import { NoActiveTurnError, USER_STOP_TURN_REASON } from "../session-manager";
+
+// The extended reason is a deliberate workbench protocol extension of the
+// closed upstream AbortReason enum; widen it for the typed router API.
+const USER_STOP_TURN = USER_STOP_TURN_REASON as Parameters<
+  SidecarRouter["sendSessionAbort"]
+>[1];
 
 /**
  * Test-only deploy router that mirrors the pre-supervisor inline
@@ -1961,7 +1967,7 @@ describe("routability decoupled from restore", () => {
 });
 
 describe("session.abort routing — user turn abort vs terminal kill", () => {
-  test("reason user_disconnect routes to abortTurn (non-terminal), not abortSession", async () => {
+  test("reason user_stop_turn routes to abortTurn (non-terminal), not abortSession", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
@@ -1982,7 +1988,7 @@ describe("session.abort routing — user turn abort vs terminal kill", () => {
       await env.router.sendAgentDeploy(address, TEST_CONFIG);
       await env.router.sendSessionStart(address);
 
-      await env.router.sendSessionAbort(address, "user_disconnect");
+      await env.router.sendSessionAbort(address, USER_STOP_TURN);
 
       expect(sessions.turnAborted).toEqual([address]);
       expect(sessions.aborted).toHaveLength(0);
@@ -1994,7 +2000,7 @@ describe("session.abort routing — user turn abort vs terminal kill", () => {
     }
   });
 
-  test("terminal reasons still route to abortSession", async () => {
+  test("user_disconnect and other upstream reasons keep terminal abortSession semantics", async () => {
     const transport = createInMemoryTransport();
     const sessions = createMockSessionManager();
     const client = createHubLink({
@@ -2015,9 +2021,13 @@ describe("session.abort routing — user turn abort vs terminal kill", () => {
       await env.router.sendAgentDeploy(address, TEST_CONFIG);
       await env.router.sendSessionStart(address);
 
+      // The native interchange abort route defaults to user_disconnect; it
+      // must keep its original terminal kill semantics.
+      await env.router.sendSessionAbort(address, "user_disconnect");
       await env.router.sendSessionAbort(address, "admin_kill");
 
       expect(sessions.aborted).toEqual([
+        { address, reason: "user_disconnect" },
         { address, reason: "admin_kill" },
       ]);
       expect(sessions.turnAborted).toHaveLength(0);
@@ -2052,7 +2062,7 @@ describe("session.abort routing — user turn abort vs terminal kill", () => {
       await env.router.sendSessionStart(address);
 
       await expect(
-        env.router.sendSessionAbort(address, "user_disconnect"),
+        env.router.sendSessionAbort(address, USER_STOP_TURN),
       ).rejects.toThrow("no-active-turn");
     } finally {
       client.close();

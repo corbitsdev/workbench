@@ -383,8 +383,13 @@ export function useMyraSession(
   // The sidecar settles an aborted turn by putting the agent to sleep, which
   // emits no further agent events — the live activity signal would otherwise
   // linger as "thinking" forever. Suppress it locally after a successful
-  // abort; the next send clears the suppression when a new turn starts.
+  // abort. The suppression clears on the next send AND on the first
+  // genuinely-new activity event (compared by identity against the value
+  // captured at abort time), so a new turn started elsewhere — e.g. a
+  // parked-mail replay wake — is never hidden and the stop button stays
+  // reachable.
   const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
@@ -795,6 +800,7 @@ export function useMyraSession(
           : "Couldn't stop Myra. Try again.";
       throw new Error(message);
     }
+    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
     setActivitySuppressed(true);
   }, [abortMutateAsync]);
 
@@ -883,10 +889,17 @@ export function useMyraSession(
     connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
   }
 
+  // Render-phase adjustment (same pattern as prevIdentity above): the first
+  // activity value that differs from the one captured at abort time is a new
+  // turn — stop hiding it.
+  const rawActivity = activeSession ? activeSession.activity : null;
+  if (activitySuppressed && rawActivity !== suppressedActivityRef.current) {
+    setActivitySuppressed(false);
+  }
+  const suppressed =
+    activitySuppressed && rawActivity === suppressedActivityRef.current;
   const activity =
-    activeSession && !activitySuppressed
-      ? toChatActivity(activeSession.activity)
-      : null;
+    activeSession && !suppressed ? toChatActivity(rawActivity) : null;
 
   const sendWithAttachments = async (
     text: string,

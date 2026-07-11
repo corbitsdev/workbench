@@ -20,6 +20,7 @@ export {
   createSessionManager,
   NoActiveTurnError,
   NO_ACTIVE_TURN,
+  USER_STOP_TURN_REASON,
   type SessionManager,
   type SessionManagerConfig,
   type SessionEventSink,

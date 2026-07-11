@@ -101,11 +101,14 @@ type BuiltHarness = {
   disposed: boolean;
 };
 
+type SinkEvent = { agentAddress: string; event: InferenceEvent };
+
 type AbortHarness = {
   manager: ReturnType<typeof createSessionManager>;
   repoStore: ReturnType<typeof createAgentRepoStore>;
   built: BuiltHarness[];
   removeCalls: string[];
+  sinkEvents: SinkEvent[];
 };
 
 async function makeAbortHarness(dataDir: string): Promise<AbortHarness> {
@@ -132,6 +135,7 @@ async function makeAbortHarness(dataDir: string): Promise<AbortHarness> {
   });
   const transport = createInMemoryTransport();
   const built: BuiltHarness[] = [];
+  const sinkEvents: SinkEvent[] = [];
 
   const builder: HarnessBuilder = {
     canBuildSource() {
@@ -180,11 +184,13 @@ async function makeAbortHarness(dataDir: string): Promise<AbortHarness> {
     keyStore,
     buildHarness: builder,
     createAgentCrypto: (kp) => makeCrypto(kp),
-    onEvent: () => {},
+    onEvent: (agentAddress, _sessionId, event) => {
+      sinkEvents.push({ agentAddress, event });
+    },
     onConnectorStateChanged: () => {},
   });
 
-  return { manager, repoStore: baseRepoStore, built, removeCalls };
+  return { manager, repoStore: baseRepoStore, built, removeCalls, sinkEvents };
 }
 
 async function waitFor(
@@ -227,6 +233,23 @@ describe("SessionManager.abortTurn", () => {
     startRun(h, "run-1");
 
     await h.manager.abortTurn(addr);
+
+    // The interrupted turn settles explained, not dangling: a synthetic
+    // failed run-ended for the open run travels the same event pipeline the
+    // hub's turn projection consumes, monotonically after the open event.
+    const settled = h.sinkEvents.find(
+      (e) =>
+        e.event.type === "message.run.ended" &&
+        e.event.data.messageRunId === "run-1",
+    );
+    if (settled === undefined || settled.event.type !== "message.run.ended") {
+      throw new Error("no synthetic run-ended emitted for the aborted run");
+    }
+    expect(settled.agentAddress).toBe(addr);
+    expect(settled.event.data.status).toBe("failed");
+    expect(settled.event.data.error?.kind).toBe("turn_aborted");
+    expect(settled.event.data.error?.message).toBe("Stopped by user");
+    expect(settled.event.seq).toBeGreaterThan(1);
 
     // The harness (whose close() aborts the in-flight reactor work) is closed
     // and disposed, but the agent is asleep — not destroyed.
@@ -310,8 +333,8 @@ describe("SessionManager.abortTurn", () => {
     // Sleeping state is untouched — the wakeable entry must survive.
     expect(h.manager.isWakeable(addr)).toBe(true);
 
-    await expect(
-      h.manager.abortTurn("nobody@nowhere"),
-    ).rejects.toBeInstanceOf(NoActiveTurnError);
+    await expect(h.manager.abortTurn("nobody@nowhere")).rejects.toBeInstanceOf(
+      NoActiveTurnError,
+    );
   });
 });
