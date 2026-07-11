@@ -4,14 +4,15 @@ import { toHumanLabel, type ToolSummaryStyle } from "@workbench/shared";
 export type { ToolSummaryStyle };
 
 /** Minimal tool-call shape for summary phrasing (sidecar-safe; no chat package). */
-export type ToolSummaryCall = {
-  id: string;
-  name: string;
-  label?: string;
-  arguments?: Record<string, unknown>;
-  result?: string;
-  isError?: boolean;
-};
+export const ToolSummaryCallSchema = type({
+  id: "string",
+  name: "string",
+  "label?": "string",
+  "arguments?": "Record<string, unknown>",
+  "result?": "string",
+  "isError?": "boolean",
+});
+export type ToolSummaryCall = typeof ToolSummaryCallSchema.infer;
 
 /**
  * Maps a tool operation to a friendly present-participle action phrase shown in
