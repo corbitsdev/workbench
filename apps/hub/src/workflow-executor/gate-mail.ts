@@ -3,10 +3,8 @@ import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
-import {
-  gateMailMessageKey,
-  insertGateMailboxItem,
-} from "../lib/principal-mailbox";
+import { gateMailMessageKey } from "../lib/principal-mailbox";
+import { writeMailboxMessage } from "../lib/mailbox-write";
 import { describePendingGates } from "./pending-gate-info";
 import { loadDeploymentMeta } from "./run-store";
 
@@ -112,11 +110,11 @@ export async function deliverPendingGateMail(
   const deepLinkPath = `${RUN_TRACE_PATH_PREFIX}/${run.runId}`;
 
   for (const gate of gates) {
-    await insertGateMailboxItem(deps.db, {
+    await writeMailboxMessage(deps.db, {
       tenantId: run.tenantId,
       principalId: owner.id,
-      recipientAddress,
-      senderAddress,
+      address: recipientAddress,
+      fromAddress: senderAddress,
       subject: `A workflow needs you: ${label}`,
       body: composeGateBody({
         label,

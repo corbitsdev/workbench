@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { sql } from "drizzle-orm";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
 
@@ -88,7 +89,14 @@ export async function writeMailboxMessage(
       fromAddress: args.fromAddress,
       messageKey: args.messageKey,
     })
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: [
+        principalMailbox.tenantId,
+        principalMailbox.principalId,
+        principalMailbox.messageKey,
+      ],
+      where: sql`${principalMailbox.messageKey} IS NOT NULL`,
+    })
     .returning({ id: principalMailbox.id });
   const row = rows[0];
   if (!row) return null;

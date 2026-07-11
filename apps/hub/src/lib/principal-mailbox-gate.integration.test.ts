@@ -6,11 +6,8 @@ import { parseHeaderSection } from "@intx/mime";
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { principalMailbox } from "../db/schema";
-import {
-  gateMailMessageKey,
-  insertGateMailboxItem,
-  markGateMailboxItemRead,
-} from "./principal-mailbox";
+import { gateMailMessageKey, markGateMailboxItemRead } from "./principal-mailbox";
+import { writeMailboxMessage } from "./mailbox-write";
 
 // The dedupe (partial unique index on message_key) and the mark-read predicate
 // are Postgres-level behaviors — a mocked db can't prove either. This exercises
@@ -31,19 +28,19 @@ const PRINCIPAL_MAILBOX_DDL = `
     read_at timestamp
   );
   CREATE UNIQUE INDEX principal_mailbox_message_key_uniq
-    ON principal_mailbox (message_key)
+    ON principal_mailbox (tenant_id, principal_id, message_key)
     WHERE message_key IS NOT NULL;
 `;
 
 let client: PGlite;
 let db: HubDb;
 
-function item(overrides: Partial<Parameters<typeof insertGateMailboxItem>[1]>) {
+function item(overrides: Partial<Parameters<typeof writeMailboxMessage>[1]>) {
   return {
     tenantId: "ten-1",
     principalId: "prn-alice",
-    recipientAddress: "usr_alice@tenant.example",
-    senderAddress: "hub@wf.example",
+    address: "usr_alice@tenant.example",
+    fromAddress: "hub@wf.example",
     subject: "A workflow needs you: Demo",
     body: "Run: wfr-1\r\nRespond here: /insights/trace/wfr-1",
     messageKey: gateMailMessageKey("wfr-1", "approval"),
@@ -61,10 +58,10 @@ afterEach(async () => {
   await client?.close();
 });
 
-describe("insertGateMailboxItem", () => {
+describe("writeMailboxMessage gate dedupe", () => {
   test("writes a keyed inbound row with a parseable RFC 2822 frame", async () => {
-    const wrote = await insertGateMailboxItem(db, item({}));
-    expect(wrote).toBe(true);
+    const wrote = await writeMailboxMessage(db, item({}));
+    expect(wrote).not.toBeNull();
 
     const rows = await db.select().from(principalMailbox);
     expect(rows).toHaveLength(1);
@@ -87,10 +84,8 @@ describe("insertGateMailboxItem", () => {
   });
 
   test("dedupes a duplicate (runId, signalName): second insert is a no-op", async () => {
-    expect(await insertGateMailboxItem(db, item({}))).toBe(true);
-    expect(await insertGateMailboxItem(db, item({ subject: "changed" }))).toBe(
-      false,
-    );
+    expect(await writeMailboxMessage(db, item({}))).not.toBeNull();
+    expect(await writeMailboxMessage(db, item({ subject: "changed" }))).toBeNull();
 
     const rows = await db.select().from(principalMailbox);
     expect(rows).toHaveLength(1);
@@ -99,8 +94,8 @@ describe("insertGateMailboxItem", () => {
   });
 
   test("a different signal on the same run writes a distinct row", async () => {
-    await insertGateMailboxItem(db, item({}));
-    await insertGateMailboxItem(
+    await writeMailboxMessage(db, item({}));
+    await writeMailboxMessage(
       db,
       item({ messageKey: gateMailMessageKey("wfr-1", "review") }),
     );
@@ -112,7 +107,7 @@ describe("insertGateMailboxItem", () => {
 
 describe("markGateMailboxItemRead", () => {
   test("stamps read_at once, then is a no-op on re-accept", async () => {
-    await insertGateMailboxItem(db, item({}));
+    await writeMailboxMessage(db, item({}));
 
     await markGateMailboxItemRead(db, "wfr-1", "approval");
     const afterFirst = (await db.select().from(principalMailbox))[0]?.readAt;
@@ -125,8 +120,8 @@ describe("markGateMailboxItemRead", () => {
   });
 
   test("leaves other gates' items untouched", async () => {
-    await insertGateMailboxItem(db, item({}));
-    await insertGateMailboxItem(
+    await writeMailboxMessage(db, item({}));
+    await writeMailboxMessage(
       db,
       item({ messageKey: gateMailMessageKey("wfr-1", "review") }),
     );

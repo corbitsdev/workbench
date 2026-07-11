@@ -1,24 +1,27 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import type { HubDb } from "../db";
-import type { GateMailboxItem } from "../lib/principal-mailbox";
+import type { MailboxWriteArgs } from "../lib/mailbox-write";
 
 // Boundary mocks: the gate-mail orchestrator composes the message and delegates
-// the durable write to `insertGateMailboxItem`, the open-gate read to
+// the durable write to `writeMailboxMessage`, the open-gate read to
 // `describePendingGates`, and the label read to `loadDeploymentMeta`. We capture
 // each at its module boundary and assert the composition, not the mocks.
 
-const insertCalls: GateMailboxItem[] = [];
+const insertCalls: MailboxWriteArgs[] = [];
 const errorLogs: { message: string; ctx: unknown }[] = [];
 const warnLogs: { message: string; ctx: unknown }[] = [];
 
 let pendingGates: { signalName: string; payloadSchema?: string }[] = [];
 let deploymentMeta: { label?: string } | null = null;
 
-mock.module("../lib/principal-mailbox", () => ({
-  insertGateMailboxItem: async (_db: HubDb, item: GateMailboxItem) => {
-    insertCalls.push(item);
-    return true;
+mock.module("../lib/mailbox-write", () => ({
+  writeMailboxMessage: async (_db: HubDb, args: MailboxWriteArgs) => {
+    insertCalls.push(args);
+    return { id: `pmb-${insertCalls.length}` };
   },
+}));
+
+mock.module("../lib/principal-mailbox", () => ({
   gateMailMessageKey: (runId: string, signalName: string) =>
     `gate:${runId}:${signalName}`,
 }));
@@ -97,8 +100,8 @@ describe("deliverPendingGateMail", () => {
     expect(first).toMatchObject({
       tenantId: "ten-1",
       principalId: "prn-alice",
-      recipientAddress: "usr_alice@tenant.example",
-      senderAddress: "hub@wf.example",
+      address: "usr_alice@tenant.example",
+      fromAddress: "hub@wf.example",
       subject: "A workflow needs you: Pain Point Collateral",
       messageKey: "gate:wfr-1:approval",
     });

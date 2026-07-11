@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { agentInstance, principal, tenant } from "@intx/db/schema";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
@@ -16,82 +16,6 @@ const USER_ADDRESS_PREFIX = "usr_";
 // occurrence, so a re-projected open gate never writes a duplicate inbox item.
 export function gateMailMessageKey(runId: string, signalName: string): string {
   return `gate:${runId}:${signalName}`;
-}
-
-// Header values are single-line; fold any control characters out so a label or
-// address carrying a stray newline can never inject a header or split the frame.
-function sanitizeHeaderValue(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").trim();
-}
-
-// Compose a minimal RFC 2822 frame the existing inbox read path (parseHeaderSection
-// + raw body) renders exactly like agent-authored mail.
-function buildMailFrame(args: {
-  senderAddress: string;
-  recipientAddress: string;
-  subject: string;
-  body: string;
-  date: Date;
-}): Uint8Array {
-  const headers =
-    `From: ${sanitizeHeaderValue(args.senderAddress)}\r\n` +
-    `To: ${sanitizeHeaderValue(args.recipientAddress)}\r\n` +
-    `Subject: ${sanitizeHeaderValue(args.subject)}\r\n` +
-    `Date: ${args.date.toUTCString()}\r\n` +
-    "\r\n";
-  return new TextEncoder().encode(`${headers}${args.body}\r\n`);
-}
-
-export type GateMailboxItem = {
-  tenantId: string;
-  principalId: string;
-  recipientAddress: string;
-  senderAddress: string;
-  subject: string;
-  body: string;
-  messageKey: string;
-  date?: Date;
-};
-
-/**
- * Insert a keyed, deduplicated inbound mailbox item. Returns whether a NEW row
- * was written — `false` when the partial unique index on `message_key` absorbed
- * a duplicate. The stored `raw` is a minimal RFC 2822 frame so the inbox read
- * path renders subject/from/body identically to agent-authored mail.
- */
-export async function insertGateMailboxItem(
-  db: HubDb,
-  item: GateMailboxItem,
-): Promise<boolean> {
-  const raw = buildMailFrame({
-    senderAddress: item.senderAddress,
-    recipientAddress: item.recipientAddress,
-    subject: item.subject,
-    body: item.body,
-    date: item.date ?? new Date(),
-  });
-  const inserted = await db
-    .insert(principalMailbox)
-    .values({
-      tenantId: item.tenantId,
-      principalId: item.principalId,
-      address: item.recipientAddress,
-      direction: "inbound" as const,
-      raw: Buffer.from(raw),
-      subject: item.subject,
-      fromAddress: item.senderAddress,
-      messageKey: item.messageKey,
-    })
-    .onConflictDoNothing({
-      target: [
-        principalMailbox.tenantId,
-        principalMailbox.principalId,
-        principalMailbox.messageKey,
-      ],
-      where: sql`${principalMailbox.messageKey} IS NOT NULL`,
-    })
-    .returning({ id: principalMailbox.id });
-  return inserted.length > 0;
 }
 
 /**
