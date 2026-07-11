@@ -299,6 +299,32 @@ export function MyraChatSurface({
     );
   }
 
+  // A non-recoverable launch failure (e.g. auth). Terminal — no background
+  // retry — but a manual Try again still re-attempts in case it was momentary.
+  if (state.phase === "fatal") {
+    return (
+      <ChatPanel
+        {...chrome}
+        messages={[]}
+        onSend={() => undefined}
+        inputDisabled
+        notice={
+          <span>
+            Myra couldn't start.{" "}
+            <button
+              type="button"
+              onClick={session.reconnect}
+              className="text-orange underline"
+            >
+              Try again
+            </button>
+            .
+          </span>
+        }
+      />
+    );
+  }
+
   // Attachments are projected to a compact lead-in and composed inline into the
   // message. Inline (not a first-class Interchange attachment) because Myra's
   // DeepSeek/openai-compatible harness does not ingest document attachment
@@ -406,30 +432,45 @@ export function MyraChatSurface({
 
   // History renders while the sidecar is unreachable; the composer stays usable
   // and sends are queued. Tell the user their messages are deferred, without
-  // surfacing a raw error (CL-3280). The Retry button sits OUTSIDE the
-  // role="status" live region so assistive tech announces the status text alone
-  // and exposes the control through the normal focus order.
-  const reconnectingNotice = session.reconnecting ? (
-    <div
-      key="reconnecting-notice"
-      className="flex items-center gap-1.5 text-xs"
-    >
-      <span role="status" className="text-text-3">
-        {session.queuedFailed
-          ? "Trouble reaching Myra — still trying. Your messages will send once it's back."
-          : "Reconnecting to Myra — your messages will send once it's back."}
-      </span>
-      {session.queuedFailed && (
-        <button
-          type="button"
-          onClick={session.reconnect}
-          className="text-orange underline"
-        >
-          Retry now
-        </button>
-      )}
-    </div>
-  ) : null;
+  // surfacing a raw error (CL-3280). A never-yet-live first connect says
+  // "Connecting"; a drop after a live session says "Reconnecting" (CL-3292). The
+  // Retry button sits OUTSIDE the role="status" live region so assistive tech
+  // announces the status text alone and exposes the control through the normal
+  // focus order.
+  let connectionCopy: string | null = null;
+  if (session.connectionNotice === "connecting") {
+    connectionCopy =
+      "Connecting to Myra — your messages will send once connected.";
+  } else if (session.connectionNotice === "reconnecting") {
+    if (session.queuedFailed) {
+      connectionCopy =
+        "Trouble reaching Myra — still trying. Your messages will send once it's back.";
+    } else {
+      connectionCopy =
+        "Reconnecting to Myra — your messages will send once it's back.";
+    }
+  }
+
+  const reconnectingNotice =
+    connectionCopy !== null ? (
+      <div
+        key="reconnecting-notice"
+        className="flex items-center gap-1.5 text-xs"
+      >
+        <span role="status" className="text-text-3">
+          {connectionCopy}
+        </span>
+        {session.queuedFailed && (
+          <button
+            type="button"
+            onClick={session.reconnect}
+            className="text-orange underline"
+          >
+            Retry now
+          </button>
+        )}
+      </div>
+    ) : null;
 
   // Mounted (not conditionally rendered) whenever a tenant is known so its SSE
   // subscription is live; it renders nothing until a pending approval exists.
