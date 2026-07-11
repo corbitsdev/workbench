@@ -23,7 +23,10 @@ export const MailboxMessageDetail = MailboxMessage.and(
 );
 export type MailboxMessageDetail = typeof MailboxMessageDetail.infer;
 
+// One keyset-paginated page of the caller's inbox, newest first, with an opaque
+// cursor for the next page when one exists.
 export const MailboxListResponse = type({
   messages: MailboxMessage.array(),
+  "nextCursor?": "string",
 });
 export type MailboxListResponse = typeof MailboxListResponse.infer;

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   CreateScheduledTriggerBodySchema,
+  ScheduledTriggerListResponseSchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
 } from "@workbench/shared";
@@ -17,9 +18,10 @@ import {
   updateOwnerSchedule,
 } from "../lib/scheduled-triggers";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
+import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
-const ScheduledTriggerList = ScheduledTriggerSchema.array();
+const DEFAULT_SCHEDULES_PAGE_LIMIT = 50;
 
 // Payload keys the server owns. A trigger payload becomes the workflow's input
 // verbatim, so client-supplied identity here would let a member address another
@@ -35,7 +37,7 @@ export type ResolveUserIdentity = (
 
 // Owner-scoped CRUD over the caller's automation triggers. Every read and write
 // is scoped to the caller's own member principal, so a member can never see or
-// mutate another member's schedule. Unblocks the scheduling UI (CL-2297).
+// mutate another member's schedule. Unblocks the scheduling UI.
 export function createMeSchedulesRouter(
   db: HubDb,
   resolveUserIdentity: ResolveUserIdentity,
@@ -47,25 +49,67 @@ export function createMeSchedulesRouter(
     describeRoute({
       tags: ["Me"],
       summary: "List the caller's automation schedules",
+      parameters: [
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: MAX_PAGE_LIMIT },
+          description: `Maximum schedules to return (default ${DEFAULT_SCHEDULES_PAGE_LIMIT}, clamped to ${MAX_PAGE_LIMIT})`,
+        },
+        {
+          name: "cursor",
+          in: "query",
+          required: false,
+          schema: { type: "string" },
+          description:
+            "Opaque keyset cursor from a previous page's nextCursor; omit for the first page",
+        },
+      ],
       responses: {
         200: {
-          description: "The caller's schedules (empty when none/no membership)",
+          description:
+            "One page of the caller's schedules (empty when none/no membership)",
           content: {
-            "application/json": { schema: resolver(ScheduledTriggerList) },
+            "application/json": {
+              schema: resolver(ScheduledTriggerListResponseSchema),
+            },
           },
+        },
+        400: {
+          description: "Invalid limit or cursor",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
       const userId = c.get("userId");
+      const limit = clampLimit(c.req.query("limit"), {
+        default: DEFAULT_SCHEDULES_PAGE_LIMIT,
+      });
+      if (limit === null) {
+        return c.json({ error: "limit must be a positive integer" }, 400);
+      }
+      const rawCursor = c.req.query("cursor");
+      const cursor =
+        rawCursor === undefined ? undefined : decodeCursor(rawCursor);
+      if (rawCursor !== undefined && cursor === null) {
+        return c.json({ error: "malformed cursor" }, 400);
+      }
       const member = await resolveCallerMember(db, userId);
-      if (!member) return c.json([]);
-      const rows = await listOwnerSchedules(
+      if (!member) return c.json({ items: [] });
+      const page = await listOwnerSchedules(
         db,
         member.tenantId,
         member.principalId,
+        { limit, ...(cursor ? { cursor } : {}) },
       );
-      return c.json(rows.map(toApiSchedule));
+      return c.json({
+        items: page.items.map(toApiSchedule),
+        ...(page.nextCursor !== undefined
+          ? { nextCursor: page.nextCursor }
+          : {}),
+      });
     },
   );
 

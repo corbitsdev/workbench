@@ -55,9 +55,7 @@ describe("MailboxMessageDetail", () => {
   });
 
   test("rejects a missing body", () => {
-    expect(MailboxMessageDetail(goodMessage) instanceof type.errors).toBe(
-      true,
-    );
+    expect(MailboxMessageDetail(goodMessage) instanceof type.errors).toBe(true);
   });
 });
 
@@ -69,6 +67,16 @@ describe("MailboxListResponse", () => {
 
   test("round-trips an empty list", () => {
     expect(MailboxListResponse({ messages: [] })).toEqual({ messages: [] });
+  });
+
+  test("carries an optional nextCursor when present", () => {
+    const payload = { messages: [goodMessage], nextCursor: "opaque" };
+    expect(MailboxListResponse(payload)).toEqual(payload);
+  });
+
+  test("rejects a non-string nextCursor", () => {
+    const payload = { messages: [], nextCursor: 42 };
+    expect(MailboxListResponse(payload) instanceof type.errors).toBe(true);
   });
 
   test("rejects a list with a malformed message", () => {

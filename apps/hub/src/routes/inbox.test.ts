@@ -29,11 +29,19 @@ const cannedDetail: MailboxMessageDetail = {
   body: "Your brief is ready.\n\n- pipeline moved\n- two calls today",
 };
 
+let mailboxPage: { items: MailboxMessage[]; nextCursor?: string } = {
+  items: [canned],
+};
 const listUserMailbox = mock(
   async (
     _db: unknown,
-    _scope: { tenantId: string; principalId: string; limit: number },
-  ) => [canned],
+    _scope: {
+      tenantId: string;
+      principalId: string;
+      limit: number;
+      cursor?: { createdAt: string; id: string };
+    },
+  ) => mailboxPage,
 );
 let markReadResult = true;
 const markMailboxMessageRead = mock(
@@ -57,6 +65,7 @@ mock.module("../lib/mailbox-read", () => ({
 
 import { Hono } from "hono";
 import type { HubDb } from "../db";
+import { encodeCursor } from "../lib/keyset";
 import { createInboxRouter } from "./inbox";
 
 function mountApp() {
@@ -75,6 +84,7 @@ beforeEach(() => {
   member = { tenantId: "ten-1", principalId: "pri-a" };
   markReadResult = true;
   detailResult = cannedDetail;
+  mailboxPage = { items: [canned] };
   listUserMailbox.mockClear();
   markMailboxMessageRead.mockClear();
   getMailboxMessage.mockClear();
@@ -141,6 +151,43 @@ describe("GET /me/inbox", () => {
       new Request("http://localhost/api/v1/me/inbox?limit=nope"),
     );
     expect(bad.status).toBe(400);
+  });
+
+  it("decodes a valid cursor and forwards the keyset position to the store", async () => {
+    const cursor = encodeCursor({
+      createdAt: new Date("2026-07-10T07:00:00.000Z"),
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+    const res = await mountApp().request(
+      new Request(
+        `http://localhost/api/v1/me/inbox?cursor=${encodeURIComponent(cursor)}`,
+      ),
+    );
+    expect(res.status).toBe(200);
+    expect(listUserMailbox.mock.calls[0]?.[1]?.cursor).toEqual({
+      createdAt: "2026-07-10T07:00:00.000Z",
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+  });
+
+  it("400s on a malformed cursor without touching the store", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox?cursor=not-a-valid-cursor"),
+    );
+    expect(res.status).toBe(400);
+    expect(listUserMailbox.mock.calls).toHaveLength(0);
+  });
+
+  it("surfaces nextCursor only when the store reports another page", async () => {
+    mailboxPage = { items: [canned], nextCursor: "opaque-next" };
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox"),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      messages: [canned],
+      nextCursor: "opaque-next",
+    });
   });
 });
 

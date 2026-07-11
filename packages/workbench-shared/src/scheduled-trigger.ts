@@ -1,6 +1,6 @@
 import { type } from "arktype";
 
-// Automation triggers that fire a workflow run on a daily cadence (CL-2609).
+// Automation triggers that fire a workflow run on a daily cadence.
 // The hub scheduler loads enabled rows each tick and starts a run for any whose
 // target UTC hour has arrived and has not already fired today. These schemas are
 // the API boundary between the hub routes and the web client.
@@ -15,6 +15,16 @@ export const ScheduledTriggerSchema = type({
   createdAt: "string",
 });
 export type ScheduledTrigger = typeof ScheduledTriggerSchema.infer;
+
+// The GET /me/schedules response: one keyset-paginated page of the caller's
+// schedules, newest first, with an opaque cursor for the next page when one
+// exists.
+export const ScheduledTriggerListResponseSchema = type({
+  items: ScheduledTriggerSchema.array(),
+  "nextCursor?": "string",
+});
+export type ScheduledTriggerListResponse =
+  typeof ScheduledTriggerListResponseSchema.infer;
 
 // Create body: which workflow, at which UTC hour, with which trigger payload.
 export const CreateScheduledTriggerBodySchema = type({

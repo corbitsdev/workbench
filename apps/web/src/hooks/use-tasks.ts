@@ -24,7 +24,7 @@ export function useTasks(options?: {
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected tasks response: ${parsed.summary}`);
       }
-      return parsed;
+      return parsed.items;
     },
   });
 }

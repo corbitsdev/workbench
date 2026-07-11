@@ -6,8 +6,13 @@ import { parseHeaderSection } from "@intx/mime";
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import { principalMailbox } from "../db/schema";
-import { gateMailMessageKey, markGateMailboxItemRead } from "./principal-mailbox";
+import {
+  gateMailMessageKey,
+  markGateMailboxItemRead,
+} from "./principal-mailbox";
 import { writeMailboxMessage } from "./mailbox-write";
+import { listUserMailbox } from "./mailbox-read";
+import { decodeCursor } from "./keyset";
 
 // The dedupe (partial unique index on message_key) and the mark-read predicate
 // are Postgres-level behaviors — a mocked db can't prove either. This exercises
@@ -85,7 +90,9 @@ describe("writeMailboxMessage gate dedupe", () => {
 
   test("dedupes a duplicate (runId, signalName): second insert is a no-op", async () => {
     expect(await writeMailboxMessage(db, item({}))).not.toBeNull();
-    expect(await writeMailboxMessage(db, item({ subject: "changed" }))).toBeNull();
+    expect(
+      await writeMailboxMessage(db, item({ subject: "changed" })),
+    ).toBeNull();
 
     const rows = await db.select().from(principalMailbox);
     expect(rows).toHaveLength(1);
@@ -140,5 +147,82 @@ describe("markGateMailboxItemRead", () => {
         ),
       );
     expect(review[0]?.readAt).toBeNull();
+  });
+});
+
+// The keyset WHERE lives in the SQL — a mocked db cannot prove the
+// (created_at, id) tuple ordering across a page boundary, especially the id
+// tiebreaker between rows sharing a created_at.
+describe("listUserMailbox keyset pagination", () => {
+  async function insertAt(id: string, createdAt: string) {
+    await client.query(
+      `insert into principal_mailbox
+         (id, tenant_id, principal_id, address, direction, raw, subject, created_at)
+       values ($1, 'ten-1', 'prn-alice', 'usr_alice@tenant.example', 'inbound',
+               '\\x00', $2, $3)`,
+      [id, `subject-${id}`, createdAt],
+    );
+  }
+
+  test("pages the full set newest-first with no duplicates or gaps", async () => {
+    // Two rows share a created_at so the id tiebreaker is exercised.
+    await insertAt(
+      "11111111-1111-4111-8111-111111111111",
+      "2026-07-10T07:00:00Z",
+    );
+    await insertAt(
+      "22222222-2222-4222-8222-222222222222",
+      "2026-07-10T08:00:00Z",
+    );
+    await insertAt(
+      "33333333-3333-4333-8333-333333333333",
+      "2026-07-10T08:00:00Z",
+    );
+    await insertAt(
+      "44444444-4444-4444-8444-444444444444",
+      "2026-07-10T09:00:00Z",
+    );
+    await insertAt(
+      "55555555-5555-4555-8555-555555555555",
+      "2026-07-10T10:00:00Z",
+    );
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < 4; page++) {
+      const decoded = cursor === undefined ? null : decodeCursor(cursor);
+      expect(decoded === null && cursor !== undefined).toBe(false);
+      const result = await listUserMailbox(db, {
+        tenantId: "ten-1",
+        principalId: "prn-alice",
+        limit: 2,
+        ...(decoded ? { cursor: decoded } : {}),
+      });
+      seen.push(...result.items.map((m) => m.id));
+      if (result.nextCursor === undefined) break;
+      cursor = result.nextCursor;
+    }
+
+    expect(seen).toEqual([
+      "55555555-5555-4555-8555-555555555555",
+      "44444444-4444-4444-8444-444444444444",
+      "33333333-3333-4333-8333-333333333333",
+      "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+    ]);
+  });
+
+  test("omits nextCursor when the set fits in one page", async () => {
+    await insertAt(
+      "11111111-1111-4111-8111-111111111111",
+      "2026-07-10T07:00:00Z",
+    );
+    const result = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "prn-alice",
+      limit: 5,
+    });
+    expect(result.items).toHaveLength(1);
+    expect(result.nextCursor).toBeUndefined();
   });
 });

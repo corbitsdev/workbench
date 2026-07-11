@@ -4,6 +4,7 @@ import { parseHeaderSection } from "@intx/mime";
 import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
+import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
 const logger = getLogger("mailbox-read");
 
@@ -11,6 +12,12 @@ export type MailboxScope = {
   tenantId: string;
   principalId: string;
   limit: number;
+  cursor?: KeysetCursor;
+};
+
+export type MailboxPage = {
+  items: MailboxMessage[];
+  nextCursor?: string;
 };
 
 const SNIPPET_MAX_CHARS = 160;
@@ -82,17 +89,30 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
 export async function listUserMailbox(
   db: HubDb,
   scope: MailboxScope,
-): Promise<MailboxMessage[]> {
+): Promise<MailboxPage> {
+  const conditions = [
+    eq(principalMailbox.tenantId, scope.tenantId),
+    eq(principalMailbox.principalId, scope.principalId),
+    eq(principalMailbox.direction, "inbound"),
+  ];
+  if (scope.cursor) {
+    const before = keysetBefore(
+      principalMailbox.createdAt,
+      principalMailbox.id,
+      scope.cursor,
+    );
+    if (before) conditions.push(before);
+  }
   const rows = await db.query.principalMailbox.findMany({
-    where: and(
-      eq(principalMailbox.tenantId, scope.tenantId),
-      eq(principalMailbox.principalId, scope.principalId),
-      eq(principalMailbox.direction, "inbound"),
-    ),
-    orderBy: [desc(principalMailbox.createdAt)],
-    limit: scope.limit,
+    where: and(...conditions),
+    orderBy: [desc(principalMailbox.createdAt), desc(principalMailbox.id)],
+    limit: scope.limit + 1,
   });
-  return rows.map(toMailboxMessage);
+  const page = takePage(rows, scope.limit);
+  return {
+    items: page.items.map(toMailboxMessage),
+    ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
+  };
 }
 
 /**

@@ -1,8 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { ScheduledTrigger } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { scheduledTrigger, type ScheduledTriggerRow } from "../db/schema";
 import type { ScheduledTriggerRow as SchedulerRow } from "../services/scheduler";
+import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+
+const DEFAULT_SCHEDULE_LIMIT = 50;
+
+export type ScheduledTriggerPage = {
+  items: ScheduledTriggerRow[];
+  nextCursor?: string;
+};
 
 // Store for the scheduled_trigger table: the scheduler's read/mark path, the
 // owner-scoped CRUD the /me/schedules routes call, and the boot-seeder upsert.
@@ -64,13 +72,27 @@ export async function listOwnerSchedules(
   db: HubDb,
   tenantId: string,
   ownerPrincipalId: string,
-): Promise<ScheduledTriggerRow[]> {
-  return db.query.scheduledTrigger.findMany({
-    where: and(
-      eq(scheduledTrigger.tenantId, tenantId),
-      eq(scheduledTrigger.ownerMemberPrincipalId, ownerPrincipalId),
-    ),
+  opts?: { limit?: number; cursor?: KeysetCursor },
+): Promise<ScheduledTriggerPage> {
+  const conditions = [
+    eq(scheduledTrigger.tenantId, tenantId),
+    eq(scheduledTrigger.ownerMemberPrincipalId, ownerPrincipalId),
+  ];
+  if (opts?.cursor) {
+    const before = keysetBefore(
+      scheduledTrigger.createdAt,
+      scheduledTrigger.id,
+      opts.cursor,
+    );
+    if (before) conditions.push(before);
+  }
+  const limit = opts?.limit ?? DEFAULT_SCHEDULE_LIMIT;
+  const rows = await db.query.scheduledTrigger.findMany({
+    where: and(...conditions),
+    orderBy: [desc(scheduledTrigger.createdAt), desc(scheduledTrigger.id)],
+    limit: limit + 1,
   });
+  return takePage(rows, limit);
 }
 
 export async function createOwnerSchedule(

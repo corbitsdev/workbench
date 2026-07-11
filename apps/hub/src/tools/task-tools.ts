@@ -193,7 +193,7 @@ function createTaskListTool(context: TaskToolContext): AgentTool {
         principalId: context.principalId,
       });
       if (owner === null) return jsonResult({ tasks: [] });
-      const tasks = await listOwnerTasks(context.db, {
+      const { items: tasks } = await listOwnerTasks(context.db, {
         tenantId: context.tenantId,
         ownerPrincipalId: owner,
         ...(parsed.status !== undefined

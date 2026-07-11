@@ -22,12 +22,14 @@ import {
 import { createDrizzleTaskPushStore } from "../lib/task-push-store";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { UuidParam } from "../lib/uuid";
+import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
+const DEFAULT_TASKS_PAGE_LIMIT = 50;
 
 // Owner-scoped CRUD over the caller's native tasks plus a downstream push. Every
 // read and write is bound to the caller's own member principal, so a member can
-// never see or mutate another member's task (CL-3315).
+// never see or mutate another member's task.
 export function createMeTasksRouter(
   db: HubDb,
 ): Hono<{ Variables: { userId: string } }> {
@@ -38,24 +40,65 @@ export function createMeTasksRouter(
     describeRoute({
       tags: ["Me"],
       summary: "List the caller's tasks",
+      parameters: [
+        {
+          name: "limit",
+          in: "query",
+          required: false,
+          schema: { type: "integer", minimum: 1, maximum: MAX_PAGE_LIMIT },
+          description: `Maximum tasks to return (default ${DEFAULT_TASKS_PAGE_LIMIT}, clamped to ${MAX_PAGE_LIMIT})`,
+        },
+        {
+          name: "cursor",
+          in: "query",
+          required: false,
+          schema: { type: "string" },
+          description:
+            "Opaque keyset cursor from a previous page's nextCursor; omit for the first page",
+        },
+      ],
       responses: {
         200: {
-          description: "The caller's tasks (empty when none/no membership)",
+          description:
+            "One page of the caller's tasks (empty when none/no membership)",
           content: {
             "application/json": { schema: resolver(TaskListResponseSchema) },
           },
+        },
+        400: {
+          description: "Invalid limit or cursor",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
     }),
     async (c) => {
       const userId = c.get("userId");
+      const limit = clampLimit(c.req.query("limit"), {
+        default: DEFAULT_TASKS_PAGE_LIMIT,
+      });
+      if (limit === null) {
+        return c.json({ error: "limit must be a positive integer" }, 400);
+      }
+      const rawCursor = c.req.query("cursor");
+      const cursor =
+        rawCursor === undefined ? undefined : decodeCursor(rawCursor);
+      if (rawCursor !== undefined && cursor === null) {
+        return c.json({ error: "malformed cursor" }, 400);
+      }
       const member = await resolveCallerMember(db, userId);
-      if (!member) return c.json([]);
-      const tasks = await listOwnerTasks(db, {
+      if (!member) return c.json({ items: [] });
+      const page = await listOwnerTasks(db, {
         tenantId: member.tenantId,
         ownerPrincipalId: member.principalId,
+        limit,
+        ...(cursor ? { cursor } : {}),
       });
-      return c.json(tasks);
+      return c.json({
+        items: page.items,
+        ...(page.nextCursor !== undefined
+          ? { nextCursor: page.nextCursor }
+          : {}),
+      });
     },
   );
 

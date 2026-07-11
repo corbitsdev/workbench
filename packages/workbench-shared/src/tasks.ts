@@ -1,6 +1,6 @@
 import { type } from "arktype";
 
-// Native Workbench task model (CL-3302). These schemas are the API boundary
+// Native Workbench task model. These schemas are the API boundary
 // shared by the hub routes, the task context tools, and the web client. The
 // domain logic (adapter registry, push service) lives in `@workbench/tasks`;
 // the tables live in the hub schema.
@@ -73,9 +73,17 @@ export const TaskSchema = type({
 });
 export type Task = typeof TaskSchema.infer;
 
-// The caller's task list, newest-relevant first. Bare array (like the schedules
-// list), parsed at the boundary by the web client.
-export const TaskListResponseSchema = TaskSchema.array();
+// A bare array of tasks, for callers (agent tools, internal projectors) that
+// consume the collection without pagination.
+export const TaskListSchema = TaskSchema.array();
+export type TaskList = typeof TaskListSchema.infer;
+
+// The GET /me/tasks response: one keyset-paginated page of the caller's tasks,
+// newest first, with an opaque cursor for the next page when one exists.
+export const TaskListResponseSchema = type({
+  items: TaskSchema.array(),
+  "nextCursor?": "string",
+});
 export type TaskListResponse = typeof TaskListResponseSchema.infer;
 
 // Request body for POST /me/tasks. The server owns tenancy, ownership,

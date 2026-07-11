@@ -10,21 +10,12 @@ import {
 } from "../lib/mailbox-read";
 import { UuidParam } from "../lib/uuid";
 import { ErrorResponse } from "../lib/openapi";
+import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
 const MarkReadResponse = type({ id: "string", read: "boolean" });
 
 const DEFAULT_INBOX_LIMIT = 50;
-const MAX_INBOX_LIMIT = 200;
-
-function parseLimit(rawLimit: string | undefined): number | null {
-  if (rawLimit === undefined) return DEFAULT_INBOX_LIMIT;
-  const parsed = Number(rawLimit);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_INBOX_LIMIT) {
-    return null;
-  }
-  return parsed;
-}
 
 // The signed-in user's durable mailbox: mail addressed to their usr_
 // address, persisted to principal_mailbox by the sidecar persistMail
@@ -44,8 +35,16 @@ export function createInboxRouter(
           name: "limit",
           in: "query",
           required: false,
-          schema: { type: "integer", minimum: 1, maximum: MAX_INBOX_LIMIT },
-          description: `Maximum messages to return (default ${DEFAULT_INBOX_LIMIT})`,
+          schema: { type: "integer", minimum: 1, maximum: MAX_PAGE_LIMIT },
+          description: `Maximum messages to return (default ${DEFAULT_INBOX_LIMIT}, clamped to ${MAX_PAGE_LIMIT})`,
+        },
+        {
+          name: "cursor",
+          in: "query",
+          required: false,
+          schema: { type: "string" },
+          description:
+            "Opaque keyset cursor from a previous page's nextCursor; omit for the first page",
         },
       ],
       responses: {
@@ -67,23 +66,34 @@ export function createInboxRouter(
     }),
     async (c) => {
       const userId = c.get("userId");
-      const limit = parseLimit(c.req.query("limit"));
+      const limit = clampLimit(c.req.query("limit"), {
+        default: DEFAULT_INBOX_LIMIT,
+      });
       if (limit === null) {
-        return c.json(
-          { error: "limit must be an integer between 1 and 200" },
-          400,
-        );
+        return c.json({ error: "limit must be a positive integer" }, 400);
+      }
+      const rawCursor = c.req.query("cursor");
+      const cursor =
+        rawCursor === undefined ? undefined : decodeCursor(rawCursor);
+      if (rawCursor !== undefined && cursor === null) {
+        return c.json({ error: "malformed cursor" }, 400);
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
       }
-      const messages = await listUserMailbox(db, {
+      const page = await listUserMailbox(db, {
         tenantId: member.tenantId,
         principalId: member.principalId,
         limit,
+        ...(cursor ? { cursor } : {}),
       });
-      return c.json({ messages });
+      return c.json({
+        messages: page.items,
+        ...(page.nextCursor !== undefined
+          ? { nextCursor: page.nextCursor }
+          : {}),
+      });
     },
   );
 

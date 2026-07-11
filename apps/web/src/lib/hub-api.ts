@@ -21,16 +21,15 @@ import {
   PreferenceSettingsResponseSchema,
   type PreferenceSetting,
   ScheduledTriggerSchema,
+  ScheduledTriggerListResponseSchema,
   type ScheduledTrigger,
   type CreateScheduledTriggerBody,
   type UpdateScheduledTriggerBody,
 } from "@workbench/shared";
 
-const ScheduledTriggerListSchema = ScheduledTriggerSchema.array();
-
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
-// Credential and tenant management moved to Interchange admin-ui (CL-1535).
+// Credential and tenant management moved to Interchange admin-ui.
 
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -298,14 +297,15 @@ export async function getWorkflowsCatalog(
   return parsed;
 }
 
-/** The caller's own automation schedules, parsed at the boundary. */
+/** The caller's own automation schedules, parsed at the boundary. Reads the
+ * first page of the keyset-paginated list; nextCursor is ignored for now. */
 export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
   const raw = await hubFetch<unknown>("GET", "v1/me/schedules");
-  const parsed = ScheduledTriggerListSchema(raw);
+  const parsed = ScheduledTriggerListResponseSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Unexpected schedules response: ${parsed.summary}`);
   }
-  return parsed;
+  return parsed.items;
 }
 
 function parseSchedule(raw: unknown): ScheduledTrigger {
@@ -767,7 +767,7 @@ const ActivityCountRowSchema = type({
 });
 
 /**
- * One bucket of the Insights daily-metrics series (CL-2836) — the source for
+ * One bucket of the Insights daily-metrics series — the source for
  * the CSV export. `bucketStart` is the row's date label (`YYYY-MM-DD`).
  */
 export const MetricsPointSchema = type({
@@ -780,7 +780,7 @@ export const MetricsPointSchema = type({
 export type MetricsPoint = typeof MetricsPointSchema.infer;
 
 /**
- * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
+ * Priced usage — mirrors `@workbench/pricing`'s `PricedUsage`.
  * `null` means the hub had no price catalog warm when it computed this row
  * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
  * some of the underlying models had no models.dev rate.
@@ -816,7 +816,7 @@ export const UsageByPersonRowSchema = type({
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
 
-/** Per-model usage with every token class separated, for cost-by-model (CL-2714). */
+/** Per-model usage with every token class separated, for cost-by-model. */
 export const UsageByModelRowSchema = type({
   model: "string",
   turnCount: "number",
@@ -982,7 +982,7 @@ export function parseActivityOverview(raw: unknown): ActivityOverview {
 }
 
 /**
- * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
+ * Fetches the hub-cached models.dev pricing catalog. The browser
  * never hits models.dev directly (CSP); the hub proxies + caches it. Parsed at
  * the boundary through the shared `PriceCatalogSchema`.
  */
@@ -1103,7 +1103,7 @@ export async function getActivityOverview(
   return parseActivityOverview(raw);
 }
 
-/** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */
+/** Server-side Insights CSV: metrics series + person/model/workflow breakdowns. */
 export async function downloadActivityExportCsv(
   tenantId: string,
   opts?: {

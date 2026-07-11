@@ -52,9 +52,13 @@ mock.module("../lib/webhook-triggers", () => ({
     _db: unknown,
     tenantId: string,
     ownerPrincipalId: string,
+    opts?: Record<string, unknown>,
   ) => {
-    storeCalls.push({ fn: "list", args: { tenantId, ownerPrincipalId } });
-    return ownerRows;
+    storeCalls.push({
+      fn: "list",
+      args: { tenantId, ownerPrincipalId, ...(opts ?? {}) },
+    });
+    return { items: ownerRows };
   },
   createOwnerWebhookTrigger: async (
     _db: unknown,
@@ -123,29 +127,55 @@ describe("GET /me/webhook-triggers", () => {
     );
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toEqual([
-      {
-        id: "trig-1",
-        workflowKind: "heartbeat",
-        enabled: true,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        lastFiredAt: null,
-      },
-    ]);
+    expect(body).toEqual({
+      items: [
+        {
+          id: "trig-1",
+          workflowKind: "heartbeat",
+          enabled: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          lastFiredAt: null,
+        },
+      ],
+    });
     expect(JSON.stringify(body)).not.toContain("secret");
-    expect(storeCalls[0]).toEqual({
+    expect(storeCalls[0]).toMatchObject({
       fn: "list",
       args: { tenantId: "tenant-root", ownerPrincipalId: "principal-a" },
     });
   });
 
-  it("returns an empty list when the caller has no membership", async () => {
+  it("passes a valid limit through and rejects a malformed one", async () => {
+    storeCalls.length = 0;
+    ownerRows = [];
+    const ok = await mountApp().fetch(
+      req("/me/webhook-triggers?limit=5", { user: "user-a" }),
+    );
+    expect(ok.status).toBe(200);
+    expect(storeCalls[0]?.args).toMatchObject({ limit: 5 });
+
+    const bad = await mountApp().fetch(
+      req("/me/webhook-triggers?limit=0", { user: "user-a" }),
+    );
+    expect(bad.status).toBe(400);
+  });
+
+  it("400s on a malformed cursor without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/webhook-triggers?cursor=not-a-valid-cursor", { user: "user-a" }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "list")).toBe(false);
+  });
+
+  it("returns an empty page when the caller has no membership", async () => {
     ownerRows = [];
     const res = await mountApp().fetch(
       req("/me/webhook-triggers", { user: "user-none" }),
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+    expect(await res.json()).toEqual({ items: [] });
   });
 });
 

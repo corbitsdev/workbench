@@ -1,10 +1,18 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { WebhookTrigger } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { workflowTrigger, type WorkflowTriggerRow } from "../db/schema";
+import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
-// Store for the workflow_trigger table (CL-3300): owner-scoped CRUD for the
+const DEFAULT_WEBHOOK_TRIGGER_LIMIT = 50;
+
+export type WebhookTriggerPage = {
+  items: WorkflowTriggerRow[];
+  nextCursor?: string;
+};
+
+// Store for the workflow_trigger table: owner-scoped CRUD for the
 // /me/webhook-triggers management routes, plus the lookup + secret-compare +
 // fire-bookkeeping the public firing route needs. Every management write is
 // scoped by owner principal so one member can never address another's row;
@@ -45,13 +53,27 @@ export async function listOwnerWebhookTriggers(
   db: HubDb,
   tenantId: string,
   ownerPrincipalId: string,
-): Promise<WorkflowTriggerRow[]> {
-  return db.query.workflowTrigger.findMany({
-    where: and(
-      eq(workflowTrigger.tenantId, tenantId),
-      eq(workflowTrigger.ownerMemberPrincipalId, ownerPrincipalId),
-    ),
+  opts?: { limit?: number; cursor?: KeysetCursor },
+): Promise<WebhookTriggerPage> {
+  const conditions = [
+    eq(workflowTrigger.tenantId, tenantId),
+    eq(workflowTrigger.ownerMemberPrincipalId, ownerPrincipalId),
+  ];
+  if (opts?.cursor) {
+    const before = keysetBefore(
+      workflowTrigger.createdAt,
+      workflowTrigger.id,
+      opts.cursor,
+    );
+    if (before) conditions.push(before);
+  }
+  const limit = opts?.limit ?? DEFAULT_WEBHOOK_TRIGGER_LIMIT;
+  const rows = await db.query.workflowTrigger.findMany({
+    where: and(...conditions),
+    orderBy: [desc(workflowTrigger.createdAt), desc(workflowTrigger.id)],
+    limit: limit + 1,
   });
+  return takePage(rows, limit);
 }
 
 // Creates a trigger and returns both the row and the plaintext secret. The

@@ -12,6 +12,12 @@ import {
   type TaskRow,
 } from "../db/schema";
 import type { HubDb } from "../db";
+import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+
+export type TaskPage = {
+  items: Task[];
+  nextCursor?: string;
+};
 
 // Owner-scoped persistence for native tasks. Every read and write is bound to
 // (tenantId, ownerPrincipalId) so a member can never see or mutate another
@@ -104,8 +110,9 @@ export async function listOwnerTasks(
     ownerPrincipalId: string;
     statuses?: TaskStatus[];
     limit?: number;
+    cursor?: KeysetCursor;
   },
-): Promise<Task[]> {
+): Promise<TaskPage> {
   const conditions = [
     eq(task.tenantId, args.tenantId),
     eq(task.ownerPrincipalId, args.ownerPrincipalId),
@@ -113,17 +120,26 @@ export async function listOwnerTasks(
   if (args.statuses !== undefined && args.statuses.length > 0) {
     conditions.push(inArray(task.status, args.statuses));
   }
+  if (args.cursor) {
+    const before = keysetBefore(task.createdAt, task.id, args.cursor);
+    if (before) conditions.push(before);
+  }
+  const limit = args.limit ?? DEFAULT_TASK_LIMIT;
   const rows = await db
     .select()
     .from(task)
     .where(and(...conditions))
-    .orderBy(desc(task.createdAt))
-    .limit(args.limit ?? DEFAULT_TASK_LIMIT);
+    .orderBy(desc(task.createdAt), desc(task.id))
+    .limit(limit + 1);
+  const page = takePage(rows, limit);
   const refs = await loadRefsByTaskIds(
     db,
-    rows.map((row) => row.id),
+    page.items.map((row) => row.id),
   );
-  return rows.map((row) => toApiTask(row, refs.get(row.id) ?? []));
+  return {
+    items: page.items.map((row) => toApiTask(row, refs.get(row.id) ?? [])),
+    ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
+  };
 }
 
 export async function getOwnerTask(

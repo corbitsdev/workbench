@@ -4,6 +4,7 @@ import { type } from "arktype";
 import {
   TaskExternalRefSchema,
   TaskLinkSchema,
+  TaskListResponseSchema,
   TaskSchema,
   TaskSourceSchema,
   TaskStatusSchema,
@@ -149,5 +150,25 @@ describe("TaskSchema", () => {
       expect(parsed.links[0]?.kind).toBe("mail");
       expect(parsed.externalRefs[0]?.adapterId).toBe("attio");
     }
+  });
+});
+
+describe("TaskListResponseSchema", () => {
+  it("wraps the page in an items array and omits nextCursor when absent", () => {
+    const parsed = TaskListResponseSchema({ items: [validTask] });
+    expect(parsed).not.toBeInstanceOf(type.errors);
+    if (!(parsed instanceof type.errors)) {
+      expect(parsed.items[0]?.id).toBe(validTask.id);
+      expect("nextCursor" in parsed).toBe(false);
+    }
+  });
+
+  it("carries an optional nextCursor and rejects a non-string one", () => {
+    expect(TaskListResponseSchema({ items: [], nextCursor: "opaque" })).toEqual(
+      { items: [], nextCursor: "opaque" },
+    );
+    expect(TaskListResponseSchema({ items: [], nextCursor: 7 })).toBeInstanceOf(
+      type.errors,
+    );
   });
 });

@@ -26,6 +26,7 @@ mock.module("../lib/task-push-store", () => ({
 type StoreCall = { fn: string; args: Record<string, unknown> };
 const storeCalls: StoreCall[] = [];
 let listRows: unknown[] = [];
+let listNextCursor: string | undefined;
 let updateResult: unknown = null;
 let ownedResult: unknown = { id: "task-a" };
 
@@ -49,7 +50,10 @@ function apiTask(overrides: Record<string, unknown> = {}) {
 mock.module("../lib/task-store", () => ({
   listOwnerTasks: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "list", args });
-    return listRows;
+    return {
+      items: listRows,
+      ...(listNextCursor ? { nextCursor: listNextCursor } : {}),
+    };
   },
   createOwnerTask: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "create", args });
@@ -114,19 +118,56 @@ describe("GET /me/tasks", () => {
   it("scopes the list to the caller's principal", async () => {
     storeCalls.length = 0;
     listRows = [apiTask()];
+    listNextCursor = undefined;
     const res = await mountApp().fetch(req("/me/tasks", { user: "user-a" }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([apiTask()]);
-    expect(storeCalls[0]?.args).toEqual({
+    expect(await res.json()).toEqual({ items: [apiTask()] });
+    expect(storeCalls[0]?.args).toMatchObject({
       tenantId: "tenant-root",
       ownerPrincipalId: "principal-a",
     });
   });
 
-  it("returns empty for a caller with no membership", async () => {
+  it("returns an empty page for a caller with no membership", async () => {
     const res = await mountApp().fetch(req("/me/tasks", { user: "user-none" }));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual([]);
+    expect(await res.json()).toEqual({ items: [] });
+  });
+
+  it("passes a valid limit through and rejects a malformed one", async () => {
+    storeCalls.length = 0;
+    listRows = [];
+    const ok = await mountApp().fetch(
+      req("/me/tasks?limit=5", { user: "user-a" }),
+    );
+    expect(ok.status).toBe(200);
+    expect(storeCalls[0]?.args).toMatchObject({ limit: 5 });
+
+    const bad = await mountApp().fetch(
+      req("/me/tasks?limit=nope", { user: "user-a" }),
+    );
+    expect(bad.status).toBe(400);
+  });
+
+  it("400s on a malformed cursor without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/tasks?cursor=not-a-valid-cursor", { user: "user-a" }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "list")).toBe(false);
+  });
+
+  it("surfaces nextCursor only when the store reports another page", async () => {
+    listRows = [apiTask()];
+    listNextCursor = "opaque-next";
+    const res = await mountApp().fetch(req("/me/tasks", { user: "user-a" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      items: [apiTask()],
+      nextCursor: "opaque-next",
+    });
+    listNextCursor = undefined;
   });
 });
 
