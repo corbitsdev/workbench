@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { threadPersona } from "./thread";
-import { mailboxPersona } from "./mailbox";
+import { isMailboxReadOnlyTool, mailboxPersona } from "./mailbox";
 import { MyraPersonaSchema } from "./persona";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
@@ -8,21 +8,31 @@ import {
 } from "../core/definition";
 import { buildPersonalAgentSystemPrompt } from "../core/prompt";
 
-// Tools that mutate external state or Myra's own memory. The mailbox triage
-// persona is prepare-only, so none of these may appear in its loadout — this is
-// the guard that keeps the triage session from taking an irreversible action.
+// Canonical catalogue of known write/mutating tools across Myra's base
+// toolset. The mailbox triage persona is prepare-only, so none of these may
+// ever appear in its loadout — this is the guard that keeps the triage
+// session from taking an irreversible action, independent of how the
+// allow-list predicate is implemented.
 const WRITE_TOOLS = [
   "memory_save",
   "artifact_create",
   "artifact_write",
+  "write_artifact",
+  "artifact_link_file",
+  "artifact_link_presentation",
+  "artifact_link_gamma_presentation",
   "attio_update_task",
   "attio_create_note",
+  "attio_create_record",
+  "linear_create_issue",
+  "notion_create_page",
   "identity_set",
   "skill_draft",
   "workflow_start",
   "workflow_signal",
   "vercel_deploy_static_file",
   "vercel_deploy_artifact",
+  "mail_send",
 ];
 
 const carriesTool = (toolNames: readonly string[], tool: string): boolean =>
@@ -64,7 +74,13 @@ describe("mailboxPersona", () => {
     expect(mailboxPersona.systemPrompt).toContain(PERSONAL_AGENT_NAME);
   });
 
-  it("exposes a read-only tool subset with no write tools", () => {
+  it("carries only tools the read-only allow predicate admits", () => {
+    for (const tool of mailboxPersona.toolNames) {
+      expect(isMailboxReadOnlyTool(tool)).toBe(true);
+    }
+  });
+
+  it("carries none of the known write tools", () => {
     for (const write of WRITE_TOOLS) {
       expect(carriesTool(mailboxPersona.toolNames, write)).toBe(false);
     }
@@ -76,8 +92,14 @@ describe("mailboxPersona", () => {
     }
   });
 
-  it("still carries read tools it needs to gather context", () => {
-    for (const read of ["memory_load", "search_tools"]) {
+  it("still carries the discovery and read tools it needs to gather context", () => {
+    for (const read of [
+      "search_tools",
+      "load_tools",
+      "memory_load",
+      "artifact_read",
+      "artifact_list",
+    ]) {
       expect(carriesTool(mailboxPersona.toolNames, read)).toBe(true);
     }
   });
