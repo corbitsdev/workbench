@@ -47,17 +47,25 @@ function readCachedHeaders(raw: Uint8Array): {
  * addresses — without this seam a workflow's mail to a user is delivered
  * only as a live SSE and never durably readable.
  *
- * Interim sender authorization also lives at this seam: only an active
- * agent instance may deliver mail, and user recipients are resolved
- * strictly within the sender's tenant (refId + `kind: "user"` + the
- * tenant's domain), so cross-tenant delivery is impossible by
- * construction. An unauthorized sender is logged and dropped.
+ * Interim sender authorization also lives at this seam, and it governs
+ * ONLY the mailbox insert: only an active agent instance earns a durable
+ * user copy, and user recipients are resolved strictly within the
+ * sender's tenant (refId + `kind: "user"` + the tenant's domain), so
+ * cross-tenant delivery is impossible by construction. Every frame is
+ * ALWAYS delegated upstream regardless of that gate, and the two writes
+ * are independent: an upstream throw still attempts the mailbox insert
+ * before propagating, and a mailbox-insert failure is logged loudly but
+ * never rejects a persist upstream already completed.
  */
 export function createPrincipalMailboxPersist(
   db: HubDb,
   upstream: PersistMailFn,
 ): PersistMailFn {
-  return async ({ senderAddress, recipients, raw }) => {
+  async function writeUserMailboxRows(
+    senderAddress: string,
+    recipients: string[],
+    raw: Uint8Array,
+  ): Promise<void> {
     const sender = await db.query.agentInstance.findFirst({
       where: and(
         eq(agentInstance.address, senderAddress),
@@ -66,13 +74,11 @@ export function createPrincipalMailboxPersist(
     });
     if (!sender) {
       logger.error(
-        "Dropping mail from unauthorized sender {senderAddress}: not an active agent instance",
+        "Skipping user mailbox delivery from unauthorized sender {senderAddress}: not an active agent instance",
         { senderAddress },
       );
-      return [];
+      return;
     }
-
-    const results = await upstream({ senderAddress, recipients, raw });
 
     const candidates = recipients
       .map(splitAddress)
@@ -80,7 +86,7 @@ export function createPrincipalMailboxPersist(
         (parts): parts is NonNullable<typeof parts> =>
           parts !== null && parts.local.startsWith(USER_ADDRESS_PREFIX),
       );
-    if (candidates.length === 0) return results;
+    if (candidates.length === 0) return;
 
     const senderTenant = await db.query.tenant.findFirst({
       where: eq(tenant.id, sender.tenantId),
@@ -90,7 +96,7 @@ export function createPrincipalMailboxPersist(
         "No tenant row for sender tenant {tenantId}; skipping user mailbox delivery",
         { tenantId: sender.tenantId },
       );
-      return results;
+      return;
     }
 
     const userRecipients: { principalId: string; address: string }[] = [];
@@ -119,7 +125,7 @@ export function createPrincipalMailboxPersist(
       }
       userRecipients.push({ principalId: member.id, address });
     }
-    if (userRecipients.length === 0) return results;
+    if (userRecipients.length === 0) return;
 
     const cached = readCachedHeaders(raw);
     await db.insert(principalMailbox).values(
@@ -133,6 +139,35 @@ export function createPrincipalMailboxPersist(
         fromAddress: cached.from,
       })),
     );
+  }
+
+  async function attemptUserMailboxWrite(
+    senderAddress: string,
+    recipients: string[],
+    raw: Uint8Array,
+  ): Promise<void> {
+    try {
+      await writeUserMailboxRows(senderAddress, recipients, raw);
+    } catch (err) {
+      logger.error(
+        "principal_mailbox write failed for mail from {senderAddress}",
+        {
+          senderAddress,
+          error: err instanceof Error ? err : new Error(String(err)),
+        },
+      );
+    }
+  }
+
+  return async ({ senderAddress, recipients, raw }) => {
+    let results: Awaited<ReturnType<PersistMailFn>>;
+    try {
+      results = await upstream({ senderAddress, recipients, raw });
+    } catch (upstreamErr) {
+      await attemptUserMailboxWrite(senderAddress, recipients, raw);
+      throw upstreamErr;
+    }
+    await attemptUserMailboxWrite(senderAddress, recipients, raw);
     return results;
   };
 }
