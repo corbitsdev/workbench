@@ -2,48 +2,14 @@ import { eq, and } from "drizzle-orm";
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { FeedbackRequest, FeedbackListResponse } from "@workbench/shared";
-import { outputFeedback, memberAgentInstance } from "../db/schema";
+import { outputFeedback } from "../db/schema";
 import type { HubDb } from "../db";
+import { resolveInstanceOwner } from "../lib/instance-ownership";
 import { requestBodySchema } from "../lib/openapi";
 
-const { agentInstance, principal } = intxSchema;
 const log = getLogger(["hub", "feedback"]);
-
-// Resolves the caller's principal in the instance's tenant and verifies they
-// own the instance via memberAgentInstance. Returns null when either check fails.
-async function resolveCallerPrincipal(
-  db: HubDb,
-  instanceId: string,
-  userId: string,
-): Promise<{ principalId: string; tenantId: string } | null> {
-  const instance = await db.query.agentInstance.findFirst({
-    where: eq(agentInstance.id, instanceId),
-  });
-  if (!instance) return null;
-
-  const callerPrincipal = await db.query.principal.findFirst({
-    where: and(
-      eq(principal.tenantId, instance.tenantId),
-      eq(principal.kind, "user"),
-      eq(principal.refId, userId),
-    ),
-  });
-  if (!callerPrincipal) return null;
-
-  // Ensure the caller is mapped to this specific instance, not merely co-tenant.
-  const ownership = await db.query.memberAgentInstance.findFirst({
-    where: and(
-      eq(memberAgentInstance.instanceId, instanceId),
-      eq(memberAgentInstance.memberPrincipalId, callerPrincipal.id),
-    ),
-  });
-  if (!ownership) return null;
-
-  return { principalId: callerPrincipal.id, tenantId: instance.tenantId };
-}
 
 const ErrorResponse = type({ error: "string" });
 
@@ -95,7 +61,7 @@ export function createFeedbackRouter(
         return c.json({ error: body.summary }, 400);
       }
 
-      const caller = await resolveCallerPrincipal(db, instanceId, userId);
+      const caller = await resolveInstanceOwner(db, instanceId, userId);
       if (!caller) {
         return c.json({ error: "Instance not found" }, 404);
       }
@@ -161,7 +127,7 @@ export function createFeedbackRouter(
       const userId = c.get("userId");
       const instanceId = c.req.param("instanceId");
 
-      const caller = await resolveCallerPrincipal(db, instanceId, userId);
+      const caller = await resolveInstanceOwner(db, instanceId, userId);
       if (!caller) {
         return c.json({ error: "Instance not found" }, 404);
       }
