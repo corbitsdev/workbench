@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { eq, and } from "drizzle-orm";
+import { type } from "arktype";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
 import { getLogger } from "@intx/log";
@@ -8,6 +9,16 @@ import { approval } from "../db/schema";
 const log = getLogger(["api", "approvals"]);
 
 const { principal } = intxSchema;
+
+export const InternalApprovalCreateSchema = type({
+  tenantId: "string",
+  agentId: "string",
+  principalId: "string",
+  action: "string",
+  resource: "string",
+  "sessionId?": "string",
+  "context?": "Record<string, unknown>",
+});
 
 // ─── User-facing routes (BetterAuth session) ───────────────────────
 // Mounted under /api/v1 with the existing auth middleware.
@@ -171,26 +182,10 @@ export function createInternalApprovalsRouter(
       return c.json({ error: "Invalid JSON" }, 400);
     }
 
-    if (
-      typeof body !== "object" ||
-      body === null ||
-      typeof (body as Record<string, unknown>)["tenantId"] !== "string" ||
-      typeof (body as Record<string, unknown>)["agentId"] !== "string" ||
-      typeof (body as Record<string, unknown>)["principalId"] !== "string" ||
-      typeof (body as Record<string, unknown>)["action"] !== "string" ||
-      typeof (body as Record<string, unknown>)["resource"] !== "string"
-    ) {
-      return c.json({ error: "Missing required fields" }, 400);
+    const validated = InternalApprovalCreateSchema(body);
+    if (validated instanceof type.errors) {
+      return c.json({ error: validated.summary }, 400);
     }
-
-    const validated = body as {
-      tenantId: string;
-      agentId: string;
-      principalId: string;
-      action: string;
-      resource: string;
-      context?: Record<string, unknown> | null;
-    };
 
     const [row] = await db
       .insert(approval)
@@ -200,10 +195,8 @@ export function createInternalApprovalsRouter(
         agentId: validated.agentId,
         resource: validated.resource,
         action: validated.action,
-        context:
-          validated.context && typeof validated.context === "object"
-            ? validated.context
-            : undefined,
+        sessionId: validated.sessionId,
+        context: validated.context,
       })
       .returning();
 

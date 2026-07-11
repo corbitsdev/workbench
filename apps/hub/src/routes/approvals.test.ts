@@ -510,7 +510,7 @@ describe("createInternalApprovalsRouter", () => {
     expect(json.error).toContain("Invalid JSON");
   });
 
-  it("returns 400 when required fields are missing", async () => {
+  it("returns 400 naming the missing required fields", async () => {
     const app = buildInternalApp(makeMockDb());
     const res = await app.fetch(
       new Request(
@@ -524,7 +524,31 @@ describe("createInternalApprovalsRouter", () => {
     );
     expect(res.status).toBe(400);
     const json = (await res.json()) as ResBody;
-    expect(json.error).toContain("Missing required fields");
+    expect(json.error).toContain("agentId");
+  });
+
+  it("returns 400 when context is a primitive rather than an object", async () => {
+    const app = buildInternalApp(makeMockDb());
+    const res = await app.fetch(
+      new Request(
+        "http://localhost/approvals",
+        authed({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: "tenant-1",
+            agentId: "agt-1",
+            principalId: "prn-1",
+            action: "a",
+            resource: "r",
+            context: "not-an-object",
+          }),
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as ResBody;
+    expect(json.error).toContain("context");
   });
 
   it("creates an approval and returns 201", async () => {
@@ -582,6 +606,60 @@ describe("createInternalApprovalsRouter", () => {
       resource: "file:/x",
       context: { foo: "bar" },
     });
+  });
+
+  it("persists the sessionId when the create body includes one", async () => {
+    const db = makeMockDb();
+    const insertValues: Record<string, unknown>[] = [];
+    db.insert = mock(() => ({
+      values: mock((vals: Record<string, unknown>) => {
+        insertValues.push(vals);
+        return {
+          returning: mock(() =>
+            Promise.resolve([
+              {
+                id: "apr-new",
+                tenantId: "tenant-1",
+                principalId: "prn-1",
+                agentId: "agt-1",
+                sessionId: "sess-1",
+                resource: "r",
+                action: "a",
+                status: "pending",
+                context: null,
+                message: null,
+                resolvedAt: null,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              },
+            ]),
+          ),
+        };
+      }),
+    }));
+
+    const app = buildInternalApp(db);
+    const res = await app.fetch(
+      new Request(
+        "http://localhost/approvals",
+        authed({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: "tenant-1",
+            agentId: "agt-1",
+            principalId: "prn-1",
+            action: "a",
+            resource: "r",
+            sessionId: "sess-1",
+          }),
+        }),
+      ),
+    );
+    expect(res.status).toBe(201);
+    const json = (await res.json()) as ResBody;
+    expect(json.sessionId).toBe("sess-1");
+    expect(insertValues[0]).toMatchObject({ sessionId: "sess-1" });
   });
 
   it("omits context when a non-object context is provided on create", async () => {

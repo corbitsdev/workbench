@@ -40,6 +40,7 @@ const CTX = {
   tenantId: "tnt_1",
   agentId: "agt_1",
   principalId: "prn_1",
+  sessionId: "ses_1",
 };
 
 function json(body: unknown, status = 200): Response {
@@ -166,6 +167,25 @@ describe("createApprovalClient", () => {
     expect(seen[1]?.url).toBe(
       "https://hub.example.com/api/internal/approvals/apr_1?tenantId=tnt_1",
     );
+  });
+
+  test("includes the originating sessionId in the create record so approvals can be scoped to a conversation", async () => {
+    let postBody: unknown;
+    const fetcher = (async (_url, init) => {
+      if (init?.method === "POST") {
+        postBody =
+          typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+        return json({ id: "apr_1", status: "pending", message: null });
+      }
+      return json({ id: "apr_1", status: "approved", message: null });
+    }) as typeof fetch;
+
+    await createApprovalClient(CTX, { fetcher, pollIntervalMs: 1 })(
+      call("notion__create_page"),
+      new AbortController().signal,
+    );
+
+    expect((postBody as { sessionId?: unknown }).sessionId).toBe("ses_1");
   });
 
   test("keeps waiting through a transient hub error", async () => {

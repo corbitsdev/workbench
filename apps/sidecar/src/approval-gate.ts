@@ -32,6 +32,7 @@ export type ApprovalGateContext = {
   tenantId: string;
   agentId: string;
   principalId: string;
+  sessionId: string;
 };
 
 const ApprovalRecord = type({
@@ -123,6 +124,7 @@ export function createApprovalClient(
         tenantId: ctx.tenantId,
         agentId: ctx.agentId,
         principalId: ctx.principalId,
+        sessionId: ctx.sessionId,
         action: `Run ${call.name}`,
         resource: `tool:${call.name}`,
         context: call.arguments,

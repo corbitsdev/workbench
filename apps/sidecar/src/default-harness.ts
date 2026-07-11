@@ -465,6 +465,7 @@ export function createDefaultHarnessBuilder({
               tenantId,
               agentId: agentConfig.agentId,
               principalId,
+              sessionId: agentConfig.sessionId,
             }),
           },
         );
