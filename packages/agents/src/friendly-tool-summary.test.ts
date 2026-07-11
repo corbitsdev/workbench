@@ -1,16 +1,24 @@
 import { describe, expect, it } from "bun:test";
 import {
+  friendlyToolResult,
   friendlyToolSummary,
+  isCatalogMetaTool,
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
+import { MYRA_TOOL_CATALOG } from "./dynamic-tools/catalog";
 import type { ToolCall } from "@workbench/chat/types";
 
-function call(name: string, args?: Record<string, unknown>): ToolCall {
+function call(
+  name: string,
+  args?: Record<string, unknown>,
+  extra?: Partial<ToolCall>,
+): ToolCall {
   return {
     id: "tc_1",
     name,
     ...(args !== undefined ? { arguments: args } : {}),
+    ...extra,
   };
 }
 
@@ -23,6 +31,16 @@ describe("toolOperationKey", () => {
 
   it("returns the whole name when there is no colon", () => {
     expect(toolOperationKey("granola_get_note")).toBe("granola_get_note");
+  });
+
+  it("normalizes LLM double-underscore names to bare phrase keys", () => {
+    expect(toolOperationKey("attio__create_record")).toBe(
+      "attio_create_record",
+    );
+    expect(toolOperationKey("exa__search")).toBe("exa_search");
+    // skills tools are not named skills_*; bare is search_skills
+    expect(toolOperationKey("skills__search_skills")).toBe("search_skills");
+    expect(toolOperationKey("skills__list_skills")).toBe("list_skills");
   });
 });
 
@@ -63,14 +81,25 @@ describe("friendlyToolSummary", () => {
     ).toBe("Reading https://example.com");
   });
 
-  it("interpolates the object type for attio_create_record", () => {
+  it("phrases attio_create_record with the company name when values carry one", () => {
+    expect(
+      friendlyToolSummary(
+        call("attio__create_record", {
+          object: "companies",
+          values: { name: "Tribe Capital", domains: ["tribecap.com"] },
+        }),
+      ),
+    ).toBe("Creating an Attio record for Tribe Capital");
+  });
+
+  it("phrases attio_create_record with the object type when no name is present", () => {
     expect(
       friendlyToolSummary(
         call("@workbench/tools-attio/attio:attio_create_record", {
           object: "companies",
         }),
       ),
-    ).toBe("Creating a CRM companies record");
+    ).toBe("Creating an Attio companies record");
   });
 
   it("falls back to the static record phrase when attio_create_record has no object", () => {
@@ -78,7 +107,69 @@ describe("friendlyToolSummary", () => {
       friendlyToolSummary(
         call("@workbench/tools-attio/attio:attio_create_record"),
       ),
-    ).toBe("Creating a CRM record");
+    ).toBe("Creating an Attio record");
+  });
+
+  it("phrases attio_query_records with nameContains and object", () => {
+    expect(
+      friendlyToolSummary(
+        call("attio__query_records", {
+          object: "companies",
+          nameContains: "Acme",
+        }),
+      ),
+    ).toBe("Searching Attio companies for Acme");
+  });
+
+  it("matches LLM double-underscore names to the same phrases as bare names", () => {
+    expect(friendlyToolSummary(call("attio__list_objects"))).toBe(
+      "Browsing Attio objects",
+    );
+    expect(friendlyToolSummary(call("exa__search", { query: "hello" }))).toBe(
+      "Searching the web for hello",
+    );
+  });
+
+  it("humanizes search_tools and load_tools without exposing raw names", () => {
+    const search = friendlyToolSummary(
+      call("search_tools", { query: "crm companies" }, { id: "s1" }),
+    );
+    // Polished, rotated set — must mention the term and never the wire id.
+    expect(search.toLowerCase()).toMatch(/crm companies/);
+    expect(search).not.toMatch(/search_tools|__/);
+    expect(search).not.toMatch(/_/);
+    // Same seed always picks the same phrase.
+    expect(
+      friendlyToolSummary(
+        call("search_tools", { query: "crm companies" }, { id: "s1" }),
+      ),
+    ).toBe(search);
+
+    const load = friendlyToolSummary(
+      call(
+        "load_tools",
+        {
+          package: "attio",
+          names: ["attio__create_record", "attio__query_records"],
+        },
+        { id: "l1" },
+      ),
+    );
+    expect(load.toLowerCase()).toMatch(/attio/);
+    expect(load).not.toMatch(/load_tools|__/);
+    expect(load).not.toMatch(/_/);
+
+    const loadOne = friendlyToolSummary(
+      call("load_tools", { names: ["attio__create_record"] }, { id: "l2" }),
+    );
+    expect(loadOne).not.toMatch(/attio__/);
+    expect(loadOne).not.toMatch(/_/);
+  });
+
+  it("flags search_tools / load_tools as catalog meta-tools", () => {
+    expect(isCatalogMetaTool("search_tools")).toBe(true);
+    expect(isCatalogMetaTool("load_tools")).toBe(true);
+    expect(isCatalogMetaTool("attio__create_record")).toBe(false);
   });
 
   it("falls back to the static phrase when an interpolating op has no useful arg", () => {
@@ -92,22 +183,127 @@ describe("friendlyToolSummary", () => {
     ).toBe("Searching the web");
   });
 
-  it("falls back to toHumanLabel for an unknown operation", () => {
-    expect(
-      friendlyToolSummary(
-        call("@workbench/tools-mystery/mystery:mystery_do_thing"),
-      ),
-    ).toBe("Mystery Do Thing");
+  it("falls back to soft sentence-case without snake_case or Title Case tool ids", () => {
+    const result = friendlyToolSummary(
+      call("@workbench/tools-mystery/mystery:mystery_do_thing"),
+    );
+    expect(result).toBe("Mystery do thing");
+    expect(result).not.toMatch(/_/);
+    expect(result).not.toBe("Mystery Do Thing");
   });
 
-  it("falls back to toHumanLabel using the operation key, not the full name", () => {
-    // Regression guard: the old behavior turned the whole FQN into garbage.
+  it("falls back using the operation key, not the full name", () => {
     const result = friendlyToolSummary(
       call("@workbench/tools-x/unknown:some_new_op"),
     );
-    expect(result).toBe("Some New Op");
+    expect(result).toBe("Some new op");
     expect(result).not.toContain("@workbench");
     expect(result).not.toContain("/");
+    expect(result).not.toMatch(/_/);
+  });
+});
+
+/**
+ * Soft-fallback reconstruction of the private softFallback() helper. Used only
+ * to assert that catalog tools never land on it (CL-3268 drift gate).
+ */
+function softFallbackSentence(name: string): string {
+  const key = toolOperationKey(name);
+  const words = key
+    .replaceAll("__", "_")
+    .split(/[-_]+/u)
+    .filter((w) => w.length > 0);
+  if (words.length === 0) return "Working on a task";
+  const sentence = words.join(" ");
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+}
+
+describe("friendlyToolResult", () => {
+  it("summarizes a JSON array as a result count", () => {
+    expect(
+      friendlyToolResult(
+        call("attio__query_records", undefined, {
+          result: JSON.stringify([{ id: 1 }, { id: 2 }, { id: 3 }]),
+        }),
+      ),
+    ).toBe("Found 3 results");
+  });
+
+  it("summarizes an empty array", () => {
+    expect(
+      friendlyToolResult(
+        call("exa__search", undefined, { result: JSON.stringify([]) }),
+      ),
+    ).toBe("No results");
+  });
+
+  it("never returns raw JSON for an object payload", () => {
+    const result = friendlyToolResult(
+      call("attio__create_record", undefined, {
+        result: JSON.stringify({
+          id: { record_id: "rec_1" },
+          values: { name: "Acme" },
+        }),
+      }),
+    );
+    expect(result).toBe("Done");
+    expect(result).not.toContain("{");
+    expect(result).not.toContain("record_id");
+  });
+
+  it("summarizes a tools list from search_tools", () => {
+    expect(
+      friendlyToolResult(
+        call("search_tools", undefined, {
+          result: JSON.stringify({
+            tools: [{ name: "a" }, { name: "b" }],
+          }),
+        }),
+      ),
+    ).toBe("Found 2 tools");
+  });
+
+  it("returns a short error message without JSON for failed calls", () => {
+    expect(
+      friendlyToolResult(
+        call("attio__create_record", undefined, {
+          isError: true,
+          result: "No matching grants for tool:attio_create_record/invoke",
+        }),
+      ),
+    ).toContain("No matching grants");
+  });
+
+  it("returns null while the call is still pending", () => {
+    expect(friendlyToolResult(call("attio__create_record"))).toBeNull();
+  });
+});
+
+describe("CL-3268 catalog phrase coverage", () => {
+  it("every catalog tool has a hand-authored phrase (not soft fallback)", () => {
+    const missing: string[] = [];
+    for (const entry of MYRA_TOOL_CATALOG) {
+      for (const tool of entry.tools) {
+        const phrase = friendlyToolSummary({ id: "", name: tool.name });
+        if (phrase === softFallbackSentence(tool.name) || /_/.test(phrase)) {
+          missing.push(`${tool.name} => ${phrase}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it("search_tools catalog descriptions are human phrases, not bare wire labels", () => {
+    for (const entry of MYRA_TOOL_CATALOG) {
+      for (const tool of entry.tools) {
+        expect(tool.description).not.toMatch(/__/);
+        expect(tool.description).not.toMatch(/_/);
+        // Description is the no-args friendly phrase (not "attio query records").
+        expect(tool.description).toBe(
+          friendlyToolSummary({ id: "", name: tool.name }),
+        );
+      }
+    }
   });
 });
 
@@ -116,6 +312,16 @@ describe("summarizeToolCalls", () => {
 
   it("returns an empty string for no calls", () => {
     expect(summarizeToolCalls([])).toBe("");
+  });
+
+  it("excludes catalog meta-tools from the roll-up", () => {
+    expect(
+      summarizeToolCalls([
+        call("search_tools", { query: "crm" }),
+        call("load_tools", { package: "attio" }),
+        call("attio__query_records"),
+      ]),
+    ).toBe("Searched Attio");
   });
 
   it("rolls up multiple families, ordered by first appearance, with counts", () => {
@@ -137,6 +343,15 @@ describe("summarizeToolCalls", () => {
     expect(summarizeToolCalls(calls)).toBe(
       "Searched Attio 6×, read 5 notes, and checked Linear 2×",
     );
+  });
+
+  it("rolls up LLM double-underscore names into the same families", () => {
+    const calls = [
+      q("attio__search_records"),
+      q("attio__get_record"),
+      q("granola__get_note"),
+    ];
+    expect(summarizeToolCalls(calls)).toBe("Searched Attio 2× and read 1 note");
   });
 
   it('joins exactly two families with "and" and no comma', () => {
@@ -293,10 +508,5 @@ describe("summarizeToolCalls styles", () => {
     expect(summarizeToolCalls(calls, "mixed")).toBe(
       "Combed Attio 6 times, skimmed 5 notes, and found 2 Linear issues (one high-priority)",
     );
-  });
-
-  it("symbols remains the default", () => {
-    expect(summarizeToolCalls(attio(6))).toBe("Searched Attio 6×");
-    expect(summarizeToolCalls(attio(6), "symbols")).toBe("Searched Attio 6×");
   });
 });

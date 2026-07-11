@@ -4,6 +4,7 @@ import {
   canonicalizeToolNames,
   toLlmToolName,
 } from "../tool-names";
+import { friendlyToolSummary } from "../friendly-tool-summary";
 
 /**
  * Myra's turn-1 advertised platform tools, as bare names. `search_tools` and
@@ -209,10 +210,16 @@ function entry(pkg: CatalogPackage): ToolCatalogEntry {
     package: pkg.package,
     summary: pkg.summary,
     tags: pkg.tags,
-    tools: catalogBareToolsFor(pkg).map((bare) => ({
-      name: toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare),
-      description: bare.replaceAll("_", " "),
-    })),
+    tools: catalogBareToolsFor(pkg).map((bare) => {
+      // LLM name stays wire-form so load_tools / call can match exactly; the
+      // description is the human phrase so search_tools never advertises
+      // snake_case labels (CL-3268).
+      const name = toLlmToolName(canonicalizeToolNames([bare])[0] ?? bare);
+      return {
+        name,
+        description: friendlyToolSummary({ id: "", name }),
+      };
+    }),
   };
 }
 
