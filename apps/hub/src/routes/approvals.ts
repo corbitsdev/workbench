@@ -15,6 +15,14 @@ const log = getLogger(["api", "approvals"]);
 
 const { principal } = intxSchema;
 
+// arktype's `Record<string, unknown>` admits arrays (an array is an object), so
+// a narrow rejects them explicitly — a tool-call context is always a keyed
+// object, never a JSON array.
+const ApprovalContextSchema = type("Record<string, unknown>").narrow(
+  (value, ctx) =>
+    Array.isArray(value) ? ctx.reject("a non-array object") : true,
+);
+
 export const InternalApprovalCreateSchema = type({
   tenantId: "string",
   agentId: "string",
@@ -22,7 +30,7 @@ export const InternalApprovalCreateSchema = type({
   action: "string",
   resource: "string",
   "sessionId?": "string",
-  "context?": "Record<string, unknown>",
+  "context?": ApprovalContextSchema,
 });
 
 export const RejectBodySchema = type({ "message?": "string" });

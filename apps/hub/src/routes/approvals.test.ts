@@ -503,6 +503,30 @@ describe("createInternalApprovalsRouter", () => {
     expect(json.error).toContain("agentId");
   });
 
+  it("returns 400 when context is an array rather than a keyed object", async () => {
+    const app = buildInternalApp(makeMockDb());
+    const res = await app.fetch(
+      new Request(
+        "http://localhost/approvals",
+        authed({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tenantId: "tenant-1",
+            agentId: "agt-1",
+            principalId: "prn-1",
+            action: "a",
+            resource: "r",
+            context: ["not", "a", "record"],
+          }),
+        }),
+      ),
+    );
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as ResBody;
+    expect(json.error).toContain("context");
+  });
+
   it("returns 400 when context is a primitive rather than an object", async () => {
     const app = buildInternalApp(makeMockDb());
     const res = await app.fetch(
