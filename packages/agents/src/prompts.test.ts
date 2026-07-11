@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { buildPersonalAgentSystemPrompt } from "./personal-agent/prompt";
+import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
 import { buildLoopAgentSystemPrompt } from "./loop/prompt";
 import { buildGranolaSystemPrompt } from "./granola/prompt";
 import { buildFirecrawlSystemPrompt } from "./firecrawl/prompt";

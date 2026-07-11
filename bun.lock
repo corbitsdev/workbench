@@ -593,6 +593,7 @@
         "@intx/workflow": "workspace:*",
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
+        "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
@@ -778,6 +779,20 @@
     "packages/last30days-core": {
       "name": "@workbench/last30days-core",
       "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/myra": {
+      "name": "@workbench/myra",
+      "dependencies": {
+        "@intx/inference": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/prompts": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -2439,6 +2454,8 @@
     "@workbench/hub-agent": ["@workbench/hub-agent@workspace:packages/hub-agent"],
 
     "@workbench/last30days-core": ["@workbench/last30days-core@workspace:packages/last30days-core"],
+
+    "@workbench/myra": ["@workbench/myra@workspace:packages/myra"],
 
     "@workbench/openapi-arktype": ["@workbench/openapi-arktype@workspace:packages/openapi-arktype"],
 

@@ -13,4 +13,4 @@ export {
   type SeedWorkspaceFile,
   type SeedMarkerParse,
   type SeedMarkerResolution,
-} from "./personal-agent/seed-files";
+} from "@workbench/myra/seed";

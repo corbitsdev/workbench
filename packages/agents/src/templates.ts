@@ -7,7 +7,7 @@ import {
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_MODEL_CONFIG,
   buildPersonalAgentGrantRequirements,
-} from "./personal-agent/definition";
+} from "@workbench/myra";
 import { MYRA_TOOL_PACKAGES } from "./dynamic-tools/catalog";
 import {
   LOOP_DEPLOY_PROMPT,

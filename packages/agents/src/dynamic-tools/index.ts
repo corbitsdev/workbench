@@ -5,7 +5,7 @@ import {
   type DynamicToolsEnv,
   type ToolCatalog,
 } from "@workbench/tools-catalog";
-import { PERSONAL_AGENT_NAME } from "../personal-agent/definition";
+import { PERSONAL_AGENT_NAME } from "@workbench/myra";
 import { MYRA_TOOL_CATALOG } from "./catalog";
 import { createDynamicToolsDirector } from "./director";
 

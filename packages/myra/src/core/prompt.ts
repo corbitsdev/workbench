@@ -2,8 +2,8 @@ import {
   buildSystemPrompt,
   type PromptFormat,
   type PromptSection,
-} from "../prompt-builder";
-import { CORBITS_VOCABULARY_SECTION } from "../corbits-vocabulary";
+} from "@workbench/prompts";
+import { CORBITS_VOCABULARY_SECTION } from "@workbench/agents/corbits-vocabulary";
 
 export interface PersonalAgentPromptOptions {
   /**

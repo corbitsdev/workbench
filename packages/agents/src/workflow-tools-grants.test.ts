@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalizeToolNames } from "./tool-names";
-import { PERSONAL_AGENT_BASE_TOOLS } from "./personal-agent/definition";
+import { PERSONAL_AGENT_BASE_TOOLS } from "@workbench/myra";
 import { AGENT_TEMPLATES } from "./templates";
 
 const FACTORY_ID = "@workbench/tools-workflows/workflows";

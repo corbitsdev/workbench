@@ -42,16 +42,17 @@ export {
   type DisplayFlowStep,
 } from "./flow-classify";
 
-// Personal agent
-export { buildPersonalAgentSystemPrompt } from "./personal-agent/prompt";
+// Personal agent (Myra) — extracted to @workbench/myra; re-exported here for
+// consumers that still reach Myra through the agents barrel.
 export {
+  buildPersonalAgentSystemPrompt,
   buildPersonalAgentGrantRequirements,
   PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
-} from "./personal-agent/definition";
-export { createPersonalAgentDirector } from "./personal-agent/director";
+  createPersonalAgentDirector,
+} from "@workbench/myra";
 export {
   DYNAMIC_TOOLS_DIRECTOR_ID,
   MYRA_TOOL_CATALOG,
@@ -67,7 +68,7 @@ export {
   parseSeedMarker,
   type SeedWorkspaceFile,
   type SeedMarkerParse,
-} from "./personal-agent/seed-files";
+} from "@workbench/myra";
 
 // Loop agent
 export { buildLoopAgentSystemPrompt } from "./loop/prompt";

@@ -1,11 +1,11 @@
 import { GrantRequirement, CredentialRequirement } from "@intx/types";
-import { canonicalizeToolNames } from "../tool-names";
+import { canonicalizeToolNames } from "@workbench/agents/tool-names";
 import {
   MYRA_CATALOG_BARE_TOOL_NAMES,
   MYRA_PLATFORM_BARE_TOOL_NAMES,
-} from "../dynamic-tools/catalog";
+} from "@workbench/agents/dynamic-tools-catalog";
 import { buildPersonalAgentSystemPrompt } from "./prompt";
-import { LLM_CREDENTIAL_NAME } from "../constants";
+import { LLM_CREDENTIAL_NAME } from "@workbench/agents/constants";
 
 type GrantRequirementType = typeof GrantRequirement.infer;
 type CredentialRequirementType = typeof CredentialRequirement.infer;

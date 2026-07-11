@@ -20,9 +20,9 @@ import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_PLATFORM_TOOLS,
-} from "../personal-agent/definition";
+  buildPersonalAgentSystemPrompt,
+} from "@workbench/myra";
 import { AGENT_TEMPLATES } from "../templates";
-import { buildPersonalAgentSystemPrompt } from "../personal-agent/prompt";
 import { createDynamicToolsDirector } from "./director";
 import { MYRA_TOOL_CATALOG } from "./catalog";
 import {

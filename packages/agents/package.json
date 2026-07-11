@@ -15,6 +15,26 @@
       "types": "./src/granola/definition.ts",
       "default": "./src/granola/definition.ts"
     },
+    "./prompt-builder": {
+      "types": "./src/prompt-builder.ts",
+      "default": "./src/prompt-builder.ts"
+    },
+    "./corbits-vocabulary": {
+      "types": "./src/corbits-vocabulary.ts",
+      "default": "./src/corbits-vocabulary.ts"
+    },
+    "./tool-names": {
+      "types": "./src/tool-names.ts",
+      "default": "./src/tool-names.ts"
+    },
+    "./dynamic-tools-catalog": {
+      "types": "./src/dynamic-tools/catalog.ts",
+      "default": "./src/dynamic-tools/catalog.ts"
+    },
+    "./constants": {
+      "types": "./src/constants.ts",
+      "default": "./src/constants.ts"
+    },
     "./seed": {
       "types": "./src/seed.ts",
       "default": "./src/seed.ts"
@@ -35,6 +55,7 @@
     "@workbench/catalog": "workspace:*",
     "@workbench/chat": "workspace:*",
     "@workbench/shared": "workspace:*",
+    "@workbench/myra": "workspace:*",
     "@workbench/tools-catalog": "workspace:*",
     "@workbench/prompts": "workspace:*"
   },

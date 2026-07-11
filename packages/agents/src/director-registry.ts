@@ -5,7 +5,7 @@ import {
   defineDirector,
   type DirectorRegistry,
 } from "@intx/agent";
-import { createPersonalAgentDirector } from "./personal-agent/director";
+import { createPersonalAgentDirector } from "@workbench/myra";
 import { createGranolaDirector } from "./granola/director";
 import { createFirecrawlDirector } from "./firecrawl/director";
 import { dynamicToolsDirector } from "./dynamic-tools";
