@@ -377,6 +377,69 @@ describe("ReviewGate — sessionId filter", () => {
   });
 });
 
+describe("ReviewGate — large context values", () => {
+  it("truncates a long non-HTML string and expands on demand", async () => {
+    const longBody = `Note body ${"x".repeat(400)}`;
+    const approval = makeApproval({
+      resource: "tool:notes__create",
+      action: "Run notes__create",
+      context: { body: longBody, title: "Short title" },
+    });
+    mockListApprovals.mockResolvedValue([approval]);
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${approval.id}`);
+    });
+
+    // Short metadata stays fully visible.
+    screen.getByText("Short title");
+    // Long body is truncated in the initial render — the full string must not
+    // appear unbroken as one dump (the expand control is the only path to it).
+    expect(container.textContent).not.toContain(longBody);
+    screen.getByTestId("context-truncated-value");
+    const expand = screen.getByRole("button", { name: /show more/i });
+    fireEvent.click(expand);
+    expect(container.textContent).toContain(longBody);
+    fireEvent.click(screen.getByRole("button", { name: /show less/i }));
+    expect(container.textContent).not.toContain(longBody);
+  });
+
+  it("renders HTML args as a sandboxed preview instead of a raw dump", async () => {
+    const html = `<!DOCTYPE html><html lang="en"><head><title>Tap Tap</title></head><body><h1>Tap Tap Workbench</h1><p>${"play".repeat(80)}</p></body></html>`;
+    const approval = makeApproval({
+      resource: "tool:vercel__deploy_static_file",
+      action: "Run vercel__deploy_static_file",
+      context: {
+        html,
+        projectName: "tap-tap-workbench",
+        fileName: "index.html",
+      },
+    });
+    mockListApprovals.mockResolvedValue([approval]);
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${approval.id}`);
+    });
+
+    // Short deploy metadata stays scannable.
+    screen.getByText("tap-tap-workbench");
+    screen.getByText("index.html");
+    // The raw HTML document is NOT dumped as unbroken text in the card.
+    expect(container.textContent).not.toContain("<!DOCTYPE html>");
+    const preview = screen.getByTestId("context-html-preview");
+    const frame = preview.querySelector("iframe");
+    expect(frame).not.toBeNull();
+    expect(frame?.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame?.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame?.getAttribute("srcdoc") ?? frame?.getAttribute("srcDoc")).toBe(
+      html,
+    );
+    // Size summary is visible so the operator knows what they are approving.
+    expect(preview.textContent).toMatch(/HTML/i);
+    expect(preview.textContent).toMatch(/KB|chars/i);
+  });
+});
+
 describe("ReviewGate — background poll failure", () => {
   beforeEach(() => {
     mockListApprovals.mockRejectedValue(new Error("network is down"));
