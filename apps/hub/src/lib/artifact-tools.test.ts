@@ -711,6 +711,39 @@ describe("artifact_read_chunk handler", () => {
   });
 });
 
+describe("artifact_read_chunk envelope with sibling params", () => {
+  const noteRows = () => [
+    [
+      {
+        id: "art_1",
+        title: "N",
+        kind: "note",
+        status: "draft",
+        version: 1,
+        content: "0123456789",
+      },
+    ],
+  ];
+
+  it("flat args: offset is honored", async () => {
+    const { context } = makeQueryContext(noteRows());
+    const handler = handlerFor(context, "artifact_read_chunk");
+    const raw = await handler({ artifactId: "art_1", offset: 5 });
+    expect(JSON.parse(raw as string).content).toBe("56789");
+  });
+
+  it("enveloped args: sibling params ride along with artifactId", async () => {
+    const { context } = makeQueryContext(noteRows());
+    const handler = handlerFor(context, "artifact_read_chunk");
+    const raw = await handler({
+      input: { artifactId: "art_1", offset: 5 },
+    });
+    // The unwrap happens at the handler entry, so the enveloped offset is
+    // honored — not silently dropped while artifactId alone is unwrapped.
+    expect(JSON.parse(raw as string).content).toBe("56789");
+  });
+});
+
 describe("artifact_write handler", () => {
   it("bumps the version under a locked read, updates the row, and appends an authored version", async () => {
     const { context, updateSets, versionInsertValues, calls } =

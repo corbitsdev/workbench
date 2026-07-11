@@ -11,6 +11,19 @@ describe("createToolLoopGuard", () => {
     );
   });
 
+  it("does not count a client abort toward escalation", () => {
+    const guard = createToolLoopGuard();
+    guard.recordFailure(S, "t", { a: 1 });
+    const abortError = new DOMException(
+      "The operation was aborted.",
+      "AbortError",
+    );
+    expect(guard.recordFailure(S, "t", { a: 1 }, abortError)).toBe(undefined);
+    expect(guard.recordFailure(S, "t", { a: 1 }, abortError)).toBe(undefined);
+    // The run is untouched: the next real failure is only the 2nd.
+    expect(guard.recordFailure(S, "t", { a: 1 })).toContain("2 times in a row");
+  });
+
   it("escalates with a hint on the second consecutive identical failure", () => {
     const guard = createToolLoopGuard();
     guard.recordFailure(S, "artifact_create", { kind: "note" });

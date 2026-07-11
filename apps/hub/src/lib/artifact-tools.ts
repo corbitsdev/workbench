@@ -564,9 +564,8 @@ async function ownerIsMemberOfTenant(
 
 async function resolveArtifactContent(
   context: ArtifactToolContext,
-  rawArgs: Record<string, unknown>,
+  args: Record<string, unknown>,
 ): Promise<{ base: Omit<ReadResult, "content">; content: string }> {
-  const args = unwrapArgsEnvelope(rawArgs, ["artifactId"]);
   const artifactId = requiredString(args, "artifactId");
   const version = optionalVersion(args);
   const tenantId = optionalString(args, "tenantId") ?? context.tenantId;
@@ -628,7 +627,10 @@ function createReadHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_READ_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      // Unwrap here, not inside resolveArtifactContent: sibling params (path)
+      // must come from the same unwrapped object as artifactId.
+      const args = unwrapArgsEnvelope(rawArgs, ["artifactId"]);
       const filePath = optionalNonEmptyString(args, "path");
       const { base, content } = await resolveArtifactContent(context, args);
       // skill-draft is private authoring scratch; use skill_draft / library tools.
@@ -669,7 +671,10 @@ function createReadChunkHandler(context: ArtifactToolContext): AgentTool {
   return {
     kind: "string",
     definition: ARTIFACT_READ_CHUNK_DEFINITION,
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      // Unwrap here, not inside resolveArtifactContent: sibling params
+      // (offset/limit) must come from the same unwrapped object as artifactId.
+      const args = unwrapArgsEnvelope(rawArgs, ["artifactId"]);
       const offset = optionalOffset(args) ?? 0;
       const limit = optionalLimit(args) ?? DEFAULT_READ_LIMIT;
       const { base, content } = await resolveArtifactContent(context, args);

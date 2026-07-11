@@ -266,8 +266,8 @@ export function createHubToolsRouter(
       if (blocked !== undefined) {
         return c.json({ result: blocked, isError: true });
       }
+      const controller = new AbortController();
       try {
-        const controller = new AbortController();
         c.req.raw.signal.addEventListener("abort", () => controller.abort());
         const result = await tool.handler(args, controller.signal);
         loopGuard.recordSuccess(sessionId);
@@ -279,7 +279,11 @@ export function createHubToolsRouter(
           toolName,
           error: message,
         });
-        const escalation = loopGuard.recordFailure(sessionId, toolName, args);
+        // A client abort is not a failure of the call; it must not count
+        // toward the loop escalation (the guard also screens AbortError).
+        const escalation = controller.signal.aborted
+          ? undefined
+          : loopGuard.recordFailure(sessionId, toolName, args, err);
         const result =
           escalation === undefined ? message : `${message}\n\n${escalation}`;
         return c.json({ result, isError: true });

@@ -12,6 +12,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * envelope key is object-valued AND at least one required key is missing at
  * the top level — flat args (and ambiguous shapes) pass through untouched.
  * Sibling top-level keys are kept; the envelope wins conflicts.
+ *
+ * Caveat: a tool whose schema has a REAL object param named artifact/input/
+ * args/params would be mangled here whenever a required key is also omitted
+ * (the legitimate object gets merged up). Callers must not adopt this helper
+ * for tools that use those names as object-valued parameters.
  */
 export function unwrapArgsEnvelope(
   args: Record<string, unknown>,

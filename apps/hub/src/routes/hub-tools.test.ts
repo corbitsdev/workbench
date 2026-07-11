@@ -14,7 +14,7 @@ import { createHubToolsRouter } from "./hub-tools";
 // without mocking @intx/db.
 function chainableSelect(rows: unknown[]): unknown {
   const chain: Record<string, unknown> = {};
-  for (const method of ["from", "where", "orderBy", "innerJoin"]) {
+  for (const method of ["from", "where", "orderBy", "innerJoin", "for"]) {
     chain[method] = () => chain;
   }
   chain.limit = async () => rows;
@@ -30,11 +30,18 @@ type DbOpts = {
   instanceMatches?: boolean;
   creatorPrincipalId?: string;
   selectRows?: unknown[];
+  // Counts db.transaction() entries — a proxy for "the tool handler actually
+  // executed" in tests that assert a blocked call never runs the tool.
+  counters?: { transactions: number };
 };
 
 function fakeDb(opts: DbOpts): Parameters<typeof createHubToolsRouter>[0] {
   return {
     select: () => chainableSelect(opts.selectRows ?? []),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      if (opts.counters) opts.counters.transactions += 1;
+      return fn({ select: () => chainableSelect(opts.selectRows ?? []) });
+    },
     query: {
       agent: {
         findFirst: async () => ({
@@ -218,6 +225,31 @@ describe("POST /hub-tools/run", () => {
       const fourth = await runToolBody(router, failingCall);
       expect(fourth.isError).toBe(true);
       expect(fourth.result).toContain("blocked");
+    });
+
+    test("a blocked call is refused without executing the tool", async () => {
+      // artifact_write reaches db.transaction before failing (artifact not
+      // found), so the transaction count measures actual handler executions.
+      const counters = { transactions: 0 };
+      const router = createHubToolsRouter(
+        fakeDb({ toolNames: ["artifact_write"], counters }),
+        "sidecar-token",
+      );
+      const call = {
+        ...baseCall,
+        toolName: "artifact_write",
+        args: { artifactId: "gone", content: "x" },
+      };
+
+      for (let i = 0; i < 3; i += 1) {
+        const body = await runToolBody(router, call);
+        expect(body.isError).toBe(true);
+      }
+      expect(counters.transactions).toBe(3);
+
+      const blocked = await runToolBody(router, call);
+      expect(blocked.result).toContain("blocked");
+      expect(counters.transactions).toBe(3);
     });
 
     test("different args reset the run", async () => {
