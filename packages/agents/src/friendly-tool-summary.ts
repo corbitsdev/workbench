@@ -452,6 +452,41 @@ export function isCatalogMetaTool(name: string): boolean {
   return key === "search_tools" || key === "load_tools";
 }
 
+// Tool-package providers that are workbench plumbing, not outside services.
+// Their tools (memory_save, write_artifact, workflow_start, skill loading,
+// sub-agent dispatch, file parsing) act on the agent's own workspace even
+// though they ship in packages and reach the model provider-prefixed.
+const INTERNAL_TOOL_PROVIDERS: ReadonlySet<string> = new Set([
+  "agents",
+  "artifact",
+  "compose",
+  "dispatch",
+  "fileparser",
+  "skills",
+  "workflows",
+]);
+
+/**
+ * External integration tools act on outside services (Attio, Linear, Exa, …).
+ * Classification keys on the provider segment of the wire name — the prefix of
+ * the LLM-safe `provider__operation` form or the `@scope/pkg/provider:operation`
+ * raw factory form. Provider-less bare names are local runners / plumbing and
+ * count as internal, as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat
+ * uses this to give external tool lines a bullet marker and render internal
+ * ones plain.
+ */
+export function isExternalIntegrationTool(name: string): boolean {
+  const llmProvider = /^([a-z0-9-]+)__/.exec(name)?.[1];
+  if (llmProvider !== undefined) {
+    return !INTERNAL_TOOL_PROVIDERS.has(llmProvider);
+  }
+  const rawProvider = /\/([a-z0-9-]+):/.exec(name)?.[1];
+  if (rawProvider !== undefined) {
+    return !INTERNAL_TOOL_PROVIDERS.has(rawProvider);
+  }
+  return false;
+}
+
 /**
  * The recognized friendly phrase for a tool call, or null when the tool id is
  * not in the catalog (or a hand-authored interpolator declines). Lets a caller

@@ -16,6 +16,7 @@ import {
   friendlyToolResult,
   summarizeToolCalls,
   isCatalogMetaTool,
+  isExternalIntegrationTool,
   attachmentPolicyForAgent,
 } from "@workbench/agents/browser";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
@@ -528,6 +529,7 @@ export function MyraChatSurface({
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
+      isExternalTool={isExternalIntegrationTool}
     />
   );
 }
