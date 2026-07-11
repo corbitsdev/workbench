@@ -4,7 +4,9 @@ import { createInstanceSession, type InstanceSession } from "@intx/hub-client";
 import {
   composeChatMessages,
   friendlyToolSummary,
+  friendlyToolResult,
   summarizeToolCalls,
+  isCatalogMetaTool,
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
@@ -564,8 +566,11 @@ export function AgentChat({
       }
       resolveAttachmentUrl={resolveAttachmentUrl}
       formatToolSummary={friendlyToolSummary}
+      formatToolResult={friendlyToolResult}
+      formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
+      isQuietTool={isCatalogMetaTool}
     />
   );
 }

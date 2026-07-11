@@ -15,10 +15,12 @@ import type { LaunchInstanceSessionResponse } from "../lib/hub-api";
 let capturedOnStreamError: ((err: Error) => void) | null = null;
 
 mock.module("../lib/instance-transport", () => ({
-  createHubTransport: mock((opts?: { onStreamError?: (err: Error) => void }) => {
-    capturedOnStreamError = opts?.onStreamError ?? null;
-    return { fetch: mock(), subscribe: mock(() => () => undefined) };
-  }),
+  createHubTransport: mock(
+    (opts?: { onStreamError?: (err: Error) => void }) => {
+      capturedOnStreamError = opts?.onStreamError ?? null;
+      return { fetch: mock(), subscribe: mock(() => () => undefined) };
+    },
+  ),
   fetchBlobObjectUrl: mock(() => Promise.resolve("blob:stub")),
 }));
 
@@ -30,6 +32,8 @@ const mockImageStop = mock();
 mock.module("@workbench/agents/browser", () => ({
   composeChatMessages: mock(() => ({ messages: [] })),
   friendlyToolSummary: mock(() => ""),
+  friendlyToolResult: mock(() => null),
+  isCatalogMetaTool: mock(() => false),
   summarizeToolCalls: mock(() => []),
   createToolNameTracker: mock(() => ({
     names: {},
