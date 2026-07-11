@@ -22,7 +22,8 @@
     "@intx/inference": "workspace:*",
     "@intx/types": "workspace:*",
     "@workbench/agents": "workspace:*",
-    "@workbench/prompts": "workspace:*"
+    "@workbench/prompts": "workspace:*",
+    "@workbench/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest",

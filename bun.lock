@@ -796,6 +796,7 @@
         "@intx/types": "workspace:*",
         "@workbench/agents": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {

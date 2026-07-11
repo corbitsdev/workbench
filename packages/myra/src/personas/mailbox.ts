@@ -1,5 +1,6 @@
 import { buildSystemPrompt, type PromptSection } from "@workbench/prompts";
 import { CORBITS_VOCABULARY_SECTION } from "@workbench/agents/corbits-vocabulary";
+import type { AgentAutonomy } from "@workbench/shared";
 import type { MyraPersona } from "./persona";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
@@ -60,7 +61,18 @@ export const MAILBOX_PERSONA_TOOLS: string[] = PERSONAL_AGENT_BASE_TOOLS.filter(
   isMailboxReadOnlyTool,
 );
 
-export function buildMailboxTriagePrompt(name: string): string {
+const PREPARE_ONLY_RULES = `You are prepare-only. Do not send mail, message anyone, create or change any record, start a workflow, or take any other irreversible action. If the right next step is one of those, name it in your plan and leave it for the person to approve — never do it yourself in this pass.`;
+
+const EXECUTE_WITH_GATES_RULES = `You may carry the next step out yourself when your tools allow it. Every externally visible or irreversible action is gated behind the person's approval rail, so request it when it is the right next step — it will be reviewed before anything happens. Still lead with the classification and plan, and still prepare a draft whenever a reply is warranted.`;
+
+export function buildMailboxTriagePrompt(
+  name: string,
+  autonomy: AgentAutonomy = "prepare_only",
+): string {
+  const actionRules =
+    autonomy === "execute_with_gates"
+      ? EXECUTE_WITH_GATES_RULES
+      : PREPARE_ONLY_RULES;
   const sections: PromptSection[] = [
     {
       tag: "role",
@@ -71,7 +83,7 @@ export function buildMailboxTriagePrompt(name: string): string {
       tag: "task",
       content: `Do three things and stop. (1) Classify the message: what it is, who it is from, and how it relates to existing people, deals, or work. (2) Assess priority and what it needs — a reply, an internal action, a hand-off, or nothing. (3) Prepare a draft response the person can review and send themselves.
 
-You are prepare-only. Do not send mail, message anyone, create or change any record, start a workflow, or take any other irreversible action. If the right next step is one of those, name it in your plan and leave it for the person to approve — never do it yourself in this pass.`,
+${actionRules}`,
     },
     {
       tag: "knowledge",
@@ -103,3 +115,27 @@ export const mailboxPersona: MyraPersona = {
   systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME),
   toolNames: MAILBOX_PERSONA_TOOLS,
 };
+
+export type MailboxLoadout = {
+  systemPrompt: string;
+  toolNames: string[];
+};
+
+/**
+ * The prompt + tool loadout a triage session mounts for a member's autonomy
+ * setting. `prepare_only` is the persona verbatim (read-only allow-list);
+ * `execute_with_gates` mounts the full base toolset with the gated-action
+ * prompt — writes still flow through the approval rail, never around it.
+ */
+export function resolveMailboxLoadout(autonomy: AgentAutonomy): MailboxLoadout {
+  if (autonomy === "execute_with_gates") {
+    return {
+      systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME, autonomy),
+      toolNames: PERSONAL_AGENT_BASE_TOOLS,
+    };
+  }
+  return {
+    systemPrompt: mailboxPersona.systemPrompt,
+    toolNames: mailboxPersona.toolNames,
+  };
+}

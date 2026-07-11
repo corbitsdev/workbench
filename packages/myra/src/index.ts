@@ -32,5 +32,7 @@ export { threadPersona } from "./personas/thread";
 export {
   mailboxPersona,
   buildMailboxTriagePrompt,
+  resolveMailboxLoadout,
   MAILBOX_PERSONA_TOOLS,
+  type MailboxLoadout,
 } from "./personas/mailbox";
