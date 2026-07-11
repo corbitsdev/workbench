@@ -76,17 +76,28 @@ const SEARCH_TOOLS_WITH_TERM = (term: string) =>
   ] as const;
 
 const LOAD_TOOLS_IDLE = [
-  "Getting that ready",
+  "Preparing tools",
   "Bringing tools online",
   "Preparing what I need",
 ] as const;
 
-const LOAD_TOOLS_PKG = (pkg: string) =>
-  [
-    `Loading ${pkg} for you`,
-    `Bringing ${pkg} online`,
-    `Getting ${pkg} ready`,
+// Package shorts are lowercase wire ids ("attio"); display them as proper
+// nouns in running text.
+function displayProviderName(pkg: string): string {
+  return pkg
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+const LOAD_TOOLS_PKG = (pkg: string) => {
+  const name = displayProviderName(pkg);
+  return [
+    `Loading ${name} for you`,
+    `Bringing ${name} online`,
+    `Getting ${name} ready`,
   ] as const;
+};
 
 /** Pull a human name out of Attio-style `values` (plain string or nested write form). */
 function attioRecordName(values: unknown): string | null {
@@ -139,11 +150,15 @@ const PHRASES: Record<string, FriendlyPhrase> = {
     }
     if (Array.isArray(names) && names.length > 0) {
       if (names.length === 1) {
-        return pickPhrase(seed, [
-          "Getting that ready",
-          "Bringing a tool online",
-          "Preparing a tool",
-        ]);
+        // Name the provider when the single tool name carries one
+        // ("attio__create_record" → "Getting Attio ready").
+        const first = names[0];
+        const provider =
+          typeof first === "string" ? /^([a-z0-9-]+)__/.exec(first)?.[1] : null;
+        if (provider !== undefined && provider !== null) {
+          return pickPhrase(seed, LOAD_TOOLS_PKG(provider));
+        }
+        return pickPhrase(seed, ["Preparing a tool", "Bringing a tool online"]);
       }
       return pickPhrase(seed, [
         `Getting ${names.length} tools ready`,
@@ -533,11 +548,13 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
   try {
     parsed = JSON.parse(text);
   } catch {
-    // Plain text result — show a short snippet, not a wall of text.
+    // Plain text result — show a short snippet, not a wall of text. Longer or
+    // JSON-ish text carries nothing worth an expand: return null (the
+    // contract: content or null, never filler).
     if (text.length <= 120 && !text.startsWith("{") && !text.startsWith("[")) {
       return text;
     }
-    return "Done";
+    return null;
   }
 
   if (Array.isArray(parsed)) {
@@ -576,12 +593,6 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
       return obj.count === 0 ? "No results" : `Found ${obj.count} results`;
     }
     if (obj.deduped === true) return "Already exists — skipped create";
-    if (obj.loaded === true || obj.ok === true) return "Done";
-    if (typeof obj.id === "string" || typeof obj.record_id === "string") {
-      return "Done";
-    }
-    // Nested Attio record envelope
-    if (obj.id !== null && typeof obj.id === "object") return "Done";
   }
 
   if (typeof parsed === "string") return truncate(parsed, 120);
@@ -589,7 +600,9 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
     return String(parsed);
   }
 
-  return "Done";
+  // Unrecognized shape: nothing useful to say. Null keeps the row
+  // non-expandable — a chevron must never open onto a bare status word.
+  return null;
 }
 
 // A tool's "family" is the package short name for LLM form (`attio__…` →
