@@ -382,7 +382,7 @@ export function MyraChatSurface({
   // the user (CL-2681) — tell them to answer from a run's card in the dock.
   const multiGateHint =
     signalRouting?.mode === "multi" ? (
-      <p className="text-xs text-text-3" role="note">
+      <p key="multi-gate-hint" className="text-xs text-text-3" role="note">
         {signalRouting.gates.length} runs are waiting on you. Use a run's card
         in the workflow dock to answer the one you mean.
       </p>
@@ -391,6 +391,7 @@ export function MyraChatSurface({
   const attachedPills =
     attached.length > 0 ? (
       <ActiveContextPills
+        key="attached-pills"
         attached={attached.map(activeContextToRef)}
         onRemove={removeAttached}
       />
@@ -398,27 +399,59 @@ export function MyraChatSurface({
 
   const resumeErrorNotice =
     resumeError !== null ? (
-      <p className="text-xs text-red" role="alert">
+      <p key="resume-error" className="text-xs text-red" role="alert">
         {resumeError}
       </p>
     ) : null;
 
+  // History renders while the sidecar is unreachable; the composer stays usable
+  // and sends are queued. Tell the user their messages are deferred, without
+  // surfacing a raw error (CL-3280). The Retry button sits OUTSIDE the
+  // role="status" live region so assistive tech announces the status text alone
+  // and exposes the control through the normal focus order.
+  const reconnectingNotice = session.reconnecting ? (
+    <div
+      key="reconnecting-notice"
+      className="flex items-center gap-1.5 text-xs"
+    >
+      <span role="status" className="text-text-3">
+        {session.queuedFailed
+          ? "Trouble reaching Myra — still trying. Your messages will send once it's back."
+          : "Reconnecting to Myra — your messages will send once it's back."}
+      </span>
+      {session.queuedFailed && (
+        <button
+          type="button"
+          onClick={session.reconnect}
+          className="text-orange underline"
+        >
+          Retry now
+        </button>
+      )}
+    </div>
+  ) : null;
+
   // Mounted (not conditionally rendered) whenever a tenant is known so its poll
   // runs; it renders nothing until a pending approval exists. Placed first so
   // the actionable approval interrupt sits above the transient hints.
-  const reviewGate = tenantId ? <ReviewGate tenantId={tenantId} /> : null;
+  const reviewGate = tenantId ? (
+    <ReviewGate key="review-gate" tenantId={tenantId} />
+  ) : null;
+
+  // Single source of truth for the composer accessories: render order and the
+  // "anything to show?" condition come from the same list. Each element carries
+  // a stable key so identity survives siblings appearing or disappearing.
+  const accessories = [
+    reviewGate,
+    reconnectingNotice,
+    resumeErrorNotice,
+    multiGateHint,
+    attachedPills,
+  ].filter((accessory) => accessory !== null);
 
   const inputAccessory =
-    reviewGate !== null ||
-    multiGateHint !== null ||
-    attachedPills !== null ||
-    resumeErrorNotice !== null ? (
-      <div className="space-y-1.5">
-        {reviewGate}
-        {resumeErrorNotice}
-        {multiGateHint}
-        {attachedPills}
-      </div>
+    accessories.length > 0 ? (
+      <div className="space-y-1.5">{accessories}</div>
     ) : null;
 
   return (

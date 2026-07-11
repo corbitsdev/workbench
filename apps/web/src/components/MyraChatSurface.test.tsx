@@ -118,6 +118,9 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
     state: { phase: "loading" },
     messages: [],
     activity: null,
+    live: true,
+    queuedFailed: false,
+    reconnecting: false,
     send: () => {},
     reconnect: () => {},
     instanceId: null,
@@ -181,10 +184,61 @@ describe("MyraChatSurface", () => {
     expect(sendSpy.mock.calls[0]?.[0]).toBe("hello");
   });
 
+  it("shows a reconnecting notice and keeps the composer enabled while reconnecting", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          reconnecting: true,
+        }),
+      }),
+    );
+    expect(screen.getByTestId("accessory").textContent).toMatch(
+      /Reconnecting to Myra/,
+    );
+    // The composer is not disabled — sends are queued, not blocked.
+    expect(screen.queryByTestId("disabled")).toBeNull();
+  });
+
+  it("hides the reconnecting notice during a normal first-connect window (not-yet-live but not reconnecting)", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          reconnecting: false,
+        }),
+      }),
+    );
+    expect(screen.queryByTestId("accessory")).toBeNull();
+  });
+
+  it("offers a retry that reconnects when a queued send has failed", () => {
+    let reconnected = 0;
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          reconnecting: true,
+          queuedFailed: true,
+          reconnect: () => reconnected++,
+        }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /retry now/i }));
+    expect(reconnected).toBe(1);
+  });
+
   function readySession(sendSpy: (t: string) => void): MyraSession {
     return makeSession({
       // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
       state: { phase: "ready", session: {} as any },
+      live: true,
       send: sendSpy,
     });
   }
