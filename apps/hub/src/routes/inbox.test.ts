@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import type { MailboxMessage } from "@workbench/shared";
-import { MailboxListResponse } from "@workbench/shared";
+import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
+import {
+  MailboxListResponse,
+  MailboxMessageDetail as MailboxMessageDetailSchema,
+} from "@workbench/shared";
 import { type } from "arktype";
 
 let member: { tenantId: string; principalId: string } | null = null;
@@ -16,10 +19,15 @@ const canned: MailboxMessage = {
   from: "ins_dep-heartbeat@tenant.example",
   to: ["usr_alice@tenant.example"],
   subject: "Morning brief",
-  date: "Fri, 10 Jul 2026 07:00:00 +0000",
+  date: "2026-07-10T07:00:00.000Z",
   messageId: "<m1@tenant.example>",
   snippet: "Your brief is ready.",
   read: false,
+};
+
+const cannedDetail: MailboxMessageDetail = {
+  ...canned,
+  body: "Your brief is ready.\n\n- pipeline moved\n- two calls today",
 };
 
 const listUserMailbox = mock(
@@ -35,9 +43,17 @@ const markMailboxMessageRead = mock(
     _args: { tenantId: string; principalId: string; id: string },
   ) => markReadResult,
 );
+let detailResult: MailboxMessageDetail | null = null;
+const getMailboxMessage = mock(
+  async (
+    _db: unknown,
+    _args: { tenantId: string; principalId: string; id: string },
+  ) => detailResult,
+);
 mock.module("../lib/mailbox-read", () => ({
   listUserMailbox,
   markMailboxMessageRead,
+  getMailboxMessage,
 }));
 
 import { Hono } from "hono";
@@ -59,8 +75,10 @@ function mountApp() {
 beforeEach(() => {
   member = { tenantId: "ten-1", principalId: "pri-a" };
   markReadResult = true;
+  detailResult = cannedDetail;
   listUserMailbox.mockClear();
   markMailboxMessageRead.mockClear();
+  getMailboxMessage.mockClear();
 });
 
 describe("GET /me/inbox", () => {
@@ -124,6 +142,72 @@ describe("GET /me/inbox", () => {
       new Request("http://localhost/api/v1/me/inbox?limit=nope"),
     );
     expect(bad.status).toBe(400);
+  });
+});
+
+describe("GET /me/inbox/:id", () => {
+  const id = "5e0f8c9a-0000-4000-8000-000000000001";
+
+  it("returns the full body and ISO date in the shared detail contract", async () => {
+    const res = await mountApp().request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}`),
+    );
+    expect(res.status).toBe(200);
+    const body = MailboxMessageDetailSchema(await res.json());
+    expect(body instanceof type.errors).toBe(false);
+    expect(body).toEqual(cannedDetail);
+  });
+
+  it("scopes the lookup to the calling member's own principal", async () => {
+    const app = mountApp();
+    await app.request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}`, {
+        headers: { "x-test-user-id": "user-a" },
+      }),
+    );
+    expect(getMailboxMessage.mock.calls[0]?.[1]).toEqual({
+      tenantId: "ten-1",
+      principalId: "pri-a",
+      id,
+    });
+
+    // Member B's read resolves B's principal — B can never read A's mail.
+    member = { tenantId: "ten-1", principalId: "pri-b" };
+    detailResult = null;
+    const res = await app.request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}`, {
+        headers: { "x-test-user-id": "user-b" },
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(getMailboxMessage.mock.calls[1]?.[1]).toMatchObject({
+      principalId: "pri-b",
+    });
+  });
+
+  it("404s when the message is not in the caller's mailbox", async () => {
+    detailResult = null;
+    const res = await mountApp().request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}`),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("400s on a non-uuid message id without touching the db", async () => {
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/not-a-uuid"),
+    );
+    expect(res.status).toBe(400);
+    expect(getMailboxMessage.mock.calls).toHaveLength(0);
+  });
+
+  it("409s when the caller has no provisioned membership", async () => {
+    member = null;
+    const res = await mountApp().request(
+      new Request(`http://localhost/api/v1/me/inbox/${id}`),
+    );
+    expect(res.status).toBe(409);
+    expect(getMailboxMessage.mock.calls).toHaveLength(0);
   });
 });
 

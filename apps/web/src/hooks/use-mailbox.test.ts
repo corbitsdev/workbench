@@ -20,6 +20,7 @@ const {
   MAILBOX_QUERY_KEY,
   MAILBOX_POLL_MS,
   useMailbox,
+  useMailboxMessage,
 } = require("./use-mailbox");
 
 function msg(over: Partial<MailboxMessage>): MailboxMessage {
@@ -95,6 +96,32 @@ describe("useMailbox", () => {
   it("does not fetch while disabled", () => {
     apiResponse = { messages: [] };
     renderHook(() => useMailbox({ enabled: false }), { wrapper: wrapper() });
+    expect(apiCalls).toEqual([]);
+  });
+});
+
+describe("useMailboxMessage", () => {
+  it("fetches the message detail and returns the parsed body", async () => {
+    apiResponse = { ...msg({ id: "m-1" }), body: "Full body text" };
+    const { result } = renderHook(() => useMailboxMessage("m-1"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.body).toBe("Full body text");
+    expect(apiCalls).toEqual([{ method: "GET", path: "/me/inbox/m-1" }]);
+  });
+
+  it("surfaces an error when the detail fails the boundary parse", async () => {
+    apiResponse = { ...msg({ id: "m-1" }), body: 42 };
+    const { result } = renderHook(() => useMailboxMessage("m-1"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  it("does not fetch while no message is selected", () => {
+    apiResponse = { ...msg({ id: "m-1" }), body: "x" };
+    renderHook(() => useMailboxMessage(null), { wrapper: wrapper() });
     expect(apiCalls).toEqual([]);
   });
 });

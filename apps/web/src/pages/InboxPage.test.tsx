@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import type { MailboxMessage } from "@workbench/shared";
+import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 
 type MailboxState = {
   data: MailboxMessage[] | undefined;
@@ -18,9 +18,17 @@ type MailboxState = {
   isError: boolean;
 };
 
+type DetailState = {
+  data: MailboxMessageDetail | undefined;
+  isLoading: boolean;
+  isError: boolean;
+};
+
 let mailbox: MailboxState;
+let detail: DetailState;
 let refetchCalls = 0;
 const markReadIds: string[] = [];
+const detailQueryIds: (string | null)[] = [];
 
 mock.module("../hooks/use-mailbox", () => ({
   useMailbox: () => ({
@@ -31,6 +39,14 @@ mock.module("../hooks/use-mailbox", () => ({
       refetchCalls += 1;
     },
   }),
+  useMailboxMessage: (id: string | null) => {
+    detailQueryIds.push(id);
+    return {
+      data: detail.data,
+      isLoading: detail.isLoading,
+      isError: detail.isError,
+    };
+  },
   useMarkMailboxRead: () => ({
     mutate: (id: string) => {
       markReadIds.push(id);
@@ -67,12 +83,15 @@ function renderInbox(initialPath = "/inbox") {
 afterEach(() => {
   cleanup();
   mailbox = { data: undefined, isLoading: false, isError: false };
+  detail = { data: undefined, isLoading: false, isError: false };
   refetchCalls = 0;
   markReadIds.length = 0;
+  detailQueryIds.length = 0;
 });
 
 // Reset before the first test too.
 mailbox = { data: undefined, isLoading: false, isError: false };
+detail = { data: undefined, isLoading: false, isError: false };
 
 describe("InboxPage", () => {
   it("shows a loading state while the mailbox query is pending", () => {
@@ -111,16 +130,24 @@ describe("InboxPage", () => {
     screen.getByText("Oat");
   });
 
-  it("opens a message on row click and shows its body in the reading pane", () => {
+  it("opens a message on row click and shows its full body in the reading pane", () => {
     mailbox = {
       data: [
         makeMessage({ id: "msg-1", subject: "Morning brief", snippet: "One" }),
         makeMessage({
           id: "msg-2",
           subject: "Deck ready",
-          snippet: "The deck is ready to review",
+          snippet: "The deck is ready…",
         }),
       ],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-2", subject: "Deck ready" }),
+        body: "The deck is ready to review, with the full walkthrough attached.",
+      },
       isLoading: false,
       isError: false,
     };
@@ -131,7 +158,10 @@ describe("InboxPage", () => {
     // this proves the detail opened — not merely that the row exists.
     screen.getByRole("heading", { name: "Deck ready" });
     const article = screen.getByRole("article");
-    within(article).getByText("The deck is ready to review");
+    within(article).getByText(
+      "The deck is ready to review, with the full walkthrough attached.",
+    );
+    expect(detailQueryIds.at(-1)).toBe("msg-2");
   });
 
   it("selects the deep-linked message without a click", () => {
@@ -140,17 +170,66 @@ describe("InboxPage", () => {
         makeMessage({
           id: "msg-1",
           subject: "Morning brief",
-          snippet: "Your brief for today",
+          snippet: "Your brief…",
         }),
         makeMessage({ id: "msg-2", subject: "Deck ready", snippet: "Two" }),
       ],
       isLoading: false,
       isError: false,
     };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-1", subject: "Morning brief" }),
+        body: "Your full brief for today, beyond the snippet.",
+      },
+      isLoading: false,
+      isError: false,
+    };
     renderInbox("/inbox/msg-1");
     screen.getByRole("heading", { name: "Morning brief" });
     const article = screen.getByRole("article");
-    within(article).getByText("Your brief for today");
+    within(article).getByText("Your full brief for today, beyond the snippet.");
+  });
+
+  it("shows a quiet loading state in the pane while the body is fetching", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = { data: undefined, isLoading: true, isError: false };
+    renderInbox("/inbox/msg-1");
+    screen.getByRole("heading", { name: "Morning brief" });
+    const article = screen.getByRole("article");
+    within(article).getByText("Loading message…");
+  });
+
+  it("falls back to a friendly note when the body cannot be loaded", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = { data: undefined, isLoading: false, isError: true };
+    renderInbox("/inbox/msg-1");
+    const article = screen.getByRole("article");
+    within(article).getByText("Couldn't load this message.");
+  });
+
+  it("shows the empty-body note when the message has no readable content", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: { ...makeMessage({ id: "msg-1" }), body: "" },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-1");
+    const article = screen.getByRole("article");
+    within(article).getByText("No content available for this message.");
   });
 
   it("marks an unread message read once it is selected", () => {

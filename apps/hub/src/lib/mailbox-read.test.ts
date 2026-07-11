@@ -2,7 +2,11 @@ import { describe, expect, it, mock } from "bun:test";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { HubDb } from "../db";
-import { listUserMailbox, markMailboxMessageRead } from "./mailbox-read";
+import {
+  getMailboxMessage,
+  listUserMailbox,
+  markMailboxMessageRead,
+} from "./mailbox-read";
 
 const RAW = Buffer.from(
   "From: ins_dep-heartbeat@tenant.example\r\n" +
@@ -66,7 +70,7 @@ describe("listUserMailbox", () => {
       from: "ins_dep-heartbeat@tenant.example",
       to: ["usr_alice@tenant.example", "usr_bob@tenant.example"],
       subject: "Morning brief",
-      date: "Fri, 10 Jul 2026 07:00:00 +0000",
+      date: "2026-07-10T07:00:00.000Z",
       messageId: "<m1@tenant.example>",
       snippet: "Your brief is ready.",
       read: false,
@@ -108,8 +112,93 @@ describe("listUserMailbox", () => {
       from: "ins_dep-heartbeat@tenant.example",
       to: ["usr_alice@tenant.example"],
       subject: "Morning brief",
+      date: "2026-07-10T07:00:01.000Z",
       read: false,
     });
+  });
+
+  it("falls back to created_at when the Date header is unparseable", async () => {
+    const { db } = makeListDb([
+      makeRow({
+        raw: Buffer.from(
+          "From: ins_dep-heartbeat@tenant.example\r\n" +
+            "Date: not a date\r\n" +
+            "\r\n" +
+            "Body.\r\n",
+        ),
+      }),
+    ]);
+    const messages = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.date).toBe("2026-07-10T07:00:01.000Z");
+  });
+});
+
+describe("getMailboxMessage", () => {
+  function makeDetailDb(row: unknown) {
+    const findFirst = mock(async (_args: { where: unknown }) => row);
+    const db = {
+      query: { principalMailbox: { findFirst } },
+    } as unknown as HubDb;
+    return { db, findFirst };
+  }
+
+  it("returns the full body and an ISO date", async () => {
+    const { db } = makeDetailDb(makeRow());
+    const message = await getMailboxMessage(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+
+    expect(message).toEqual({
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+      from: "ins_dep-heartbeat@tenant.example",
+      to: ["usr_alice@tenant.example", "usr_bob@tenant.example"],
+      subject: "Morning brief",
+      date: "2026-07-10T07:00:00.000Z",
+      messageId: "<m1@tenant.example>",
+      snippet: "Your brief is ready.",
+      read: false,
+      body: "Your brief is ready.",
+    });
+  });
+
+  it("degrades to an empty body when the stored frame is malformed", async () => {
+    const { db } = makeDetailDb(makeRow({ raw: Buffer.from("not a frame") }));
+    const message = await getMailboxMessage(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+
+    expect(message).toMatchObject({
+      subject: "Morning brief",
+      date: "2026-07-10T07:00:01.000Z",
+      body: "",
+    });
+  });
+
+  it("scopes the lookup to the caller's tenant, principal, and inbound direction", async () => {
+    const { db, findFirst } = makeDetailDb(undefined);
+    const message = await getMailboxMessage(db, {
+      tenantId: "ten-1",
+      principalId: "pri-bob",
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+
+    expect(message).toBeNull();
+    const { sql, params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(sql).toContain("tenant_id");
+    expect(sql).toContain("principal_id");
+    expect(sql).toContain("direction");
+    expect(params).toContain("ten-1");
+    expect(params).toContain("pri-bob");
+    expect(params).toContain("inbound");
+    expect(params).toContain("5e0f8c9a-0000-4000-8000-000000000001");
   });
 });
 

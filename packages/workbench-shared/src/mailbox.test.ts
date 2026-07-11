@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { type } from "arktype";
-import { MailboxListResponse, MailboxMessage } from "./mailbox";
+import {
+  MailboxListResponse,
+  MailboxMessage,
+  MailboxMessageDetail,
+} from "./mailbox";
 
 const goodMessage = {
   id: "pm-1",
@@ -36,6 +40,24 @@ describe("MailboxMessage", () => {
   test("rejects a non-boolean read flag", () => {
     const bad = { ...goodMessage, read: "no" };
     expect(MailboxMessage(bad) instanceof type.errors).toBe(true);
+  });
+});
+
+describe("MailboxMessageDetail", () => {
+  test("accepts a message with a full body", () => {
+    const detail = { ...goodMessage, body: "Your brief is ready.\n\n- one" };
+    expect(MailboxMessageDetail(detail)).toEqual(detail);
+  });
+
+  test("accepts an empty body (unparseable frame degrades, never 500s)", () => {
+    const detail = { ...goodMessage, body: "" };
+    expect(MailboxMessageDetail(detail)).toEqual(detail);
+  });
+
+  test("rejects a missing body", () => {
+    expect(MailboxMessageDetail(goodMessage) instanceof type.errors).toBe(
+      true,
+    );
   });
 });
 
