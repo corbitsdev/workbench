@@ -42,6 +42,21 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Hello agent")).not.toBeNull();
   });
 
+  it("marks a queued user message as pending with a dimmed bubble and a Sending label", () => {
+    const message: ChatMessage = {
+      id: "pending-1",
+      role: "user",
+      content: "queued while offline",
+      createdAt: "2026-06-04T00:00:00Z",
+      status: "sending",
+    };
+    const { container } = render(<MessageBubble message={message} />);
+    expect(screen.getByText("queued while offline")).not.toBeNull();
+    expect(screen.getByText("Sending…")).not.toBeNull();
+    const body = container.querySelector(".bg-orange") as HTMLElement;
+    expect(body.className).toContain("opacity-70");
+  });
+
   it("renders the user message in a width-constrained orange bubble", () => {
     const message: ChatMessage = {
       id: "u-box",
