@@ -1,14 +1,13 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { getAncestorChain } from "@intx/db";
 import {
   CreateScheduledTriggerBodySchema,
   ScheduledTriggerSchema,
   UpdateScheduledTriggerBodySchema,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
-import { listRunnableWorkflowKinds } from "../lib/workflow-run-gate";
+import { isRunnableKind } from "../lib/workflow-run-gate";
 import {
   createOwnerSchedule,
   deleteOwnerSchedule,
@@ -112,9 +111,7 @@ export function createMeSchedulesRouter(
         return c.json({ error: "No provisioned membership" }, 409);
       }
 
-      const chain = await getAncestorChain(db, member.tenantId);
-      const kinds = await listRunnableWorkflowKinds(db, chain);
-      if (!kinds.some((k) => k.kind === body.kind)) {
+      if (!(await isRunnableKind(db, member.tenantId, body.kind))) {
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
       }
 

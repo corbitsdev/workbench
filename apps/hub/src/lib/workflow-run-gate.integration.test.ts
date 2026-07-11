@@ -8,6 +8,7 @@ import { schema } from "../db";
 import type { HubDb } from "../db";
 import {
   backfillDenyForExistingWorkflowKinds,
+  isRunnableKind,
   isWorkflowRunDeniedForTenant,
   seedDenyGrantForNewWorkflowKind,
   setWorkflowRunGrant,
@@ -142,6 +143,25 @@ describe("workflow-run enablement lifecycle", () => {
       enabled: false,
     });
     expect((await grantRows()).rows.map((r) => r.effect)).toEqual(["deny"]);
+  });
+});
+
+describe("isRunnableKind", () => {
+  test("true for a deployed, not-denied kind; false once disabled", async () => {
+    await insertDeployment(TENANT, KIND);
+    expect(await isRunnableKind(db, TENANT, KIND)).toBe(true);
+
+    await setWorkflowRunGrant(db, {
+      tenantId: TENANT,
+      roleId: MEMBER_ROLE,
+      kind: KIND,
+      enabled: false,
+    });
+    expect(await isRunnableKind(db, TENANT, KIND)).toBe(false);
+  });
+
+  test("false for a kind with no active deployment", async () => {
+    expect(await isRunnableKind(db, TENANT, "never-deployed")).toBe(false);
   });
 });
 

@@ -24,7 +24,8 @@ mock.module("@intx/db", () => ({
 
 let runnableKinds = [{ kind: "heartbeat" }, { kind: "deck" }];
 mock.module("../lib/workflow-run-gate", () => ({
-  listRunnableWorkflowKinds: async () => runnableKinds,
+  isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
+    runnableKinds.some((k) => k.kind === kind),
 }));
 
 // Store spy. Each call is captured so a test asserts the owner principal the

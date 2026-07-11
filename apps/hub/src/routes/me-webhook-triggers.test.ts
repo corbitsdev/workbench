@@ -24,7 +24,8 @@ mock.module("@intx/db", () => ({
 
 let runnableKinds = [{ kind: "heartbeat" }, { kind: "deck" }];
 mock.module("../lib/workflow-run-gate", () => ({
-  listRunnableWorkflowKinds: async () => runnableKinds,
+  isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
+    runnableKinds.some((k) => k.kind === kind),
 }));
 
 type StoreCall = { fn: string; args: Record<string, unknown> };
