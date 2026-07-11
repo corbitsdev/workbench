@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { type } from "arktype";
 import {
+  type EmbeddedDisplayFlowStep,
   EmbeddedWorkflowDefSchema,
   embeddedWorkflowDefsDir,
 } from "./workflow-defs-embedded";
@@ -40,4 +41,41 @@ export async function loadWorkflowCatalogKinds(
     }
   }
   return kinds;
+}
+
+/**
+ * The declared user-facing display flow for each workflow kind that ships one,
+ * read from the committed embedded catalog (`generated/workflow-defs/*.json`).
+ * This is how the server catalog preview obtains a workflow's DISPLAY_STEPS
+ * without importing workflow runtime code: the flow is serialized alongside the
+ * def at build time and travels in the same committed artifact as `label` /
+ * `description`. A kind with no declared flow is simply absent from the map, and
+ * the classifier falls back to the per-step `stepOrder` projection. A malformed
+ * file is skipped rather than dropping every kind.
+ */
+export async function loadWorkflowDisplayFlows(
+  defsDir: string = embeddedWorkflowDefsDir(),
+): Promise<Map<string, EmbeddedDisplayFlowStep[]>> {
+  const flows = new Map<string, EmbeddedDisplayFlowStep[]>();
+  let files: string[];
+  try {
+    files = (await readdir(defsDir)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return flows;
+  }
+  for (const file of files) {
+    try {
+      const raw = JSON.parse(await readFile(join(defsDir, file), "utf8"));
+      const parsed = EmbeddedWorkflowDefSchema(raw);
+      if (
+        !(parsed instanceof type.errors) &&
+        parsed.displayFlow !== undefined
+      ) {
+        flows.set(parsed.kind, parsed.displayFlow);
+      }
+    } catch {
+      // Skip an unreadable/malformed committed def.
+    }
+  }
+  return flows;
 }

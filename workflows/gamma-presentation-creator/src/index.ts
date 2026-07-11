@@ -16,6 +16,11 @@ export const description =
   "Turn any artifact, call, or pasted text into a Gamma deck, refining it round by round until you approve it.";
 export const kind = "gamma-presentation-creator";
 
+// Re-export the user-facing display flow so it travels with the workflow package
+// for the server catalog classifier; the client panel imports it from the same
+// browser-safe module.
+export { DISPLAY_STEPS } from "./display-steps";
+
 // Number of generate → render → preview rounds (defined in ./constants so the
 // browser panel can share it without importing this server-only module). Each
 // round re-renders a fresh Gamma deck from the user's feedback (Gamma cannot

@@ -31,6 +31,11 @@ export const description =
   "Research the last 30 days of market and community signal, synthesize a cited brief, and save it as an artifact.";
 export const kind = "last30days-research";
 
+// Re-export the user-facing display flow so it travels with the workflow package
+// for the server catalog classifier; the client panel imports it from the same
+// browser-safe module.
+export { DISPLAY_STEPS } from "./display-steps";
+
 // Each source pulls its query from the grounding step's per-source map rather
 // than the raw topic, so e.g. github_activity gets repo/org names and
 // youtube_search gets video-title phrasing instead of all sources searching the

@@ -38,6 +38,7 @@ export {
   countHumanGates,
   type FlowStepClass,
   type ClassifiedFlowStep,
+  type DisplayFlowStep,
 } from "./flow-classify";
 
 // Personal agent

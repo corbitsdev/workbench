@@ -5,7 +5,6 @@ import {
   activeDisplayStep,
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   failedRunErrorMessage,
   HorizontalStepper,
   LiveStatusSlot,
@@ -14,6 +13,7 @@ import {
   type WorkflowPanelProps,
   type WorkflowStep,
 } from "@workbench/ui";
+import { DISPLAY_STEPS, type StepKey } from "./display-steps";
 import {
   type AnalyzeResult,
   deriveBusinessContext,
@@ -26,29 +26,8 @@ import {
 export type { AnalyzeResult, Opportunity };
 
 // ── Step order + labels ───────────────────────────────────────────────────────
-
-const STEP_ORDER = [
-  "intake",
-  "scrape",
-  "analyze",
-  "review",
-  "collect",
-  "curate",
-  "selection",
-  "persist",
-] as const;
-type StepKey = (typeof STEP_ORDER)[number];
-
-const STEP_LABELS: Record<StepKey, string> = {
-  intake: "Website",
-  scrape: "Crawl",
-  analyze: "Strategy",
-  review: "Search plan",
-  collect: "Collect",
-  curate: "Opportunities",
-  selection: "Select",
-  persist: "Done",
-};
+// The display flow (order, labels, activity lines) is declared once in the
+// browser-safe ./display-steps module and shared with the server catalog preview.
 
 const INTAKE_SIGNAL = "intake";
 const REVIEW_SIGNAL = "recommendation-review";
@@ -76,28 +55,6 @@ function phaseFor(
 ): StepPhase | undefined {
   return state?.steps.get(stepId)?.phase;
 }
-
-// One runtime step per display step; the shared helpers encode the robust
-// "passed = completed OR a later step progressed" rule so a gate whose output is
-// missing from the synthesized record can't rewind the panel mid-run (CL-2506).
-// Machine-work steps carry a verb `activityLabel` for the live line; the intake,
-// review, and selection gates carry none.
-const STEP_ACTIVITY: Partial<Record<StepKey, string>> = {
-  scrape: "Reading the website",
-  analyze: "Building the search plan",
-  collect: "Searching Reddit",
-  curate: "Curating opportunities",
-  persist: "Saving to workbench",
-};
-
-const DISPLAY_STEPS: DisplayStep[] = STEP_ORDER.map((id) => ({
-  key: id,
-  label: STEP_LABELS[id],
-  stepIds: [id],
-  ...(STEP_ACTIVITY[id] !== undefined
-    ? { activityLabel: STEP_ACTIVITY[id] }
-    : {}),
-}));
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
   return buildRunStepperSteps(state, DISPLAY_STEPS);

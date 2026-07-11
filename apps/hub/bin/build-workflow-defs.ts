@@ -35,12 +35,14 @@ export function workflowKinds(): string[] {
 export async function serializeWorkflowDef(
   kind: string,
 ): Promise<typeof EmbeddedWorkflowDefSchema.infer> {
-  const { definition, label, description } = await loadWorkflow(kind);
+  const { definition, label, description, displayFlow } =
+    await loadWorkflow(kind);
   const embedded = {
     kind,
     version: readWorkflowMeta(kind).version,
     ...(label !== undefined ? { label } : {}),
     ...(description !== undefined ? { description } : {}),
+    ...(displayFlow !== undefined ? { displayFlow } : {}),
     definition,
   };
   // Validate the serialized shape the hub will parse on boot — a malformed
