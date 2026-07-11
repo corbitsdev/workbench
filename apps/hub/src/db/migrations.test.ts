@@ -358,7 +358,7 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
   });
 });
 
-describe("0050 adds message_key to principal_mailbox (CL-3301)", () => {
+describe("0050 adds message_key to principal_mailbox", () => {
   const sql = readFileSync(
     join(
       import.meta.dir,
@@ -370,11 +370,13 @@ describe("0050 adds message_key to principal_mailbox (CL-3301)", () => {
   it("adds a nullable message_key column", () => {
     expect(sql).toMatch(/ALTER TABLE "principal_mailbox"/i);
     expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "message_key" text/i);
+    expect(sql).not.toMatch(/NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
   });
 
-  it("creates a partial unique index on message_key", () => {
+  it("dedupes keyed rows per (tenant, principal, message_key)", () => {
     expect(sql).toMatch(
-      /CREATE UNIQUE INDEX IF NOT EXISTS "principal_mailbox_message_key_uniq"\s+ON "principal_mailbox" \("message_key"\)\s+WHERE "message_key" IS NOT NULL/i,
+      /CREATE UNIQUE INDEX IF NOT EXISTS "principal_mailbox_message_key_uniq"\s+ON "principal_mailbox" \("tenant_id", "principal_id", "message_key"\)\s+WHERE "message_key" IS NOT NULL/i,
     );
   });
 
