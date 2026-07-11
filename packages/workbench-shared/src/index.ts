@@ -8,6 +8,7 @@ export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./governance";
 export * from "./last30days";
+export * from "./mailbox";
 export * from "./reddit-opportunity-scanner";
 export * from "./pain-point-collateral";
 export * from "./web-site";
