@@ -83,13 +83,36 @@ mock.module("../lib/scheduled-triggers", () => ({
 
 const { createMeSchedulesRouter } = await import("./me-schedules");
 
+// Mirrors the index.ts wiring: the caller's member principal resolves to their
+// own user mail identity — never to anything the client supplied.
+const identityByPrincipal: Record<
+  string,
+  { userAddress: string; userRefId: string }
+> = {
+  "principal-a": {
+    userAddress: "usr_user-a@workbench.example",
+    userRefId: "user-a",
+  },
+  "principal-b": {
+    userAddress: "usr_user-b@workbench.example",
+    userRefId: "user-b",
+  },
+};
+
 function mountApp() {
   const v1 = new Hono<{ Variables: { userId: string } }>();
   v1.use((c, next) => {
     c.set("userId", c.req.header("x-test-user-id") ?? "user-a");
     return next();
   });
-  v1.route("/", createMeSchedulesRouter({} as unknown as HubDb));
+  v1.route(
+    "/",
+    createMeSchedulesRouter({} as unknown as HubDb, async (principalId) => {
+      const identity = identityByPrincipal[principalId];
+      if (!identity) throw new Error(`principal not found: ${principalId}`);
+      return identity;
+    }),
+  );
   const app = new Hono();
   app.route("/api/v1", v1);
   return app;
@@ -167,8 +190,55 @@ describe("POST /me/schedules", () => {
       ownerPrincipalId: "principal-a",
       kind: "deck",
       hourUtc: 9,
-      payload: { x: 1 },
+      payload: {
+        x: 1,
+        userAddress: "usr_user-a@workbench.example",
+        userRefId: "user-a",
+      },
     });
+  });
+
+  it("overrides client-supplied identity keys with the caller's own", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "heartbeat",
+          hourUtc: 7,
+          payload: {
+            reason: "scheduled-heartbeat",
+            userAddress: "usr_user-b@workbench.example",
+            userRefId: "user-b",
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args["payload"]).toEqual({
+      reason: "scheduled-heartbeat",
+      userAddress: "usr_user-a@workbench.example",
+      userRefId: "user-a",
+    });
+  });
+
+  it("rejects a payload larger than 8KB without touching the store", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "deck",
+          hourUtc: 9,
+          payload: { blob: "x".repeat(9000) },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
   it("rejects an out-of-range hour without touching the store", async () => {

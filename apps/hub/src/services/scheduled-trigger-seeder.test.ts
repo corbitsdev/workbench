@@ -16,7 +16,10 @@ describe("seedHeartbeatSchedules", () => {
       kind: "heartbeat",
       hourUtc: 13,
       listMyraTargets: async () => [{ memberPrincipalId: "p-1" }],
-      resolveUserAddress: async () => "user-1@workbench.example",
+      resolveUserIdentity: async () => ({
+        userAddress: "user-1@workbench.example",
+        userRefId: "user-1",
+      }),
       ensureSchedule: async (a) => {
         ensured.push(a);
       },
@@ -25,7 +28,7 @@ describe("seedHeartbeatSchedules", () => {
     expect(ensured).toHaveLength(0);
   });
 
-  it("ensures a heartbeat row per Myra member with the user-address payload", async () => {
+  it("ensures a heartbeat row per Myra member with the resolved identity payload", async () => {
     const ensured: Ensured[] = [];
     const result = await seedHeartbeatSchedules({
       enabled: true,
@@ -35,10 +38,10 @@ describe("seedHeartbeatSchedules", () => {
         { memberPrincipalId: "principal-a" },
         { memberPrincipalId: "principal-b" },
       ],
-      resolveUserAddress: async (pid) =>
+      resolveUserIdentity: async (pid) =>
         pid === "principal-a"
-          ? "user-a@workbench.example"
-          : "user-b@workbench.example",
+          ? { userAddress: "user-a@workbench.example", userRefId: "user-a" }
+          : { userAddress: "user-b@workbench.example", userRefId: "user-b" },
       ensureSchedule: async (a) => {
         ensured.push(a);
       },
@@ -67,19 +70,38 @@ describe("seedHeartbeatSchedules", () => {
     });
   });
 
-  it("derives userRefId as the segment before the final @ for an email refId", async () => {
+  it("passes an email-shaped userRefId through verbatim", async () => {
     const ensured: Ensured[] = [];
     await seedHeartbeatSchedules({
       enabled: true,
       kind: "heartbeat",
       hourUtc: 9,
       listMyraTargets: async () => [{ memberPrincipalId: "p-1" }],
-      resolveUserAddress: async () => "user@corp.com@workbench.example",
+      resolveUserIdentity: async () => ({
+        userAddress: "user@corp.com@workbench.example",
+        userRefId: "user@corp.com",
+      }),
       ensureSchedule: async (a) => {
         ensured.push(a);
       },
     });
     expect(ensured[0]?.payload["userRefId"]).toBe("user@corp.com");
+  });
+
+  it("skips a target whose resolved identity fails payload validation", async () => {
+    const ensured: Ensured[] = [];
+    const result = await seedHeartbeatSchedules({
+      enabled: true,
+      kind: "heartbeat",
+      hourUtc: 13,
+      listMyraTargets: async () => [{ memberPrincipalId: "p-1" }],
+      resolveUserIdentity: async () => ({ userAddress: "", userRefId: "" }),
+      ensureSchedule: async (a) => {
+        ensured.push(a);
+      },
+    });
+    expect(result.seeded).toBe(0);
+    expect(ensured).toHaveLength(0);
   });
 
   it("one member's failure does not block the others", async () => {
@@ -92,9 +114,9 @@ describe("seedHeartbeatSchedules", () => {
         { memberPrincipalId: "principal-a" },
         { memberPrincipalId: "principal-b" },
       ],
-      resolveUserAddress: async (pid) => {
+      resolveUserIdentity: async (pid) => {
         if (pid === "principal-a") throw new Error("no principal");
-        return "user-b@workbench.example";
+        return { userAddress: "user-b@workbench.example", userRefId: "user-b" };
       },
       ensureSchedule: async (a) => {
         ensured.push(a);
@@ -113,7 +135,7 @@ describe("seedHeartbeatSchedules", () => {
       listMyraTargets: async () => {
         throw new Error("db down");
       },
-      resolveUserAddress: async () => "x@y",
+      resolveUserIdentity: async () => ({ userAddress: "x@y", userRefId: "x" }),
       ensureSchedule: async () => {},
     });
     expect(result.seeded).toBe(0);

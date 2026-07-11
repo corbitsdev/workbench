@@ -65,7 +65,7 @@ function argMapOf(
 }
 
 const TRIGGER_PAYLOAD = {
-  reason: "scheduled",
+  reason: "scheduled-heartbeat",
   userAddress: "usr_abc123@workbench.local",
   userRefId: "usr_abc123",
   createdAfter: "2026-07-04T00:00:00Z",
