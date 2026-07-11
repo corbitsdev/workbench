@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { friendlyToolSummary } from "@workbench/agents/browser";
+import { friendlyToolSummaryKnown } from "@workbench/agents/browser";
 import type { ToolCall } from "@workbench/chat";
 import {
   approveRequest,
@@ -43,15 +43,15 @@ function approvalToToolCall(approval: Approval): ToolCall {
 }
 
 /**
- * The line-one headline: the humanized verb phrase when we can produce one,
- * otherwise the backend's own action sentence. `friendlyToolSummary` falls back
- * to a soft "Working on …" for tool ids it does not recognize — in that case
- * the backend's `action` is the more specific, honest description.
+ * The line-one headline: the humanized verb phrase when the tool is recognized,
+ * otherwise the backend's own action sentence. `friendlyToolSummaryKnown`
+ * returns null for unrecognized tool ids — for those the backend's `action` is
+ * the more specific, honest description.
  */
 function headlineFor(approval: Approval): string {
-  const summary = friendlyToolSummary(approvalToToolCall(approval));
-  if (summary.startsWith("Working on ")) return approval.action;
-  return summary;
+  return (
+    friendlyToolSummaryKnown(approvalToToolCall(approval)) ?? approval.action
+  );
 }
 
 function humanizeKey(key: string): string {

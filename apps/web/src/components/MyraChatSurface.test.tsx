@@ -104,6 +104,7 @@ mock.module("@workbench/chat", () => ({
 
 mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummary: () => "",
+  friendlyToolSummaryKnown: () => null,
   friendlyToolResult: () => null,
   isCatalogMetaTool: () => false,
   summarizeToolCalls: () => "",

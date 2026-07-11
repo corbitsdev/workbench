@@ -138,6 +138,25 @@ describe("ReviewGate — humanized context", () => {
     expect(screen.queryByText("Run notion__create_page")).not.toBeNull();
     screen.getByText(/notion page/i);
   });
+
+  it("falls back to the backend action headline for an unrecognized tool", async () => {
+    const unknown = makeApproval({
+      resource: "tool:totally_unknown_xyz_tool",
+      action: "Perform the specific unknown operation",
+      context: {},
+    });
+    mockListApprovals.mockResolvedValue([unknown]);
+    const { container } = renderGate();
+    await waitFor(() => {
+      screen.getByTestId(`approval-${unknown.id}`);
+    });
+    // Unrecognized tool: friendlyToolSummaryKnown returns null, so the headline
+    // is the backend action — never the soft "Working on …" fallback label.
+    expect(container.textContent).toContain(
+      "Perform the specific unknown operation",
+    );
+    expect(container.textContent).not.toContain("Working on");
+  });
 });
 
 describe("ReviewGate — approve action", () => {
