@@ -51,16 +51,16 @@ The sidecar carries three tool runners merged via `mergeToolRunners` before `fil
 
 The merged `ToolRunner` is wrapped as an Interchange `toolFactory` via `defineTool` (from `@intx/agent`) and passed in `toolFactories` on the `AgentDefinition` — **not** via an `env.tools` field, which does not exist in Interchange's `BaseEnv`. The `env` passed to `createHarness` must include `directors: createDefaultDirectorRegistry()` (required by `BaseEnv`). Missing either of these causes `createHarness` to throw at agent launch time, leaving every workflow run stuck in its current state with zero token consumption.
 
+### `packages/myra` (`@workbench/myra`)
+
+Myra was extracted out of `@workbench/agents` into its own package. `src/core/` holds Myra's system prompt, agent definition, custom director, and seed files (`definition.ts`, `prompt.ts`, `director.ts`, `seed-files.ts`) — the same shape `@workbench/agents` uses for its other templates. `src/personas/mailbox.ts` is a second, deliberately narrower persona: the read-only loadout used for ephemeral triage sessions (see `mailbox-triage.ts` below), which cannot mutate anything on the user's behalf. `@workbench/agents` keeps the generic primitives (adapter, prompt-builder, tool-name tracking, deploy descriptors, and the remaining templates); it no longer owns Myra's definition.
+
 ### `packages/agents` (`@workbench/agents`)
 
-Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter. This package is the source of truth for all template content. At hub boot, `seedAgentTemplates(db)` reads the templates from this package and idempotently upserts one Interchange agent definition per template (Myra, Oat, Freddy, Walter, Loop, …) into the root tenant — re-boot is a no-op.
+Agent definitions, system prompts, custom directors, and the `InstanceEvent` → `ChatMessage` adapter for every template other than Myra (Oat, Freddy, Walter, Loop, Fannie, Lincoln, Hammy, …), plus the shared primitives every template — including Myra — builds on. This package is the source of truth for that template content. At hub boot, `seedAgentTemplates(db)` reads the templates from `@workbench/agents` and `@workbench/myra` and idempotently upserts one Interchange agent definition per template into the root tenant — re-boot is a no-op.
 
 ```
 src/
-  personal-agent/
-    prompt.ts        — Myra system prompt
-    definition.ts    — Myra agent definition
-    director.ts      — Custom director filtering inbound senders
   granola/
     prompt.ts        — Oat system prompt
     definition.ts    — Oat agent definition
@@ -340,6 +340,13 @@ Tracks which workflow kinds a principal has enabled in a tenant.
 - `kind` (text) — workflow kind
 - Unique `(tenant_id, principal_id, kind)` for idempotent upserts. Scoped per-principal so one member's enablement cannot overwrite another's in the shared root tenant.
 
+### Mailbox, automations, and tasks
+
+- `principal_mailbox` (migration `0046`, `message_key` added in `0050`) — the workbench-owned inbox for every principal (human or agent instance). `apps/hub/src/lib/principal-mailbox.ts` (`createPrincipalMailboxPersist`) provides the `persistMail` override that writes here instead of relying on Interchange's own mail persistence. `GET /me/inbox` is keyset-paginated (`{ limit, cursor }` → `{ messages, nextCursor? }`); `GET /me/inbox/:id` and `POST /me/inbox/:id/read` complete the surface.
+- `scheduled_trigger` (migration `0047`) — durable per-user schedules fired by the daily scheduler (`apps/hub/src/services/scheduler.ts`) and seeded by `scheduled-trigger-seeder.ts` (one heartbeat schedule per Myra instance, at `scheduler.heartbeatHourUtc`). Gated by `SCHEDULER_ENABLED` (default off).
+- `workflow_trigger` (migration `0048`) — user-owned webhook triggers. `/me/webhook-triggers` manages them; the public `POST /triggers/webhook/:triggerId` route authenticates with a SHA-256 secret hash and rate-limits per `(ip, triggerId)`, returning a generic 404 on any auth or rate-limit failure so triggers can't be enumerated.
+- `task` and `task_external_ref` (migration `0049`) — native, workbench-owned tasks. `packages/tasks` holds the adapter registry, an Attio adapter, and a push service that writes `task_external_ref` rows; a failed push is retried server-side by the `tasksReconciler` (gated by `TASKS_RECONCILER_ENABLED`, default off) and never surfaces as a user-facing error. `/me/tasks` is keyset-paginated the same way as inbox and schedules, though its list field is `items` rather than `messages` — see `API.md` for the inconsistency.
+
 ### Migration Sequence
 
 | Migration     | Description                                                                                                                                                                                      |
@@ -471,6 +478,10 @@ All environment validation lives in `apps/hub/src/config.ts`. Variables are vali
 | `GLOBAL_TENANT_DOMAIN`      | Yes      | Domain of the root tenant; Myra instance addresses are `instanceId@<domain>`.                                                                                                                                  |
 | `WEDGE_SWEEP_INTERVAL_MS`   | No       | Cadence (ms) of the wedge-sweep reconciler that relaunches active-but-unroutable instances after a sidecar restart. Positive integer; defaults to 30000.                                                       |
 | `WEDGE_UNROUTABLE_GRACE_MS` | No       | How long (ms) an address must stay continuously unroutable before the wedge sweep relaunches it. Must exceed the 90s disconnect grace and sidecar reconnect-settle time. Positive integer; defaults to 120000. |
+| `SCHEDULER_ENABLED`         | No       | Opt-in kill switch for the automation scheduler (`scheduled_trigger` rows + heartbeat seeding). Default off.                                                                                                    |
+| `HEARTBEAT_HOUR_UTC`        | No       | UTC hour the seeded per-Myra heartbeat schedule fires at. Defaults to 13.                                                                                                                                       |
+| `TRIAGE_ENABLED`            | No       | Opt-in kill switch for ephemeral, read-only Myra triage of inbound external mail. Default off.                                                                                                                  |
+| `TASKS_RECONCILER_ENABLED`  | No       | Opt-in kill switch for the background retry of `task_external_ref` rows a push left `pending`. Default off.                                                                                                     |
 
 ### Client deployment
 

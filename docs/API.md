@@ -145,6 +145,52 @@ responds `{ thread }`; delete responds `{ deleted: true }`.
 
 ---
 
+## Personal (`/me/*`) API conventions
+
+Every `/me/*` route resolves the caller's identity server-side from the
+session — a request never supplies its own principal id. List routes share a
+keyset pagination shape: request `{ limit, cursor }`, response includes
+`nextCursor` when more results remain. The list-field name is **not**
+uniform across routes — `/me/inbox` returns `{ messages, nextCursor? }` while
+`/me/schedules`, `/me/tasks`, and `/me/webhook-triggers` all return
+`{ items, nextCursor? }`. Treat this as a known inconsistency, not a
+convention to copy — new `/me/*` list routes should use `items`.
+
+### Inbox
+
+```
+GET   /me/inbox              # { limit, cursor } → { messages, nextCursor? }
+GET   /me/inbox/:id          # message detail
+POST  /me/inbox/:id/read     # marks a message read
+```
+
+Backed by the workbench-owned `principal_mailbox` table — every principal
+(human or agent instance) has one. Delivery is authorized to senders in the
+same tenant domain as the recipient.
+
+### Schedules and webhook triggers
+
+```
+GET/POST/PATCH/DELETE  /me/schedules              # durable scheduled_trigger rows
+GET/POST/DELETE        /me/webhook-triggers        # workflow_trigger rows
+POST                   /triggers/webhook/:triggerId  # public — secret-authenticated, IP-rate-limited
+```
+
+The scheduler and its heartbeat seeder, and the webhook trigger route, are
+each gated behind an opt-in environment kill switch (default off) — see
+`IMPLEMENTATION.md`.
+
+### Tasks
+
+```
+GET/POST/PATCH  /me/tasks   # { limit, cursor } → { items, nextCursor? }
+```
+
+Backed by the workbench-owned `task` table, with optional external-system
+linkage in `task_external_ref`.
+
+---
+
 ## Recent Calls API
 
 ```

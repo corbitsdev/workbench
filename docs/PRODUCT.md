@@ -8,13 +8,68 @@ The agent layer handles analysis and first-draft generation. The human handles c
 
 The broader workbench pattern is source-to-artifact: users bring source material, choose an outcome, review the important decisions, approve artifacts, and optionally deliver them. Users choose outcomes, not pipeline topology. The canonical model lives in [SOURCE_TO_ARTIFACT.md](./SOURCE_TO_ARTIFACT.md).
 
+## Inbox — the home surface
+
+The app now opens into the **Inbox**, not a chat thread. The inbox is a
+per-principal mailbox (every user and every agent instance has one) that also
+serves as the "Now" dashboard: a single prioritized list of everything that
+needs the user's attention, ranked **gate asks first, then unread mail, then
+open tasks** (a blocked workflow run always outranks an unread message, which
+always outranks an open task). Mail delivery into a principal's inbox is
+authorized to senders in the same tenant domain — an agent instance can write
+to a user's inbox, but only within the tenant it's provisioned in — and every
+inbox list and detail route derives the caller's identity from their session,
+never from a client-supplied id.
+
+A notifications bell in the app chrome surfaces unread counts, and a
+registry-driven onboarding tour (its shown/dismissed state is a persisted user
+preference, not local-only UI state) introduces new users to the inbox model
+on first login.
+
+## Automations
+
+Two ways work can start without a user opening the app:
+
+- **Scheduled triggers** — a durable, per-user schedule (daily, UTC-hour
+  cadence) that fires a workflow run. Users manage their own schedules from a
+  dedicated page. One heartbeat schedule is seeded automatically per Myra
+  instance so Myra can check in on a cadence even if the user never sets up a
+  schedule themselves. This is opt-in at the deployment level — an operator
+  turns automation scheduling on for an environment.
+- **Webhook triggers** — a user can mint a webhook that starts a workflow run
+  when an external system posts to it. The public endpoint is secret-authenticated
+  and rate-limited per source IP to prevent abuse; a failed or unauthorized
+  request returns a generic not-found rather than revealing which triggers
+  exist.
+
+## Ephemeral triage Myra
+
+When a message from outside the platform lands in a user's inbox, an
+ephemeral, read-only instance of Myra can triage it before the user sees it —
+summarizing, flagging what needs a decision, and handing back a threaded
+"Myra triaged: …" note in the same inbox. Triage runs as a short-lived
+per-message session (not a standing agent), is bounded so a burst of inbound
+mail can't runwild the queue, and is opt-in at the deployment level. The
+default autonomy level for this and other agent-initiated action is
+**prepare-only** — the agent drafts and hands back, it does not send or act on
+the user's behalf, unless the user raises their own autonomy preference.
+
+## Native tasks
+
+Tasks are now a first-class object in the workbench, not something that only
+exists in a connected CRM. A user (or an agent acting for them) can create a
+task, and the workbench can optionally push it out to an external system (for
+example Attio) and reconcile state back — pushes and reconciliation happen
+server-side; a push failure never surfaces as a user-facing error, it's
+retried in the background.
+
 ## Agents
 
 ### Myra — Personal AI Agent
 
 Every user gets a personal AI agent named **Myra**. Myra acts as a Chief of Staff / Executive Assistant. Each user receives their own Myra instance (provisioned automatically on join) within the shared global org tenant. Myra can coordinate across workbenches and serves as the user's persistent, intelligent assistant throughout the platform.
 
-**Multi-thread chat.** Myra is the default, chat-first experience: the app opens directly into a conversation. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, and history), not a saved transcript. Myra's durable **memory is shared across all of a user's threads**, not per-thread: what she learns in one chat (the standing brief on the person, durable facts, contacts) is available in the others. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
+**Multi-thread chat.** The app's home surface is the Inbox (see below), but Myra chat remains the default way to work with the assistant directly. A user can run **multiple parallel Myra chats** ("threads") — each thread is a separate, full Myra (its own tools, skills, and history), not a saved transcript. Myra's durable **memory is shared across all of a user's threads**, not per-thread: what she learns in one chat (the standing brief on the person, durable facts, contacts) is available in the others. The widened left sidebar lists every thread with **+ New Chat**, and threads can be renamed or deleted. The app remembers the last-active thread, so reopening the app (or the docked quick-chat available on non-chat pages) lands the user back where they were. Workflow run history lives on its own **Workflows** page.
 
 **Document understanding.** A user can attach an image or a **document (PDF)** to a Myra message. Images Myra reads directly. Documents she reads through a dedicated **File Parser** — the uploaded file is turned into text and handed to Myra — so she understands PDFs **regardless of her own chat model**, which cannot read documents natively. The attached document appears as a chip on the message. Myra can also read a document a user or workflow saved earlier as an artifact.
 
@@ -61,6 +116,13 @@ Key capabilities:
 - **Delete** — owners can permanently remove a skill and its git store from the detail page; deletion requires an inline confirmation step
 
 A skill is visible to everyone in the tenant it was created in and that tenant's descendants (e.g. a skill in the org is visible in every workbench under it). Per-user private skills are deferred until users have a personal tenancy.
+
+## Settings
+
+User-facing preferences (triage autonomy, notification behavior, tour
+dismissal, and similar) are validated against a shared preference registry
+rather than accepted as free-form values — a write to an unregistered
+preference key is rejected. Users manage these from the Settings page.
 
 ## Target Users
 
