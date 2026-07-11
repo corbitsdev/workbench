@@ -445,17 +445,19 @@ export function createSessionManager(
   //   `assistantLoopGuard` — per-agent run of consecutive identical
   //                          normalized assistant outputs; reset by any
   //                          inbound user message and at session go-live.
-  //   `currentRuns`        — the open message-run bracket per agent, so an
-  //                          interrupt can end the correct turn.
+  //   `openRuns`           — the open message-run brackets per agent, keyed
+  //                          by messageRunId (the reactor serializes runs,
+  //                          but this mirrors the `activeRuns` counting
+  //                          model rather than assuming a single slot), so
+  //                          an interrupt can settle every open turn.
   //   `loopInterrupted`    — agents whose turn was interrupted; remaining
   //                          events from the aborting reactor are dropped so
   //                          the synthetic run-ended stays the turn's last
-  //                          word. Cleared when a session goes live again.
+  //                          word. Cleared when a session goes live again —
+  //                          or immediately if the eviction fails, so a
+  //                          still-live session is never left muted.
   const assistantLoopGuard = createAssistantLoopGuard();
-  const currentRuns = new Map<
-    string,
-    { messageRunId: string; messageId: string }
-  >();
+  const openRuns = new Map<string, Map<string, string>>();
   const loopInterrupted = new Set<string>();
 
   // WORKBENCH-LOCAL (CL-3340): stop the turn on a detected output loop. The
@@ -472,38 +474,45 @@ export function createSessionManager(
     message: string,
   ): void {
     loopInterrupted.add(agentAddress);
-    const run = currentRuns.get(agentAddress);
-    currentRuns.delete(agentAddress);
+    const runs = openRuns.get(agentAddress);
+    openRuns.delete(agentAddress);
     activeRuns.delete(agentAddress);
-    if (run !== undefined) {
-      const ended: InferenceEvent = {
-        type: "message.run.ended",
-        seq,
-        data: {
-          messageRunId: run.messageRunId,
-          messageId: run.messageId,
-          status: "failed",
-          error: { message, kind: "assistant_loop_interrupted" },
-        },
-      };
-      const set = agentEventListeners.get(agentAddress);
-      if (set !== undefined) {
-        for (const listener of set) {
-          try {
-            listener(ended);
-          } catch (err: unknown) {
-            logger.error`agent-event listener for ${agentAddress} threw during loop interrupt: ${String(err)}`;
+    // Settle every open bracket so no turn dangles hub-side (the reactor
+    // serializes runs, so normally this is exactly one).
+    if (runs !== undefined) {
+      for (const [messageRunId, messageId] of runs) {
+        const ended: InferenceEvent = {
+          type: "message.run.ended",
+          seq,
+          data: {
+            messageRunId,
+            messageId,
+            status: "failed",
+            error: { message, kind: "assistant_loop_interrupted" },
+          },
+        };
+        const set = agentEventListeners.get(agentAddress);
+        if (set !== undefined) {
+          for (const listener of set) {
+            try {
+              listener(ended);
+            } catch (err: unknown) {
+              logger.error`agent-event listener for ${agentAddress} threw during loop interrupt: ${String(err)}`;
+            }
           }
         }
+        onEvent(agentAddress, sessionId, ended);
       }
-      onEvent(agentAddress, sessionId, ended);
     }
     const session = sessions.get(agentAddress);
     if (session === undefined) return;
     logger.warn`Assistant output loop detected for ${agentAddress}; interrupting the turn and putting the session to sleep`;
     void evictSession(agentAddress, session, "loop-interrupt").catch(
       (err: unknown) => {
-        logger.error`Loop-interrupt eviction for ${agentAddress} failed: ${String(err)}`;
+        // A failed teardown leaves the session live — unmute it rather than
+        // leaving a deaf zombie until the idle sweep.
+        loopInterrupted.delete(agentAddress);
+        logger.error`Loop-interrupt eviction for ${agentAddress} failed; resuming event forwarding: ${String(err)}`;
       },
     );
   }
@@ -734,17 +743,23 @@ export function createSessionManager(
           ) {
             lastCheckpointHashes.set(agentAddress, event.data.checkpointHash);
           }
-          // WORKBENCH-LOCAL (CL-3340): track the open run bracket and check
+          // WORKBENCH-LOCAL (CL-3340): track the open run brackets and check
           // each finalized inference cycle for a stuck identical response.
           // The tripping duplicate is swallowed — the interrupt's synthetic
           // run-ended settles the turn instead.
           if (event.type === "message.run.started") {
-            currentRuns.set(agentAddress, {
-              messageRunId: event.data.messageRunId,
-              messageId: event.data.messageId,
-            });
+            let runs = openRuns.get(agentAddress);
+            if (runs === undefined) {
+              runs = new Map();
+              openRuns.set(agentAddress, runs);
+            }
+            runs.set(event.data.messageRunId, event.data.messageId);
           } else if (event.type === "message.run.ended") {
-            currentRuns.delete(agentAddress);
+            const runs = openRuns.get(agentAddress);
+            if (runs !== undefined) {
+              runs.delete(event.data.messageRunId);
+              if (runs.size === 0) openRuns.delete(agentAddress);
+            }
           } else if (event.type === "inference.done") {
             const interrupt = assistantLoopGuard.recordAssistantOutput(
               agentAddress,
@@ -961,7 +976,10 @@ export function createSessionManager(
   // delivery failure. A genuine terminal failure with mail still parked is the
   // silent-drop case: surface it so the sender-acked message is observably
   // undelivered rather than lost in a log.
-  function reportTerminalWakeFailure(agentAddress: string, err: unknown): void {
+  function reportTerminalWakeFailure(
+    agentAddress: string,
+    err: unknown,
+  ): void {
     if (err instanceof WakeAbortedError) return;
     const parkedCount = parkedMail.get(agentAddress)?.length ?? 0;
     if (parkedCount > 0) {
