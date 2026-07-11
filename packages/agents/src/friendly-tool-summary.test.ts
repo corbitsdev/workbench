@@ -328,14 +328,31 @@ describe("friendlyToolResult", () => {
       const withPkg = friendlyToolSummary(
         call("load_tools", { package: "attio" }, { id }),
       );
+      // Every package phrase embeds the display name — lowercase never leaks.
+      expect(withPkg).toContain("Attio");
       expect(withPkg).not.toMatch(/\battio\b/);
-      if (/atti/i.test(withPkg)) expect(withPkg).toContain("Attio");
       const single = friendlyToolSummary(
         call("load_tools", { names: ["attio__create_record"] }, { id }),
       );
       expect(single).not.toBe("Getting that ready");
       const idle = friendlyToolSummary(call("load_tools", {}, { id }));
       expect(idle).not.toBe("Getting that ready");
+    }
+  });
+
+  it("uses stylized casing for brands plain capitalization gets wrong", () => {
+    for (const id of ["s1", "s2", "s3"]) {
+      expect(
+        friendlyToolSummary(
+          call("load_tools", { package: "scrapecreators" }, { id }),
+        ),
+      ).toContain("ScrapeCreators");
+      expect(
+        friendlyToolSummary(call("load_tools", { package: "youtube" }, { id })),
+      ).toContain("YouTube");
+      expect(
+        friendlyToolSummary(call("load_tools", { package: "github" }, { id })),
+      ).toContain("GitHub");
     }
   });
 

@@ -52,7 +52,10 @@ export function MessageFeedback({
   return (
     <div
       className={cn(
-        "flex items-center gap-0.5 transition-opacity duration-150",
+        // gap must exceed the buttons' combined horizontal hit-area extension
+        // (2 × after:-inset-x-1 = 8px) so the overlays never overlap — a click
+        // near one thumb must not register on the other.
+        "flex items-center gap-2.5 transition-opacity duration-150",
         revealed
           ? "opacity-100"
           : "opacity-0 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
@@ -82,10 +85,11 @@ export function MessageFeedback({
   );
 }
 
-// Visual size stays small; the ::after overlay lifts the hit target to ~40px
-// (same pattern as the tool rows' TOUCH_TARGET).
+// Visual size stays small; the ::after overlay lifts the hit target to 44px
+// vertically (tool-row TOUCH_TARGET pattern). Horizontal extension is held to
+// 4px per side so adjacent thumbs' overlays cannot cross the row's 10px gap.
 const FEEDBACK_BUTTON =
-  "relative rounded p-1 text-text-3 transition-[color,transform] hover:text-text active:scale-[0.97] disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange cursor-pointer after:absolute after:-inset-2 after:content-['']";
+  "relative rounded p-1 text-text-3 transition-[color,transform] hover:text-text active:scale-[0.97] disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange cursor-pointer after:absolute after:-inset-x-1 after:-inset-y-2.5 after:content-['']";
 
 function ThumbUpIcon() {
   return (

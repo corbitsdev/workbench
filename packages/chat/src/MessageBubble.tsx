@@ -257,9 +257,17 @@ export function MessageBubble({
   // empty rather than rendering a blank bubble.
   const hasBody = message.content.trim() !== "";
 
-  // Nothing to show: no body, not streaming, no images, no renderable
-  // attachments. (Reasoning renders in the AgentTurn trace, not here.)
-  if (!hasBody && message.status !== "sending" && !hasImages && !hasAttachments)
+  // Nothing to show: no body, no images, no renderable attachments — and
+  // either settled, or streaming with reasoning carrying the live state (the
+  // AgentTurn trace renders reasoning; an empty wrapper here would only add
+  // dead space under it). A reasoning-less stream keeps the bubble as the
+  // typing placeholder.
+  if (
+    !hasBody &&
+    !hasImages &&
+    !hasAttachments &&
+    (message.status !== "sending" || hasReasoning)
+  )
     return null;
 
   // Only attempt block extraction on settled agent/system messages — a partial

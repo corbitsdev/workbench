@@ -1,7 +1,39 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
+
+// Height/opacity reveal matching ToolNarrative's ExpandReveal: reduced-motion
+// users get an instant toggle with no AnimatePresence — this matters here
+// because the disclosure auto-collapses (uninvoked motion) when the answer
+// starts.
+function ReasoningReveal({
+  open,
+  reduceMotion,
+  children,
+}: {
+  open: boolean;
+  reduceMotion: boolean;
+  children: ReactNode;
+}) {
+  if (reduceMotion) return open ? <div>{children}</div> : null;
+  return (
+    <AnimatePresence initial={false}>
+      {open && (
+        <motion.div
+          key="content"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.18, ease: EASE_OUT }}
+          className="overflow-hidden"
+        >
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
 
 export interface ReasoningDisclosureProps {
   /** The agent's reasoning text. */
@@ -69,27 +101,16 @@ export function ReasoningDisclosure({
           />
         </span>
       </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            key="content"
-            initial={reduceMotion === true ? false : { height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.18, ease: EASE_OUT }}
-            className="overflow-hidden"
+      <ReasoningReveal open={open} reduceMotion={reduceMotion === true}>
+        <div className="ml-[26px] border-l border-border pl-3">
+          <Markdown
+            mode={streaming ? "streaming" : "static"}
+            className="text-xs leading-relaxed text-text-3"
           >
-            <div className="ml-[26px] border-l border-border pl-3">
-              <Markdown
-                mode={streaming ? "streaming" : "static"}
-                className="text-xs leading-relaxed text-text-3"
-              >
-                {reasoning}
-              </Markdown>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            {reasoning}
+          </Markdown>
+        </div>
+      </ReasoningReveal>
     </div>
   );
 }

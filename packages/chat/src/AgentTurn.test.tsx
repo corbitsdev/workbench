@@ -1,6 +1,12 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import React from "react";
 
 import { AgentTurn } from "./AgentTurn";
@@ -95,7 +101,7 @@ describe("AgentTurn", () => {
     ).toBe("false");
   });
 
-  it("renders feedback once, after the tool narrative, keyed on feedbackId", () => {
+  it("renders feedback once, after the tool narrative, keyed on feedbackId", async () => {
     const onRate = mock(() => Promise.resolve());
     const message = agentMessage({
       feedbackId: "t1",
@@ -131,8 +137,32 @@ describe("AgentTurn", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Thumbs down" }));
-    expect(onRate).toHaveBeenCalledWith("t1", "turn_part", -1);
+    // waitFor flushes the click's async rating state update inside act().
+    await waitFor(() =>
+      expect(onRate).toHaveBeenCalledWith("t1", "turn_part", -1),
+    );
     expect(text.indexOf("Final answer")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("reads the saved rating under feedbackId so a thumb survives the turn→mail collapse", () => {
+    const getRating = mock((subjectId: string) =>
+      subjectId === "t1" ? (1 as const) : null,
+    );
+    render(
+      <AgentTurn
+        message={agentMessage({ id: "a1", feedbackId: "t1" })}
+        onRate={() => Promise.resolve()}
+        getRating={getRating}
+      />,
+    );
+    const up = screen.getByRole("button", { name: "Thumbs up" });
+    expect(up.getAttribute("aria-pressed")).toBe("true");
+    expect(getRating).toHaveBeenCalledWith("t1", "turn_part");
+  });
+
+  it("renders the sender label exactly once", () => {
+    render(<AgentTurn message={agentMessage({ senderLabel: "Oat" })} />);
+    expect(screen.getAllByText("From: Oat")).toHaveLength(1);
   });
 
   it("shows no feedback while the turn is still streaming", () => {

@@ -118,7 +118,7 @@ export interface ChatThreadProps {
     subjectKind: FeedbackSubjectKind,
     rating: 1 | -1,
   ) => Promise<void>;
-  /** Returns the server-fetched rating for a subject. Passed to MessageBubble → MessageFeedback. */
+  /** Returns the server-fetched rating for a subject. Passed to AgentTurn → MessageFeedback. */
   getRating?: (
     subjectId: string,
     subjectKind: FeedbackSubjectKind,

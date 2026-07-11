@@ -81,9 +81,20 @@ const LOAD_TOOLS_IDLE = [
   "Preparing what I need",
 ] as const;
 
+// Stylized brand names that plain first-letter capitalization gets wrong.
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  scrapecreators: "ScrapeCreators",
+  x: "X",
+  youtube: "YouTube",
+  github: "GitHub",
+  hackernews: "Hacker News",
+};
+
 // Package shorts are lowercase wire ids ("attio"); display them as proper
 // nouns in running text.
 function displayProviderName(pkg: string): string {
+  const stylized = PROVIDER_DISPLAY_NAMES[pkg.toLowerCase()];
+  if (stylized !== undefined) return stylized;
   return pkg
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))

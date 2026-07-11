@@ -64,7 +64,9 @@ export function AgentTurn({
   const hasReasoning = (message.reasoning ?? "").trim() !== "";
   const toolCalls = visibleToolCalls ?? message.toolCalls;
   const hasTools = toolCalls !== undefined && toolCalls.length > 0;
-  const settled = message.status !== "sending";
+  // The turn header owns the sender label; strip it from the nested bubble so
+  // it renders exactly once.
+  const { senderLabel, ...bubbleMessage } = message;
 
   return (
     <div
@@ -72,8 +74,8 @@ export function AgentTurn({
       data-role="agent"
       data-testid="agent-turn"
     >
-      {message.senderLabel !== undefined && message.senderLabel !== "" && (
-        <span className="text-xs text-text-3">From: {message.senderLabel}</span>
+      {senderLabel !== undefined && senderLabel !== "" && (
+        <span className="text-xs text-text-3">From: {senderLabel}</span>
       )}
       {(hasReasoning || hasTools) && (
         <div
@@ -110,7 +112,7 @@ export function AgentTurn({
         </div>
       )}
       <MessageBubble
-        message={message}
+        message={bubbleMessage}
         {...(onRespond !== undefined ? { onRespond } : {})}
         {...(onAction !== undefined ? { onAction } : {})}
         {...(resolveAttachmentUrl !== undefined
@@ -118,7 +120,7 @@ export function AgentTurn({
           : {})}
       />
       {trailing}
-      {settled && onRate !== undefined && (
+      {!isStreaming && onRate !== undefined && (
         <MessageFeedback
           subjectId={message.feedbackId ?? message.id}
           subjectKind="turn_part"
