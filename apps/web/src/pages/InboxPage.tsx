@@ -1,32 +1,64 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Inbox as InboxIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
-import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 import {
+  buildNowFeed,
+  type MailboxMessage,
+  type MailboxMessageDetail,
+} from "@workbench/shared";
+import {
+  MAILBOX_POLL_MS,
   useMailbox,
   useMailboxMessage,
   useMarkMailboxRead,
 } from "../hooks/use-mailbox";
+import { useTasks } from "../hooks/use-tasks";
+import { useWorkflowRuns } from "../hooks/use-workflow";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { NowSection } from "../components/NowSection";
+
+// The Now feed's liveness cadence, shared with the bell's mailbox poll so the
+// whole dashboard breathes at one rate.
+const NOW_POLL_MS = MAILBOX_POLL_MS;
 
 /**
- * The Human Inbox: the durable surface for mail addressed to the signed-in
- * user (Myra's morning brief, workflow hand-offs, gate asks). Read-only in M1
- * — a message list rail plus a reading pane. Opening a message marks it read
- * so the ambient notifications bell's unread badge stays honest.
+ * The inbox as the living dashboard: a message-list rail plus a main pane
+ * that shows the prioritized "Now" feed (gate asks, unread mail, open tasks)
+ * until a message is selected, then its reading pane. Opening a message marks
+ * it read so the ambient notifications bell's unread badge stays honest.
  */
 export function InboxPage() {
   const { messageId } = useParams<{ messageId?: string }>();
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
-  const { data, isLoading, isError, refetch } = useMailbox();
+  const { activeTenantId } = useActiveWorkbench();
+  const { data, isLoading, isError, refetch } = useMailbox({
+    refetchInterval: NOW_POLL_MS,
+  });
+  const tasks = useTasks({ refetchInterval: NOW_POLL_MS });
+  const runs = useWorkflowRuns(activeTenantId, {
+    idleRefetchInterval: NOW_POLL_MS,
+  });
   const markRead = useMarkMailboxRead();
   const markReadMutate = markRead.mutate;
 
   const messages = data ?? [];
+  const taskList = tasks.data;
+  const runList = runs.data;
+  const nowItems = useMemo(
+    () =>
+      buildNowFeed({
+        runs: runList ?? [],
+        messages: data ?? [],
+        tasks: taskList ?? [],
+      }),
+    [runList, data, taskList],
+  );
+  const nowReady = !isLoading && !tasks.isLoading && !runs.isLoading;
   const selected = messages.find((m) => m.id === messageId) ?? null;
   const detail = useMailboxMessage(selected?.id ?? null);
 
@@ -67,14 +99,21 @@ export function InboxPage() {
 
       <section className="min-w-0 flex-1 overflow-y-auto bg-page">
         <ErrorBoundary>
-          <ReadingPane
-            message={selected}
-            detail={detail.data}
-            detailLoading={detail.isLoading}
-            detailError={detail.isError}
-            hasMessages={messages.length > 0}
-            reduceMotion={reduceMotion ?? false}
-          />
+          {selected ? (
+            <ReadingPane
+              message={selected}
+              detail={detail.data}
+              detailLoading={detail.isLoading}
+              detailError={detail.isError}
+              reduceMotion={reduceMotion ?? false}
+            />
+          ) : (
+            <NowSection
+              items={nowItems}
+              ready={nowReady}
+              reduceMotion={reduceMotion ?? false}
+            />
+          )}
         </ErrorBoundary>
       </section>
     </div>
@@ -128,7 +167,7 @@ function MessageList({
   }
 
   return (
-    <ul className="flex flex-col gap-0.5">
+    <ul aria-label="Messages" className="flex flex-col gap-0.5">
       {messages.map((message, index) => (
         <motion.li
           key={message.id}
@@ -221,11 +260,10 @@ function MessageRow({
 }
 
 interface ReadingPaneProps {
-  message: MailboxMessage | null;
+  message: MailboxMessage;
   detail: MailboxMessageDetail | undefined;
   detailLoading: boolean;
   detailError: boolean;
-  hasMessages: boolean;
   reduceMotion: boolean;
 }
 
@@ -261,21 +299,8 @@ function ReadingPane({
   detail,
   detailLoading,
   detailError,
-  hasMessages,
   reduceMotion,
 }: ReadingPaneProps) {
-  if (!message) {
-    return (
-      <div className="grid h-full place-items-center px-6 text-center">
-        <p className="text-sm text-text-3">
-          {hasMessages
-            ? "Select a message to read it."
-            : "New mail will appear here."}
-        </p>
-      </div>
-    );
-  }
-
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.article

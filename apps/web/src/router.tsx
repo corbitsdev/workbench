@@ -230,9 +230,9 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          // Chat-first: the index redirects into the last-active conversation;
-          // /chats is the searchable list; /chats/:threadId is a conversation.
-          { index: true, element: <ChatThreadPage /> },
+          // Inbox-first: login lands on the living dashboard (the inbox with
+          // its Now feed). Chat stays reachable at /chats and /chats/:threadId.
+          { index: true, element: <InboxPage /> },
           { path: "/chats", element: <ChatsListPage /> },
           { path: "/chats/:threadId", element: <ChatThreadPage /> },
           { path: "/onboarding", element: <Navigate to="/" replace /> },
