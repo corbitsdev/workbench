@@ -155,6 +155,16 @@ function parsePositiveIntEnv(
   return parsed;
 }
 
+function parseHourUtcEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 23) {
+    throw new Error(`${name} must be an integer hour 0-23; got "${raw}"`);
+  }
+  return parsed;
+}
+
 function originOf(url: string): string {
   return new URL(url.endsWith("/") ? url : `${url}/`).origin;
 }
@@ -396,6 +406,15 @@ export function loadConfig() {
         DEFAULT_IDLE_SESSION_REAP_INTERVAL_MS,
         "milliseconds",
       ),
+    },
+    // Automation scheduler (CL-2609). Opt-in kill switch, default OFF (mirrors
+    // workflowAutopublishOnBoot). When enabled, the hub fires durable
+    // scheduled_trigger rows on a daily UTC-hour cadence and seeds one
+    // heartbeat schedule per Myra member at `heartbeatHourUtc` on boot.
+    scheduler: {
+      enabled: parseBooleanEnv("SCHEDULER_ENABLED"),
+      heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
+      heartbeatKind: "heartbeat",
     },
   };
 

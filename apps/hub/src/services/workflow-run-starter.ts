@@ -22,6 +22,12 @@ export type StartRunInput = {
   kind: string;
   tenantId: string;
   input: Record<string, unknown>;
+  // Attribution for the run (CL-2609): the principal on whose behalf the run
+  // fires. The HTTP route omits it and the resolved deployment's own principal
+  // is used (preserving pre-CL-2609 behavior); the scheduler passes the
+  // schedule's owning member principal so a scheduled run is attributed to its
+  // owner, not to the shared deployment.
+  creatorPrincipalId?: string;
 };
 
 export type StartRunResult =
@@ -43,6 +49,7 @@ export function createWorkflowRunStarter(deps: {
     kind,
     tenantId,
     input,
+    creatorPrincipalId,
   }: StartRunInput): Promise<StartRunResult> {
     const chain = await getAncestorChain(deps.db, tenantId);
 
@@ -90,7 +97,7 @@ export function createWorkflowRunStarter(deps: {
         deploymentId: deployment.deploymentId,
         kind: deployment.kind,
         tenantId: deployment.tenantId,
-        creatorPrincipalId: deployment.principalId,
+        creatorPrincipalId: creatorPrincipalId ?? deployment.principalId,
       });
       await deps.sessionService.sendUserMessage({
         agentAddress: deriveDeploymentAddress({

@@ -78,6 +78,13 @@ import {
 } from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createWorkflowRunStarter } from "./services/workflow-run-starter";
+import { createScheduler } from "./services/scheduler";
+import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
+import {
+  ensureOwnerSchedule,
+  listEnabledSchedules,
+  markScheduleFired,
+} from "./lib/scheduled-triggers";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
@@ -125,6 +132,7 @@ import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
@@ -1064,6 +1072,7 @@ v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createInboxRouter(db));
+v1.route("/", createMeSchedulesRouter(db));
 v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
@@ -1230,6 +1239,77 @@ void workflowReconciler
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });
+
+// Automation scheduler (CL-2609): fire durable scheduled_trigger rows on a
+// daily UTC-hour cadence by calling the run-start service directly (no HTTP
+// self-call). Single-replica assumption — like the disconnect reconciler, N
+// replicas would fire N runs/schedule/day; a DB-backed fire-lock is the
+// multi-replica follow-up. resolveUserAddress derives the user mail address the
+// heartbeat payload targets.
+// EPIC-INTEGRATION: swap to deriveUserMailAddress from @workbench/hub-agent.
+const resolveUserAddress = async (
+  memberPrincipalId: string,
+): Promise<string> => {
+  const member = await db.query.principal.findFirst({
+    where: eq(intxSchema.principal.id, memberPrincipalId),
+  });
+  if (!member) {
+    throw new Error(`principal not found: ${memberPrincipalId}`);
+  }
+  return `${member.refId}@${config.rootTenant.domain}`;
+};
+
+const listMyraTargets = async () => {
+  const rows = await db.query.memberAgentInstance.findMany({
+    where: and(
+      eq(schema.memberAgentInstance.tenantId, rootTenantId),
+      eq(schema.memberAgentInstance.templateKey, "myra"),
+    ),
+  });
+  return rows.map((row) => ({ memberPrincipalId: row.memberPrincipalId }));
+};
+
+const scheduler = createScheduler({
+  enabled: config.scheduler.enabled,
+  listSchedules: () => listEnabledSchedules(db, rootTenantId),
+  markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
+  startWorkflowRun: async (fire) => {
+    const result = await runStarter.startRun({
+      kind: fire.kind,
+      tenantId: fire.tenantId,
+      input: fire.triggerPayload,
+      creatorPrincipalId: fire.creatorPrincipalId,
+    });
+    if (!result.ok) {
+      throw new Error(`run-start ${result.reason}: ${result.message}`);
+    }
+    return { deploymentId: result.deploymentId, accepted: true };
+  },
+});
+scheduler.start();
+
+// Idempotent boot seed so the morning brief works out of the box: one heartbeat
+// schedule per Myra member. Gated by the same enable flag; detached so a slow
+// seed never blocks startup.
+void seedHeartbeatSchedules({
+  enabled: config.scheduler.enabled,
+  kind: config.scheduler.heartbeatKind,
+  hourUtc: config.scheduler.heartbeatHourUtc,
+  listMyraTargets,
+  resolveUserAddress,
+  ensureSchedule: (args) =>
+    ensureOwnerSchedule(db, {
+      tenantId: rootTenantId,
+      ownerPrincipalId: args.ownerPrincipalId,
+      kind: args.kind,
+      hourUtc: args.hourUtc,
+      payload: args.payload,
+    }),
+}).catch((err) => {
+  log.error("heartbeat schedule seed failed", {
+    error: err instanceof Error ? err : new Error(String(err)),
+  });
+});
 
 // CL-2670: backfill analytics facts for any terminal run missing a fact — a run
 // whose live projection threw (WRN, now ERROR) or that reached terminal while the
@@ -1435,6 +1515,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      scheduler.stop();
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
       log.info("Closing sidecar connections", {

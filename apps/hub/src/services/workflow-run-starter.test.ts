@@ -158,6 +158,34 @@ describe("createWorkflowRunStarter", () => {
     });
   });
 
+  it("attributes routability to an explicit creatorPrincipalId when provided", async () => {
+    chainRef = ["t-root"];
+    let routableArgs: Record<string, unknown> | undefined;
+    const starter = createWorkflowRunStarter({
+      db: makeDb([
+        candidate({ deploymentId: "dep-1", principalId: "deployment-owner" }),
+      ]),
+      sessionService: {
+        sendUserMessage: async () => {},
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async (a) => {
+        routableArgs = a;
+        return { reestablished: false };
+      },
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+    });
+
+    await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+      creatorPrincipalId: "schedule-owner",
+    });
+
+    expect(routableArgs?.creatorPrincipalId).toBe("schedule-owner");
+  });
+
   it("returns delivery_failed when delivery throws", async () => {
     chainRef = ["t-root"];
     const starter = createWorkflowRunStarter({
