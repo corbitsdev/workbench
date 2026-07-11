@@ -1,80 +1,110 @@
 // Approval request API client.
 //
-// These routes proxy to the Interchange tenant approval endpoints
-// (/api/tenants/:tenantId/approvals). The tenantId must be obtained
-// from /api/v1/me before calling these functions.
+// These routes are served by the workbench hub's own approvals router
+// (createApprovalsRouter), mounted under /api/v1
+// (/api/v1/tenants/:tenantId/approvals). Requests go through the shared api()
+// client so the /api/v1 prefix and error handling stay single-sourced with the
+// rest of the app. The tenantId must be obtained from /api/v1/me before calling
+// these functions.
 
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
+import { type } from "arktype";
+import { api, buildEventSourceUrl } from "./api";
+import { subscribeSharedEventStream } from "./shared-event-stream";
 
-async function approvalsApiFetch<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const url = new URL(
-    `/api/${path.replace(/^\//, "")}`,
-    apiBase || window.location.origin,
-  ).toString();
-  const init: RequestInit = { method, credentials: "include" };
-  if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
+export const ApprovalSchema = type({
+  id: "string",
+  tenantId: "string",
+  principalId: "string",
+  agentId: "string",
+  sessionId: "string | null",
+  resource: "string",
+  action: "string",
+  context: "Record<string, unknown> | null",
+  status: "'pending' | 'approved' | 'rejected'",
+  message: "string | null",
+  createdAt: "string",
+  resolvedAt: "string | null",
+});
+export type Approval = typeof ApprovalSchema.infer;
+export type ApprovalStatus = Approval["status"];
+
+const ApprovalArraySchema = ApprovalSchema.array();
+
+function parseApproval(raw: unknown): Approval {
+  const parsed = ApprovalSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid approval response: ${parsed.summary}`);
   }
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw Object.assign(
-      new Error((err as { error?: string }).error ?? `HTTP ${res.status}`),
-      {
-        status: res.status,
-      },
-    );
-  }
-  return res.json() as Promise<T>;
+  return parsed;
 }
 
-export type ApprovalStatus = "pending" | "approved" | "rejected";
+function parseApprovals(raw: unknown): Approval[] {
+  const parsed = ApprovalArraySchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Invalid approvals response: ${parsed.summary}`);
+  }
+  return parsed;
+}
 
-export type Approval = {
-  id: string;
-  tenantId: string;
-  principalId: string;
-  agentId: string;
-  sessionId: string;
-  resource: string;
-  action: string;
-  context: Record<string, unknown> | null;
-  status: ApprovalStatus;
-  createdAt: string;
-  resolvedAt: string | null;
-};
+// A change notification pushed over the workbench-owned approvals SSE stream —
+// never the approval data itself. The client refetches the ownership-scoped
+// list route on each event.
+export const ApprovalEventSchema = type({
+  tenantId: "string",
+  sessionId: "string | null",
+  kind: "'created' | 'resolved'",
+});
+export type ApprovalEvent = typeof ApprovalEventSchema.infer;
 
-export type ApproveScope = "once" | "always";
+const APPROVALS_STREAM_EVENT = "approvals";
 
 /**
- * List all pending approval requests for the given tenant.
- * Optionally filter by Interchange session ID on the client side.
+ * Subscribe to the tenant's approval change notifications over SSE. Shares one
+ * ref-counted EventSource per stream URL (see shared-event-stream). Each valid
+ * event invokes `onEvent`; malformed frames are dropped. `onError` fires once if
+ * the connection never opens (terminal failure) so the caller can react instead
+ * of silently going quiet. Returns an unsubscribe function that closes the
+ * connection when the last subscriber leaves.
+ */
+export function subscribeApprovals(
+  tenantId: string,
+  onEvent: (event: ApprovalEvent) => void,
+  onError?: (error: Error) => void,
+): () => void {
+  const url = buildEventSourceUrl(`tenants/${tenantId}/approvals/stream`);
+  return subscribeSharedEventStream(
+    url,
+    APPROVALS_STREAM_EVENT,
+    (raw) => {
+      const parsed = ApprovalEventSchema(raw);
+      if (parsed instanceof type.errors) return;
+      onEvent(parsed);
+    },
+    onError,
+  );
+}
+
+/**
+ * List the pending approval requests the caller owns for the given tenant.
  */
 export async function listApprovals(tenantId: string): Promise<Approval[]> {
-  return approvalsApiFetch<Approval[]>("GET", `tenants/${tenantId}/approvals`);
+  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
+  return parseApprovals(raw);
 }
 
 /**
- * Approve a pending approval request.
- *
- * `scope: 'once'` — one-time approval.
- * `scope: 'always'` — creates a persistent grant so the agent won't ask again.
+ * Approve a pending approval request. The approve endpoint reads no request
+ * body — the approval is resolved as a one-time grant server-side.
  */
 export async function approveRequest(
   tenantId: string,
   approvalId: string,
-  scope: ApproveScope,
 ): Promise<Approval> {
-  return approvalsApiFetch<Approval>(
+  const raw = await api<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/approve`,
-    { scope },
   );
+  return parseApproval(raw);
 }
 
 /**
@@ -85,9 +115,10 @@ export async function rejectRequest(
   approvalId: string,
   message?: string,
 ): Promise<Approval> {
-  return approvalsApiFetch<Approval>(
+  const raw = await api<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/reject`,
-    message !== undefined ? { message } : {},
+    message !== undefined ? { message } : undefined,
   );
+  return parseApproval(raw);
 }

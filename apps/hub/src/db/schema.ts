@@ -391,6 +391,11 @@ export const memberAgentInstance = pgTable(
     /** UI label for this instance row (Myra threads, etc.). */
     label: text("label"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
+    // Most recent activity (a user message to this instance). Bumped by the hub
+    // mail middleware so the chat list can order most-recently-active first;
+    // seeded to created_at on insert (a fresh thread's only activity is its
+    // creation).
+    lastActivityAt: timestamp("last_activity_at").notNull().defaultNow(),
   },
   () => ({}),
 );

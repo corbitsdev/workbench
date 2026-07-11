@@ -13,7 +13,10 @@ import {
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
+  friendlyToolResult,
   summarizeToolCalls,
+  isCatalogMetaTool,
+  isExternalIntegrationTool,
   attachmentPolicyForAgent,
 } from "@workbench/agents/browser";
 import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
@@ -29,6 +32,7 @@ import { useActiveContext } from "../lib/active-context-store";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
 import { ActiveContextPills } from "./ActiveContextPills";
+import { ReviewGate } from "./ReviewGate";
 
 /**
  * Near-full-screen overlay wrapping the whole chat panel while expanded so the
@@ -116,6 +120,11 @@ const hideMyraSelfManagement = (call: { name: string }): boolean =>
 
 type MyraChatSurfaceProps = {
   session: MyraSession;
+  /**
+   * Active Interchange tenant. When present, an inline approval gate is mounted
+   * so a side-effect tool call parked on approval can be resolved from the chat.
+   */
+  tenantId?: string | null;
   /** Optional thread label shown as the agent tagline (multi-thread chat). */
   threadLabel?: string;
   /**
@@ -166,6 +175,7 @@ type MyraChatSurfaceProps = {
 
 export function MyraChatSurface({
   session,
+  tenantId,
   threadLabel,
   headerLeft,
   onUserSend,
@@ -290,6 +300,32 @@ export function MyraChatSurface({
     );
   }
 
+  // A non-recoverable launch failure (e.g. auth). Terminal — no background
+  // retry — but a manual Try again still re-attempts in case it was momentary.
+  if (state.phase === "fatal") {
+    return (
+      <ChatPanel
+        {...chrome}
+        messages={[]}
+        onSend={() => undefined}
+        inputDisabled
+        notice={
+          <span>
+            Myra couldn't start.{" "}
+            <button
+              type="button"
+              onClick={session.reconnect}
+              className="text-orange underline"
+            >
+              Try again
+            </button>
+            .
+          </span>
+        }
+      />
+    );
+  }
+
   // Attachments are projected to a compact lead-in and composed inline into the
   // message. Inline (not a first-class Interchange attachment) because Myra's
   // DeepSeek/openai-compatible harness does not ingest document attachment
@@ -373,7 +409,7 @@ export function MyraChatSurface({
   // the user (CL-2681) — tell them to answer from a run's card in the dock.
   const multiGateHint =
     signalRouting?.mode === "multi" ? (
-      <p className="text-xs text-text-3" role="note">
+      <p key="multi-gate-hint" className="text-xs text-text-3" role="note">
         {signalRouting.gates.length} runs are waiting on you. Use a run's card
         in the workflow dock to answer the one you mean.
       </p>
@@ -382,6 +418,7 @@ export function MyraChatSurface({
   const attachedPills =
     attached.length > 0 ? (
       <ActiveContextPills
+        key="attached-pills"
         attached={attached.map(activeContextToRef)}
         onRemove={removeAttached}
       />
@@ -389,20 +426,83 @@ export function MyraChatSurface({
 
   const resumeErrorNotice =
     resumeError !== null ? (
-      <p className="text-xs text-red" role="alert">
+      <p key="resume-error" className="text-xs text-red" role="alert">
         {resumeError}
       </p>
     ) : null;
 
-  const inputAccessory =
-    multiGateHint !== null ||
-    attachedPills !== null ||
-    resumeErrorNotice !== null ? (
-      <div className="space-y-1.5">
-        {resumeErrorNotice}
-        {multiGateHint}
-        {attachedPills}
+  // History renders while the sidecar is unreachable; the composer stays usable
+  // and sends are queued. Tell the user their messages are deferred, without
+  // surfacing a raw error (CL-3280). A never-yet-live first connect says
+  // "Connecting"; a drop after a live session says "Reconnecting" (CL-3292). The
+  // Retry button sits OUTSIDE the role="status" live region so assistive tech
+  // announces the status text alone and exposes the control through the normal
+  // focus order.
+  let connectionCopy: string | null = null;
+  if (session.connectionNotice === "connecting") {
+    connectionCopy =
+      "Connecting to Myra — your messages will send once connected.";
+  } else if (session.connectionNotice === "reconnecting") {
+    if (session.queuedFailed) {
+      connectionCopy =
+        "Trouble reaching Myra — still trying. Your messages will send once it's back.";
+    } else {
+      connectionCopy =
+        "Reconnecting to Myra — your messages will send once it's back.";
+    }
+  }
+
+  const reconnectingNotice =
+    connectionCopy !== null ? (
+      <div
+        key="reconnecting-notice"
+        className="flex items-center gap-1.5 text-xs"
+      >
+        <span role="status" className="text-text-3">
+          {connectionCopy}
+        </span>
+        {session.queuedFailed && (
+          <button
+            type="button"
+            onClick={session.reconnect}
+            className="text-orange underline"
+          >
+            Retry now
+          </button>
+        )}
       </div>
+    ) : null;
+
+  // Mounted (not conditionally rendered) whenever a tenant is known so its SSE
+  // subscription is live; it renders nothing until a pending approval exists.
+  // Event-driven (CL-3285) — no interval poll. Tenant-scoped: the interchange
+  // runtime sessionId that approvals carry is not exposed on MyraSession, so the
+  // client cannot session-filter yet; the ownership-scoped list route already
+  // limits what the caller sees. Placed first so the actionable approval
+  // interrupt sits above the transient hints.
+  const reviewGate = tenantId ? (
+    <ReviewGate
+      key="review-gate"
+      tenantId={tenantId}
+      sessionId={session.sessionId ?? undefined}
+      sessionScope="session"
+    />
+  ) : null;
+
+  // Single source of truth for the composer accessories: render order and the
+  // "anything to show?" condition come from the same list. Each element carries
+  // a stable key so identity survives siblings appearing or disappearing.
+  const accessories = [
+    reviewGate,
+    reconnectingNotice,
+    resumeErrorNotice,
+    multiGateHint,
+    attachedPills,
+  ].filter((accessory) => accessory !== null);
+
+  const inputAccessory =
+    accessories.length > 0 ? (
+      <div className="space-y-1.5">{accessories}</div>
     ) : null;
 
   return (
@@ -424,8 +524,12 @@ export function MyraChatSurface({
         : {})}
       hideToolCall={hideMyraSelfManagement}
       formatToolSummary={friendlyToolSummary}
+      formatToolResult={friendlyToolResult}
+      formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
+      isQuietTool={isCatalogMetaTool}
+      isExternalTool={isExternalIntegrationTool}
     />
   );
 }

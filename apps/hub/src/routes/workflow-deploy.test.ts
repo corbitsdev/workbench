@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import * as intxDb from "@intx/db";
+import { schema as intxSchema } from "@intx/db";
 import type { GrantRule } from "@intx/authz";
 
 // Control the global-or-descendant validation deterministically.
@@ -69,7 +70,40 @@ function makeDeps(opts: {
   // Defaults to none, so the deploy-path tests exercise the no-prior case.
   priorRuns?: { id: string; deploymentId: string }[];
   endedSessions?: string[];
+  // seedDenyGrantForNewWorkflowKind's inputs/outputs: the tenant's system
+  // member role id (undefined → no role found, seeding no-ops), whether a
+  // grant row already exists for the publishing kind (regression case), and
+  // where new grant inserts land.
+  memberRoleId?: string;
+  existingGrant?: { id: string };
+  grantsInserted?: Record<string, unknown>[];
 }) {
+  const insert = (table: unknown) => ({
+    values: async (row: Record<string, unknown>) => {
+      if (table === intxSchema.grant) {
+        opts.grantsInserted?.push(row);
+        return;
+      }
+      opts.inserted.push(row as InsertedRow);
+    },
+  });
+
+  // seedDenyGrantForNewWorkflowKind runs its check-and-insert inside a
+  // transaction under a member-role row lock; the fake `transaction` yields a
+  // `tx` carrying the grant lookup + insert surface it touches, and the row lock
+  // (`select(...).for("update")`) is a no-op the fake satisfies.
+  const tx = {
+    select: () => ({
+      from: () => ({ where: () => ({ for: async () => [] }) }),
+    }),
+    query: {
+      grant: {
+        findFirst: async () => opts.existingGrant,
+      },
+    },
+    insert,
+  };
+
   const db = {
     query: {
       tenant: {
@@ -85,15 +119,16 @@ function makeDeps(opts: {
       agentInstance: {
         findMany: async () => [],
       },
-    },
-    insert: () => ({
-      values: async (row: InsertedRow) => {
-        opts.inserted.push(row);
+      role: {
+        findFirst: async () =>
+          opts.memberRoleId ? { id: opts.memberRoleId } : undefined,
       },
-    }),
+    },
+    insert,
     update: () => ({
       set: () => ({ where: async () => undefined }),
     }),
+    transaction: async (fn: (t: unknown) => Promise<void>) => fn(tx),
   } as unknown as Parameters<typeof createWorkflowDeployRouter>[0]["db"];
 
   const workflowDeployService = {
@@ -566,5 +601,108 @@ describe("redeploy supersedes prior deployments", () => {
     const res = await post(router, "");
     expect(res.status).toBe(200);
     expect(inserted).toHaveLength(1);
+  });
+});
+
+// CL-3145: publishWorkflowDefinition must seed a deny grant the FIRST time a
+// kind is published (so it starts disabled), and must never touch a grant row
+// that already exists for a kind being redeployed. Uses a real embedded
+// catalog kind (`pain-point-collateral`) rather than `validDefinition` so
+// these tests are independent of the catalog membership of the other suites'
+// fixture id.
+const catalogKindDefinition = {
+  id: "pain-point-collateral",
+  triggers: [],
+  steps: {},
+  stepOrder: [],
+};
+
+describe("publishWorkflowDefinition seeds a deny grant for new kinds", () => {
+  beforeEach(() => {
+    lastPrincipalTenant = GLOBAL;
+    ancestorChain = ["tenant_global"];
+  });
+
+  test("first-time publish of a new kind seeds a deny grant", async () => {
+    const inserted: InsertedRow[] = [];
+    const grantsInserted: Record<string, unknown>[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+        memberRoleId: "rol_member",
+        grantsInserted,
+      }),
+    );
+
+    const res = await post(router, "", catalogKindDefinition);
+    expect(res.status).toBe(200);
+    expect(grantsInserted).toHaveLength(1);
+    expect(grantsInserted[0]).toMatchObject({
+      tenantId: GLOBAL,
+      roleId: "rol_member",
+      resource: `workflow:${catalogKindDefinition.id}`,
+      action: "run",
+      effect: "deny",
+      origin: "system",
+    });
+  });
+
+  test("redeploy of an existing kind with an existing DENY grant leaves it untouched", async () => {
+    const inserted: InsertedRow[] = [];
+    const grantsInserted: Record<string, unknown>[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+        priorRuns: [{ id: "old_row", deploymentId: "ses_old" }],
+        memberRoleId: "rol_member",
+        existingGrant: { id: "grt_existing_deny" },
+        grantsInserted,
+      }),
+    );
+
+    const res = await post(router, "", catalogKindDefinition);
+    expect(res.status).toBe(200);
+    expect(grantsInserted).toHaveLength(0);
+  });
+
+  test("redeploy of an existing kind with an existing ALLOW (re-enabled) grant leaves it untouched", async () => {
+    const inserted: InsertedRow[] = [];
+    const grantsInserted: Record<string, unknown>[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+        priorRuns: [{ id: "old_row", deploymentId: "ses_old" }],
+        memberRoleId: "rol_member",
+        existingGrant: { id: "grt_existing_allow" },
+        grantsInserted,
+      }),
+    );
+
+    const res = await post(router, "", catalogKindDefinition);
+    expect(res.status).toBe(200);
+    expect(grantsInserted).toHaveLength(0);
+  });
+
+  test("no member role yet → seeding no-ops without failing the publish", async () => {
+    const inserted: InsertedRow[] = [];
+    const grantsInserted: Record<string, unknown>[] = [];
+    const router = createWorkflowDeployRouter(
+      makeDeps({
+        tenantsBySlug: {},
+        ownerByTenant: { [GLOBAL]: { id: "owner_global" } },
+        inserted,
+        grantsInserted,
+      }),
+    );
+
+    const res = await post(router, "", catalogKindDefinition);
+    expect(res.status).toBe(200);
+    expect(grantsInserted).toHaveLength(0);
   });
 });

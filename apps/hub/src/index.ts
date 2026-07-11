@@ -79,6 +79,7 @@ import {
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
+import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
 import { createSkillsRouter } from "./routes/skills";
@@ -100,6 +101,7 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
+import { recordMyraThreadActivity } from "./services/myra-threads";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
@@ -118,6 +120,7 @@ import {
   createApprovalsRouter,
   createInternalApprovalsRouter,
 } from "./routes/approvals";
+import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
@@ -738,14 +741,22 @@ app.use(
 
 // CL-2790: an inbound user message is fresh activity — bump the idle-reaper
 // clock for the target instance so a user mid-conversation is never slept.
-// Best-effort and non-blocking: the resolve is fire-and-forget inside the
-// reaper, and we always fall through to the mail route.
+// Also bump the thread's lastActivityAt so the chat list orders active chats
+// first. Best-effort and non-blocking: both side effects are fire-and-forget
+// and we always fall through to the mail route.
 app.use(
   "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
   async (c, next) => {
     const instanceId = c.req.param("instanceId");
-    if (instanceId)
+    if (instanceId) {
       void idleSessionReaper.recordActivityForInstance(instanceId);
+      void recordMyraThreadActivity(db, instanceId).catch((err) => {
+        log.error("failed to record Myra thread activity", {
+          instanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    }
     await next();
   },
 );
@@ -754,6 +765,11 @@ app.use(
 app.route("/", hubApp);
 
 // ─── Workbench routes ──────────────────────────────────────────────
+
+// Workbench-owned approvals change bus (CL-3285). One in-process instance shared
+// by the user-facing router (SSE stream + resolve emits) and the internal router
+// (create emit) so a sidecar-created approval reaches an open browser stream.
+const approvalsEventBus = createApprovalsEventBus();
 
 const v1 = new Hono<{ Variables: { userId: string; userName: string } }>();
 
@@ -1040,7 +1056,7 @@ v1.route("/", createMyraThreadsRouter(db, sessionService, analyticsSubscriber));
 v1.route("/", createArtifactsRouter(db, grantStore));
 v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
-v1.route("/", createApprovalsRouter(db));
+v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createMeProfileRouter(auth));
@@ -1245,11 +1261,18 @@ void publishEmbeddedWorkflowDefs({
   enabled: config.workflowAutopublishOnBoot,
   buildSha: config.buildSha,
   autopublishMap: config.workflowAutopublishMap,
-}).catch((err) => {
-  log.error("workflow autopublish-on-boot failed", {
-    error: err instanceof Error ? err.message : String(err),
+})
+  // Reconcile the whole existing catalog to deny-by-default once the boot
+  // publish has settled: every already-deployed kind with no owner decision is
+  // seeded a deny so it ships disabled, and an owner re-enables per kind. Runs
+  // after the publish so kinds just (re)published are included; idempotent, so
+  // running it on every boot only ever fills zero-row kinds.
+  .then(() => backfillDenyForExistingWorkflowKinds(db))
+  .catch((err) => {
+    log.error("workflow autopublish-on-boot failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
-});
 
 v1.post(
   "/workflows/deploy",
@@ -1322,7 +1345,7 @@ app.route("/api/v1", v1);
 
 app.route(
   "/api/internal",
-  createInternalApprovalsRouter(db, config.sidecarToken),
+  createInternalApprovalsRouter(db, config.sidecarToken, approvalsEventBus),
 );
 app.route(
   "/api/internal",

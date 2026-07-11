@@ -33,4 +33,34 @@ describe("PagePanel", () => {
       "shadow-[",
     );
   });
+
+  it("sizes to content instead of filling the viewport when fitContent", () => {
+    const { container } = render(
+      <PagePanel scroll={false} flat fitContent>
+        x
+      </PagePanel>,
+    );
+    const panel = container.querySelector("section");
+    // Content-based sizing: no flex-1 (which forces full-viewport height),
+    // but capped at the viewport with self-start so it can still scroll.
+    expect(panel?.className).not.toContain("flex-1");
+    expect(panel?.className).toContain("self-start");
+    expect(panel?.className).toContain("max-h-full");
+    expect(panel?.className).toContain("w-full");
+  });
+
+  it("drops the border in fitContent so a shortened panel leaves no floating edge", () => {
+    const { container } = render(
+      <PagePanel scroll={false} flat fitContent>
+        x
+      </PagePanel>,
+    );
+    const panel = container.querySelector("section");
+    expect(panel?.className).not.toContain("border-border");
+    // Default (non-fit) panel keeps its framing border.
+    const framed = render(<PagePanel>x</PagePanel>);
+    expect(framed.container.querySelector("section")?.className).toContain(
+      "border-border",
+    );
+  });
 });

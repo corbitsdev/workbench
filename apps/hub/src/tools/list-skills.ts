@@ -5,11 +5,14 @@ import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
 import {
   DRAFT_SKILL_DEFINITION,
+  LIST_SKILL_DRAFTS_DEFINITION,
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  LOAD_SKILL_DRAFT_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   parseDraftSkillArgs,
   parseSearchQuery,
+  parseSkillDraftId,
   parseSkillId,
   skillMatchesQuery,
   type SkillIndexEntry,
@@ -17,10 +20,13 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { HubDb } from "../db";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
+import type { UserContext } from "../lib/user-context";
 import { artifact } from "../db/schema";
 import {
+  getOwnedSkillDraftItem,
   getSkillAsset,
   getSkillContent,
+  listSkillDrafts,
   listSkills,
   matchSkillIdByDraftName,
   type SkillItem,
@@ -34,6 +40,8 @@ export {
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  LIST_SKILL_DRAFTS_DEFINITION,
+  LOAD_SKILL_DRAFT_DEFINITION,
   DRAFT_SKILL_DEFINITION,
 } from "@workbench/tools-skills";
 
@@ -213,6 +221,75 @@ async function loadSkillHandler(
   });
 }
 
+/**
+ * Pending drafts are owned by the human MEMBER principal (stamped by
+ * skill_draft), not the agent principal. Resolve the owning member so the draft
+ * read tools authorize against the same id skill_draft writes and approve reads.
+ * Returns null when the agent has no owning member (fail closed).
+ */
+async function resolveOwnerContext(
+  context: SkillToolsContext,
+): Promise<UserContext | null> {
+  const ownerPrincipalId = await resolveOwnerMemberPrincipalId(
+    context.db as DB["db"],
+    { tenantId: context.tenantId, principalId: context.principalId },
+  );
+  if (ownerPrincipalId === null) return null;
+  return { tenantId: context.tenantId, principalId: ownerPrincipalId };
+}
+
+async function listSkillDraftsHandler(
+  context: SkillToolsContext,
+): Promise<string> {
+  const owner = await resolveOwnerContext(context);
+  if (owner === null) return jsonResult({ drafts: [] });
+  const drafts = await listSkillDrafts(context.db, owner);
+  return jsonResult({
+    drafts: drafts.map((draft) => ({
+      id: draft.id,
+      name: draft.title,
+      description: draft.description,
+    })),
+  });
+}
+
+async function loadSkillDraftHandler(
+  context: SkillToolsContext,
+  args: Record<string, unknown>,
+): Promise<string> {
+  const id = parseSkillDraftId(args);
+  const owner = await resolveOwnerContext(context);
+  if (owner === null) {
+    throw new Error(`Skill draft not found: ${id}`);
+  }
+  const draft = await getOwnedSkillDraftItem(context.db, owner, id);
+
+  const budget = { remaining: MAX_SKILL_LOAD_CHARS };
+  const bodyClamped = clampContent(draft.content, budget);
+  const loadedFiles: LoadedFile[] = draft.files.map((file) => ({
+    path: file.path,
+    ...clampContent(file.content, budget),
+  }));
+  const truncated =
+    bodyClamped.truncated === true ||
+    loadedFiles.some((f) => f.truncated || f.omitted);
+
+  return jsonResult({
+    id: draft.id,
+    name: draft.title,
+    description: draft.description,
+    existingSkillId: draft.existingSkillId,
+    body: bodyClamped.content ?? "",
+    files: loadedFiles,
+    ...(truncated
+      ? {
+          notice:
+            "Some content was truncated or omitted due to load size limits.",
+        }
+      : {}),
+  });
+}
+
 async function skillDraftHandler(
   context: SkillToolsContext,
   args: Record<string, unknown>,
@@ -318,6 +395,16 @@ export function createSkillTools(context: SkillToolsContext): AgentTool[] {
     },
     {
       kind: "string",
+      definition: LIST_SKILL_DRAFTS_DEFINITION,
+      handler: () => listSkillDraftsHandler(context),
+    },
+    {
+      kind: "string",
+      definition: LOAD_SKILL_DRAFT_DEFINITION,
+      handler: (args) => loadSkillDraftHandler(context, args),
+    },
+    {
+      kind: "string",
       definition: DRAFT_SKILL_DEFINITION,
       handler: (args) => skillDraftHandler(context, args),
     },
@@ -346,18 +433,32 @@ function requireSkillContext(context: {
 
 export const SKILLS_HUB_TOOLS: Record<string, ContextToolEntry> = {
   list_skills: {
+    sideEffect: "read",
     definition: LIST_SKILLS_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
   search_skills: {
+    sideEffect: "read",
     definition: SEARCH_SKILLS_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
   load_skill: {
+    sideEffect: "read",
     definition: LOAD_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },
+  list_skill_drafts: {
+    sideEffect: "read",
+    definition: LIST_SKILL_DRAFTS_DEFINITION,
+    createTools: (context) => createSkillTools(requireSkillContext(context)),
+  },
+  load_skill_draft: {
+    sideEffect: "read",
+    definition: LOAD_SKILL_DRAFT_DEFINITION,
+    createTools: (context) => createSkillTools(requireSkillContext(context)),
+  },
   skill_draft: {
+    sideEffect: "write",
     definition: DRAFT_SKILL_DEFINITION,
     createTools: (context) => createSkillTools(requireSkillContext(context)),
   },

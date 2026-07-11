@@ -54,6 +54,33 @@ export const LOAD_SKILL_DEFINITION: ToolDefinition = {
   },
 };
 
+export const LIST_SKILL_DRAFTS_DEFINITION: ToolDefinition = {
+  name: "list_skill_drafts",
+  description:
+    "List your pending skill drafts — the ones awaiting your review under Skills → Pending drafts, not yet published. Returns a cheap index — only {id, name, description} per draft, never the SKILL.md body. Use this to find a draft to iterate on, then load_skill_draft to read it and skill_draft to save an improved version. Read-only.",
+  inputSchema: {
+    type: "object",
+    properties: {},
+    required: [],
+  },
+};
+
+export const LOAD_SKILL_DRAFT_DEFINITION: ToolDefinition = {
+  name: "load_skill_draft",
+  description:
+    "Load the full content of one of your pending skill drafts by its id (from list_skill_drafts). Returns the SKILL.md body, the contents of any support files, and existingSkillId (the id of the published skill this draft revises, or null for a new skill). Large content is truncated (flagged), with a top-level notice when anything was dropped. Only your own pending drafts can be loaded; an id you do not own, or one that is no longer pending, is reported as not found. To save changes, call skill_draft with the same name. Read-only.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      id: {
+        type: "string",
+        description: "The draft id to load, as returned by list_skill_drafts.",
+      },
+    },
+    required: ["id"],
+  },
+};
+
 export const DRAFT_SKILL_DEFINITION: ToolDefinition = {
   name: "skill_draft",
   description:
@@ -102,11 +129,14 @@ export const SKILL_TOOL_DEFINITIONS: readonly ToolDefinition[] = [
   LIST_SKILLS_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  LIST_SKILL_DRAFTS_DEFINITION,
+  LOAD_SKILL_DRAFT_DEFINITION,
   DRAFT_SKILL_DEFINITION,
 ];
 
 const SearchSkillsArgs = type({ query: "string > 0" });
 const LoadSkillArgs = type({ id: "string > 0" });
+const LoadSkillDraftArgs = type({ id: "string > 0" });
 const DraftSkillArgs = type({
   name: "string > 0",
   description: "string?",
@@ -129,6 +159,15 @@ export function parseSkillId(args: unknown): string {
   const parsed = LoadSkillArgs(args);
   if (parsed instanceof type.errors) {
     throw new Error(`load_skill: ${parsed.summary}`);
+  }
+  return parsed.id;
+}
+
+/** Parse and validate the `load_skill_draft` id argument at the tool boundary. */
+export function parseSkillDraftId(args: unknown): string {
+  const parsed = LoadSkillDraftArgs(args);
+  if (parsed instanceof type.errors) {
+    throw new Error(`load_skill_draft: ${parsed.summary}`);
   }
   return parsed.id;
 }

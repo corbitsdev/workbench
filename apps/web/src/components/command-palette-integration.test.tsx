@@ -35,27 +35,49 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+const ME_FIXTURE = {
+  userId: "user_test",
+  userName: "Test User",
+  personalTenantId: null,
+  rootTenantIds: [],
+  paInstanceId: null,
+  provisioned: true,
+  credentialResolved: true,
+};
+
 function stubSearchFetch() {
-  const captured: { url?: string } = {};
-  globalThis.fetch = mock((url: string) => {
-    captured.url = url;
-    return Promise.resolve(
-      new Response(
-        JSON.stringify({
-          results: [
-            {
-              id: "artifact:a1",
-              category: "artifact",
-              title: "Q3 pricing one-pager",
-              to: "/artifacts/a1",
-            },
-          ],
-          page: 0,
-          hasMore: false,
+  const captured: { searchUrl?: string } = {};
+  globalThis.fetch = mock((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/v1/me")) {
+      return Promise.resolve(
+        new Response(JSON.stringify(ME_FIXTURE), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+      );
+    }
+    if (url.includes("/search")) {
+      captured.searchUrl = url;
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: "artifact:a1",
+                category: "artifact",
+                title: "Q3 pricing one-pager",
+                to: "/artifacts/a1",
+              },
+            ],
+            page: 0,
+            hasMore: false,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    }
+    return Promise.resolve(new Response("{}", { status: 404 }));
   }) as unknown as typeof fetch;
   return captured;
 }
@@ -97,9 +119,11 @@ describe("command palette query→render integration", () => {
 
     // The real searchPaletteEntities builds the tenant-scoped URL and parses
     // the server payload through the shared arktype schema.
-    await waitFor(() => expect(captured.url).toBeDefined(), { timeout: 2000 });
-    expect(captured.url).toContain("/api/tenants/tn-1/search");
-    expect(captured.url).toContain("q=pricing");
+    await waitFor(() => expect(captured.searchUrl).toBeDefined(), {
+      timeout: 2000,
+    });
+    expect(captured.searchUrl).toContain("/api/tenants/tn-1/search");
+    expect(captured.searchUrl).toContain("q=pricing");
 
     // The parsed backend row renders under its server category group, alongside
     // the static GO TO nav group — proving server results actually surface.

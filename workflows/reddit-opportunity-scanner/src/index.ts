@@ -22,6 +22,11 @@ export const description =
   "Scan a website, review keyword and subreddit recommendations, then rank Reddit opportunities for follow-up.";
 export const kind = "reddit-opportunity-scanner";
 
+// Re-export the user-facing display flow so it travels with the workflow package
+// for the server catalog classifier; the client panel imports it from the same
+// browser-safe module.
+export { DISPLAY_STEPS } from "./display-steps";
+
 // -------------------------------------------------------------------------
 // Workflow definition — guided Reddit research flow (CL-2513)
 //

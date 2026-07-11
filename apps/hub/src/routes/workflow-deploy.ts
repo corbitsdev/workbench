@@ -19,6 +19,7 @@ import { resolveWorkflowDeployConfig } from "../services/workflow-deploy-config"
 import { requestBodySchema } from "../lib/openapi";
 import { WorkflowMeta } from "../lib/workflow-meta";
 import { loadWorkflowCatalogKinds } from "../lib/workflow-catalog";
+import { seedDenyGrantForNewWorkflowKind } from "../lib/workflow-run-gate";
 
 const log = getLogger(["api", "workflow-deploy"]);
 
@@ -329,6 +330,13 @@ export async function publishWorkflowDefinition(
     status: "running",
     ...(deployMeta !== null ? { meta: deployMeta } : {}),
   });
+
+  // First-time publish of this (tenant, kind) starts disabled: seed a `deny`
+  // grant on the tenant's system member role so the CL-2885 run gate blocks it
+  // until an owner explicitly enables it. A kind that already has a grant row
+  // (owner-enabled or owner-disabled) is left untouched — this only fills the
+  // gap where no toggle has ever been made for the kind.
+  await seedDenyGrantForNewWorkflowKind(deps.db, targetTenantId, definition.id);
 
   // Redeploy supersedes: the newest deploy of a (kind, tenant) is the only
   // active one. Mark every prior active deployment of this kind in this tenant

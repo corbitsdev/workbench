@@ -49,6 +49,15 @@ describe("buildToolGrantRows", () => {
     expect(buildToolGrantRows([], scope, now)).toEqual([]);
   });
 
+  it("stamps every grant 'allow' — approval is enforced at the sidecar runner, not the grant", () => {
+    const rows = buildToolGrantRows(
+      ["@workbench/tools-attio/attio:attio_update_task", "exa_search"],
+      scope,
+      now,
+    );
+    expect(rows.every((r) => r.effect === "allow")).toBe(true);
+  });
+
   it("assigns a distinct id to each grant", () => {
     const rows = buildToolGrantRows(["a", "b", "c"], scope, now);
     const ids = new Set(rows.map((r) => r.id));

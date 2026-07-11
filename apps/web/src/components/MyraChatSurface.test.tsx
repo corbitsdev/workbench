@@ -2,8 +2,17 @@
 import "../test-setup";
 import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
 import type { MyraSession } from "../hooks/use-myra-session";
+
+let approvalsResult: unknown[] = [];
+mock.module("../lib/approvals-api", () => ({
+  listApprovals: mock(async () => approvalsResult),
+  approveRequest: mock(async () => ({})),
+  rejectRequest: mock(async () => ({})),
+  subscribeApprovals: mock(() => () => {}),
+}));
 
 mock.module("@workbench/chat", () => ({
   ChatPanel: (props: {
@@ -96,6 +105,9 @@ mock.module("@workbench/chat", () => ({
 
 mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummary: () => "",
+  friendlyToolSummaryKnown: () => null,
+  friendlyToolResult: () => null,
+  isCatalogMetaTool: () => false,
   summarizeToolCalls: () => "",
   attachmentPolicyForAgent: () => undefined,
 }));
@@ -107,6 +119,10 @@ function makeSession(over: Partial<MyraSession>): MyraSession {
     state: { phase: "loading" },
     messages: [],
     activity: null,
+    live: true,
+    queuedFailed: false,
+    connectionNotice: null,
+    sessionId: null,
     send: () => {},
     reconnect: () => {},
     instanceId: null,
@@ -152,6 +168,26 @@ describe("MyraChatSurface", () => {
     expect(reconnected).toBe(1);
   });
 
+  it("shows a terminal notice with a manual retry on a fatal launch", () => {
+    let reconnected = 0;
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          state: { phase: "fatal", message: "Forbidden" },
+          reconnect: () => reconnected++,
+        }),
+      }),
+    );
+    expect(screen.getByTestId("notice").textContent).toMatch(
+      /Myra couldn't start/,
+    );
+    // The composer is disabled (nothing can be sent to a session that can't
+    // start), but a manual Try again re-attempts.
+    screen.getByTestId("disabled");
+    fireEvent.click(screen.getByRole("button", { name: /try again/i }));
+    expect(reconnected).toBe(1);
+  });
+
   it("renders messages and wires send when ready", () => {
     const sendSpy = mock((_t: string) => {});
     const session = makeSession({
@@ -170,10 +206,78 @@ describe("MyraChatSurface", () => {
     expect(sendSpy.mock.calls[0]?.[0]).toBe("hello");
   });
 
+  it("shows a reconnecting notice and keeps the composer enabled after a drop", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          connectionNotice: "reconnecting",
+        }),
+      }),
+    );
+    expect(screen.getByTestId("accessory").textContent).toMatch(
+      /Reconnecting to Myra/,
+    );
+    // The composer is not disabled — sends are queued, not blocked.
+    expect(screen.queryByTestId("disabled")).toBeNull();
+  });
+
+  it("shows a connecting notice on a first connect before the session is live", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          connectionNotice: "connecting",
+        }),
+      }),
+    );
+    expect(screen.getByTestId("accessory").textContent).toMatch(
+      /Connecting to Myra/,
+    );
+    expect(screen.queryByTestId("disabled")).toBeNull();
+  });
+
+  it("hides the connection notice once the session is live", () => {
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: true,
+          connectionNotice: null,
+        }),
+      }),
+    );
+    expect(screen.queryByTestId("accessory")).toBeNull();
+  });
+
+  it("offers a retry that reconnects when a queued send has failed", () => {
+    let reconnected = 0;
+    render(
+      React.createElement(MyraChatSurface, {
+        session: makeSession({
+          // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+          state: { phase: "ready", session: {} as any },
+          live: false,
+          connectionNotice: "reconnecting",
+          queuedFailed: true,
+          reconnect: () => reconnected++,
+        }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /retry now/i }));
+    expect(reconnected).toBe(1);
+  });
+
   function readySession(sendSpy: (t: string) => void): MyraSession {
     return makeSession({
       // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
       state: { phase: "ready", session: {} as any },
+      live: true,
       send: sendSpy,
     });
   }
@@ -211,6 +315,137 @@ describe("MyraChatSurface", () => {
       }),
     );
     expect(screen.getByTestId("composer-full-width").textContent).toBe("false");
+  });
+
+  it("does not mount the approval gate when no tenant is set", () => {
+    approvalsResult = [];
+    render(
+      React.createElement(MyraChatSurface, { session: readySession(() => {}) }),
+    );
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+
+  it("does not surface tenant-wide approvals before the chat session id is known", () => {
+    approvalsResult = [
+      {
+        id: "apr-tenant",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-other",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "other" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: readySession(() => {}),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    expect(screen.queryByTestId("review-gate")).toBeNull();
+  });
+
+  it("mounts the approval gate and surfaces a pending approval for the tenant", async () => {
+    approvalsResult = [
+      {
+        id: "apr-1",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-chat",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "demo" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-chat",
+            send: () => {},
+          }),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    const gate = await screen.findByTestId("review-gate");
+    expect(gate.textContent).toContain("Run notion__create_page");
+    await screen.findByTestId("approve-apr-1");
+    await screen.findByTestId("reject-apr-1");
+  });
+
+  it("scopes the approval gate to the chat session when sessionId is known", async () => {
+    approvalsResult = [
+      {
+        id: "apr-this",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-this",
+        resource: "tool:vercel__deploy_static_file",
+        action: "Run vercel__deploy_static_file",
+        context: { projectName: "this-chat" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+      {
+        id: "apr-other",
+        tenantId: "tenant-1",
+        principalId: "prn-1",
+        agentId: "agt-1",
+        sessionId: "sess-other",
+        resource: "tool:notion__create_page",
+        action: "Run notion__create_page",
+        context: { title: "other chat" },
+        status: "pending",
+        message: null,
+        createdAt: "2026-07-10T00:00:00.000Z",
+        resolvedAt: null,
+      },
+    ];
+    const client = new QueryClient();
+    render(
+      React.createElement(
+        QueryClientProvider,
+        { client },
+        React.createElement(MyraChatSurface, {
+          session: makeSession({
+            // biome-ignore lint/suspicious/noExplicitAny: minimal ready session
+            state: { phase: "ready", session: {} as any },
+            live: true,
+            sessionId: "sess-this",
+            send: () => {},
+          }),
+          tenantId: "tenant-1",
+        }),
+      ),
+    );
+    await screen.findByTestId("approval-apr-this");
+    expect(screen.queryByTestId("approval-apr-other")).toBeNull();
   });
 
   it("routes free text to the sole pending gate instead of a chat turn (CL-2681)", () => {

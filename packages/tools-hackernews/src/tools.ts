@@ -101,6 +101,7 @@ export function createHackerNewsTools(
 
 export const HACKERNEWS_HUB_TOOLS = {
   hackernews_search: {
+    sideEffect: "read" as const,
     definition: HACKERNEWS_SEARCH_DEFINITION,
     createTools: () => createHackerNewsTools(),
   },

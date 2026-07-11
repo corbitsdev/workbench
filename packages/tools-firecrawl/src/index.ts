@@ -133,6 +133,7 @@ export const FIRECRAWL_HUB_TOOLS = Object.fromEntries(
   FIRECRAWL_DEFINITIONS.map((definition) => [
     definition.name,
     {
+      sideEffect: "read" as const,
       definition,
       providerName: "firecrawl" as const,
       createTools: (config: {

@@ -231,11 +231,14 @@ mock.module("../lib/tenant-provisioning", () => ({
 
 import type { InferenceEvent } from "@intx/types/runtime";
 import { createAnalyticsSubscriber } from "@workbench/analytics";
+import { desc, eq } from "drizzle-orm";
+import { memberAgentInstance } from "../db/schema";
 import {
   createMyraThread,
   deleteMyraThread,
   generateMyraThreadTitle,
   listMyraThreads,
+  recordMyraThreadActivity,
   renameMyraThread,
 } from "./myra-threads";
 
@@ -535,6 +538,7 @@ describe("generateMyraThreadTitle", () => {
       instanceId: string;
       label: string;
       createdAt: Date;
+      lastActivityAt: Date;
     };
   }) {
     const updateReturning = mock(() =>
@@ -588,6 +592,7 @@ describe("generateMyraThreadTitle", () => {
         instanceId: "inst-1",
         label: "Pricing Deep Dive",
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-04T00:00:00Z"),
       },
     });
 
@@ -604,6 +609,7 @@ describe("generateMyraThreadTitle", () => {
       instanceId: "inst-1",
       label: "Pricing Deep Dive",
       createdAt: "2026-01-01T00:00:00.000Z",
+      lastActivityAt: "2026-01-04T00:00:00.000Z",
     });
     // The turn was recorded under the thread's instance + tenant.
     expect(lastCreateEventCollectorConfig?.instanceId).toBe("inst-1");
@@ -643,6 +649,7 @@ describe("generateMyraThreadTitle", () => {
       instanceId: "inst-1",
       label: "How should we price the enterprise tier",
       createdAt: new Date("2026-01-01T00:00:00Z"),
+      lastActivityAt: new Date("2026-01-01T00:00:00Z"),
     };
     const db = buildTitleDb({
       mappingRow: { id: "map-1", instanceId: "inst-1", label: "Chat" },
@@ -681,6 +688,7 @@ describe("generateMyraThreadTitle", () => {
         instanceId: "inst-1",
         label: "First fallback",
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
 
@@ -708,6 +716,7 @@ describe("generateMyraThreadTitle", () => {
         instanceId: "inst-2",
         label: "Pricing Deep Dive",
         createdAt: new Date("2026-01-02T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-02T00:00:00Z"),
       },
     });
 
@@ -733,6 +742,7 @@ describe("generateMyraThreadTitle", () => {
         instanceId: "inst-1",
         label: "Pricing Deep Dive",
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
     // The Myra definition lives only in the root ancestor, not the active child.
@@ -810,6 +820,7 @@ describe("generateMyraThreadTitle", () => {
                   instanceId: "inst-1",
                   label: vals.label,
                   createdAt: new Date("2026-01-01T00:00:00Z"),
+                  lastActivityAt: new Date("2026-01-01T00:00:00Z"),
                 },
               ]),
           }),
@@ -933,6 +944,7 @@ describe("generateMyraThreadTitle", () => {
         instanceId: "inst-1",
         label: "Pricing Strategy",
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-01T00:00:00Z"),
       },
     });
     // Capture the label handed to update().set().
@@ -948,6 +960,7 @@ describe("generateMyraThreadTitle", () => {
                   instanceId: "inst-1",
                   label: vals.label,
                   createdAt: new Date("2026-01-01T00:00:00Z"),
+                  lastActivityAt: new Date("2026-01-01T00:00:00Z"),
                 },
               ]),
           }),
@@ -984,6 +997,7 @@ describe("generateMyraThreadTitle", () => {
           instanceId,
           label: "Titled",
           createdAt: new Date("2026-01-01T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-01T00:00:00Z"),
         },
       });
 
@@ -1036,25 +1050,28 @@ describe("generateMyraThreadTitle", () => {
 });
 
 describe("listMyraThreads", () => {
-  it("maps rows and falls back to default labels by position", async () => {
+  it("maps rows (including lastActivityAt) and falls back to default labels by position", async () => {
     const rows = [
       {
         id: "map-1",
         instanceId: "inst-1",
         label: null,
         createdAt: new Date("2026-01-01T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-05T00:00:00Z"),
       },
       {
         id: "map-2",
         instanceId: "inst-2",
         label: "  ",
         createdAt: new Date("2026-01-02T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-02T00:00:00Z"),
       },
       {
         id: "map-3",
         instanceId: "inst-3",
         label: "Pricing deep dive",
         createdAt: new Date("2026-01-03T00:00:00Z"),
+        lastActivityAt: new Date("2026-01-03T00:00:00Z"),
       },
     ];
     // biome-ignore lint/suspicious/noExplicitAny: structural db mock
@@ -1064,31 +1081,121 @@ describe("listMyraThreads", () => {
       },
     };
 
-    const threads = await listMyraThreads(db, {
+    const page = await listMyraThreads(db, {
       tenantId: "tn-global",
       memberPrincipalId: "prn-member",
     });
 
-    expect(threads).toEqual([
+    expect(page.threads).toEqual([
       {
         id: "map-1",
         instanceId: "inst-1",
         label: "Chat",
         createdAt: "2026-01-01T00:00:00.000Z",
+        lastActivityAt: "2026-01-05T00:00:00.000Z",
       },
       {
         id: "map-2",
         instanceId: "inst-2",
         label: "Chat 2",
         createdAt: "2026-01-02T00:00:00.000Z",
+        lastActivityAt: "2026-01-02T00:00:00.000Z",
       },
       {
         id: "map-3",
         instanceId: "inst-3",
         label: "Pricing deep dive",
         createdAt: "2026-01-03T00:00:00.000Z",
+        lastActivityAt: "2026-01-03T00:00:00.000Z",
       },
     ]);
+    // Unlimited fetch returned every row, so total is the row count with no
+    // separate count query.
+    expect(page.total).toBe(3);
+  });
+
+  it("orders by lastActivityAt desc and forwards the limit, counting the full set", async () => {
+    let findManyArg: { orderBy?: unknown; limit?: number } | undefined;
+    const findMany = mock((arg: { orderBy?: unknown; limit?: number }) => {
+      findManyArg = arg;
+      return Promise.resolve([]);
+    });
+    const $count = mock(() => Promise.resolve(42));
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const db: any = { query: { memberAgentInstance: { findMany } }, $count };
+
+    const page = await listMyraThreads(db, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      limit: 10,
+    });
+
+    expect(findManyArg?.limit).toBe(10);
+    // A limited page reports the member's full count (for "view all"), not the
+    // page size.
+    expect(page.total).toBe(42);
+    expect($count).toHaveBeenCalledTimes(1);
+    // Sort is lastActivityAt, then createdAt, then id — all descending — so
+    // most-recently-active is first and ties are deterministic.
+    expect(findManyArg?.orderBy).toEqual([
+      desc(memberAgentInstance.lastActivityAt),
+      desc(memberAgentInstance.createdAt),
+      desc(memberAgentInstance.id),
+    ]);
+  });
+
+  it("omits limit and skips the count query for the full list", async () => {
+    let findManyArg: { limit?: number } | undefined;
+    const findMany = mock((arg: { limit?: number }) => {
+      findManyArg = arg;
+      return Promise.resolve([]);
+    });
+    const $count = mock(() => Promise.resolve(99));
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const db: any = { query: { memberAgentInstance: { findMany } }, $count };
+
+    const page = await listMyraThreads(db, {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+    });
+
+    expect(findManyArg && "limit" in findManyArg).toBe(false);
+    // No separate count for the full list; total derives from the rows.
+    expect($count).not.toHaveBeenCalled();
+    expect(page.total).toBe(0);
+  });
+});
+
+describe("recordMyraThreadActivity", () => {
+  it("bumps last_activity_at for exactly the given instance's row", async () => {
+    let updatedTable: unknown;
+    let setValues: Record<string, unknown> | undefined;
+    let whereArg: unknown;
+    // biome-ignore lint/suspicious/noExplicitAny: structural db mock
+    const db: any = {
+      update: mock((table: unknown) => {
+        updatedTable = table;
+        return {
+          set: (vals: Record<string, unknown>) => {
+            setValues = vals;
+            return {
+              where: (arg: unknown) => {
+                whereArg = arg;
+                return Promise.resolve(undefined);
+              },
+            };
+          },
+        };
+      }),
+    };
+
+    await recordMyraThreadActivity(db, "inst-1");
+
+    // Updates the member_agent_instance row keyed by instanceId, setting a fresh
+    // timestamp — i.e. the WHERE targets this instance, not a blanket update.
+    expect(updatedTable).toBe(memberAgentInstance);
+    expect(setValues?.lastActivityAt).toBeInstanceOf(Date);
+    expect(whereArg).toEqual(eq(memberAgentInstance.instanceId, "inst-1"));
   });
 });
 
@@ -1101,6 +1208,7 @@ describe("renameMyraThread", () => {
           instanceId: "inst-1",
           label: "New label",
           createdAt: new Date("2026-01-01T00:00:00Z"),
+          lastActivityAt: new Date("2026-01-06T00:00:00Z"),
         },
       ]),
     );
@@ -1121,6 +1229,7 @@ describe("renameMyraThread", () => {
       instanceId: "inst-1",
       label: "New label",
       createdAt: "2026-01-01T00:00:00.000Z",
+      lastActivityAt: "2026-01-06T00:00:00.000Z",
     });
     expect(returning).toHaveBeenCalled();
   });

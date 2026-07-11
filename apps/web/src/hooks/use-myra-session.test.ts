@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -24,8 +24,17 @@ class FakeApiError extends Error {
 
 const destroyed: number[] = [];
 const sessionTenantIds: (string | undefined)[] = [];
-const launchInstanceSession = mock((_id: string) =>
-  Promise.resolve({ launched: true }),
+const sessionStops: ReturnType<typeof mock>[] = [];
+// Events the next created session hydrates with; set per-test before render.
+type StubEvent = { id: string; role?: string; content?: string };
+let nextSessionEvents: StubEvent[] = [];
+// Content passed to any session's sendMail, across reconnects.
+const sentMails: string[] = [];
+// Force the next sendMail(s) to reject, to exercise send-failure paths.
+let sendMailShouldFail: "recoverable" | "permanent" | null = null;
+const launchInstanceSession = mock(
+  (_id: string): Promise<{ launched: boolean; launchError?: string }> =>
+    Promise.resolve({ launched: true }),
 );
 const ensureMeSynced = mock(() =>
   Promise.resolve({
@@ -41,14 +50,27 @@ mock.module("@intx/hub-client", () => ({
     const idx = destroyed.length;
     destroyed.push(0);
     sessionTenantIds.push(opts?.tenantId);
+    const events = nextSessionEvents;
+    const stop = mock();
+    sessionStops.push(stop);
     return {
-      events: [],
+      events,
       activity: null,
-      start: () => () => {},
+      hydrated: true,
+      start: () => stop,
       destroy: () => {
         destroyed[idx] = 1;
       },
-      sendMail: () => Promise.resolve(),
+      sendMail: (content: string) => {
+        if (sendMailShouldFail === "permanent") {
+          return Promise.reject(new FakeApiError(500));
+        }
+        if (sendMailShouldFail === "recoverable") {
+          return Promise.reject(new FakeApiError(502, "sidecar_unavailable"));
+        }
+        sentMails.push(content);
+        return Promise.resolve();
+      },
     };
   },
 }));
@@ -61,18 +83,37 @@ mock.module("../lib/hub-api", () => ({
   upsertRating: (prev: unknown) => prev ?? [],
 }));
 
+let capturedOnStreamError: ((err: Error) => void) | null = null;
+
 mock.module("../lib/instance-transport", () => ({
-  createHubTransport: () => ({}),
+  createHubTransport: (opts?: { onStreamError?: (err: Error) => void }) => {
+    capturedOnStreamError = opts?.onStreamError ?? null;
+    return {};
+  },
   fetchBlobObjectUrl: (_tenantId: string, _blobId: string) =>
     Promise.resolve("blob:test"),
 }));
 
+const trackerStops = {
+  toolNames: mock(),
+  liveText: mock(),
+  reasoning: mock(),
+  image: mock(),
+};
+
 mock.module("@workbench/agents/browser", () => ({
-  composeChatMessages: () => ({ messages: [] }),
-  createToolNameTracker: () => ({ stop: () => {}, names: {} }),
-  createLiveTextTracker: () => ({ stop: () => {}, text: "" }),
-  createReasoningTracker: () => ({ stop: () => {}, text: "" }),
-  createImageTracker: () => ({ stop: () => {}, images: [] }),
+  composeChatMessages: (input: { events?: StubEvent[] }) => ({
+    messages: (input.events ?? []).map((e) => ({
+      id: e.id,
+      role: e.role ?? "user",
+      content: e.content ?? "",
+      createdAt: "",
+    })),
+  }),
+  createToolNameTracker: () => ({ stop: trackerStops.toolNames, names: {} }),
+  createLiveTextTracker: () => ({ stop: trackerStops.liveText, text: "" }),
+  createReasoningTracker: () => ({ stop: trackerStops.reasoning, text: "" }),
+  createImageTracker: () => ({ stop: trackerStops.image, images: [] }),
 }));
 
 const {
@@ -89,9 +130,21 @@ type DeliverTransport = Parameters<typeof deliverMessageWithAttachments>[0];
 
 beforeEach(() => {
   launchInstanceSession.mockClear();
+  launchInstanceSession.mockImplementation(() =>
+    Promise.resolve({ launched: true }),
+  );
   ensureMeSynced.mockClear();
   destroyed.length = 0;
   sessionTenantIds.length = 0;
+  sessionStops.length = 0;
+  nextSessionEvents = [];
+  sentMails.length = 0;
+  sendMailShouldFail = null;
+  capturedOnStreamError = null;
+  trackerStops.toolNames.mockClear();
+  trackerStops.liveText.mockClear();
+  trackerStops.reasoning.mockClear();
+  trackerStops.image.mockClear();
 });
 
 afterEach(() => {
@@ -139,6 +192,37 @@ describe("deliverMessage", () => {
     ).rejects.toBeInstanceOf(FakeApiError);
     expect(session.sendMail).toHaveBeenCalledTimes(2);
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("relaunches on a 502 carrying the structured sidecar_unavailable code", async () => {
+    let calls = 0;
+    const session = {
+      sendMail: mock(() => {
+        calls++;
+        if (calls === 1) {
+          return Promise.reject(new FakeApiError(502, "sidecar_unavailable"));
+        }
+        return Promise.resolve();
+      }),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await deliverMessage(session, "inst-1", "hello");
+    expect(session.sendMail).toHaveBeenCalledTimes(2);
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+  });
+
+  it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
+    const session = {
+      sendMail: mock(() =>
+        Promise.reject(new FakeApiError(502, "upstream_gateway_error")),
+      ),
+      // biome-ignore lint/suspicious/noExplicitAny: minimal session stub
+    } as any;
+    await expect(
+      deliverMessage(session, "inst-1", "hi"),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(session.sendMail).toHaveBeenCalledTimes(1);
+    expect(launchInstanceSession).not.toHaveBeenCalled();
   });
 
   it("rethrows a non-409 error without relaunching", async () => {
@@ -191,6 +275,20 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
 
+  it("exposes the Interchange sessionId returned by launch for ReviewGate scoping", async () => {
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({ launched: true, sessionId: "ses-from-launch" }),
+    );
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() =>
+      expect(result.current.sessionId).toBe("ses-from-launch"),
+    );
+    expect(result.current.live).toBe(true);
+  });
+
   it("opens the session against the active workbench tenant, not the working/root tenant", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(sessionTenantIds).toHaveLength(1));
@@ -212,6 +310,280 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));
     expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
     expect(destroyed[0]).toBe(1);
+  });
+
+  // CL-3155: identityKey (derived from instanceId/tenantId) must never be
+  // committed alongside the previous identity's stale `ready` phase. The
+  // render-time reset means the very commit that carries the new instanceId
+  // already carries `phase: "loading"` — there is no intermediate commit a
+  // consumer (e.g. useReportConnectionStatus) could observe with the old
+  // `ready` still attached to the new identity.
+  it("commits phase as loading in the same update as an identity change, never a stale ready", async () => {
+    const { rerender, result } = renderHook(
+      ({ id }: { id: string }) => useMyraSession(id, "tnt-acme", true),
+      {
+        initialProps: { id: "inst-1" },
+        wrapper,
+      },
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+
+    rerender({ id: "inst-2" });
+
+    expect(result.current.state.phase).toBe("loading");
+  });
+});
+
+describe("useMyraSession — terminal stream error teardown (CL-3211)", () => {
+  it("stops every sibling tracker subscription, not just the session, on a terminal stream error", async () => {
+    renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
+    await waitFor(() => expect(sessionStops).toHaveLength(1));
+    await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
+
+    await act(async () => {
+      capturedOnStreamError?.(new Error("gave up reconnecting"));
+      await Promise.resolve();
+    });
+
+    expect(sessionStops[0]).toHaveBeenCalled();
+    expect(trackerStops.toolNames).toHaveBeenCalled();
+    expect(trackerStops.liveText).toHaveBeenCalled();
+    expect(trackerStops.reasoning).toHaveBeenCalled();
+    expect(trackerStops.image).toHaveBeenCalled();
+    expect(destroyed[0]).toBe(1);
+  });
+
+  // CL-3280: a hydrated session must not blank to an error on a dropped stream —
+  // it degrades to reconnecting (live=false) while history stays on screen.
+  it("degrades to reconnecting rather than a hard error on a dropped stream", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    await waitFor(() => expect(result.current.live).toBe(true));
+    // A healthy live session shows no connection notice.
+    expect(result.current.connectionNotice).toBe(null);
+    await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
+
+    await act(async () => {
+      capturedOnStreamError?.(new Error("gave up reconnecting"));
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.phase).toBe("ready");
+    expect(result.current.live).toBe(false);
+    // A drop after a live session is "reconnecting"; the first-connect window is
+    // "connecting" (guards the misleading-notice regression).
+    expect(result.current.connectionNotice).toBe("reconnecting");
+  });
+});
+
+describe("useMyraSession — history + queued send while disconnected (CL-3280)", () => {
+  it("renders hydrated history even when the launch fails because the sidecar is down", async () => {
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({
+        launched: false,
+        launchError: "No sidecar connected for agent",
+      }),
+    );
+    nextSessionEvents = [
+      { id: "m1", role: "user", content: "hello from history" },
+    ];
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    expect(result.current.live).toBe(false);
+    // Never been live and the sidecar is down: a first-connect window shows the
+    // "connecting" notice (not "reconnecting"), so the stuck-send state is
+    // explained rather than silent (CL-3292).
+    expect(result.current.connectionNotice).toBe("connecting");
+    expect(result.current.messages.map((m) => m.content)).toContain(
+      "hello from history",
+    );
+  });
+
+  it("queues a send while disconnected and flushes it once the session reconnects", async () => {
+    launchInstanceSession.mockResolvedValueOnce({
+      launched: false,
+      launchError: "No sidecar connected for agent",
+    });
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    await waitFor(() => expect(result.current.live).toBe(false));
+
+    act(() => {
+      void result.current.send("queued message");
+    });
+
+    expect(
+      result.current.messages.some(
+        (m) => m.content === "queued message" && m.status === "sending",
+      ),
+    ).toBe(true);
+    expect(sentMails).not.toContain("queued message");
+
+    act(() => {
+      result.current.reconnect();
+    });
+
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await waitFor(() => expect(sentMails).toContain("queued message"));
+    await waitFor(() =>
+      expect(
+        result.current.messages.some((m) => m.content === "queued message"),
+      ).toBe(false),
+    );
+  });
+
+  it("marks a non-recoverable live send as failed and never auto-resends it on reconnect", async () => {
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    sendMailShouldFail = "permanent";
+    act(() => {
+      void result.current.send("doomed message");
+    });
+
+    await waitFor(() =>
+      expect(
+        result.current.messages.some(
+          (m) => m.content === "doomed message" && m.status === "failed",
+        ),
+      ).toBe(true),
+    );
+    expect(sentMails).not.toContain("doomed message");
+
+    // A reconnect must not blindly resend a non-recoverable failure — the mail
+    // may already be persisted upstream (CL-3280).
+    sendMailShouldFail = null;
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sentMails).not.toContain("doomed message");
+  });
+
+  it("does not mark a dead session live if the stream drops during the launch window", async () => {
+    let resolveLaunch: (v: {
+      launched: boolean;
+      sessionId?: string;
+    }) => void = () => {};
+    launchInstanceSession.mockImplementation(
+      () =>
+        new Promise<{ launched: boolean; sessionId?: string }>((res) => {
+          resolveLaunch = res;
+        }),
+    );
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    // Session started; establishLive is parked on the pending launch.
+    await waitFor(() => expect(capturedOnStreamError).not.toBeNull());
+
+    // The live stream drops before the launch resolves.
+    await act(async () => {
+      capturedOnStreamError?.(new Error("dropped during launch"));
+      await Promise.resolve();
+    });
+
+    // The launch then reports success — but the session it would mark live was
+    // already torn down, so it must NOT flip live (CL-3280).
+    await act(async () => {
+      resolveLaunch({ launched: true, sessionId: "ses-mid-launch" });
+      await Promise.resolve();
+    });
+
+    expect(result.current.live).toBe(false);
+    // Never reached a live session, so the notice is "connecting", not
+    // "reconnecting".
+    expect(result.current.connectionNotice).toBe("connecting");
+    expect(result.current.sessionId).toBe("ses-mid-launch");
+  });
+
+  it("surfaces a terminal fatal state on a fatal launch failure and does not relaunch", async () => {
+    // "Forbidden" is neither transient nor a missing-config error, so
+    // classifyLaunchState returns `fatal`.
+    launchInstanceSession.mockImplementation(() =>
+      Promise.resolve({ launched: false, launchError: "Forbidden" }),
+    );
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+
+    // A fatal launch is terminal, not an outage: the surface goes to `fatal` and
+    // the live subscriptions are torn down (CL-3292).
+    await waitFor(() => expect(result.current.state.phase).toBe("fatal"));
+    expect(result.current.live).toBe(false);
+    await waitFor(() => expect(destroyed[0]).toBe(1));
+
+    // Terminal means the connection reporter must NOT re-drive a relaunch loop;
+    // only one session is ever created. (An `error` phase would relaunch here.)
+    await new Promise((r) => setTimeout(r, 30));
+    expect(destroyed.length).toBe(1);
+  });
+
+  it("does not resend a queued message that fails non-recoverably during flush", async () => {
+    launchInstanceSession.mockResolvedValueOnce({
+      launched: false,
+      launchError: "No sidecar connected for agent",
+    });
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.state.phase).toBe("ready"));
+    await waitFor(() => expect(result.current.live).toBe(false));
+
+    act(() => {
+      void result.current.send("queued-then-doomed");
+    });
+    expect(
+      result.current.messages.some((m) => m.content === "queued-then-doomed"),
+    ).toBe(true);
+
+    // The flush attempt on reconnect hits a non-recoverable failure.
+    sendMailShouldFail = "permanent";
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await waitFor(() =>
+      expect(
+        result.current.messages.some(
+          (m) => m.content === "queued-then-doomed" && m.status === "failed",
+        ),
+      ).toBe(true),
+    );
+    expect(sentMails).not.toContain("queued-then-doomed");
+
+    // A further reconnect must not resend the permanently-failed item.
+    sendMailShouldFail = null;
+    act(() => {
+      result.current.reconnect();
+    });
+    await waitFor(() => expect(result.current.live).toBe(true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(sentMails).not.toContain("queued-then-doomed");
   });
 });
 
@@ -335,6 +707,51 @@ describe("deliverMessageWithAttachments", () => {
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it("relaunches on a 502 carrying the structured sidecar_unavailable code", async () => {
+    let calls = 0;
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) => {
+      calls += 1;
+      if (calls === 1) {
+        return Promise.reject(new FakeApiError(502, "sidecar_unavailable"));
+      }
+      return Promise.resolve(undefined);
+    });
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await deliverMessageWithAttachments(
+      transport,
+      "tnt-acme",
+      "inst-1",
+      "hi",
+      attachments,
+    );
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.reject(new FakeApiError(502, "upstream_gateway_error")),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    await expect(
+      deliverMessageWithAttachments(
+        transport,
+        "tnt-acme",
+        "inst-1",
+        "hi",
+        attachments,
+      ),
+    ).rejects.toBeInstanceOf(FakeApiError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(launchInstanceSession).not.toHaveBeenCalled();
+  });
 });
 
 describe("document diversion (CL-2628)", () => {
@@ -404,6 +821,22 @@ describe("document diversion (CL-2628)", () => {
     expect(attachmentErrorMessage(err)).toContain("too long");
     // Not the generic connectivity fallback.
     expect(attachmentErrorMessage(err)).not.toContain("connection");
+  });
+
+  it("maps a parse-route 502 to a connection failure, not a content failure", async () => {
+    const transport = {
+      fetch: mock(() => Promise.reject(new FakeApiError(502))),
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+    const err = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "big.pdf",
+      mimeType: "application/pdf",
+      data: "AAAA",
+    }).catch((e) => e);
+    expect(err).toBeInstanceOf(DocumentParseError);
+    expect(attachmentErrorMessage(err)).toContain("connect");
+    // Not the generic content-failure message.
+    expect(attachmentErrorMessage(err)).not.toContain("couldn't be read");
   });
 
   it("surfaces a DocumentParseError's message rather than a connectivity error", () => {

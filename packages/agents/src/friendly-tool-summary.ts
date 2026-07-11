@@ -1,12 +1,18 @@
 import { type } from "arktype";
-import { toHumanLabel } from "@workbench/ui";
-import type { ToolSummaryStyle } from "@workbench/ui";
-import type { ToolCall } from "@workbench/chat/types";
+import { toHumanLabel, type ToolSummaryStyle } from "@workbench/shared";
 
-// `ToolSummaryStyle` is owned by @workbench/ui (the foundation both this package
-// and the preference hook depend on); re-exported here so callers can keep
-// importing it from @workbench/agents.
 export type { ToolSummaryStyle };
+
+/** Minimal tool-call shape for summary phrasing (sidecar-safe; no chat package). */
+export const ToolSummaryCallSchema = type({
+  id: "string",
+  name: "string",
+  "label?": "string",
+  "arguments?": "Record<string, unknown>",
+  "result?": "string",
+  "isError?": "boolean",
+});
+export type ToolSummaryCall = typeof ToolSummaryCallSchema.infer;
 
 /**
  * Maps a tool operation to a friendly present-participle action phrase shown in
@@ -19,7 +25,7 @@ export type { ToolSummaryStyle };
  */
 type FriendlyPhrase =
   | string
-  | ((args: Record<string, unknown>) => string | null);
+  | ((args: Record<string, unknown>, call?: ToolSummaryCall) => string | null);
 
 function firstStringArg(
   args: Record<string, unknown>,
@@ -34,6 +40,16 @@ function firstStringArg(
 
 const QUERY_KEYS = ["query", "q", "search", "term", "keyword"];
 
+/** Deterministic pick so the same call always renders the same polished phrase. */
+function pickPhrase(seed: string, options: readonly string[]): string {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return options[h % options.length] ?? options[0] ?? "";
+}
+
 function searching(label: string, keys: string[] = QUERY_KEYS): FriendlyPhrase {
   return (args) => {
     const term = firstStringArg(args, keys);
@@ -43,9 +59,101 @@ function searching(label: string, keys: string[] = QUERY_KEYS): FriendlyPhrase {
   };
 }
 
-// Keyed by the operation key — the substring after the last `:` in the
-// fully-qualified tool name (e.g. `granola_get_note`).
+// Platform catalog meta-tools are internal plumbing, not user-facing capabilities.
+// The chat UI renders them as quiet reasoning-style lines (see isCatalogMetaTool).
+const SEARCH_TOOLS_IDLE = [
+  "Searching Workbench…",
+  "Exploring the best tools for you",
+  "Finding the right capability",
+  "Looking across Workbench…",
+] as const;
+
+const SEARCH_TOOLS_WITH_TERM = (term: string) =>
+  [
+    `Looking for tools about ${term}`,
+    `Exploring tools for ${term}`,
+    `Searching Workbench for ${term}`,
+  ] as const;
+
+const LOAD_TOOLS_IDLE = [
+  "Getting that ready",
+  "Bringing tools online",
+  "Preparing what I need",
+] as const;
+
+const LOAD_TOOLS_PKG = (pkg: string) =>
+  [
+    `Loading ${pkg} for you`,
+    `Bringing ${pkg} online`,
+    `Getting ${pkg} ready`,
+  ] as const;
+
+/** Pull a human name out of Attio-style `values` (plain string or nested write form). */
+function attioRecordName(values: unknown): string | null {
+  if (values === null || values === undefined || typeof values !== "object") {
+    return null;
+  }
+  const record = values as Record<string, unknown>;
+  for (const key of ["name", "full_name", "title"]) {
+    const raw = record[key];
+    if (typeof raw === "string" && raw.trim() !== "") return raw.trim();
+    if (Array.isArray(raw) && raw.length > 0) {
+      const first = raw[0];
+      if (typeof first === "string" && first.trim() !== "") return first.trim();
+      if (
+        first !== null &&
+        typeof first === "object" &&
+        typeof (first as { value?: unknown }).value === "string"
+      ) {
+        const v = ((first as { value: string }).value ?? "").trim();
+        if (v !== "") return v;
+      }
+    }
+  }
+  return null;
+}
+
+function truncate(text: string, max = 48): string {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 1)}…`;
+}
+
 const PHRASES: Record<string, FriendlyPhrase> = {
+  // Platform meta-tools (catalog runner locals) — polished, rotated, quiet.
+  search_tools: (args, call) => {
+    const term = firstStringArg(args, QUERY_KEYS);
+    const seed = `${call?.id ?? ""}|${term ?? ""}`;
+    if (term !== null) {
+      return pickPhrase(seed, SEARCH_TOOLS_WITH_TERM(truncate(term)));
+    }
+    return pickPhrase(seed || "search_tools", SEARCH_TOOLS_IDLE);
+  },
+  load_tools: (args, call) => {
+    const pkg = firstStringArg(args, ["package"]);
+    const names = args.names;
+    const seed = `${call?.id ?? ""}|${pkg ?? ""}|${
+      Array.isArray(names) ? names.length : 0
+    }`;
+    if (pkg !== null) {
+      return pickPhrase(seed, LOAD_TOOLS_PKG(pkg));
+    }
+    if (Array.isArray(names) && names.length > 0) {
+      if (names.length === 1) {
+        return pickPhrase(seed, [
+          "Getting that ready",
+          "Bringing a tool online",
+          "Preparing a tool",
+        ]);
+      }
+      return pickPhrase(seed, [
+        `Getting ${names.length} tools ready`,
+        `Bringing ${names.length} tools online`,
+        `Preparing ${names.length} tools`,
+      ]);
+    }
+    return pickPhrase(seed || "load_tools", LOAD_TOOLS_IDLE);
+  },
+
   // Granola — meeting notes / transcripts
   granola_get_note: "Loading a transcript",
   granola_list_notes: "Finding recent meetings",
@@ -57,25 +165,60 @@ const PHRASES: Record<string, FriendlyPhrase> = {
 
   // Linear
   linear_list_issues: "Looking through Linear issues",
-  linear_get_issue: "Opening a Linear issue",
+  linear_get_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Opening a Linear issue"
+      : `Opening Linear issue ${id}`;
+  },
   linear_list_teams: "Listing Linear teams",
   linear_list_users: "Listing Linear users",
 
-  // Attio CRM
-  attio_query_records: "Searching the CRM",
-  attio_search_records: "Searching the CRM",
-  attio_get_record: "Looking up a CRM record",
-  attio_list_objects: "Browsing CRM objects",
-  attio_list_workspace_members: "Listing workspace members",
-  attio_list_tasks: "Listing CRM tasks",
-  attio_get_task: "Looking up a CRM task",
-  attio_update_task: "Updating a CRM task",
-  attio_create_note: "Adding a CRM note",
+  // Attio CRM — brand name in the phrase (not "CRM") so the UI reads naturally
+  attio_query_records: (args) => {
+    const term = firstStringArg(args, [
+      "nameContains",
+      "domainContains",
+      ...QUERY_KEYS,
+    ]);
+    const object = firstStringArg(args, ["object"]);
+    if (term !== null && object !== null) {
+      return `Searching Attio ${object} for ${truncate(term)}`;
+    }
+    if (term !== null) return `Searching Attio for ${truncate(term)}`;
+    if (object !== null) return `Searching Attio ${object}`;
+    return "Searching Attio";
+  },
+  attio_search_records: (args) => {
+    const term = firstStringArg(args, QUERY_KEYS);
+    return term === null
+      ? "Searching Attio"
+      : `Searching Attio for ${truncate(term)}`;
+  },
+  attio_get_record: (args) => {
+    const object = firstStringArg(args, ["object"]);
+    return object === null
+      ? "Looking up an Attio record"
+      : `Looking up an Attio ${object} record`;
+  },
+  attio_list_objects: "Browsing Attio objects",
+  attio_list_workspace_members: "Listing Attio workspace members",
+  attio_list_tasks: "Listing Attio tasks",
+  attio_get_task: "Looking up an Attio task",
+  attio_update_task: "Updating an Attio task",
+  attio_create_note: "Adding an Attio note",
+  attio_create_record: (args) => {
+    const name = attioRecordName(args.values);
+    const object = firstStringArg(args, ["object"]);
+    if (name !== null) return `Creating an Attio record for ${truncate(name)}`;
+    if (object !== null) return `Creating an Attio ${object} record`;
+    return "Creating an Attio record";
+  },
 
   // Firecrawl — web scraping / crawling
   firecrawl_scrape: (args) => {
     const url = firstStringArg(args, ["url"]);
-    return url === null ? "Reading a web page" : `Reading ${url}`;
+    return url === null ? "Reading a web page" : `Reading ${truncate(url, 56)}`;
   },
   firecrawl_search: searching("the web"),
   firecrawl_map: "Mapping a website",
@@ -127,7 +270,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   gamma_list_themes: "Browsing presentation themes",
 
   // GitHub
-  github_activity: "Checking GitHub activity",
+  github_activity: searching("GitHub"),
 
   // Reddit
   reddit_search: searching("Reddit"),
@@ -157,11 +300,14 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   // Artifact — workspace deliverables
   artifact_create: "Creating an artifact",
   artifact_write: "Saving an artifact",
+  write_artifact: "Saving an artifact",
   artifact_read: "Reading an artifact",
+  artifact_read_chunk: "Reading an artifact",
   artifact_list: "Listing artifacts",
   artifact_find_by_title: "Finding an artifact",
   artifact_link_file: "Linking a file",
   artifact_link_presentation: "Linking a presentation",
+  artifact_link_gamma_presentation: "Linking a presentation",
 
   // Memory — durable per-user store (CL-2413)
   memory_load: "Recalling memory",
@@ -182,39 +328,281 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   last30days_core_extract: "Extracting research findings",
   last30days_core_report: "Compiling a research report",
   last30days_validate: "Validating research sources",
+
+  // Skills
+  search_skills: (args) => {
+    const term = firstStringArg(args, QUERY_KEYS);
+    return term === null
+      ? "Searching skills"
+      : `Searching skills for ${truncate(term)}`;
+  },
+  load_skill: (args) => {
+    const name = firstStringArg(args, ["name", "skill", "id"]);
+    return name === null
+      ? "Loading a skill"
+      : `Loading skill ${truncate(name)}`;
+  },
+  list_skills: "Listing skills",
+  list_skill_drafts: "Listing skill drafts",
+  load_skill_draft: "Loading a skill draft",
+  skill_draft: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Drafting a skill"
+      : `Drafting skill ${truncate(name)}`;
+  },
+
+  // Notion
+  notion_search: searching("Notion"),
+  notion_get_page: "Opening a Notion page",
+  notion_get_page_content: "Reading a Notion page",
+  notion_get_database: "Opening a Notion database",
+  notion_query_database: "Querying a Notion database",
+  notion_create_page: (args) => {
+    const title = firstStringArg(args, ["title", "name"]);
+    return title === null
+      ? "Creating a Notion page"
+      : `Creating a Notion page for ${truncate(title)}`;
+  },
+
+  // Vercel
+  vercel_list_projects: "Listing Vercel projects",
+  vercel_list_deployments: "Listing Vercel deployments",
+  vercel_deploy_static_file: "Deploying a static file",
+  vercel_deploy_artifact: "Deploying an artifact",
+
+  // File parser
+  parse_file: "Parsing a document",
 };
 
 /**
- * Parse the operation key out of a fully-qualified tool name. Interchange names
- * look like `@workbench/tools-granola/granola:granola_get_note`; the operation
- * is the substring after the last `:`. Falls back to the whole name when the
- * format differs.
+ * The raw operation segment of a tool name (after the last `:` for FQNs).
+ * LLM form keeps the double underscore: `attio__create_record`.
  */
-export function toolOperationKey(name: string): string {
+function operationSegment(name: string): string {
   const colon = name.lastIndexOf(":");
   return colon === -1 ? name : name.slice(colon + 1);
 }
 
 /**
- * A host `formatToolSummary`: renders a friendly action verb for a tool call.
- * Unknown operations fall back to `toHumanLabel` so nothing regresses.
+ * Phrase-table lookup keys for a tool name, most-specific first.
+ *
+ * - FQN / bare: `attio_create_record`
+ * - LLM with stripped package prefix: `attio__create_record` → `attio_create_record`
+ * - LLM without package prefix on the tool: `skills__search_skills` → `search_skills`
  */
-export function friendlyToolSummary(call: ToolCall): string {
-  const key = toolOperationKey(call.name);
-  const phrase = PHRASES[key];
-  if (phrase === undefined) return toHumanLabel(key);
-  if (typeof phrase === "string") return phrase;
-  const interpolated = phrase(call.arguments ?? {});
-  return interpolated ?? toHumanLabel(key);
+function phraseKeyCandidates(name: string): string[] {
+  const op = operationSegment(name);
+  const out: string[] = [];
+  const push = (k: string) => {
+    if (k !== "" && !out.includes(k)) out.push(k);
+  };
+  push(op);
+  const dunder = op.indexOf("__");
+  if (dunder !== -1) {
+    const pkg = op.slice(0, dunder);
+    const short = op.slice(dunder + 2);
+    push(`${pkg}_${short}`);
+    push(short);
+  }
+  if (op.includes("__")) push(op.split("__").join("_"));
+  return out;
 }
 
-// A tool's "family" is the prefix before the first underscore of its operation
-// key — `attio_get_record` and `attio_query_records` both belong to `attio`.
-// This is what lets a turn's many calls roll up into one clause per provider.
+/**
+ * Canonical bare operation key used for roll-up family grouping and fallbacks.
+ *
+ * - FQN: `@workbench/tools-granola/granola:granola_get_note` → `granola_get_note`
+ * - LLM with package-prefixed bare: `attio__create_record` → `attio_create_record`
+ * - LLM without: `skills__list_skills` → `list_skills` when that is the bare name
+ * - bare: unchanged
+ */
+export function toolOperationKey(name: string): string {
+  const candidates = phraseKeyCandidates(name);
+  for (const key of candidates) {
+    if (PHRASES[key] !== undefined) return key;
+  }
+  // Prefer `pkg_short` reconstruction for LLM form; otherwise the first candidate.
+  return candidates[0] ?? name;
+}
+
+/**
+ * Soft present-participle fallback that never surfaces snake_case or Title Case
+ * tool ids. Unknown ops keep a calm action frame rather than reading like a name.
+ * `mystery_do_thing` → "Working on mystery do thing"
+ */
+function softFallback(key: string): string {
+  const words = key
+    .split("__")
+    .join("_")
+    .split(/[-_]+/u)
+    .filter((w: string) => w.length > 0);
+  if (words.length === 0) return "Working on a task";
+  return `Working on ${words.join(" ").toLowerCase()}`;
+}
+
+/**
+ * Platform catalog meta-tools (`search_tools` / `load_tools`). They are internal
+ * plumbing, not user-facing capabilities — chat renders them as quiet
+ * reasoning-style lines (no tool chrome / checkmark) and excludes them from
+ * roll-up tool counts.
+ */
+export function isCatalogMetaTool(name: string): boolean {
+  const key = toolOperationKey(name);
+  return key === "search_tools" || key === "load_tools";
+}
+
+// Tool-package providers that are workbench plumbing, not outside services.
+// Their tools (memory_save, write_artifact, workflow_start, skill loading,
+// sub-agent dispatch, file parsing) act on the agent's own workspace even
+// though they ship in packages and reach the model provider-prefixed.
+const INTERNAL_TOOL_PROVIDERS: ReadonlySet<string> = new Set([
+  "agents",
+  "artifact",
+  "compose",
+  "dispatch",
+  "fileparser",
+  "skills",
+  "workflows",
+]);
+
+/**
+ * External integration tools act on outside services (Attio, Linear, Exa, …).
+ * Classification keys on the provider segment of the wire name — the prefix of
+ * the LLM-safe `provider__operation` form or the `@scope/pkg/provider:operation`
+ * raw factory form. Provider-less bare names are local runners / plumbing and
+ * count as internal, as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat
+ * uses this to give external tool lines a bullet marker and render internal
+ * ones plain.
+ */
+export function isExternalIntegrationTool(name: string): boolean {
+  const llmProvider = /^([a-z0-9-]+)__/.exec(name)?.[1];
+  if (llmProvider !== undefined) {
+    return !INTERNAL_TOOL_PROVIDERS.has(llmProvider);
+  }
+  const rawProvider = /\/([a-z0-9-]+):/.exec(name)?.[1];
+  if (rawProvider !== undefined) {
+    return !INTERNAL_TOOL_PROVIDERS.has(rawProvider);
+  }
+  return false;
+}
+
+/**
+ * The recognized friendly phrase for a tool call, or null when the tool id is
+ * not in the catalog (or a hand-authored interpolator declines). Lets a caller
+ * choose its own fallback — e.g. a backend-supplied action sentence — instead of
+ * the soft "Working on …" label, and without pattern-matching that label's text.
+ */
+export function friendlyToolSummaryKnown(call: ToolSummaryCall): string | null {
+  const phrase = PHRASES[toolOperationKey(call.name)];
+  if (phrase === undefined) return null;
+  if (typeof phrase === "string") return phrase;
+  return phrase(call.arguments ?? {}, call);
+}
+
+/**
+ * A host `formatToolSummary`: renders a friendly action verb for a tool call.
+ * Unknown operations fall back to a soft present-participle label — never the raw id.
+ */
+export function friendlyToolSummary(call: ToolSummaryCall): string {
+  const key = toolOperationKey(call.name);
+  const phrase = PHRASES[key];
+  if (phrase === undefined) return softFallback(key);
+  if (typeof phrase === "string") return phrase;
+  // Hand-authored interpolators always return a static phrase when args are
+  // thin; null is only a defensive escape and must not reintroduce wire-id words.
+  const interpolated = phrase(call.arguments ?? {}, call);
+  return interpolated ?? "Working on a task";
+}
+
+/**
+ * Short human outcome for a settled tool call. Returns null when there is nothing
+ * useful to say (pending, empty, or unparseable). Never returns raw JSON.
+ */
+export function friendlyToolResult(call: ToolSummaryCall): string | null {
+  if (call.isError === true) {
+    if (typeof call.result === "string" && call.result.trim() !== "") {
+      return truncate(call.result.trim(), 160);
+    }
+    return "Something went wrong";
+  }
+  if (call.result === undefined || call.result === "") return null;
+
+  const text = call.result.trim();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    // Plain text result — show a short snippet, not a wall of text.
+    if (text.length <= 120 && !text.startsWith("{") && !text.startsWith("[")) {
+      return text;
+    }
+    return "Done";
+  }
+
+  if (Array.isArray(parsed)) {
+    const n = parsed.length;
+    if (n === 0) return "No results";
+    if (n === 1) return "Found 1 result";
+    return `Found ${n} results`;
+  }
+
+  if (parsed !== null && typeof parsed === "object") {
+    const obj = parsed as Record<string, unknown>;
+
+    // search_tools / catalog-shaped results
+    if (Array.isArray(obj.tools)) {
+      const n = obj.tools.length;
+      if (n === 0) return "No matching tools";
+      if (n === 1) return "Found 1 tool";
+      return `Found ${n} tools`;
+    }
+    if (Array.isArray(obj.packages)) {
+      const n = obj.packages.length;
+      if (n === 0) return "No matching packages";
+      return n === 1 ? "Found 1 package" : `Found ${n} packages`;
+    }
+    if (Array.isArray(obj.results)) {
+      const n = obj.results.length;
+      if (n === 0) return "No results";
+      return n === 1 ? "Found 1 result" : `Found ${n} results`;
+    }
+    if (Array.isArray(obj.data)) {
+      const n = obj.data.length;
+      if (n === 0) return "No results";
+      return n === 1 ? "Found 1 result" : `Found ${n} results`;
+    }
+    if (typeof obj.count === "number") {
+      return obj.count === 0 ? "No results" : `Found ${obj.count} results`;
+    }
+    if (obj.deduped === true) return "Already exists — skipped create";
+    if (obj.loaded === true || obj.ok === true) return "Done";
+    if (typeof obj.id === "string" || typeof obj.record_id === "string") {
+      return "Done";
+    }
+    // Nested Attio record envelope
+    if (obj.id !== null && typeof obj.id === "object") return "Done";
+  }
+
+  if (typeof parsed === "string") return truncate(parsed, 120);
+  if (typeof parsed === "number" || typeof parsed === "boolean") {
+    return String(parsed);
+  }
+
+  return "Done";
+}
+
+// A tool's "family" is the package short name for LLM form (`attio__…` →
+// `attio`) or the prefix before the first underscore of a bare key
+// (`attio_get_record` → `attio`). This is what lets a turn's many calls roll
+// up into one clause per provider.
 function toolFamilyKey(name: string): string {
-  const op = toolOperationKey(name);
-  const underscore = op.indexOf("_");
-  return underscore === -1 ? op : op.slice(0, underscore);
+  const op = operationSegment(name);
+  const dunder = op.indexOf("__");
+  if (dunder !== -1) return op.slice(0, dunder);
+  const key = toolOperationKey(name);
+  const underscore = key.indexOf("_");
+  return underscore === -1 ? key : key.slice(0, underscore);
 }
 
 /**
@@ -277,7 +665,7 @@ interface FamilyDef {
   noun?: { one: string; many: string };
   // Best-effort richer clause built from the calls' results, used by the
   // `detail`/`mixed` styles. Returns null to fall back to the plain clause.
-  detail?: (calls: ToolCall[]) => string | null;
+  detail?: (calls: ToolSummaryCall[]) => string | null;
 }
 
 function pluralize(count: number, one: string, many: string): string {
@@ -314,7 +702,7 @@ function isHighPriority(
 
 // Detects how many issues a Linear turn pulled and whether any are high-stakes,
 // degrading to null when a result does not match the expected shape.
-function linearDetail(calls: ToolCall[]): string | null {
+function linearDetail(calls: ToolSummaryCall[]): string | null {
   let issues = 0;
   let high = 0;
   for (const call of calls) {
@@ -384,11 +772,21 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
     altVerb: "handed off to another agent",
   },
   last30days: { verb: "researched", altVerb: "dug into the research" },
+  notion: { verb: "checked Notion", altVerb: "browsed Notion" },
+  vercel: { verb: "checked Vercel", altVerb: "browsed Vercel" },
+  skills: { verb: "looked up skills", altVerb: "browsed skills" },
+  search: { verb: "looked up tools", altVerb: "browsed tools" },
+  load: { verb: "loaded tools", altVerb: "pulled in tools" },
+  list: { verb: "listed items", altVerb: "browsed items" },
+  identity: { verb: "checked identity", altVerb: "looked up identity" },
+  memory: { verb: "updated memory", altVerb: "recalled memory" },
+  workflow: { verb: "worked with workflows", altVerb: "ran a workflow" },
+  parse: { verb: "parsed a document", altVerb: "read a document" },
 };
 
 function familyClause(
   family: string,
-  calls: ToolCall[],
+  calls: ToolSummaryCall[],
   count: number,
   style: ToolSummaryStyle,
 ): string {
@@ -429,13 +827,15 @@ function capitalize(text: string): string {
  * for no calls.
  */
 export function summarizeToolCalls(
-  calls: ToolCall[],
+  calls: ToolSummaryCall[],
   style: ToolSummaryStyle = "symbols",
 ): string {
-  if (calls.length === 0) return "";
+  // Catalog meta-tools are internal plumbing — never count them in the roll-up.
+  const real = calls.filter((c) => !isCatalogMetaTool(c.name));
+  if (real.length === 0) return "";
   const order: string[] = [];
-  const byFamily = new Map<string, ToolCall[]>();
-  for (const call of calls) {
+  const byFamily = new Map<string, ToolSummaryCall[]>();
+  for (const call of real) {
     const family = toolFamilyKey(call.name);
     const existing = byFamily.get(family);
     if (existing === undefined) {
@@ -455,7 +855,7 @@ export function summarizeToolCalls(
 // A representative turn used to render a live example of each style in Settings,
 // so the preview always matches real output (including detail extraction). The
 // Linear result is shaped so the `detail`/`mixed` styles surface the priority.
-export const TOOL_SUMMARY_PREVIEW_CALLS: ToolCall[] = [
+export const TOOL_SUMMARY_PREVIEW_CALLS: ToolSummaryCall[] = [
   {
     id: "p1",
     name: "@workbench/tools-attio/attio:attio_search_records",

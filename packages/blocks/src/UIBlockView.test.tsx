@@ -185,6 +185,89 @@ describe("UIBlockView", () => {
     });
   });
 
+  it("grows the form textarea to fit its content as the user types (CL-3234)", () => {
+    const block: UIBlock = {
+      kind: "form",
+      signalName: "intake",
+      fields: [{ kind: "textarea", name: "focus", label: "Focus" }],
+    };
+    render(<UIBlockView block={block} />);
+    const area = screen.getByRole("textbox", {
+      name: /Focus/,
+    }) as HTMLTextAreaElement;
+    // Simulate the browser reporting a taller content box than the initial rows.
+    Object.defineProperty(area, "scrollHeight", {
+      configurable: true,
+      get: () => 128,
+    });
+    fireEvent.change(area, {
+      target: { value: "line\nline\nline\nline\nline" },
+    });
+    // Auto-grow pins the inline height to the measured content height, rather
+    // than leaving the box at its fixed initial rows.
+    expect(area.style.height).toBe("128px");
+  });
+
+  it("caps the textarea height and scrolls past the ceiling (CL-3234)", () => {
+    const block: UIBlock = {
+      kind: "form",
+      signalName: "intake",
+      fields: [{ kind: "textarea", name: "focus", label: "Focus" }],
+    };
+    render(<UIBlockView block={block} />);
+    const area = screen.getByRole("textbox", {
+      name: /Focus/,
+    }) as HTMLTextAreaElement;
+    expect(area.className).toContain("max-h-[40vh]");
+    expect(area.className).toContain("overflow-y-auto");
+    // A min-height floor keeps an empty box at its initial rows rather than
+    // collapsing to a single line when auto-grow measures the content. Derived
+    // from the shared text-sm line height (1.25rem), py-2 (1rem), 1px border.
+    expect(area.style.minHeight).toBe("calc(3 * 1.25rem + 1rem + 2px)");
+  });
+
+  it("remeasures height when the textarea width changes (CL-3234)", () => {
+    const observers: Array<() => void> = [];
+    const original = globalThis.ResizeObserver;
+    class FakeResizeObserver {
+      constructor(private cb: () => void) {
+        observers.push(() => this.cb());
+      }
+      observe() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver =
+      FakeResizeObserver as unknown as typeof ResizeObserver;
+    try {
+      const block: UIBlock = {
+        kind: "form",
+        signalName: "intake",
+        fields: [{ kind: "textarea", name: "focus", label: "Focus" }],
+      };
+      let height = 40;
+      let width = 300;
+      render(<UIBlockView block={block} />);
+      const area = screen.getByRole("textbox", {
+        name: /Focus/,
+      }) as HTMLTextAreaElement;
+      Object.defineProperty(area, "scrollHeight", {
+        configurable: true,
+        get: () => height,
+      });
+      Object.defineProperty(area, "clientWidth", {
+        configurable: true,
+        get: () => width,
+      });
+      // A width change (container resize) rewraps text into a taller box.
+      width = 150;
+      height = 96;
+      observers.forEach((fire) => fire());
+      expect(area.style.height).toBe("96px");
+    } finally {
+      globalThis.ResizeObserver = original;
+    }
+  });
+
   it("leaves the payload unchanged when the prompt-box is left blank", () => {
     let received: UIResponse | undefined;
     const onRespond = (response: UIResponse) => {

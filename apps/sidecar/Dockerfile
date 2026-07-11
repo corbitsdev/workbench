@@ -52,6 +52,7 @@ COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/ab-compare-presets/package.json packages/ab-compare-presets/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
 COPY packages/tools-attio/package.json packages/tools-attio/
+COPY packages/tools-notion/package.json packages/tools-notion/
 COPY packages/tools-catalog/package.json packages/tools-catalog/
 COPY packages/tools-github/package.json packages/tools-github/
 COPY packages/tools-granola/package.json packages/tools-granola/
@@ -97,5 +98,6 @@ COPY packages/workflow-host/ packages/workflow-host/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tool-credentials/ packages/tool-credentials/
+COPY packages/workbench-shared/ packages/workbench-shared/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]

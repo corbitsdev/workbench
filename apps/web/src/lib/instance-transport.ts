@@ -49,7 +49,9 @@ export async function fetchBlobObjectUrl(
   return URL.createObjectURL(blob);
 }
 
-export function createHubTransport(): Transport {
+export function createHubTransport(transportOpts?: {
+  onStreamError?: (error: Error) => void;
+}): Transport {
   return {
     async fetch<T>(method: string, path: string, body?: unknown): Promise<T> {
       const init: RequestInit = { method, credentials: "include" };
@@ -86,6 +88,7 @@ export function createHubTransport(): Transport {
         toEventSourceUrl(path),
         opts?.eventName ?? "message",
         onEvent,
+        transportOpts?.onStreamError,
       );
     },
   };

@@ -52,8 +52,9 @@ function subscribe(
   url: string,
   name: string,
   onEvent: (event: unknown) => void,
+  onError?: (error: Error) => void,
 ) {
-  const stop = subscribeSharedEventStream(url, name, onEvent);
+  const stop = subscribeSharedEventStream(url, name, onEvent, onError);
   activeStops.push(stop);
   return stop;
 }
@@ -189,5 +190,47 @@ describe("subscribeSharedEventStream", () => {
     FakeEventSource.instances[0]!.emit("agent.event", { type: "x" });
 
     expect(received).toHaveLength(0);
+  });
+
+  it("gives up after the never-opened attempt cap and notifies onError", () => {
+    const errors: Error[] = [];
+    subscribe(URL_A, "agent.event", () => undefined, (err) =>
+      errors.push(err),
+    );
+
+    // Fail three times without ever opening; each schedules a reconnect.
+    for (let i = 0; i < 3; i++) {
+      FakeEventSource.instances[FakeEventSource.instances.length - 1]!.onerror?.();
+      flushTimers();
+    }
+    expect(FakeEventSource.instances).toHaveLength(4);
+    expect(errors).toHaveLength(0);
+
+    // The fourth attempt also fails without opening — the cap is reached and
+    // no further reconnect is scheduled.
+    FakeEventSource.instances[3]!.onerror?.();
+    flushTimers();
+
+    expect(FakeEventSource.instances).toHaveLength(4);
+    expect(errors).toHaveLength(1);
+  });
+
+  it("keeps reconnecting indefinitely once opened, even past the never-opened cap", () => {
+    const errors: Error[] = [];
+    subscribe(URL_A, "agent.event", () => undefined, (err) =>
+      errors.push(err),
+    );
+
+    // The connection opens successfully once.
+    FakeEventSource.instances[0]!.onopen?.();
+
+    // It then drops more times than the never-opened cap would allow.
+    for (let i = 0; i < 6; i++) {
+      FakeEventSource.instances[FakeEventSource.instances.length - 1]!.onerror?.();
+      flushTimers();
+    }
+
+    expect(FakeEventSource.instances).toHaveLength(7);
+    expect(errors).toHaveLength(0);
   });
 });

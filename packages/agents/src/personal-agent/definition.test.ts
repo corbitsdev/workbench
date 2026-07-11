@@ -84,6 +84,9 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
       "@workbench/tools-linear/linear:linear_list_issues",
     );
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
+      "@workbench/tools-linear/linear:linear_create_issue",
+    );
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain(
       "@workbench/tools-attio/attio:attio_query_records",
     );
     expect(PERSONAL_AGENT_BASE_TOOLS).toContain(

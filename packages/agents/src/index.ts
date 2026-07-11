@@ -14,6 +14,11 @@ export {
 } from "./tool-names";
 export { withCorbitsVocabulary } from "./corbits-vocabulary";
 export {
+  APPROVAL_GATED_TOOL_NAMES,
+  INTERNAL_WRITE_EXCLUSIONS,
+  approvalGatedWriteNames,
+} from "./tool-side-effects";
+export {
   deterministicToolStep,
   inlineInferenceStep,
   STEP_KIND_TAG,
@@ -34,6 +39,7 @@ export {
   countHumanGates,
   type FlowStepClass,
   type ClassifiedFlowStep,
+  type DisplayFlowStep,
 } from "./flow-classify";
 
 // Personal agent

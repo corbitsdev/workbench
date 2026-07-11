@@ -112,6 +112,14 @@ describe("reduceReporter", () => {
     );
   });
 
+  it("treats a fatal launch as terminal — idle, never re-driving a reconnect", () => {
+    // Even after a ready session, `fatal` must not spin the overlay or fire a
+    // reconnect (unlike `error`, which retries for the redeploy window).
+    const d = reduceReporter(ready, "fatal", true, 1000);
+    expect(d.status).toBe("idle");
+    expect(d.reconnect).toBe(false);
+  });
+
   it("re-arms the reconnect window after the session recovers", () => {
     const errored = reduceReporter(ready, "error", true, 1000);
     const recovered = reduceReporter(errored.nextState, "ready", true, 2000);

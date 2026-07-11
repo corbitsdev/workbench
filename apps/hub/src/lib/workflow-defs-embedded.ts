@@ -8,11 +8,25 @@ import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
 // boot without importing workflow runtime code (the hub image carries no
 // workflow source). Only STABLE provenance lives here — `sha`/`deployedAt` are
 // stamped at publish time so the committed artifact does not churn per build.
+// A workflow author's declared user-facing step flow, serialized alongside the
+// def so the server catalog preview groups/labels steps exactly like the client
+// run stepper. Kept a SIBLING of `definition` (like `label`/`description`) so it
+// never churns the published-definition fingerprint.
+export const EmbeddedDisplayFlowStepSchema = type({
+  key: "string",
+  label: "string",
+  stepIds: "string[]",
+  "activityLabel?": "string",
+});
+export type EmbeddedDisplayFlowStep =
+  typeof EmbeddedDisplayFlowStepSchema.infer;
+
 export const EmbeddedWorkflowDefSchema = type({
   kind: "string",
   version: "string",
   "label?": "string",
   "description?": "string",
+  "displayFlow?": EmbeddedDisplayFlowStepSchema.array(),
   definition: workflowDefinitionEnvelopeSchema,
 });
 export type EmbeddedWorkflowDef = typeof EmbeddedWorkflowDefSchema.infer;

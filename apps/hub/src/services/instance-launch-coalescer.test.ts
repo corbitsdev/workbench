@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import {
   coalesceInstanceLaunch,
   resetInstanceLaunchCoalescer,
-} from "./agent-provisioning";
+} from "./instance-launch-coalescer";
 
 afterEach(() => {
   resetInstanceLaunchCoalescer();

@@ -9,16 +9,6 @@ import type {
 
 const logger = getLogger(["sidecar", "approval-gate"]);
 
-/**
- * Tools that publish/act irreversibly and so require human approval before
- * they run. This is the harness-side stand-in for an `ask` capability grant;
- * empty it (and flip the grant) once the native gate is wired (CL-2591).
- */
-export const APPROVAL_GATED_TOOLS: ReadonlySet<string> = new Set([
-  "vercel_deploy_static_file",
-  "vercel_deploy_artifact",
-]);
-
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
 export type ApprovalDecision = { approved: boolean; message?: string };
@@ -27,10 +17,9 @@ export type ApprovalDecision = { approved: boolean; message?: string };
  * Asks the tenant principal to approve a single gated tool call and resolves
  * the decision. This is the harness-side enforcement of human-in-the-loop:
  * the gated tool cannot run until a human resolves the request in the
- * ReviewGate UI. It is a deliberate stand-in for Interchange's native `ask`
- * grant effect (gate-based approval, not yet wired upstream — CL-2591). When
- * that lands, drop the wrapper and flip the grant to `ask`; the approval
- * record + ReviewGate UI this uses are the same ones the native path will.
+ * ReviewGate UI, which shows the full tool arguments (deploy target, note
+ * body) so the human approves the concrete action — the runner wrapper passes
+ * `call.arguments` into the approval record for exactly this reason.
  */
 export type ApproveFn = (
   call: ToolCall,
@@ -43,6 +32,7 @@ export type ApprovalGateContext = {
   tenantId: string;
   agentId: string;
   principalId: string;
+  sessionId: string;
 };
 
 const ApprovalRecord = type({
@@ -134,6 +124,7 @@ export function createApprovalClient(
         tenantId: ctx.tenantId,
         agentId: ctx.agentId,
         principalId: ctx.principalId,
+        sessionId: ctx.sessionId,
         action: `Run ${call.name}`,
         resource: `tool:${call.name}`,
         context: call.arguments,
@@ -176,9 +167,13 @@ export function createApprovalClient(
 }
 
 /**
- * Wrap a tool runner so that calls to `gatedTools` require human approval
- * before they execute; everything else passes through untouched. The wrapper
- * IS the executor of the gated tool, so the model cannot route around it.
+ * Wrap a tool runner so that calls to `gatedTools` (LLM-safe names) require
+ * human approval before they execute; everything else passes through
+ * untouched. The wrapper IS the executor of the gated tool, so the model
+ * cannot route around it. The approval record carries the concrete
+ * `call.arguments` (via `createApprovalClient`), so ReviewGate shows the human
+ * exactly what will run — the reason approval lives at the runner seam rather
+ * than the argument-blind authz callback.
  */
 export function createApprovalGatedRunner(
   inner: DefinedRunner,

@@ -65,8 +65,13 @@ describe("ChatThread", () => {
   it("suppresses the empty state while typing", () => {
     render(<ChatThread messages={[]} typing typingLabel="Ada is typing" />);
     expect(screen.queryByText("Send a message to get started.")).toBeNull();
-    expect(screen.getByTestId("typing-indicator")).toBeDefined();
+    expect(screen.getByTestId("busy-indicator")).toBeDefined();
     expect(screen.getByText("Ada is typing")).toBeDefined();
+  });
+
+  it("shows no busy indicator when idle", () => {
+    render(<ChatThread messages={messages} agentName="Ada" />);
+    expect(screen.queryByTestId("busy-indicator")).toBeNull();
   });
 
   it("renders a tool narrative for agent messages with tool calls", () => {
@@ -151,7 +156,7 @@ describe("ChatThread", () => {
     expect(screen.queryByText("should not appear")).toBeNull();
   });
 
-  it("shows an activity label instead of the typing indicator", () => {
+  it("labels the busy indicator with the current activity", () => {
     render(
       <ChatThread
         messages={messages}
@@ -160,7 +165,19 @@ describe("ChatThread", () => {
         typing
       />,
     );
-    expect(screen.queryByTestId("typing-indicator")).toBeNull();
+    // One indicator, activity label wins over the generic typing label.
+    expect(screen.getAllByTestId("busy-indicator")).toHaveLength(1);
+    expect(screen.getByText("Ada is thinking")).toBeDefined();
+  });
+
+  it("still surfaces the activity label when no agentName is set", () => {
+    render(<ChatThread messages={messages} activity={{ type: "thinking" }} />);
+    expect(screen.getByText("Agent is thinking")).toBeDefined();
+  });
+
+  it("keeps the busy indicator visible while typing with no discrete activity", () => {
+    render(<ChatThread messages={messages} typing agentName="Ada" />);
+    expect(screen.getByTestId("busy-indicator")).toBeDefined();
     expect(screen.getByText("Ada is thinking")).toBeDefined();
   });
 
@@ -195,9 +212,19 @@ describe("ChatThread", () => {
     ).toBeDefined();
   });
 
-  it("does not render the activity pill when agentName is missing", () => {
-    render(<ChatThread messages={messages} activity={{ type: "thinking" }} />);
-    expect(screen.queryByText(/is thinking/)).toBeNull();
+  it("keeps quiet meta-tools generic on the activity pill", () => {
+    render(
+      <ChatThread
+        messages={messages}
+        agentName="Myra"
+        activity={{ type: "tool_running", name: "search_tools" }}
+        formatToolName={() => "Searching Workbench…"}
+        isQuietTool={(name) => name === "search_tools"}
+      />,
+    );
+    expect(screen.getByText("Myra is thinking")).toBeDefined();
+    expect(screen.queryByText(/Searching Workbench/)).toBeNull();
+    expect(screen.queryByText(/search_tools/)).toBeNull();
   });
 
   it("runs the scroll handler against the new scroll position and keeps messages rendered", () => {

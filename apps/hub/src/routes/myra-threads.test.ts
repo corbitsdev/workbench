@@ -2,8 +2,8 @@ import { describe, expect, it, mock, beforeEach } from "bun:test";
 import { Hono } from "hono";
 
 // biome-ignore lint/suspicious/noExplicitAny: structural mocks for service boundary
-const listMyraThreads = mock<(...args: any[]) => Promise<any[]>>(() =>
-  Promise.resolve([]),
+const listMyraThreads = mock<(...args: any[]) => Promise<any>>(() =>
+  Promise.resolve({ threads: [], total: 0 }),
 );
 const createMyraThread = mock<(...args: any[]) => Promise<any>>(() =>
   Promise.resolve({ created: true, thread: {} }),
@@ -76,22 +76,49 @@ describe("Myra threads router", () => {
   });
 
   it("lists threads for the resolved member", async () => {
-    listMyraThreads.mockResolvedValueOnce([
-      {
-        id: "map-1",
-        instanceId: "inst-1",
-        label: "Chat",
-        createdAt: "2026-01-01T00:00:00.000Z",
-      },
-    ]);
+    listMyraThreads.mockResolvedValueOnce({
+      threads: [
+        {
+          id: "map-1",
+          instanceId: "inst-1",
+          label: "Chat",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          lastActivityAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      total: 1,
+    });
     const app = wrapWithAuth(buildRouter());
     const res = await app.request("/tenants/tn-global/me/myra/threads");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       threads: { id: string; label: string }[];
+      total: number;
     };
     expect(body.threads).toHaveLength(1);
     expect(body.threads[0]?.label).toBe("Chat");
+    expect(body.total).toBe(1);
+    expect(listMyraThreads).toHaveBeenCalledWith(expect.anything(), {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+    });
+  });
+
+  it("forwards a valid ?limit= to the service", async () => {
+    listMyraThreads.mockResolvedValueOnce({ threads: [], total: 0 });
+    const app = wrapWithAuth(buildRouter());
+    await app.request("/tenants/tn-global/me/myra/threads?limit=10");
+    expect(listMyraThreads).toHaveBeenCalledWith(expect.anything(), {
+      tenantId: "tn-global",
+      memberPrincipalId: "prn-member",
+      limit: 10,
+    });
+  });
+
+  it("ignores a malformed ?limit= and falls back to the full list", async () => {
+    listMyraThreads.mockResolvedValueOnce({ threads: [], total: 0 });
+    const app = wrapWithAuth(buildRouter());
+    await app.request("/tenants/tn-global/me/myra/threads?limit=abc");
     expect(listMyraThreads).toHaveBeenCalledWith(expect.anything(), {
       tenantId: "tn-global",
       memberPrincipalId: "prn-member",

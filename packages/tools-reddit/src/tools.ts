@@ -91,7 +91,7 @@ export function normalizeSubredditSearchArgs(
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolvedBaseURL(config: RedditToolsConfig): string {
@@ -394,12 +394,14 @@ export function createRedditTools(config: RedditToolsConfig): AgentTool[] {
 
 export const REDDIT_HUB_TOOLS = {
   reddit_search: {
+    sideEffect: "read" as const,
     definition: REDDIT_SEARCH_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
       createRedditTools(config),
   },
   reddit_subreddit_search: {
+    sideEffect: "read" as const,
     definition: REDDIT_SUBREDDIT_SEARCH_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>

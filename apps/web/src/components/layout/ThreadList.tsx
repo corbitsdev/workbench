@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { Link, useLocation, useNavigate } from "react-router";
 import { MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import {
   useDeleteMyraThread,
@@ -8,6 +8,10 @@ import {
   writeLastActiveThreadId,
 } from "../../hooks/use-myra-threads";
 import type { MyraThread } from "../../lib/hub-api";
+
+// The sidebar shows only the most-recently-active chats; the rest live on the
+// /chats page reached via the "View all" link below.
+const SIDEBAR_THREAD_LIMIT = 10;
 
 function useActiveThreadId(): string | null {
   const location = useLocation();
@@ -30,7 +34,8 @@ function ThreadRow({
   const rename = useRenameMyraThread();
   const remove = useDeleteMyraThread();
   const navigate = useNavigate();
-  const threads = useMyraThreads().data ?? [];
+  const threads =
+    useMyraThreads({ limit: SIDEBAR_THREAD_LIMIT }).data?.threads ?? [];
 
   const commitRename = () => {
     const label = draft.trim();
@@ -136,7 +141,9 @@ function ThreadRow({
 }
 
 export function ThreadList() {
-  const { data: threads, isLoading, isError } = useMyraThreads();
+  const { data, isLoading, isError } = useMyraThreads({
+    limit: SIDEBAR_THREAD_LIMIT,
+  });
   const activeThreadId = useActiveThreadId();
   const navigate = useNavigate();
 
@@ -155,13 +162,18 @@ export function ThreadList() {
     );
   }
 
-  if ((threads?.length ?? 0) === 0) {
+  const shown = data?.threads ?? [];
+  if (shown.length === 0) {
     return <div className="px-2 py-1 text-xs text-text-3">No chats yet</div>;
   }
 
+  // The server reports the member's full thread count; if it exceeds what the
+  // sidebar shows, offer the full list rather than silently truncating.
+  const hasMore = (data?.total ?? 0) > shown.length;
+
   return (
     <div className="flex flex-col gap-0.5">
-      {(threads ?? []).map((thread) => (
+      {shown.map((thread) => (
         <ThreadRow
           key={thread.id}
           thread={thread}
@@ -169,6 +181,14 @@ export function ThreadList() {
           onOpen={openThread}
         />
       ))}
+      {hasMore && (
+        <Link
+          to="/chats"
+          className="rounded-[8px] px-2 py-1.5 text-left text-xs text-text-3 transition-colors hover:bg-page hover:text-text"
+        >
+          View all chats
+        </Link>
+      )}
     </div>
   );
 }

@@ -5,7 +5,6 @@ import {
   activeDisplayStep,
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   FailedRunNotice,
   HorizontalStepper,
   LiveStatusSlot,
@@ -14,46 +13,17 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import { parseReport, type Report } from "@workbench/last30days-core";
+import { DISPLAY_STEPS, RESEARCH_STEP_IDS } from "./display-steps";
 
 const INTAKE_SIGNAL = "intake";
 
 type StepKey = "intake" | "research" | "report" | "done";
 
-// Every runtime step of the multi-source research phase, in run order, terminal
-// (`brief`) last — clustered into one display step so the stepper shows a single
-// "Research" node and the shared router reads it `completed` only once the brief
-// lands.
-const RESEARCH_STEP_IDS = [
-  "ground",
-  "groundQueries",
-  "web",
-  "webB",
-  "webC",
-  "hackernews",
-  "github",
-  "reddit",
-  "x",
-  "youtube",
-  "polymarket",
-  "entities",
-  "entityQueries",
-  "web2",
-  "reddit2",
-  "x2",
-  "youtube2",
-  "collect",
-  "curate",
-  "brief",
-] as const;
-
-// Routing goes through the shared helpers like every other panel; the live LINE
-// is bespoke (see `currentActivity`), so these carry no `activityLabel`.
-const DISPLAY_STEPS: DisplayStep[] = [
-  { key: "intake", label: "Topic", stepIds: ["intake"] },
-  { key: "research", label: "Research", stepIds: RESEARCH_STEP_IDS },
-  { key: "report", label: "Report", stepIds: ["write"] },
-  { key: "done", label: "Done", stepIds: ["persist"] },
-];
+// The research-phase step ids and the display flow (order, labels, grouping) are
+// declared once in the browser-safe ./display-steps module and shared with the
+// server catalog preview. Routing goes through the shared helpers; the live LINE
+// is bespoke (see `currentActivity`), so the declaration carries no
+// `activityLabel`.
 
 const ToolResultEnvelope = type({ callId: "string", content: "string" }).or({
   content: "string",

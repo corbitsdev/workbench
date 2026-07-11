@@ -151,7 +151,7 @@ function FileChip({
         <span className="text-text-3">{formatBytes(attachment.size)}</span>
       </button>
       {failed && (
-        <span role="alert" className="text-xs text-red-500">
+        <span role="alert" className="text-xs text-red">
           Couldn't download — try again
         </span>
       )}
@@ -340,6 +340,8 @@ export function MessageBubble({
               ? "w-full text-text"
               : "max-w-[80%] rounded-lg px-3 py-2",
             isUser && "bg-orange text-white whitespace-pre-wrap",
+            isUser && "transition-opacity duration-200",
+            isUser && message.status === "sending" && "opacity-70",
             isSystem && "bg-surface-2 text-text-3 italic",
           )}
         >
@@ -371,8 +373,13 @@ export function MessageBubble({
             onRate={onRate}
           />
         )}
+      {isUser && message.status === "sending" && (
+        <span className="text-xs text-text-3">Sending…</span>
+      )}
       {message.status === "failed" && (
-        <span className="text-xs text-orange-soft">Failed to send</span>
+        <span role="alert" className="text-xs text-red">
+          Failed to send
+        </span>
       )}
     </div>
   );

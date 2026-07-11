@@ -30,6 +30,11 @@ export const description =
   "Pick an Attio task; an agent grounds itself in your CRM and internal context, asks only when it must, then drafts the BD artifacts you need — with your approval before anything is written back.";
 export const kind = "attio-task-agent";
 
+// Re-export the user-facing display flow so it travels with the workflow package
+// for the server catalog classifier; the client panel imports it from the same
+// browser-safe module.
+export { DISPLAY_STEPS } from "./display-steps";
+
 // -------------------------------------------------------------------------
 // The gather/analyze agent — the one tool-using reasoning step.
 //

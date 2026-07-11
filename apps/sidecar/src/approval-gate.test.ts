@@ -6,7 +6,6 @@ import type {
   ToolRunner,
 } from "@intx/types/runtime";
 import {
-  APPROVAL_GATED_TOOLS,
   createApprovalClient,
   createApprovalGatedRunner,
 } from "./approval-gate";
@@ -14,7 +13,7 @@ import {
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
 
 const DEF: ToolDefinition = {
-  name: "vercel_deploy_static_file",
+  name: "vercel__deploy_static_file",
   description: "deploy",
   inputSchema: { type: "object", properties: {} },
 };
@@ -41,6 +40,7 @@ const CTX = {
   tenantId: "tnt_1",
   agentId: "agt_1",
   principalId: "prn_1",
+  sessionId: "ses_1",
 };
 
 function json(body: unknown, status = 200): Response {
@@ -51,11 +51,11 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe("createApprovalGatedRunner", () => {
-  test("passes ungated tools straight through without asking for approval", async () => {
+  test("passes ungated (read) tools straight through without asking", async () => {
     const inner = innerRunner();
     let approveCalled = false;
     const runner = createApprovalGatedRunner(inner, {
-      gatedTools: new Set(["vercel_deploy_static_file"]),
+      gatedTools: new Set(["notion__create_page"]),
       approve: async () => {
         approveCalled = true;
         return { approved: true };
@@ -63,7 +63,7 @@ describe("createApprovalGatedRunner", () => {
     });
 
     const result = await runner.run(
-      call("vercel_list_projects"),
+      call("notion__search"),
       new AbortController().signal,
     );
 
@@ -72,78 +72,59 @@ describe("createApprovalGatedRunner", () => {
     expect(approveCalled).toBe(false);
   });
 
-  test("runs a gated tool only after approval", async () => {
+  test("prompts for a gated write tool and forwards the concrete arguments", async () => {
     const inner = innerRunner();
+    let seen: ToolCall | undefined;
     const runner = createApprovalGatedRunner(inner, {
-      gatedTools: new Set(["vercel_deploy_static_file"]),
-      approve: async () => ({ approved: true }),
-    });
-
-    const result = await runner.run(
-      call("vercel_deploy_static_file"),
-      new AbortController().signal,
-    );
-
-    expect(result.content).toBe("deployed");
-    expect(inner.calls).toHaveLength(1);
-  });
-
-  test("gates vercel_deploy_artifact the same as static file deploy", async () => {
-    const inner = innerRunner();
-    let approved = false;
-    const runner = createApprovalGatedRunner(inner, {
-      gatedTools: new Set(["vercel_deploy_artifact"]),
-      approve: async () => {
-        approved = true;
+      gatedTools: new Set(["notion__create_page"]),
+      approve: async (c) => {
+        seen = c;
         return { approved: true };
       },
     });
 
     const result = await runner.run(
-      call("vercel_deploy_artifact"),
+      call("notion__create_page"),
       new AbortController().signal,
     );
 
-    expect(approved).toBe(true);
-    expect(result.isError).toBe(false);
+    expect(result.content).toBe("deployed");
     expect(inner.calls).toHaveLength(1);
-  });
-
-  test("ships both Vercel write tools in the production gated set", () => {
-    expect(APPROVAL_GATED_TOOLS.has("vercel_deploy_static_file")).toBe(true);
-    expect(APPROVAL_GATED_TOOLS.has("vercel_deploy_artifact")).toBe(true);
+    // The whole point of the runner seam: the approval sees the real args so
+    // ReviewGate can show the human what will run.
+    expect(seen?.arguments).toEqual({ projectName: "demo" });
   });
 
   test("blocks a gated tool when approval is rejected and never runs it", async () => {
     const inner = innerRunner();
     const runner = createApprovalGatedRunner(inner, {
-      gatedTools: new Set(["vercel_deploy_static_file"]),
+      gatedTools: new Set(["notion__create_page"]),
       approve: async () => ({ approved: false, message: "nope" }),
     });
 
     const result = await runner.run(
-      call("vercel_deploy_static_file"),
+      call("notion__create_page"),
       new AbortController().signal,
     );
 
     expect(result.isError).toBe(true);
     expect(result.content).toEqual({
-      error: "vercel_deploy_static_file was not approved: nope",
+      error: "notion__create_page was not approved: nope",
     });
     expect(inner.calls).toHaveLength(0);
   });
 
-  test("blocks (does not run) when the approval request errors", async () => {
+  test("blocks (does not run) when the approval request errors/times out", async () => {
     const inner = innerRunner();
     const runner = createApprovalGatedRunner(inner, {
-      gatedTools: new Set(["vercel_deploy_static_file"]),
+      gatedTools: new Set(["notion__create_page"]),
       approve: async () => {
         throw new Error("hub down");
       },
     });
 
     const result = await runner.run(
-      call("vercel_deploy_static_file"),
+      call("notion__create_page"),
       new AbortController().signal,
     );
 
@@ -153,10 +134,15 @@ describe("createApprovalGatedRunner", () => {
 });
 
 describe("createApprovalClient", () => {
-  test("creates a record and resolves approved once a human approves", async () => {
-    const seen: { url: string; method: string }[] = [];
+  test("creates a record carrying the tool arguments, resolves approved once a human approves", async () => {
+    const seen: { url: string; method: string; body?: unknown }[] = [];
     const fetcher = (async (url, init) => {
-      seen.push({ url: String(url), method: String(init?.method) });
+      seen.push({
+        url: String(url),
+        method: String(init?.method),
+        body:
+          typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
+      });
       if (init?.method === "POST")
         return json({ id: "apr_1", status: "pending", message: null });
       return json({ id: "apr_1", status: "approved", message: null });
@@ -164,18 +150,42 @@ describe("createApprovalClient", () => {
 
     const approve = createApprovalClient(CTX, { fetcher, pollIntervalMs: 1 });
     const decision = await approve(
-      call("vercel_deploy_static_file"),
+      call("notion__create_page"),
       new AbortController().signal,
     );
 
     expect(decision).toEqual({ approved: true });
-    expect(seen[0]).toEqual({
+    expect(seen[0]).toMatchObject({
       url: "https://hub.example.com/api/internal/approvals",
       method: "POST",
     });
+    // The approval record must carry the concrete tool arguments (F1 pivot):
+    // ReviewGate shows the human the exact action.
+    expect(
+      (seen[0]?.body as { context?: unknown } | undefined)?.context,
+    ).toEqual({ projectName: "demo" });
     expect(seen[1]?.url).toBe(
       "https://hub.example.com/api/internal/approvals/apr_1?tenantId=tnt_1",
     );
+  });
+
+  test("includes the originating sessionId in the create record so approvals can be scoped to a conversation", async () => {
+    let postBody: unknown;
+    const fetcher = (async (_url, init) => {
+      if (init?.method === "POST") {
+        postBody =
+          typeof init.body === "string" ? JSON.parse(init.body) : undefined;
+        return json({ id: "apr_1", status: "pending", message: null });
+      }
+      return json({ id: "apr_1", status: "approved", message: null });
+    }) as typeof fetch;
+
+    await createApprovalClient(CTX, { fetcher, pollIntervalMs: 1 })(
+      call("notion__create_page"),
+      new AbortController().signal,
+    );
+
+    expect((postBody as { sessionId?: unknown }).sessionId).toBe("ses_1");
   });
 
   test("keeps waiting through a transient hub error", async () => {
@@ -191,7 +201,7 @@ describe("createApprovalClient", () => {
     const decision = await createApprovalClient(CTX, {
       fetcher,
       pollIntervalMs: 1,
-    })(call("vercel_deploy_static_file"), new AbortController().signal);
+    })(call("notion__create_page"), new AbortController().signal);
 
     expect(decision).toEqual({ approved: true });
     expect(gets).toBe(2);
@@ -205,7 +215,7 @@ describe("createApprovalClient", () => {
 
     await expect(
       createApprovalClient(CTX, { fetcher, pollIntervalMs: 1 })(
-        call("vercel_deploy_static_file"),
+        call("notion__create_page"),
         new AbortController().signal,
       ),
     ).rejects.toThrow("404");
@@ -223,7 +233,7 @@ describe("createApprovalClient", () => {
     const decision = await createApprovalClient(CTX, {
       fetcher,
       pollIntervalMs: 1,
-    })(call("vercel_deploy_static_file"), controller.signal);
+    })(call("notion__create_page"), controller.signal);
 
     expect(decision).toEqual({
       approved: false,

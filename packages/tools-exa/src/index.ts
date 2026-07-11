@@ -108,7 +108,7 @@ function normalizeBaseUrl(baseUrl: string): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseSearchResponse(value: unknown): ExaSearchResponse {
@@ -309,12 +309,14 @@ function createExaToolFor(
  */
 export const EXA_HUB_TOOLS = {
   exa_search: {
+    sideEffect: "read" as const,
     definition: EXA_SEARCH_DEFINITION,
     providerName: "exa" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>
       createExaToolFor({ apiKey: config.apiKey }, EXA_SEARCH_DEFINITION),
   },
   web_search: {
+    sideEffect: "read" as const,
     definition: WEB_SEARCH_DEFINITION,
     providerName: "exa" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

@@ -198,6 +198,7 @@ export interface LoadedWorkflow {
   definition: unknown;
   label?: string;
   description?: string;
+  displayFlow?: unknown;
 }
 
 function readStringExport(mod: object, key: string): string | undefined {
@@ -217,10 +218,20 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   }
   const definition = (mod as { workflow: unknown }).workflow;
   assertSerializable(definition, new Set(), "workflow");
+  // The optional DISPLAY_STEPS export is the workflow's declared user-facing step
+  // flow. It is plain serializable data; the build validates its shape through
+  // EmbeddedWorkflowDefSchema before committing it.
+  const displayFlow = (mod as { DISPLAY_STEPS?: unknown }).DISPLAY_STEPS;
+  const label = readStringExport(mod, "label");
+  const description = readStringExport(mod, "description");
+  // Conditional spreads (not `key: value | undefined`) so the return satisfies
+  // LoadedWorkflow under exactOptionalPropertyTypes — an omitted optional, not a
+  // present-but-undefined one.
   return {
     definition,
-    label: readStringExport(mod, "label"),
-    description: readStringExport(mod, "description"),
+    ...(label !== undefined ? { label } : {}),
+    ...(description !== undefined ? { description } : {}),
+    ...(displayFlow !== undefined ? { displayFlow } : {}),
   };
 }
 

@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from "react";
 import {
   buildRunStepperSteps,
   Button,
-  type DisplayStep,
   failedRunErrorMessage,
   HorizontalStepper,
   inputFieldClass,
@@ -13,6 +12,7 @@ import {
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
 import { attioTaskArtifactKinds } from "@workbench/shared";
+import { DISPLAY_STEPS } from "./display-steps";
 import {
   defaultSelectedIndices,
   mergeReview,
@@ -79,49 +79,9 @@ export function activeGate(state: RunState | null): GateId | null {
 }
 
 // ── Stepper configuration ─────────────────────────────────────────────────────
-
-// Each stepper entry clusters the internal workflow steps it represents, in run
-// order. `buildRunStepperSteps` computes status with the "passed = completed OR
-// a later step progressed" rule, so a gate whose output is missing can't rewind
-// the panel. `activityLabel` drives the live line from in-flight machine work;
-// gate-only groups carry none.
-const DISPLAY_STEPS: DisplayStep[] = [
-  {
-    key: "setup",
-    label: "Task setup",
-    stepIds: [
-      "listMembers",
-      "selectMember",
-      "listTasks",
-      "selectTask",
-      "fetchTask",
-    ],
-  },
-  {
-    key: "analyze",
-    label: "Analyze",
-    stepIds: ["analyze", "clarify"],
-    activityLabel: "Analyzing the task",
-  },
-  {
-    key: "generate",
-    label: "Act",
-    stepIds: ["execute", "reviewArtifacts"],
-    activityLabel: "Carrying out the plan",
-  },
-  {
-    key: "review",
-    label: "Review",
-    stepIds: ["review", "persist"],
-    activityLabel: "Saving to workbench",
-  },
-  {
-    key: "sync",
-    label: "Write back",
-    stepIds: ["suggest", "approveSync", "writeNote", "writeComplete"],
-    activityLabel: "Writing back to Attio",
-  },
-];
+// The display flow (order, labels, grouping, activity lines) is declared once in
+// the browser-safe ./display-steps module and shared with the server catalog
+// preview so the two surfaces cannot drift.
 
 function buildStepperSteps(state: RunState | null): WorkflowStep[] {
   return buildRunStepperSteps(state, DISPLAY_STEPS);

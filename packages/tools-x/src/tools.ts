@@ -60,7 +60,7 @@ export const X_SEARCH_DEFINITION: ToolDefinition = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseXSearchResult(value: unknown): XSearchResult {
@@ -336,6 +336,7 @@ export function createXTools(config: XToolsConfig): AgentTool[] {
 
 export const X_HUB_TOOLS = {
   x_search: {
+    sideEffect: "read" as const,
     definition: X_SEARCH_DEFINITION,
     providerName: "xai" as const,
     createTools: (config: { apiKey: string; baseURL: string }) =>

@@ -55,6 +55,56 @@ function parsePositiveInt(
   return value;
 }
 
+// A non-negative integer where 0 is a meaningful "disabled" value, unlike
+// `parsePositiveInt` which rejects 0. Used by the idle-eviction threshold.
+function parseNonNegativeInt(
+  name: string,
+  raw: string | undefined,
+  fallback: number,
+): number {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer (got "${raw}")`);
+  }
+  return value;
+}
+
+// Idle-agent eviction (CL-3103). A live agent session with no activity for
+// `idleEvictMs` is torn down and returned to the wakeable state; the next
+// inbound message rebuilds it with full history from the durable repo store.
+// Default 60s; `0` disables eviction. The sweep runs on a fixed cadence
+// derived from the threshold (bounded so a large threshold still sweeps
+// often enough that eviction latency stays close to the threshold).
+export const DEFAULT_SIDECAR_AGENT_IDLE_EVICT_MS = 60_000;
+const IDLE_EVICT_SWEEP_MIN_MS = 1_000;
+const IDLE_EVICT_SWEEP_MAX_MS = 15_000;
+
+export type SidecarIdleEviction = {
+  idleEvictMs: number;
+  sweepIntervalMs: number;
+};
+
+export function resolveSidecarIdleEviction(
+  env: Record<string, string | undefined>,
+): SidecarIdleEviction {
+  const idleEvictMs = parseNonNegativeInt(
+    "SIDECAR_AGENT_IDLE_EVICT_MS",
+    env.SIDECAR_AGENT_IDLE_EVICT_MS,
+    DEFAULT_SIDECAR_AGENT_IDLE_EVICT_MS,
+  );
+  const sweepIntervalMs =
+    idleEvictMs <= 0
+      ? 0
+      : Math.min(
+          IDLE_EVICT_SWEEP_MAX_MS,
+          Math.max(IDLE_EVICT_SWEEP_MIN_MS, idleEvictMs),
+        );
+  return { idleEvictMs, sweepIntervalMs };
+}
+
 export type ToolPackageCache = {
   cacheRoot: string;
   cacheMaxBytes: number;

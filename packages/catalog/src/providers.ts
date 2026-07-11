@@ -16,7 +16,25 @@ export const CATALOG_PROVIDERS: CatalogProviderSpec[] = [
   { name: "google-ai", plugin: "google-genai", credentialName: "google-ai" },
   { name: "near-ai", plugin: "openai-compatible", credentialName: "near-ai" },
   { name: "Myra LLM", plugin: "openai-compatible", credentialName: "Myra LLM" },
-  { name: "bifrost", plugin: "openai-compatible", credentialName: "Bifrost" },
+  // Bifrost gateway, one provider row per wire format on the same instance and
+  // virtual key. Owner-prefixed so a customer workbench can shadow with its own
+  // <customer>-bifrost* rows. openai-compatible → /v1, anthropic → /anthropic,
+  // google-genai → /genai.
+  {
+    name: "corbits-default-bifrost",
+    plugin: "openai-compatible",
+    credentialName: "Corbits Default Bifrost",
+  },
+  {
+    name: "corbits-default-bifrost-anthropic",
+    plugin: "anthropic",
+    credentialName: "Corbits Default Bifrost Anthropic",
+  },
+  {
+    name: "corbits-default-bifrost-genai",
+    plugin: "google-genai",
+    credentialName: "Corbits Default Bifrost GenAI",
+  },
   {
     name: "openrouter",
     plugin: "openai-compatible",

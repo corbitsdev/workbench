@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "arktype": "catalog:",
+    "@workbench/shared": "workspace:*",
     "@intx/workflow": "workspace:*",
     "@radix-ui/react-dropdown-menu": "^2.1.18",
     "class-variance-authority": "^0.7.1",

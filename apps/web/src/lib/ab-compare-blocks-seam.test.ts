@@ -84,11 +84,17 @@ describe("ab-compare presets — real log→state→blocks seam", () => {
       stepOutputs,
     });
 
-    const documents = blocks.filter((b) => b.kind === "document");
-    expect(documents.length).toBe(2);
-    expect(documents[0]?.kind === "document" && documents[0].source).toContain(
-      "Close deals faster",
-    );
+    expect(blocks.some((b) => b.kind === "document")).toBe(false);
+    const comparison = blocks.find((b) => b.kind === "comparison");
+    expect(comparison?.kind).toBe("comparison");
+    if (comparison?.kind === "comparison") {
+      expect(comparison.status).toBe("final");
+      expect(comparison.blind).toBe(true);
+      expect(comparison.result.variants).toHaveLength(2);
+      expect(comparison.result.variants[0]?.content).toContain(
+        "Close deals faster",
+      );
+    }
 
     const choice = blocks.find((b) => b.kind === "choice");
     expect(choice?.kind).toBe("choice");

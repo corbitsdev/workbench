@@ -111,3 +111,53 @@ row's `modelRequirements`), then spin the instance down and up — the relaunch
 re-resolves sources from the catalog. The launch guard short-circuits cleanly if
 the catalog cannot resolve an agent's model, so a missing offering surfaces as a
 non-launch rather than a crash.
+
+### Bifrost as the primary gateway (offering priority + failover)
+
+Source resolution (`@intx/db resolveModelSources`) returns an **ordered**
+`InferenceSource[]` for a model — head = the default source, tail = the automatic
+failover chain — ordered by each offering's `priority` **ascending** (lower wins
+the head), tie-broken by offering id. The runtime reactor fails over head → tail
+on credential / protocol-mismatch / retryable / timeout errors and resets to the
+head each new call, so a transient blip on the head provider fails over for that
+call and the next call tries the head again. Every `CATALOG_OFFERINGS` row in
+`@workbench/catalog` carries an explicit `priority`; `seed-catalog` sends it to
+the offering-create route (an absent value defaults to 0).
+
+**Bifrost is the primary proxy**, with the direct providers kept as the fallback
+tail. The catalog declares one Bifrost provider per wire format — all on the same
+Bifrost instance sharing **one virtual key** (`BIFROST_API_KEY`), owner-prefixed
+so a customer workbench can shadow with its own `<customer>-bifrost*` rows:
+
+| Provider                            | plugin            | Bifrost surface (baseURL suffix) | env for baseURL              |
+| ----------------------------------- | ----------------- | -------------------------------- | ---------------------------- |
+| `corbits-default-bifrost`           | openai-compatible | `/v1`                            | `BIFROST_BASE_URL`           |
+| `corbits-default-bifrost-anthropic` | anthropic         | `/anthropic`                     | `BIFROST_ANTHROPIC_BASE_URL` |
+| `corbits-default-bifrost-genai`     | google-genai      | `/genai`                         | `BIFROST_GENAI_BASE_URL`     |
+
+The base URL is the gateway host plus the per-surface suffix — e.g.
+`https://corbits-ai-gateway.up.railway.app/v1`. The openai-compatible adapter
+treats the base as ending in `/v1` and appends `/chat/completions`; the anthropic
+(`/anthropic`) and google-genai (`/genai`) adapters append their own version
+path, so those bases carry no `/v1`. There is no default base URL — it is a
+self-hosted gateway, so each surface seeds only when its base URL env is set (or
+is entered from the Owner Catalog page). **Each model gets exactly one Bifrost
+head at priority 1** — `bifrost /v1` where the model has an openai-compatible
+offering (its current head wire format), or the matching native surface
+(`/anthropic`, `/genai`) where the model is native-only. The fallback tail is the
+openai-compatible directs (`opencode-zen`/`near-ai`) at priority 2, then the
+native directs (`anthropic-api`/`OpenAI`/`google-ai`) at priority 3. So Bifrost
+is the head and the prior provider(s) are the failover tail — priority ordering
+only, never a `pin` (which would drop the fallback).
+
+Each surface is gated independently — `seed-credentials` seeds a surface only
+when its own base URL env is set (`/v1` on `BIFROST_BASE_URL`, `/anthropic` on
+`BIFROST_ANTHROPIC_BASE_URL`, `/genai` on `BIFROST_GENAI_BASE_URL`), all sharing
+the one VK. **Offerings reconcile priority on re-seed**: an existing offering's
+priority is PATCHed in place, so re-running **Seed model catalog** after a
+priority change reorders the head/tail without a destructive delete (a changed
+provider **baseURL** still lives on the provider row and needs delete + re-seed).
+After a re-seed, relaunch agents — the source list is baked at launch. The change
+is inert until a Bifrost credential is seeded: with `BIFROST_API_KEY` (or a
+surface's base URL) unset, `seed-catalog` skips that Bifrost provider and its
+offerings and every agent resolves against `opencode-zen` exactly as before.

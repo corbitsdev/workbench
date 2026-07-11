@@ -1,11 +1,5 @@
 .DS_Store
 .pi
-.env
-.env.local
-.env.hub
-.env.sidecar
-.env.staging
-.env.production
 node_modules
 .agents
 .claude/settings.local.json
@@ -26,3 +20,10 @@ coverage
 .intercode
 worktree
 worktrees
+
+# Env Files
+.env
+.env.staging
+.env.production
+.env.maven11
+.env.circleclick

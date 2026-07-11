@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { BaseEnv } from "@intx/agent";
 import { toolCredentialEnvKey } from "./index";
-import { defineCredentialedToolPackage } from "./factory";
+import {
+  defineCredentialedToolPackage,
+  writeToolNamesFromEntries,
+} from "./factory";
 
 const definition = {
   name: "demo_search",
@@ -14,6 +17,7 @@ const factory = defineCredentialedToolPackage({
   provider: "demo",
   entries: {
     demo_search: {
+      sideEffect: "read",
       createTools: (cred) => [
         {
           kind: "string",
@@ -46,5 +50,15 @@ describe("defineCredentialedToolPackage", () => {
 
   test("throws at construction when the credential was not injected", () => {
     expect(() => factory({} as BaseEnv)).toThrow(/demo/);
+  });
+
+  test("writeToolNamesFromEntries lists only write-classified tools", () => {
+    expect(
+      writeToolNamesFromEntries({
+        a_read: { sideEffect: "read" },
+        b_write: { sideEffect: "write" },
+        c_write: { sideEffect: "write" },
+      }),
+    ).toEqual(["b_write", "c_write"]);
   });
 });

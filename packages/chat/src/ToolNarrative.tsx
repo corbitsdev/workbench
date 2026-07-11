@@ -9,42 +9,51 @@ import {
   type UIResponse,
 } from "@workbench/blocks";
 
-function DoneIcon({ isError }: { isError?: boolean }) {
+function ErrorIcon() {
   return (
     <span
-      className={cn(
-        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-        isError ? "bg-red-500" : "bg-text-3",
-      )}
+      data-testid="tool-marker-error"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500"
     >
-      {isError ? (
-        <svg
-          className="h-2.5 w-2.5 text-white"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      ) : (
-        <svg
-          className="h-2.5 w-2.5 text-white"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      )}
+      <svg
+        className="h-2.5 w-2.5 text-white"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
     </span>
   );
+}
+
+function BulletIcon() {
+  return (
+    <span
+      data-testid="tool-marker-bullet"
+      className="flex h-4 w-4 shrink-0 items-center justify-center"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-text-3" />
+    </span>
+  );
+}
+
+// Settled marker: errors keep a loud badge; external tools get a quiet bullet;
+// internal tools get an empty slot (plain text, but rows stay column-aligned).
+function SettledMarker({
+  isError,
+  external,
+}: {
+  isError: boolean;
+  external: boolean;
+}) {
+  if (isError) return <ErrorIcon />;
+  if (external) return <BulletIcon />;
+  return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
 function ActiveIcon() {
@@ -88,10 +97,18 @@ const ROW_GAP = "space-y-5";
 export interface ToolNarrativeProps {
   toolCalls: ToolCall[];
   /**
-   * Optional formatter the host supplies to turn a tool name + result into a
-   * human-readable summary line. Falls back to the call's `label` or `name`.
+   * Optional formatter the host supplies to turn a tool name + args into a
+   * human-readable action phrase. Falls back to the call's `label` or a
+   * humanized name. When set, pending rows use it too (never the raw tool id).
    */
   formatSummary?: (call: ToolCall) => string;
+  /**
+   * Optional formatter for the settled outcome of a tool call. When provided,
+   * the expandable body shows this short human line instead of dumping raw
+   * JSON args/results. Structured UI blocks still render when parseable.
+   * Return null to fall back (errors still surface their message).
+   */
+  formatResult?: (call: ToolCall) => string | null;
   /**
    * When true (and a `summarizeCalls` is supplied), a completed turn with
    * {@link COLLAPSE_THRESHOLD}+ tool calls collapses into a single summary line
@@ -103,6 +120,18 @@ export interface ToolNarrativeProps {
    * e.g. "Searched Attio 6×, read 5 notes, and checked Linear 2×".
    */
   summarizeCalls?: (calls: ToolCall[]) => string;
+  /**
+   * Platform-internal tools (e.g. search_tools / load_tools) render as quiet
+   * reasoning-style text — no checkmark, no expand chrome — and are excluded
+   * from the collapsed "N tools" count.
+   */
+  isQuietTool?: (name: string) => boolean;
+  /**
+   * External integration tools (provider-prefixed, e.g. `attio__create_note`)
+   * get a small bullet marker when settled; internal tools render plain.
+   * When omitted, every non-quiet tool is treated as external.
+   */
+  isExternalTool?: (name: string) => boolean;
   /** Forwarded to interactive UI blocks rendered from a structured tool result. */
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
@@ -163,19 +192,37 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+function QuietToolLine({ summary }: { summary: string }) {
+  return (
+    <p
+      className="text-xs italic leading-snug text-text-3/80"
+      data-testid="quiet-tool-line"
+    >
+      {summary}
+    </p>
+  );
+}
+
 function ToolRow({
   call,
   summary,
+  quiet,
+  external,
   suppressArgsSummary,
+  formatResult,
   onRespond,
   onAction,
 }: {
   call: ToolCall;
   summary: string;
+  quiet: boolean;
+  external: boolean;
   // When the host supplies a formatter, the summary line already conveys the
   // relevant argument (e.g. "Searching the web for X"), so the raw arg chip
-  // would render it twice. The full arguments remain available on expand.
+  // would render it twice. The full arguments remain available on expand only
+  // when formatResult is not also suppressing raw dumps.
   suppressArgsSummary: boolean;
+  formatResult?: ((call: ToolCall) => string | null) | undefined;
   onRespond?: ((response: UIResponse) => void) | undefined;
   onAction?:
     | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
@@ -189,11 +236,34 @@ function ToolRow({
     : summarizeArgs(call.arguments);
   const hasArgs =
     call.arguments !== undefined && Object.keys(call.arguments).length > 0;
-  const expandable = !pending && (call.result !== undefined || hasArgs);
+  const humanized = formatResult !== undefined;
+  const friendlyOutcome =
+    !pending && formatResult !== undefined ? formatResult(call) : null;
+  const hasFriendly = friendlyOutcome !== null && friendlyOutcome.trim() !== "";
   const resultBlock =
     call.result !== undefined && call.result !== "" && !call.isError
       ? parseToolResult(call.result)
       : null;
+  // Structured interactive blocks (form/document/…) stay available even when
+  // the host humanizes outcomes. Plain `text` blocks are raw dumps in practice
+  // (parseToolResult wraps any non-UIBlock string) and only show in legacy mode.
+  const structuredBlock =
+    resultBlock !== null && resultBlock.kind !== "text" ? resultBlock : null;
+  // Humanized mode: expand for a friendly outcome, structured UI, or an error
+  // message — never for raw JSON dumps. Legacy mode keeps the previous contract.
+  const expandable = humanized
+    ? !pending &&
+      (hasFriendly ||
+        structuredBlock !== null ||
+        (call.isError === true &&
+          call.result !== undefined &&
+          call.result !== ""))
+    : !pending && (call.result !== undefined || hasArgs);
+
+  // Internal meta-tools: quiet reasoning-style text, no tool chrome.
+  if (quiet) {
+    return <QuietToolLine summary={summary} />;
+  }
 
   return (
     <div className="flex flex-col">
@@ -210,7 +280,10 @@ function ToolRow({
           {pending ? (
             <ActiveIcon />
           ) : (
-            <DoneIcon isError={call.isError === true} />
+            <SettledMarker
+              isError={call.isError === true}
+              external={external}
+            />
           )}
         </span>
         <span
@@ -232,31 +305,66 @@ function ToolRow({
       </button>
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
         <div className="mt-1.5 ml-[26px] space-y-2 text-xs">
-          {hasArgs && (
-            <pre className="overflow-x-auto rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
-              {JSON.stringify(call.arguments, null, 2)}
-            </pre>
-          )}
-          {call.isError === true &&
-            call.result !== undefined &&
-            call.result !== "" && (
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
-                {call.result}
-              </pre>
-            )}
-          {resultBlock !== null && resultBlock.kind === "text" && (
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
-              {resultBlock.text}
-            </pre>
-          )}
-          {resultBlock !== null && resultBlock.kind !== "text" && (
-            <div className="text-sm">
-              <UIBlockView
-                block={resultBlock}
-                {...(onRespond !== undefined ? { onRespond } : {})}
-                {...(onAction !== undefined ? { onAction } : {})}
-              />
-            </div>
+          {humanized ? (
+            <>
+              {structuredBlock !== null && (
+                <div className="text-sm">
+                  <UIBlockView
+                    block={structuredBlock}
+                    {...(onRespond !== undefined ? { onRespond } : {})}
+                    {...(onAction !== undefined ? { onAction } : {})}
+                  />
+                </div>
+              )}
+              {structuredBlock === null && hasFriendly && (
+                <p
+                  className={cn(
+                    "leading-relaxed",
+                    call.isError === true ? "text-red-600" : "text-text-2",
+                  )}
+                >
+                  {friendlyOutcome}
+                </p>
+              )}
+              {structuredBlock === null &&
+                !hasFriendly &&
+                call.isError === true &&
+                call.result !== undefined &&
+                call.result !== "" && (
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                    {call.result}
+                  </pre>
+                )}
+            </>
+          ) : (
+            <>
+              {hasArgs && (
+                <pre className="overflow-x-auto rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
+                  {JSON.stringify(call.arguments, null, 2)}
+                </pre>
+              )}
+              {call.isError === true &&
+                call.result !== undefined &&
+                call.result !== "" && (
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                    {call.result}
+                  </pre>
+                )}
+              {resultBlock !== null && resultBlock.kind === "text" && (
+                <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-2 px-2 py-1.5 font-mono text-text-2">
+                  {resultBlock.text}
+                </pre>
+              )}
+              {resultBlock !== null && resultBlock.kind !== "text" && (
+                <div className="text-sm">
+                  <UIBlockView
+                    block={resultBlock}
+                    {...(onRespond !== undefined ? { onRespond } : {})}
+                    {...(onAction !== undefined ? { onAction } : {})}
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
       </ExpandReveal>
@@ -297,29 +405,37 @@ function ExpandReveal({
 function ToolRows({
   toolCalls,
   formatSummary,
+  formatResult,
+  isQuietTool,
+  isExternalTool,
   onRespond,
   onAction,
 }: Pick<
   ToolNarrativeProps,
-  "toolCalls" | "formatSummary" | "onRespond" | "onAction"
+  | "toolCalls"
+  | "formatSummary"
+  | "formatResult"
+  | "isQuietTool"
+  | "isExternalTool"
+  | "onRespond"
+  | "onAction"
 >) {
   const fmt = formatSummary ?? defaultSummary;
   return (
     <>
-      {toolCalls.map((call) => {
-        const pending = call.result === undefined && !call.isError;
-        const summary = pending ? (call.label ?? call.name) : fmt(call);
-        return (
-          <ToolRow
-            key={call.id}
-            call={call}
-            summary={summary}
-            suppressArgsSummary={formatSummary !== undefined}
-            onRespond={onRespond}
-            onAction={onAction}
-          />
-        );
-      })}
+      {toolCalls.map((call) => (
+        <ToolRow
+          key={call.id}
+          call={call}
+          summary={fmt(call)}
+          quiet={isQuietTool?.(call.name) === true}
+          external={isExternalTool === undefined || isExternalTool(call.name)}
+          suppressArgsSummary={formatSummary !== undefined}
+          {...(formatResult !== undefined ? { formatResult } : {})}
+          {...(onRespond !== undefined ? { onRespond } : {})}
+          {...(onAction !== undefined ? { onAction } : {})}
+        />
+      ))}
     </>
   );
 }
@@ -328,11 +444,13 @@ function CollapsedToolSummary({
   summary,
   count,
   hasError,
+  external,
   children,
 }: {
   summary: string;
   count: number;
   hasError: boolean;
+  external: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -349,7 +467,7 @@ function CollapsedToolSummary({
         )}
       >
         <span className="mt-0.5">
-          <DoneIcon isError={hasError} />
+          <SettledMarker isError={hasError} external={external} />
         </span>
         <span
           className={cn(
@@ -372,44 +490,74 @@ function CollapsedToolSummary({
 export function ToolNarrative({
   toolCalls,
   formatSummary,
+  formatResult,
   compact,
   summarizeCalls,
+  isQuietTool,
+  isExternalTool,
   onRespond,
   onAction,
   className,
 }: ToolNarrativeProps) {
   if (toolCalls.length === 0) return null;
 
+  const realCalls =
+    isQuietTool === undefined
+      ? toolCalls
+      : toolCalls.filter((c) => !isQuietTool(c.name));
+  const quietCalls =
+    isQuietTool === undefined
+      ? []
+      : toolCalls.filter((c) => isQuietTool(c.name));
+
   const anyPending = toolCalls.some(
     (c) => c.result === undefined && c.isError !== true,
   );
+  // Collapse only considers real (non-quiet) tools — meta-tools never pad the count.
   const shouldCollapse =
     compact === true &&
     summarizeCalls !== undefined &&
     !anyPending &&
-    toolCalls.length >= COLLAPSE_THRESHOLD;
+    realCalls.length >= COLLAPSE_THRESHOLD;
 
-  const rows = (
-    <ToolRows
-      toolCalls={toolCalls}
-      {...(formatSummary !== undefined ? { formatSummary } : {})}
-      {...(onRespond !== undefined ? { onRespond } : {})}
-      {...(onAction !== undefined ? { onAction } : {})}
-    />
-  );
+  const quietRows =
+    quietCalls.length === 0 ? null : (
+      <ToolRows
+        toolCalls={quietCalls}
+        {...(formatSummary !== undefined ? { formatSummary } : {})}
+        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+      />
+    );
+
+  const realRows =
+    realCalls.length === 0 ? null : (
+      <ToolRows
+        toolCalls={realCalls}
+        {...(formatSummary !== undefined ? { formatSummary } : {})}
+        {...(formatResult !== undefined ? { formatResult } : {})}
+        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+        {...(onRespond !== undefined ? { onRespond } : {})}
+        {...(onAction !== undefined ? { onAction } : {})}
+      />
+    );
 
   return (
     <div className={cn(ROW_GAP, className)} data-testid="tool-narrative">
+      {quietRows}
       {shouldCollapse ? (
         <CollapsedToolSummary
-          summary={summarizeCalls(toolCalls)}
-          count={toolCalls.length}
-          hasError={toolCalls.some((c) => c.isError === true)}
+          summary={summarizeCalls(realCalls)}
+          count={realCalls.length}
+          hasError={realCalls.some((c) => c.isError === true)}
+          external={realCalls.some(
+            (c) => isExternalTool === undefined || isExternalTool(c.name),
+          )}
         >
-          {rows}
+          {realRows}
         </CollapsedToolSummary>
       ) : (
-        rows
+        realRows
       )}
     </div>
   );

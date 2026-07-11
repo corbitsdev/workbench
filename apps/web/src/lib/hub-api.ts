@@ -320,6 +320,7 @@ const MyraThreadSchema = type({
   instanceId: "string",
   label: "string",
   createdAt: "string",
+  lastActivityAt: "string",
 });
 export type MyraThread = typeof MyraThreadSchema.infer;
 
@@ -328,11 +329,14 @@ export const MyraThreadListItemSchema = type({
   instanceId: "string",
   label: "string",
   createdAt: "string",
+  lastActivityAt: "string",
 });
 export type MyraThreadListItem = typeof MyraThreadListItemSchema.infer;
-const MyraThreadListSchema = type({
+export const MyraThreadPageSchema = type({
   threads: MyraThreadListItemSchema.array(),
+  total: "number",
 });
+export type MyraThreadPage = typeof MyraThreadPageSchema.infer;
 
 function myraThreadsBase(tenantId: string): string {
   return `v1/tenants/${encodeURIComponent(tenantId)}/me/myra/threads`;
@@ -340,13 +344,18 @@ function myraThreadsBase(tenantId: string): string {
 
 export async function listMyraThreads(
   tenantId: string,
-): Promise<MyraThreadListItem[]> {
-  const raw = await hubFetch<unknown>("GET", myraThreadsBase(tenantId));
-  const parsed = MyraThreadListSchema(raw);
+  opts?: { limit?: number },
+): Promise<MyraThreadPage> {
+  const path =
+    opts?.limit !== undefined
+      ? `${myraThreadsBase(tenantId)}?limit=${opts.limit}`
+      : myraThreadsBase(tenantId);
+  const raw = await hubFetch<unknown>("GET", path);
+  const parsed = MyraThreadPageSchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid Myra threads response: ${parsed.summary}`);
   }
-  return parsed.threads;
+  return parsed;
 }
 
 const MyraThreadCreateSchema = type({
@@ -493,19 +502,37 @@ export async function deleteAgentInstance(
   );
 }
 
-export type LaunchInstanceSessionResponse = {
-  launched: boolean;
-  launchError?: string;
-};
+const LaunchInstanceSessionSuccessSchema = type({
+  launched: "true",
+  sessionId: "string | null",
+});
+
+const LaunchInstanceSessionFailureSchema = type({
+  launched: "false",
+  "launchError?": "string",
+});
+
+export const LaunchInstanceSessionResponseSchema =
+  LaunchInstanceSessionSuccessSchema.or(LaunchInstanceSessionFailureSchema);
+
+export type LaunchInstanceSessionResponse =
+  typeof LaunchInstanceSessionResponseSchema.infer;
 
 export async function launchInstanceSession(
   instanceId: string,
 ): Promise<LaunchInstanceSessionResponse> {
-  return hubFetch<LaunchInstanceSessionResponse>(
+  const raw = await hubFetch<unknown>(
     "POST",
     `v1/instances/${instanceId}/sessions`,
     {},
   );
+  const parsed = LaunchInstanceSessionResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Invalid launch instance session response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
 }
 
 export async function stopAgentInstance(

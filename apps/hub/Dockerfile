@@ -43,6 +43,7 @@ COPY packages/tools-fileparser/package.json packages/tools-fileparser/
 COPY packages/tools-firecrawl/package.json packages/tools-firecrawl/
 COPY packages/tools-gamma/package.json packages/tools-gamma/
 COPY packages/tools-linear/package.json packages/tools-linear/
+COPY packages/tools-notion/package.json packages/tools-notion/
 COPY packages/tools-vercel/package.json packages/tools-vercel/
 COPY packages/ab-compare-presets/package.json packages/ab-compare-presets/
 COPY packages/tools-ab-compare/package.json packages/tools-ab-compare/
@@ -103,6 +104,7 @@ COPY packages/tools-fileparser/ packages/tools-fileparser/
 COPY packages/tools-firecrawl/ packages/tools-firecrawl/
 COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/
+COPY packages/tools-notion/ packages/tools-notion/
 COPY packages/tools-vercel/ packages/tools-vercel/
 COPY packages/tools-attio/ packages/tools-attio/
 COPY packages/tools-catalog/ packages/tools-catalog/

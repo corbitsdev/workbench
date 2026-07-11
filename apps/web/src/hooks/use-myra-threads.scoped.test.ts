@@ -68,6 +68,7 @@ const thread = {
   instanceId: "inst-1",
   label: "Chat",
   createdAt: "2026-01-01T00:00:00.000Z",
+  lastActivityAt: "2026-01-01T00:00:00.000Z",
 };
 
 function wrapper() {
@@ -93,7 +94,7 @@ afterEach(() => {
 
 describe("useMyraThreads (tenant scoping)", () => {
   it("fetches the active tenant's threads and keys the query by tenant", async () => {
-    stubFetch({ threads: [thread] });
+    stubFetch({ threads: [thread], total: 1 });
     const { client, Wrapper } = wrapper();
     renderHook(() => useMyraThreads(), { wrapper: Wrapper });
 
@@ -105,12 +106,12 @@ describe("useMyraThreads (tenant scoping)", () => {
       .getQueryCache()
       .getAll()
       .map((q) => q.queryKey);
-    expect(keys).toContainEqual(["myra-threads", "tnt_child"]);
+    expect(keys).toContainEqual(["myra-threads", "tnt_child", "all"]);
   });
 
   it("does not fetch when there is no active tenant", async () => {
     activeTenantId = null;
-    stubFetch({ threads: [] });
+    stubFetch({ threads: [], total: 0 });
     const { Wrapper } = wrapper();
     const { result } = renderHook(() => useMyraThreads(), {
       wrapper: Wrapper,
@@ -142,22 +143,25 @@ describe("Myra thread mutations (tenant scoping)", () => {
   it("adds a newly created thread to the current cache before caller success handlers run", async () => {
     stubFetch({ thread, created: true });
     const { client, Wrapper } = wrapper();
-    client.setQueryData(
-      ["myra-threads", "tnt_child"],
-      [
+    client.setQueryData(["myra-threads", "tnt_child"], {
+      threads: [
         {
           id: "old-1",
           instanceId: "inst-old",
           label: "Old chat",
           createdAt: "2025-12-31T00:00:00.000Z",
+          lastActivityAt: "2025-12-31T00:00:00.000Z",
         },
       ],
-    );
+      total: 1,
+    });
     const { result } = renderHook(() => useCreateMyraThread(), {
       wrapper: Wrapper,
     });
 
-    let cachedBeforeCallerNavigate: unknown;
+    let cachedBeforeCallerNavigate:
+      | { threads: unknown[]; total: number }
+      | undefined;
     act(() => {
       result.current.mutate("Pricing", {
         onSuccess: () => {
@@ -170,7 +174,9 @@ describe("Myra thread mutations (tenant scoping)", () => {
     });
 
     await waitFor(() => expect(cachedBeforeCallerNavigate).toBeDefined());
-    expect(cachedBeforeCallerNavigate).toContainEqual(thread);
+    // The new thread is prepended and the total is bumped.
+    expect(cachedBeforeCallerNavigate?.threads).toContainEqual(thread);
+    expect(cachedBeforeCallerNavigate?.total).toBe(2);
   });
 
   it("shares an in-flight create for duplicate empty-chat requests", async () => {

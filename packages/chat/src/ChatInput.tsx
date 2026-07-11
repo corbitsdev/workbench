@@ -8,22 +8,19 @@ import {
   useRef,
   useState,
 } from "react";
-import { File as FileIcon, Paperclip, Plus, X } from "lucide-react";
-import {
-  Button,
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-  buttonVariants,
-  cn,
-} from "@workbench/ui";
+import { ArrowUp, File as FileIcon, Paperclip, Plus, X } from "lucide-react";
+import { Menu, MenuContent, MenuItem, MenuTrigger, cn } from "@workbench/ui";
 import {
   formatBytes,
   validateFiles,
   type AttachmentPolicy,
   type PendingAttachment,
 } from "./attachments";
+
+// Shared geometry for the composer's circular controls (+ trigger and send)
+// so they stay the same size and sit on one axis with the textarea.
+const CIRCLE_BUTTON =
+  "flex h-10 w-10 shrink-0 items-center justify-center rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:cursor-not-allowed cursor-pointer";
 
 export interface ChatInputProps {
   /**
@@ -243,8 +240,8 @@ export function ChatInput({
                 aria-label="Add files"
                 disabled={isBlocked}
                 className={cn(
-                  buttonVariants({ variant: "ghost", size: "sm" }),
-                  "px-2",
+                  CIRCLE_BUTTON,
+                  "border border-border text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50",
                 )}
               >
                 <Plus className="h-4 w-4" />
@@ -279,26 +276,32 @@ export function ChatInput({
           onKeyDown={handleKeyDown}
           className="chat-composer-textarea max-h-[30vh] min-h-[2.5rem] flex-1 resize-none overflow-x-hidden overflow-y-auto rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text placeholder:text-text-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-orange disabled:opacity-50"
         />
-        <Button
+        <button
           type="button"
-          size="sm"
           aria-label={showBusy ? "Waiting for agent" : "Send"}
+          aria-busy={showBusy}
           onClick={submit}
           disabled={
             isBlocked || (draft.trim().length === 0 && pending.length === 0)
           }
-          className={cn(showBusy && "opacity-60")}
+          className={cn(
+            CIRCLE_BUTTON,
+            "bg-orange text-white transition-[background-color,transform] hover:bg-orange-deep active:scale-[0.97] disabled:active:scale-100",
+            // Busy keeps full color — the spinner reads as active work, not a
+            // greyed-out control the user might think is broken.
+            showBusy ? "disabled:opacity-100" : "disabled:opacity-50",
+          )}
         >
           {showBusy ? (
-            <span className="flex items-center gap-1" aria-hidden="true">
-              <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.3s]" />
-              <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current [animation-delay:-0.15s]" />
-              <span className="block h-1.5 w-1.5 animate-bounce rounded-full bg-current" />
-            </span>
+            <span
+              data-testid="composer-busy-spinner"
+              aria-hidden="true"
+              className="block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+            />
           ) : (
-            "Send"
+            <ArrowUp className="h-4 w-4" aria-hidden="true" />
           )}
-        </Button>
+        </button>
       </div>
     </div>
   );

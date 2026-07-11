@@ -16,8 +16,12 @@ export {
 } from "./walter/definition";
 export {
   friendlyToolSummary,
+  friendlyToolSummaryKnown,
+  friendlyToolResult,
   summarizeToolCalls,
   toolOperationKey,
+  isCatalogMetaTool,
+  isExternalIntegrationTool,
   isToolSummaryStyle,
   TOOL_SUMMARY_STYLES,
   TOOL_SUMMARY_STYLE_LABELS,

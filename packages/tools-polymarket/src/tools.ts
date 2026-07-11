@@ -103,6 +103,7 @@ export function createPolymarketTools(
 
 export const POLYMARKET_HUB_TOOLS = {
   polymarket_odds: {
+    sideEffect: "read" as const,
     definition: POLYMARKET_ODDS_DEFINITION,
     createTools: () => createPolymarketTools(),
   },

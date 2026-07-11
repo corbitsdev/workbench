@@ -99,6 +99,7 @@ function createParseFileHandler(context: FileParserToolContext): AgentTool {
 
 export const FILEPARSER_HUB_TOOLS: Record<string, ContextToolEntry> = {
   parse_file: {
+    sideEffect: "read",
     definition: PARSE_FILE_DEFINITION,
     createTools: (ctx) => [createParseFileHandler(ctx)],
   },

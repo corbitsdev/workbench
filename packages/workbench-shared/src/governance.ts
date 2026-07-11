@@ -410,8 +410,8 @@ export interface CredentialProviderCatalogEntry {
    * whose value is stored on the provider's `metadata.baseURL`. Used by
    * providers that need an endpoint (Bifrost) or an identity handle (Bluesky)
    * in addition to the secret. `required` blocks saving until it is filled —
-   * true where the provider cannot resolve without it (Bluesky's handle) and
-   * false where a default exists (Bifrost's baseURL). */
+   * true where the provider cannot resolve without it (Bluesky's handle, and
+   * Bifrost's per-env base URL, which has no universal default). */
   secondaryField?: { label: string; placeholder: string; required?: boolean };
   /** Display names of the platforms a single credential powers, shown as a
    * sub-label in the owner row. One credential can back several platforms
@@ -420,9 +420,11 @@ export interface CredentialProviderCatalogEntry {
   platforms?: readonly string[];
 }
 
-/** Provider name for Bifrost (openai-compatible gateway). Central constant so
- * UI conditionals and tests do not duplicate the string literal. */
-export const BIFROST_PROVIDER_NAME = "bifrost" as const;
+/** Provider name for the default Bifrost /v1 (openai-compatible) surface.
+ * Owner-prefixed so a customer workbench can shadow with its own
+ * <customer>-bifrost* rows. Central constant so UI conditionals and tests do
+ * not duplicate the string literal. */
+export const BIFROST_PROVIDER_NAME = "corbits-default-bifrost" as const;
 
 export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntry[] =
   [
@@ -436,12 +438,34 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
     {
       providerName: BIFROST_PROVIDER_NAME,
       providerPlugin: "openai-compatible",
-      label: "Bifrost",
+      label: "Bifrost (/v1)",
       kind: "inference",
-      defaultMetadata: { baseURL: "https://your-bifrost.example.com/v1" },
       secondaryField: {
         label: "Base URL",
-        placeholder: "https://your-bifrost.example.com/v1",
+        placeholder: "https://corbits-ai-gateway.up.railway.app/v1",
+        required: true,
+      },
+    },
+    {
+      providerName: "corbits-default-bifrost-anthropic",
+      providerPlugin: "anthropic",
+      label: "Bifrost (/anthropic)",
+      kind: "inference",
+      secondaryField: {
+        label: "Base URL",
+        placeholder: "https://corbits-ai-gateway.up.railway.app/anthropic",
+        required: true,
+      },
+    },
+    {
+      providerName: "corbits-default-bifrost-genai",
+      providerPlugin: "google-genai",
+      label: "Bifrost (/genai)",
+      kind: "inference",
+      secondaryField: {
+        label: "Base URL",
+        placeholder: "https://corbits-ai-gateway.up.railway.app/genai",
+        required: true,
       },
     },
     {

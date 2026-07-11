@@ -1,24 +1,26 @@
 import { getLogger } from "@intx/log";
+import {
+  coalesceInstanceLaunch,
+  resetInstanceLaunchCoalescer,
+} from "./instance-launch-coalescer";
 
 const log = getLogger(["api", "agents", "relaunch-breaker"]);
 
 /**
- * Process-local circuit breaker for the poll-driven Myra auto-relaunch path
- * (`relaunchInstanceIfNeeded`, fired on every `POST /v1/me`). Two failure modes
- * it closes (CL-2407):
- *
- *  - **In-flight dedup**: concurrent `/me` calls land before the first launch
- *    resolves and each fires its own expensive launch. We coalesce them onto a
- *    single in-flight promise keyed per instance.
- *  - **Failure-aware cooldown**: a launch that keeps failing is otherwise
- *    re-attempted on every poll (client-driven, seconds apart), sustaining load
- *    on the shared hub. We record the failure and refuse re-attempts until an
- *    exponential, capped backoff elapses.
+ * Failure-aware cooldown decorator over the shared per-instance launch
+ * coalescer (`coalesceInstanceLaunch`). This is the wedge-sweep / poll-driven
+ * relaunch entry point (`relaunchInstanceIfNeeded`); it adds a backoff on top
+ * of the one in-flight primitive so a launch that keeps failing is not
+ * re-attempted on every poll (client-driven, seconds apart), sustaining load on
+ * the shared hub. In-flight dedup is NOT owned here — it lives in
+ * `coalesceInstanceLaunch`, so a sweep relaunch and an explicit
+ * `POST /instances/:id/sessions` for the same instance coalesce onto one launch
+ * (CL-2407, CL-3152).
  *
  * The hub is the shared resource and the only component that knows a launch
- * just failed, so the durable state lives here. It is process-local (a breaker,
- * not a persisted lock) — a hub restart resets it, which is the correct
- * behaviour: a fresh process should retry once.
+ * just failed, so the durable cooldown state lives here. It is process-local (a
+ * breaker, not a persisted lock) — a hub restart resets it, which is the
+ * correct behaviour: a fresh process should retry once.
  */
 
 // Backoff schedule: the `/me` poll cadence is client-driven and only seconds
@@ -37,7 +39,6 @@ type FailureState = {
   consecutiveFailures: number;
 };
 
-const inFlight = new Map<string, Promise<void>>();
 const failures = new Map<string, FailureState>();
 
 let clock: RelaunchBreakerClock = () => Date.now();
@@ -49,9 +50,9 @@ export function setRelaunchBreakerClock(next: RelaunchBreakerClock): void {
 
 /** Test seam: drop all breaker state and restore the real clock. */
 export function resetRelaunchBreaker(): void {
-  inFlight.clear();
   failures.clear();
   clock = () => Date.now();
+  resetInstanceLaunchCoalescer();
 }
 
 function cooldownForFailureCount(consecutiveFailures: number): number {
@@ -73,29 +74,27 @@ export function isInRelaunchCooldown(instanceId: string): boolean {
 }
 
 /**
- * Coalesce relaunch attempts for one instance. If a launch is already in flight
- * for `instanceId`, returns the existing promise without invoking `launch`. If
- * the instance is in a failure cooldown, returns without launching. Otherwise
- * runs `launch` once, recording success (clears state) or failure (arms/extends
- * the cooldown). Re-throws the launch error to the caller after recording it,
- * so the HTTP layer still logs the cause — the breaker debounces repeats, it
- * does not swallow faults.
+ * Relaunch one instance through the shared launch coalescer, gated by the
+ * failure cooldown. If the instance is in a failure cooldown, returns without
+ * launching. Otherwise delegates to `coalesceInstanceLaunch` — so a launch
+ * already in flight for `instanceId` (from this path or the explicit route) is
+ * joined rather than duplicated — and records success (clears cooldown state)
+ * or failure (arms/extends the cooldown) for the launch it starts. Re-throws
+ * the launch error to the caller after recording it, so the HTTP layer still
+ * logs the cause — the breaker debounces repeats, it does not swallow faults.
  */
 export function runDedupedRelaunch(
   instanceId: string,
   launch: () => Promise<void>,
 ): Promise<void> {
-  const existing = inFlight.get(instanceId);
-  if (existing) return existing;
-
   if (isInRelaunchCooldown(instanceId)) {
     log.debug("Relaunch suppressed during cooldown", { instanceId });
     return Promise.resolve();
   }
 
-  const attempt = trackRelaunch(instanceId, launch);
-  inFlight.set(instanceId, attempt);
-  return attempt;
+  return coalesceInstanceLaunch(instanceId, () =>
+    trackRelaunch(instanceId, launch),
+  );
 }
 
 async function trackRelaunch(
@@ -108,8 +107,6 @@ async function trackRelaunch(
   } catch (err) {
     recordFailure(instanceId);
     throw err;
-  } finally {
-    inFlight.delete(instanceId);
   }
 }
 

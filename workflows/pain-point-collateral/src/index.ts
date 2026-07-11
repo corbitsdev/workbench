@@ -25,6 +25,11 @@ export const description =
   "Analyze a call transcript for customer pain points and generate targeted sales collateral.";
 export const kind = "pain-point-collateral";
 
+// Re-export the user-facing display flow so it travels with the workflow package
+// for the server catalog classifier; the client panel imports it from the same
+// browser-safe module.
+export { DISPLAY_STEPS } from "./display-steps";
+
 // -------------------------------------------------------------------------
 // Workflow definition — 8-step guided flow
 //

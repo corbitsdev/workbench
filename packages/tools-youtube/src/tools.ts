@@ -48,7 +48,7 @@ export const YOUTUBE_SEARCH_DEFINITION: ToolDefinition = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseSearchItem(value: unknown): YouTubeSearchItem {
@@ -230,6 +230,7 @@ export function createYouTubeTools(config: YouTubeToolsConfig): AgentTool[] {
 
 export const YOUTUBE_HUB_TOOLS = {
   youtube_search: {
+    sideEffect: "read" as const,
     definition: YOUTUBE_SEARCH_DEFINITION,
     providerName: "youtube",
     createTools: (config: YouTubeToolsConfig) => createYouTubeTools(config),

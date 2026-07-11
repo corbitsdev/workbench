@@ -3,7 +3,6 @@ import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
-import { TypingIndicator } from "./TypingIndicator";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
@@ -15,17 +14,32 @@ function byTimestamp(a: string, b: string): number {
   return 0;
 }
 
+function lowerFirst(text: string): string {
+  if (text.length === 0) return text;
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function formatActivityLabel(
   activity: ChatActivity,
   agentName: string,
+  formatToolName?: (name: string) => string,
+  isQuietTool?: (name: string) => boolean,
 ): string {
   switch (activity.type) {
     case "thinking":
       return `${agentName} is thinking`;
     case "tool_call":
-      return `${agentName} is calling ${toHumanLabel(activity.name)}`;
-    case "tool_running":
-      return `${agentName} is running ${toHumanLabel(activity.name)}`;
+    case "tool_running": {
+      // Platform meta-tools stay quiet in the narrative — keep the pill generic
+      // too so users never see "Myra is searching Workbench…" for plumbing.
+      if (isQuietTool?.(activity.name) === true) {
+        return `${agentName} is thinking`;
+      }
+      if (formatToolName !== undefined) {
+        return `${agentName} is ${lowerFirst(formatToolName(activity.name))}`;
+      }
+      return `${agentName} is ${activity.type === "tool_call" ? "calling" : "running"} ${toHumanLabel(activity.name)}`;
+    }
     case "rate_limited":
       return `${agentName} is rate-limited, retrying in ${Math.ceil(activity.retryAfterMs / 1000)}s`;
   }
@@ -59,13 +73,31 @@ export interface ChatThreadProps {
   emptyState?: React.ReactNode;
   /**
    * Optional formatter passed through to ToolNarrative. Supply this to turn
-   * raw tool names and results into readable summary lines.
+   * raw tool names into readable action phrases.
    */
   formatToolSummary?: ToolNarrativeProps["formatSummary"];
+  /**
+   * Optional formatter for settled tool outcomes. When set, ToolNarrative never
+   * dumps raw JSON results — it shows the formatter's short human line instead.
+   */
+  formatToolResult?: ToolNarrativeProps["formatResult"];
+  /**
+   * Optional formatter for the activity pill's tool name (tool_call /
+   * tool_running). When set, the pill reads e.g. "Myra is creating an Attio
+   * record" instead of "Myra is calling Attio Create Record".
+   */
+  formatToolName?: (name: string) => string;
   /** When true, completed turns with many tool calls collapse to a summary line. */
   compactToolActivity?: ToolNarrativeProps["compact"];
   /** Rolls a turn's tool calls into one summary line for the collapsed view. */
   summarizeToolCalls?: ToolNarrativeProps["summarizeCalls"];
+  /**
+   * Platform-internal tools rendered as quiet reasoning-style text (no
+   * checkmark / tool chrome) and excluded from the collapsed "N tools" count.
+   */
+  isQuietTool?: ToolNarrativeProps["isQuietTool"];
+  /** External integration tools get a bullet marker; internal tools render plain. */
+  isExternalTool?: ToolNarrativeProps["isExternalTool"];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -105,8 +137,12 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  formatToolResult,
+  formatToolName,
   compactToolActivity,
   summarizeToolCalls,
+  isQuietTool,
+  isExternalTool,
   hideToolCall,
   onRespond,
   onAction,
@@ -126,6 +162,19 @@ export function ChatThread({
   });
 
   const hasActivity = activity !== undefined && activity !== null;
+  // One indicator covers the whole in-flight turn: a discrete activity labels
+  // it precisely; plain typing falls back to a generic "thinking" line so a
+  // running turn is never silent between activity events.
+  const busy = hasActivity || typing === true;
+  const busyLabel = hasActivity
+    ? formatActivityLabel(
+        activity,
+        agentName ?? "Agent",
+        formatToolName,
+        isQuietTool,
+      )
+    : (typingLabel ??
+      (agentName !== undefined ? `${agentName} is thinking` : "Thinking"));
 
   function renderMessage(message: ChatMessage): ReactNode {
     const isSettledAgent =
@@ -165,12 +214,17 @@ export function ChatThread({
                 {...(formatToolSummary !== undefined
                   ? { formatSummary: formatToolSummary }
                   : {})}
+                {...(formatToolResult !== undefined
+                  ? { formatResult: formatToolResult }
+                  : {})}
                 {...(compactToolActivity !== undefined
                   ? { compact: compactToolActivity }
                   : {})}
                 {...(summarizeToolCalls !== undefined
                   ? { summarizeCalls: summarizeToolCalls }
                   : {})}
+                {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+                {...(isExternalTool !== undefined ? { isExternalTool } : {})}
                 {...(onRespond !== undefined ? { onRespond } : {})}
                 {...(onAction !== undefined ? { onAction } : {})}
                 className="pl-1"
@@ -229,18 +283,17 @@ export function ChatThread({
           {item.node}
         </div>
       ))}
-      {hasActivity && agentName !== undefined && (
-        <div className="flex items-start" aria-live="polite">
+      {busy && (
+        <div
+          className="flex items-start"
+          aria-live="polite"
+          data-testid="busy-indicator"
+        >
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
-            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange" />
-            {formatActivityLabel(activity, agentName)}
+            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
+            {busyLabel}
           </span>
         </div>
-      )}
-      {typing === true && !hasActivity && (
-        <TypingIndicator
-          {...(typingLabel !== undefined ? { label: typingLabel } : {})}
-        />
       )}
     </div>
   );

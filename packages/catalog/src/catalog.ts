@@ -26,7 +26,17 @@ export type CatalogProviderSpec = {
 
 export type CatalogModelSpec = { canonicalName: string };
 
-export type CatalogOfferingSpec = { model: string; provider: string };
+export type CatalogOfferingSpec = {
+  model: string;
+  provider: string;
+  /**
+   * Source-resolution ordering hint; lower wins the head/default slot and the
+   * rest form the failover tail (@intx/db resolveModelSources sorts ascending).
+   * Optional so the template-derived catalog can omit it; the static catalog
+   * sets it on every row and the seeder defaults an absent value to 0.
+   */
+  priority?: number;
+};
 
 export type AgentCatalogSpec = {
   providers: CatalogProviderSpec[];

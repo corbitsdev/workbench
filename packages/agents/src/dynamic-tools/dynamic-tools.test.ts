@@ -12,13 +12,16 @@ import { createCatalogTools } from "@workbench/tools-catalog";
 import {
   canonicalizeToolNames,
   producibleLlmToolNames,
+  producibleLlmToolNamesForPins,
   toLlmToolName,
 } from "../tool-names";
 import { catalogManagedNames } from "@workbench/tools-catalog";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
+  PERSONAL_AGENT_PLATFORM_TOOLS,
 } from "../personal-agent/definition";
+import { AGENT_TEMPLATES } from "../templates";
 import { buildPersonalAgentSystemPrompt } from "../personal-agent/prompt";
 import { createDynamicToolsDirector } from "./director";
 import { MYRA_TOOL_CATALOG } from "./catalog";
@@ -226,6 +229,133 @@ describe("MYRA_TOOL_CATALOG metadata", () => {
     );
     expect(attio?.tools.some((t) => t.name === expected)).toBe(true);
     expect(expected).toBe("attio__query_records");
+  });
+});
+
+// CL-3190: the loadout is a strict partition. Every tool Myra materializes
+// from her pins is EITHER an advertised platform tool OR catalog-managed
+// (hidden until load_tools). Nothing leaks onto turn one, and the catalog is
+// the single source of truth for the integration grants.
+describe("Myra loadout partition (CL-3190)", () => {
+  const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+  const myraPins = myra?.toolPackages ?? [];
+  const platformLlm = new Set(
+    PERSONAL_AGENT_PLATFORM_TOOLS.map((n) => toLlmToolName(n)),
+  );
+  const catalogLlm = catalogManagedNames(MYRA_TOOL_CATALOG);
+
+  test("platform tools are exactly the minimal advertised set", () => {
+    expect(PERSONAL_AGENT_PLATFORM_TOOLS).toEqual([
+      "search_tools",
+      "load_tools",
+      "@workbench/tools-artifact/artifact:memory_load",
+      "@workbench/tools-artifact/artifact:memory_save",
+      "@workbench/tools-artifact/artifact:artifact_create",
+      "@workbench/tools-artifact/artifact:artifact_read",
+      "@workbench/tools-artifact/artifact:artifact_write",
+      "@workbench/tools-artifact/artifact:artifact_list",
+      "@workbench/tools-workflows/workflows:workflow_list_kinds",
+      "@workbench/tools-workflows/workflows:workflow_start",
+      "@workbench/tools-skills/skills:search_skills",
+      "@workbench/tools-skills/skills:load_skill",
+      "@workbench/tools-skills/skills:list_skill_drafts",
+      "@workbench/tools-skills/skills:load_skill_draft",
+    ]);
+  });
+
+  test("no producible Myra tool leaks onto turn one (platform ∪ catalog covers all)", () => {
+    const producible = producibleLlmToolNamesForPins(myraPins);
+    const leaks = [...producible].filter(
+      (n) => !platformLlm.has(n) && !catalogLlm.has(n),
+    );
+    expect(leaks).toEqual([]);
+  });
+
+  test("every catalog tool is producible from Myra's pins", () => {
+    const producible = producibleLlmToolNamesForPins(myraPins);
+    const dead = [...catalogLlm].filter((n) => !producible.has(n));
+    expect(dead).toEqual([]);
+  });
+
+  test("every non-local platform tool is producible from Myra's pins", () => {
+    const producible = producibleLlmToolNamesForPins(myraPins);
+    const locals = new Set(["search_tools", "load_tools"]);
+    const missing = [...platformLlm].filter(
+      (n) => !locals.has(n) && !producible.has(n),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  test("platform and catalog do not overlap", () => {
+    const overlap = [...platformLlm].filter((n) => catalogLlm.has(n));
+    expect(overlap).toEqual([]);
+  });
+
+  test("base tools (the grant list) are exactly platform ∪ catalog", () => {
+    const baseLlm = new Set(
+      PERSONAL_AGENT_BASE_TOOLS.map((n) => toLlmToolName(n)),
+    );
+    const expected = new Set([...platformLlm, ...catalogLlm]);
+    expect([...baseLlm].sort()).toEqual([...expected].sort());
+  });
+
+  test("all Myra pins use the '*' version policy", () => {
+    expect(myraPins.length).toBeGreaterThan(0);
+    for (const pin of myraPins) expect(pin.version).toBe("*");
+  });
+
+  // A pin must be a bare @scope/package name — one published tarball ships all
+  // its factories. A factory subpath (e.g. `@workbench/tools-vercel/deploy-
+  // artifact`) has no tarball and throws in the closure resolver at launch
+  // (`resolveClosure` → `fetchPackument`), breaking Myra's tool manifest. The
+  // partition helper prefix-matches subpaths, so only this guard catches it.
+  test("every Myra pin is a bare @scope/package name (no factory subpath)", () => {
+    for (const pin of myraPins) {
+      expect(pin.name).toMatch(/^@[^/]+\/[^/]+$/);
+    }
+  });
+
+  test("no workflow-only tool packages (gamma, last30days) on Myra", () => {
+    for (const pin of myraPins) {
+      expect(pin.name.includes("tools-gamma")).toBe(false);
+      expect(pin.name.includes("tools-last30days")).toBe(false);
+    }
+    for (const tool of PERSONAL_AGENT_BASE_TOOLS) {
+      expect(tool.includes("tools-gamma")).toBe(false);
+      expect(tool.includes("tools-last30days")).toBe(false);
+    }
+    for (const name of catalogLlm) {
+      expect(name.startsWith("gamma__")).toBe(false);
+      expect(name.startsWith("last30days__")).toBe(false);
+    }
+  });
+});
+
+// CL-3190: the guarantee that actually matters — the director advertises
+// EXACTLY the platform set on turn one, given Myra's real materialized tools.
+describe("advertised turn-1 loadout == platform (CL-3190)", () => {
+  test("director advertises exactly PERSONAL_AGENT_PLATFORM_TOOLS", async () => {
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    const producible = [
+      ...producibleLlmToolNamesForPins(myra?.toolPackages ?? []),
+    ];
+    const toolDefs = [
+      def("search_tools"),
+      def("load_tools"),
+      ...producible.map(def),
+    ];
+    const exposure: ToolExposureState = { exposed: new Set() };
+    const director = createDynamicToolsDirector("sys", toolDefs, {
+      catalog: MYRA_TOOL_CATALOG,
+      exposure,
+    });
+    const sink = { tools: [] as ToolDefinition[][] };
+    await director.decide(messageReceived, state, recordingCapabilities(sink));
+    const advertised = new Set((sink.tools[0] ?? []).map((d) => d.name));
+    const platformLlm = PERSONAL_AGENT_PLATFORM_TOOLS.map((n) =>
+      toLlmToolName(n),
+    );
+    expect([...advertised].sort()).toEqual([...platformLlm].sort());
   });
 });
 

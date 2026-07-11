@@ -202,6 +202,7 @@ function createMockSessionManager(): SessionManager & {
     isWakeable(agentAddress: string): boolean {
       return mock.wakeable.includes(agentAddress);
     },
+    evictIdleSessions: () => Promise.resolve(),
     async wakeAgent(agentAddress: string): Promise<void> {
       if (mock.shouldThrow !== null) throw new Error(mock.shouldThrow);
       if (mock.wakeHook !== null) await mock.wakeHook(agentAddress);

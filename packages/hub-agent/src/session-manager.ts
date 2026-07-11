@@ -75,6 +75,18 @@ export type DeployApplyErrorSink = (
   payload: Omit<DeployApplyErrorFrame, "type" | "agentAddress">,
 ) => void;
 
+// WORKBENCH-LOCAL (CL-3149): host-observable signal that a mail-triggered wake
+// terminally failed with the inbound message still parked. The hub acks the
+// sender the instant it routes mail to the sidecar, so a wake that then fails
+// would otherwise drop the parked message with no trace above an internal log.
+// This sink turns that silent drop into a first-class failure the sidecar host
+// owns (mirroring `DeployApplyErrorSink`); the message stays parked for a later
+// trigger.
+export type MailDeliveryFailedSink = (
+  agentAddress: string,
+  info: { parkedCount: number; cause: string },
+) => void;
+
 export type SessionManagerConfig = {
   transport: HubTransport;
   repoStore: AgentRepoStore;
@@ -95,6 +107,13 @@ export type SessionManagerConfig = {
    * distribution can omit this.
    */
   onDeployApplyError?: DeployApplyErrorSink;
+  /**
+   * WORKBENCH-LOCAL (CL-3149): Optional: invoked when a wake triggered by
+   * inbound mail exhausts its retries while the message is still parked, so
+   * the silent drop becomes an observable failure the host can escalate.
+   * Hosts that do not care can omit it.
+   */
+  onMailDeliveryFailed?: MailDeliveryFailedSink;
   // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning. `restoreSessions` no
   // longer builds harnesses; the first inbound message (or explicit
   // session open) builds one on demand via `wakeAgent`, which retries a
@@ -114,7 +133,27 @@ export type SessionManagerConfig = {
    * (default 256). Oldest is dropped with a warning when full.
    */
   maxParkedMail?: number;
+  // WORKBENCH-LOCAL (CL-3103): idle-eviction tuning. `evictIdleSessions`
+  // tears a live session down and returns the agent to `wakeable` when it
+  // has had no activity for `idleEvictMs`, so the very next message rebuilds
+  // it through the same wake rails with full conversation history (durable
+  // in the isogit-backed repo store). Eviction is the inverse of wake.
+  /**
+   * Idle threshold in ms before a live session is evicted. `0` (the
+   * default) disables eviction entirely — every session stays resident.
+   */
+  idleEvictMs?: number;
+  /**
+   * Clock used for activity timestamps and the idle comparison. Defaults
+   * to `Date.now`; tests inject a fake clock so eviction is exercised
+   * without wall-clock waits.
+   */
+  now?: () => number;
 };
+
+// WORKBENCH-LOCAL (CL-3103): idle-eviction disabled by default here; the
+// sidecar host supplies the 60s production default (see apps/sidecar config).
+const DEFAULT_IDLE_EVICT_MS = 0;
 
 // WORKBENCH-LOCAL (CL-3102): wake-retry + parking defaults.
 const DEFAULT_WAKE_MAX_ATTEMPTS = 5;
@@ -178,14 +217,29 @@ export type SessionManager = {
    */
   isWakeable(agentAddress: string): boolean;
   /**
+   * WORKBENCH-LOCAL (CL-3103): evict every live session that has been idle
+   * for at least `idleEvictMs`. The inverse of `wakeAgent`: the harness is
+   * disposed (bundle disposers run, transport unregistered, heap reclaimed)
+   * and the agent is returned to the `wakeable` state so the next inbound
+   * message rebuilds it with full history from the durable repo store. A
+   * session is NEVER evicted while a turn is running, an in-process event
+   * subscriber is attached, mail is parked, a wake/build is in flight, or an
+   * eviction is already under way. `idleEvictMs <= 0` makes this a no-op.
+   * Resolves once all evictions started by this sweep have settled. Wired to
+   * a periodic timer by the sidecar host.
+   */
+  evictIdleSessions(): Promise<void>;
+  /**
    * WORKBENCH-LOCAL (CL-3102): deliver a raw inbound mail message to the
    * agent. A live session is delivered immediately; a wakeable (not-yet-
    * built) agent has the message parked and its harness woken, then the
    * parked messages are replayed into the freshly built harness in arrival
    * order. The trigger survives every in-process failure path (build
-   * failure, retry, concurrent wake); it is lost only if the process
-   * crashes mid-wake or the retries exhaust with no later trigger — the
-   * parked buffer is memory-only.
+   * failure, retry, concurrent wake). If the wake retries exhaust while the
+   * message is still parked, `onMailDeliveryFailed` fires so the failure is
+   * observable to the host rather than silent, and the message stays parked
+   * for a later trigger; it is lost only if the process crashes mid-wake —
+   * the parked buffer is memory-only.
    */
   deliverInboundMail(agentAddress: string, rawMessage: Uint8Array): void;
   destroySession(agentAddress: string): Promise<void>;
@@ -269,6 +323,9 @@ type WakeableAgent = {
 type LiveSession = AgentSession & {
   harness: Harness;
   bundle: HarnessBundle;
+  // WORKBENCH-LOCAL (CL-3103): retained so idle eviction can return the
+  // agent to `wakeable` (which needs the key pair) without re-reading disk.
+  keyPair: KeyPair;
 };
 
 export function createSessionManager(
@@ -283,12 +340,16 @@ export function createSessionManager(
     onEvent,
     onConnectorStateChanged,
     onDeployApplyError,
+    onMailDeliveryFailed,
     // WORKBENCH-LOCAL (CL-3102): lazy-wake tuning.
     sleep = defaultSleep,
     wakeMaxAttempts = DEFAULT_WAKE_MAX_ATTEMPTS,
     wakeBaseDelayMs = DEFAULT_WAKE_BASE_DELAY_MS,
     wakeMaxDelayMs = DEFAULT_WAKE_MAX_DELAY_MS,
     maxParkedMail = DEFAULT_MAX_PARKED_MAIL,
+    // WORKBENCH-LOCAL (CL-3103): idle-eviction tuning.
+    idleEvictMs = DEFAULT_IDLE_EVICT_MS,
+    now = Date.now,
   } = config;
   if (!Number.isInteger(wakeMaxAttempts) || wakeMaxAttempts < 1) {
     throw new Error(
@@ -316,6 +377,27 @@ export function createSessionManager(
   // own build instead of installing it — and never tears down a session
   // it does not own.
   const wakeTokens = new Map<string, { superseded: boolean }>();
+
+  // WORKBENCH-LOCAL (CL-3103): idle-eviction bookkeeping.
+  //   `lastActivityAt` — per live session, the clock time of the most
+  //                      recent activity (any inference event, inbound mail
+  //                      delivery, or the moment the session went live).
+  //   `activeRuns`     — per live session, the count of message runs
+  //                      currently in flight (bracketed by
+  //                      `message.run.started` / `message.run.ended`). A
+  //                      turn — including its tool execution, which emits no
+  //                      inference events — keeps this above zero, so the
+  //                      idle sweep never tears an agent down mid-turn.
+  //   `evicting`       — in-flight evictions keyed by address, so a second
+  //                      sweep, a destroy, or inbound mail coordinates with
+  //                      the teardown instead of racing it.
+  const lastActivityAt = new Map<string, number>();
+  const activeRuns = new Map<string, number>();
+  const evicting = new Map<string, Promise<void>>();
+
+  function markActivity(agentAddress: string): void {
+    if (sessions.has(agentAddress)) lastActivityAt.set(agentAddress, now());
+  }
 
   // Per-agent InferenceEvent fan-out. Subscribers register against a
   // specific agentAddress; the dispatch site looks the listener set up
@@ -555,6 +637,22 @@ export function createSessionManager(
         agentTransport,
         crypto,
         onEvent(event: InferenceEvent) {
+          // WORKBENCH-LOCAL (CL-3103): every event is activity, and the
+          // message-run bracket is the turn-in-progress signal the idle
+          // sweep consults. `message.run.started` / `message.run.ended`
+          // span the whole turn — including tool execution, which emits no
+          // inference events — so a long tool call cannot look idle.
+          lastActivityAt.set(agentAddress, now());
+          if (event.type === "message.run.started") {
+            activeRuns.set(
+              agentAddress,
+              (activeRuns.get(agentAddress) ?? 0) + 1,
+            );
+          } else if (event.type === "message.run.ended") {
+            const remaining = (activeRuns.get(agentAddress) ?? 0) - 1;
+            if (remaining > 0) activeRuns.set(agentAddress, remaining);
+            else activeRuns.delete(agentAddress);
+          }
           if (
             event.type === "connector.reply" &&
             event.data.checkpointHash !== undefined
@@ -601,7 +699,12 @@ export function createSessionManager(
         config: agentConfig,
         harness: bundle.harness,
         bundle,
+        keyPair,
       });
+      // WORKBENCH-LOCAL (CL-3103): seed the idle clock at go-live so a
+      // session that never sees mail is still eligible for eviction once the
+      // threshold elapses.
+      lastActivityAt.set(agentAddress, now());
 
       // The composition-layer harness is started by `createHarness` --
       // by the time the builder returns the bundle, the agent's
@@ -656,12 +759,28 @@ export function createSessionManager(
   // load and holds (measured: fresh 422MB → 6.4GB, flat). Force a GC after each
   // full session teardown (reaper eviction, instance delete, redeploy) so memory
   // tracks live agents. Guarded for any non-Bun import context.
-  function reclaimHeap(): void {
+  // WORKBENCH-LOCAL (CL-3233): log rss/heapUsed across the forced GC at the
+  // exact teardown point. Bun/mimalloc can free the JS heap without returning
+  // pages to the OS, so an idle-evicted session may leave RSS pinned at its
+  // high-water-mark. Measuring here is the only reliable classifier: a heapUsed
+  // drop with flat rss = allocator retention (needs a decommit/recycle fix);
+  // both flat = references still held (a disposal leak). The periodic 60s
+  // memory logger cannot attribute a change to a specific eviction.
+  function reclaimHeap(context: string): void {
     const bun = (globalThis as { Bun?: { gc?: (force: boolean) => void } }).Bun;
-    bun?.gc?.(true);
+    if (bun?.gc === undefined) return;
+    const mb = (bytes: number): number => Math.round(bytes / 1024 / 1024);
+    const before = process.memoryUsage();
+    bun.gc(true);
+    const after = process.memoryUsage();
+    logger.info`Reclaim heap (${context}) rss ${String(mb(before.rss))}->${String(mb(after.rss))}MB heapUsed ${String(mb(before.heapUsed))}->${String(mb(after.heapUsed))}MB`;
   }
 
   async function destroySession(agentAddress: string): Promise<void> {
+    // WORKBENCH-LOCAL (CL-3103): let an in-flight eviction settle first. It
+    // ends with the agent `wakeable`, which the branches below drop cleanly;
+    // tearing down mid-eviction would double-close the harness.
+    await awaitEviction(agentAddress);
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
       // WORKBENCH-LOCAL (CL-3102): also drop any lazy-restore state so
@@ -685,7 +804,7 @@ export function createSessionManager(
     if (session === undefined) {
       throw new Error(`No session exists for agent "${agentAddress}"`);
     }
-    await destroyLiveSession(agentAddress, session);
+    await destroyLiveSession(agentAddress, session, "destroy");
   }
 
   // WORKBENCH-LOCAL (CL-3102): session-only teardown, factored out of
@@ -695,6 +814,7 @@ export function createSessionManager(
   async function destroyLiveSession(
     agentAddress: string,
     session: LiveSession,
+    context: "destroy" | "idle-evict" | "wake-abort",
   ): Promise<void> {
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
@@ -704,19 +824,135 @@ export function createSessionManager(
     if (sessions.get(agentAddress) === session) {
       sessions.delete(agentAddress);
       transport.unregister(agentAddress);
+      // WORKBENCH-LOCAL (CL-3103): drop idle bookkeeping for the gone session.
+      lastActivityAt.delete(agentAddress);
+      activeRuns.delete(agentAddress);
     }
     if (disposerErrors.length > 0) {
       logger.warn`Stopped session for ${agentAddress} with ${String(disposerErrors.length)} disposer failure(s)`;
     } else {
       logger.info`Stopped session for ${agentAddress}`;
     }
-    reclaimHeap();
+    reclaimHeap(`${context} ${agentAddress}`);
+  }
+
+  // WORKBENCH-LOCAL (CL-3103): idle eviction — the inverse of `wakeAgent`.
+  // A live session with no activity for `idleEvictMs` is torn down (harness
+  // closed so its conversation state flushes to the durable repo store,
+  // disposers run, transport unregistered, heap reclaimed) and the agent is
+  // returned to `wakeable`, so the next inbound message rebuilds it through
+  // the existing wake rails with full history. Eviction preserves the
+  // conversation: no `endedAt` stamp, no conversation-ended event, no
+  // `deleteAgentDir` — only session-scoped teardown, exactly like a sleep.
+  async function awaitEviction(agentAddress: string): Promise<void> {
+    const inflight = evicting.get(agentAddress);
+    if (inflight !== undefined) await inflight.catch(() => undefined);
+  }
+
+  // WORKBENCH-LOCAL (CL-3149): a wake that drains parked inbound mail can
+  // terminally fail on either wake-triggering path (mail arriving to a
+  // sleeping agent, or the post-eviction replay). A WakeAbortedError means the
+  // agent was destroyed/superseded — not a stuck message, so it is not a
+  // delivery failure. A genuine terminal failure with mail still parked is the
+  // silent-drop case: surface it so the sender-acked message is observably
+  // undelivered rather than lost in a log.
+  function reportTerminalWakeFailure(
+    agentAddress: string,
+    err: unknown,
+  ): void {
+    if (err instanceof WakeAbortedError) return;
+    const parkedCount = parkedMail.get(agentAddress)?.length ?? 0;
+    if (parkedCount > 0) {
+      const cause = err instanceof Error ? err.message : String(err);
+      onMailDeliveryFailed?.(agentAddress, { parkedCount, cause });
+    }
+  }
+
+  async function performEvict(
+    agentAddress: string,
+    session: LiveSession,
+  ): Promise<void> {
+    const { config: evictedConfig, keyPair } = session;
+    // destroyLiveSession flushes conversation state via harness.close(),
+    // runs disposers, drains repo ops, unregisters the transport, and
+    // reclaims the heap — the same teardown wake will rebuild from.
+    await destroyLiveSession(agentAddress, session, "idle-evict");
+    // Only return to wakeable if nothing else claimed the address during the
+    // teardown (a racing provision/deploy/undeploy). Clobbering a fresh
+    // provisioned/wakeable entry would brick the new deploy.
+    if (
+      sessions.has(agentAddress) ||
+      provisioned.has(agentAddress) ||
+      wakeable.has(agentAddress) ||
+      pending.has(agentAddress)
+    ) {
+      return;
+    }
+    wakeable.set(agentAddress, { config: evictedConfig, keyPair });
+    logger.info`Evicted idle agent ${agentAddress}`;
+    // Mail parked while the eviction was in flight (or arriving between the
+    // wakeable.set above and the evicting-map clear) is replayed by a wake.
+    const parked = parkedMail.get(agentAddress);
+    if (parked !== undefined && parked.length > 0) {
+      void wakeAgent(agentAddress).catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error`Wake after eviction for ${agentAddress} failed: ${msg}`;
+        reportTerminalWakeFailure(agentAddress, err);
+      });
+    }
+  }
+
+  function evictSession(
+    agentAddress: string,
+    session: LiveSession,
+  ): Promise<void> {
+    const existing = evicting.get(agentAddress);
+    if (existing !== undefined) return existing;
+    const done = performEvict(agentAddress, session).finally(() => {
+      if (evicting.get(agentAddress) === done) evicting.delete(agentAddress);
+    });
+    evicting.set(agentAddress, done);
+    return done;
+  }
+
+  function isEvictable(agentAddress: string, cutoff: number): boolean {
+    // A turn (message run) in flight — including its tool execution, which
+    // emits no inference events — must never be evicted.
+    if ((activeRuns.get(agentAddress) ?? 0) > 0) return false;
+    // An attached in-process event subscriber (e.g. a workflow reactor) is
+    // an open consumer; leave the session resident.
+    const listeners = agentEventListeners.get(agentAddress);
+    if (listeners !== undefined && listeners.size > 0) return false;
+    // Mail parked for this address is pending work.
+    const parked = parkedMail.get(agentAddress);
+    if (parked !== undefined && parked.length > 0) return false;
+    // A wake/build in flight (defensive — a waking agent has no live session).
+    if (waking.has(agentAddress)) return false;
+    const last = lastActivityAt.get(agentAddress);
+    // No recorded activity yet is treated as not-idle (fail safe).
+    if (last === undefined) return false;
+    return last <= cutoff;
+  }
+
+  async function evictIdleSessions(): Promise<void> {
+    if (idleEvictMs <= 0) return;
+    const cutoff = now() - idleEvictMs;
+    const pendingEvicts: Promise<void>[] = [];
+    for (const [agentAddress, session] of sessions) {
+      if (evicting.has(agentAddress)) continue;
+      if (!isEvictable(agentAddress, cutoff)) continue;
+      pendingEvicts.push(evictSession(agentAddress, session));
+    }
+    await Promise.allSettled(pendingEvicts);
   }
 
   async function abortSession(
     agentAddress: string,
     reason: string,
   ): Promise<void> {
+    // WORKBENCH-LOCAL (CL-3103): see destroySession — settle an in-flight
+    // eviction before tearing down.
+    await awaitEviction(agentAddress);
     if (provisioned.has(agentAddress)) {
       provisioned.delete(agentAddress);
       // WORKBENCH-LOCAL (CL-3102): also drop any lazy-restore state so
@@ -743,12 +979,15 @@ export function createSessionManager(
     await drainRepoOps(agentAddress);
     sessions.delete(agentAddress);
     transport.unregister(agentAddress);
+    // WORKBENCH-LOCAL (CL-3103): drop idle bookkeeping for the gone session.
+    lastActivityAt.delete(agentAddress);
+    activeRuns.delete(agentAddress);
     if (disposerErrors.length > 0) {
       logger.warn`Aborted agent ${agentAddress} (${reason}) with ${String(disposerErrors.length)} disposer failure(s)`;
     } else {
       logger.info`Aborted agent ${agentAddress}: ${reason}`;
     }
-    reclaimHeap();
+    reclaimHeap(`abort ${agentAddress}`);
   }
 
   function deliverMessage(agentAddress: string, message: InboundMessage): void {
@@ -756,6 +995,8 @@ export function createSessionManager(
     if (session === undefined) {
       throw new Error(`No session exists for agent "${agentAddress}"`);
     }
+    // WORKBENCH-LOCAL (CL-3103): a direct harness delivery is activity.
+    markActivity(agentAddress);
     session.harness.deliver(message);
   }
 
@@ -890,7 +1131,7 @@ export function createSessionManager(
         ourSession !== undefined &&
         sessions.get(agentAddress) === ourSession
       ) {
-        await destroyLiveSession(agentAddress, ourSession);
+        await destroyLiveSession(agentAddress, ourSession, "wake-abort");
       }
       throw new WakeAbortedError(
         `Wake aborted for "${agentAddress}": agent was destroyed or superseded during the build`,
@@ -1064,6 +1305,8 @@ export function createSessionManager(
       logger.warn`Failed to deliver inbound mail to ${agentAddress}: ${msg}`;
     }
     if (sessions.has(agentAddress)) {
+      // WORKBENCH-LOCAL (CL-3103): inbound mail is activity.
+      markActivity(agentAddress);
       void commitInboundMail(agentAddress, rawMessage);
     }
   }
@@ -1103,6 +1346,14 @@ export function createSessionManager(
       parkMail(agentAddress, rawMessage);
       return;
     }
+    // WORKBENCH-LOCAL (CL-3103): mail arriving mid-eviction must not deliver
+    // into the harness being torn down. Park it; `performEvict` triggers a
+    // wake that replays the parked batch once the old harness has flushed
+    // and disposed.
+    if (evicting.has(agentAddress)) {
+      parkMail(agentAddress, rawMessage);
+      return;
+    }
     if (sessions.has(agentAddress)) {
       deliverLive(agentAddress, rawMessage);
       return;
@@ -1116,6 +1367,7 @@ export function createSessionManager(
         // Leave the parked batch in place: the agent stays wakeable, so
         // a later inbound message triggers a fresh wake that drains it.
         logger.error`Wake for inbound mail to ${agentAddress} failed: ${msg}`;
+        reportTerminalWakeFailure(agentAddress, err);
       });
       return;
     }
@@ -1279,6 +1531,7 @@ export function createSessionManager(
     startSession,
     wakeAgent,
     isWakeable,
+    evictIdleSessions,
     deliverInboundMail,
     destroySession,
     abortSession,

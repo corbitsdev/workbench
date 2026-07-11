@@ -177,6 +177,7 @@ export function createListAgentsTool(context: ListAgentsContext): AgentTool[] {
 
 export const LIST_AGENTS_HUB_TOOLS: Record<string, ContextToolEntry> = {
   list_agents: {
+    sideEffect: "read",
     definition: LIST_AGENTS_DEFINITION,
     createTools: (context) =>
       createListAgentsTool({

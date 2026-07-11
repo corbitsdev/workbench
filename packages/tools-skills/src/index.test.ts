@@ -1,38 +1,52 @@
 import { describe, expect, it } from "bun:test";
 import {
   DRAFT_SKILL_DEFINITION,
+  LIST_SKILL_DRAFTS_DEFINITION,
   LIST_SKILLS_DEFINITION,
   LOAD_SKILL_DEFINITION,
+  LOAD_SKILL_DRAFT_DEFINITION,
   SEARCH_SKILLS_DEFINITION,
   SKILL_TOOL_DEFINITIONS,
   parseDraftSkillArgs,
   parseSearchQuery,
+  parseSkillDraftId,
   parseSkillId,
   skillMatchesQuery,
   type SkillIndexEntry,
 } from "./index";
 
 describe("skill tool definitions", () => {
-  it("exposes the read tools plus skill_draft", () => {
+  it("exposes the read tools, the draft read tools, plus skill_draft", () => {
     expect(SKILL_TOOL_DEFINITIONS.map((d) => d.name).sort()).toEqual([
+      "list_skill_drafts",
       "list_skills",
       "load_skill",
+      "load_skill_draft",
       "search_skills",
       "skill_draft",
     ]);
   });
 
-  it("list_skills takes no required args", () => {
+  it("list_skills and list_skill_drafts take no required args", () => {
     expect(LIST_SKILLS_DEFINITION.inputSchema.required).toEqual([]);
+    expect(LIST_SKILL_DRAFTS_DEFINITION.inputSchema.required).toEqual([]);
   });
 
-  it("search_skills requires query, load_skill requires id, skill_draft requires name+body", () => {
+  it("search_skills requires query, load_skill/load_skill_draft require id, skill_draft requires name+body", () => {
     expect(SEARCH_SKILLS_DEFINITION.inputSchema.required).toEqual(["query"]);
     expect(LOAD_SKILL_DEFINITION.inputSchema.required).toEqual(["id"]);
+    expect(LOAD_SKILL_DRAFT_DEFINITION.inputSchema.required).toEqual(["id"]);
     expect(DRAFT_SKILL_DEFINITION.inputSchema.required).toEqual([
       "name",
       "body",
     ]);
+  });
+
+  it("list_skill_drafts description points at pending drafts and load_skill_draft", () => {
+    expect(LIST_SKILL_DRAFTS_DEFINITION.description).toContain("pending");
+    expect(LIST_SKILL_DRAFTS_DEFINITION.description).toContain(
+      "load_skill_draft",
+    );
   });
 
   it("skill_draft description points humans at Skills → Pending drafts", () => {
@@ -71,6 +85,20 @@ describe("parseSkillId", () => {
 
   it("throws on an empty id", () => {
     expect(() => parseSkillId({ id: "" })).toThrow("load_skill");
+  });
+});
+
+describe("parseSkillDraftId", () => {
+  it("returns the id string", () => {
+    expect(parseSkillDraftId({ id: "art_1" })).toBe("art_1");
+  });
+
+  it("throws on a missing id", () => {
+    expect(() => parseSkillDraftId({})).toThrow("load_skill_draft");
+  });
+
+  it("throws on an empty id", () => {
+    expect(() => parseSkillDraftId({ id: "" })).toThrow("load_skill_draft");
   });
 });
 

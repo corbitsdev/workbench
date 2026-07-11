@@ -68,6 +68,7 @@
         "@workbench/tools-hackernews": "workspace:*",
         "@workbench/tools-last30days": "workspace:*",
         "@workbench/tools-linear": "workspace:*",
+        "@workbench/tools-notion": "workspace:*",
         "@workbench/tools-polymarket": "workspace:*",
         "@workbench/tools-reddit": "workspace:*",
         "@workbench/tools-scrapecreators": "workspace:*",
@@ -592,8 +593,8 @@
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
         "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
-        "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1151,6 +1152,19 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tools-notion": {
+      "name": "@workbench/tools-notion",
+      "version": "0.1.0",
+      "dependencies": {
+        "@workbench/tool-credentials": "workspace:*",
+      },
+      "devDependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-polymarket": {
       "name": "@workbench/tools-polymarket",
       "version": "0.1.0",
@@ -1288,6 +1302,7 @@
       "dependencies": {
         "@intx/workflow": "workspace:*",
         "@radix-ui/react-dropdown-menu": "^2.1.18",
+        "@workbench/shared": "workspace:*",
         "arktype": "catalog:",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -2456,6 +2471,8 @@
     "@workbench/tools-last30days": ["@workbench/tools-last30days@workspace:packages/tools-last30days"],
 
     "@workbench/tools-linear": ["@workbench/tools-linear@workspace:packages/tools-linear"],
+
+    "@workbench/tools-notion": ["@workbench/tools-notion@workspace:packages/tools-notion"],
 
     "@workbench/tools-polymarket": ["@workbench/tools-polymarket@workspace:packages/tools-polymarket"],
 

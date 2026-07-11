@@ -127,4 +127,40 @@ describe("classifyWorkflowSteps", () => {
   it("counts human gates", () => {
     expect(countHumanGates(classifyWorkflowSteps(makeDefinition()))).toBe(1);
   });
+
+  it("projects onto a declared display flow: one entry per group, labelled", () => {
+    const steps = classifyWorkflowSteps(makeDefinition(), [
+      {
+        key: "gather",
+        label: "Gather",
+        stepIds: ["fetch_sources", "synthesize_brief"],
+      },
+      { key: "approve", label: "Approve", stepIds: ["reviewDraft", "publish"] },
+    ]);
+    expect(steps).toEqual([
+      { id: "gather", title: "Gather", kind: "agent" },
+      { id: "approve", title: "Approve", kind: "human" },
+    ]);
+  });
+
+  it("aggregates a group's kind as human > agent > auto", () => {
+    const [autoOnly] = classifyWorkflowSteps(makeDefinition(), [
+      { key: "a", label: "A", stepIds: ["fetch_sources", "publish"] },
+    ]);
+    expect(autoOnly!.kind).toBe("auto");
+  });
+
+  it("tolerates a declared stepId that is not a real step", () => {
+    const [group] = classifyWorkflowSteps(makeDefinition(), [
+      { key: "g", label: "G", stepIds: ["fetch_sources", "ghost"] },
+    ]);
+    // The missing id is skipped; the group still classifies from its real steps.
+    expect(group).toEqual({ id: "g", title: "G", kind: "auto" });
+  });
+
+  it("falls back to the per-step projection for an empty display flow", () => {
+    const grouped = classifyWorkflowSteps(makeDefinition(), []);
+    const fallback = classifyWorkflowSteps(makeDefinition());
+    expect(grouped).toEqual(fallback);
+  });
 });

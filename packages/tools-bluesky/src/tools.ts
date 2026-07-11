@@ -63,7 +63,7 @@ export const BLUESKY_SEARCH_DEFINITION: ToolDefinition = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseBlueskyPost(value: unknown): BlueskyPost {
@@ -295,6 +295,7 @@ export function createBlueskyTools(
 
 export const BLUESKY_HUB_TOOLS = {
   bluesky_search: {
+    sideEffect: "read" as const,
     definition: BLUESKY_SEARCH_DEFINITION,
     providerName: "bluesky" as const,
     createTools: (credential: { apiKey: string; baseURL: string }) =>

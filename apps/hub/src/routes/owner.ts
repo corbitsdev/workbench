@@ -19,7 +19,6 @@ import {
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
-  WORKFLOW_RUN_ACTION,
   workflowRunResource,
 } from "@workbench/shared";
 import type { HubDb } from "../db";
@@ -28,6 +27,7 @@ import { createOwnerGrantGuard } from "../lib/admin-grant";
 import { demosViewAllowed } from "../lib/demos-gate";
 import {
   loadMemberRoleGrantsForTenantChain,
+  setWorkflowRunGrant,
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
@@ -154,9 +154,11 @@ export function createOwnerRouter(
     },
   );
 
-  // Toggle a workflow's run-enablement for the workbench. Disable = write a
-  // member-role `deny` for `workflow:<kind>`/`run`; enable = remove it. Owner
-  // enable/disable is grant CRUD on the org member role (the tenant baseline).
+  // Toggle a workflow's run-enablement for the workbench. Enable = write a
+  // member-role `allow` for `workflow:<kind>`/`run`; disable = write a `deny`.
+  // Enablement is a persisted grant either way (never the absence of one) so a
+  // redeploy's first-publish seed can tell an owner-enabled kind (allow) from a
+  // never-decided one (no row) and leave the owner's choice intact.
   router.put(
     "/owner/workflows/:kind",
     describeRoute({
@@ -189,59 +191,25 @@ export function createOwnerRouter(
       }
       const resource = workflowRunResource(kind);
       const actor = c.get("ownerPrincipalId");
-      const now = new Date();
 
-      if (parsed.enabled) {
-        await db
-          .delete(grant)
-          .where(
-            and(
-              eq(grant.roleId, roleId),
-              eq(grant.resource, resource),
-              eq(grant.action, WORKFLOW_RUN_ACTION),
-              eq(grant.effect, "deny"),
-            ),
-          );
-        void recordAudit({
-          db,
-          tenantId: rootTenantId,
-          action: "grant_revoked",
-          actorPrincipalId: actor,
-          resource,
-          detail: { kind, capability: "workflow-run" },
-        });
-      } else {
-        const existing = await db.query.grant.findFirst({
-          where: and(
-            eq(grant.roleId, roleId),
-            eq(grant.resource, resource),
-            eq(grant.action, WORKFLOW_RUN_ACTION),
-            eq(grant.effect, "deny"),
-          ),
-          columns: { id: true },
-        });
-        if (!existing) {
-          await db.insert(grant).values({
-            id: generateId("grant"),
-            tenantId: rootTenantId,
-            roleId,
-            resource,
-            action: WORKFLOW_RUN_ACTION,
-            effect: "deny",
-            origin: "system",
-            createdAt: now,
-            updatedAt: now,
-          });
-          void recordAudit({
-            db,
-            tenantId: rootTenantId,
-            action: "grant_created",
-            actorPrincipalId: actor,
-            resource,
-            detail: { kind, capability: "workflow-run", effect: "deny" },
-          });
-        }
-      }
+      await setWorkflowRunGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        kind,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: "grant_created",
+        actorPrincipalId: actor,
+        resource,
+        detail: {
+          kind,
+          capability: "workflow-run",
+          effect: parsed.enabled ? "allow" : "deny",
+        },
+      });
 
       return c.json({ kind, enabled: parsed.enabled });
     },

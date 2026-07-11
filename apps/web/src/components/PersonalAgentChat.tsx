@@ -57,7 +57,8 @@ export function PersonalAgentChat() {
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
 
   const { activeTenantId } = useActiveWorkbench();
-  const { data: threads } = useMyraThreads();
+  const { data: threadPage } = useMyraThreads();
+  const threads = threadPage?.threads;
   const createThread = useCreateMyraThread();
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);
@@ -94,7 +95,8 @@ export function PersonalAgentChat() {
     setOpen(true);
     if (
       session.state.phase === "error" ||
-      session.state.phase === "credential-error"
+      session.state.phase === "credential-error" ||
+      session.state.phase === "fatal"
     ) {
       clearPendingMessage();
       return;
@@ -156,6 +158,7 @@ export function PersonalAgentChat() {
       <div className="min-h-0 flex-1">
         <MyraChatSurface
           session={session}
+          tenantId={activeTenantId}
           headerLeft={switcher}
           onUserSend={maybeTitleFromFirstMessage}
           dockState={dockState}

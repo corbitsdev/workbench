@@ -37,7 +37,7 @@ export type ScrapeCreatorsToolsConfig = {
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function resolvedBaseURL(config: ScrapeCreatorsToolsConfig): string {
@@ -505,24 +505,28 @@ export function createScrapeCreatorsTools(
 
 export const SCRAPECREATORS_HUB_TOOLS = {
   scrapecreators_tiktok: {
+    sideEffect: "read" as const,
     definition: SCRAPECREATORS_TIKTOK_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
       createScrapeCreatorsTools(config),
   },
   scrapecreators_instagram: {
+    sideEffect: "read" as const,
     definition: SCRAPECREATORS_INSTAGRAM_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
       createScrapeCreatorsTools(config),
   },
   scrapecreators_threads: {
+    sideEffect: "read" as const,
     definition: SCRAPECREATORS_THREADS_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>
       createScrapeCreatorsTools(config),
   },
   scrapecreators_pinterest: {
+    sideEffect: "read" as const,
     definition: SCRAPECREATORS_PINTEREST_DEFINITION,
     providerName: "scrapecreators" as const,
     createTools: (config: { apiKey: string; baseURL?: string }) =>

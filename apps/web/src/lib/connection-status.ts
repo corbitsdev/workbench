@@ -20,7 +20,8 @@ export type MyraPhase =
   | "provisioning"
   | "credential-error"
   | "ready"
-  | "error";
+  | "error"
+  | "fatal";
 
 export type ConnectionStatus =
   | "idle"
@@ -74,7 +75,8 @@ export const RECONNECT_THROTTLE_MS = 4_000;
  * - after a `ready`, `error` keeps the overlay up and fires a throttled reconnect
  *   for as long as the drop is within `RECONNECT_MAX_MS`; past that it is a real
  *   outage → `failed` (overlay hides, the panel's own "Try again" takes over).
- * - `provisioning`/`credential-error` are setup problems, not restarts → `idle`.
+ * - `provisioning`/`credential-error`/`fatal` are terminal setup/launch problems,
+ *   not restarts → `idle` (no overlay, no auto-retry).
  */
 export function reduceReporter(
   prev: ReporterState,
@@ -105,7 +107,11 @@ export function reduceReporter(
   if (phase === "error") {
     const droppedAt = prev.droppedAt ?? now;
     if (now - droppedAt >= RECONNECT_MAX_MS) {
-      return { status: "failed", nextState: { ...prev, droppedAt }, reconnect: false };
+      return {
+        status: "failed",
+        nextState: { ...prev, droppedAt },
+        reconnect: false,
+      };
     }
     const shouldReconnect =
       prev.lastReconnectAt === null ||
@@ -120,6 +126,8 @@ export function reduceReporter(
       reconnect: shouldReconnect,
     };
   }
+  // `fatal` (a non-recoverable launch failure) is terminal: never auto-retried,
+  // so it neither spins the overlay nor re-drives a reconnect (CL-3292).
   return { status: "idle", nextState: prev, reconnect: false };
 }
 

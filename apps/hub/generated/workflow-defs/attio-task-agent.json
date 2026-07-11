@@ -3,6 +3,57 @@
   "version": "0.1.0",
   "label": "Attio Task Agent",
   "description": "Pick an Attio task; an agent grounds itself in your CRM and internal context, asks only when it must, then drafts the BD artifacts you need — with your approval before anything is written back.",
+  "displayFlow": [
+    {
+      "key": "setup",
+      "label": "Task setup",
+      "stepIds": [
+        "listMembers",
+        "selectMember",
+        "listTasks",
+        "selectTask",
+        "fetchTask"
+      ]
+    },
+    {
+      "key": "analyze",
+      "label": "Analyze",
+      "stepIds": [
+        "analyze",
+        "clarify"
+      ],
+      "activityLabel": "Analyzing the task"
+    },
+    {
+      "key": "generate",
+      "label": "Act",
+      "stepIds": [
+        "execute",
+        "reviewArtifacts"
+      ],
+      "activityLabel": "Carrying out the plan"
+    },
+    {
+      "key": "review",
+      "label": "Review",
+      "stepIds": [
+        "review",
+        "persist"
+      ],
+      "activityLabel": "Saving to workbench"
+    },
+    {
+      "key": "sync",
+      "label": "Write back",
+      "stepIds": [
+        "suggest",
+        "approveSync",
+        "writeNote",
+        "writeComplete"
+      ],
+      "activityLabel": "Writing back to Attio"
+    }
+  ],
   "definition": {
     "id": "attio-task-agent",
     "triggers": [

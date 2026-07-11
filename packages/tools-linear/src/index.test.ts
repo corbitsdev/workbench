@@ -27,10 +27,11 @@ function lastBody(fetcher: FetchStub): {
 }
 
 describe("createLinearTools", () => {
-  it("exposes the four read-only linear tools", () => {
+  it("exposes the four read-only tools plus the write tool", () => {
     const tools = createLinearTools({ apiKey: "test-key" });
     const names = tools.map((t) => t.definition.name).sort();
     expect(names).toEqual([
+      "linear_create_issue",
       "linear_get_issue",
       "linear_list_issues",
       "linear_list_teams",
@@ -374,7 +375,142 @@ describe("error handling", () => {
   });
 });
 
+describe("linear_create_issue handler", () => {
+  it("runs the issueCreate mutation with the input variables and parses the created issue", async () => {
+    const issue = {
+      id: "uuid-9",
+      identifier: "ENG-9",
+      title: "Ship the write tool",
+      url: "https://linear.app/x/issue/ENG-9",
+    };
+    const fetcher = makeFetchStub({
+      data: { issueCreate: { success: true, issue } },
+    });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: {
+          teamId: "team-uuid",
+          title: "Ship the write tool",
+          description: "with **markdown**",
+          priority: 2,
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual(issue);
+
+    const body = lastBody(fetcher);
+    expect(body.query).toContain("issueCreate(input: $input)");
+    expect(body.variables).toEqual({
+      input: {
+        teamId: "team-uuid",
+        title: "Ship the write tool",
+        description: "with **markdown**",
+        priority: 2,
+      },
+    });
+  });
+
+  it("omits optional fields when not provided", async () => {
+    const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
+    const fetcher = makeFetchStub({
+      data: { issueCreate: { success: true, issue } },
+    });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: { teamId: "team-uuid", title: "T" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(lastBody(fetcher).variables).toEqual({
+      input: { teamId: "team-uuid", title: "T" },
+    });
+  });
+
+  it("requires a teamId", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: { title: "T" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("teamId is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("requires a title", async () => {
+    const fetcher = makeFetchStub({ data: {} });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: { teamId: "team-uuid" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("title is required");
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
+  it("errors when Linear rejects the create and returns no issue", async () => {
+    const fetcher = makeFetchStub({
+      data: { issueCreate: { success: false, issue: null } },
+    });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: { teamId: "bad-team", title: "T" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Linear did not return the created issue");
+    expect(fetcher.mock.calls).toHaveLength(1);
+  });
+});
+
 describe("LINEAR_HUB_TOOLS", () => {
+  it("classifies linear_create_issue as a write and the rest as reads", () => {
+    expect(LINEAR_HUB_TOOLS.linear_create_issue.sideEffect).toBe("write");
+    expect(LINEAR_HUB_TOOLS.linear_list_issues.sideEffect).toBe("read");
+  });
+
   it("builds each tool from resolved credentials with the linear provider", () => {
     for (const [name, entry] of Object.entries(LINEAR_HUB_TOOLS)) {
       expect(entry.providerName).toBe("linear");
