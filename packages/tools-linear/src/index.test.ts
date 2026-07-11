@@ -481,6 +481,28 @@ describe("linear_create_issue handler", () => {
     expect(result.content).toContain("title is required");
     expect(fetcher.mock.calls).toHaveLength(0);
   });
+
+  it("errors when Linear rejects the create and returns no issue", async () => {
+    const fetcher = makeFetchStub({
+      data: { issueCreate: { success: false, issue: null } },
+    });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_create_issue",
+        arguments: { teamId: "bad-team", title: "T" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("Linear did not return the created issue");
+    expect(fetcher.mock.calls).toHaveLength(1);
+  });
 });
 
 describe("LINEAR_HUB_TOOLS", () => {
