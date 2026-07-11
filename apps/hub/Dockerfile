@@ -65,6 +65,7 @@ COPY packages/test-utils/package.json packages/test-utils/
 COPY packages/tools-interchange-contract/package.json packages/tools-interchange-contract/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
+COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
@@ -123,6 +124,7 @@ COPY packages/tools-workflows/ packages/tools-workflows/
 COPY packages/tools-x/ packages/tools-x/
 COPY packages/tools-youtube/ packages/tools-youtube/
 COPY packages/ui/ packages/ui/
+COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
 EXPOSE 4000
