@@ -1,7 +1,8 @@
 // Approval request API client.
 //
-// These routes proxy to the Interchange tenant approval endpoints
-// (/api/tenants/:tenantId/approvals). The tenantId must be obtained
+// These routes are served by the workbench hub's own approvals router
+// (createApprovalsRouter), mounted under /api/v1
+// (/api/v1/tenants/:tenantId/approvals). The tenantId must be obtained
 // from /api/v1/me before calling these functions.
 
 import { type } from "arktype";
@@ -14,7 +15,7 @@ async function approvalsApiFetch<T>(
   body?: unknown,
 ): Promise<T> {
   const url = new URL(
-    `/api/${path.replace(/^\//, "")}`,
+    `/api/v1/${path.replace(/^\//, "")}`,
     apiBase || window.location.origin,
   ).toString();
   const init: RequestInit = { method, credentials: "include" };
