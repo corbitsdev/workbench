@@ -569,4 +569,39 @@ describe("write_artifact tool", () => {
 
     expect(artifactInserts.length).toBe(0);
   });
+
+  it("absent title: throws a model-actionable message naming the field shape", async () => {
+    const db = makeMockDb({});
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    await expect(
+      handler({ body: "B", kind: "report", citations: [] }, SIGNAL),
+    ).rejects.toThrow('title is required — pass a top-level string field "title"');
+  });
+
+  it("unwraps a single-level args envelope", async () => {
+    const artifactInserts: InsertedArtifact[] = [];
+    const db = makeMockDb({ captureArtifactInserts: artifactInserts });
+    const handler = getStringHandler({
+      db,
+      tenantId: "tnt-1",
+      principalId: "prn-1",
+    });
+
+    const raw = await handler(
+      {
+        params: { title: "Wrapped", body: "body", kind: "report" },
+      },
+      SIGNAL,
+    );
+
+    expect(artifactInserts).toHaveLength(1);
+    expect(artifactInserts[0]?.title).toBe("Wrapped");
+    expect(artifactInserts[0]?.content).toBe("body");
+    expect(JSON.parse(raw as string).title).toBe("Wrapped");
+  });
 });
