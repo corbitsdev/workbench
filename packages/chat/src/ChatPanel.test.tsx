@@ -89,15 +89,15 @@ describe("ChatPanel", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("shows a typing indicator when typing is true", () => {
+  it("shows the busy indicator when typing is true", () => {
     render(
       <ChatPanel agent={agent} messages={messages} onSend={() => {}} typing />,
     );
-    expect(screen.getByTestId("typing-indicator")).toBeDefined();
+    expect(screen.getByTestId("busy-indicator")).toBeDefined();
     expect(screen.getByText("Ada is typing")).toBeDefined();
   });
 
-  it("shows an activity label instead of typing indicator when activity is present", () => {
+  it("labels the busy indicator with the activity when one is present", () => {
     render(
       <ChatPanel
         agent={agent}
@@ -106,7 +106,7 @@ describe("ChatPanel", () => {
         activity={{ type: "thinking" }}
       />,
     );
-    expect(screen.queryByTestId("typing-indicator")).toBeNull();
+    expect(screen.getAllByTestId("busy-indicator")).toHaveLength(1);
     expect(screen.getByText("Ada is thinking")).toBeDefined();
   });
 

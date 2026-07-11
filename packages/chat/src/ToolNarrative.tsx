@@ -9,42 +9,51 @@ import {
   type UIResponse,
 } from "@workbench/blocks";
 
-function DoneIcon({ isError }: { isError?: boolean }) {
+function ErrorIcon() {
   return (
     <span
-      className={cn(
-        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full",
-        isError ? "bg-red-500" : "bg-text-3",
-      )}
+      data-testid="tool-marker-error"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500"
     >
-      {isError ? (
-        <svg
-          className="h-2.5 w-2.5 text-white"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <line x1="18" y1="6" x2="6" y2="18" />
-          <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-      ) : (
-        <svg
-          className="h-2.5 w-2.5 text-white"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      )}
+      <svg
+        className="h-2.5 w-2.5 text-white"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={4}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
     </span>
   );
+}
+
+function BulletIcon() {
+  return (
+    <span
+      data-testid="tool-marker-bullet"
+      className="flex h-4 w-4 shrink-0 items-center justify-center"
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-text-3" />
+    </span>
+  );
+}
+
+// Settled marker: errors keep a loud badge; external tools get a quiet bullet;
+// internal tools get an empty slot (plain text, but rows stay column-aligned).
+function SettledMarker({
+  isError,
+  external,
+}: {
+  isError: boolean;
+  external: boolean;
+}) {
+  if (isError) return <ErrorIcon />;
+  if (external) return <BulletIcon />;
+  return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
 function ActiveIcon() {
@@ -117,6 +126,12 @@ export interface ToolNarrativeProps {
    * from the collapsed "N tools" count.
    */
   isQuietTool?: (name: string) => boolean;
+  /**
+   * External integration tools (provider-prefixed, e.g. `attio__create_note`)
+   * get a small bullet marker when settled; internal tools render plain.
+   * When omitted, every non-quiet tool is treated as external.
+   */
+  isExternalTool?: (name: string) => boolean;
   /** Forwarded to interactive UI blocks rendered from a structured tool result. */
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
@@ -192,6 +207,7 @@ function ToolRow({
   call,
   summary,
   quiet,
+  external,
   suppressArgsSummary,
   formatResult,
   onRespond,
@@ -200,6 +216,7 @@ function ToolRow({
   call: ToolCall;
   summary: string;
   quiet: boolean;
+  external: boolean;
   // When the host supplies a formatter, the summary line already conveys the
   // relevant argument (e.g. "Searching the web for X"), so the raw arg chip
   // would render it twice. The full arguments remain available on expand only
@@ -263,7 +280,10 @@ function ToolRow({
           {pending ? (
             <ActiveIcon />
           ) : (
-            <DoneIcon isError={call.isError === true} />
+            <SettledMarker
+              isError={call.isError === true}
+              external={external}
+            />
           )}
         </span>
         <span
@@ -387,6 +407,7 @@ function ToolRows({
   formatSummary,
   formatResult,
   isQuietTool,
+  isExternalTool,
   onRespond,
   onAction,
 }: Pick<
@@ -395,6 +416,7 @@ function ToolRows({
   | "formatSummary"
   | "formatResult"
   | "isQuietTool"
+  | "isExternalTool"
   | "onRespond"
   | "onAction"
 >) {
@@ -407,6 +429,7 @@ function ToolRows({
           call={call}
           summary={fmt(call)}
           quiet={isQuietTool?.(call.name) === true}
+          external={isExternalTool === undefined || isExternalTool(call.name)}
           suppressArgsSummary={formatSummary !== undefined}
           {...(formatResult !== undefined ? { formatResult } : {})}
           {...(onRespond !== undefined ? { onRespond } : {})}
@@ -421,11 +444,13 @@ function CollapsedToolSummary({
   summary,
   count,
   hasError,
+  external,
   children,
 }: {
   summary: string;
   count: number;
   hasError: boolean;
+  external: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -442,7 +467,7 @@ function CollapsedToolSummary({
         )}
       >
         <span className="mt-0.5">
-          <DoneIcon isError={hasError} />
+          <SettledMarker isError={hasError} external={external} />
         </span>
         <span
           className={cn(
@@ -469,6 +494,7 @@ export function ToolNarrative({
   compact,
   summarizeCalls,
   isQuietTool,
+  isExternalTool,
   onRespond,
   onAction,
   className,
@@ -510,6 +536,7 @@ export function ToolNarrative({
         {...(formatSummary !== undefined ? { formatSummary } : {})}
         {...(formatResult !== undefined ? { formatResult } : {})}
         {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
         {...(onRespond !== undefined ? { onRespond } : {})}
         {...(onAction !== undefined ? { onAction } : {})}
       />
@@ -523,6 +550,9 @@ export function ToolNarrative({
           summary={summarizeCalls(realCalls)}
           count={realCalls.length}
           hasError={realCalls.some((c) => c.isError === true)}
+          external={realCalls.some(
+            (c) => isExternalTool === undefined || isExternalTool(c.name),
+          )}
         >
           {realRows}
         </CollapsedToolSummary>

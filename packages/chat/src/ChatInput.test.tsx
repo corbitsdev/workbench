@@ -87,7 +87,7 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("shows a busy indicator, relabels the button, and blocks submission when busy", async () => {
+  it("shows a busy spinner, relabels the button, and blocks submission when busy", async () => {
     const user = userEvent.setup();
     const onSend = mock((_text: string) => {});
     render(<ChatInput onSend={onSend} busy />);
@@ -96,11 +96,20 @@ describe("ChatInput", () => {
       name: "Waiting for agent",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+    // Busy state reads as active work — a spinner, not greyed-out dots.
+    expect(screen.getByTestId("composer-busy-spinner")).toBeDefined();
     expect(
       (screen.getByLabelText("Message") as HTMLTextAreaElement).disabled,
     ).toBe(true);
     await user.keyboard("{Enter}");
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("renders the send control as an icon button, not a text label", () => {
+    render(<ChatInput onSend={() => {}} />);
+    // Accessible name stays "Send"; the visible label is an icon.
+    expect(screen.getByRole("button", { name: "Send" })).toBeDefined();
+    expect(screen.queryByText("Send")).toBeNull();
   });
 
   it("renders a custom placeholder when provided", () => {

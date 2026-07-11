@@ -25,7 +25,6 @@ mock.module("framer-motion", () => ({
 
 import { DockedChatBar } from "./DockedChatBar";
 import { FloatingChat } from "./FloatingChat";
-import { TypingIndicator } from "./TypingIndicator";
 import { QuickReplyChips } from "./QuickReplyChips";
 import { type QuickReply } from "./types";
 
@@ -111,20 +110,6 @@ describe("FloatingChat", () => {
     );
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
     expect(onClose.mock.calls.length).toBe(0);
-  });
-});
-
-describe("TypingIndicator", () => {
-  it("renders the dots and an optional label", () => {
-    render(<TypingIndicator label="Ada is typing" />);
-    expect(screen.getByTestId("typing-indicator")).toBeDefined();
-    expect(screen.getByText("Ada is typing")).toBeDefined();
-  });
-
-  it("omits the label when none is given", () => {
-    render(<TypingIndicator />);
-    const indicator = screen.getByTestId("typing-indicator");
-    expect(indicator.textContent).toBe("");
   });
 });
 

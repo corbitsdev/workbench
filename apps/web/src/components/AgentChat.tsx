@@ -7,6 +7,7 @@ import {
   friendlyToolResult,
   summarizeToolCalls,
   isCatalogMetaTool,
+  isExternalIntegrationTool,
   createToolNameTracker,
   createLiveTextTracker,
   createReasoningTracker,
@@ -571,6 +572,7 @@ export function AgentChat({
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
+      isExternalTool={isExternalIntegrationTool}
     />
   );
 }

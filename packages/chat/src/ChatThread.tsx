@@ -3,7 +3,6 @@ import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
-import { TypingIndicator } from "./TypingIndicator";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
@@ -97,6 +96,8 @@ export interface ChatThreadProps {
    * checkmark / tool chrome) and excluded from the collapsed "N tools" count.
    */
   isQuietTool?: ToolNarrativeProps["isQuietTool"];
+  /** External integration tools get a bullet marker; internal tools render plain. */
+  isExternalTool?: ToolNarrativeProps["isExternalTool"];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -141,6 +142,7 @@ export function ChatThread({
   compactToolActivity,
   summarizeToolCalls,
   isQuietTool,
+  isExternalTool,
   hideToolCall,
   onRespond,
   onAction,
@@ -160,6 +162,19 @@ export function ChatThread({
   });
 
   const hasActivity = activity !== undefined && activity !== null;
+  // One indicator covers the whole in-flight turn: a discrete activity labels
+  // it precisely; plain typing falls back to a generic "thinking" line so a
+  // running turn is never silent between activity events.
+  const busy = hasActivity || typing === true;
+  const busyLabel = hasActivity
+    ? formatActivityLabel(
+        activity,
+        agentName ?? "Agent",
+        formatToolName,
+        isQuietTool,
+      )
+    : (typingLabel ??
+      (agentName !== undefined ? `${agentName} is thinking` : "Thinking"));
 
   function renderMessage(message: ChatMessage): ReactNode {
     const isSettledAgent =
@@ -209,6 +224,7 @@ export function ChatThread({
                   ? { summarizeCalls: summarizeToolCalls }
                   : {})}
                 {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+                {...(isExternalTool !== undefined ? { isExternalTool } : {})}
                 {...(onRespond !== undefined ? { onRespond } : {})}
                 {...(onAction !== undefined ? { onAction } : {})}
                 className="pl-1"
@@ -267,23 +283,17 @@ export function ChatThread({
           {item.node}
         </div>
       ))}
-      {hasActivity && agentName !== undefined && (
-        <div className="flex items-start" aria-live="polite">
+      {busy && (
+        <div
+          className="flex items-start"
+          aria-live="polite"
+          data-testid="busy-indicator"
+        >
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
-            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange" />
-            {formatActivityLabel(
-              activity,
-              agentName,
-              formatToolName,
-              isQuietTool,
-            )}
+            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
+            {busyLabel}
           </span>
         </div>
-      )}
-      {typing === true && !hasActivity && (
-        <TypingIndicator
-          {...(typingLabel !== undefined ? { label: typingLabel } : {})}
-        />
       )}
     </div>
   );

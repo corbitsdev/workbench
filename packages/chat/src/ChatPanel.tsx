@@ -78,6 +78,8 @@ export interface ChatPanelProps {
   summarizeToolCalls?: ChatThreadProps["summarizeToolCalls"];
   /** Platform-internal tools as quiet reasoning-style text (no tool chrome). */
   isQuietTool?: ChatThreadProps["isQuietTool"];
+  /** External integration tools get a bullet marker; internal tools render plain. */
+  isExternalTool?: ChatThreadProps["isExternalTool"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -131,6 +133,7 @@ export function ChatPanel({
   compactToolActivity,
   summarizeToolCalls,
   isQuietTool,
+  isExternalTool,
   className,
   notice,
   headerLeft,
@@ -228,6 +231,7 @@ export function ChatPanel({
         {...(compactToolActivity !== undefined ? { compactToolActivity } : {})}
         {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
         {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
       />
 
       {quickReplies !== undefined &&
