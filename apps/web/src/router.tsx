@@ -10,6 +10,7 @@ import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
+import { NotificationsBell } from "./components/layout/NotificationsBell";
 import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
@@ -24,6 +25,7 @@ import { ChatsListPage } from "./pages/ChatsListPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
+import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
 import { SkillsNew } from "./pages/SkillsNew";
@@ -66,6 +68,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Chats",
     to: "/chats",
     keywords: ["conversations", "myra", "messages"],
+  },
+  {
+    id: "nav:inbox",
+    category: "navigation",
+    title: "Inbox",
+    to: "/inbox",
+    keywords: ["mail", "mailbox", "messages", "email", "notifications"],
   },
   {
     id: "nav:artifacts",
@@ -173,18 +182,21 @@ function AppShell() {
                     />
                   )}
                   <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                    <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
+                    <header className="flex items-center gap-2 border-b border-border px-3 py-2">
                       <button
                         type="button"
                         onClick={() => setDrawerOpen(true)}
                         aria-label="Open menu"
-                        className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
+                        className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text md:hidden"
                       >
                         <Menu size={20} />
                       </button>
-                      <span className="text-sm font-semibold text-text">
+                      <span className="text-sm font-semibold text-text md:hidden">
                         Workbench
                       </span>
+                      <div className="ml-auto">
+                        <NotificationsBell />
+                      </div>
                     </header>
                     <main className="flex-1 overflow-hidden">
                       <Outlet />
@@ -219,6 +231,8 @@ export const router = createBrowserRouter([
           { path: "/chats/:threadId", element: <ChatThreadPage /> },
           { path: "/onboarding", element: <Navigate to="/" replace /> },
           { path: "/dashboard", element: <Navigate to="/" replace /> },
+          { path: "/inbox", element: <InboxPage /> },
+          { path: "/inbox/:messageId", element: <InboxPage /> },
           { path: "/artifacts", element: <ArtifactsPage /> },
           { path: "/artifacts/:artifactId", element: <ArtifactDetailPage /> },
           {
