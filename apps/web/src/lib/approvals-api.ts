@@ -2,39 +2,13 @@
 //
 // These routes are served by the workbench hub's own approvals router
 // (createApprovalsRouter), mounted under /api/v1
-// (/api/v1/tenants/:tenantId/approvals). The tenantId must be obtained
-// from /api/v1/me before calling these functions.
+// (/api/v1/tenants/:tenantId/approvals). Requests go through the shared api()
+// client so the /api/v1 prefix and error handling stay single-sourced with the
+// rest of the app. The tenantId must be obtained from /api/v1/me before calling
+// these functions.
 
 import { type } from "arktype";
-
-const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
-
-async function approvalsApiFetch<T>(
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const url = new URL(
-    `/api/v1/${path.replace(/^\//, "")}`,
-    apiBase || window.location.origin,
-  ).toString();
-  const init: RequestInit = { method, credentials: "include" };
-  if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
-  }
-  const res = await fetch(url, init);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw Object.assign(
-      new Error((err as { error?: string }).error ?? `HTTP ${res.status}`),
-      {
-        status: res.status,
-      },
-    );
-  }
-  return res.json() as Promise<T>;
-}
+import { api } from "./api";
 
 export const ApprovalSchema = type({
   id: "string",
@@ -64,14 +38,10 @@ function parseApproval(raw: unknown): Approval {
 }
 
 /**
- * List all pending approval requests for the given tenant.
- * Optionally filter by Interchange session ID on the client side.
+ * List the pending approval requests the caller owns for the given tenant.
  */
 export async function listApprovals(tenantId: string): Promise<Approval[]> {
-  const raw = await approvalsApiFetch<unknown>(
-    "GET",
-    `tenants/${tenantId}/approvals`,
-  );
+  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
   const parsed = ApprovalArraySchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid approvals response: ${parsed.summary}`);
@@ -87,7 +57,7 @@ export async function approveRequest(
   tenantId: string,
   approvalId: string,
 ): Promise<Approval> {
-  const raw = await approvalsApiFetch<unknown>(
+  const raw = await api<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/approve`,
   );
@@ -102,10 +72,10 @@ export async function rejectRequest(
   approvalId: string,
   message?: string,
 ): Promise<Approval> {
-  const raw = await approvalsApiFetch<unknown>(
+  const raw = await api<unknown>(
     "POST",
     `tenants/${tenantId}/approvals/${approvalId}/reject`,
-    message !== undefined ? { message } : {},
+    message !== undefined ? { message } : undefined,
   );
   return parseApproval(raw);
 }

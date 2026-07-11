@@ -17,24 +17,28 @@ function jsonResponse(body: unknown, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: { get: () => null },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   } as unknown as Response;
 }
 
-function stubFetch(body: unknown, status = 200): void {
-  globalThis.fetch = mock(async () =>
-    jsonResponse(body, status),
+// Single fetch stub that both returns a canned body and records the request, so
+// tests can assert the outgoing URL and body without a second parallel helper.
+function stubFetch(
+  body: unknown,
+  status = 200,
+): { url: () => string; init: () => RequestInit | undefined } {
+  let capturedUrl = "";
+  let capturedInit: RequestInit | undefined;
+  globalThis.fetch = mock(
+    async (input: URL | RequestInfo, init?: RequestInit) => {
+      capturedUrl = typeof input === "string" ? input : input.toString();
+      capturedInit = init;
+      return jsonResponse(body, status);
+    },
   ) as unknown as typeof fetch;
-}
-
-function captureUrl(body: unknown): { url: () => string } {
-  let captured = "";
-  globalThis.fetch = mock(async (input: URL | RequestInfo) => {
-    captured = typeof input === "string" ? input : input.toString();
-    return jsonResponse(body);
-  }) as unknown as typeof fetch;
-  return { url: () => captured };
+  return { url: () => capturedUrl, init: () => capturedInit };
 }
 
 const VALID_ROW: Approval = {
@@ -83,7 +87,7 @@ describe("listApprovals", () => {
 
 describe("hub v1 route targeting", () => {
   it("lists approvals from the /api/v1 route the hub serves", async () => {
-    const capture = captureUrl([VALID_ROW]);
+    const capture = stubFetch([VALID_ROW]);
 
     await listApprovals("tenant-1");
 
@@ -93,7 +97,7 @@ describe("hub v1 route targeting", () => {
   });
 
   it("approves via the /api/v1 route", async () => {
-    const capture = captureUrl(VALID_ROW);
+    const capture = stubFetch(VALID_ROW);
 
     await approveRequest("tenant-1", "apr-1");
 
@@ -103,13 +107,31 @@ describe("hub v1 route targeting", () => {
   });
 
   it("rejects via the /api/v1 route", async () => {
-    const capture = captureUrl(VALID_ROW);
+    const capture = stubFetch(VALID_ROW);
 
     await rejectRequest("tenant-1", "apr-1", "no thanks");
 
     expect(new URL(capture.url()).pathname).toBe(
       "/api/v1/tenants/tenant-1/approvals/apr-1/reject",
     );
+  });
+
+  it("forwards the rejection message in the request body", async () => {
+    const capture = stubFetch(VALID_ROW);
+
+    await rejectRequest("tenant-1", "apr-1", "no thanks");
+
+    const body = capture.init()?.body;
+    expect(typeof body).toBe("string");
+    expect(JSON.parse(body as string)).toEqual({ message: "no thanks" });
+  });
+
+  it("sends no body when rejecting without a message", async () => {
+    const capture = stubFetch(VALID_ROW);
+
+    await rejectRequest("tenant-1", "apr-1");
+
+    expect(capture.init()?.body).toBeUndefined();
   });
 });
 
@@ -119,6 +141,28 @@ describe("approveRequest", () => {
 
     await expect(approveRequest("tenant-1", "apr-1")).rejects.toThrow(
       "Invalid approval response",
+    );
+  });
+});
+
+describe("error surfacing", () => {
+  it("surfaces a legible message when the error body nests { error: { message } }", async () => {
+    stubFetch(
+      { error: { code: "not_implemented", message: "Not implemented" } },
+      501,
+    );
+
+    await expect(listApprovals("tenant-1")).rejects.toThrow("Not implemented");
+  });
+
+  it("never surfaces a raw object as the error message", async () => {
+    stubFetch(
+      { error: { code: "not_implemented", message: "Not implemented" } },
+      501,
+    );
+
+    await expect(listApprovals("tenant-1")).rejects.not.toThrow(
+      "[object Object]",
     );
   });
 });
