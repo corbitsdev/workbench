@@ -178,14 +178,26 @@ function runStarted(seq: number): InferenceEvent {
   };
 }
 
-function inferenceDone(seq: number, text: string): InferenceEvent {
+function inferenceDone(
+  seq: number,
+  text: string,
+  toolCall?: { name: string; arguments: Record<string, unknown> },
+): InferenceEvent {
+  const content: { type: "text"; text: string }[] = [{ type: "text", text }];
+  const blocks =
+    toolCall === undefined
+      ? content
+      : [
+          ...content,
+          { type: "tool_call" as const, id: `call-${String(seq)}`, ...toolCall },
+        ];
   return {
     type: "inference.done",
     seq,
     data: {
       turn: {
         role: "assistant",
-        content: [{ type: "text", text }],
+        content: blocks,
         model: "test-model",
         timestamp: 0,
       },
@@ -275,6 +287,81 @@ describe("SessionManager assistant output loop guard", () => {
       fx.forwarded.filter((e) => e.type === "message.run.ended"),
     ).toHaveLength(0);
     expect(fx.manager.hasSession(address)).toBe(true);
+  });
+
+  test("identical narration with distinct tool calls per cycle does not trip", async () => {
+    const address = "progress@local";
+    const fx = await makeFixture(address);
+
+    fx.emit(runStarted(1));
+    fx.emit(
+      inferenceDone(2, "Working on it.", {
+        name: "search",
+        arguments: { q: "one" },
+      }),
+    );
+    fx.emit(
+      inferenceDone(3, "Working on it.", {
+        name: "search",
+        arguments: { q: "two" },
+      }),
+    );
+    fx.emit(
+      inferenceDone(4, "Working on it.", {
+        name: "search",
+        arguments: { q: "three" },
+      }),
+    );
+    fx.emit(
+      inferenceDone(5, "Working on it.", {
+        name: "fetch",
+        arguments: { url: "x" },
+      }),
+    );
+
+    expect(
+      fx.forwarded.filter((e) => e.type === "inference.done"),
+    ).toHaveLength(4);
+    expect(
+      fx.forwarded.filter((e) => e.type === "message.run.ended"),
+    ).toHaveLength(0);
+    expect(fx.manager.hasSession(address)).toBe(true);
+  });
+
+  test("identical narration with an identical tool call trips at 3", async () => {
+    const address = "stuck@local";
+    const fx = await makeFixture(address);
+
+    fx.emit(runStarted(1));
+    fx.emit(
+      inferenceDone(2, "Working on it.", {
+        name: "search",
+        arguments: { q: "one" },
+      }),
+    );
+    fx.emit(
+      inferenceDone(3, "Working on it.", {
+        name: "search",
+        arguments: { q: "one" },
+      }),
+    );
+    fx.emit(
+      inferenceDone(4, "Working on it.", {
+        name: "search",
+        arguments: { q: "one" },
+      }),
+    );
+
+    expect(
+      fx.forwarded.filter((e) => e.type === "inference.done"),
+    ).toHaveLength(2);
+    const ended = fx.forwarded.find((e) => e.type === "message.run.ended");
+    if (ended === undefined || ended.type !== "message.run.ended") {
+      throw new Error("expected a synthetic message.run.ended");
+    }
+    expect(ended.data.status).toBe("failed");
+    expect(ended.data.error?.kind).toBe("assistant_loop_interrupted");
+    await until(() => !fx.manager.hasSession(address), "session eviction");
   });
 
   test("a user message resets the counter", async () => {

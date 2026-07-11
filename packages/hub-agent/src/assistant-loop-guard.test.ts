@@ -2,8 +2,8 @@ import { describe, test, expect } from "bun:test";
 
 import {
   ASSISTANT_LOOP_THRESHOLD,
+  assistantCycleFingerprint,
   createAssistantLoopGuard,
-  extractAssistantText,
   normalizeAssistantOutput,
 } from "./assistant-loop-guard";
 
@@ -103,13 +103,62 @@ describe("normalizeAssistantOutput", () => {
   });
 });
 
-describe("extractAssistantText", () => {
-  test("joins text blocks and ignores non-text blocks", () => {
-    const text = extractAssistantText([
+describe("assistantCycleFingerprint", () => {
+  test("covers text blocks and ignores thinking blocks", () => {
+    const a = assistantCycleFingerprint([
       { type: "text", text: "one" },
       { type: "thinking" },
       { type: "text", text: "two" },
     ]);
-    expect(text).toBe("one\ntwo");
+    const b = assistantCycleFingerprint([
+      { type: "text", text: "one" },
+      { type: "text", text: "two" },
+    ]);
+    expect(a).toBe(b);
+    expect(a).not.toBe("");
+  });
+
+  test("identical text with different tool calls yields different fingerprints", () => {
+    const base = [{ type: "text", text: "working on it" }];
+    const a = assistantCycleFingerprint([
+      ...base,
+      { type: "tool_call", id: "c1", name: "search", arguments: { q: "one" } },
+    ]);
+    const b = assistantCycleFingerprint([
+      ...base,
+      { type: "tool_call", id: "c2", name: "search", arguments: { q: "two" } },
+    ]);
+    expect(a).not.toBe(b);
+  });
+
+  test("identical text and tool call match regardless of call id and arg key order", () => {
+    const a = assistantCycleFingerprint([
+      { type: "text", text: "working on it" },
+      {
+        type: "tool_call",
+        id: "c1",
+        name: "search",
+        arguments: { q: "one", limit: 5 },
+      },
+    ]);
+    const b = assistantCycleFingerprint([
+      { type: "text", text: "working  on it" },
+      {
+        type: "tool_call",
+        id: "c2",
+        name: "search",
+        arguments: { limit: 5, q: "one" },
+      },
+    ]);
+    expect(a).toBe(b);
+  });
+
+  test("a tool-only cycle has a non-empty fingerprint and an empty cycle has none", () => {
+    const toolOnly = assistantCycleFingerprint([
+      { type: "tool_call", id: "c1", name: "search", arguments: {} },
+    ]);
+    expect(toolOnly).not.toBe("");
+    expect(assistantCycleFingerprint([{ type: "thinking" }])).toBe("");
+    expect(assistantCycleFingerprint([])).toBe("");
   });
 });
