@@ -1,6 +1,11 @@
 /// <reference types="bun" />
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { approveRequest, listApprovals, type Approval } from "./approvals-api";
+import {
+  approveRequest,
+  listApprovals,
+  rejectRequest,
+  type Approval,
+} from "./approvals-api";
 
 const originalFetch = globalThis.fetch;
 
@@ -21,6 +26,15 @@ function stubFetch(body: unknown, status = 200): void {
   globalThis.fetch = mock(async () =>
     jsonResponse(body, status),
   ) as unknown as typeof fetch;
+}
+
+function captureUrl(body: unknown): { url: () => string } {
+  let captured = "";
+  globalThis.fetch = mock(async (input: URL | RequestInfo) => {
+    captured = typeof input === "string" ? input : input.toString();
+    return jsonResponse(body);
+  }) as unknown as typeof fetch;
+  return { url: () => captured };
 }
 
 const VALID_ROW: Approval = {
@@ -63,6 +77,38 @@ describe("listApprovals", () => {
 
     await expect(listApprovals("tenant-1")).rejects.toThrow(
       "Invalid approvals response",
+    );
+  });
+});
+
+describe("hub v1 route targeting", () => {
+  it("lists approvals from the /api/v1 route the hub serves", async () => {
+    const capture = captureUrl([VALID_ROW]);
+
+    await listApprovals("tenant-1");
+
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/v1/tenants/tenant-1/approvals",
+    );
+  });
+
+  it("approves via the /api/v1 route", async () => {
+    const capture = captureUrl(VALID_ROW);
+
+    await approveRequest("tenant-1", "apr-1");
+
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/v1/tenants/tenant-1/approvals/apr-1/approve",
+    );
+  });
+
+  it("rejects via the /api/v1 route", async () => {
+    const capture = captureUrl(VALID_ROW);
+
+    await rejectRequest("tenant-1", "apr-1", "no thanks");
+
+    expect(new URL(capture.url()).pathname).toBe(
+      "/api/v1/tenants/tenant-1/approvals/apr-1/reject",
     );
   });
 });
