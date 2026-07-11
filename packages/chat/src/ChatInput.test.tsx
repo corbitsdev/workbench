@@ -117,9 +117,11 @@ describe("ChatInput", () => {
     expect(screen.getByPlaceholderText("Ask anything")).toBeDefined();
   });
 
-  it("falls back to the default placeholder", () => {
+  it("falls back to an agent-neutral placeholder", () => {
+    // The fallback must never name a specific agent — hosts pass the bound
+    // agent's name via `placeholder`.
     render(<ChatInput onSend={() => {}} />);
-    expect(screen.getByPlaceholderText("Message Ada…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Message…")).toBeDefined();
   });
 
   it("hides the attach control when no attachment policy is given", () => {

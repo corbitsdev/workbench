@@ -168,8 +168,53 @@ describe("ToolNarrative", () => {
     // Collapse threshold is 3 real tools — quiet ones do not pad the count.
     screen.getByText("Did three things");
     screen.getByText(/· 3 tools/);
-    // Quiet phrases still render above the collapsed summary.
+    // Quiet lines no longer float above the summary — they live inside the
+    // expandable chronology.
+    expect(screen.queryByTestId("quiet-tool-line")).toBeNull();
+    fireEvent.click(screen.getByText("Did three things"));
     expect(screen.getAllByTestId("quiet-tool-line")).toHaveLength(2);
+  });
+
+  it("renders quiet and real calls interleaved in original call order", () => {
+    const calls: ToolCall[] = [
+      { id: "r1", name: "attio__query_records", result: "[]", isError: false },
+      { id: "q1", name: "search_tools", result: "[]", isError: false },
+      { id: "r2", name: "exa__search", result: "[]", isError: false },
+    ];
+    const { container } = render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={(c) => `row-${c.id}`}
+        isQuietTool={(name) => name === "search_tools"}
+      />,
+    );
+    const text = container.textContent ?? "";
+    const positions = ["row-r1", "row-q1", "row-r2"].map((s) =>
+      text.indexOf(s),
+    );
+    expect(positions[0]).toBeGreaterThanOrEqual(0);
+    expect(positions[1]).toBeGreaterThan(positions[0] ?? 0);
+    expect(positions[2]).toBeGreaterThan(positions[1] ?? 0);
+  });
+
+  it("keeps quiet lines in the marker column", () => {
+    const calls: ToolCall[] = [
+      { id: "q1", name: "search_tools", result: "[]", isError: false },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Searching Workbench…"}
+        isQuietTool={() => true}
+      />,
+    );
+    const quiet = screen.getByTestId("quiet-tool-line");
+    // The quiet line sits inside a marker-column row, aligned with tool rows.
+    expect(
+      quiet
+        .closest('[data-testid="quiet-tool-row"]')
+        ?.querySelector('[data-testid="tool-marker-spacer"]') ?? null,
+    ).not.toBeNull();
   });
 
   it("shows a friendly result and never dumps raw JSON when formatResult is set", () => {

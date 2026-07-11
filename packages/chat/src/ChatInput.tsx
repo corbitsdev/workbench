@@ -210,7 +210,7 @@ export function ChatInput({
       {errors.length > 0 && (
         <div className={cn("mb-2 space-y-0.5", rowWidth)}>
           {errors.map((message, index) => (
-            <p key={index} role="alert" className="text-xs text-red-500">
+            <p key={index} role="alert" className="text-xs text-red">
               {message}
             </p>
           ))}
@@ -266,7 +266,7 @@ export function ChatInput({
           rows={1}
           value={draft}
           disabled={isBlocked}
-          placeholder={placeholder ?? "Message Ada…"}
+          placeholder={placeholder ?? "Message…"}
           onChange={(event) => {
             setDraft(event.target.value);
             adjustHeight();
