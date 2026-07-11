@@ -86,6 +86,7 @@ import {
   type EnsureDeploymentRoutableFn,
 } from "./workflow-runs";
 import type { HubDb } from "../db";
+import { createWorkflowRunStarter } from "../services/workflow-run-starter";
 
 type WorkflowRunRow = {
   deploymentId: string;
@@ -169,6 +170,14 @@ function buildApp(db: HubDb, userId = "user-1") {
       cryptoProvider: noopCrypto,
       deploymentDomain: "deploy.example.com",
       ensureDeploymentRoutable: () => Promise.resolve({ reestablished: false }),
+      runStarter: createWorkflowRunStarter({
+        db,
+        sessionService: noopSessionService,
+        ensureDeploymentRoutable: () =>
+          Promise.resolve({ reestablished: false }),
+        deploymentDomain: "deploy.example.com",
+        cryptoProvider: noopCrypto,
+      }),
     }),
   );
   return parent;
@@ -379,6 +388,14 @@ describe("GET /workflow-runs (workbench-aware visibility)", () => {
         deploymentDomain: "deploy.example.com",
         ensureDeploymentRoutable: () =>
           Promise.resolve({ reestablished: false }),
+        runStarter: createWorkflowRunStarter({
+          db,
+          sessionService: noopSessionService,
+          ensureDeploymentRoutable: () =>
+            Promise.resolve({ reestablished: false }),
+          deploymentDomain: "deploy.example.com",
+          cryptoProvider: noopCrypto,
+        }),
       }),
     );
     return parent;
@@ -524,6 +541,14 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
         deploymentDomain: "deploy.example.com",
         ensureDeploymentRoutable:
           ensure ?? (() => Promise.resolve({ reestablished: false })),
+        runStarter: createWorkflowRunStarter({
+          db,
+          sessionService,
+          ensureDeploymentRoutable:
+            ensure ?? (() => Promise.resolve({ reestablished: false })),
+          deploymentDomain: "deploy.example.com",
+          cryptoProvider: noopCrypto,
+        }),
       }),
     );
     return parent;

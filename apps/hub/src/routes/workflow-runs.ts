@@ -1,5 +1,4 @@
-import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
@@ -32,6 +31,7 @@ export {
 } from "../lib/workflow-run-gate";
 import { requestBodySchema } from "../lib/openapi";
 import { WorkflowMeta } from "../lib/workflow-meta";
+import type { WorkflowRunStarter } from "../services/workflow-run-starter";
 
 // User-facing read/control surface over natively-deployed workflows.
 // The hub indexes each deployment in `workflow_run` at deploy time; these
@@ -236,6 +236,7 @@ export function createWorkflowRunsRouter(deps: {
   cryptoProvider: CryptoProvider;
   deploymentDomain: string;
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
+  runStarter: WorkflowRunStarter;
 }): Hono<{ Variables: { userId: string } }> {
   const router = new Hono<{ Variables: { userId: string } }>();
   const { repoStore } = deps;
@@ -883,38 +884,6 @@ export function createWorkflowRunsRouter(deps: {
         );
       }
 
-      const candidates = await deps.db.query.workflowRun.findMany({
-        where: and(
-          eq(workflowRun.kind, kind),
-          inArray(workflowRun.tenantId, chain),
-          isNotNull(workflowRun.deploymentId),
-          isNull(workflowRun.deletedAt),
-        ),
-        orderBy: desc(workflowRun.createdAt),
-      });
-
-      // Shadowing rule: when the same kind is deployed in several tenants along
-      // the chain, the most-specific tenant wins (active workbench shadows an
-      // inherited global deployment). `chain` is ordered most-specific-first, so
-      // the lowest chain index is most specific; ties break on recency (the
-      // findMany is already ordered createdAt desc, so the first match wins).
-      const chainRank = new Map(
-        chain.map((tenantId, index) => [tenantId, index]),
-      );
-      let deployment: (typeof candidates)[number] | undefined;
-      let bestRank = Number.POSITIVE_INFINITY;
-      for (const candidate of candidates) {
-        const rank =
-          chainRank.get(candidate.tenantId) ?? Number.POSITIVE_INFINITY;
-        if (rank < bestRank) {
-          bestRank = rank;
-          deployment = candidate;
-        }
-      }
-      if (!deployment?.deploymentId) {
-        return c.json({ error: `no deployed workflow of kind "${kind}"` }, 404);
-      }
-
       // A run begins when the deployment's mail address receives a message: the
       // supervisor enqueues it and forwards a trigger.fire to the workflow child.
       // We deliver the request body as that trigger message; the new run surfaces
@@ -930,43 +899,18 @@ export function createWorkflowRunsRouter(deps: {
         return c.json({ error: `invalid input: ${input.summary}` }, 400);
       }
 
-      try {
-        // The supervisor may have been dropped from the hub's addressIndex by a
-        // restart since deploy; re-establish it before delivering the trigger so
-        // the run does not dead-end on `agent is unreachable` with zero events
-        // (CL-2223/CL-2225).
-        await deps.ensureDeploymentRoutable({
-          deploymentId: deployment.deploymentId,
-          kind: deployment.kind,
-          tenantId: deployment.tenantId,
-          creatorPrincipalId: deployment.principalId,
-        });
-        await deps.sessionService.sendUserMessage({
-          agentAddress: deriveDeploymentAddress({
-            deploymentId: deployment.deploymentId,
-            deploymentDomain: deps.deploymentDomain,
-          }),
-          from: `hub@${deps.deploymentDomain}`,
-          messageId: randomUUID(),
-          date: new Date(),
-          content: JSON.stringify(input),
-          sessionId: randomUUID(),
-          tenantId: deployment.tenantId,
-          cryptoProvider: deps.cryptoProvider,
-        });
-      } catch (err) {
-        log.error("workflow run-start failed", {
-          kind,
-          deploymentId: deployment.deploymentId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
+      const result = await deps.runStarter.startRun({
+        kind,
+        tenantId: context.tenantId,
+        input,
+      });
+      if (!result.ok && result.reason === "not_found") {
+        return c.json({ error: result.message }, 404);
+      }
+      if (!result.ok) {
         return c.json({ error: "failed to start workflow run" }, 500);
       }
-
-      return c.json(
-        { deploymentId: deployment.deploymentId, accepted: true },
-        202,
-      );
+      return c.json({ deploymentId: result.deploymentId, accepted: true }, 202);
     },
   );
 

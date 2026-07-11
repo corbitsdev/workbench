@@ -77,6 +77,7 @@ import {
   registerAwaitingSupervisorPrewarm,
 } from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
+import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
@@ -1110,6 +1111,17 @@ const provisionRunDeployment: ProvisionRunDeploymentFn = (args) =>
     hubPublicKey: hubPublicKeyHex,
   });
 
+// Callable run-start (CL-2606): shared by the HTTP start handler and the
+// scheduler (CL-2609), so a scheduled run fires through the same resolution +
+// routability + mail-trigger delivery as an HTTP-initiated one.
+const runStarter = createWorkflowRunStarter({
+  db,
+  sessionService,
+  ensureDeploymentRoutable,
+  deploymentDomain: config.rootTenant.domain,
+  cryptoProvider: createEd25519Crypto(registry.active),
+});
+
 v1.route(
   "/",
   createWorkflowRunsRouter({
@@ -1120,6 +1132,7 @@ v1.route(
     cryptoProvider: createEd25519Crypto(registry.active),
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
+    runStarter,
   }),
 );
 
