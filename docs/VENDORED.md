@@ -219,6 +219,25 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   depend on this package); a guard test in
   `apps/hub/src/services/workflow-reconciler.test.ts` pins the two literals
   byte-identical. Guarded by `src/ws/hub-link-hibernate.test.ts`.
+- **WORKBENCH-LOCAL (CL-3340) — assistant output loop guard**
+  (`src/assistant-loop-guard.ts`, wired in `src/session-manager.ts`): the
+  per-session `onEvent` wrapper checks each `inference.done` for the same
+  cycle fingerprint three times in a row — normalized (trimmed,
+  whitespace-collapsed) assistant text PLUS tool-call identity (name +
+  stable-serialized arguments, call id excluded), because the practical trip
+  path is tool-executing cycles within one message run and identical
+  narration with different tool calls is progress, not a loop. The tripping
+  duplicate is swallowed; a synthetic failed
+  `message.run.ended` (`error.kind: "assistant_loop_interrupted"`) settles
+  the turn hub-side with an explanation, remaining events from the aborting
+  reactor are dropped, and the session is evicted through the CL-3103
+  teardown back to `wakeable` — the reactor exposes no per-cycle
+  cancellation, so eviction is the stop lever and the next user message
+  rebuilds the session with full history. Any inbound user message
+  (`deliverLive`/`deliverMessage`) or a different output resets the run;
+  session go-live clears the interrupted flag. Guarded by
+  `src/assistant-loop-guard.test.ts` and
+  `src/session-manager-assistant-loop.test.ts`.
 
 ---
 

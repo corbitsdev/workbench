@@ -46,6 +46,10 @@ import type { AgentKeyEntry, AgentKeyStore } from "./agent-key-store";
 import type { AgentRepoStore } from "./agent-repo-store";
 import type { HarnessBuilder, HarnessBundle } from "./harness-builder";
 import { applyAssetPack as applyAssetPackFn } from "./apply-asset-pack";
+import {
+  assistantCycleFingerprint,
+  createAssistantLoopGuard,
+} from "./assistant-loop-guard";
 
 const logger = getLogger(["interchange", "hub-agent", "session"]);
 
@@ -485,6 +489,78 @@ export function createSessionManager(
   // before the handler reads it.
   const lastCheckpointHashes = new Map<string, string>();
 
+  // WORKBENCH-LOCAL (CL-3340): assistant output loop guard.
+  //   `assistantLoopGuard` — per-agent run of consecutive identical
+  //                          normalized assistant outputs; reset by any
+  //                          inbound user message and at session go-live.
+  //   `loopInterrupted`    — agents whose turn was interrupted; remaining
+  //                          events from the aborting reactor are dropped so
+  //                          the synthetic run-ended stays the turn's last
+  //                          word. Cleared when a session goes live again —
+  //                          or immediately if the eviction fails, so a
+  //                          still-live session is never left muted.
+  // Open-run settlement reuses the shared `openRuns` bracket map declared
+  // above (the turn-abort plumbing tracks the same brackets).
+  const assistantLoopGuard = createAssistantLoopGuard();
+  const loopInterrupted = new Set<string>();
+
+  // WORKBENCH-LOCAL (CL-3340): stop the turn on a detected output loop. The
+  // reactor exposes no per-cycle cancellation, so the stop lever is the
+  // eviction teardown: the harness close aborts the reactor and flushes
+  // conversation state, and the agent returns to `wakeable` — the next user
+  // message rebuilds it with full history, so the session stays usable. A
+  // synthetic failed run-ended (kind "assistant_loop_interrupted") settles
+  // the turn hub-side with the explanation.
+  function interruptAssistantLoop(
+    agentAddress: string,
+    sessionId: string,
+    seq: number,
+    message: string,
+  ): void {
+    loopInterrupted.add(agentAddress);
+    const runs = openRuns.get(agentAddress);
+    openRuns.delete(agentAddress);
+    activeRuns.delete(agentAddress);
+    // Settle every open bracket so no turn dangles hub-side (the reactor
+    // serializes runs, so normally this is exactly one).
+    if (runs !== undefined) {
+      for (const [messageRunId, messageId] of runs) {
+        const ended: InferenceEvent = {
+          type: "message.run.ended",
+          seq,
+          data: {
+            messageRunId,
+            messageId,
+            status: "failed",
+            error: { message, kind: "assistant_loop_interrupted" },
+          },
+        };
+        const set = agentEventListeners.get(agentAddress);
+        if (set !== undefined) {
+          for (const listener of set) {
+            try {
+              listener(ended);
+            } catch (err: unknown) {
+              logger.error`agent-event listener for ${agentAddress} threw during loop interrupt: ${String(err)}`;
+            }
+          }
+        }
+        onEvent(agentAddress, sessionId, ended);
+      }
+    }
+    const session = sessions.get(agentAddress);
+    if (session === undefined) return;
+    logger.warn`Assistant output loop detected for ${agentAddress}; interrupting the turn and putting the session to sleep`;
+    void evictSession(agentAddress, session, "loop-interrupt").catch(
+      (err: unknown) => {
+        // A failed teardown leaves the session live — unmute it rather than
+        // leaving a deaf zombie until the idle sweep.
+        loopInterrupted.delete(agentAddress);
+        logger.error`Loop-interrupt eviction for ${agentAddress} failed; resuming event forwarding: ${String(err)}`;
+      },
+    );
+  }
+
   // Per-agent promise chain that serializes the operations against an agent's
   // on-disk directory that can be in flight during a live session -- mail-audit
   // commits, state-pack and deploy-ref reads, and deploy/asset-pack applies all
@@ -681,6 +757,10 @@ export function createSessionManager(
       // `message.run.ended` through the exact pipeline real events take —
       // bookkeeping, per-agent listeners, and the global hub forwarder.
       const emitEvent = (event: InferenceEvent): void => {
+        // WORKBENCH-LOCAL (CL-3340): a loop-interrupted agent's reactor is
+        // being torn down; drop its remaining events so the synthetic
+        // run-ended is the last thing the hub sees for the turn.
+        if (loopInterrupted.has(agentAddress)) return;
         // WORKBENCH-LOCAL (CL-3103): every event is activity, and the
         // message-run bracket is the turn-in-progress signal the idle
         // sweep consults. `message.run.started` / `message.run.ended`
@@ -716,6 +796,24 @@ export function createSessionManager(
           event.data.checkpointHash !== undefined
         ) {
           lastCheckpointHashes.set(agentAddress, event.data.checkpointHash);
+        }
+        // WORKBENCH-LOCAL (CL-3340): check each finalized inference cycle for
+        // a stuck identical response. The tripping duplicate is swallowed —
+        // the interrupt's synthetic run-ended settles the turn instead.
+        if (event.type === "inference.done") {
+          const interrupt = assistantLoopGuard.recordAssistantOutput(
+            agentAddress,
+            assistantCycleFingerprint(event.data.turn.content),
+          );
+          if (interrupt !== undefined) {
+            interruptAssistantLoop(
+              agentAddress,
+              sessionId,
+              event.seq,
+              interrupt,
+            );
+            return;
+          }
         }
         // Per-agent listeners fire before the global sink so an
         // in-process consumer (the workflow-host trivial-launch
@@ -770,6 +868,10 @@ export function createSessionManager(
         keyPair,
         emitEvent,
       });
+      // WORKBENCH-LOCAL (CL-3340): a fresh harness starts with a clean loop
+      // run, and a rebuilt (woken) session must forward events again.
+      loopInterrupted.delete(agentAddress);
+      assistantLoopGuard.reset(agentAddress);
       // WORKBENCH-LOCAL (CL-3103): seed the idle clock at go-live so a
       // session that never sees mail is still eligible for eviction once the
       // threshold elapses.
@@ -883,7 +985,7 @@ export function createSessionManager(
   async function destroyLiveSession(
     agentAddress: string,
     session: LiveSession,
-    context: "destroy" | "idle-evict" | "wake-abort",
+    context: "destroy" | "idle-evict" | "wake-abort" | "loop-interrupt",
   ): Promise<void> {
     await session.harness.close();
     const disposerErrors = await runDisposers(session, agentAddress);
@@ -940,12 +1042,13 @@ export function createSessionManager(
   async function performEvict(
     agentAddress: string,
     session: LiveSession,
+    reason: EvictReason,
   ): Promise<void> {
     const { config: evictedConfig, keyPair } = session;
     // destroyLiveSession flushes conversation state via harness.close(),
     // runs disposers, drains repo ops, unregisters the transport, and
     // reclaims the heap — the same teardown wake will rebuild from.
-    await destroyLiveSession(agentAddress, session, "idle-evict");
+    await destroyLiveSession(agentAddress, session, reason);
     // Only return to wakeable if nothing else claimed the address during the
     // teardown (a racing provision/deploy/undeploy). Clobbering a fresh
     // provisioned/wakeable entry would brick the new deploy.
@@ -958,7 +1061,13 @@ export function createSessionManager(
       return;
     }
     wakeable.set(agentAddress, { config: evictedConfig, keyPair });
-    logger.info`Evicted idle agent ${agentAddress}`;
+    // WORKBENCH-LOCAL (CL-3340): name the eviction cause — a loop interrupt
+    // must not read as idle sleep in the logs.
+    if (reason === "loop-interrupt") {
+      logger.warn`Evicted agent ${agentAddress} after assistant output loop interrupt`;
+    } else {
+      logger.info`Evicted idle agent ${agentAddress}`;
+    }
     // Mail parked while the eviction was in flight (or arriving between the
     // wakeable.set above and the evicting-map clear) is replayed by a wake.
     const parked = parkedMail.get(agentAddress);
@@ -971,13 +1080,19 @@ export function createSessionManager(
     }
   }
 
+  // WORKBENCH-LOCAL (CL-3340): the eviction teardown is shared by the idle
+  // sweep and the assistant-loop interrupt; the reason is threaded through
+  // for log attribution only.
+  type EvictReason = "idle-evict" | "loop-interrupt";
+
   function evictSession(
     agentAddress: string,
     session: LiveSession,
+    reason: EvictReason = "idle-evict",
   ): Promise<void> {
     const existing = evicting.get(agentAddress);
     if (existing !== undefined) return existing;
-    const done = performEvict(agentAddress, session).finally(() => {
+    const done = performEvict(agentAddress, session, reason).finally(() => {
       if (evicting.get(agentAddress) === done) evicting.delete(agentAddress);
     });
     evicting.set(agentAddress, done);
@@ -1109,6 +1224,8 @@ export function createSessionManager(
     }
     // WORKBENCH-LOCAL (CL-3103): a direct harness delivery is activity.
     markActivity(agentAddress);
+    // WORKBENCH-LOCAL (CL-3340): a user message resets the loop run.
+    assistantLoopGuard.reset(agentAddress);
     session.harness.deliver(message);
   }
 
@@ -1410,6 +1527,8 @@ export function createSessionManager(
   // caller; the commit is enqueued only for a live session so it cannot
   // reject unobserved.
   function deliverLive(agentAddress: string, rawMessage: Uint8Array): void {
+    // WORKBENCH-LOCAL (CL-3340): a user message resets the loop run.
+    assistantLoopGuard.reset(agentAddress);
     try {
       transport.deliver(agentAddress, rawMessage);
     } catch (err) {
