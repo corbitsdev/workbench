@@ -57,13 +57,120 @@ function humanizeKey(key: string): string {
   return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 }
 
-function formatValue(value: unknown): string {
+// Inline context values longer than this are truncated with a Show more control
+// so Action Request cards stay scannable (e.g. full HTML deploy bodies).
+const CONTEXT_VALUE_TRUNCATE_AT = 240;
+
+// Untrusted model-generated HTML in approval context: null-origin sandbox (no
+// allow-same-origin), scripts only — same posture as web artifact previews.
+const CONTEXT_HTML_SANDBOX = "allow-scripts";
+
+function isHTMLDocument(value: string): boolean {
+  const head = value.trimStart().slice(0, 64).toLowerCase();
+  return head.startsWith("<!doctype html") || head.startsWith("<html");
+}
+
+function formatSizeLabel(charCount: number): string {
+  if (charCount < 1024) return `${String(charCount)} chars`;
+  const kb = charCount / 1024;
+  if (kb < 10) return `${kb.toFixed(1)} KB`;
+  if (kb < 1024) return `${String(Math.round(kb))} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function stringifyValue(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   if (value === null || value === undefined) return "—";
   return JSON.stringify(value);
+}
+
+function isBlockContextValue(value: unknown): boolean {
+  if (typeof value === "string") {
+    return isHTMLDocument(value) || value.length > CONTEXT_VALUE_TRUNCATE_AT;
+  }
+  if (value !== null && typeof value === "object") {
+    return stringifyValue(value).length > CONTEXT_VALUE_TRUNCATE_AT;
+  }
+  return false;
+}
+
+function ContextValue({ value }: { value: unknown }) {
+  const [expanded, setExpanded] = useState(false);
+  const [showSource, setShowSource] = useState(false);
+
+  if (typeof value === "string" && isHTMLDocument(value)) {
+    return (
+      <div
+        className="flex w-full min-w-0 flex-col gap-1.5"
+        data-testid="context-html-preview"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-text-3">
+            HTML document · {formatSizeLabel(value.length)}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowSource((prev) => !prev)}
+            className="text-[11px] font-medium text-orange underline-offset-2 hover:underline"
+          >
+            {showSource ? "Show preview" : "View source"}
+          </button>
+        </div>
+        {showSource ? (
+          <div className="min-w-0">
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] text-text-2">
+              {expanded
+                ? value
+                : `${value.slice(0, CONTEXT_VALUE_TRUNCATE_AT)}…`}
+            </pre>
+            {value.length > CONTEXT_VALUE_TRUNCATE_AT ? (
+              <button
+                type="button"
+                onClick={() => setExpanded((prev) => !prev)}
+                className="mt-1 text-[11px] font-medium text-orange underline-offset-2 hover:underline"
+              >
+                {expanded ? "Show less" : "Show more"}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="h-40 overflow-hidden rounded-sm border border-border bg-white">
+            <iframe
+              srcDoc={value}
+              title="HTML preview"
+              sandbox={CONTEXT_HTML_SANDBOX}
+              className="h-full w-full border-0 bg-white"
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const text = stringifyValue(value);
+  if (text.length <= CONTEXT_VALUE_TRUNCATE_AT) {
+    return text;
+  }
+
+  return (
+    <div className="min-w-0" data-testid="context-truncated-value">
+      <span className="break-words">
+        {expanded ? text : `${text.slice(0, CONTEXT_VALUE_TRUNCATE_AT)}…`}
+      </span>{" "}
+      <button
+        type="button"
+        onClick={() => setExpanded((prev) => !prev)}
+        className="text-[11px] font-medium text-orange underline-offset-2 hover:underline"
+      >
+        {expanded
+          ? "Show less"
+          : `Show more (${formatSizeLabel(text.length - CONTEXT_VALUE_TRUNCATE_AT)} more)`}
+      </button>
+    </div>
+  );
 }
 
 export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
@@ -234,17 +341,27 @@ export function ReviewGate({ tenantId, sessionId }: ReviewGateProps) {
                   {approval.resource}
                 </p>
                 {contextEntries.length > 0 && (
-                  <dl className="mt-2 flex flex-col gap-1 rounded-sm bg-bg px-3 py-2">
-                    {contextEntries.map(([key, value]) => (
-                      <div key={key} className="flex gap-2 text-[12px]">
-                        <dt className="shrink-0 font-medium text-text-3">
-                          {humanizeKey(key)}
-                        </dt>
-                        <dd className="min-w-0 break-words text-text-2">
-                          {formatValue(value)}
-                        </dd>
-                      </div>
-                    ))}
+                  <dl className="mt-2 flex flex-col gap-1.5 rounded-sm bg-bg px-3 py-2">
+                    {contextEntries.map(([key, value]) => {
+                      const block = isBlockContextValue(value);
+                      return (
+                        <div
+                          key={key}
+                          className={
+                            block
+                              ? "flex flex-col gap-1 text-[12px]"
+                              : "flex gap-2 text-[12px]"
+                          }
+                        >
+                          <dt className="shrink-0 font-medium text-text-3">
+                            {humanizeKey(key)}
+                          </dt>
+                          <dd className="min-w-0 break-words text-text-2">
+                            <ContextValue value={value} />
+                          </dd>
+                        </div>
+                      );
+                    })}
                   </dl>
                 )}
               </div>
