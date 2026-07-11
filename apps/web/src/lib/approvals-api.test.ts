@@ -165,4 +165,12 @@ describe("error surfacing", () => {
       "[object Object]",
     );
   });
+
+  it("surfaces a legible message from approveRequest on a nested error body", async () => {
+    stubFetch({ error: { code: "forbidden", message: "Forbidden" } }, 403);
+
+    await expect(approveRequest("tenant-1", "apr-1")).rejects.toThrow(
+      "Forbidden",
+    );
+  });
 });

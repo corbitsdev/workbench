@@ -37,16 +37,20 @@ function parseApproval(raw: unknown): Approval {
   return parsed;
 }
 
-/**
- * List the pending approval requests the caller owns for the given tenant.
- */
-export async function listApprovals(tenantId: string): Promise<Approval[]> {
-  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
+function parseApprovals(raw: unknown): Approval[] {
   const parsed = ApprovalArraySchema(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Invalid approvals response: ${parsed.summary}`);
   }
   return parsed;
+}
+
+/**
+ * List the pending approval requests the caller owns for the given tenant.
+ */
+export async function listApprovals(tenantId: string): Promise<Approval[]> {
+  const raw = await api<unknown>("GET", `tenants/${tenantId}/approvals`);
+  return parseApprovals(raw);
 }
 
 /**
