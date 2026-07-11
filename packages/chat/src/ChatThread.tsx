@@ -15,17 +15,26 @@ function byTimestamp(a: string, b: string): number {
   return 0;
 }
 
+function lowerFirst(text: string): string {
+  if (text.length === 0) return text;
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function formatActivityLabel(
   activity: ChatActivity,
   agentName: string,
+  formatToolName?: (name: string) => string,
 ): string {
   switch (activity.type) {
     case "thinking":
       return `${agentName} is thinking`;
     case "tool_call":
-      return `${agentName} is calling ${toHumanLabel(activity.name)}`;
-    case "tool_running":
-      return `${agentName} is running ${toHumanLabel(activity.name)}`;
+    case "tool_running": {
+      if (formatToolName !== undefined) {
+        return `${agentName} is ${lowerFirst(formatToolName(activity.name))}`;
+      }
+      return `${agentName} is ${activity.type === "tool_call" ? "calling" : "running"} ${toHumanLabel(activity.name)}`;
+    }
     case "rate_limited":
       return `${agentName} is rate-limited, retrying in ${Math.ceil(activity.retryAfterMs / 1000)}s`;
   }
@@ -59,13 +68,29 @@ export interface ChatThreadProps {
   emptyState?: React.ReactNode;
   /**
    * Optional formatter passed through to ToolNarrative. Supply this to turn
-   * raw tool names and results into readable summary lines.
+   * raw tool names into readable action phrases.
    */
   formatToolSummary?: ToolNarrativeProps["formatSummary"];
+  /**
+   * Optional formatter for settled tool outcomes. When set, ToolNarrative never
+   * dumps raw JSON results — it shows the formatter's short human line instead.
+   */
+  formatToolResult?: ToolNarrativeProps["formatResult"];
+  /**
+   * Optional formatter for the activity pill's tool name (tool_call /
+   * tool_running). When set, the pill reads e.g. "Myra is creating an Attio
+   * record" instead of "Myra is calling Attio Create Record".
+   */
+  formatToolName?: (name: string) => string;
   /** When true, completed turns with many tool calls collapse to a summary line. */
   compactToolActivity?: ToolNarrativeProps["compact"];
   /** Rolls a turn's tool calls into one summary line for the collapsed view. */
   summarizeToolCalls?: ToolNarrativeProps["summarizeCalls"];
+  /**
+   * Platform-internal tools rendered as quiet reasoning-style text (no
+   * checkmark / tool chrome) and excluded from the collapsed "N tools" count.
+   */
+  isQuietTool?: ToolNarrativeProps["isQuietTool"];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -105,8 +130,11 @@ export function ChatThread({
   typingLabel,
   emptyState,
   formatToolSummary,
+  formatToolResult,
+  formatToolName,
   compactToolActivity,
   summarizeToolCalls,
+  isQuietTool,
   hideToolCall,
   onRespond,
   onAction,
@@ -165,12 +193,16 @@ export function ChatThread({
                 {...(formatToolSummary !== undefined
                   ? { formatSummary: formatToolSummary }
                   : {})}
+                {...(formatToolResult !== undefined
+                  ? { formatResult: formatToolResult }
+                  : {})}
                 {...(compactToolActivity !== undefined
                   ? { compact: compactToolActivity }
                   : {})}
                 {...(summarizeToolCalls !== undefined
                   ? { summarizeCalls: summarizeToolCalls }
                   : {})}
+                {...(isQuietTool !== undefined ? { isQuietTool } : {})}
                 {...(onRespond !== undefined ? { onRespond } : {})}
                 {...(onAction !== undefined ? { onAction } : {})}
                 className="pl-1"
@@ -233,7 +265,7 @@ export function ChatThread({
         <div className="flex items-start" aria-live="polite">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
             <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange" />
-            {formatActivityLabel(activity, agentName)}
+            {formatActivityLabel(activity, agentName, formatToolName)}
           </span>
         </div>
       )}
