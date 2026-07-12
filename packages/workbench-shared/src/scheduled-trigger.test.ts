@@ -1,6 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { type } from "arktype";
-import { HeartbeatTriggerPayloadSchema } from "./scheduled-trigger";
+import {
+  HEARTBEAT_WORKFLOW_KIND,
+  HeartbeatTriggerPayloadSchema,
+} from "./scheduled-trigger";
+
+describe("HEARTBEAT_WORKFLOW_KIND", () => {
+  it("is the single shared literal for the heartbeat workflow kind", () => {
+    expect(HEARTBEAT_WORKFLOW_KIND).toBe("heartbeat");
+  });
+});
 
 describe("HeartbeatTriggerPayloadSchema", () => {
   it("accepts a well-formed heartbeat payload", () => {

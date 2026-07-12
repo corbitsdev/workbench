@@ -1,5 +1,12 @@
 import { type } from "arktype";
 
+// The heartbeat workflow's kind literal. Shared between the hub scheduler
+// config (apps/hub/src/config.ts) and the heartbeat workflow package
+// (workflows/heartbeat) so the two never drift — the hub does not import
+// workflow packages, so this constant lives here instead of being re-exported
+// from workflows/heartbeat.
+export const HEARTBEAT_WORKFLOW_KIND = "heartbeat";
+
 // Automation triggers that fire a workflow run on a daily cadence.
 // The hub scheduler loads enabled rows each tick and starts a run for any whose
 // target UTC hour has arrived and has not already fired today. These schemas are

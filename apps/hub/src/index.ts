@@ -326,6 +326,7 @@ const registry = await loadSigningKeyRegistry(hub.signingKeys);
 log.info("Loaded signing key registry: active version {version}", {
   version: registry.active.version,
 });
+const cryptoProvider = createEd25519Crypto(registry.active);
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
@@ -577,7 +578,7 @@ mailboxTriage = createMailboxTriage({
   sessionService,
   grantStore,
   eventCollectors,
-  cryptoProvider: createEd25519Crypto(registry.active),
+  cryptoProvider,
   mailboxEventBus,
 });
 
@@ -1253,7 +1254,7 @@ const runStarter = createWorkflowRunStarter({
   sessionService,
   ensureDeploymentRoutable,
   deploymentDomain: config.rootTenant.domain,
-  cryptoProvider: createEd25519Crypto(registry.active),
+  cryptoProvider,
 });
 
 // Public webhook firing surface: no session, authenticated only by
@@ -1268,7 +1269,7 @@ v1.route(
     repoStore: repoStore.repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     runStarter,
@@ -1291,7 +1292,7 @@ v1.route(
     repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,
@@ -1613,7 +1614,7 @@ app.route(
     buildToolDefinitions,
     // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
     // start/resume wiring.
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     provisionRunDeployment,
     ensureDeploymentRoutable,

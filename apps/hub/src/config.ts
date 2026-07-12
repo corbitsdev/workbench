@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
+import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
 
 const log = getLogger(["api", "config"]);
 
@@ -418,7 +419,7 @@ export function loadConfig() {
     scheduler: {
       enabled: parseBooleanEnv("SCHEDULER_ENABLED"),
       heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
-      heartbeatKind: "heartbeat",
+      heartbeatKind: HEARTBEAT_WORKFLOW_KIND,
     },
     // Native-task pending-ref reconciler. Opt-in kill switch, default
     // OFF. When enabled, the hub periodically retries task_external_ref rows a
