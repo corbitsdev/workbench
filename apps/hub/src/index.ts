@@ -1374,6 +1374,9 @@ const scheduler = createScheduler({
       fire.kind,
       config.scheduler.heartbeatKind,
       resolveEnabledBriefSources(prefs),
+      fire.nowMs,
+      fire.lastFiredDayUtc,
+      fire.hourUtc,
     );
     const result = await runStarter.startRun({
       kind: fire.kind,

@@ -24,6 +24,12 @@ export type StartWorkflowRunFn = (a: {
   tenantId: string;
   creatorPrincipalId: string;
   triggerPayload: Record<string, unknown>;
+  // The firing tick's clock read and this row's fire state, passed through so
+  // the caller can derive a fire-time value (e.g. a heartbeat's
+  // `createdAfter`) without re-reading the schedule row itself.
+  nowMs: number;
+  lastFiredDayUtc: number | null;
+  hourUtc: number;
 }) => Promise<{ deploymentId: string; accepted: boolean }>;
 
 // Pure decision: fire when we are in the target UTC hour and this schedule has
@@ -72,7 +78,11 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
   // same schedule would fire twice before its marker is persisted.
   let running = false;
 
-  async function fireRow(row: ScheduledTriggerRow, dayUtc: number) {
+  async function fireRow(
+    row: ScheduledTriggerRow,
+    dayUtc: number,
+    nowMs: number,
+  ) {
     try {
       await deps.markFired(row.id, dayUtc);
     } catch (err) {
@@ -90,6 +100,9 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         tenantId: row.tenantId,
         creatorPrincipalId: row.ownerMemberPrincipalId,
         triggerPayload: row.triggerPayload,
+        nowMs,
+        lastFiredDayUtc: row.lastFiredDayUtc,
+        hourUtc: row.hourUtc,
       });
     } catch (err) {
       log.error("scheduler: run-start failed", {
@@ -118,7 +131,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       if (!enabled) continue;
       // A single row's failure is logged inside fireRow and never aborts the
       // batch — one member's schedule never blocks another's.
-      await fireRow(row, today);
+      await fireRow(row, today, nowMs);
     }
   }
 
