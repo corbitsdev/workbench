@@ -150,6 +150,73 @@ describe("linear_list_issues handler", () => {
     });
   });
 
+  it("forwards updatedAfter as an IssueFilter updatedAt.gt bound", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { updatedAfter: "2026-07-04T00:00:00.000Z" },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables).toEqual({
+      first: 10,
+      filter: { updatedAt: { gt: "2026-07-04T00:00:00.000Z" } },
+    });
+  });
+
+  it("uses createdAfter as the updatedAt bound when updatedAfter is absent", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          createdAfter: "2026-07-01T00:00:00.000Z",
+          enabledSources: ["linear"],
+        },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables).toEqual({
+      first: 10,
+      filter: { updatedAt: { gt: "2026-07-01T00:00:00.000Z" } },
+    });
+  });
+
+  it("skips the network call and reports skipped when linear is not in enabledSources", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["email"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.parse(String(result.content))).toEqual({ skipped: true });
+  });
+
   it("scopes to a team and caps first at 100", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { team: { issues: { nodes } } } });
