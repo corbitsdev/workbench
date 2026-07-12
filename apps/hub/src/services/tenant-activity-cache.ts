@@ -2,6 +2,7 @@ import type { TimelineCursor } from "@workbench/timeline";
 
 import { getConfig } from "../config";
 import type { HubDb } from "../db";
+import { createTtlMemo } from "../lib/ttl-memo";
 import {
   getTenantActivityPage,
   type PrincipalActivityPage,
@@ -30,15 +31,18 @@ import {
 // In-process only: the hub has no redis (see docs/ANALYTICS.md), mirroring the
 // models.dev pricing TTL cache in `lib/pricing.ts`.
 
-type CacheEntry = { page: PrincipalActivityPage; storedAt: number };
+// Bounds the resident key count across `${tenantId}:${limit}` combinations.
+// The frontend only ever requests a small, fixed set of page-size limits, so
+// this many tenants-times-limit-variants is a generous ceiling in practice —
+// it exists to stop unbounded growth over a hub's lifetime, not to constrain
+// normal usage.
+const MAX_ENTRIES = 200;
 
-const cache = new Map<string, CacheEntry>();
-let inflight = new Map<string, Promise<PrincipalActivityPage>>();
+const memo = createTtlMemo<PrincipalActivityPage>({ maxEntries: MAX_ENTRIES });
 
 /** Test-only: clears the tenant-activity cache. */
 export function resetTenantActivityCache(): void {
-  cache.clear();
-  inflight = new Map();
+  memo.reset();
 }
 
 export async function getCachedTenantActivityPage(args: {
@@ -60,30 +64,17 @@ export async function getCachedTenantActivityPage(args: {
   }
 
   const ttlMs = args.ttlMs ?? getConfig().insights.tenantActivityCacheTtlMs;
-  const clock = args.now ?? Date.now;
   const key = `${args.tenantId}:${args.limit}`;
 
-  const cached = cache.get(key);
-  if (cached !== undefined && clock() - cached.storedAt < ttlMs) {
-    return cached.page;
-  }
-
-  const existing = inflight.get(key);
-  if (existing !== undefined) return existing;
-
-  const promise = getTenantActivityPage({
-    db: args.db,
-    tenantId: args.tenantId,
-    limit: args.limit,
-  })
-    .then((page) => {
-      cache.set(key, { page, storedAt: clock() });
-      return page;
-    })
-    .finally(() => {
-      inflight.delete(key);
-    });
-
-  inflight.set(key, promise);
-  return promise;
+  return memo.get({
+    key,
+    ttlMs,
+    now: args.now,
+    resolve: () =>
+      getTenantActivityPage({
+        db: args.db,
+        tenantId: args.tenantId,
+        limit: args.limit,
+      }),
+  });
 }

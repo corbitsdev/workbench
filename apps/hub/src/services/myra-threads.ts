@@ -11,7 +11,8 @@ import { createIsogitStore } from "@workbench/storage-isogit";
 import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { AGENT_TEMPLATES, PERSONAL_AGENT_NAME } from "@workbench/agents";
+import { AGENT_TEMPLATES } from "@workbench/agents";
+import { PERSONAL_AGENT_NAME, PERSONAL_AGENT_TRIAGE_NAME } from "@workbench/myra";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -62,16 +63,14 @@ function defaultThreadLabel(index: number): string {
  * specific one (nearest to the active tenant). Returns null when no Myra
  * definition exists anywhere in the chain.
  */
-async function resolveMyraDefinition(
+async function resolveAgentDefinitionByName(
   db: HubDb,
   tenantId: string,
+  name: string,
 ): Promise<typeof agent.$inferSelect | null> {
   const chain = await getAncestorChain(db as never, tenantId);
   const defs = await db.query.agent.findMany({
-    where: and(
-      inArray(agent.tenantId, chain),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
+    where: and(inArray(agent.tenantId, chain), eq(agent.name, name)),
   });
   if (defs.length === 0) return null;
 
@@ -85,6 +84,26 @@ async function resolveMyraDefinition(
     }
   }
   return best;
+}
+
+export async function resolveMyraDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_NAME);
+}
+
+/**
+ * Resolve the ephemeral inbox-triage variant of Myra (CL-3364) — a distinct
+ * agent definition ("Myra Triage") bound to the cheap flash model, since
+ * model binds at the definition level and there is no per-launch override in
+ * `launchAgentSession`. Same ancestor-chain resolution as `resolveMyraDefinition`.
+ */
+export async function resolveMyraTriageDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_TRIAGE_NAME);
 }
 
 export type MyraThreadPage = {
@@ -152,8 +171,8 @@ export async function recordMyraThreadActivity(
 
 /**
  * Delete the rows a Myra thread owns in one transaction. Shared by the
- * create-launch-failure rollback and the explicit delete path so both tear a
- * thread down identically.
+ * create-launch-failure rollback, the explicit delete path, and the ephemeral
+ * mailbox-triage teardown so all tear a thread down identically.
  *
  * Order is FK-dictated: `agentInstance.sessionId → agentSession` and
  * `agentSession.principalId → principal` are both RESTRICT. `launchAgentSession`
@@ -163,7 +182,7 @@ export async function recordMyraThreadActivity(
  * principal while the ended session still references it raises an FK violation
  * (aborting the rollback and leaving the orphan it was meant to remove).
  */
-async function teardownThreadRows(
+export async function teardownThreadRows(
   db: HubDb,
   opts: { instanceId: string; mappingId: string; instancePrincipalId: string },
 ): Promise<void> {

@@ -156,6 +156,9 @@ describe("attio-task-agent native workflow", () => {
     const analyze = stepPrimitive("analyze");
     expect(analyze.agent.tags?.[STEP_KIND_TAG]).toBeUndefined();
     expect(analyze.agent.systemPrompt.length).toBeGreaterThan(0);
+    expect(analyze.agent.systemPrompt).toContain(
+      "Corbits, Corbits.dev, Interchange, and Faremeter",
+    );
     const caps = analyze.agent.capabilities.join(" ");
     expect(caps).toContain("attio_get_task");
     expect(caps).toContain("granola_get_note");

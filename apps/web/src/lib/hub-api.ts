@@ -14,15 +14,26 @@ import {
   type OwnerCredentialState,
   OwnerDemosResponse,
   type OwnerDemosResponse as OwnerDemosState,
+  OwnerFeaturesResponse,
+  type OwnerFeaturesResponse as OwnerFeaturesState,
+  OwnerFeatureToggleResult,
+  type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
   type DemoLink,
   DemoLinkSchema,
   WorkflowCatalogSchema,
   type WorkflowCatalog,
+  PreferenceSettingsResponseSchema,
+  type PreferenceSetting,
+  ScheduledTriggerSchema,
+  ScheduledTriggerListResponseSchema,
+  type ScheduledTrigger,
+  type CreateScheduledTriggerBody,
+  type UpdateScheduledTriggerBody,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
-// Credential and tenant management moved to Interchange admin-ui (CL-1535).
+// Credential and tenant management moved to Interchange admin-ui.
 
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -186,6 +197,34 @@ export async function setOwnerDemosEnabled(
   return parsed;
 }
 
+/** Owner-managed feature grants (scheduler/triage/tasks-reconciler) and their
+ * enablement state (owner-guarded). */
+export async function getOwnerFeatures(): Promise<OwnerFeaturesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/features");
+  const parsed = OwnerFeaturesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/features response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable a feature grant org-wide (owner-guarded). */
+export async function setOwnerFeatureEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<OwnerFeatureToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/features/${encodeURIComponent(name)}`,
+    { enabled },
+  );
+  const parsed = OwnerFeatureToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner feature response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 /** Deployed workflow kinds + their run-enablement state (owner-guarded). */
 export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
   const raw = await hubFetch<unknown>("GET", "v1/owner/workflows");
@@ -290,11 +329,83 @@ export async function getWorkflowsCatalog(
   return parsed;
 }
 
+/** The caller's own automation schedules, parsed at the boundary. Reads the
+ * first page of the keyset-paginated list; nextCursor is ignored for now. */
+export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/schedules");
+  const parsed = ScheduledTriggerListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedules response: ${parsed.summary}`);
+  }
+  return parsed.items;
+}
+
+function parseSchedule(raw: unknown): ScheduledTrigger {
+  const parsed = ScheduledTriggerSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedule response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Create a schedule that fires the given workflow at a UTC hour. */
+export async function createMeSchedule(
+  body: CreateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>("POST", "v1/me/schedules", body),
+  );
+}
+
+/** Update the caller's schedule (enablement and/or fire hour). */
+export async function updateMeSchedule(
+  id: string,
+  body: UpdateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>(
+      "PATCH",
+      `v1/me/schedules/${encodeURIComponent(id)}`,
+      body,
+    ),
+  );
+}
+
+/** Delete the caller's schedule. */
+export async function deleteMeSchedule(id: string): Promise<void> {
+  await hubFetch<void>("DELETE", `v1/me/schedules/${encodeURIComponent(id)}`);
+}
+
+/** The registry-driven settings with the caller's resolved values, parsed at
+ * the boundary through the shared schema. */
+export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences/settings");
+  const parsed = PreferenceSettingsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Unexpected preference settings response: ${parsed.summary}`,
+    );
+  }
+  return parsed.settings;
+}
+
 /** Merge a partial patch into the caller's persisted UI preferences. */
 export async function patchMePreferences(
   patch: Record<string, unknown>,
 ): Promise<MemberPreferences> {
   return hubFetch<MemberPreferences>("PATCH", "v1/me/preferences", patch);
+}
+
+/** The caller's raw persisted preferences, parsed at the boundary. Used for
+ * keys (like `changelogSeenVersion`) that ride the open jsonb map rather than
+ * the registry-driven settings list. */
+export async function getMePreferences(): Promise<MemberPreferences> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences");
+  const parsed = MemberPreferencesSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected preferences response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Persist the caller's display name; returns the saved value as `userName`. */
@@ -721,7 +832,7 @@ const ActivityCountRowSchema = type({
 });
 
 /**
- * One bucket of the Insights daily-metrics series (CL-2836) — the source for
+ * One bucket of the Insights daily-metrics series — the source for
  * the CSV export. `bucketStart` is the row's date label (`YYYY-MM-DD`).
  */
 export const MetricsPointSchema = type({
@@ -734,7 +845,7 @@ export const MetricsPointSchema = type({
 export type MetricsPoint = typeof MetricsPointSchema.infer;
 
 /**
- * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
+ * Priced usage — mirrors `@workbench/pricing`'s `PricedUsage`.
  * `null` means the hub had no price catalog warm when it computed this row
  * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
  * some of the underlying models had no models.dev rate.
@@ -770,7 +881,7 @@ export const UsageByPersonRowSchema = type({
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
 
-/** Per-model usage with every token class separated, for cost-by-model (CL-2714). */
+/** Per-model usage with every token class separated, for cost-by-model. */
 export const UsageByModelRowSchema = type({
   model: "string",
   turnCount: "number",
@@ -936,7 +1047,7 @@ export function parseActivityOverview(raw: unknown): ActivityOverview {
 }
 
 /**
- * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
+ * Fetches the hub-cached models.dev pricing catalog. The browser
  * never hits models.dev directly (CSP); the hub proxies + caches it. Parsed at
  * the boundary through the shared `PriceCatalogSchema`.
  */
@@ -1057,7 +1168,7 @@ export async function getActivityOverview(
   return parseActivityOverview(raw);
 }
 
-/** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */
+/** Server-side Insights CSV: metrics series + person/model/workflow breakdowns. */
 export async function downloadActivityExportCsv(
   tenantId: string,
   opts?: {

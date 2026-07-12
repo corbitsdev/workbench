@@ -23,9 +23,22 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
+      "myra-triage",
       "oat",
       "walter",
     ]);
+  });
+
+  it("registers the Myra Triage variant on the flash model, not deployed to the catalog", () => {
+    const triage = AGENT_TEMPLATES.find((t) => t.key === "myra-triage");
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(triage).toBeDefined();
+    expect(triage?.name).toBe("Myra Triage");
+    expect(triage?.modelConfig).toEqual({ defaultModel: "deepseek-v4-flash" });
+    expect(triage?.deployable).toBe(false);
+    // Grants stay the full Myra base toolset — only the mailbox persona's
+    // advertised loadout narrows at launch (packages/myra/src/personas/mailbox.ts).
+    expect(triage?.capabilities.tools).toEqual(myra?.capabilities.tools);
   });
 
   it("registers Freddie as deployable Opus-backed Fable prompt agent", () => {

@@ -125,7 +125,7 @@ mock.module("./agent-tools", () => ({
 }));
 
 import { createDefaultHarnessBuilder } from "./default-harness";
-import { buildPersonalAgentSystemPrompt } from "@workbench/agents";
+import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
 import { DYNAMIC_TOOLS_ENV_KEY } from "@workbench/tools-catalog";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type { InferenceSource } from "@intx/types/runtime";

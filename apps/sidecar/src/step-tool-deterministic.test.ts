@@ -241,6 +241,50 @@ describe("runDeterministicToolStep", () => {
     );
   });
 
+  test("mail_send delivers through the substrate-injected transport", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // The workflow substrate injects an in-process transport on the step env
+    // (env.transport) whenever the deployment has a mailbox. The deterministic
+    // path must expose the mail runner off that transport — the real
+    // @intx/tools-mail handlers and the outbound guard run; only the network
+    // send is faked here.
+    const sent: unknown[] = [];
+    env.transport = {
+      send: async (outbound: unknown) => {
+        sent.push(outbound);
+        return { messageId: "m1" };
+      },
+    };
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", content: "hi" },
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr.isError).not.toBe(true);
+    expect(tr.content).toEqual({ messageId: "m1" });
+    expect(sent).toEqual([
+      { to: "usr_x@tenant.example", content: "hi", type: "conversation.message" },
+    ]);
+  });
+
+  test("mail_send stays unavailable when no transport is injected", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // Pure-inference / mailbox-less deployments inject no transport; the mail
+    // runner must not appear, so the declared tool fails loud as unpinned.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: { to: "usr_x@tenant.example", content: "hi" },
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
+  });
+
   test("fails loud when an argMap `from` field is absent on the evaluated input", async () => {
     stubHubFetch();
     const { env } = await makeEnv();

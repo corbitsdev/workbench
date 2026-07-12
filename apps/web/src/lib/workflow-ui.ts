@@ -16,6 +16,7 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
   "attio-task-agent": () => import("@workbench/workflow-attio-task-agent/ui"),
   "gamma-presentation-creator": () =>
     import("@workbench/workflow-gamma-presentation-creator/ui"),
+  heartbeat: () => import("@workbench/workflow-heartbeat/ui"),
   "pain-point-collateral": () =>
     import("@workbench/workflow-pain-point-collateral/ui"),
   "reddit-opportunity-scanner": () =>

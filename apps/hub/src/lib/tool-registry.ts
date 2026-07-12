@@ -29,6 +29,7 @@ import { IDENTITY_HUB_TOOLS } from "../tools/identity";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
 import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
+import { TASK_HUB_TOOLS } from "../tools/task-tools";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -84,6 +85,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...SKILLS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,
+  ...TASK_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {

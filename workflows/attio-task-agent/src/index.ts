@@ -16,6 +16,7 @@ import {
   deterministicToolStep,
   inlineInferenceStep,
   STEP_TITLE_TAG,
+  withCorbitsVocabulary,
 } from "@workbench/agents";
 import {
   buildAnalyzeSystemPrompt,
@@ -63,7 +64,7 @@ const analyzeAgent = defineAgent({
   id: "attio-task-agent-analyze",
   description:
     "The planner: grounds itself in the Attio task + record and internal context (read-only), then decides the action plan.",
-  systemPrompt: buildAnalyzeSystemPrompt(),
+  systemPrompt: withCorbitsVocabulary(buildAnalyzeSystemPrompt()),
   tools: [],
   capabilities: canonicalizeToolNames([...GROUNDING_TOOLS]),
   inference: {

@@ -129,12 +129,18 @@ describe("inlineInferenceStep", () => {
     expect(primitive.agent.tags?.[STEP_ARGMAP_TAG]).toBeUndefined();
   });
 
-  test("keeps the real system prompt (this is genuine reasoning)", () => {
+  test("adds canonical Corbits terminology without replacing the supplied prompt", () => {
     const primitive = inlineInferenceStep({
       id: "analyze",
       systemPrompt: SYSTEM_PROMPT,
     });
-    expect(primitive.agent.systemPrompt).toBe(SYSTEM_PROMPT);
+    expect(primitive.agent.systemPrompt).toContain(SYSTEM_PROMPT);
+    expect(primitive.agent.systemPrompt).toContain(
+      "Corbits, Corbits.dev, Interchange, and Faremeter",
+    );
+    expect(primitive.agent.systemPrompt).toContain(
+      "clear speech-to-text or spelling variant",
+    );
   });
 
   test("declares no tools/capabilities and no inference source in the definition", () => {

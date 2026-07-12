@@ -587,3 +587,96 @@ export const OwnerCredentialSetBody = type({
   "baseURL?": "string",
 });
 export type OwnerCredentialSetBody = typeof OwnerCredentialSetBody.infer;
+
+// ─── Feature grants (owner-managed automation toggles) ─────────────
+//
+// The v0.6 automation kill switches (SCHEDULER_ENABLED, TRIAGE_ENABLED,
+// TASKS_RECONCILER_ENABLED) were env-only: turning one on required a redeploy.
+// This catalog names the equivalent owner-managed grants, one per feature,
+// resolved through the native Interchange grant store exactly like the
+// workflow-run gate and the demos toggle above: a `feature:<name>`/`enable`
+// ALLOW grant on the tenant's system `member` role turns the feature on for
+// everyone in the tenant; no row (or a non-allow row) leaves it off. Features
+// are deny-by-default (mirrors demos, not the allow-by-default workflow-run
+// gate) — absent any grant, a feature stays off. The env vars are kept as an
+// emergency global override: when set, the feature is on regardless of grant
+// state (see `apps/hub/src/lib/feature-grants.ts`).
+export const FEATURE_GRANT_ACTION = "enable";
+
+export function featureGrantResource(name: string): string {
+  return `feature:${name}`;
+}
+
+export const FEATURE_NAMES = [
+  "scheduler",
+  "triage",
+  "tasks-reconciler",
+] as const;
+export type FeatureName = (typeof FEATURE_NAMES)[number];
+
+export interface FeatureCatalogEntry {
+  name: FeatureName;
+  label: string;
+  description: string;
+}
+
+/** Hand-maintained, like `CREDENTIAL_PROVIDER_CATALOG` above: a feature is
+ * invisible on the Owner → Capabilities "Features" section until it is added
+ * here. */
+export const FEATURE_GRANT_CATALOG: readonly FeatureCatalogEntry[] = [
+  {
+    name: "scheduler",
+    label: "Automation scheduler",
+    description:
+      "Fires durable scheduled triggers (e.g. daily Myra heartbeats) on their configured UTC hour.",
+  },
+  {
+    name: "triage",
+    label: "Mailbox triage",
+    description:
+      "Ephemeral Myra triage of external inbound mail landing in a member's inbox.",
+  },
+  {
+    name: "tasks-reconciler",
+    label: "Task sync reconciler",
+    description:
+      "Retries task pushes left pending by a downstream outage, with a bounded per-task retry budget.",
+  },
+];
+
+export const FeatureNameSchema = type.enumerated(...FEATURE_NAMES);
+
+/** Owner-area read/toggle for one feature grant. `enabled` reflects the
+ * member-role grant only; `forcedByEnv` is true when the feature's emergency
+ * env override is on — the feature then runs regardless of the grant, so the
+ * toggle has no effect and the UI says so instead of lying (mirrors
+ * `OwnerDemosResponse`). Per-principal overrides are out of scope for this
+ * catalog (tenant-level only); `principalId: null` here is reserved so a future
+ * per-principal row can be added to the same response shape. */
+export const OwnerFeatureStateSchema = type({
+  name: FeatureNameSchema,
+  label: "string",
+  description: "string",
+  enabled: "boolean",
+  forcedByEnv: "boolean",
+  principalId: "string | null",
+});
+export type OwnerFeatureState = typeof OwnerFeatureStateSchema.infer;
+
+export const OwnerFeaturesResponse = type({
+  features: OwnerFeatureStateSchema.array(),
+});
+export type OwnerFeaturesResponse = typeof OwnerFeaturesResponse.infer;
+
+export const OwnerFeatureToggle = type({
+  enabled: "boolean",
+});
+export type OwnerFeatureToggle = typeof OwnerFeatureToggle.infer;
+
+/** The PUT toggle route's response: just the written state, not the full
+ * catalog row (mirrors `OwnerWorkflowState`). */
+export const OwnerFeatureToggleResult = type({
+  name: FeatureNameSchema,
+  enabled: "boolean",
+});
+export type OwnerFeatureToggleResult = typeof OwnerFeatureToggleResult.infer;

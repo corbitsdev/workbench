@@ -88,12 +88,18 @@ export function runListIsActive(runs: readonly { status: string }[]): boolean {
   return runs.some((r) => !isRecordTerminal(r.status as RunRecord["status"]));
 }
 
-export function useWorkflowRuns(tenantId?: string | null) {
+export function useWorkflowRuns(
+  tenantId?: string | null,
+  options?: { idleRefetchInterval?: number | false },
+) {
   return useQuery<WorkflowRun[]>({
     queryKey: ["workflow-runs", tenantId ?? null],
     refetchInterval: (query) => {
       const runs = query.state.data;
-      return runs && runListIsActive(runs) ? 5000 : false;
+      if (runs && runListIsActive(runs)) return 5000;
+      // The Now feed keeps a slow idle tick: runs are started by producers the
+      // client never sees as a mutation, so a gate ask must still surface.
+      return options?.idleRefetchInterval ?? false;
     },
     queryFn: async () => {
       const raw = await api<unknown>(

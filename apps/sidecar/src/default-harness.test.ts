@@ -75,7 +75,7 @@ import {
   resolveMailOutboundLimit,
   wsUrlToHttp,
 } from "./default-harness";
-import { buildPersonalAgentSystemPrompt } from "@workbench/agents";
+import { buildPersonalAgentSystemPrompt } from "@workbench/myra";
 import { createBuiltinRegistry } from "@intx/inference/providers";
 import type {
   InferenceSource,

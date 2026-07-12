@@ -10,6 +10,7 @@ import type {
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { isWorkflowRunDeniedForTenant } from "../lib/workflow-run-gate";
+import { markGateMailboxItemRead } from "../lib/principal-mailbox";
 import { workflowRun } from "../db/schema";
 import type {
   EnsureDeploymentRoutableFn,
@@ -124,6 +125,26 @@ function deployInProgressFailure(): RunExecFailure {
 
 function mintRunId(): string {
   return `wfr_${randomBytes(16).toString("hex")}`;
+}
+
+// Resolve a gate's "needs you" mailbox item once its signal is accepted:
+// stamp read_at if the item is still unread. Best-effort — the run resume must
+// never fail because the inbox bookkeeping did, so a failure is logged and
+// swallowed.
+async function markGateMailReadBestEffort(
+  db: HubDb,
+  runId: string,
+  signalName: string,
+): Promise<void> {
+  try {
+    await markGateMailboxItemRead(db, runId, signalName);
+  } catch (err) {
+    log.warn("failed to mark gate mail read", {
+      runId,
+      signalName,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 // Resolve the most-specific deployment of `kind` visible along the user's
@@ -594,6 +615,7 @@ export async function acceptGateSignal(
     signalId,
     payload: opts.payload ?? {},
   });
+  await markGateMailReadBestEffort(deps.db, state.runId, opts.signalName);
   return { ok: true, state };
 }
 
@@ -704,6 +726,8 @@ export async function resumeWorkflowRun(
     });
     return { ok: false, status: 500, error: "failed to deliver signal" };
   }
+
+  await markGateMailReadBestEffort(deps.db, state.runId, opts.signalName);
 
   // CL-2727: the projection bridge is the SOLE writer of run STATUS progression
   // — we no longer optimistically persist `running` here. The gate is cleared on

@@ -46,12 +46,15 @@
         "@workbench/analytics": "workspace:*",
         "@workbench/catalog": "workspace:*",
         "@workbench/event-collector": "workspace:*",
+        "@workbench/hub-agent": "workspace:*",
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/myra": "workspace:*",
         "@workbench/openapi-arktype": "workspace:*",
         "@workbench/pricing": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
+        "@workbench/tasks": "workspace:*",
         "@workbench/timeline": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
@@ -117,6 +120,7 @@
         "@workbench/approvals": "workspace:*",
         "@workbench/context-repair": "workspace:*",
         "@workbench/hub-agent": "workspace:*",
+        "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/sentry": "workspace:*",
         "@workbench/storage-isogit": "workspace:*",
@@ -152,6 +156,7 @@
         "@workbench/ui": "workspace:*",
         "@workbench/workflow-attio-task-agent": "workspace:*",
         "@workbench/workflow-gamma-presentation-creator": "workspace:*",
+        "@workbench/workflow-heartbeat": "workspace:*",
         "@workbench/workflow-last30days-research": "workspace:*",
         "@workbench/workflow-pain-point-collateral": "workspace:*",
         "@workbench/workflow-reddit-opportunity-scanner": "workspace:*",
@@ -592,6 +597,7 @@
         "@intx/workflow": "workspace:*",
         "@workbench/catalog": "workspace:*",
         "@workbench/chat": "workspace:*",
+        "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
@@ -784,6 +790,21 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/myra": {
+      "name": "@workbench/myra",
+      "dependencies": {
+        "@intx/inference": "workspace:*",
+        "@intx/types": "workspace:*",
+        "@workbench/agents": "workspace:*",
+        "@workbench/prompts": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/openapi-arktype": {
       "name": "@workbench/openapi-arktype",
       "bin": {
@@ -863,6 +884,22 @@
       "devDependencies": {
         "@intx/crypto": "workspace:*",
         "@types/bun": "1.3.9",
+        "typescript": "^5.9.0",
+      },
+    },
+    "packages/tasks": {
+      "name": "@workbench/tasks",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/log": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "@workbench/tools-attio": "workspace:*",
+        "@workbench/tools-linear": "workspace:*",
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
         "typescript": "^5.9.0",
       },
     },
@@ -1422,6 +1459,29 @@
         "@workbench/agents": "workspace:*",
         "@workbench/blocks": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/ui": "workspace:*",
+        "arktype": "catalog:",
+        "react": "^19.0.0",
+      },
+      "devDependencies": {
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
+        "@types/bun": "latest",
+        "@types/react": "^19.0.0",
+        "@workbench/test-utils": "workspace:*",
+        "typescript": "catalog:",
+      },
+      "peerDependencies": {
+        "react": "*",
+      },
+    },
+    "workflows/heartbeat": {
+      "name": "@workbench/workflow-heartbeat",
+      "version": "0.1.0",
+      "dependencies": {
+        "@intx/agent": "workspace:*",
+        "@intx/workflow": "workspace:*",
+        "@workbench/agents": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",
@@ -2416,6 +2476,8 @@
 
     "@workbench/last30days-core": ["@workbench/last30days-core@workspace:packages/last30days-core"],
 
+    "@workbench/myra": ["@workbench/myra@workspace:packages/myra"],
+
     "@workbench/openapi-arktype": ["@workbench/openapi-arktype@workspace:packages/openapi-arktype"],
 
     "@workbench/pricing": ["@workbench/pricing@workspace:packages/pricing"],
@@ -2431,6 +2493,8 @@
     "@workbench/sidecar": ["@workbench/sidecar@workspace:apps/sidecar"],
 
     "@workbench/storage-isogit": ["@workbench/storage-isogit@workspace:packages/storage-isogit"],
+
+    "@workbench/tasks": ["@workbench/tasks@workspace:packages/tasks"],
 
     "@workbench/test-utils": ["@workbench/test-utils@workspace:packages/test-utils"],
 
@@ -2505,6 +2569,8 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
+
+    "@workbench/workflow-heartbeat": ["@workbench/workflow-heartbeat@workspace:workflows/heartbeat"],
 
     "@workbench/workflow-host": ["@workbench/workflow-host@workspace:packages/workflow-host"],
 

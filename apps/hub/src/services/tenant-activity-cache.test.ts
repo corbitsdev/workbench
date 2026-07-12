@@ -163,6 +163,47 @@ describe("getCachedTenantActivityPage", () => {
     expect(calls.length).toBe(2);
   });
 
+  it("bounds the cache size — evicting the stalest tenant once past the cap", async () => {
+    // Fill in one more entry than the cache's cap so the oldest one is
+    // evicted, then confirm it re-queries the DB while a recent one still
+    // serves from cache.
+    const MAX_ENTRIES = 200;
+    for (let i = 0; i < MAX_ENTRIES; i += 1) {
+      nextResult = () => ({ entries: [{ id: `row-${i}` }], nextCursor: null });
+      // eslint-disable-next-line no-await-in-loop
+      await getCachedTenantActivityPage({
+        db,
+        tenantId: `tenant-${i}`,
+        limit: 50,
+        ttlMs: TTL,
+        now: () => 1_000 + i,
+      });
+    }
+    calls = [];
+
+    nextResult = () => ({ entries: [{ id: "row-new" }], nextCursor: null });
+    await getCachedTenantActivityPage({
+      db,
+      tenantId: "tenant-overflow",
+      limit: 50,
+      ttlMs: TTL,
+      now: () => 1_000 + MAX_ENTRIES,
+    });
+
+    // The very first tenant inserted (tenant-0, stalest storedAt) should have
+    // been evicted to make room, so re-requesting it hits the DB again.
+    nextResult = () => ({ entries: [{ id: "row-0-again" }], nextCursor: null });
+    await getCachedTenantActivityPage({
+      db,
+      tenantId: "tenant-0",
+      limit: 50,
+      ttlMs: TTL,
+      now: () => 1_000 + MAX_ENTRIES + 1,
+    });
+
+    expect(calls.length).toBe(2);
+  });
+
   it("collapses concurrent first-page loads into a single DB query", async () => {
     let resolve!: (page: Page) => void;
     const pending = new Promise<Page>((r) => {

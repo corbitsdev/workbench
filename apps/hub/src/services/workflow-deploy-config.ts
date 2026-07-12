@@ -91,7 +91,7 @@ function applyModelMaxTokens(
 // ordered as a routing chain — head = default, tail = failover — so the deploy
 // approves the whole chain and pins the head as `defaultSource`. Split out from
 // config assembly so a re-drive (the deployment reconciler / run-start
-// resilience, CL-2224/CL-2225) can rebuild config for an EXISTING deploymentId
+// resilience) can rebuild config for an EXISTING deploymentId
 // without minting a new one.
 //
 // The catalog is the operator-approved set: every source it returns is an

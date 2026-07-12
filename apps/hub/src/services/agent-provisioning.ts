@@ -282,6 +282,15 @@ export async function launchAgentSession(
     tenantDomain: string;
     systemPrompt: string;
     now: Date;
+    /**
+     * Per-launch tool subsetting: mount only the definition tools named here
+     * (intersection — a persona can never add a tool the definition lacks).
+     * Both the sidecar's tool list and the persisted tool grants are subset, so
+     * the restriction is enforced, not just advertised. A persona launch also
+     * keeps `systemPrompt` verbatim (no per-instance personalization): the
+     * persona prompt is the authoritative role for the session.
+     */
+    persona?: { toolNames: string[] };
   },
 ): Promise<{ address: string; sessionId: string }> {
   const {
@@ -327,7 +336,14 @@ export async function launchAgentSession(
   const sources = resolution.sources;
   const defaultSource = sources[0]!.id;
 
-  const toolNames = getToolNamesFromCapabilities(agentRow.capabilities ?? null);
+  const definitionToolNames = getToolNamesFromCapabilities(
+    agentRow.capabilities ?? null,
+  );
+  let toolNames = definitionToolNames;
+  if (opts.persona) {
+    const allowed = new Set(opts.persona.toolNames);
+    toolNames = definitionToolNames.filter((name) => allowed.has(name));
+  }
   const tools = buildToolDefinitions(toolNames);
 
   // Personalize the personal agent per instance: rebuild its prompt in the
@@ -340,23 +356,25 @@ export async function launchAgentSession(
     sources.find((s) => s.id === defaultSource)?.provider ??
     sources[0]!.provider;
   let effectiveSystemPrompt = systemPrompt;
-  try {
-    const personalized = await composePersonalAgentPromptForInstance(db, {
-      tenantId,
-      instanceId,
-      provider: defaultSourceProvider,
-    });
-    if (personalized !== null) {
-      effectiveSystemPrompt = personalized;
-    }
-  } catch (err) {
-    log.warn(
-      "Failed to personalize personal-agent prompt; using seeded prompt",
-      {
+  if (!opts.persona) {
+    try {
+      const personalized = await composePersonalAgentPromptForInstance(db, {
+        tenantId,
         instanceId,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    );
+        provider: defaultSourceProvider,
+      });
+      if (personalized !== null) {
+        effectiveSystemPrompt = personalized;
+      }
+    } catch (err) {
+      log.warn(
+        "Failed to personalize personal-agent prompt; using seeded prompt",
+        {
+          instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
   }
 
   // Persist the agent's tool grants on the instance principal before collecting.

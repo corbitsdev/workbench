@@ -26,6 +26,9 @@ import { LogOut } from "lucide-react";
 import { fetchBuildSha } from "../lib/api";
 import { getMe, patchMeProfile } from "../lib/hub-api";
 import { useAuth } from "../components/AuthProvider";
+import { PreferencesPanel } from "../components/PreferencesPanel";
+import { useTourLauncher } from "../components/tour/OnboardingTour";
+import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -84,6 +87,7 @@ const INITIAL_VALUES: SettingsValues = {};
 
 export default function Settings() {
   const { signOut } = useAuth();
+  const { startTour } = useTourLauncher();
   const { theme, setTheme } = useTheme();
   const { compact: compactToolActivity, setCompact: setCompactToolActivity } =
     useCompactToolActivity();
@@ -171,6 +175,24 @@ export default function Settings() {
         onChange={handleChange}
         description="Manage your workbench preferences."
       />
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <PreferencesPanel />
+      </div>
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <WhatsNewSection />
+      </div>
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <button
+          type="button"
+          onClick={startTour}
+          className="rounded-[10px] border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
+        >
+          Take the tour
+        </button>
+        <p className="mt-1 text-xs text-text-3">
+          Replay the five-step introduction.
+        </p>
+      </div>
       <div
         className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? "" : " opacity-50"}`}
       >
@@ -194,8 +216,8 @@ export default function Settings() {
               {saveMutation.isPending ? "Saving…" : "Save display name"}
             </button>
             {saveMutation.isError && (
-              <span className="text-sm text-red-500">
-                Failed to save. Please try again.
+              <span className="text-sm text-red">
+                Couldn't save. Try again.
               </span>
             )}
           </div>
@@ -203,7 +225,7 @@ export default function Settings() {
       )}
       {saveMutation.isSuccess && (
         <div className="mx-auto w-full max-w-2xl px-4 pb-4">
-          <p className="text-sm text-green-600">Display name saved.</p>
+          <p className="text-sm text-green">Display name saved.</p>
         </div>
       )}
       <div className="mx-auto w-full max-w-2xl px-4 pb-6">

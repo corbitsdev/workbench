@@ -197,6 +197,12 @@ const PHRASES: Record<string, FriendlyPhrase> = {
       ? "Opening a Linear issue"
       : `Opening Linear issue ${id}`;
   },
+  linear_create_issue: (args) => {
+    const title = firstStringArg(args, ["title"]);
+    return title === null
+      ? "Creating a Linear issue"
+      : `Creating Linear issue "${title}"`;
+  },
   linear_list_teams: "Listing Linear teams",
   linear_list_users: "Listing Linear users",
 

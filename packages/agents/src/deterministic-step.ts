@@ -4,6 +4,7 @@ import { step } from "@intx/workflow";
 import type { StepPrimitive, Selector, RetryPolicy } from "@intx/workflow";
 import { canonicalizeToolNames } from "./tool-names";
 import { LLM_PROVIDER } from "./constants";
+import { withCorbitsVocabulary } from "./corbits-vocabulary";
 
 /**
  * Marker tags the sidecar's step invoker reads to dispatch a step as a
@@ -231,7 +232,7 @@ export function inlineInferenceStep(
   const agent = defineAgent({
     id: opts.id,
     description: `Inline single-turn inference: ${opts.id}`,
-    systemPrompt: opts.systemPrompt,
+    systemPrompt: withCorbitsVocabulary(opts.systemPrompt),
     tools: [],
     capabilities: [],
     // A declared preferred source makes the capability walk emit the

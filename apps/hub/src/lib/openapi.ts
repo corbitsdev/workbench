@@ -1,5 +1,8 @@
 import { resolver } from "hono-openapi";
-import type { Type } from "arktype";
+import { type, type Type } from "arktype";
+
+// The uniform error body every hub route returns on a 4xx/5xx: `{ error }`.
+export const ErrorResponse = type({ error: "string" });
 
 // hono-openapi 1.x accepts `resolver()` output in a route's `responses` schema
 // position, but types `requestBody.content[].schema` as a raw OpenAPI

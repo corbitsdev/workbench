@@ -24,6 +24,8 @@ export const INTERNAL_WRITE_EXCLUSIONS: ReadonlySet<string> = new Set([
   "artifact_link_gamma_presentation",
   "workflow_start",
   "workflow_signal",
+  "task_create",
+  "task_update",
 ]);
 
 /**

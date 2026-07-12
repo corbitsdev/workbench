@@ -28,6 +28,7 @@ COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/myra/package.json packages/myra/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
@@ -64,6 +65,7 @@ COPY packages/test-utils/package.json packages/test-utils/
 COPY packages/tools-interchange-contract/package.json packages/tools-interchange-contract/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
+COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
@@ -71,6 +73,7 @@ COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
@@ -82,6 +85,7 @@ COPY apps/hub/ apps/hub/
 # Railway's pre-deploy command runs `bun run scripts/db-setup.ts` in this image
 COPY scripts/ scripts/
 COPY packages/agents/ packages/agents/
+COPY packages/myra/ packages/myra/
 COPY packages/analytics/ packages/analytics/
 COPY packages/pricing/ packages/pricing/
 COPY packages/catalog/ packages/catalog/
@@ -120,6 +124,7 @@ COPY packages/tools-workflows/ packages/tools-workflows/
 COPY packages/tools-x/ packages/tools-x/
 COPY packages/tools-youtube/ packages/tools-youtube/
 COPY packages/ui/ packages/ui/
+COPY packages/tasks/ packages/tasks/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
 EXPOSE 4000

@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { createKeyedEventBus } from "./keyed-event-bus";
 
 // A change NOTIFICATION, never the approval data itself. The payload carries
 // only the tenant it belongs to, an optional session for client-side filtering,
@@ -26,27 +27,9 @@ export interface ApprovalsEventBus {
 // live in the same process for delivery (same assumption as the workflow
 // reconcilers).
 export function createApprovalsEventBus(): ApprovalsEventBus {
-  const listenersByTenant = new Map<string, Set<ApprovalEventListener>>();
-
+  const bus = createKeyedEventBus<ApprovalEvent>();
   return {
-    publish(event) {
-      const listeners = listenersByTenant.get(event.tenantId);
-      if (listeners === undefined) return;
-      for (const listener of listeners) listener(event);
-    },
-    subscribe(tenantId, listener) {
-      let listeners = listenersByTenant.get(tenantId);
-      if (listeners === undefined) {
-        listeners = new Set();
-        listenersByTenant.set(tenantId, listeners);
-      }
-      listeners.add(listener);
-      return () => {
-        const current = listenersByTenant.get(tenantId);
-        if (current === undefined) return;
-        current.delete(listener);
-        if (current.size === 0) listenersByTenant.delete(tenantId);
-      };
-    },
+    publish: (event) => bus.publish(event.tenantId, event),
+    subscribe: (tenantId, listener) => bus.subscribe(tenantId, listener),
   };
 }

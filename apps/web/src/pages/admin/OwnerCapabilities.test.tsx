@@ -16,6 +16,10 @@ type Outcome =
   | { kind: "pending" };
 
 let credentialsOutcome: Outcome = { kind: "resolve", data: [] };
+let featuresOutcome: Outcome = { kind: "resolve", data: { features: [] } };
+const setOwnerFeatureEnabledMock = mock(
+  async (name: string, enabled: boolean) => ({ name, enabled }),
+);
 
 function resolveOutcome(outcome: Outcome): Promise<unknown> {
   if (outcome.kind === "resolve") return Promise.resolve(outcome.data);
@@ -28,6 +32,9 @@ mock.module("../../lib/hub-api", () => ({
   setOwnerCredential: () => Promise.reject(new Error("not used in this test")),
   clearOwnerCredential: () =>
     Promise.reject(new Error("not used in this test")),
+  getOwnerFeatures: () => resolveOutcome(featuresOutcome),
+  setOwnerFeatureEnabled: (name: string, enabled: boolean) =>
+    setOwnerFeatureEnabledMock(name, enabled),
 }));
 
 import { OwnerCapabilities } from "./OwnerCapabilities";
@@ -47,6 +54,8 @@ function renderCapabilities() {
 afterEach(() => {
   cleanup();
   credentialsOutcome = { kind: "resolve", data: [] };
+  featuresOutcome = { kind: "resolve", data: { features: [] } };
+  setOwnerFeatureEnabledMock.mockClear();
 });
 
 describe("OwnerCapabilities", () => {
@@ -83,5 +92,79 @@ describe("OwnerCapabilities", () => {
     await waitFor(() => expect(screen.getByText("Granola")));
     expect(screen.queryByText("Anthropic")).toBeNull();
     expect(document.body.innerHTML).not.toContain("gr-super-secret");
+  });
+
+  it("lists feature grants with their enablement state", async () => {
+    featuresOutcome = {
+      kind: "resolve",
+      data: {
+        features: [
+          {
+            name: "scheduler",
+            label: "Automation scheduler",
+            description: "Fires durable scheduled triggers.",
+            enabled: false,
+            forcedByEnv: false,
+            principalId: null,
+          },
+        ],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+    expect(screen.getByText("Disabled"));
+    expect(screen.getByText("Enable"));
+  });
+
+  it("disables the toggle and explains when a feature is forced on by env", async () => {
+    featuresOutcome = {
+      kind: "resolve",
+      data: {
+        features: [
+          {
+            name: "triage",
+            label: "Mailbox triage",
+            description: "Ephemeral Myra triage.",
+            enabled: false,
+            forcedByEnv: true,
+            principalId: null,
+          },
+        ],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Mailbox triage")));
+    expect(screen.getByText("Forced on by the deployment"));
+    const button = screen.getByRole("button", {
+      name: "Enable",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  it("toggles a feature on click, calling the hub API with the flipped state", async () => {
+    featuresOutcome = {
+      kind: "resolve",
+      data: {
+        features: [
+          {
+            name: "scheduler",
+            label: "Automation scheduler",
+            description: "Fires durable scheduled triggers.",
+            enabled: false,
+            forcedByEnv: false,
+            principalId: null,
+          },
+        ],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Automation scheduler")));
+    screen.getByRole("button", { name: "Enable" }).click();
+    await waitFor(() =>
+      expect(setOwnerFeatureEnabledMock).toHaveBeenCalledWith(
+        "scheduler",
+        true,
+      ),
+    );
   });
 });

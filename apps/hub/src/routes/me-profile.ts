@@ -1,12 +1,11 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { requestBodySchema } from "../lib/openapi";
+import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { updateDisplayName, type AuthUserUpdater } from "../lib/display-name";
 
 const ProfilePatchBody = type({ displayName: "1 <= string <= 200" });
 const ProfileResponse = type({ userName: "string" });
-const ErrorResponse = type({ error: "string" });
 
 // Persist the caller's display name (better-auth `user.name`). The value flows
 // back through GET /v1/me (`userName`), so the Settings field reflects it on the

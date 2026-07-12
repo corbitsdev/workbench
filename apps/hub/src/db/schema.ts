@@ -14,7 +14,14 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { adminAuditActions, feedbackSubjectKinds } from "@workbench/shared";
+import {
+  type TaskLink,
+  adminAuditActions,
+  feedbackSubjectKinds,
+  taskSources,
+  taskStatuses,
+  taskSyncStates,
+} from "@workbench/shared";
 
 // Postgres bytea has no first-class Drizzle column helper; map it to Buffer.
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -340,6 +347,79 @@ export const artifactVersion = pgTable(
   }),
 );
 
+// Native Workbench tasks: a pointer to work with a state machine and
+// downstream mirrors. Workbench-owned — text principal/tenant columns held by
+// value, no FK to any interchange table. The (tenant, owner, status) index
+// serves the inbox query.
+export const task = pgTable(
+  "task",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    ownerPrincipalId: text("owner_principal_id").notNull(),
+    createdByPrincipalId: text("created_by_principal_id").notNull(),
+    title: text("title").notNull(),
+    body: text("body"),
+    status: text("status", { enum: taskStatuses }).notNull().default("open"),
+    source: text("source", { enum: taskSources }).notNull(),
+    sourceRef: text("source_ref"),
+    due: timestamp("due"),
+    links: jsonb("links").$type<TaskLink[]>().notNull().default([]),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    taskTenantOwnerStatusIdx: index("task_tenant_owner_status_idx").on(
+      t.tenantId,
+      t.ownerPrincipalId,
+      t.status,
+    ),
+  }),
+);
+
+export type TaskRow = typeof task.$inferSelect;
+
+// A task's mirror in a downstream system (Attio, ...). One row per
+// (task, adapter) — the unique constraint is the create-idempotency backstop.
+// `actorPrincipalId` attributes the external write; `syncState = 'pending'` is
+// what the reconciler scans for. Failure detail never leaves the server.
+export const taskExternalRef = pgTable(
+  "task_external_ref",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => task.id, { onDelete: "cascade" }),
+    adapterId: text("adapter_id").notNull(),
+    externalId: text("external_id"),
+    externalUrl: text("external_url"),
+    syncState: text("sync_state", { enum: taskSyncStates })
+      .notNull()
+      .default("pending"),
+    actorPrincipalId: text("actor_principal_id").notNull(),
+    lastSyncedAt: timestamp("last_synced_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    taskExternalRefUniq: unique("task_external_ref_task_id_adapter_id_uniq").on(
+      t.taskId,
+      t.adapterId,
+    ),
+    taskExternalRefSyncStateIdx: index("task_external_ref_sync_state_idx").on(
+      t.syncState,
+    ),
+  }),
+);
+
+export type TaskExternalRefRow = typeof taskExternalRef.$inferSelect;
+
 // Tracks which workflow kinds are enabled within a tenant.
 //
 // Two flavours:
@@ -540,6 +620,106 @@ export const adminAudit = pgTable(
 );
 
 export type AdminAuditRow = typeof adminAudit.$inferSelect;
+
+// ─── Principal mailbox ─────────────────────────────────────────────
+//
+// Durable per-principal mailbox for mail addressed to human users (usr_
+// addresses). Interchange's session_mail persists inbound rows only for
+// agent-instance recipients and skips human addresses; the workbench
+// persistMail override (lib/principal-mailbox.ts) writes those frames
+// here instead, keyed by the recipient's member principal so the inbox
+// read path is a direct equality filter. `raw` is the RFC 2822 frame
+// verbatim; `subject`/`from_address` are cached list headers parsed at
+// write time. `message_key` is an optional idempotency key for
+// programmatically-delivered items (workflow gate mail, `gate:<runId>:<signal>`)
+// — the partial unique index below dedupes keyed inserts while leaving the
+// keyless human/agent mail unconstrained.
+export const principalMailboxDirections = ["inbound", "outbound"] as const;
+
+export const principalMailbox = pgTable(
+  "principal_mailbox",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    principalId: text("principal_id").notNull(),
+    address: text("address").notNull(),
+    direction: text("direction", {
+      enum: principalMailboxDirections,
+    }).notNull(),
+    raw: bytea("raw").notNull(),
+    subject: text("subject"),
+    fromAddress: text("from_address"),
+    // Dedupe key for hub-written rows (gate:<runId>:<signal>, triage:<row id>);
+    // NULL for delivered external mail, unconstrained by the partial index.
+    messageKey: text("message_key"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    readAt: timestamp("read_at"),
+  },
+  (t) => ({
+    principalMailboxPrincipalCreatedIdx: index(
+      "principal_mailbox_principal_created_idx",
+    ).on(t.tenantId, t.principalId, t.createdAt),
+    principalMailboxMessageKeyUniq: uniqueIndex(
+      "principal_mailbox_message_key_uniq",
+    )
+      .on(t.tenantId, t.principalId, t.messageKey)
+      .where(sql`${t.messageKey} IS NOT NULL`),
+  }),
+);
+
+export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
+
+// Automation triggers: durable per-member schedules that fire a
+// workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
+// rows each tick and starts a run for any whose target hour has arrived and has
+// not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
+// floor(ms / 86_400_000)). Only `hour_utc` is honored today. Unique per
+// (tenant, owner, kind) so the boot heartbeat seeder is idempotent.
+export const scheduledTrigger = pgTable(
+  "scheduled_trigger",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: text("tenant_id").notNull(),
+    ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
+    workflowKind: text("workflow_kind").notNull(),
+    hourUtc: integer("hour_utc").notNull(),
+    triggerPayload: jsonb("trigger_payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    enabled: boolean("enabled").notNull().default(true),
+    lastFiredDayUtc: integer("last_fired_day_utc"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => ({
+    scheduledTriggerOwnerKindUniq: unique(
+      "scheduled_trigger_owner_kind_uniq",
+    ).on(t.tenantId, t.ownerMemberPrincipalId, t.workflowKind),
+  }),
+);
+
+export type ScheduledTriggerRow = typeof scheduledTrigger.$inferSelect;
+
+// Webhook-triggered workflow runs: a durable per-trigger secret lets
+// an external system fire a workflow run over HTTP, without a session.
+// `secretHash` is a SHA-256 hash of the trigger secret -- the plaintext is
+// returned to the owner exactly once, at creation, and never persisted.
+export const workflowTrigger = pgTable("workflow_trigger", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tenantId: text("tenant_id").notNull(),
+  ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
+  workflowKind: text("workflow_kind").notNull(),
+  secretHash: text("secret_hash").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  lastFiredAt: timestamp("last_fired_at"),
+});
+
+export type WorkflowTriggerRow = typeof workflowTrigger.$inferSelect;
 
 export {
   analyticsEvent,

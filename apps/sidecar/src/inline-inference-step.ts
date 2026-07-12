@@ -1,6 +1,7 @@
 import { getLogger } from "@intx/log";
 import type { Agent, AgentDefinition, AuthorizeFn, BaseEnv } from "@intx/agent";
 import type { StepInvokeRequest } from "@intx/workflow";
+import type { InferenceEvent } from "@intx/types/runtime";
 import type { StepEnvBase } from "@workbench/workflow-host";
 import {
   STEP_NONFATAL_TAG,
@@ -59,6 +60,17 @@ export async function runInlineInferenceStep(args: {
     def: AgentDefinition<EnvReq>,
     env: EnvReq,
   ) => Promise<Agent>;
+  /**
+   * WORKBENCH-LOCAL (CL-3379): per-step inference event sink, threaded from
+   * the same `onEvent` the launched-step path forwards through
+   * `onInferenceEvent` -> `publishInferenceEvent` (workflow-host-wiring.ts),
+   * which carries the deployment's `agentAddress`/`sessionId` attribution.
+   * Absent, no events are consumed beyond the drain (matches prior
+   * behaviour); present, every non-`message.received` event is forwarded so
+   * the heartbeat brief's per-member inline inference reaches
+   * `analytics_event` the same way a launched step's does.
+   */
+  onEvent?: (event: InferenceEvent) => void;
 }): Promise<{
   output: { reply: string; turn: unknown; isError?: boolean; error?: string };
 }> {
@@ -70,14 +82,27 @@ export async function runInlineInferenceStep(args: {
   const agent = await args.agentFactory(args.req.agent, env);
   // Attach a draining stream() consumer BEFORE send() so the agent's pre-start
   // event buffer drains instead of overflowing (CL-2253) and the step's live
-  // progress events flow to the sidecar logs. Consume-and-discard: the
-  // workflow-child invokeStep wrapper voids onEvent for inline steps. The loop
-  // ends when close() terminates the consumer; a StreamBackpressureError is
-  // caught and logged rather than left to reject.
+  // progress events flow to the sidecar logs. The loop ends when close()
+  // terminates the consumer; a StreamBackpressureError is caught and logged
+  // rather than left to reject.
+  //
+  // WORKBENCH-LOCAL (CL-3379): forward every non-`message.received` event to
+  // `args.onEvent` (when supplied) instead of discarding it, mirroring
+  // `@workbench/workflow-host`'s `subscribeAgentEvents` filter/forwarding
+  // contract for the launched-step path -- a throwing sink is logged and
+  // swallowed so a downstream consumer's failure can never fail the step.
   const drainStream = async (): Promise<void> => {
     try {
-      for await (const _event of agent.stream()) {
-        void _event;
+      for await (const event of agent.stream()) {
+        if (event.type === "message.received") continue;
+        if (args.onEvent === undefined) continue;
+        try {
+          args.onEvent(event);
+        } catch (sinkErr) {
+          logger.error`inline inference step event sink threw forwarding ${event.type}: ${
+            sinkErr instanceof Error ? sinkErr.message : String(sinkErr)
+          }`;
+        }
       }
     } catch (err) {
       logger.warn`inline inference step: event stream drain stopped: ${

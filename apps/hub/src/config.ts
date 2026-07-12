@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
+import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
 
 const log = getLogger(["api", "config"]);
 
@@ -151,6 +152,16 @@ function parsePositiveIntEnv(
   if (!Number.isInteger(parsed) || parsed <= 0) {
     const unit = unitHint === undefined ? "" : ` (${unitHint})`;
     throw new Error(`${name} must be a positive integer${unit}; got "${raw}"`);
+  }
+  return parsed;
+}
+
+function parseHourUtcEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 23) {
+    throw new Error(`${name} must be an integer hour 0-23; got "${raw}"`);
   }
   return parsed;
 }
@@ -313,6 +324,10 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // Kill switch for ephemeral Myra triage of external inbound user mail
+    // (per-item session, prepare-only by default). Default OFF; opt in per
+    // environment.
+    triageEnabled: parseBooleanEnv("TRIAGE_ENABLED"),
     // Global override for the Demos sidebar section (hidden by default). When
     // true the demo links are served to every client regardless of the org-wide
     // owner toggle; absent/false leaves demos to the owner grant.
@@ -397,6 +412,34 @@ export function loadConfig() {
         "milliseconds",
       ),
     },
+    // Automation scheduler. Opt-in kill switch, default OFF (mirrors
+    // workflowAutopublishOnBoot). When enabled, the hub fires durable
+    // scheduled_trigger rows on a daily UTC-hour cadence and seeds one
+    // heartbeat schedule per Myra member at `heartbeatHourUtc` on boot.
+    scheduler: {
+      enabled: parseBooleanEnv("SCHEDULER_ENABLED"),
+      heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
+      heartbeatKind: HEARTBEAT_WORKFLOW_KIND,
+    },
+    // Native-task pending-ref reconciler. Opt-in kill switch, default
+    // OFF. When enabled, the hub periodically retries task_external_ref rows a
+    // push left `pending` (adapter threw, credential missing) with a bounded
+    // per-ref budget; failures stay server-side and never surface to the user.
+    tasksReconciler: {
+      enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
+    },
+    // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
+    // the env-only kill switches above as the day-to-day toggle; the env vars
+    // stay as an emergency global override (see feature-grants.ts). Each
+    // runtime decision point re-checks the tenant's grant on a tick/enqueue, so
+    // a short in-process TTL collapses that to one grant-store query per
+    // window rather than one per tick. Override with
+    // FEATURE_GRANT_CACHE_TTL_MS (positive integer milliseconds).
+    featureGrantCacheTtlMs: parsePositiveIntEnv(
+      "FEATURE_GRANT_CACHE_TTL_MS",
+      30_000,
+      "milliseconds",
+    ),
   };
 
   log.info("Configuration loaded", {

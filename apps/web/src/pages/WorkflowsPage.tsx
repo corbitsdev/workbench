@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { ActiveWorkflowRuns } from "../components/ActiveWorkflowRuns";
 import { WorkflowCatalog } from "../components/WorkflowCatalog";
+import { MySchedules } from "../components/MySchedules";
 import { WorkflowRunPane } from "../components/WorkflowRunPane";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
@@ -45,6 +46,9 @@ export function WorkflowsPage() {
           tenantId={activeTenantId}
           onWorkflowStarted={(runId) => navigate(`/workflows/${runId}`)}
         />
+        <ErrorBoundary>
+          <MySchedules tenantId={activeTenantId} />
+        </ErrorBoundary>
       </div>
     </div>
   );

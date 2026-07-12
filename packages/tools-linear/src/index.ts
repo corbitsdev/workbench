@@ -89,7 +89,7 @@ function graphqlErrorMessage(errors: unknown): string {
   return messages.length > 0 ? messages.join("; ") : "unknown error";
 }
 
-async function fetchLinearGraphQL(
+export async function fetchLinearGraphQL(
   config: LinearToolsConfig,
   query: string,
   variables: Record<string, unknown>,

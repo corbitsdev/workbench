@@ -33,6 +33,7 @@ import {
   ensureMember,
   autoJoinConfiguredTenants,
   lookupMember,
+  resolveCallerMember,
   getEnabledTemplateKeys,
   agentDefMatchesTemplate,
   reseedAgentTemplateIfStale,
@@ -611,6 +612,46 @@ describe("lookupMember", () => {
       tenantId: TENANT_ID,
       userId: "user-abc",
     });
+    expect(result).toBeNull();
+  });
+});
+
+describe("resolveCallerMember", () => {
+  it("resolves the caller to their principal in the root tenant", async () => {
+    const db = makeMockDB({
+      query: {
+        tenant: {
+          findFirst: mock(() => Promise.resolve({ id: "tnt_root" })),
+        },
+        principal: {
+          findFirst: mock(() => Promise.resolve({ id: "prn_me" })),
+        },
+      },
+    });
+    const result = await resolveCallerMember(db as never, "user-abc");
+    expect(result).toEqual({ tenantId: "tnt_root", principalId: "prn_me" });
+  });
+
+  it("returns null when the root tenant is unseeded", async () => {
+    const db = makeMockDB({
+      query: {
+        tenant: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+    });
+    const result = await resolveCallerMember(db as never, "user-abc");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when the caller has no membership", async () => {
+    const db = makeMockDB({
+      query: {
+        tenant: {
+          findFirst: mock(() => Promise.resolve({ id: "tnt_root" })),
+        },
+        principal: { findFirst: mock(() => Promise.resolve(undefined)) },
+      },
+    });
+    const result = await resolveCallerMember(db as never, "user-abc");
     expect(result).toBeNull();
   });
 });
