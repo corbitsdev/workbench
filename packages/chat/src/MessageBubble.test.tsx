@@ -42,6 +42,22 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Hello agent")).not.toBeNull();
   });
 
+  it("renders a mention in a sent user message as a pill, not the raw token", () => {
+    const message: ChatMessage = {
+      id: "mention-1",
+      role: "user",
+      content:
+        "@[Sawyer - Test](#usr_252b009f-c844-4c23-8250-2db3815dabe7) what's up?",
+      createdAt: "2026-06-04T00:00:00Z",
+    };
+    render(<MessageBubble message={message} />);
+    expect(screen.getByText("@Sawyer - Test")).not.toBeNull();
+    expect(screen.getByText(/what's up\?/)).not.toBeNull();
+    expect(
+      screen.queryByText(/#usr_252b009f-c844-4c23-8250-2db3815dabe7/),
+    ).toBeNull();
+  });
+
   it("marks a queued user message as pending with a dimmed bubble and a Sending label", () => {
     const message: ChatMessage = {
       id: "pending-1",

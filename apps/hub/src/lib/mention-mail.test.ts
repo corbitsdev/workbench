@@ -37,7 +37,7 @@ describe("deliverMentionMail", () => {
     await deliverMentionMail({
       db,
       tenantId: "ten-1",
-      senderUserId: "usr_sender",
+      senderUserId: "sender-1",
       senderName: "Alice",
       content: "no mentions here",
       conversationUrl: "https://app.example/chats/1",
@@ -50,15 +50,15 @@ describe("deliverMentionMail", () => {
     await deliverMentionMail({
       db,
       tenantId: "ten-1",
-      senderUserId: "usr_sender",
+      senderUserId: "sender-1",
       senderName: "Alice",
-      content: "@[Alice](#usr_sender) noting this for myself",
+      content: "@[Alice](#usr_sender-1) noting this for myself",
       conversationUrl: "https://app.example/chats/1",
     });
     expect(inserted).toHaveLength(0);
   });
 
-  it("writes a mailbox row for a resolvable mentioned member", async () => {
+  it("writes a mailbox row for a resolvable mentioned member, addressed with the usr_ prefix", async () => {
     const inserted: Record<string, unknown>[] = [];
     const returning = mock(async () => [{ id: "row-1" }]);
     const onConflictDoNothing = mock(() => ({ returning }));
@@ -71,7 +71,7 @@ describe("deliverMentionMail", () => {
       query: {
         tenant: { findFirst: mock(async () => TENANT_ROW) },
         principal: {
-          findFirst: mock(async () => ({ id: "prn-bob", refId: "usr_bob" })),
+          findFirst: mock(async () => ({ id: "prn-bob", refId: "bob-1" })),
         },
       },
     } as unknown as HubDb;
@@ -79,9 +79,9 @@ describe("deliverMentionMail", () => {
     await deliverMentionMail({
       db,
       tenantId: "ten-1",
-      senderUserId: "usr_sender",
+      senderUserId: "sender-1",
       senderName: "Alice",
-      content: "@[Bob](#usr_bob) can you take a look",
+      content: "@[Bob](#usr_bob-1) can you take a look",
       conversationUrl: "https://app.example/chats/1",
     });
 
@@ -89,9 +89,10 @@ describe("deliverMentionMail", () => {
     const row = inserted[0] as Record<string, unknown>;
     expect(row.tenantId).toBe("ten-1");
     expect(row.principalId).toBe("prn-bob");
-    expect(row.address).toBe("usr_bob@tenant.example");
+    expect(row.address).toBe("usr_bob-1@tenant.example");
+    expect(row.fromAddress).toBe("usr_sender-1@tenant.example");
     expect(row.subject).toBe("Alice mentioned you");
-    expect(row.messageKey).toMatch(/^mention:usr_bob:/);
+    expect(row.messageKey).toMatch(/^mention:bob-1:/);
   });
 
   it("skips a mentioned id that does not resolve to a tenant member", async () => {
@@ -113,9 +114,9 @@ describe("deliverMentionMail", () => {
     await deliverMentionMail({
       db,
       tenantId: "ten-1",
-      senderUserId: "usr_sender",
+      senderUserId: "sender-1",
       senderName: "Alice",
-      content: "@[Ghost](#usr_ghost) hello",
+      content: "@[Ghost](#usr_ghost-1) hello",
       conversationUrl: "https://app.example/chats/1",
     });
     expect(inserted).toHaveLength(0);
@@ -148,8 +149,8 @@ describe("deliverMentionMail", () => {
         tenant: { findFirst: mock(async () => TENANT_ROW) },
         principal: {
           findFirst: mock(async ({ where }: { where: unknown }) => {
-            if (whereMentions(where, "usr_bob"))
-              return { id: "prn-bob", refId: "usr_bob" };
+            if (whereMentions(where, "bob-1"))
+              return { id: "prn-bob", refId: "bob-1" };
             return undefined;
           }),
         },
@@ -159,9 +160,9 @@ describe("deliverMentionMail", () => {
     await deliverMentionMail({
       db,
       tenantId: "ten-other",
-      senderUserId: "usr_outsider",
+      senderUserId: "outsider-1",
       senderName: "Mallory",
-      content: "@[Bob](#usr_bob) look at this",
+      content: "@[Bob](#usr_bob-1) look at this",
       conversationUrl: "https://app.example/chats/1",
     });
     expect(inserted).toHaveLength(0);
@@ -180,9 +181,9 @@ describe("deliverMentionMail", () => {
       deliverMentionMail({
         db,
         tenantId: "ten-1",
-        senderUserId: "usr_sender",
+        senderUserId: "sender-1",
         senderName: "Alice",
-        content: "@[Bob](#usr_bob) hi",
+        content: "@[Bob](#usr_bob-1) hi",
         conversationUrl: "https://app.example/chats/1",
       }),
     ).resolves.toBeUndefined();

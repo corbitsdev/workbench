@@ -28,7 +28,7 @@ import {
 
 /** One workspace member the `@` composer trigger can mention. */
 export interface MentionCandidate {
-  /** The `usr_<id>` token inserted into the mention wire format. */
+  /** The member's bare user id (their `refId`); formatMention adds the `usr_` marker. */
   id: string;
   name: string;
 }
