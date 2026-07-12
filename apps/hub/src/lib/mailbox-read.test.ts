@@ -58,7 +58,7 @@ describe("listUserMailbox", () => {
         readAt: new Date("2026-07-10T08:00:00.000Z"),
       }),
     ]);
-    const messages = await listUserMailbox(db, {
+    const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
       limit: 50,
@@ -87,7 +87,7 @@ describe("listUserMailbox", () => {
     });
 
     const arg = findMany.mock.calls[0]?.[0];
-    expect(arg?.limit).toBe(25);
+    expect(arg?.limit).toBe(26);
     const { sql, params } = renderWhere(arg?.where);
     expect(sql).toContain("tenant_id");
     expect(sql).toContain("principal_id");
@@ -101,7 +101,7 @@ describe("listUserMailbox", () => {
     const { db } = makeListDb([
       makeRow({ raw: Buffer.from("not a mime frame") }),
     ]);
-    const messages = await listUserMailbox(db, {
+    const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
       limit: 50,
@@ -152,7 +152,7 @@ describe("listUserMailbox", () => {
         ),
       }),
     ]);
-    const messages = await listUserMailbox(db, {
+    const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
       limit: 50,
