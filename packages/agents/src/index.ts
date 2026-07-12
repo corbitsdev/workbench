@@ -16,6 +16,7 @@ export { withCorbitsVocabulary } from "./corbits-vocabulary";
 export {
   APPROVAL_GATED_TOOL_NAMES,
   INTERNAL_WRITE_EXCLUSIONS,
+  NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
 } from "./tool-side-effects";
 export {

@@ -46,6 +46,20 @@ export function approvalGatedWriteNames(
 }
 
 /**
+ * Native (non-tool-package) writes that gate the same as an external write,
+ * hand-listed because they carry no `sideEffect` classification in the hub's
+ * `KNOWN_TOOLS` registry — they are local sidecar runners (mail, posix), not
+ * credentialed/hub-backed tool entries, so `approvalGatedWriteNames` cannot
+ * derive them from the tool registry. `mail_send` lands in a teammate's
+ * mailbox — a member-visible, hard-to-undo action once Myra's chat persona
+ * can call it — so it gates like any other external write rather than
+ * running unattended.
+ */
+export const NATIVE_APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "mail_send",
+]);
+
+/**
  * The materialized LLM-safe names the sidecar's approval-gated runner wrapper
  * matches a tool call against — every external / hard-to-undo write tool.
  *
@@ -53,9 +67,10 @@ export function approvalGatedWriteNames(
  * tarballs that surface only `ToolDefinition` (no `sideEffect`), so it cannot
  * derive the set itself. Correctness is enforced by a hub drift test
  * (`approval-gated-tools.test.ts`) that recomputes the set from every tool's
- * `sideEffect: "write"` classification via {@link approvalGatedWriteNames} and
- * asserts it equals this const — so adding a write tool without gating it (or
- * mis-listing one here) fails CI. Keep in lockstep with that derivation.
+ * `sideEffect: "write"` classification via {@link approvalGatedWriteNames},
+ * unions in {@link NATIVE_APPROVAL_GATED_TOOL_NAMES}, and asserts it equals
+ * this const — so adding a write tool without gating it (or mis-listing one
+ * here) fails CI. Keep in lockstep with that derivation.
  */
 export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "attio__update_task",
@@ -67,4 +82,5 @@ export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "deploy-artifact__vercel_deploy_artifact",
   "notion__create_page",
   "linear__create_issue",
+  ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
 ]);

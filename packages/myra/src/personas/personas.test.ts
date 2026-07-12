@@ -53,6 +53,15 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
     }
   });
 
+  // CL-3407: mail_send was added to Myra's base toolset for the chat persona.
+  // The triage persona's allow-list is read-only by construction, so it must
+  // stay excluded even though the base toolset now carries it.
+  it("carries mail_send in the base toolset but excludes it from the triage loadout", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("mail_send");
+    expect(carriesTool(MAILBOX_PERSONA_TOOLS, "mail_send")).toBe(false);
+    expect(isMailboxReadOnlyTool("mail_send")).toBe(false);
+  });
+
   it("draws every tool from Myra's base toolset", () => {
     for (const tool of MAILBOX_PERSONA_TOOLS) {
       expect(PERSONAL_AGENT_BASE_TOOLS).toContain(tool);

@@ -58,11 +58,21 @@ describe("buildPersonalAgentSystemPrompt", () => {
     expect(prompt).toContain("call a tool by the exact name it gives");
   });
 
-  it("no longer advertises mail tools or a delegation section", () => {
+  it("no longer advertises a delegation section", () => {
     const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
-    expect(prompt).not.toContain("mail_send");
     expect(prompt).not.toContain("<delegation>");
     expect(prompt).not.toContain("PENDING.md");
+  });
+
+  // CL-3407: Myra can send a note to a teammate's mailbox using the
+  // @-mention token's bare id and her own mail domain. The address format is
+  // not discoverable from a function list the way a tool name is, so the
+  // prompt hardcodes this one addressing convention.
+  it("directs mail_send addressing via the mention token and own mail domain", () => {
+    const prompt = buildPersonalAgentSystemPrompt("Myra", xmlFormat);
+    expect(prompt).toContain("@[Name](#usr_<id>)");
+    expect(prompt).toContain("usr_<id>");
+    expect(prompt).toContain("your own mail domain");
   });
 
   it("coordinates expertise rather than claiming authority", () => {

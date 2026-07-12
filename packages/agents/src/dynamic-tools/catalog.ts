@@ -26,6 +26,12 @@ export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
   "load_skill",
   "list_skill_drafts",
   "load_skill_draft",
+  // Native sidecar-local tool (not from a pinned package — mail_* runners
+  // are always mounted by the harness, see tool-names.ts), so it is granted
+  // here rather than added as a catalog package. Lets Myra send a note to a
+  // teammate's inbox; gated behind human approval (APPROVAL_GATED_TOOL_NAMES)
+  // and excluded from the mailbox-triage persona (isMailboxReadOnlyTool).
+  "mail_send",
 ];
 
 /**

@@ -115,9 +115,16 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     );
   });
 
-  it("no longer carries the mail tools (removed in favor of direct domain tools)", () => {
+  // CL-3407: mail_send is the one mail tool restored, so Myra can send a note
+  // to a teammate's mailbox. Every other mail tool (mail_reply, mail_search,
+  // mail_read, mail_wait) stays out — chat-Myra initiates notes, it does not
+  // triage an inbox.
+  it("carries mail_send but no other mail tool", () => {
+    expect(PERSONAL_AGENT_BASE_TOOLS).toContain("mail_send");
     for (const tool of PERSONAL_AGENT_BASE_TOOLS) {
-      expect(tool.startsWith("mail_")).toBe(false);
+      if (tool.startsWith("mail_")) {
+        expect(tool).toBe("mail_send");
+      }
     }
   });
 });
