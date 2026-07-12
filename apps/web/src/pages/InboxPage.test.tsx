@@ -9,6 +9,7 @@ import {
   within,
 } from "@testing-library/react";
 import React from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import type {
   MailboxMessage,
@@ -134,7 +135,16 @@ function renderInbox(initialPath = "/inbox") {
     ],
     { initialEntries: [initialPath] },
   );
-  render(React.createElement(RouterProvider, { router }));
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  render(
+    React.createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      React.createElement(RouterProvider, { router }),
+    ),
+  );
   return router;
 }
 
@@ -440,5 +450,41 @@ describe("InboxPage Now feed", () => {
     runsState = { data: undefined, isLoading: true, isError: false };
     renderInbox();
     expect(screen.queryByText("You're all caught up")).toBeNull();
+  });
+
+  it("navigates a linkless task row to its own inbox selection", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-2", title: "Draft the recap" })],
+      isLoading: false,
+      isError: false,
+    };
+    const router = renderInbox();
+    const feed = screen.getByRole("list", { name: "Now" });
+    fireEvent.click(within(feed).getByText("Draft the recap"));
+    expect(router.state.location.pathname).toBe("/inbox");
+    expect(router.state.location.search).toBe("?task=task-2");
+  });
+
+  it("highlights the now-feed row matching ?task=<id>", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [
+        makeTask({ id: "task-1", title: "Not selected" }),
+        makeTask({ id: "task-2", title: "Selected task" }),
+      ],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?task=task-2");
+    const selectedRow = screen
+      .getByText("Selected task")
+      .closest('[aria-current="true"]');
+    expect(selectedRow).not.toBeNull();
+    const otherRow = screen
+      .getByText("Not selected")
+      .closest("li")
+      ?.querySelector('[aria-current="true"]');
+    expect(otherRow ?? null).toBeNull();
   });
 });

@@ -143,7 +143,7 @@ describe("NotificationsBell", () => {
     screen.getByText("You're all caught up");
   });
 
-  it("lists open tasks alongside mail and links them to the inbox", () => {
+  it("lists open tasks alongside mail and deep-links them to their inbox selection", () => {
     bellData = [];
     bellTaskData = [
       makeTask({ id: "t-1", title: "Draft renewal note", status: "open" }),
@@ -155,6 +155,18 @@ describe("NotificationsBell", () => {
     expect(screen.queryByText("Done task")).toBeNull();
     fireEvent.click(screen.getByText("Draft renewal note"));
     expect(router.state.location.pathname).toBe("/inbox");
+    expect(router.state.location.search).toBe("?task=t-1");
+  });
+
+  it("carries the task id on the notification entry's href", () => {
+    bellData = [];
+    bellTaskData = [
+      makeTask({ id: "t-42", title: "Follow up with Acme", status: "open" }),
+    ];
+    renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    const link = screen.getByRole("link", { name: /follow up with acme/i });
+    expect(link.getAttribute("href")).toBe("/inbox?task=t-42");
   });
 
   it("does not count open tasks toward the unread badge", () => {

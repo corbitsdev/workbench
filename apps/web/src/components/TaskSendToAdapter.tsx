@@ -69,17 +69,32 @@ export function TaskSendToAdapter({ task }: { task: Task }) {
             />
           );
         }
+        // The push mutation is single-flight for this task (one shared
+        // useTaskPush per row), so a send in flight for another adapter
+        // disables this button too rather than racing a second push —
+        // the title tells the actor why, since a disabled control with no
+        // explanation is indistinguishable from a broken one.
+        const disabledByOtherSend =
+          push.isPending && sendingAdapterId !== adapterId;
         return (
-          <ConfirmButton
+          <span
             key={adapterId}
-            variant="ghost"
-            size="sm"
-            disabled={push.isPending}
-            confirmLabel={`Confirm send to ${label}`}
-            onConfirm={() => handleSend(adapterId)}
+            title={
+              disabledByOtherSend
+                ? "Another send is in progress"
+                : undefined
+            }
           >
-            Send to {label}
-          </ConfirmButton>
+            <ConfirmButton
+              variant="ghost"
+              size="sm"
+              disabled={push.isPending}
+              confirmLabel={`Confirm send to ${label}`}
+              onConfirm={() => handleSend(adapterId)}
+            >
+              Send to {label}
+            </ConfirmButton>
+          </span>
         );
       })}
       {error && <span className="text-[11px] text-red">{error}</span>}

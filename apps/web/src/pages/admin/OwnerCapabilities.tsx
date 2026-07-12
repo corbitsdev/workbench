@@ -76,41 +76,52 @@ export function OwnerCapabilities() {
         ) : (
           <div className={adminTableCard}>
             <ul className="divide-y divide-border">
-              {features.data.features.map((f) => (
-                <li
-                  key={f.name}
-                  className="flex items-center justify-between gap-4 p-3"
-                >
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-text">{f.label}</p>
-                    <p className="mt-0.5 text-xs text-text-2">
-                      {f.description}
-                    </p>
-                    <p className="mt-0.5 text-xs text-text-3">
-                      {f.forcedByEnv
-                        ? "Forced on by the deployment"
-                        : f.enabled
-                          ? "Enabled"
-                          : "Disabled"}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant={f.enabled ? "ghost" : "primary"}
-                    size="sm"
-                    disabled={toggleFeature.isPending || f.forcedByEnv}
-                    onClick={() => {
-                      setFeatureError(null);
-                      toggleFeature.mutate({
-                        name: f.name,
-                        enabled: !f.enabled,
-                      });
-                    }}
+              {features.data.features.map((f) => {
+                const statusId = `feature-status-${f.name}`;
+                return (
+                  <li
+                    key={f.name}
+                    className="flex items-center justify-between gap-4 p-3"
                   >
-                    {f.enabled ? "Disable" : "Enable"}
-                  </Button>
-                </li>
-              ))}
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text">
+                        {f.label}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-2">
+                        {f.description}
+                      </p>
+                      <p id={statusId} className="mt-0.5 text-xs text-text-3">
+                        {f.forcedByEnv
+                          ? "Forced on by the deployment"
+                          : f.enabled
+                            ? "Enabled"
+                            : "Disabled"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={f.enabled ? "ghost" : "primary"}
+                      size="sm"
+                      disabled={toggleFeature.isPending || f.forcedByEnv}
+                      title={
+                        f.forcedByEnv
+                          ? "Forced on by the deployment"
+                          : undefined
+                      }
+                      aria-describedby={f.forcedByEnv ? statusId : undefined}
+                      onClick={() => {
+                        setFeatureError(null);
+                        toggleFeature.mutate({
+                          name: f.name,
+                          enabled: !f.enabled,
+                        });
+                      }}
+                    >
+                      {f.enabled ? "Disable" : "Enable"}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

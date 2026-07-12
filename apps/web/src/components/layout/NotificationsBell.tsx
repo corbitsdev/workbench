@@ -229,7 +229,7 @@ interface TaskNotificationItemProps {
 function TaskNotificationItem({ task, onSelect }: TaskNotificationItemProps) {
   return (
     <Link
-      to="/inbox"
+      to={`/inbox?task=${encodeURIComponent(task.id)}`}
       onClick={onSelect}
       className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
     >

@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router";
 import { CheckCircle2 } from "lucide-react";
@@ -15,12 +16,18 @@ interface NowSectionProps {
   items: NowItem[];
   ready: boolean;
   reduceMotion: boolean;
+  selectedTaskId?: string | null;
 }
 
 // The inbox-as-dashboard "Now" feed: one prioritized list of everything that
 // needs the user right now — approvals first, then unread mail, then open
 // tasks — each row deep-linking to where it gets handled.
-export function NowSection({ items, ready, reduceMotion }: NowSectionProps) {
+export function NowSection({
+  items,
+  ready,
+  reduceMotion,
+  selectedTaskId = null,
+}: NowSectionProps) {
   if (!ready) {
     return (
       <div className="mx-auto max-w-[720px] px-8 py-8" role="status">
@@ -81,7 +88,7 @@ export function NowSection({ items, ready, reduceMotion }: NowSectionProps) {
                 delay: reduceMotion ? 0 : Math.min(index * 0.03, 0.24),
               }}
             >
-              <NowRow item={item} />
+              <NowRow item={item} selectedTaskId={selectedTaskId} />
             </motion.li>
           ))}
         </AnimatePresence>
@@ -96,7 +103,13 @@ function nowItemKey(item: NowItem): string {
   return `task:${item.task.id}`;
 }
 
-function NowRow({ item }: { item: NowItem }) {
+function NowRow({
+  item,
+  selectedTaskId,
+}: {
+  item: NowItem;
+  selectedTaskId: string | null;
+}) {
   if (item.type === "gate") {
     return (
       <RowShell
@@ -112,7 +125,9 @@ function NowRow({ item }: { item: NowItem }) {
   if (item.type === "mail") {
     return <MailRow item={item} />;
   }
-  return <TaskRow item={item} />;
+  return (
+    <TaskRow item={item} selected={item.task.id === selectedTaskId} />
+  );
 }
 
 function MailRow({ item }: { item: NowMailItem }) {
@@ -135,10 +150,25 @@ function collapsedLabel(item: NowMailItem): string | undefined {
   return `${item.collapsed.length} earlier items handled by Myra`;
 }
 
-function TaskRow({ item }: { item: NowTaskItem }) {
+function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
+  const rowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (selected) {
+      rowRef.current?.scrollIntoView({ block: "center" });
+    }
+  }, [selected]);
+
   const href = taskHref(item.task);
   return (
-    <div>
+    <div
+      ref={rowRef}
+      aria-current={selected ? "true" : undefined}
+      className={cn(
+        "rounded-[10px] transition-colors duration-300",
+        selected && "bg-row-hover ring-1 ring-inset ring-border-strong",
+      )}
+    >
       <RowShell
         href={href}
         accent="bg-border-strong"
@@ -154,15 +184,15 @@ function TaskRow({ item }: { item: NowTaskItem }) {
   );
 }
 
-// Minimal deep-link affordance until a task detail surface exists: follow the
-// task's first internal link; a linkless task renders as a static row.
-function taskHref(task: Task): string | null {
+// Every task row deep-links to somewhere: an internal link's own surface, or
+// (when it has none) its own selection state on the inbox page — so a task
+// with no external ref is still navigable rather than an inert-looking row.
+function taskHref(task: Task): string {
   const link = task.links[0];
-  if (!link) return null;
-  if (link.kind === "workflow_run") return `/workflows/${link.ref}`;
-  if (link.kind === "mail") return `/inbox/${link.ref}`;
-  if (link.kind === "artifact") return `/artifacts/${link.ref}`;
-  return null;
+  if (link?.kind === "workflow_run") return `/workflows/${link.ref}`;
+  if (link?.kind === "mail") return `/inbox/${link.ref}`;
+  if (link?.kind === "artifact") return `/artifacts/${link.ref}`;
+  return `/inbox?task=${encodeURIComponent(task.id)}`;
 }
 
 interface RowShellProps {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Inbox as InboxIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
@@ -33,6 +33,8 @@ const NOW_POLL_MS = MAILBOX_POLL_MS;
  */
 export function InboxPage() {
   const { messageId } = useParams<{ messageId?: string }>();
+  const [searchParams] = useSearchParams();
+  const selectedTaskId = searchParams.get("task");
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const { activeTenantId } = useActiveWorkbench();
@@ -112,6 +114,7 @@ export function InboxPage() {
               items={nowItems}
               ready={nowReady}
               reduceMotion={reduceMotion ?? false}
+              selectedTaskId={selectedTaskId}
             />
           )}
         </ErrorBoundary>
