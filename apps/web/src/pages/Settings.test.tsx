@@ -236,6 +236,38 @@ describe("Settings build version display", () => {
   });
 });
 
+describe("Settings general preferences", () => {
+  it("renders General-category preferences in the Account section", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/me/preferences/settings"))
+        return jsonResponse({
+          settings: [
+            {
+              key: "onboardingTourDone",
+              label: "Onboarding tour completed",
+              description:
+                "Whether the guided introduction has been completed.",
+              type: "boolean",
+              default: false,
+              value: true,
+              category: "General",
+            },
+          ],
+        });
+      if (url.includes("/api/v1/me"))
+        return jsonResponse({ userId: "u1", userName: "" });
+      if (url.includes("/version")) return jsonResponse({ buildSha: null });
+      throw new Error(`unexpected fetch to ${url}`);
+    }) as typeof fetch;
+
+    renderSettings();
+
+    const label = await screen.findByText("Onboarding tour completed");
+    expect(label.closest("section#account")).not.toBeNull();
+  });
+});
+
 describe("Settings onboarding tour", () => {
   it("relaunches the tour from the Take the tour button", () => {
     neverResolvingVersion();
