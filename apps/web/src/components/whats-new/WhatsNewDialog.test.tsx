@@ -70,4 +70,65 @@ describe("WhatsNewDialog", () => {
     expect(onClose.mock.calls.length).toBe(1);
     expect(onDone.mock.calls.length).toBe(0);
   });
+
+  it("Tab from the last focusable element wraps to the first", () => {
+    renderDialog();
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    const doneButton = screen.getByRole("button", { name: "Done" });
+    doneButton.focus();
+    expect(document.activeElement).toBe(doneButton);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab" });
+    expect(document.activeElement).toBe(closeButton);
+  });
+
+  it("Shift+Tab from the first focusable element wraps to the last", () => {
+    renderDialog();
+    const closeButton = screen.getByRole("button", { name: "Close" });
+    const doneButton = screen.getByRole("button", { name: "Done" });
+    closeButton.focus();
+    expect(document.activeElement).toBe(closeButton);
+    fireEvent.keyDown(screen.getByRole("dialog"), {
+      key: "Tab",
+      shiftKey: true,
+    });
+    expect(document.activeElement).toBe(doneButton);
+  });
+
+  it("locks and restores body scroll while mounted", () => {
+    document.body.style.overflow = "auto";
+    const { unmount } = render(
+      <MemoryRouter>
+        <WhatsNewDialog
+          release={release}
+          onClose={() => {}}
+          onDone={() => {}}
+        />
+      </MemoryRouter>,
+    );
+    expect(document.body.style.overflow).toBe("hidden");
+    unmount();
+    expect(document.body.style.overflow).toBe("auto");
+  });
+
+  it("restores focus to the trigger element on unmount", () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "Open";
+    document.body.appendChild(trigger);
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <WhatsNewDialog
+          release={release}
+          onClose={() => {}}
+          onDone={() => {}}
+        />
+      </MemoryRouter>,
+    );
+    expect(document.activeElement).not.toBe(trigger);
+    unmount();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
 });

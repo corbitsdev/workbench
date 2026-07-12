@@ -61,6 +61,12 @@ export function InboxPage() {
     [runList, data, taskList],
   );
   const nowReady = !isLoading && !tasks.isLoading && !runs.isLoading;
+  const selectedTaskMissing =
+    nowReady &&
+    selectedTaskId !== null &&
+    !nowItems.some(
+      (item) => item.type === "task" && item.task.id === selectedTaskId,
+    );
   const selected = messages.find((m) => m.id === messageId) ?? null;
   const detail = useMailboxMessage(selected?.id ?? null);
 
@@ -110,12 +116,19 @@ export function InboxPage() {
               reduceMotion={reduceMotion ?? false}
             />
           ) : (
-            <NowSection
-              items={nowItems}
-              ready={nowReady}
-              reduceMotion={reduceMotion ?? false}
-              selectedTaskId={selectedTaskId}
-            />
+            <>
+              {selectedTaskMissing && (
+                <p className="mx-auto max-w-[720px] px-8 pt-4 text-xs text-text-3">
+                  That task is no longer in your feed.
+                </p>
+              )}
+              <NowSection
+                items={nowItems}
+                ready={nowReady}
+                reduceMotion={reduceMotion ?? false}
+                selectedTaskId={selectedTaskId}
+              />
+            </>
           )}
         </ErrorBoundary>
       </section>

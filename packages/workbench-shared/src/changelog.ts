@@ -59,7 +59,7 @@ export const CHANGELOG: readonly ChangelogRelease[] = [
       {
         title: "Native tasks and send-to-external",
         description:
-          "Tasks live in the workbench natively, and you can send them out to external tools when work moves beyond it.",
+          "Tasks live natively in Workbench, and you can send them out to external tools when work moves beyond it.",
       },
       {
         title: "Notifications bell",

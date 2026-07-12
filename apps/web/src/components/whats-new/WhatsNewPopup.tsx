@@ -39,7 +39,7 @@ export function WhatsNewPopup() {
             animate={{ opacity: 1, y: 0 }}
             exit={reduceMotion ? undefined : { opacity: 0, y: 12 }}
             transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-4 right-4 z-40 flex w-72 items-start gap-3 rounded-xl border border-border bg-surface p-3.5 shadow-lg"
+            className="fixed bottom-24 right-4 z-[60] flex w-72 items-start gap-3 rounded-lg border border-border bg-surface p-3.5 shadow-lg"
           >
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-text">
@@ -57,7 +57,7 @@ export function WhatsNewPopup() {
               type="button"
               onClick={handleDismiss}
               aria-label="Dismiss"
-              className="grid h-6 w-6 flex-none place-items-center rounded-[7px] text-text-3 transition-colors hover:bg-page hover:text-text"
+              className="grid h-8 w-8 flex-none place-items-center rounded-[7px] text-text-3 transition-colors hover:bg-page hover:text-text"
             >
               <svg
                 viewBox="0 0 24 24"

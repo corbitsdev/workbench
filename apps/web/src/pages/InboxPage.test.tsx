@@ -452,7 +452,7 @@ describe("InboxPage Now feed", () => {
     expect(screen.queryByText("You're all caught up")).toBeNull();
   });
 
-  it("navigates a linkless task row to its own inbox selection", () => {
+  it("renders a linkless task row as non-interactive, not a self-link", () => {
     mailbox = { data: [], isLoading: false, isError: false };
     tasksState = {
       data: [makeTask({ id: "task-2", title: "Draft the recap" })],
@@ -461,9 +461,11 @@ describe("InboxPage Now feed", () => {
     };
     const router = renderInbox();
     const feed = screen.getByRole("list", { name: "Now" });
-    fireEvent.click(within(feed).getByText("Draft the recap"));
+    const title = within(feed).getByText("Draft the recap");
+    expect(title.closest("a")).toBeNull();
+    fireEvent.click(title);
     expect(router.state.location.pathname).toBe("/inbox");
-    expect(router.state.location.search).toBe("?task=task-2");
+    expect(router.state.location.search).toBe("");
   });
 
   it("highlights the now-feed row matching ?task=<id>", () => {
@@ -486,5 +488,29 @@ describe("InboxPage Now feed", () => {
       .closest("li")
       ?.querySelector('[aria-current="true"]');
     expect(otherRow ?? null).toBeNull();
+  });
+
+  it("shows a quiet notice when ?task=<id> matches no feed row", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Still here" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?task=task-missing");
+    screen.getByText("That task is no longer in your feed.");
+  });
+
+  it("omits the missing-task notice when ?task=<id> matches a feed row", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Still here" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?task=task-1");
+    expect(
+      screen.queryByText("That task is no longer in your feed."),
+    ).toBeNull();
   });
 });

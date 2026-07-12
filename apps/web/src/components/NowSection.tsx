@@ -163,6 +163,7 @@ function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
   return (
     <div
       ref={rowRef}
+      id={`task-${item.task.id}`}
       aria-current={selected ? "true" : undefined}
       className={cn(
         "rounded-[10px] transition-colors duration-300",
@@ -184,15 +185,16 @@ function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
   );
 }
 
-// Every task row deep-links to somewhere: an internal link's own surface, or
-// (when it has none) its own selection state on the inbox page — so a task
-// with no external ref is still navigable rather than an inert-looking row.
-function taskHref(task: Task): string {
+// Task rows with an internal link deep-link to that surface. A task with no
+// internal link has nowhere to go — its row renders as a non-interactive
+// shell (see RowShell) rather than a dead-end link to its own URL; the bell's
+// `?task=` deep-link still highlights it via the row's `id`, not a href.
+function taskHref(task: Task): string | null {
   const link = task.links[0];
   if (link?.kind === "workflow_run") return `/workflows/${link.ref}`;
   if (link?.kind === "mail") return `/inbox/${link.ref}`;
   if (link?.kind === "artifact") return `/artifacts/${link.ref}`;
-  return `/inbox?task=${encodeURIComponent(task.id)}`;
+  return null;
 }
 
 interface RowShellProps {

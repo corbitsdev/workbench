@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type KeyboardEvent } from "react";
 import { Link } from "react-router";
 import type { ChangelogRelease } from "@workbench/shared";
 
@@ -23,7 +23,14 @@ export function WhatsNewDialog({
   const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
     dialogRef.current?.focus();
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
   }, []);
 
   function handleDone() {
@@ -31,18 +38,44 @@ export function WhatsNewDialog({
     onClose();
   }
 
+  function handleTabTrap(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    const container = dialogRef.current;
+    if (!container) return;
+    const focusable = container.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled])',
+    );
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    const active = document.activeElement;
+    if (event.shiftKey) {
+      if (active === first || !container.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label={`New in Workbench ${release.version}`}
-      className="fixed inset-0 z-[100] grid place-items-center bg-[rgba(0,0,0,0.45)] p-4"
+      className="fixed inset-0 z-[70] grid place-items-center bg-[rgba(0,0,0,0.45)] p-4"
       onClick={onClose}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
           onClose();
+          return;
         }
+        handleTabTrap(event);
       }}
     >
       <div
