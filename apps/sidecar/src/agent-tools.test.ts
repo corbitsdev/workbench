@@ -181,11 +181,12 @@ describe("createMemoizingManifestLoad", () => {
   it("does not cache a rejected load, so a transient failure is retried", async () => {
     const cache = createMemoizingManifestLoad();
     const failure = new Error("transient tarball fetch failure");
+    const recovered = [fakePackage("pkg-a")];
     let attempt = 0;
     const loadFn = mock(async () => {
       attempt += 1;
       if (attempt === 1) throw failure;
-      return [fakePackage("pkg-a")];
+      return recovered;
     });
 
     await expect(cache.load("hash-1", loadFn)).rejects.toThrow(failure);
@@ -194,7 +195,7 @@ describe("createMemoizingManifestLoad", () => {
     const retried = await cache.load("hash-1", loadFn);
 
     expect(loadFn).toHaveBeenCalledTimes(2);
-    expect(retried).toEqual([fakePackage("pkg-a")]);
+    expect(retried).toBe(recovered);
   });
 
   it("evicts the least-recently-used hash once the bound is exceeded", async () => {
