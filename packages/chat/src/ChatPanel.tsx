@@ -13,7 +13,7 @@ import {
   type ThreadInsert,
 } from "./ChatThread";
 import { QuickReplyChips } from "./QuickReplyChips";
-import { ChatInput } from "./ChatInput";
+import { ChatInput, type MentionCandidate } from "./ChatInput";
 import type { AttachmentPolicy, PendingAttachment } from "./attachments";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
@@ -101,6 +101,8 @@ export interface ChatPanelProps {
   inputAccessory?: React.ReactNode;
   /** When present with a non-empty accepted set, enables file attachments in the composer. */
   attachmentPolicy?: AttachmentPolicy;
+  /** Workspace members eligible for `@` mention autocomplete in the composer. */
+  mentionCandidates?: MentionCandidate[];
 }
 
 /**
@@ -143,6 +145,7 @@ export function ChatPanel({
   composerFullWidth,
   inputAccessory,
   attachmentPolicy,
+  mentionCandidates,
 }: ChatPanelProps) {
   const busy = typing === true || (activity !== undefined && activity !== null);
 
@@ -257,6 +260,7 @@ export function ChatPanel({
         {...(composerFullWidth === true ? { fullWidth: true } : {})}
         {...(inputDisabled !== undefined ? { disabled: inputDisabled } : {})}
         {...(attachmentPolicy !== undefined ? { attachmentPolicy } : {})}
+        {...(mentionCandidates !== undefined ? { mentionCandidates } : {})}
       />
     </div>
   );

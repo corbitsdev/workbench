@@ -5,6 +5,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -17,12 +18,36 @@ import {
   X,
 } from "lucide-react";
 import { Menu, MenuContent, MenuItem, MenuTrigger, cn } from "@workbench/ui";
+import { formatMention } from "@workbench/shared";
 import {
   formatBytes,
   validateFiles,
   type AttachmentPolicy,
   type PendingAttachment,
 } from "./attachments";
+
+/** One workspace member the `@` composer trigger can mention. */
+export interface MentionCandidate {
+  /** The `usr_<id>` token inserted into the mention wire format. */
+  id: string;
+  name: string;
+}
+
+// Matches an in-progress `@query` at the caret so the trigger only fires
+// while typing a token, not on every `@` anywhere in the draft. No
+// whitespace in the query keeps this from matching across word boundaries.
+const MENTION_TRIGGER = /@([^\s@]*)$/;
+
+function findMentionQuery(
+  text: string,
+  caret: number,
+): { query: string; start: number } | null {
+  const upToCaret = text.slice(0, caret);
+  const match = MENTION_TRIGGER.exec(upToCaret);
+  if (match === null) return null;
+  const query = match[1] ?? "";
+  return { query, start: caret - query.length - 1 };
+}
 
 // Shared geometry for the composer's circular controls (+ trigger and send)
 // so they stay the same size and sit on one axis with the textarea.
@@ -63,6 +88,11 @@ export interface ChatInputProps {
    * the composer's left edge lines up with the message column.
    */
   fullWidth?: boolean;
+  /**
+   * Workspace members eligible for `@` mention autocomplete. Omitted or
+   * empty disables the trigger entirely (no dropdown, `@` types literally).
+   */
+  mentionCandidates?: MentionCandidate[];
 }
 
 /**
@@ -79,6 +109,7 @@ export function ChatInput({
   className,
   attachmentPolicy,
   fullWidth,
+  mentionCandidates,
 }: ChatInputProps) {
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<PendingAttachment[]>([]);
@@ -86,8 +117,67 @@ export function ChatInput({
   const [dragActive, setDragActive] = useState(false);
   const [sending, setSending] = useState(false);
   const [aborting, setAborting] = useState(false);
+  const [mentionState, setMentionState] = useState<{
+    start: number;
+    query: string;
+    activeIndex: number;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputId = useId();
+
+  const mentionMatches = useMemo(() => {
+    if (mentionState === null || mentionCandidates === undefined) return [];
+    const query = mentionState.query.toLowerCase();
+    return mentionCandidates
+      .filter((m) => m.name.toLowerCase().includes(query))
+      .slice(0, 6);
+  }, [mentionState, mentionCandidates]);
+
+  const mentionOpen =
+    mentionState !== null &&
+    mentionCandidates !== undefined &&
+    mentionCandidates.length > 0 &&
+    mentionMatches.length > 0;
+
+  const insertMention = useCallback(
+    (candidate: MentionCandidate) => {
+      if (mentionState === null) return;
+      const el = textareaRef.current;
+      const caret = el?.selectionStart ?? draft.length;
+      const before = draft.slice(0, mentionState.start);
+      const after = draft.slice(caret);
+      const token = `${formatMention(candidate.id, candidate.name)} `;
+      const nextDraft = `${before}${token}${after}`;
+      setDraft(nextDraft);
+      setMentionState(null);
+      requestAnimationFrame(() => {
+        const nextCaret = before.length + token.length;
+        el?.focus();
+        el?.setSelectionRange(nextCaret, nextCaret);
+      });
+    },
+    [draft, mentionState],
+  );
+
+  const syncMentionState = useCallback(
+    (text: string, caret: number) => {
+      if (mentionCandidates === undefined || mentionCandidates.length === 0) {
+        setMentionState(null);
+        return;
+      }
+      const found = findMentionQuery(text, caret);
+      if (found === null) {
+        setMentionState(null);
+        return;
+      }
+      setMentionState({
+        start: found.start,
+        query: found.query,
+        activeIndex: 0,
+      });
+    },
+    [mentionCandidates],
+  );
 
   const isBlocked = disabled === true || busy === true || sending;
   const showBusy = busy === true || sending;
@@ -138,6 +228,7 @@ export function ChatInput({
     setDraft("");
     setPending([]);
     setErrors([]);
+    setMentionState(null);
   };
 
   const submit = () => {
@@ -190,6 +281,45 @@ export function ChatInput({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (mentionOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setMentionState((prev) =>
+          prev === null
+            ? prev
+            : {
+                ...prev,
+                activeIndex: (prev.activeIndex + 1) % mentionMatches.length,
+              },
+        );
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setMentionState((prev) =>
+          prev === null
+            ? prev
+            : {
+                ...prev,
+                activeIndex:
+                  (prev.activeIndex - 1 + mentionMatches.length) %
+                  mentionMatches.length,
+              },
+        );
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const candidate = mentionMatches[mentionState.activeIndex];
+        if (candidate !== undefined) insertMention(candidate);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMentionState(null);
+        return;
+      }
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       submit();
@@ -261,7 +391,36 @@ export function ChatInput({
       {/* Centered + capped by default so the prompt box does not stretch
           edge-to-edge across a wide/expanded panel; `fullWidth` lines it up with
           the message column in the docked context. */}
-      <div className={cn("flex items-end gap-2", rowWidth)}>
+      <div className={cn("relative flex items-end gap-2", rowWidth)}>
+        {mentionOpen && (
+          <ul
+            role="listbox"
+            aria-label="Mention a member"
+            className="absolute bottom-full left-0 z-10 mb-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface py-1 shadow-lg"
+          >
+            {mentionMatches.map((candidate, index) => (
+              <li key={candidate.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === mentionState.activeIndex}
+                  onClick={() => insertMention(candidate)}
+                  onMouseEnter={() =>
+                    setMentionState((prev) =>
+                      prev === null ? prev : { ...prev, activeIndex: index },
+                    )
+                  }
+                  className={cn(
+                    "block w-full cursor-pointer truncate px-3 py-1.5 text-left text-sm text-text",
+                    index === mentionState.activeIndex && "bg-surface-2",
+                  )}
+                >
+                  {candidate.name}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {attachmentsEnabled && (
           <>
             <input
@@ -311,6 +470,7 @@ export function ChatInput({
           onChange={(event) => {
             setDraft(event.target.value);
             adjustHeight();
+            syncMentionState(event.target.value, event.target.selectionStart);
           }}
           onInput={adjustHeight}
           onPaste={() => requestAnimationFrame(adjustHeight)}
