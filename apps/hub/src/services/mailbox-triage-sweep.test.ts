@@ -82,7 +82,10 @@ describe("sweepStaleTriageInstances", () => {
     });
   });
 
-  it("still tears down a row when endSession fails — indefinite retry has no payoff for backlog this stale", async () => {
+  it("keeps a row for the next boot when endSession fails", async () => {
+    // Deleting the rows while the sidecar undeploy failed would orphan the
+    // on-disk agent dir with no hub-side record — the leak this sweep
+    // exists to drain — so the row stays and the next boot retries.
     const rows: StaleRow[] = [
       {
         mappingId: "mai-1",
@@ -98,8 +101,8 @@ describe("sweepStaleTriageInstances", () => {
 
     const result = await sweepStaleTriageInstances(db, session);
 
-    expect(result).toEqual({ scanned: 1, retired: 1 });
-    expect(teardownMock).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ scanned: 1, retired: 0 });
+    expect(teardownMock).not.toHaveBeenCalled();
   });
 
   it("does not count a row toward retired when teardown itself fails", async () => {

@@ -589,11 +589,17 @@ mailboxTriage = createMailboxTriage({
 // their `endSession` call failed mid-teardown (see `runOne`'s finally block
 // in mailbox-triage.ts). Bounded, logged once, fire-and-forget — a failure
 // here just leaves the backlog for the next boot to retry.
-void sweepStaleTriageInstances(db, sessionService).catch((err) => {
-  log.error("Triage boot sweep failed", {
-    error: err instanceof Error ? err : new Error(String(err)),
+// Delayed past the sidecar's typical post-boot reconnect window so the
+// undeploy calls have a live sidecar to land on; a still-disconnected
+// sidecar just defers rows to the next boot.
+const TRIAGE_SWEEP_BOOT_DELAY_MS = 5 * 60_000;
+setTimeout(() => {
+  void sweepStaleTriageInstances(db, sessionService).catch((err) => {
+    log.error("Triage boot sweep failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
   });
-});
+}, TRIAGE_SWEEP_BOOT_DELAY_MS).unref();
 
 // The disconnect reconciler above only ENDS a stale session; nothing re-registers
 // the address, because the router has no `sidecar.connect` counterpart to the

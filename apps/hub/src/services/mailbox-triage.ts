@@ -572,6 +572,7 @@ export async function sweepStaleTriageInstances(
     .limit(limit);
 
   let retired = 0;
+  let deferred = 0;
   for (const row of stale) {
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -580,13 +581,21 @@ export async function sweepStaleTriageInstances(
         "mailbox_triage_boot_sweep",
       );
     } catch (err) {
+      // Same rule as runOne's teardown: rows are only deleted once the
+      // sidecar undeploy succeeded. At hub boot the sidecar is often not
+      // reconnected yet and endSession rejects immediately — deleting the
+      // rows then would orphan the on-disk agent dir with no record, the
+      // exact leak this sweep exists to drain. Leave the row; the next
+      // boot's sweep retries.
+      deferred += 1;
       log.warn(
-        "Triage boot sweep: endSession failed; retiring DB rows anyway",
+        "Triage boot sweep: endSession failed; keeping rows for a later retry",
         {
           instanceId: row.instanceId,
           error: err instanceof Error ? err.message : String(err),
         },
       );
+      continue;
     }
     try {
       // eslint-disable-next-line no-await-in-loop
@@ -604,6 +613,10 @@ export async function sweepStaleTriageInstances(
     }
   }
 
-  log.info("Triage boot sweep complete", { scanned: stale.length, retired });
+  log.info("Triage boot sweep complete", {
+    scanned: stale.length,
+    retired,
+    deferred,
+  });
   return { scanned: stale.length, retired };
 }
