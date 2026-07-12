@@ -48,7 +48,34 @@ const ListDeploymentsArgs = type({
   "projectId?": "string > 0",
   "teamId?": "string > 0",
   "limit?": "number",
+  "createdAfter?": "string",
+  // Workbench-internal: the calling member's currently-enabled brief source
+  // keys (see @workbench/shared's BriefSourceFetchInputSchema). When set and
+  // it omits "vercel", this call is skipped instead of hitting the Vercel API
+  // — duplicated locally (not imported from @workbench/shared) per the
+  // tools-granola precedent, since this package has no dependency on it.
+  "enabledSources?": "string[]",
 });
+
+/** The marker a brief-source fetch tool returns instead of calling out, when
+ * self-skipping. Duplicated from @workbench/shared's
+ * BRIEF_SOURCE_SKIPPED_MARKER — see ListDeploymentsArgs above for why. */
+const BRIEF_SOURCE_SKIPPED_MARKER = { skipped: true as const };
+
+function isBriefSourceFetchEnabled(
+  sourceKey: string,
+  enabledSources: string[] | undefined,
+): boolean {
+  return enabledSources === undefined || enabledSources.includes(sourceKey);
+}
+
+const CompactDeploymentSchema = type({
+  name: "string | null",
+  state: "string | null",
+  url: "string | null",
+  createdAt: "number | string | null",
+});
+type CompactDeployment = typeof CompactDeploymentSchema.infer;
 
 const DeployStaticFileArgs = type({
   projectName: "string > 0",
@@ -86,6 +113,17 @@ export const VERCEL_LIST_DEPLOYMENTS_DEFINITION: ToolDefinition = {
       limit: {
         type: "number",
         description: "Maximum deployments to return, 1-100.",
+      },
+      createdAfter: {
+        type: "string",
+        description:
+          "Return only deployments created after this ISO date-time.",
+      },
+      enabledSources: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          'Workbench-internal: the calling member\'s currently-enabled brief source keys. When set and it omits "vercel", this call is skipped (returns a `{ skipped: true }` result) instead of hitting the Vercel API.',
       },
     },
   },
@@ -258,6 +296,17 @@ async function listProjects(
   return jsonResult(response.projects);
 }
 
+function toCompactDeployment(
+  deployment: typeof VercelDeploymentSchema.infer,
+): CompactDeployment {
+  return {
+    name: deployment.name ?? null,
+    state: deployment.state ?? deployment.readyState ?? null,
+    url: deployment.url ?? null,
+    createdAt: deployment.createdAt ?? null,
+  };
+}
+
 async function listDeployments(
   config: VercelToolsConfig,
   args: Record<string, unknown>,
@@ -268,10 +317,21 @@ async function listDeployments(
     throw new Error(`vercel_list_deployments: ${parsed.summary}`);
   }
 
+  const briefShaped = parsed.enabledSources !== undefined;
+  if (!isBriefSourceFetchEnabled("vercel", parsed.enabledSources)) {
+    return jsonResult(BRIEF_SOURCE_SKIPPED_MARKER);
+  }
+
   const url = apiUrl(config, "/v6/deployments");
   url.searchParams.set("limit", String(normalizeLimit(parsed.limit)));
   if (parsed.projectId !== undefined) {
     url.searchParams.set("projectId", parsed.projectId);
+  }
+  if (parsed.createdAfter !== undefined) {
+    const sinceMillis = Date.parse(parsed.createdAfter);
+    if (!Number.isNaN(sinceMillis)) {
+      url.searchParams.set("since", String(sinceMillis));
+    }
   }
   withTeamId(url, parsed.teamId);
 
@@ -279,6 +339,12 @@ async function listDeployments(
   const response = VercelDeploymentsResponse(raw);
   if (response instanceof type.errors) {
     throw new Error(`Vercel deployments response invalid: ${response.summary}`);
+  }
+
+  if (briefShaped) {
+    return jsonResult({
+      deployments: response.deployments.map(toCompactDeployment),
+    });
   }
   return jsonResult(response.deployments);
 }

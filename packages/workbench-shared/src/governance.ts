@@ -529,6 +529,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Linear",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.linear.app/graphql" },
+      briefSource: {
+        description: "Issues updated since your last brief.",
+        tool: "linear_list_issues",
+      },
     },
     {
       providerName: "github",
@@ -542,6 +546,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Attio",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.attio.com" },
+      briefSource: {
+        description: "New CRM records and open tasks since your last brief.",
+        tool: "attio_recent_activity",
+      },
     },
     {
       providerName: "vercel",
@@ -549,6 +557,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Vercel",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.vercel.com" },
+      briefSource: {
+        description: "Deployments since your last brief, with build state.",
+        tool: "vercel_list_deployments",
+      },
     },
     {
       providerName: "youtube",
