@@ -24,6 +24,8 @@ import {
   type WorkflowCatalog,
   PreferenceSettingsResponseSchema,
   type PreferenceSetting,
+  AvailableBriefSourcesResponseSchema,
+  type AvailableBriefSource,
   ScheduledTriggerSchema,
   ScheduledTriggerListResponseSchema,
   type ScheduledTrigger,
@@ -387,6 +389,18 @@ export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
     );
   }
   return parsed.settings;
+}
+
+/** The morning-brief sources the caller can toggle: every catalog source with
+ * a credential configured for their tenant, resolved against their stored
+ * enablement. A source without a configured credential is simply absent. */
+export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/brief-sources");
+  const parsed = AvailableBriefSourcesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected brief sources response: ${parsed.summary}`);
+  }
+  return parsed.sources;
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */

@@ -80,7 +80,7 @@ async function providerAvailable(
   }
 }
 
-async function resolveAvailableProviderNames(
+export async function resolveAvailableProviderNames(
   db: HubDb,
   tenantId: string,
   wanted: Set<string>,
