@@ -15,6 +15,7 @@ import { resolveMailboxLoadout } from "@workbench/myra";
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
 import { getConfig } from "../config";
+import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { decodeMailFrame } from "../lib/mailbox-read";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import { readMemberPreferences } from "../lib/member-preferences";
@@ -322,11 +323,23 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     try {
       let next = queue.shift();
       while (next !== undefined) {
-        // Re-check at dequeue so flipping the flag off also stops the backlog,
-        // not just new arrivals.
+        // Re-check per item, by the ITEM'S tenant, so flipping the tenant's
+        // feature grant off also stops that tenant's backlog (not just new
+        // arrivals), while another tenant's queued items are unaffected. The
+        // env override is checked first and synchronously: when it is on,
+        // every tenant is enabled and the async grant lookup is skipped
+        // entirely (matches the pre-existing fast path).
         if (!getConfig().triageEnabled) {
-          queue.length = 0;
-          break;
+          const enabled = await isFeatureEnabledForTenantCached(
+            deps.db,
+            next.tenantId,
+            "triage",
+            false,
+          );
+          if (!enabled) {
+            next = queue.shift();
+            continue;
+          }
         }
         try {
           await runOne(next);
@@ -346,7 +359,12 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
 
   return {
     enqueue(item) {
-      if (!getConfig().triageEnabled) return;
+      // `enqueue` is a fire-and-forget hook off a mail-arrival event and must
+      // stay synchronous, so it cannot make the authoritative (env OR
+      // per-tenant grant) check itself — that check runs in `drainQueue` at
+      // dequeue instead, which drops the item there if the item's tenant has
+      // triage disabled. Queueing an item whose tenant turns out to be
+      // disabled is a harmless no-op (dropped before `runOne`).
       if (queue.length >= MAX_QUEUE) {
         const dropped = queue.shift();
         log.error("Mailbox triage queue full; dropped oldest item", {

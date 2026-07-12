@@ -41,7 +41,14 @@ export function shouldFire(
 }
 
 export interface SchedulerDeps {
+  // Static, deployment-wide fallback used when `isTenantEnabled` is not
+  // provided (kept for tests and any caller that has not migrated to the
+  // per-tenant feature grant). Ignored once `isTenantEnabled` is set.
   enabled: boolean;
+  // Per-tenant feature-grant check (env override OR owner grant), re-evaluated
+  // every tick so a live owner toggle takes effect without a restart. Optional
+  // for back-compat; when absent, `enabled` gates every row uniformly.
+  isTenantEnabled?: (tenantId: string) => Promise<boolean>;
   // Enabled schedules to evaluate this tick. Injected so `shouldFire` never
   // queries; a durable store reads the DB, a test supplies fixtures.
   listSchedules: () => Promise<ScheduledTriggerRow[]>;
@@ -112,6 +119,10 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
     const today = Math.floor(nowMs / MS_PER_DAY);
     for (const row of rows) {
       if (!shouldFire(nowMs, row.lastFiredDayUtc, row.hourUtc)) continue;
+      const enabled = deps.isTenantEnabled
+        ? await deps.isTenantEnabled(row.tenantId)
+        : deps.enabled;
+      if (!enabled) continue;
       // A single row's failure is logged inside fireRow and never aborts the
       // batch — one member's schedule never blocks another's.
       await fireRow(row, today);
@@ -120,10 +131,6 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
 
   return {
     start() {
-      if (!deps.enabled) {
-        log.info("scheduler: disabled");
-        return;
-      }
       if (timer) return;
       timer = setInterval(() => {
         if (running) return;

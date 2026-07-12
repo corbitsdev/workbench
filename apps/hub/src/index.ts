@@ -97,6 +97,7 @@ import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
+import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
 import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
@@ -1168,6 +1169,11 @@ v1.route(
     grantStore,
     rootTenantId,
     showDemos: config.showDemos,
+    featureEnvOverrides: {
+      scheduler: config.scheduler.enabled,
+      triage: config.triageEnabled,
+      "tasks-reconciler": config.tasksReconciler.enabled,
+    },
   }),
 );
 // Built before the runs router so the run-start/signal handlers and the
@@ -1342,6 +1348,13 @@ const listMyraTargets = async () => {
 
 const scheduler = createScheduler({
   enabled: config.scheduler.enabled,
+  isTenantEnabled: (tenantId) =>
+    isFeatureEnabledForTenantCached(
+      db,
+      tenantId,
+      "scheduler",
+      config.scheduler.enabled,
+    ),
   listSchedules: () => listEnabledSchedules(db, rootTenantId),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   startWorkflowRun: async (fire) => {
@@ -1359,10 +1372,19 @@ const scheduler = createScheduler({
 });
 scheduler.start();
 
-// Native-task pending-ref reconciler. Gated by TASKS_RECONCILER_ENABLED
-// (default OFF); retries downstream pushes left pending, failures server-side.
+// Native-task pending-ref reconciler. Gated by the `tasks-reconciler` feature
+// grant on the root tenant (env override OR owner grant, default OFF); the
+// reconciler is not tenant-partitioned (`reconcileOnce` scans all pending
+// refs), so the grant check is scoped to the deployment's root tenant.
 const taskReconciler = createTaskReconcilerService({
   enabled: config.tasksReconciler.enabled,
+  isEnabled: () =>
+    isFeatureEnabledForTenantCached(
+      db,
+      rootTenantId,
+      "tasks-reconciler",
+      config.tasksReconciler.enabled,
+    ),
   db,
 });
 taskReconciler.start();

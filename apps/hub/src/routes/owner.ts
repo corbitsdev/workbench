@@ -9,6 +9,8 @@ import {
   CREDENTIAL_PROVIDER_CATALOG,
   DEMOS_RESOURCE,
   DEMOS_VIEW_ACTION,
+  FEATURE_GRANT_CATALOG,
+  type FeatureName,
   MEMBER_ROLE_NAME,
   OwnerContextResponse,
   OwnerCredentialSetBody,
@@ -16,6 +18,9 @@ import {
   OwnerCredentialStateSchema,
   OwnerDemosResponse,
   OwnerDemosToggle,
+  OwnerFeaturesResponse,
+  OwnerFeatureToggle,
+  OwnerFeatureToggleResult,
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
@@ -25,6 +30,7 @@ import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
 import { demosViewAllowed } from "../lib/demos-gate";
+import { featureGrantAllowed, setFeatureGrant } from "../lib/feature-grants";
 import {
   loadMemberRoleGrantsForTenantChain,
   setWorkflowRunGrant,
@@ -62,6 +68,10 @@ export interface CreateOwnerRouterDeps {
   // Whether the `SHOW_DEMOS` env override is on. Reported as `forcedByEnv` so the
   // owner sees the demos toggle is inert while the deployment forces demos on.
   showDemos: boolean;
+  // Each feature grant's emergency env override (SCHEDULER_ENABLED,
+  // TRIAGE_ENABLED, TASKS_RECONCILER_ENABLED), keyed by `FeatureName`. Reported
+  // per feature as `forcedByEnv`, same purpose as `showDemos`.
+  featureEnvOverrides: Record<FeatureName, boolean>;
 }
 
 /**
@@ -75,7 +85,7 @@ export interface CreateOwnerRouterDeps {
 export function createOwnerRouter(
   deps: CreateOwnerRouterDeps,
 ): Hono<OwnerRouteEnv> {
-  const { db, grantStore, rootTenantId, showDemos } = deps;
+  const { db, grantStore, rootTenantId, showDemos, featureEnvOverrides } = deps;
   const router = new Hono<OwnerRouteEnv>();
 
   router.use(
@@ -331,6 +341,108 @@ export function createOwnerRouter(
       }
 
       return c.json({ enabled: parsed.enabled, forcedByEnv: showDemos });
+    },
+  );
+
+  // The owner-managed feature-grant catalog (scheduler/triage/tasks-reconciler
+  // — see `packages/workbench-shared/src/governance.ts`). `enabled` reflects
+  // the member-role grant only; `forcedByEnv` is true when the feature's
+  // emergency env override is on, mirroring the demos toggle above.
+  // Per-principal overrides are out of scope here (tenant-level only); every
+  // row's `principalId` is `null`.
+  router.get(
+    "/owner/features",
+    describeRoute({
+      description:
+        "Owner-managed feature grants (scheduler, triage, tasks reconciler) and their enablement state.",
+      responses: {
+        200: {
+          description: "Owner features",
+          content: {
+            "application/json": { schema: resolver(OwnerFeaturesResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      const features = await Promise.all(
+        FEATURE_GRANT_CATALOG.map(async (entry) => ({
+          name: entry.name,
+          label: entry.label,
+          description: entry.description,
+          enabled: await featureGrantAllowed(grants, entry.name),
+          forcedByEnv: featureEnvOverrides[entry.name],
+          principalId: null,
+        })),
+      );
+      return c.json({ features });
+    },
+  );
+
+  // Toggle a feature grant org-wide. Enable = write a member-role `allow` for
+  // `feature:<name>`/`enable`; disable = remove it — the same deny-by-default
+  // CRUD shape as the demos toggle.
+  router.put(
+    "/owner/features/:name",
+    describeRoute({
+      description: "Enable or disable a feature grant for the workbench.",
+      responses: {
+        200: {
+          description: "Updated feature state",
+          content: {
+            "application/json": { schema: resolver(OwnerFeatureToggleResult) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const name = c.req.param("name");
+      const catalogEntry = FEATURE_GRANT_CATALOG.find(
+        (entry) => entry.name === name,
+      );
+      if (!catalogEntry) {
+        return c.json({ error: `unknown feature: ${name}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerFeatureToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setFeatureGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        name: catalogEntry.name,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `feature:${catalogEntry.name}`,
+        detail: {
+          capability: "feature-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      return c.json({ name: catalogEntry.name, enabled: parsed.enabled });
     },
   );
 

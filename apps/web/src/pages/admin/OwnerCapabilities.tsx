@@ -1,8 +1,14 @@
 import { Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { Button } from "@workbench/ui";
 import { adminTableCard } from "./admin-ui";
 import { CredentialRow } from "./CredentialRow";
-import { getOwnerCredentials } from "../../lib/hub-api";
+import {
+  getOwnerCredentials,
+  getOwnerFeatures,
+  setOwnerFeatureEnabled,
+} from "../../lib/hub-api";
 
 // Integrations/tools the workbench exposes with a dedicated sub-page. Add a
 // new integration by appending here and mounting its sub-route — no other
@@ -33,8 +39,83 @@ export function OwnerCapabilities() {
   });
   const toolCredentials = credentials.data?.filter((c) => c.kind === "tool");
 
+  const queryClient = useQueryClient();
+  const [featureError, setFeatureError] = useState<string | null>(null);
+  const features = useQuery({
+    queryKey: ["owner", "features"],
+    queryFn: getOwnerFeatures,
+    staleTime: 5 * 60_000,
+  });
+  const toggleFeature = useMutation({
+    mutationFn: ({ name, enabled }: { name: string; enabled: boolean }) =>
+      setOwnerFeatureEnabled(name, enabled),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["owner", "features"] }),
+    onError: () =>
+      setFeatureError("Could not update the feature. Try again in a moment."),
+  });
+
   return (
     <div className="space-y-5">
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-text">Features</h2>
+        <p className="mb-2 text-sm text-text-2">
+          Turn background automation on or off for this workbench.
+        </p>
+        {featureError && (
+          <p className="mb-2 text-sm text-red-500" role="status">
+            {featureError}
+          </p>
+        )}
+        {features.isLoading ? (
+          <p className="p-3 text-sm text-text-2">Loading…</p>
+        ) : features.isError || !features.data ? (
+          <p className="p-3 text-sm text-text-2">
+            Could not load features. Try again in a moment.
+          </p>
+        ) : (
+          <div className={adminTableCard}>
+            <ul className="divide-y divide-border">
+              {features.data.features.map((f) => (
+                <li
+                  key={f.name}
+                  className="flex items-center justify-between gap-4 p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-text">{f.label}</p>
+                    <p className="mt-0.5 text-xs text-text-2">
+                      {f.description}
+                    </p>
+                    <p className="mt-0.5 text-xs text-text-3">
+                      {f.forcedByEnv
+                        ? "Forced on by the deployment"
+                        : f.enabled
+                          ? "Enabled"
+                          : "Disabled"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant={f.enabled ? "ghost" : "primary"}
+                    size="sm"
+                    disabled={toggleFeature.isPending || f.forcedByEnv}
+                    onClick={() => {
+                      setFeatureError(null);
+                      toggleFeature.mutate({
+                        name: f.name,
+                        enabled: !f.enabled,
+                      });
+                    }}
+                  >
+                    {f.enabled ? "Disable" : "Enable"}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
       <div>
         <p className="mb-2 text-sm text-text-2">
           Tools and integrations available in this workbench. Select Gamma to

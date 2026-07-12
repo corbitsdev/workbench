@@ -20,9 +20,13 @@ export interface TaskReconcilerService {
 // Periodically retries task_external_ref rows a push left `pending`. The
 // underlying `createTaskReconciler` owns the per-ref retry budget and its own
 // reentrancy guard; this wrapper only drives it on an interval and is gated by
-// the TASKS_RECONCILER_ENABLED kill switch (default OFF).
+// the `tasks-reconciler` feature grant (env override OR owner grant on the
+// root tenant, checked fresh every tick so a live toggle takes effect without
+// a restart; default OFF). `enabled` is the static fallback used when
+// `isEnabled` is absent (back-compat / simple tests).
 export function createTaskReconcilerService(deps: {
   enabled: boolean;
+  isEnabled?: () => Promise<boolean>;
   db: HubDb;
   intervalMs?: number;
 }): TaskReconcilerService {
@@ -38,18 +42,16 @@ export function createTaskReconcilerService(deps: {
 
   return {
     start() {
-      if (!deps.enabled) {
-        log.info("task-reconciler: disabled");
-        return;
-      }
       if (timer) return;
       timer = setInterval(() => {
-        void reconciler
-          .reconcileOnce()
-          .then((pass) => {
-            if (pass.retried > 0 || pass.synced > 0) {
-              log.info("task-reconciler: pass", pass);
-            }
+        void (deps.isEnabled ? deps.isEnabled() : Promise.resolve(deps.enabled))
+          .then((enabled) => {
+            if (!enabled) return undefined;
+            return reconciler.reconcileOnce().then((pass) => {
+              if (pass.retried > 0 || pass.synced > 0) {
+                log.info("task-reconciler: pass", pass);
+              }
+            });
           })
           .catch((err) =>
             log.error("task-reconciler: pass failed", {

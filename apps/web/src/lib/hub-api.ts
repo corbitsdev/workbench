@@ -14,6 +14,10 @@ import {
   type OwnerCredentialState,
   OwnerDemosResponse,
   type OwnerDemosResponse as OwnerDemosState,
+  OwnerFeaturesResponse,
+  type OwnerFeaturesResponse as OwnerFeaturesState,
+  OwnerFeatureToggleResult,
+  type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
   type DemoLink,
   DemoLinkSchema,
   WorkflowCatalogSchema,
@@ -189,6 +193,34 @@ export async function setOwnerDemosEnabled(
   const parsed = OwnerDemosResponse(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed owner demos response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Owner-managed feature grants (scheduler/triage/tasks-reconciler) and their
+ * enablement state (owner-guarded). */
+export async function getOwnerFeatures(): Promise<OwnerFeaturesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/features");
+  const parsed = OwnerFeaturesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/features response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable a feature grant org-wide (owner-guarded). */
+export async function setOwnerFeatureEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<OwnerFeatureToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/features/${encodeURIComponent(name)}`,
+    { enabled },
+  );
+  const parsed = OwnerFeatureToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner feature response: ${parsed.summary}`);
   }
   return parsed;
 }

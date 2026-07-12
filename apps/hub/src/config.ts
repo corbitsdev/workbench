@@ -427,6 +427,18 @@ export function loadConfig() {
     tasksReconciler: {
       enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
     },
+    // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
+    // the env-only kill switches above as the day-to-day toggle; the env vars
+    // stay as an emergency global override (see feature-grants.ts). Each
+    // runtime decision point re-checks the tenant's grant on a tick/enqueue, so
+    // a short in-process TTL collapses that to one grant-store query per
+    // window rather than one per tick. Override with
+    // FEATURE_GRANT_CACHE_TTL_MS (positive integer milliseconds).
+    featureGrantCacheTtlMs: parsePositiveIntEnv(
+      "FEATURE_GRANT_CACHE_TTL_MS",
+      30_000,
+      "milliseconds",
+    ),
   };
 
   log.info("Configuration loaded", {
