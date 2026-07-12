@@ -295,4 +295,29 @@ describe("createPrincipalMailboxPersist", () => {
       direction: "inbound",
     });
   });
+
+  it("still delivers to a legacy bare-format recipient address", async () => {
+    // Schedule rows seeded before the usr_ prefix unification carry bare
+    // `<refId>@<domain>` recipient addresses in their trigger payloads;
+    // those must keep delivering without a reseed.
+    const { db, inserted, principalFindFirst } = makeDb({
+      sender: SENDER,
+      tenantDomain: "tenant.example",
+      memberPrincipal: { id: "pri-alice" },
+    });
+    const { upstream } = makeUpstream();
+    const persist = createPrincipalMailboxPersist(db, upstream);
+
+    await persist({
+      senderAddress: SENDER.address,
+      recipients: ["alice@tenant.example"],
+      raw: RAW,
+    });
+
+    expect(inserted).toHaveLength(1);
+    const { params } = renderWhere(
+      (principalFindFirst.mock.calls[0] as { where: unknown }[])[0]?.where,
+    );
+    expect(params).toContain("alice");
+  });
 });
