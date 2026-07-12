@@ -112,6 +112,10 @@ export const BRIEF_SOURCE_CATALOG: readonly {
   label: string;
   description: string;
   defaultEnabled: boolean;
+  /** The source's fetch tool name, when it has one wired
+   * (`CredentialProviderCatalogEntry.briefSource.tool`) — the heartbeat
+   * workflow generates an intake step only for entries that carry this. */
+  tool?: string;
 }[] = CREDENTIAL_PROVIDER_CATALOG.filter(
   (entry): entry is typeof entry & { briefSource: NonNullable<typeof entry.briefSource> } =>
     entry.briefSource !== undefined,
@@ -120,11 +124,88 @@ export const BRIEF_SOURCE_CATALOG: readonly {
   label: entry.label,
   description: entry.briefSource.description,
   defaultEnabled: entry.briefSource.defaultEnabled ?? false,
+  ...(entry.briefSource.tool !== undefined
+    ? { tool: entry.briefSource.tool }
+    : {}),
 }));
+
+/**
+ * The subset of `BRIEF_SOURCE_CATALOG` with a wired fetch tool — what the
+ * heartbeat workflow (`workflows/heartbeat/src/index.ts`) generates one
+ * intake `deterministicToolStep` per entry from. Exported so the workflow
+ * and its tests share the same derivation rather than re-filtering the
+ * catalog inline.
+ */
+/** The heartbeat intake step key generated for a wired brief source. */
+export function heartbeatIntakeStepKey(sourceKey: string): string {
+  return `intake-${sourceKey}`;
+}
+
+export const WIRED_BRIEF_SOURCES: readonly ((typeof BRIEF_SOURCE_CATALOG)[number] &
+  { tool: string })[] = BRIEF_SOURCE_CATALOG.filter(
+  (source): source is (typeof BRIEF_SOURCE_CATALOG)[number] & { tool: string } =>
+    source.tool !== undefined,
+);
 
 /** The registry key a brief source's enablement toggle is stored under. */
 export function briefSourcePreferenceKey(sourceKey: string): string {
   return `briefSource:${sourceKey}`;
+}
+
+/**
+ * The brief-source fetch contract every source's intake tool shares —
+ * formalizes the shape `granola_list_notes` pioneered (see
+ * `@workbench/tools-granola`) so a new source's fetch tool and the heartbeat
+ * workflow validate against one definition instead of each re-deriving it.
+ *
+ * `enabledSources` is the member's currently-enabled brief source keys
+ * (`BRIEF_SOURCE_CATALOG` keys, i.e. `CredentialProviderCatalogEntry.providerName`).
+ * Absent means "no restriction" — call as normal; an explicit list that
+ * omits this source's key means self-skip (see
+ * `BriefSourceSkippedMarkerSchema`) instead of calling out.
+ *
+ * `createdAfter` is the heartbeat's fire-time lookback cutoff, stamped by
+ * `enrichHeartbeatTriggerPayload` (`apps/hub/src/lib/heartbeat-trigger-payload.ts`)
+ * onto the trigger payload every intake step reads from.
+ */
+export const BriefSourceFetchInputSchema = type({
+  "enabledSources?": "string[]",
+  "createdAfter?": "string",
+});
+export type BriefSourceFetchInput = typeof BriefSourceFetchInputSchema.infer;
+
+/**
+ * The marker a brief-source fetch tool returns instead of calling out, when
+ * `enabledSources` is set and omits this source's key, or (for a
+ * heartbeat-shaped call, i.e. `enabledSources !== undefined`) the source's
+ * credential is missing or rejected. Read by the synthesis prompt to
+ * describe the source as honestly disabled/unavailable rather than a failed
+ * fetch — never as an error.
+ */
+export const BriefSourceSkippedMarkerSchema = type({
+  skipped: "true",
+});
+export type BriefSourceSkippedMarker =
+  typeof BriefSourceSkippedMarkerSchema.infer;
+
+/** The skip marker value every brief-source fetch tool returns verbatim on
+ * self-skip, kept in one place so a source's `SKIPPED_LIST_RESULT` and this
+ * contract cannot drift on the literal shape. */
+export const BRIEF_SOURCE_SKIPPED_MARKER: BriefSourceSkippedMarker = {
+  skipped: true,
+};
+
+/**
+ * Whether a brief source should be called, given the caller's
+ * `enabledSources`. Shared by every source's fetch tool so the self-skip
+ * check (`isHeartbeatShaped` + membership test in `@workbench/tools-granola`)
+ * is one function, not one per source.
+ */
+export function isBriefSourceFetchEnabled(
+  sourceKey: string,
+  enabledSources: string[] | undefined,
+): boolean {
+  return enabledSources === undefined || enabledSources.includes(sourceKey);
 }
 
 const BRIEF_SOURCE_ENTRIES: readonly PreferenceEntry[] =

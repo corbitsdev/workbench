@@ -9,7 +9,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AvailableBriefSource, PreferenceSetting } from "@workbench/shared";
+import type {
+  AvailableBriefSource,
+  PreferenceSetting,
+} from "@workbench/shared";
 
 const SETTINGS: PreferenceSetting[] = [
   {
@@ -33,6 +36,15 @@ const SETTINGS: PreferenceSetting[] = [
     description: "Notify me when a new message lands.",
     category: "Notifications",
     value: true,
+  },
+  {
+    key: "briefHourUtc",
+    type: "hourUtc",
+    default: 13,
+    label: "Morning brief time",
+    description: "When your morning brief arrives.",
+    category: "Agent",
+    value: 13,
   },
 ];
 
@@ -126,6 +138,37 @@ describe("PreferencesPanel", () => {
     });
   });
 
+  it("labels the brief-hour select in local time and persists the UTC hour on change", async () => {
+    renderPanel();
+    const select = (await screen.findByLabelText(
+      "Morning brief time",
+    )) as HTMLSelectElement;
+
+    const expectedLocalLabel = (utcHour: number): string => {
+      const date = new Date();
+      date.setUTCHours(utcHour, 0, 0, 0);
+      return date.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    };
+
+    expect(select.value).toBe("13");
+    expect(select.options[select.selectedIndex]?.textContent).toBe(
+      expectedLocalLabel(13),
+    );
+    expect(screen.getByText("Shown in your local time.")).toBeDefined();
+
+    fireEvent.change(select, { target: { value: "9" } });
+    await waitFor(() => {
+      if (patchMePreferences.mock.calls.length === 0)
+        throw new Error("no patch");
+    });
+    expect(patchMePreferences.mock.calls[0][0]).toEqual({
+      briefHourUtc: 9,
+    });
+  });
+
   it("renders a toggle for every brief source the hub returns, dynamically", async () => {
     renderPanel();
     await screen.findByText("Granola calls");
@@ -136,6 +179,15 @@ describe("PreferencesPanel", () => {
     const exaToggle = screen.getByRole("switch", { name: "Exa research" });
     expect(granolaToggle.getAttribute("aria-checked")).toBe("true");
     expect(exaToggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("renders each brief source's catalog description under its toggle", async () => {
+    renderPanel();
+    await screen.findByText("Granola calls");
+    expect(
+      screen.getByText("Pull in recent call notes from Granola."),
+    ).toBeDefined();
+    expect(screen.getByText("Pull in recent research from Exa.")).toBeDefined();
   });
 
   it("does not render a brief source absent from the hub response", async () => {

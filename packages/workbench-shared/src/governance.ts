@@ -424,8 +424,20 @@ export interface CredentialProviderCatalogEntry {
    * — adding a new brief-eligible provider is purely additive here, no
    * composer code change required. `description` is the toggle's copy;
    * `defaultEnabled` seeds a brand-new member's preference (defaults to
-   * `false` when omitted). */
-  briefSource?: { description: string; defaultEnabled?: boolean };
+   * `false` when omitted). `tool` is the source's fetch tool name (e.g.
+   * `granola_list_notes`) — when set, the heartbeat workflow
+   * (`workflows/heartbeat/src/index.ts`) generates one `deterministicToolStep`
+   * intake step for this source automatically; omit `tool` to tag a provider
+   * as brief-eligible (surfaced in Settings) without wiring an intake step
+   * yet. The tool must accept `BriefSourceFetchInputSchema`
+   * (`preferences-registry.ts`) and self-skip per
+   * `isBriefSourceFetchEnabled` when called with `enabledSources` that omit
+   * this provider's name. */
+  briefSource?: {
+    description: string;
+    defaultEnabled?: boolean;
+    tool?: string;
+  };
 }
 
 /** Provider name for the default Bifrost /v1 (openai-compatible) surface.
@@ -496,8 +508,9 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       kind: "tool",
       defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
       briefSource: {
-        description: "Pull in recent call notes from Granola.",
+        description: "Call notes from meetings since your last brief.",
         defaultEnabled: true,
+        tool: "granola_list_notes",
       },
     },
     { providerName: "exa", providerPlugin: "exa", label: "Exa", kind: "tool" },
@@ -520,6 +533,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Linear",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.linear.app/graphql" },
+      briefSource: {
+        description: "Issues updated since your last brief.",
+        tool: "linear_list_issues",
+      },
     },
     {
       providerName: "github",
@@ -533,6 +550,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Attio",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.attio.com" },
+      briefSource: {
+        description: "New CRM records and open tasks since your last brief.",
+        tool: "attio_recent_activity",
+      },
     },
     {
       providerName: "vercel",
@@ -540,6 +561,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Vercel",
       kind: "tool",
       defaultMetadata: { baseURL: "https://api.vercel.com" },
+      briefSource: {
+        description: "Deployments since your last brief, with build state.",
+        tool: "vercel_list_deployments",
+      },
     },
     {
       providerName: "youtube",

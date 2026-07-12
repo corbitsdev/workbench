@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
+import { heartbeatIntakeStepKey, WIRED_BRIEF_SOURCES } from "@workbench/shared";
 import {
   buildRunStepperSteps,
   Button,
@@ -14,10 +15,15 @@ import {
 } from "@workbench/ui";
 
 // Scheduler-fired and gate-free: this panel is a read-only run view. It has no
-// launch inputs and fires no signals — it reports the four steps' progress and
-// renders the delivered brief once it is written.
+// launch inputs and fires no signals — it reports the steps' progress and
+// renders the delivered brief once it is written. Intake step ids are derived
+// from the wired brief-source catalog, matching how the workflow generates them.
+const INTAKE_STEP_IDS = WIRED_BRIEF_SOURCES.map((source) =>
+  heartbeatIntakeStepKey(source.key),
+);
+
 const DISPLAY_STEPS: DisplayStep[] = [
-  { key: "intake", label: "Recent calls", stepIds: ["intake"] },
+  { key: "intake", label: "Sources", stepIds: [...INTAKE_STEP_IDS] },
   {
     key: "brief",
     label: "Brief",
@@ -38,7 +44,7 @@ const DISPLAY_STEPS: DisplayStep[] = [
   },
 ];
 
-const ALL_STEP_IDS = ["intake", "brief", "notify", "persist"] as const;
+const ALL_STEP_IDS = [...INTAKE_STEP_IDS, "brief", "notify", "persist"];
 
 const BriefOutput = type({ reply: "string" });
 
@@ -105,9 +111,11 @@ function Spinner({ label }: { label: string }) {
 }
 
 function PreparingCard({ state }: { state: RunState | null }) {
-  const intakeRunning = phaseFor(state, "intake") !== "completed";
+  const intakeRunning = INTAKE_STEP_IDS.some(
+    (id) => phaseFor(state, id) !== "completed",
+  );
   const label = intakeRunning
-    ? "Gathering your recent calls…"
+    ? "Gathering your sources…"
     : "Writing your brief…";
   return (
     <Card>

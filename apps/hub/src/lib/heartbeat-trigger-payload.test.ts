@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { type } from "arktype";
+import { BriefSourceFetchInputSchema } from "@workbench/shared";
 import {
   computeHeartbeatCreatedAfter,
   enrichHeartbeatTriggerPayload,
@@ -89,5 +91,26 @@ describe("enrichHeartbeatTriggerPayload", () => {
     expect(result.createdAfter).toBe(
       new Date(yesterday * MS_PER_DAY + 9 * 3_600_000).toISOString(),
     );
+  });
+
+  // Contract-conformance seam: every wired brief source's fetch tool
+  // validates its args through `BriefSourceFetchInputSchema`
+  // (`@workbench/shared`). This proves the hub's enriched trigger payload —
+  // what every heartbeat intake step actually receives as
+  // `{ from: "trigger.payload" }` — satisfies that same schema, so the
+  // producer (this file) and every consumer (each source's fetch tool)
+  // cannot silently drift on the enabledSources/createdAfter shape.
+  it("the enriched payload's enabledSources + createdAfter satisfy BriefSourceFetchInputSchema", () => {
+    const result = enrichHeartbeatTriggerPayload(
+      { reason: "scheduled-heartbeat", userAddress: "usr_1@d" },
+      "heartbeat",
+      "heartbeat",
+      ["granola"],
+      NOW,
+      null,
+      9,
+    );
+    const parsed = BriefSourceFetchInputSchema(result);
+    expect(parsed instanceof type.errors).toBe(false);
   });
 });
