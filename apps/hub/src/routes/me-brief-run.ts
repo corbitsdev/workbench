@@ -33,6 +33,9 @@ export function createMeBriefRunRouter(deps: {
   db: HubDb;
   runStarter: WorkflowRunStarter;
   heartbeatKind: string;
+  resolveUserIdentity: (
+    memberPrincipalId: string,
+  ) => Promise<{ userAddress: string; userRefId: string }>;
   now?: () => number;
 }): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
@@ -59,7 +62,7 @@ export function createMeBriefRunRouter(deps: {
         },
         404: {
           description:
-            "Caller has no provisioned membership or no brief schedule yet",
+            "Caller has no provisioned membership",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         429: {
@@ -95,8 +98,25 @@ export function createMeBriefRunRouter(deps: {
       const heartbeat = schedules.items.find(
         (row) => row.workflowKind === deps.heartbeatKind,
       );
-      if (!heartbeat) {
-        return c.json({ error: "No brief is set up yet" }, 404);
+      // Schedule seeding is boot-only and env-gated, so a member can lack a
+      // row through no fault of their own (fresh member, scheduler disabled).
+      // A manual run does not need the row — build the same payload ad hoc.
+      let basePayload: Record<string, unknown>;
+      let lastFiredDayUtc: number | null;
+      let hourUtc: number;
+      if (heartbeat) {
+        basePayload = heartbeat.triggerPayload;
+        lastFiredDayUtc = heartbeat.lastFiredDayUtc;
+        hourUtc = heartbeat.hourUtc;
+      } else {
+        const identity = await deps.resolveUserIdentity(member.principalId);
+        basePayload = {
+          reason: "manual-brief",
+          userAddress: identity.userAddress,
+          userRefId: identity.userRefId,
+        };
+        lastFiredDayUtc = null;
+        hourUtc = 0;
       }
 
       const prefs = await readMemberPreferences(
@@ -106,13 +126,13 @@ export function createMeBriefRunRouter(deps: {
       );
       const nowMs = clock();
       const triggerPayload = enrichHeartbeatTriggerPayload(
-        heartbeat.triggerPayload,
+        basePayload,
         deps.heartbeatKind,
         deps.heartbeatKind,
         resolveEnabledBriefSources(prefs),
         nowMs,
-        heartbeat.lastFiredDayUtc,
-        heartbeat.hourUtc,
+        lastFiredDayUtc,
+        hourUtc,
       );
 
       const result = await deps.runStarter.startRun({
@@ -124,6 +144,9 @@ export function createMeBriefRunRouter(deps: {
       });
 
       if (!result.ok) {
+        // A run that never started should not cost the member their one
+        // manual slot for the window.
+        briefRunLimiter.refund(member.principalId);
         if (result.reason === "not_found") {
           return c.json({ error: "No brief is set up yet" }, 404);
         }

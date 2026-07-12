@@ -158,16 +158,6 @@ describe("POST /me/brief-run", () => {
     expect(res.status).toBe(404);
   });
 
-  it("404s when the caller has no heartbeat schedule yet", async () => {
-    startRunCalls = [];
-    const previous = scheduleRowsByPrincipal["principal-a"];
-    scheduleRowsByPrincipal["principal-a"] = [];
-    const app = mountApp();
-    const res = await app.fetch(req("/me/brief-run", "user-a"));
-    expect(res.status).toBe(404);
-    expect(startRunCalls).toHaveLength(0);
-    scheduleRowsByPrincipal["principal-a"] = previous ?? [];
-  });
 
   it("rejects a second manual run from the same member within the window", async () => {
     startRunCalls = [];

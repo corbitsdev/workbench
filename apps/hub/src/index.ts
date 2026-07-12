@@ -1319,13 +1319,14 @@ const runStarter = createWorkflowRunStarter({
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
 
 // Member-initiated brief-on-demand: lets a member fire their own heartbeat
-// brief outside its daily schedule (CL-3430).
+// brief outside its daily schedule.
 v1.route(
   "/",
   createMeBriefRunRouter({
     db,
     runStarter,
     heartbeatKind: config.scheduler.heartbeatKind,
+    resolveUserIdentity,
   }),
 );
 
