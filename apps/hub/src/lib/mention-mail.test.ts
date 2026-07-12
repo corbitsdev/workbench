@@ -121,6 +121,52 @@ describe("deliverMentionMail", () => {
     expect(inserted).toHaveLength(0);
   });
 
+  it("delivers nothing when the sender is not a member of the tenant", async () => {
+    const inserted: Record<string, unknown>[] = [];
+    const returning = mock(async () => [{ id: "row-1" }]);
+    const onConflictDoNothing = mock(() => ({ returning }));
+    const values = mock((row: Record<string, unknown>) => {
+      inserted.push(row);
+      return { onConflictDoNothing };
+    });
+    // Resolve principal lookups by the refId inside the drizzle expression:
+    // the mentioned member exists in the tenant, the sender does not.
+    const whereMentions = (node: unknown, target: string): boolean => {
+      const seen = new Set<unknown>();
+      const walk = (value: unknown): boolean => {
+        if (typeof value === "string") return value === target;
+        if (value === null || typeof value !== "object" || seen.has(value))
+          return false;
+        seen.add(value);
+        return Object.values(value).some(walk);
+      };
+      return walk(node);
+    };
+    const db = {
+      insert: mock(() => ({ values })),
+      query: {
+        tenant: { findFirst: mock(async () => TENANT_ROW) },
+        principal: {
+          findFirst: mock(async ({ where }: { where: unknown }) => {
+            if (whereMentions(where, "usr_bob"))
+              return { id: "prn-bob", refId: "usr_bob" };
+            return undefined;
+          }),
+        },
+      },
+    } as unknown as HubDb;
+
+    await deliverMentionMail({
+      db,
+      tenantId: "ten-other",
+      senderUserId: "usr_outsider",
+      senderName: "Mallory",
+      content: "@[Bob](#usr_bob) look at this",
+      conversationUrl: "https://app.example/chats/1",
+    });
+    expect(inserted).toHaveLength(0);
+  });
+
   it("never throws when the db lookup fails", async () => {
     const db = {
       query: {
