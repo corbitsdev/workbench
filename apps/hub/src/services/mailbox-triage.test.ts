@@ -31,11 +31,16 @@ mock.module("./agent-provisioning", () => ({
   launchAgentSession: launchMock,
 }));
 
-const MYRA_DEF = { id: "agt_myra", tenantId: "ten-1", name: "Myra" };
-const resolveDefMock = mock(async () => MYRA_DEF);
+const MYRA_TRIAGE_DEF = {
+  id: "agt_myra_triage",
+  tenantId: "ten-1",
+  name: "Myra Triage",
+  modelConfig: { defaultModel: "deepseek-v4-flash" },
+};
+const resolveDefMock = mock(async () => MYRA_TRIAGE_DEF);
 const teardownMock = mock(async () => undefined);
 mock.module("./myra-threads", () => ({
-  resolveMyraDefinition: resolveDefMock,
+  resolveMyraTriageDefinition: resolveDefMock,
   teardownThreadRows: teardownMock,
 }));
 
@@ -341,7 +346,8 @@ describe("createMailboxTriage", () => {
     expect(launchOpts.persona).toEqual({
       toolNames: prepareOnlyLoadout.toolNames,
     });
-    expect(launchOpts.agentId).toBe(MYRA_DEF.id);
+    expect(launchOpts.agentId).toBe(MYRA_TRIAGE_DEF.id);
+    expect(resolveDefMock).toHaveBeenCalled();
 
     const mapping = txInserts.find(
       (row) => row.templateKey === "myra-triage",

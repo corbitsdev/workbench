@@ -70,6 +70,69 @@ describe("MAILBOX_PERSONA_TOOLS", () => {
       expect(carriesTool(MAILBOX_PERSONA_TOOLS, read)).toBe(true);
     }
   });
+
+  // CL-3364: triage volume runs in the hundreds/day, so turn 1 advertises only
+  // the platform core plus the internal-lookup tools the triage prompt calls
+  // for (relationship/deal, recent calls, open work) — every research/social/
+  // third-party tool (web search, Notion, Vercel, Firecrawl, GitHub, YouTube,
+  // Reddit, Bluesky, X, HackerNews, Polymarket, ...) is dropped.
+  it("shrinks to exactly the platform core plus the read-essential lookups", () => {
+    const bareNames = MAILBOX_PERSONA_TOOLS.map((name) =>
+      name.slice(name.lastIndexOf(":") + 1),
+    ).sort();
+    expect(bareNames).toEqual(
+      [
+        "search_tools",
+        "load_tools",
+        "memory_load",
+        "artifact_read",
+        "artifact_list",
+        "workflow_list_kinds",
+        "search_skills",
+        "load_skill",
+        "list_skill_drafts",
+        "load_skill_draft",
+        "attio_search_records",
+        "attio_get_record",
+        "attio_query_records",
+        "attio_list_objects",
+        "granola_list_notes",
+        "granola_get_note",
+        "linear_list_issues",
+        "linear_get_issue",
+      ].sort(),
+    );
+  });
+
+  it("drops the research/social/third-party tools out of the advertised loadout", () => {
+    for (const dropped of [
+      "web_search",
+      "exa_search",
+      "notion_search",
+      "vercel_list_projects",
+      "firecrawl_search",
+      "github_activity",
+      "youtube_search",
+      "reddit_search",
+      "bluesky_search",
+      "x_search",
+      "hackernews_search",
+      "polymarket_odds",
+      "parse_file",
+      "workflow_list_runs",
+      "list_skills",
+      "list_agents",
+      "list_principals",
+      "identity_get",
+      "attio_list_tasks",
+      "attio_get_task",
+      "granola_list_folders",
+      "linear_list_teams",
+      "linear_list_users",
+    ]) {
+      expect(carriesTool(MAILBOX_PERSONA_TOOLS, dropped)).toBe(false);
+    }
+  });
 });
 
 describe("resolveMailboxLoadout", () => {

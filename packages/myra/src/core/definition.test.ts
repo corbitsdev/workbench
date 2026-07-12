@@ -3,6 +3,9 @@ import { describe, expect, it } from "bun:test";
 import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_DEPLOY_PROMPT,
+  PERSONAL_AGENT_NAME,
+  PERSONAL_AGENT_TRIAGE_NAME,
+  PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "./definition";
 
 describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
@@ -116,6 +119,18 @@ describe("PERSONAL_AGENT_BASE_TOOLS (CL-1555, CL-2145)", () => {
     for (const tool of PERSONAL_AGENT_BASE_TOOLS) {
       expect(tool.startsWith("mail_")).toBe(false);
     }
+  });
+});
+
+describe("PERSONAL_AGENT_TRIAGE_MODEL_CONFIG (CL-3364)", () => {
+  it("names a distinct definition from Myra's own", () => {
+    expect(PERSONAL_AGENT_TRIAGE_NAME).not.toBe(PERSONAL_AGENT_NAME);
+  });
+
+  it("pins the cheap flash model, not Myra's own chat model", () => {
+    expect(PERSONAL_AGENT_TRIAGE_MODEL_CONFIG).toEqual({
+      defaultModel: "deepseek-v4-flash",
+    });
   });
 });
 
