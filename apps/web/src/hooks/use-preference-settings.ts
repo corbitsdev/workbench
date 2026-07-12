@@ -1,5 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AvailableBriefSource, PreferenceSetting } from "@workbench/shared";
+import {
+  briefSourcePreferenceKey,
+  type AvailableBriefSource,
+  type PreferenceSetting,
+} from "@workbench/shared";
 import {
   getMeBriefSources,
   getMePreferenceSettings,
@@ -84,7 +88,7 @@ export function useUpdateBriefSource() {
     UpdateBriefSourceContext
   >({
     mutationFn: async ({ key, enabled }) => {
-      await patchMePreferences({ [`briefSource:${key}`]: enabled });
+      await patchMePreferences({ [briefSourcePreferenceKey(key)]: enabled });
       return getMeBriefSources();
     },
     onMutate: async ({ key, enabled }) => {

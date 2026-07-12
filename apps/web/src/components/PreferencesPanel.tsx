@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Select, Toggle } from "@workbench/settings";
 import {
+  briefSourcePreferenceKey,
   PREFERENCE_CATEGORIES,
   type PreferenceCategory,
   type PreferenceSetting,
@@ -14,7 +15,7 @@ import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
-const BRIEF_SOURCE_KEY_PREFIX = "briefSource:";
+const BRIEF_SOURCE_KEY_PREFIX = briefSourcePreferenceKey("");
 
 type PreferenceValue = boolean | string | number;
 
