@@ -7,8 +7,11 @@ import type {
 } from "@intx/types/runtime";
 import {
   createGuardedMailRunner,
+  CORRESPONDENT_WINDOW_MS,
   MAX_IDENTICAL_OUTBOUND,
+  MAX_OUTBOUND_PER_CORRESPONDENT,
   MAX_OUTBOUND_PER_TURN,
+  MAX_TRACKED_CORRESPONDENTS,
 } from "./mail-guard";
 
 type DefinedRunner = ToolRunner & { definitions: ToolDefinition[] };
@@ -201,5 +204,221 @@ describe("createGuardedMailRunner", () => {
       await guarded.run(send(`c${i}`, `body ${i}`), signal);
     }
     expect(calls).toHaveLength(MAX_OUTBOUND_PER_TURN + 2);
+  });
+
+  function sendTo(id: string, to: string, content: string): ToolCall {
+    return { id, name: "mail_send", arguments: { to, content } };
+  }
+
+  it("terminates a two-agent ping-pong despite the budget resetting on every inbound turn", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner);
+    const signal = new AbortController().signal;
+    const other = "ins_other@gtm.localhost";
+
+    const results: ToolResult[] = [];
+    for (let turn = 0; turn < MAX_OUTBOUND_PER_CORRESPONDENT + 3; turn++) {
+      // Each turn simulates: an inbound message from the other agent arrives
+      // (resetting the per-turn budget), then this agent replies.
+      guarded.resetOutboundBudget();
+      results.push(
+        await guarded.run(
+          sendTo(`turn${turn}`, other, `reply ${turn}`),
+          signal,
+        ),
+      );
+    }
+
+    expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_CORRESPONDENT);
+    const blocked = results.filter((r) => r.isError);
+    expect(blocked).toHaveLength(3);
+    expect(JSON.stringify(blocked[0]?.content)).toContain("Too many messages");
+  });
+
+  it("never throttles sends to a member (usr_) recipient across many turns", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner);
+    const signal = new AbortController().signal;
+    const member = "usr_sawyer@gtm.localhost";
+
+    const turns = MAX_OUTBOUND_PER_CORRESPONDENT + 10;
+    for (let turn = 0; turn < turns; turn++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        sendTo(`m${turn}`, member, `message ${turn}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    expect(inner.calls).toHaveLength(turns);
+  });
+
+  it("allows resumption once the correspondent window expires", async () => {
+    const inner = countingRunner();
+    let clock = 0;
+    const guarded = createGuardedMailRunner(inner, { now: () => clock });
+    const signal = new AbortController().signal;
+    const other = "ins_other@gtm.localhost";
+
+    for (let i = 0; i < MAX_OUTBOUND_PER_CORRESPONDENT; i++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        sendTo(`w${i}`, other, `body ${i}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    guarded.resetOutboundBudget();
+    const blocked = await guarded.run(
+      sendTo("blocked", other, "over correspondent cap"),
+      signal,
+    );
+    expect(blocked.isError).toBe(true);
+
+    clock += CORRESPONDENT_WINDOW_MS + 1;
+    guarded.resetOutboundBudget();
+    const resumed = await guarded.run(
+      sendTo("resumed", other, "after window expiry"),
+      signal,
+    );
+    expect(resumed.isError).toBeUndefined();
+    expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_CORRESPONDENT + 1);
+  });
+
+  it("prunes least-recently-touched correspondents once the tracked cap is hit", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner);
+    const signal = new AbortController().signal;
+    const first = "ins_first@gtm.localhost";
+
+    for (let i = 0; i < MAX_OUTBOUND_PER_CORRESPONDENT; i++) {
+      guarded.resetOutboundBudget();
+      await guarded.run(sendTo(`f${i}`, first, `body ${i}`), signal);
+    }
+    guarded.resetOutboundBudget();
+    const blocked = await guarded.run(
+      sendTo("blocked", first, "over cap"),
+      signal,
+    );
+    expect(blocked.isError).toBe(true);
+
+    for (let i = 0; i < MAX_TRACKED_CORRESPONDENTS; i++) {
+      guarded.resetOutboundBudget();
+      await guarded.run(
+        sendTo(`o${i}`, `ins_other${i}@gtm.localhost`, "hello"),
+        signal,
+      );
+    }
+
+    guarded.resetOutboundBudget();
+    const afterEviction = await guarded.run(
+      sendTo("after-eviction", first, "history should be forgotten"),
+      signal,
+    );
+    expect(afterEviction.isError).toBeUndefined();
+  });
+
+  function reply(id: string, content: string): ToolCall {
+    return {
+      id,
+      name: "mail_reply",
+      arguments: { ref: { uid: 1, mailbox: "INBOX" }, content },
+    };
+  }
+
+  it("terminates a mail_reply ping-pong once the resolver reveals the same ins_ correspondent", async () => {
+    const inner = countingRunner();
+    const other = "ins_other@gtm.localhost";
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => other,
+    });
+    const signal = new AbortController().signal;
+
+    const results: ToolResult[] = [];
+    for (let turn = 0; turn < MAX_OUTBOUND_PER_CORRESPONDENT + 3; turn++) {
+      guarded.resetOutboundBudget();
+      results.push(
+        await guarded.run(reply(`t${turn}`, `reply ${turn}`), signal),
+      );
+    }
+
+    expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_CORRESPONDENT);
+    const blocked = results.filter((r) => r.isError);
+    expect(blocked).toHaveLength(3);
+    expect(JSON.stringify(blocked[0]?.content)).toContain("Too many messages");
+  });
+
+  it("falls through to per-turn budget only when the resolver returns null", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => null,
+    });
+    const signal = new AbortController().signal;
+
+    const turns = MAX_OUTBOUND_PER_CORRESPONDENT + 5;
+    for (let turn = 0; turn < turns; turn++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        reply(`u${turn}`, `reply ${turn}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    expect(inner.calls).toHaveLength(turns);
+  });
+
+  it("lets the reply proceed when the resolver throws", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => {
+        throw new Error("transport unreachable");
+      },
+    });
+    const signal = new AbortController().signal;
+
+    const result = await guarded.run(reply("r1", "hello"), signal);
+
+    expect(result.isError).toBeUndefined();
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("exempts a usr_ reply recipient resolved by the resolver from the correspondent bound", async () => {
+    const inner = countingRunner();
+    const member = "usr_sawyer@gtm.localhost";
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => member,
+    });
+    const signal = new AbortController().signal;
+
+    const turns = MAX_OUTBOUND_PER_CORRESPONDENT + 5;
+    for (let turn = 0; turn < turns; turn++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        reply(`m${turn}`, `reply ${turn}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    expect(inner.calls).toHaveLength(turns);
+  });
+
+  it("does not call the reply resolver for mail_send", async () => {
+    const inner = countingRunner();
+    let resolverCalls = 0;
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => {
+        resolverCalls += 1;
+        return "ins_other@gtm.localhost";
+      },
+    });
+    const signal = new AbortController().signal;
+
+    await guarded.run(send("s1", "hello"), signal);
+
+    expect(resolverCalls).toBe(0);
   });
 });

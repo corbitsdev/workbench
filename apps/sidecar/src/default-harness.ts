@@ -40,7 +40,7 @@ import {
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
 import { createBlobReader } from "@intx/types/runtime";
-import type { InferenceSource } from "@intx/types/runtime";
+import type { InferenceSource, MessageRef } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
 import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
@@ -300,6 +300,16 @@ export function createDefaultHarnessBuilder({
           mailTools as DefinedRunner,
           {
             maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+            resolveReplyRecipient: async (ref) => {
+              try {
+                const headers = await agentTransport.fetchHeaders(
+                  ref as MessageRef,
+                );
+                return headers.from;
+              } catch {
+                return null;
+              }
+            },
           },
         );
 
@@ -397,13 +407,17 @@ export function createDefaultHarnessBuilder({
               // different bundle copy of ToolCredentialMissingError than the
               // one in this process — `instanceof` can miss across bundles.
               // `err.name` survives bundling, so match on it instead.
-              if (err instanceof Error && err.name === "ToolCredentialMissingError") {
+              if (
+                err instanceof Error &&
+                err.name === "ToolCredentialMissingError"
+              ) {
                 logger.info(
                   "Tool package {id} skipped for {address}: no credential configured for provider {providerName}",
                   {
                     id: factory.id,
                     address: agentAddress,
-                    providerName: (err as { providerName?: string }).providerName,
+                    providerName: (err as { providerName?: string })
+                      .providerName,
                   },
                 );
                 continue;
