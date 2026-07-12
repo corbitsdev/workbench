@@ -115,7 +115,7 @@ describe("TaskSendToAdapter", () => {
     await user.click(screen.getByRole("button", { name: /confirm send/i }));
 
     await waitFor(() =>
-      screen.getByText(/could not send this task to attio|downstream write failed/i),
+      screen.getByText("Could not send this task to Attio. Try again."),
     );
   });
 });

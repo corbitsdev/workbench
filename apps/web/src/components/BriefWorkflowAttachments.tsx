@@ -38,10 +38,8 @@ function AttachedRow({
   const reduceMotion = useReducedMotion();
 
   const handleDetach = () => {
-    deleteSchedule.mutateAsync({ id: schedule.id }).catch((err: unknown) => {
-      onError(
-        err instanceof Error ? err.message : "Could not detach the workflow.",
-      );
+    deleteSchedule.mutateAsync({ id: schedule.id }).catch(() => {
+      onError("Could not detach the workflow. Try again.");
     });
   };
 
@@ -137,10 +135,8 @@ export function BriefWorkflowAttachments({
     createSchedule
       .mutateAsync({ kind: selectedKind, hourUtc: briefHourUtc })
       .then(() => setSelectedKind(""))
-      .catch((err: unknown) => {
-        setError(
-          err instanceof Error ? err.message : "Could not attach the workflow.",
-        );
+      .catch(() => {
+        setError("Could not attach the workflow. Try again.");
       });
   };
 

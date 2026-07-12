@@ -141,3 +141,12 @@ export const TASK_ADAPTER_CATALOG: TaskAdapterCatalogEntry[] = [
   { id: "attio", label: "Attio" },
   { id: "linear", label: "Linear" },
 ];
+
+// Shared display-label lookup for a task adapter id, falling back to the raw
+// id for an adapter not (yet) in the catalog rather than rendering blank.
+export function adapterLabel(adapterId: string): string {
+  return (
+    TASK_ADAPTER_CATALOG.find((entry) => entry.id === adapterId)?.label ??
+    adapterId
+  );
+}

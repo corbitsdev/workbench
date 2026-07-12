@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ConfirmButton } from "@workbench/ui";
-import { TASK_ADAPTER_CATALOG, type Task } from "@workbench/shared";
+import { adapterLabel, TASK_ADAPTER_CATALOG, type Task } from "@workbench/shared";
 import { TaskExternalRefChip } from "./TaskExternalRefChip";
 import { useTaskPush } from "../hooks/use-task-push";
 
@@ -43,39 +43,30 @@ export function TaskSendToAdapter({ task }: { task: Task }) {
     setSendingAdapterId(adapterId);
     push
       .mutateAsync({ taskId: task.id, adapterId })
-      .catch((err: unknown) => {
-        const label =
-          TASK_ADAPTER_CATALOG.find((e) => e.id === adapterId)?.label ??
-          adapterId;
-        setError(
-          err instanceof Error
-            ? err.message
-            : `Could not send this task to ${label}.`,
-        );
+      .catch(() => {
+        const label = adapterLabel(adapterId);
+        setError(`Could not send this task to ${label}. Try again.`);
       })
       .finally(() => setSendingAdapterId(null));
   };
 
   return (
-    <div
-      className="mt-1.5 flex flex-wrap items-center gap-1.5"
-      onClick={(event) => event.stopPropagation()}
-    >
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
       {task.externalRefs.map((ref) => (
         <TaskExternalRefChip key={ref.adapterId} externalRef={ref} />
       ))}
       {uncovered.map((adapterId) => {
-        const label =
-          TASK_ADAPTER_CATALOG.find((e) => e.id === adapterId)?.label ??
-          adapterId;
+        const label = adapterLabel(adapterId);
         if (sendingAdapterId === adapterId && push.isPending) {
           return (
-            <span
+            <TaskExternalRefChip
               key={adapterId}
-              className="inline-flex items-center gap-1 rounded-full border border-border bg-page px-2 py-0.5 text-[11px] font-medium text-text-3"
-            >
-              {label} · sending
-            </span>
+              externalRef={{
+                adapterId,
+                externalId: "",
+                syncState: "pending",
+              }}
+            />
           );
         }
         return (

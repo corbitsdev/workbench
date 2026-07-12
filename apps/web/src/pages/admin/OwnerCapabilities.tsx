@@ -63,7 +63,7 @@ export function OwnerCapabilities() {
           Turn background automation on or off for this workbench.
         </p>
         {featureError && (
-          <p className="mb-2 text-sm text-red-500" role="status">
+          <p className="mb-2 text-sm text-red" role="status">
             {featureError}
           </p>
         )}

@@ -1,12 +1,5 @@
 import { cn } from "@workbench/ui";
-import { TASK_ADAPTER_CATALOG, type TaskExternalRef } from "@workbench/shared";
-
-function adapterLabel(adapterId: string): string {
-  return (
-    TASK_ADAPTER_CATALOG.find((entry) => entry.id === adapterId)?.label ??
-    adapterId
-  );
-}
+import { adapterLabel, type TaskExternalRef } from "@workbench/shared";
 
 // A task's downstream sync state, collapsed to the two states a member is ever
 // allowed to see: "linked" (synced) or "sending" (pending — including a stuck
@@ -38,7 +31,6 @@ export function TaskExternalRefChip({
         href={externalRef.externalUrl}
         target="_blank"
         rel="noreferrer"
-        onClick={(event) => event.stopPropagation()}
         className={cn(
           "inline-flex items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-text-2 transition-colors hover:border-border-strong hover:text-text",
         )}

@@ -30,7 +30,7 @@ export function useTaskPush() {
       return parsed;
     },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
+      return queryClient.invalidateQueries({ queryKey: TASKS_QUERY_KEY });
     },
   });
 }
