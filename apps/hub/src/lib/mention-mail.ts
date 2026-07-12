@@ -11,10 +11,12 @@ const log = getLogger(["hub", "mention-mail"]);
 
 const { principal, tenant } = intxSchema;
 
+const USER_ADDRESS_PREFIX = "usr_";
+
 export type DeliverMentionMailArgs = {
   db: HubDb;
   tenantId: string;
-  /** The sender's user id (== their principal's refId, the `usr_<id>` token). */
+  /** The sender's bare user id (== their principal's refId, == session.user.id). */
   senderUserId: string;
   senderName: string;
   /** Outbound chat message body, scanned for `@[Name](#usr_<id>)` tokens. */
@@ -105,8 +107,8 @@ export async function deliverMentionMail(
         {
           tenantId: args.tenantId,
           principalId: member.id,
-          address: `${mention.id}@${tenantRow.domain}`,
-          fromAddress: `${args.senderUserId}@${tenantRow.domain}`,
+          address: `${USER_ADDRESS_PREFIX}${mention.id}@${tenantRow.domain}`,
+          fromAddress: `${USER_ADDRESS_PREFIX}${args.senderUserId}@${tenantRow.domain}`,
           subject: `${args.senderName} mentioned you`,
           body,
           messageKey: `mention:${mention.id}:${contentHash}`,

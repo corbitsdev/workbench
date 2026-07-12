@@ -7,6 +7,7 @@ import {
 } from "react";
 import { File as FileIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
+import { splitMentionSegments } from "@workbench/shared";
 import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
 import { formatBytes } from "./attachments";
 import {
@@ -40,6 +41,32 @@ class UIBlockErrorBoundary extends Component<
   }
 }
 
+/**
+ * Render a user-authored message as plain text, except for `@[Name](#usr_id)`
+ * mention tokens, which render as pills — matching how a sent mention shows
+ * up for its recipients. User content otherwise never goes through Markdown.
+ */
+function UserMessageBody({ content }: { content: string }) {
+  const segments = splitMentionSegments(content);
+  if (segments.length === 1 && segments[0]?.type === "text") return content;
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.type === "mention" ? (
+          <span
+            key={index}
+            className="rounded-sm bg-white/20 px-1 py-0.5 font-medium"
+          >
+            @{segment.name}
+          </span>
+        ) : (
+          <span key={index}>{segment.value}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export interface MessageBubbleProps {
   message: ChatMessage;
   /** Forwarded to interactive UI blocks embedded in the agent's reply. */
@@ -67,7 +94,8 @@ export interface MessageBubbleProps {
  * agent reply embeds a fenced ```ui block (the agent reformatting tool output
  * into generative UI), that block is lifted out and rendered through the
  * UIBlockView registry, with the surrounding prose still rendered as Markdown.
- * User messages are kept as plain text.
+ * User messages are kept as plain text, except for mention tokens rendered
+ * as pills (see UserMessageBody) — no other markdown is interpreted.
  */
 
 function InlineImage({ image }: { image: ChatImage }) {
@@ -276,7 +304,7 @@ export function MessageBubble({
     !isUser && !isStreaming ? extractUIBlockFromText(message.content) : null;
 
   function renderBody() {
-    if (isUser) return message.content;
+    if (isUser) return <UserMessageBody content={message.content} />;
     if (extracted !== null) {
       return (
         <div className="flex flex-col gap-2">

@@ -28,7 +28,7 @@ export function createMembersRouter(
       tags: ["Members"],
       summary: "List workbench members",
       description:
-        "Lists the user members of a tenant. Requires `?tenantId=<id>`; the caller must be a user member of that tenant. Returns each member as `{ id, name, refId }`, where `id` is the user principal id and `refId` is the user id (the `usr_<id>` mention/mailbox address token).",
+        "Lists the user members of a tenant. Requires `?tenantId=<id>`; the caller must be a user member of that tenant. Returns each member as `{ id, name, refId }`, where `id` is the user principal id and `refId` is the bare user id — the same id used to build the `usr_<refId>` mention token and mailbox address.",
       parameters: [
         {
           name: "tenantId",
