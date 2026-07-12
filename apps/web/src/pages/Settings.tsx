@@ -220,6 +220,7 @@ export default function Settings() {
             </SettingsSection>
 
             <SettingsSection id="account" title="Account">
+              <PreferencesPanel categories={["General"]} />
               <div className="rounded-xl border border-border bg-surface p-5">
                 <SettingsPage
                   title="Profile & appearance"
