@@ -79,6 +79,28 @@ describe("PREFERENCE_REGISTRY", () => {
     }
   });
 
+  test("registers the tasks toggles with defaults that keep current behavior", () => {
+    const triageCreate = getPreferenceEntry("tasksTriageCreate");
+    expect(triageCreate?.type).toBe("boolean");
+    expect(triageCreate?.category).toBe("Automations");
+    expect(triageCreate?.default).toBe(true);
+
+    // Task-event mail is a single preference owned by the delivery seam.
+    expect(getPreferenceEntry("tasksNotifyMail")).toBeUndefined();
+    const taskMail = getPreferenceEntry("taskMailEnabled");
+    expect(taskMail?.default).toBe(true);
+
+    const autoSend = getPreferenceEntry("tasksAutoSendAdapter");
+    expect(autoSend?.type).toBe("boolean");
+    expect(autoSend?.category).toBe("Automations");
+    expect(autoSend?.default).toBe(false);
+
+    const showCompleted = getPreferenceEntry("tasksShowCompleted");
+    expect(showCompleted?.type).toBe("boolean");
+    expect(showCompleted?.category).toBe("Inbox");
+    expect(showCompleted?.default).toBe(false);
+  });
+
   test("PREFERENCE_DEFAULTS mirrors the registry defaults", () => {
     for (const entry of PREFERENCE_REGISTRY) {
       expect(PREFERENCE_DEFAULTS[entry.key]).toBe(entry.default);
@@ -239,8 +261,12 @@ describe("validatePreferencePatch", () => {
 
 describe("changelogSeenVersion", () => {
   test("is excluded from resolvePreferenceSettings so it never renders as a control", () => {
-    const settings = resolvePreferenceSettings({ changelogSeenVersion: "0.6.0" });
-    expect(settings.find((s) => s.key === "changelogSeenVersion")).toBeUndefined();
+    const settings = resolvePreferenceSettings({
+      changelogSeenVersion: "0.6.0",
+    });
+    expect(
+      settings.find((s) => s.key === "changelogSeenVersion"),
+    ).toBeUndefined();
   });
 });
 
@@ -288,20 +314,17 @@ describe("brief-source fetch contract", () => {
 
   test("BriefSourceSkippedMarkerSchema only accepts skipped: true", () => {
     expect(
-      BriefSourceSkippedMarkerSchema({ skipped: true }) instanceof
-        type.errors,
+      BriefSourceSkippedMarkerSchema({ skipped: true }) instanceof type.errors,
     ).toBe(false);
     expect(
-      BriefSourceSkippedMarkerSchema({ skipped: false }) instanceof
-        type.errors,
+      BriefSourceSkippedMarkerSchema({ skipped: false }) instanceof type.errors,
     ).toBe(true);
   });
 
   test("BRIEF_SOURCE_SKIPPED_MARKER satisfies its own schema", () => {
     expect(
-      BriefSourceSkippedMarkerSchema(
-        BRIEF_SOURCE_SKIPPED_MARKER,
-      ) instanceof type.errors,
+      BriefSourceSkippedMarkerSchema(BRIEF_SOURCE_SKIPPED_MARKER) instanceof
+        type.errors,
     ).toBe(false);
   });
 
