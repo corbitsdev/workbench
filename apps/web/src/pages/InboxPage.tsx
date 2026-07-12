@@ -38,7 +38,15 @@ export function InboxPage() {
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
   const { activeTenantId } = useActiveWorkbench();
-  const { data, isLoading, isError, refetch } = useMailbox({
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    hasNextPage: mailboxHasNextPage,
+    fetchNextPage: fetchNextMailboxPage,
+    isFetchingNextPage: isFetchingNextMailboxPage,
+  } = useMailbox({
     refetchInterval: NOW_POLL_MS,
   });
   const tasks = useTasks({ refetchInterval: NOW_POLL_MS });
@@ -127,6 +135,16 @@ export function InboxPage() {
                 ready={nowReady}
                 reduceMotion={reduceMotion ?? false}
                 selectedTaskId={selectedTaskId}
+              />
+              <LoadMoreControl
+                hasMore={Boolean(mailboxHasNextPage) || Boolean(tasks.hasNextPage)}
+                loading={
+                  isFetchingNextMailboxPage || Boolean(tasks.isFetchingNextPage)
+                }
+                onClick={() => {
+                  if (mailboxHasNextPage) void fetchNextMailboxPage();
+                  if (tasks.hasNextPage) void tasks.fetchNextPage();
+                }}
               />
             </>
           )}
@@ -346,6 +364,31 @@ function ReadingPane({
         </div>
       </motion.article>
     </AnimatePresence>
+  );
+}
+
+interface LoadMoreControlProps {
+  hasMore: boolean;
+  loading: boolean;
+  onClick: () => void;
+}
+
+// The single explicit affordance for the growable /inbox surfaces (mailbox,
+// tasks) — no scroll-sentinel machinery, just one quiet control at the feed's
+// end that fetches whichever source(s) still have another page.
+function LoadMoreControl({ hasMore, loading, onClick }: LoadMoreControlProps) {
+  if (!hasMore) return null;
+  return (
+    <div className="mx-auto max-w-[720px] px-8 pb-8">
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={loading}
+        className="w-full rounded-[10px] border border-border px-2.5 py-1.5 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        {loading ? "Loading…" : "Show older"}
+      </button>
+    </div>
   );
 }
 

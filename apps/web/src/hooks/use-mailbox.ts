@@ -1,4 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import { type } from "arktype";
 import {
   MailboxListResponse,
@@ -21,6 +27,24 @@ export const MAILBOX_QUERY_KEY = ["mailbox"] as const;
 // interval.
 export const MAILBOX_POLL_MS = 30_000;
 
+// Matches the hub's DEFAULT_INBOX_LIMIT (apps/hub/src/routes/inbox.ts) so a page
+// here is exactly one hub page — an explicit choice rather than relying on the
+// server's implicit default.
+export const MAILBOX_PAGE_LIMIT = 50;
+
+type MailboxPage = typeof MailboxListResponse.infer;
+
+async function fetchMailboxPage(cursor: string | undefined): Promise<MailboxPage> {
+  const params = new URLSearchParams({ limit: String(MAILBOX_PAGE_LIMIT) });
+  if (cursor !== undefined) params.set("cursor", cursor);
+  const raw = await api<unknown>("GET", `/me/inbox?${params.toString()}`);
+  const parsed = MailboxListResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected mailbox response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 export function unreadCount(
   messages: readonly MailboxMessage[] | undefined,
 ): number {
@@ -32,18 +56,14 @@ export function useMailbox(options?: {
   enabled?: boolean;
   refetchInterval?: number | false;
 }) {
-  return useQuery<MailboxMessage[]>({
+  return useInfiniteQuery({
     queryKey: MAILBOX_QUERY_KEY,
     enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval ?? false,
-    queryFn: async () => {
-      const raw = await api<unknown>("GET", "/me/inbox");
-      const parsed = MailboxListResponse(raw);
-      if (parsed instanceof type.errors) {
-        throw new Error(`Unexpected mailbox response: ${parsed.summary}`);
-      }
-      return parsed.messages;
-    },
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) => fetchMailboxPage(pageParam),
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    select: (data) => data.pages.flatMap((page) => page.messages),
   });
 }
 
@@ -84,15 +104,19 @@ export function useMarkMailboxRead() {
     },
     onMutate: async (id: string) => {
       await queryClient.cancelQueries({ queryKey: MAILBOX_QUERY_KEY });
-      const previous =
-        queryClient.getQueryData<MailboxMessage[]>(MAILBOX_QUERY_KEY);
+      const previous = queryClient.getQueryData<InfiniteData<MailboxPage>>(
+        MAILBOX_QUERY_KEY,
+      );
       if (previous) {
-        queryClient.setQueryData<MailboxMessage[]>(
-          MAILBOX_QUERY_KEY,
-          previous.map((message) =>
-            message.id === id ? { ...message, read: true } : message,
-          ),
-        );
+        queryClient.setQueryData<InfiniteData<MailboxPage>>(MAILBOX_QUERY_KEY, {
+          ...previous,
+          pages: previous.pages.map((page) => ({
+            ...page,
+            messages: page.messages.map((message) =>
+              message.id === id ? { ...message, read: true } : message,
+            ),
+          })),
+        });
       }
       return { previous };
     },
