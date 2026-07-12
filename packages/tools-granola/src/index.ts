@@ -139,16 +139,40 @@ function optionalPositiveInteger(
   return Math.min(value, max);
 }
 
+// Deliberately does NOT check apiKey here: whether a missing key is a hard
+// failure or a graceful skip depends on the calling shape (see
+// requireApiKeyOrDegrade below), which is only known per tool call, not at
+// construction time.
 function validateConfig(config: ResolvedGranolaConfig): void {
-  if (config.apiKey.length === 0) {
-    throw new Error("Granola apiKey is required");
-  }
-
   try {
     new URL(config.baseUrl);
   } catch {
     throw new Error("Granola baseUrl must be a valid URL");
   }
+}
+
+// Thrown when the Granola API rejects the configured key so callers can
+// distinguish "credential is bad" from any other fetch/parse failure —
+// only this case is eligible to degrade to a skipped result for the
+// heartbeat brief; a network error, malformed response, etc. must still
+// surface loudly to every caller.
+class GranolaAuthError extends Error {}
+
+const SKIPPED_LIST_RESULT: GranolaListResponse = {
+  notes: [],
+  hasMore: false,
+  skipped: true,
+};
+
+// The heartbeat brief is the only caller that passes `enabledSources` (see
+// ListNotesArgs above) — it is a workbench-internal marker of "this is the
+// unattended brief path", not a general opt-in flag. Reusing it (rather than
+// adding a second, overlapping opt-in argument) keeps every other caller of
+// granola_list_notes — interactive chat agents, other workflows — fail-loud
+// on a missing or rejected credential, which is the safer default: only a
+// caller that already declared itself brief-shaped degrades silently.
+function isHeartbeatShaped(args: { enabledSources?: string[] }): boolean {
+  return args.enabledSources !== undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,7 +210,11 @@ async function fetchGranolaJSON(
   if (!response.ok) {
     const body = errorMessageFromBody(await response.text().catch(() => ""));
     const detail = response.statusText || body;
-    throw new Error(`Granola API error: ${response.status} ${detail ?? ""}`);
+    const message = `Granola API error: ${response.status} ${detail ?? ""}`;
+    if (response.status === 401 || response.status === 403) {
+      throw new GranolaAuthError(message);
+    }
+    throw new Error(message);
   }
 
   const data: unknown = await response.json();
@@ -298,11 +326,20 @@ async function listNotes(
     throw new Error(`granola_list_notes: ${args.summary}`);
   }
 
+  const heartbeatShaped = isHeartbeatShaped(args);
+
   if (
     args.enabledSources !== undefined &&
     !args.enabledSources.includes("granola")
   ) {
-    return { notes: [], hasMore: false, skipped: true };
+    return SKIPPED_LIST_RESULT;
+  }
+
+  if (config.apiKey.length === 0) {
+    if (heartbeatShaped) {
+      return SKIPPED_LIST_RESULT;
+    }
+    throw new Error("Granola apiKey is required");
   }
 
   const limit = optionalPositiveInteger(
@@ -334,7 +371,14 @@ async function listNotes(
     url.searchParams.set("folder_id", folderId);
   }
 
-  return parseListResponse(await fetchGranolaJSON(config, url, signal));
+  try {
+    return parseListResponse(await fetchGranolaJSON(config, url, signal));
+  } catch (error) {
+    if (heartbeatShaped && error instanceof GranolaAuthError) {
+      return SKIPPED_LIST_RESULT;
+    }
+    throw error;
+  }
 }
 
 async function listFolders(
@@ -345,6 +389,10 @@ async function listFolders(
   const args = ListFoldersArgs(rawArgs);
   if (args instanceof type.errors) {
     throw new Error(`granola_list_folders: ${args.summary}`);
+  }
+
+  if (config.apiKey.length === 0) {
+    throw new Error("Granola apiKey is required");
   }
 
   const limit = optionalPositiveInteger(
@@ -373,6 +421,10 @@ async function getNote(
     // absent; surface the arktype summary for wrong-type inputs (e.g. a number).
     const missing = !("noteId" in rawArgs) || rawArgs.noteId === undefined;
     throw new Error(missing ? "noteId is required" : args.summary);
+  }
+
+  if (config.apiKey.length === 0) {
+    throw new Error("Granola apiKey is required");
   }
 
   const url = new URL(
