@@ -217,6 +217,47 @@ describe("linear_list_issues handler", () => {
     expect(JSON.parse(String(result.content))).toEqual({ skipped: true });
   });
 
+  it("wraps a brief-shaped call's issues under a source-unique key", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          createdAfter: "2026-07-01T00:00:00.000Z",
+          enabledSources: ["linear"],
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
+  });
+
+  it("keeps the raw GraphQL shape for non-brief callers", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {},
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(String(result.content))).toEqual({ nodes });
+  });
+
   it("scopes to a team and caps first at 100", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = makeFetchStub({ data: { team: { issues: { nodes } } } });
