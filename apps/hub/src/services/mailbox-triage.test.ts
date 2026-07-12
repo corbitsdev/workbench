@@ -450,6 +450,40 @@ describe("createMailboxTriage", () => {
     expect(teardownMock).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves the DB rows in place (does not teardown) when endSession fails, so the boot sweep can retry deprovisioning", async () => {
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    session.endSession.mockImplementation(async () => {
+      throw new Error("sidecar unreachable");
+    });
+    const triage = makeTriage(db, session, 20);
+
+    triage.enqueue(ITEM);
+    await triage.waitForDrain();
+
+    expect(session.endSession).toHaveBeenCalled();
+    expect(teardownMock).not.toHaveBeenCalled();
+  });
+
+  it("still tears down (nothing to deprovision) when the launch itself fails before a session ever exists", async () => {
+    const { db } = makeDb({
+      sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
+    });
+    const session = makeSessionService();
+    launchMock.mockImplementationOnce(async () => {
+      throw new Error("launch failed");
+    });
+    const triage = makeTriage(db, session, 20);
+
+    triage.enqueue(ITEM);
+    await triage.waitForDrain();
+
+    expect(session.endSession).not.toHaveBeenCalled();
+    expect(teardownMock).toHaveBeenCalledTimes(1);
+  });
+
   it("caps the queue at 50 and drops the oldest item on overflow, never blocking enqueue", async () => {
     const MAX_QUEUE = 50;
     const OVERFLOW = 6;
