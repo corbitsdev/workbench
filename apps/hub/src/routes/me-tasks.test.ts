@@ -75,16 +75,16 @@ let pushOutcome: unknown = {
   deduped: false,
 };
 const pushCalls: Record<string, unknown>[] = [];
+const stubPushService = {
+  pushTask: async (request: Record<string, unknown>) => {
+    pushCalls.push(request);
+    return pushOutcome;
+  },
+};
 const tasksReal = await import("@workbench/tasks");
 mock.module("@workbench/tasks", () => ({
   ...tasksReal,
   TASK_ADAPTERS: { attio: { id: "attio", providerName: "attio" } },
-  createTaskPushService: () => ({
-    pushTask: async (request: Record<string, unknown>) => {
-      pushCalls.push(request);
-      return pushOutcome;
-    },
-  }),
 }));
 
 const { createMeTasksRouter } = await import("./me-tasks");
@@ -95,7 +95,13 @@ function mountApp() {
     c.set("userId", c.req.header("x-test-user-id") ?? "user-a");
     return next();
   });
-  v1.route("/", createMeTasksRouter({} as unknown as HubDb));
+  v1.route(
+    "/",
+    createMeTasksRouter(
+      {} as unknown as HubDb,
+      stubPushService as unknown as Parameters<typeof createMeTasksRouter>[1],
+    ),
+  );
   const app = new Hono();
   app.route("/api/v1", v1);
   return app;
@@ -332,5 +338,35 @@ describe("POST /me/tasks/:id/push", () => {
       operation: "create",
       actorPrincipalId: "principal-a",
     });
+  });
+
+  it("routes concurrent requests through the one injected push service instance", async () => {
+    ownedResult = { id: VALID_ID };
+    pushCalls.length = 0;
+    pushOutcome = { status: "synced", externalId: "note_1", deduped: false };
+    const app = mountApp();
+    const [first, second] = await Promise.all([
+      app.fetch(
+        req(`/me/tasks/${VALID_ID}/push`, {
+          method: "POST",
+          user: "user-a",
+          body: JSON.stringify({ adapterId: "attio", operation: "create" }),
+        }),
+      ),
+      app.fetch(
+        req(`/me/tasks/${VALID_ID}/push`, {
+          method: "POST",
+          user: "user-a",
+          body: JSON.stringify({ adapterId: "attio", operation: "comment" }),
+        }),
+      ),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(pushCalls).toHaveLength(2);
+    expect(pushCalls.map((c) => c["operation"]).sort()).toEqual([
+      "comment",
+      "create",
+    ]);
   });
 });

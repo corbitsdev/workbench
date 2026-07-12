@@ -5,9 +5,6 @@ let reconcileCalls = 0;
 const tasksReal = await import("@workbench/tasks");
 mock.module("@workbench/tasks", () => ({
   ...tasksReal,
-  createTaskPushService: () => ({
-    pushTask: async () => ({ status: "pending" }),
-  }),
   createTaskReconciler: () => ({
     reconcileOnce: async () => {
       reconcileCalls += 1;
@@ -19,13 +16,11 @@ mock.module("@workbench/tasks", () => ({
 mock.module("../lib/task-push-store", () => ({
   createDrizzleTaskPushStore: () => ({}),
 }));
-mock.module("../lib/task-credential", () => ({
-  resolveAdapterCredential: () => async () => null,
-}));
 
 const { createTaskReconcilerService } = await import("./task-reconciler");
 
 const db = {} as unknown as HubDb;
+const stubPushService = { pushTask: async () => ({ status: "pending" as const }) };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -37,6 +32,7 @@ describe("createTaskReconcilerService", () => {
     const svc = createTaskReconcilerService({
       isEnabled: async () => false,
       db,
+      pushService: stubPushService,
       intervalMs: 5,
     });
     svc.start();
@@ -50,6 +46,7 @@ describe("createTaskReconcilerService", () => {
     const svc = createTaskReconcilerService({
       isEnabled: async () => true,
       db,
+      pushService: stubPushService,
       intervalMs: 5,
     });
     svc.start();

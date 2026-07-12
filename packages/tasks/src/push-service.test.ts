@@ -89,6 +89,47 @@ describe("createTaskPushService.pushTask", () => {
     expect(b).toEqual({ status: "synced", externalId: "ext-1", deduped: false });
   });
 
+  it("does not coalesce a concurrent create and comment on the same task and adapter", async () => {
+    const calls: TaskAdapterExecutableOperation[] = [];
+    let releaseCreate: (() => void) | undefined;
+    let releaseComment: (() => void) | undefined;
+    const createGate = new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    });
+    const commentGate = new Promise<void>((resolve) => {
+      releaseComment = resolve;
+    });
+    const service = createTaskPushService({
+      store,
+      resolveCredential: async () => credential,
+      adapters: {
+        fake: makeAdapter(async (op) => {
+          calls.push(op);
+          await (op === "create" ? createGate : commentGate);
+          return { externalId: `ext-${op}`, deduped: false };
+        }),
+      },
+    });
+
+    const create = service.pushTask({
+      taskId: "task-1",
+      adapterId: "fake",
+      operation: "create",
+      actorPrincipalId: "principal-owner",
+    });
+    const comment = service.pushTask({
+      taskId: "task-1",
+      adapterId: "fake",
+      operation: "comment",
+      actorPrincipalId: "principal-owner",
+    });
+    releaseCreate?.();
+    releaseComment?.();
+    await Promise.all([create, comment]);
+
+    expect(calls.sort()).toEqual(["comment", "create"]);
+  });
+
   it("does not coalesce pushes for different adapters of the same task", async () => {
     const calls: string[] = [];
     let release: (() => void) | undefined;
@@ -324,6 +365,41 @@ describe("createTaskPushService.pushTask", () => {
         actorPrincipalId: "principal-owner",
       }),
     ).rejects.toThrow(/does not support/i);
+  });
+
+  it("resolves the assignee with the task's own tenantId, not a caller-supplied one", async () => {
+    const resolveCalls: Array<{
+      ownerPrincipalId: string;
+      adapterId: string;
+      tenantId: string;
+    }> = [];
+    const calls: Call[] = [];
+    const service = createTaskPushService({
+      store,
+      resolveCredential: async () => credential,
+      resolveAssignee: async (ownerPrincipalId, adapterId, tenantId) => {
+        resolveCalls.push({ ownerPrincipalId, adapterId, tenantId });
+        return "assignee-1";
+      },
+      adapters: {
+        fake: makeAdapter(async (op, input, config) => {
+          calls.push({ op, input, config });
+          return { externalId: "ext-1", deduped: false };
+        }),
+      },
+    });
+
+    await service.pushTask({
+      taskId: "task-1",
+      adapterId: "fake",
+      operation: "create",
+      actorPrincipalId: "principal-owner",
+    });
+
+    expect(resolveCalls).toEqual([
+      { ownerPrincipalId: "principal-owner", adapterId: "fake", tenantId: "tenant-1" },
+    ]);
+    expect(calls[0]?.input.assignee).toBe("assignee-1");
   });
 
   it("throws when the task does not exist", async () => {
