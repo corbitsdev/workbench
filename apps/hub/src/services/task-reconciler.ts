@@ -1,10 +1,6 @@
 import { getLogger } from "@intx/log";
-import {
-  createTaskPushService,
-  createTaskReconciler,
-  TASK_ADAPTERS,
-} from "@workbench/tasks";
-import { resolveAdapterCredential } from "../lib/task-credential";
+import { createTaskReconciler } from "@workbench/tasks";
+import type { TaskPushService } from "@workbench/tasks";
 import { createDrizzleTaskPushStore } from "../lib/task-push-store";
 import type { HubDb } from "../db";
 
@@ -26,16 +22,15 @@ export interface TaskReconcilerService {
 export function createTaskReconcilerService(deps: {
   isEnabled: () => Promise<boolean>;
   db: HubDb;
+  pushService: TaskPushService;
   intervalMs?: number;
 }): TaskReconcilerService {
   const intervalMs = deps.intervalMs ?? DEFAULT_INTERVAL_MS;
   const store = createDrizzleTaskPushStore(deps.db);
-  const pushService = createTaskPushService({
+  const reconciler = createTaskReconciler({
     store,
-    adapters: TASK_ADAPTERS,
-    resolveCredential: resolveAdapterCredential(deps.db),
+    pushService: deps.pushService,
   });
-  const reconciler = createTaskReconciler({ store, pushService });
   let timer: ReturnType<typeof setInterval> | undefined;
 
   return {

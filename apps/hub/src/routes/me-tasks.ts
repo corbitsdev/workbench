@@ -9,17 +9,15 @@ import {
   TaskSchema,
   UpdateTaskBodySchema,
 } from "@workbench/shared";
-import { createTaskPushService, TASK_ADAPTERS } from "@workbench/tasks";
+import { TASK_ADAPTERS } from "@workbench/tasks";
+import type { TaskPushService } from "@workbench/tasks";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
-import { resolveAdapterCredential } from "../lib/task-credential";
-import { getIdentityAccounts } from "../lib/member-identity";
 import {
   createOwnerTask,
   getOwnerTask,
   listOwnerTasks,
   updateOwnerTask,
 } from "../lib/task-store";
-import { createDrizzleTaskPushStore } from "../lib/task-push-store";
 import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { UuidParam } from "../lib/uuid";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
@@ -32,6 +30,7 @@ const DEFAULT_TASKS_PAGE_LIMIT = 50;
 // never see or mutate another member's task.
 export function createMeTasksRouter(
   db: HubDb,
+  pushService: TaskPushService,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -283,23 +282,6 @@ export function createMeTasksRouter(
         id,
       });
       if (!owned) return c.json({ error: "task not found" }, 404);
-
-      const pushService = createTaskPushService({
-        store: createDrizzleTaskPushStore(db),
-        adapters: TASK_ADAPTERS,
-        resolveCredential: resolveAdapterCredential(db),
-        resolveAssignee: async (ownerPrincipalId, _adapterId) => {
-          const provider = TASK_ADAPTERS[body.adapterId]?.providerName;
-          if (provider === undefined) return null;
-          const accounts = await getIdentityAccounts(
-            db,
-            member.tenantId,
-            ownerPrincipalId,
-            [provider],
-          );
-          return accounts[0]?.value ?? null;
-        },
-      });
 
       const outcome = await pushService.pushTask({
         taskId: id,

@@ -81,6 +81,10 @@ import { createRunLivenessSweep } from "./services/run-liveness-sweep";
 import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createScheduler } from "./services/scheduler";
 import { createTaskReconcilerService } from "./services/task-reconciler";
+import { createTaskPushService, TASK_ADAPTERS } from "@workbench/tasks";
+import { resolveAdapterCredential } from "./lib/task-credential";
+import { createDrizzleTaskPushStore } from "./lib/task-push-store";
+import { getIdentityAccounts } from "./lib/member-identity";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
 import { enrichHeartbeatTriggerPayload } from "./lib/heartbeat-trigger-payload";
 import {
@@ -1125,6 +1129,25 @@ v1.post("/me", async (c) => {
   });
 });
 
+// Shared across the `/me/tasks/:id/push` route and the background reconciler
+// so concurrent pushes for the same (task, adapter, operation) — whether both
+// from the route, both from the reconciler, or one of each — coalesce onto
+// one in-process in-flight map instead of two independent guards that never
+// see each other's work.
+const taskPushService = createTaskPushService({
+  store: createDrizzleTaskPushStore(db),
+  adapters: TASK_ADAPTERS,
+  resolveCredential: resolveAdapterCredential(db),
+  resolveAssignee: async (ownerPrincipalId, adapterId, tenantId) => {
+    const provider = TASK_ADAPTERS[adapterId]?.providerName;
+    if (provider === undefined) return null;
+    const accounts = await getIdentityAccounts(db, tenantId, ownerPrincipalId, [
+      provider,
+    ]);
+    return accounts[0]?.value ?? null;
+  },
+});
+
 v1.route(
   "/",
   createAgentProvisioningRouter(
@@ -1144,7 +1167,7 @@ v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createInboxRouter(db, mailboxEventBus));
-v1.route("/", createMeTasksRouter(db));
+v1.route("/", createMeTasksRouter(db, taskPushService));
 
 // Resolves a member principal to the user mail identity trigger payloads
 // carry (`${refId}@${domain}` via deriveUserMailAddress). Shared by the
@@ -1419,6 +1442,7 @@ const taskReconciler = createTaskReconcilerService({
       config.tasksReconciler.enabled,
     ),
   db,
+  pushService: taskPushService,
 });
 taskReconciler.start();
 
