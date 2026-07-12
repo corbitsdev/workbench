@@ -9,8 +9,9 @@ import {
   STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
+import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
 
-import { workflow } from "./index";
+import { workflow, heartbeatIntakeStepKey } from "./index";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -78,7 +79,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(4);
+    expect(kinds.length).toBe(3 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -94,18 +95,43 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Deterministic tool steps
+  // Deterministic tool steps — generated from WIRED_BRIEF_SOURCES
   // -------------------------------------------------------------------------
-  test("intake is a deterministic granola_list_notes step with no inference source", () => {
-    const intake = stepPrimitive("intake");
-    expect(intake.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
-    expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
-    expect(intake.agent.inference.sources).toEqual([]);
+  test("generates exactly one intake step per WIRED_BRIEF_SOURCES entry", () => {
+    const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
+      heartbeatIntakeStepKey(s.key),
+    );
+    for (const stepId of intakeStepIds) {
+      expect(Object.keys(workflow.steps)).toContain(stepId);
+    }
+    const nonIntakeSteps = Object.keys(workflow.steps).filter(
+      (id) => !intakeStepIds.includes(id),
+    );
+    expect(nonIntakeSteps.sort()).toEqual(["brief", "notify", "persist"]);
   });
 
-  test("intake is nonFatal — a missing/rejected Granola credential cannot fail the run", () => {
-    const intake = stepPrimitive("intake");
+  test("each generated intake step is a deterministic call to its source's tool, nonFatal, with no inference source", () => {
+    for (const source of WIRED_BRIEF_SOURCES) {
+      const intake = stepPrimitive(heartbeatIntakeStepKey(source.key));
+      expect(intake.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+      expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain(source.tool);
+      expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+      expect(intake.agent.inference.sources).toEqual([]);
+      expect(intake.input).toEqual({ from: "trigger.payload" });
+      expect(intake.after).toBeUndefined();
+    }
+  });
+
+  // Load-bearing: today's catalog (Granola only) must generate a step graph
+  // behaviorally identical to the old hand-written definition — one intake
+  // step calling granola_list_notes, nonFatal, with brief depending on it.
+  test("today's catalog (Granola only) generates the same graph shape as the hand-written v0", () => {
+    expect(WIRED_BRIEF_SOURCES.map((s) => s.key)).toEqual(["granola"]);
+    const intake = stepPrimitive(heartbeatIntakeStepKey("granola"));
+    expect(intake.agent.id).toBe("heartbeat-intake-granola");
+    expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
     expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
+    expect(stepPrimitive("brief").after).toEqual(["intake-granola"]);
   });
 
   test("notify is a deterministic mail_send step with no inference source", () => {
@@ -139,14 +165,25 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Selector wiring
   // -------------------------------------------------------------------------
-  test("intake reads the trigger payload verbatim", () => {
-    expect(stepPrimitive("intake").input).toEqual({ from: "trigger.payload" });
+  test("every intake step reads the trigger payload verbatim", () => {
+    for (const source of WIRED_BRIEF_SOURCES) {
+      expect(stepPrimitive(heartbeatIntakeStepKey(source.key)).input).toEqual(
+        { from: "trigger.payload" },
+      );
+    }
   });
 
-  test("brief merges the trigger payload and the intake output", () => {
+  test("brief merges the trigger payload and every intake step's output, and depends on all of them", () => {
+    const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
+      heartbeatIntakeStepKey(s.key),
+    );
     expect(stepPrimitive("brief").input).toEqual({
-      merge: [{ from: "trigger.payload" }, { from: "steps.intake.output" }],
+      merge: [
+        { from: "trigger.payload" },
+        ...intakeStepIds.map((stepId) => ({ from: `steps.${stepId}.output` })),
+      ],
     });
+    expect(stepPrimitive("brief").after).toEqual(intakeStepIds);
   });
 
   // -------------------------------------------------------------------------
@@ -179,7 +216,7 @@ describe("heartbeat native workflow", () => {
     const briefReply =
       "# Morning brief\n\n## What happened\n- Discovery call with Acme.";
     const { invoker, ran } = makeRecordingInvoker({
-      "heartbeat-intake": {
+      "heartbeat-intake-granola": {
         notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
       },
       "heartbeat-brief": { reply: briefReply },
@@ -197,7 +234,7 @@ describe("heartbeat native workflow", () => {
     expect(result.terminalStatus).toBe("completed");
 
     const ranIds = ran.map((r) => r.id);
-    expect(ranIds).toContain("heartbeat-intake");
+    expect(ranIds).toContain("heartbeat-intake-granola");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
@@ -210,7 +247,7 @@ describe("heartbeat native workflow", () => {
   test("mail_send receives the firing user's usr_ address and the artifact persists the brief", async () => {
     const briefReply = "# Morning brief\n\nAll clear today.";
     const { invoker, ran } = makeRecordingInvoker({
-      "heartbeat-intake": { notes: [] },
+      "heartbeat-intake-granola": { notes: [] },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
