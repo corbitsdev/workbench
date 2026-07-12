@@ -353,6 +353,7 @@ export function createOwnerRouter(
   router.get(
     "/owner/features",
     describeRoute({
+      tags: ["Owner"],
       description:
         "Owner-managed feature grants (scheduler, triage, tasks reconciler) and their enablement state.",
       responses: {
@@ -388,7 +389,16 @@ export function createOwnerRouter(
   router.put(
     "/owner/features/:name",
     describeRoute({
+      tags: ["Owner"],
       description: "Enable or disable a feature grant for the workbench.",
+      parameters: [
+        {
+          name: "name",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
       responses: {
         200: {
           description: "Updated feature state",

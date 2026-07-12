@@ -29,7 +29,7 @@ const log = getLogger(["api", "mailbox-triage"]);
 
 const { principal, agentInstance, tenant } = intxSchema;
 
-export const TRIAGE_TEMPLATE_KEY = "myra-triage";
+const TRIAGE_TEMPLATE_KEY = "myra-triage";
 
 /**
  * Sender local-parts owned by system rails. Mail from these never triages:
