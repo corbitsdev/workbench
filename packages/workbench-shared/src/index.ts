@@ -16,6 +16,7 @@ export * from "./scheduled-trigger";
 export * from "./webhook-trigger";
 export * from "./tasks";
 export * from "./pain-point-collateral";
+export * from "./sumble-account-intel";
 export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./changelog";

@@ -205,6 +205,12 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   },
   linear_list_teams: "Listing Linear teams",
   linear_list_users: "Listing Linear users",
+  linear_create_issue: (args) => {
+    const title = firstStringArg(args, ["title", "name"]);
+    return title === null
+      ? "Creating a Linear issue"
+      : `Creating Linear issue ${truncate(title)}`;
+  },
 
   // Attio CRM — brand name in the phrase (not "CRM") so the UI reads naturally
   attio_query_records: (args) => {
@@ -310,6 +316,21 @@ const PHRASES: Record<string, FriendlyPhrase> = {
 
   // X / Twitter
   x_search: searching("X"),
+
+  // Sumble — account intelligence
+  sumble_resolve_organization: (args) => {
+    const term = firstStringArg(args, ["domain", "slug", "name"]);
+    return term === null
+      ? "Resolving an organization"
+      : `Resolving ${truncate(term)}`;
+  },
+  sumble_search_organizations: searching("Sumble organizations"),
+  sumble_get_org_tech_stack: "Reading an org's tech stack",
+  sumble_list_teams: "Listing org teams",
+  sumble_search_people: "Finding people at an org",
+  sumble_list_jobs: "Listing open jobs",
+  sumble_search_signals: "Checking account signals",
+  sumble_get_intelligence_brief: "Building an account brief",
 
   // YouTube
   youtube_search: searching("YouTube"),
@@ -795,6 +816,10 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
   scrapecreators: {
     verb: "pulled social data",
     altVerb: "gathered social data",
+  },
+  sumble: {
+    verb: "researched the account",
+    altVerb: "dug into account intelligence",
   },
   gamma: { verb: "worked on a presentation", altVerb: "built a presentation" },
   dispatch: {

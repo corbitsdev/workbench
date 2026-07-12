@@ -197,6 +197,22 @@ const MYRA_CATALOG_PACKAGES: CatalogPackage[] = [
     tags: ["x", "twitter", "social", "posts"],
   },
   {
+    pin: "@workbench/tools-sumble",
+    package: "sumble",
+    summary:
+      "Sumble — account intelligence: resolve organizations, tech stack, teams, people, jobs, and intent signals.",
+    tags: [
+      "sumble",
+      "account",
+      "intelligence",
+      "prospecting",
+      "tech stack",
+      "signals",
+      "people",
+      "enrichment",
+    ],
+  },
+  {
     pin: "@workbench/tools-hackernews",
     package: "hackernews",
     summary: "Hacker News — search stories and discussions.",

@@ -73,6 +73,7 @@
     "@workbench/tools-scrapecreators": "workspace:*",
     "@workbench/tools-skills": "workspace:*",
     "@workbench/tools-slack": "workspace:*",
+    "@workbench/tools-sumble": "workspace:*",
     "@workbench/tools-vercel": "workspace:*",
     "@workbench/tools-workflows": "workspace:*",
     "@workbench/tools-x": "workspace:*",

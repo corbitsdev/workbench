@@ -580,6 +580,13 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       platforms: ["Reddit", "TikTok", "Instagram", "Threads", "Pinterest"],
     },
     {
+      providerName: "sumble",
+      providerPlugin: "sumble",
+      label: "Sumble",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://api.sumble.com/v8" },
+    },
+    {
       providerName: "bluesky",
       providerPlugin: "bluesky",
       label: "Bluesky",

@@ -167,6 +167,16 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "workflow_list_runs",
     "workflow_signal",
   ],
+  "@workbench/tools-sumble/sumble": [
+    "sumble_resolve_organization",
+    "sumble_search_organizations",
+    "sumble_get_org_tech_stack",
+    "sumble_list_teams",
+    "sumble_search_people",
+    "sumble_list_jobs",
+    "sumble_search_signals",
+    "sumble_get_intelligence_brief",
+  ],
   "@workbench/tools-x/x": ["x_search"],
   "@workbench/tools-youtube/youtube": ["youtube_search"],
 };
@@ -197,6 +207,7 @@ const PACKAGE_PROVIDERS: Record<string, string> = {
   "@workbench/tools-reddit": "scrapecreators",
   "@workbench/tools-scrapecreators": "scrapecreators",
   "@workbench/tools-slack": "slack",
+  "@workbench/tools-sumble": "sumble",
   "@workbench/tools-x": "xai",
   "@workbench/tools-youtube": "youtube",
 };
