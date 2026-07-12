@@ -11,6 +11,7 @@ import {
 } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { getConfig } from "../config";
+import { createTtlMemo } from "./ttl-memo";
 import { loadMemberRoleGrantsForTenantChain } from "./workflow-run-gate";
 
 const { grant } = intxSchema;
@@ -77,15 +78,11 @@ export async function isFeatureEnabledForTenant(
 // tasks-reconciler interval each re-check on every pass, and the grant changes
 // rarely, so a ~30s window collapses that to one grant-store query per
 // (tenant, feature) rather than one per tick. In-process only, no redis.
-type FeatureCacheEntry = { enabled: boolean; storedAt: number };
-
-const cache = new Map<string, FeatureCacheEntry>();
-let inflight = new Map<string, Promise<boolean>>();
+const memo = createTtlMemo<boolean>();
 
 /** Test-only: clears the feature-grant cache. */
 export function resetFeatureGrantCache(): void {
-  cache.clear();
-  inflight = new Map();
+  memo.reset();
 }
 
 export async function isFeatureEnabledForTenantCached(
@@ -95,29 +92,12 @@ export async function isFeatureEnabledForTenantCached(
   envOverride: boolean,
   opts?: { ttlMs?: number; now?: () => number },
 ): Promise<boolean> {
-  const ttlMs = opts?.ttlMs ?? getConfig().featureGrantCacheTtlMs;
-  const clock = opts?.now ?? Date.now;
-  const key = `${tenantId}:${name}`;
-
-  const cached = cache.get(key);
-  if (cached !== undefined && clock() - cached.storedAt < ttlMs) {
-    return cached.enabled;
-  }
-
-  const existing = inflight.get(key);
-  if (existing !== undefined) return existing;
-
-  const promise = isFeatureEnabledForTenant(db, tenantId, name, envOverride)
-    .then((enabled) => {
-      cache.set(key, { enabled, storedAt: clock() });
-      return enabled;
-    })
-    .finally(() => {
-      inflight.delete(key);
-    });
-
-  inflight.set(key, promise);
-  return promise;
+  return memo.get({
+    key: `${tenantId}:${name}`,
+    ttlMs: opts?.ttlMs ?? getConfig().featureGrantCacheTtlMs,
+    now: opts?.now,
+    resolve: () => isFeatureEnabledForTenant(db, tenantId, name, envOverride),
+  });
 }
 
 async function memberRoleRowLock(
