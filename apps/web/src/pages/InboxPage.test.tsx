@@ -36,17 +36,35 @@ type ListState<T> = {
   isError: boolean;
 };
 
+type PageState = {
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+};
+
 let mailbox: MailboxState;
+let mailboxPaging: PageState;
 let detail: DetailState;
 let tasksState: ListState<Task>;
+let tasksPaging: PageState;
 let runsState: ListState<NowRun>;
 let refetchCalls = 0;
+let fetchNextMailboxCalls = 0;
+let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
 const detailQueryIds: (string | null)[] = [];
 
 mock.module("../hooks/use-tasks", () => ({
   TASKS_QUERY_KEY: ["tasks"],
-  useTasks: () => tasksState,
+  useTasks: () => ({
+    data: tasksState.data,
+    isLoading: tasksState.isLoading,
+    isError: tasksState.isError,
+    hasNextPage: tasksPaging.hasNextPage,
+    isFetchingNextPage: tasksPaging.isFetchingNextPage,
+    fetchNextPage: () => {
+      fetchNextTasksCalls += 1;
+    },
+  }),
 }));
 
 mock.module("../hooks/use-workflow", () => ({
@@ -63,6 +81,11 @@ mock.module("../hooks/use-mailbox", () => ({
     data: mailbox.data,
     isLoading: mailbox.isLoading,
     isError: mailbox.isError,
+    hasNextPage: mailboxPaging.hasNextPage,
+    isFetchingNextPage: mailboxPaging.isFetchingNextPage,
+    fetchNextPage: () => {
+      fetchNextMailboxCalls += 1;
+    },
     refetch: () => {
       refetchCalls += 1;
     },
@@ -150,8 +173,10 @@ function renderInbox(initialPath = "/inbox") {
 
 function resetStates() {
   mailbox = { data: undefined, isLoading: false, isError: false };
+  mailboxPaging = { hasNextPage: false, isFetchingNextPage: false };
   detail = { data: undefined, isLoading: false, isError: false };
   tasksState = { data: [], isLoading: false, isError: false };
+  tasksPaging = { hasNextPage: false, isFetchingNextPage: false };
   runsState = { data: [], isLoading: false, isError: false };
 }
 
@@ -159,6 +184,8 @@ afterEach(() => {
   cleanup();
   resetStates();
   refetchCalls = 0;
+  fetchNextMailboxCalls = 0;
+  fetchNextTasksCalls = 0;
   markReadIds.length = 0;
   detailQueryIds.length = 0;
 });
@@ -511,6 +538,67 @@ describe("InboxPage Now feed", () => {
     renderInbox("/inbox?task=task-1");
     expect(
       screen.queryByText("That task is no longer in your feed."),
+    ).toBeNull();
+  });
+});
+
+describe("InboxPage load-more control", () => {
+  it("hides the control when neither source has another page", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox();
+    expect(
+      screen.queryByRole("button", { name: /show older/i }),
+    ).toBeNull();
+  });
+
+  it("shows the control when the mailbox has another page and fetches it on click", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailboxPaging = { hasNextPage: true, isFetchingNextPage: false };
+    renderInbox();
+    fireEvent.click(screen.getByRole("button", { name: /show older/i }));
+    expect(fetchNextMailboxCalls).toBe(1);
+    expect(fetchNextTasksCalls).toBe(0);
+  });
+
+  it("shows the control when tasks have another page and fetches it on click", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Follow up" })],
+      isLoading: false,
+      isError: false,
+    };
+    tasksPaging = { hasNextPage: true, isFetchingNextPage: false };
+    renderInbox();
+    fireEvent.click(screen.getByRole("button", { name: /show older/i }));
+    expect(fetchNextTasksCalls).toBe(1);
+    expect(fetchNextMailboxCalls).toBe(0);
+  });
+
+  it("shows a loading label while a next page is fetching", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    mailboxPaging = { hasNextPage: true, isFetchingNextPage: true };
+    renderInbox();
+    screen.getByRole("button", { name: /loading/i });
+  });
+
+  it("hides the control behind the reading pane when a message is selected", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    mailboxPaging = { hasNextPage: true, isFetchingNextPage: false };
+    renderInbox("/inbox/msg-1");
+    expect(
+      screen.queryByRole("button", { name: /show older/i }),
     ).toBeNull();
   });
 });
