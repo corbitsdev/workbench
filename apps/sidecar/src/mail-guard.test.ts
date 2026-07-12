@@ -222,16 +222,17 @@ describe("createGuardedMailRunner", () => {
       // (resetting the per-turn budget), then this agent replies.
       guarded.resetOutboundBudget();
       results.push(
-        await guarded.run(sendTo(`turn${turn}`, other, `reply ${turn}`), signal),
+        await guarded.run(
+          sendTo(`turn${turn}`, other, `reply ${turn}`),
+          signal,
+        ),
       );
     }
 
     expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_CORRESPONDENT);
     const blocked = results.filter((r) => r.isError);
     expect(blocked).toHaveLength(3);
-    expect(JSON.stringify(blocked[0]?.content)).toContain(
-      "Too many messages",
-    );
+    expect(JSON.stringify(blocked[0]?.content)).toContain("Too many messages");
   });
 
   it("never throttles sends to a member (usr_) recipient across many turns", async () => {
@@ -317,5 +318,107 @@ describe("createGuardedMailRunner", () => {
       signal,
     );
     expect(afterEviction.isError).toBeUndefined();
+  });
+
+  function reply(id: string, content: string): ToolCall {
+    return {
+      id,
+      name: "mail_reply",
+      arguments: { ref: { uid: 1, mailbox: "INBOX" }, content },
+    };
+  }
+
+  it("terminates a mail_reply ping-pong once the resolver reveals the same ins_ correspondent", async () => {
+    const inner = countingRunner();
+    const other = "ins_other@gtm.localhost";
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => other,
+    });
+    const signal = new AbortController().signal;
+
+    const results: ToolResult[] = [];
+    for (let turn = 0; turn < MAX_OUTBOUND_PER_CORRESPONDENT + 3; turn++) {
+      guarded.resetOutboundBudget();
+      results.push(
+        await guarded.run(reply(`t${turn}`, `reply ${turn}`), signal),
+      );
+    }
+
+    expect(inner.calls).toHaveLength(MAX_OUTBOUND_PER_CORRESPONDENT);
+    const blocked = results.filter((r) => r.isError);
+    expect(blocked).toHaveLength(3);
+    expect(JSON.stringify(blocked[0]?.content)).toContain("Too many messages");
+  });
+
+  it("falls through to per-turn budget only when the resolver returns null", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => null,
+    });
+    const signal = new AbortController().signal;
+
+    const turns = MAX_OUTBOUND_PER_CORRESPONDENT + 5;
+    for (let turn = 0; turn < turns; turn++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        reply(`u${turn}`, `reply ${turn}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    expect(inner.calls).toHaveLength(turns);
+  });
+
+  it("lets the reply proceed when the resolver throws", async () => {
+    const inner = countingRunner();
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => {
+        throw new Error("transport unreachable");
+      },
+    });
+    const signal = new AbortController().signal;
+
+    const result = await guarded.run(reply("r1", "hello"), signal);
+
+    expect(result.isError).toBeUndefined();
+    expect(inner.calls).toHaveLength(1);
+  });
+
+  it("exempts a usr_ reply recipient resolved by the resolver from the correspondent bound", async () => {
+    const inner = countingRunner();
+    const member = "usr_sawyer@gtm.localhost";
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => member,
+    });
+    const signal = new AbortController().signal;
+
+    const turns = MAX_OUTBOUND_PER_CORRESPONDENT + 5;
+    for (let turn = 0; turn < turns; turn++) {
+      guarded.resetOutboundBudget();
+      const result = await guarded.run(
+        reply(`m${turn}`, `reply ${turn}`),
+        signal,
+      );
+      expect(result.isError).toBeUndefined();
+    }
+
+    expect(inner.calls).toHaveLength(turns);
+  });
+
+  it("does not call the reply resolver for mail_send", async () => {
+    const inner = countingRunner();
+    let resolverCalls = 0;
+    const guarded = createGuardedMailRunner(inner, {
+      resolveReplyRecipient: async () => {
+        resolverCalls += 1;
+        return "ins_other@gtm.localhost";
+      },
+    });
+    const signal = new AbortController().signal;
+
+    await guarded.run(send("s1", "hello"), signal);
+
+    expect(resolverCalls).toBe(0);
   });
 });

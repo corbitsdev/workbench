@@ -67,6 +67,15 @@ export type GuardedMailRunnerOptions = {
   correspondentWindowMs?: number;
   maxTrackedCorrespondents?: number;
   now?: () => number;
+  /**
+   * Resolves a `mail_reply` call's `ref` to the recipient address it will
+   * send to, so the cross-turn correspondent bound can be applied before the
+   * send happens. Returns `null` when the address cannot be resolved.
+   * Omitted, or a rejected/failed resolution, falls through to the
+   * per-turn-only behavior — resolution failure must never block or crash a
+   * legitimate reply.
+   */
+  resolveReplyRecipient?: (ref: unknown) => Promise<string | null>;
 };
 
 function blocked(call: ToolCall, message: string): ToolResult {
@@ -90,15 +99,20 @@ function recipientOf(call: ToolCall): string {
 }
 
 /**
- * Only `to`-addressed sends carry a resolvable agent address up front;
- * `mail_reply` targets a message `ref` that this guard cannot map to an
- * address without the mailbox, so the cross-turn correspondent bound only
- * applies to direct `mail_send` calls naming an `ins_` recipient.
+ * `mail_send` carries a resolvable agent address up front in `to`. `mail_reply`
+ * only carries a message `ref` — its recipient is the parent message's sender,
+ * which the runner resolves inside the black-box mail transport. To bound
+ * cross-turn reply loops too, `run()` below asks the optional
+ * `resolveReplyRecipient` hook to look that address up before the send.
  */
 function agentRecipientOf(call: ToolCall): string | undefined {
   const to = call.arguments.to;
   if (typeof to === "string" && to.startsWith(AGENT_ADDRESS_PREFIX)) return to;
   return undefined;
+}
+
+function isAgentAddress(value: string | null | undefined): value is string {
+  return typeof value === "string" && value.startsWith(AGENT_ADDRESS_PREFIX);
 }
 
 /**
@@ -133,6 +147,7 @@ export function createGuardedMailRunner(
   const maxTrackedCorrespondents =
     options.maxTrackedCorrespondents ?? MAX_TRACKED_CORRESPONDENTS;
   const now = options.now ?? Date.now;
+  const resolveReplyRecipient = options.resolveReplyRecipient;
   let outboundCount = 0;
   const sentKeys = new Map<string, number>();
   // Cross-turn, per-agent-correspondent send timestamps. Deliberately NOT
@@ -183,7 +198,23 @@ export function createGuardedMailRunner(
         );
       }
 
-      const agentRecipient = agentRecipientOf(call);
+      let agentRecipient = agentRecipientOf(call);
+      if (
+        agentRecipient === undefined &&
+        call.name === "mail_reply" &&
+        resolveReplyRecipient !== undefined
+      ) {
+        try {
+          const resolved = await resolveReplyRecipient(call.arguments.ref);
+          if (isAgentAddress(resolved)) agentRecipient = resolved;
+        } catch (cause) {
+          logger.debug(
+            "Reply recipient resolution failed; falling through to per-turn budget only",
+            { error: cause instanceof Error ? cause.message : String(cause) },
+          );
+        }
+      }
+
       if (agentRecipient !== undefined) {
         const nowMs = now();
         const recentSends = pruneCorrespondent(agentRecipient, nowMs);
