@@ -9,6 +9,7 @@ mock.module("../lib/artifact-tools", () => ({
 type StoreCall = { fn: string; args: Record<string, unknown> };
 const storeCalls: StoreCall[] = [];
 let updateResult: unknown = { id: "task-1" };
+let triageDefaultStatus: string | undefined;
 mock.module("../lib/task-store", () => ({
   createOwnerTask: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "create", args });
@@ -22,6 +23,7 @@ mock.module("../lib/task-store", () => ({
     storeCalls.push({ fn: "list", args });
     return [{ id: "task-1" }];
   },
+  resolveTriageTaskDefaultStatus: async () => triageDefaultStatus,
 }));
 
 const { createTaskTools } = await import("./task-tools");
@@ -45,6 +47,7 @@ const signal = new AbortController().signal;
 describe("task_create", () => {
   it("scopes to the resolved owner and attributes creation to the agent", async () => {
     ownerResult = "principal-owner";
+    triageDefaultStatus = undefined;
     storeCalls.length = 0;
     const raw = await tool("task_create").handler(
       { title: "Prep follow-up", body: "context" },
@@ -60,13 +63,27 @@ describe("task_create", () => {
       title: "Prep follow-up",
       source: "agent",
     });
+    expect(call?.args.status).toBeUndefined();
   });
 
   it("fails closed when the agent has no owning user", async () => {
     ownerResult = null;
+    triageDefaultStatus = undefined;
     await expect(
       tool("task_create").handler({ title: "x" }, signal),
     ).rejects.toThrow(/no owning user/i);
+  });
+
+  it("lands a triage-created task in waiting, not the open default", async () => {
+    ownerResult = "principal-owner";
+    triageDefaultStatus = "waiting";
+    storeCalls.length = 0;
+    await tool("task_create").handler(
+      { title: "Follow up with sender" },
+      signal,
+    );
+    const call = storeCalls.find((c) => c.fn === "create");
+    expect(call?.args.status).toBe("waiting");
   });
 });
 

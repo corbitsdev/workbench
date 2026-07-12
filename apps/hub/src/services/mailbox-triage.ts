@@ -24,13 +24,19 @@ import type { MailboxEventBus } from "../lib/mailbox-events";
 import { readMemberPreferences } from "../lib/member-preferences";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import { launchAgentSession } from "./agent-provisioning";
-import { resolveMyraTriageDefinition, teardownThreadRows } from "./myra-threads";
+import {
+  resolveMyraTriageDefinition,
+  teardownThreadRows,
+} from "./myra-threads";
 
 const log = getLogger(["api", "mailbox-triage"]);
 
 const { principal, agentInstance, tenant } = intxSchema;
 
-const TRIAGE_TEMPLATE_KEY = "myra-triage";
+// Exported so task-tools.ts can recognize a triage-created task and force it
+// into `waiting` (see resolveTriageTaskDefaultStatus) without a second,
+// driftable copy of this string.
+export const TRIAGE_TEMPLATE_KEY = "myra-triage";
 
 /**
  * Sender local-parts owned by system rails. Mail from these never triages:
@@ -252,7 +258,11 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
       item.memberPrincipalId,
     );
     const autonomy = resolveAgentAutonomy(prefs);
-    const loadout = resolveMailboxLoadout(autonomy);
+    // Default true (see the `tasksTriageCreate` registry entry): a member who
+    // has never touched the setting keeps getting the tasks triage already
+    // prepares today.
+    const tasksEnabled = prefs.tasksTriageCreate !== false;
+    const loadout = resolveMailboxLoadout(autonomy, tasksEnabled);
 
     const now = new Date();
     const instanceId = generateId("instance");

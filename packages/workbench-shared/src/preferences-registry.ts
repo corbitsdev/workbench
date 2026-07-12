@@ -103,6 +103,38 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
       "Notify me in my inbox when a task is created for me, assigned to me, or waiting on me.",
     category: "Notifications",
   },
+  // Tasks toggles from the task design spike. Triage's own task creation
+  // defaults ON so prepare-only members keep getting the tasks it already
+  // prepares today; the other two default OFF because they are additive
+  // behaviors (pushing a task to an external adapter, surfacing done work)
+  // that must not change existing behavior for a member who never opts in.
+  // Task-event mail is governed by `taskMailEnabled` above.
+  {
+    key: "tasksTriageCreate",
+    type: "boolean",
+    default: true,
+    label: "Triage may create tasks",
+    description:
+      "Let Myra's inbox triage leave a task behind for an actionable message.",
+    category: "Automations",
+  },
+  {
+    key: "tasksAutoSendAdapter",
+    type: "boolean",
+    default: false,
+    label: "Auto-send tasks to CRM",
+    description:
+      "Push new tasks to your connected CRM/tracker automatically instead of sending them on request.",
+    category: "Automations",
+  },
+  {
+    key: "tasksShowCompleted",
+    type: "boolean",
+    default: false,
+    label: "Show completed tasks",
+    description: "Include done and cancelled tasks in your task list.",
+    category: "Inbox",
+  },
 ];
 
 /**
@@ -126,8 +158,11 @@ export const BRIEF_SOURCE_CATALOG: readonly {
    * workflow generates an intake step only for entries that carry this. */
   tool?: string;
 }[] = CREDENTIAL_PROVIDER_CATALOG.filter(
-  (entry): entry is typeof entry & { briefSource: NonNullable<typeof entry.briefSource> } =>
-    entry.briefSource !== undefined,
+  (
+    entry,
+  ): entry is typeof entry & {
+    briefSource: NonNullable<typeof entry.briefSource>;
+  } => entry.briefSource !== undefined,
 ).map((entry) => ({
   key: entry.providerName,
   label: entry.label,
@@ -150,9 +185,12 @@ export function heartbeatIntakeStepKey(sourceKey: string): string {
   return `intake-${sourceKey}`;
 }
 
-export const WIRED_BRIEF_SOURCES: readonly ((typeof BRIEF_SOURCE_CATALOG)[number] &
-  { tool: string })[] = BRIEF_SOURCE_CATALOG.filter(
-  (source): source is (typeof BRIEF_SOURCE_CATALOG)[number] & { tool: string } =>
+export const WIRED_BRIEF_SOURCES: readonly ((typeof BRIEF_SOURCE_CATALOG)[number] & {
+  tool: string;
+})[] = BRIEF_SOURCE_CATALOG.filter(
+  (
+    source,
+  ): source is (typeof BRIEF_SOURCE_CATALOG)[number] & { tool: string } =>
     source.tool !== undefined,
 );
 

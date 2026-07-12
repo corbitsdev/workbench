@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
 import type {
   Task,
   TaskExternalRef,
@@ -8,6 +9,7 @@ import type {
 import {
   task,
   taskExternalRef,
+  memberAgentInstance,
   type TaskExternalRefRow,
   type TaskRow,
 } from "../db/schema";
@@ -15,6 +17,12 @@ import type { HubDb } from "../db";
 import { deliverTaskMail } from "./deliver-task-mail";
 import type { MailboxEventBus } from "./mailbox-events";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+
+// Mirrors `TRIAGE_TEMPLATE_KEY` in ../services/mailbox-triage.ts. Duplicated
+// rather than imported so this lib module (below services in the dependency
+// direction) never depends on a service; a `memberAgentInstance.templateKey`
+// audit would catch drift either way.
+const TRIAGE_TEMPLATE_KEY = "myra-triage";
 
 export type TaskPage = {
   items: Task[];
@@ -38,6 +46,11 @@ export type CreateTaskInput = {
   due?: string;
   links?: TaskLink[];
   mailboxEventBus?: MailboxEventBus;
+  // Omitted defaults to the column default (`open`). Callers that create a
+  // task on the owner's behalf ahead of their own review — mailbox triage's
+  // `task_create` is the only one today — pass `waiting` so it starts parked
+  // rather than nagging before the person has seen it.
+  status?: TaskStatus;
 };
 
 export type UpdateTaskInput = {
@@ -168,6 +181,49 @@ export async function getOwnerTask(
   return toApiTask(row, refs.get(row.id) ?? []);
 }
 
+/**
+ * Task creation is prepare-only for every caller today — mailbox triage is
+ * the sole write `task_create` is admitted to (see
+ * packages/myra/src/personas/mailbox.ts). A triage-created task is work the
+ * agent prepared on the member's behalf, not work it decided to surface as
+ * immediately actionable, so it lands in `waiting` regardless of the
+ * member's autonomy setting (`prepare_only` vs `execute_with_gates` gates
+ * what triage may DO, not the status of what it merely leaves behind). A
+ * non-triage caller falls through to `undefined` (the column default,
+ * `open`) — none exist yet, since `task_create` is not granted outside the
+ * mailbox persona.
+ */
+export async function resolveTriageTaskDefaultStatus(
+  db: HubDb,
+  args: { tenantId: string; principalId: string },
+): Promise<TaskStatus | undefined> {
+  const instanceRows = await db
+    .select({ id: intxSchema.agentInstance.id })
+    .from(intxSchema.agentInstance)
+    .where(
+      and(
+        eq(intxSchema.agentInstance.tenantId, args.tenantId),
+        eq(intxSchema.agentInstance.principalId, args.principalId),
+      ),
+    )
+    .limit(1);
+  const instanceId = instanceRows[0]?.id;
+  if (!instanceId) return undefined;
+
+  const mappingRows = await db
+    .select({ templateKey: memberAgentInstance.templateKey })
+    .from(memberAgentInstance)
+    .where(
+      and(
+        eq(memberAgentInstance.tenantId, args.tenantId),
+        eq(memberAgentInstance.instanceId, instanceId),
+      ),
+    )
+    .limit(1);
+  if (mappingRows[0]?.templateKey !== TRIAGE_TEMPLATE_KEY) return undefined;
+  return "waiting";
+}
+
 export async function createOwnerTask(
   db: HubDb,
   input: CreateTaskInput,
@@ -183,6 +239,7 @@ export async function createOwnerTask(
   if (input.body !== undefined) values.body = input.body;
   if (input.sourceRef !== undefined) values.sourceRef = input.sourceRef;
   if (input.due !== undefined) values.due = new Date(input.due);
+  if (input.status !== undefined) values.status = input.status;
   const [row] = await db.insert(task).values(values).returning();
   if (!row) throw new Error("Failed to create task");
   const created = toApiTask(row, []);
