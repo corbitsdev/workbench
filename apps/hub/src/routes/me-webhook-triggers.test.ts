@@ -40,6 +40,7 @@ type OwnerRow = {
 let ownerRows: OwnerRow[] = [];
 let createdSecret = "unset-secret";
 let deleteResult = false;
+let ownerTriggerCount = 0;
 mock.module("../lib/webhook-triggers", () => ({
   toApiWebhookTrigger: (r: OwnerRow) => ({
     id: r.id,
@@ -48,6 +49,13 @@ mock.module("../lib/webhook-triggers", () => ({
     createdAt: r.createdAt.toISOString(),
     lastFiredAt: r.lastFiredAt ? r.lastFiredAt.toISOString() : null,
   }),
+  countOwnerWebhookTriggers: async (
+    _db: unknown,
+    args: Record<string, unknown>,
+  ) => {
+    storeCalls.push({ fn: "count", args });
+    return ownerTriggerCount;
+  },
   listOwnerWebhookTriggers: async (
     _db: unknown,
     tenantId: string,
@@ -182,6 +190,7 @@ describe("GET /me/webhook-triggers", () => {
 describe("POST /me/webhook-triggers", () => {
   it("creates a trigger scoped to the caller for a runnable kind, returning the secret once", async () => {
     storeCalls.length = 0;
+    ownerTriggerCount = 0;
     createdSecret = "plaintext-secret-value";
     const res = await mountApp().fetch(
       req("/me/webhook-triggers", {
@@ -231,6 +240,7 @@ describe("POST /me/webhook-triggers", () => {
   });
 
   it("409s when the caller has no membership", async () => {
+    ownerTriggerCount = 0;
     const res = await mountApp().fetch(
       req("/me/webhook-triggers", {
         method: "POST",
@@ -239,6 +249,39 @@ describe("POST /me/webhook-triggers", () => {
       }),
     );
     expect(res.status).toBe(409);
+  });
+
+  it("409s at the per-owner trigger cap without creating a row", async () => {
+    storeCalls.length = 0;
+    ownerTriggerCount = 20;
+    const res = await mountApp().fetch(
+      req("/me/webhook-triggers", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "deck" }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe(
+      "You've reached the webhook trigger limit. Delete one to create another.",
+    );
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("creates below the per-owner trigger cap", async () => {
+    storeCalls.length = 0;
+    ownerTriggerCount = 19;
+    createdSecret = "plaintext-secret-value";
+    const res = await mountApp().fetch(
+      req("/me/webhook-triggers", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "deck" }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(true);
   });
 });
 

@@ -10,6 +10,7 @@ import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { isRunnableKind } from "../lib/workflow-run-gate";
 import { isUuid } from "../lib/uuid";
 import {
+  countOwnerWebhookTriggers,
   createOwnerWebhookTrigger,
   deleteOwnerWebhookTrigger,
   listOwnerWebhookTriggers,
@@ -20,6 +21,12 @@ import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
 const DEFAULT_WEBHOOK_TRIGGERS_PAGE_LIMIT = 50;
+
+// Row cap per owner. Without one, a single member can mint unbounded webhook
+// triggers, each an independent unattended run-start entry point; 20 is well
+// above any legitimate per-member automation count while still bounding the
+// total.
+const MAX_WEBHOOK_TRIGGERS_PER_OWNER = 20;
 
 // Owner-scoped CRUD over the caller's webhook triggers. Every read
 // and write is scoped to the caller's own member principal, so a member can
@@ -125,7 +132,8 @@ export function createMeWebhookTriggersRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Caller has no provisioned membership yet",
+          description:
+            "Caller has no provisioned membership yet, or has reached the webhook trigger limit",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -145,6 +153,20 @@ export function createMeWebhookTriggersRouter(
 
       if (!(await isRunnableKind(db, member.tenantId, body.kind))) {
         return c.json({ error: `unknown workflow kind "${body.kind}"` }, 400);
+      }
+
+      const existingCount = await countOwnerWebhookTriggers(db, {
+        tenantId: member.tenantId,
+        ownerPrincipalId: member.principalId,
+      });
+      if (existingCount >= MAX_WEBHOOK_TRIGGERS_PER_OWNER) {
+        return c.json(
+          {
+            error:
+              "You've reached the webhook trigger limit. Delete one to create another.",
+          },
+          409,
+        );
       }
 
       const { row, secret } = await createOwnerWebhookTrigger(db, {

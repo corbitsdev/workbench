@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  countOwnerWebhookTriggers,
   createOwnerWebhookTrigger,
   generateTriggerSecret,
   secretMatchesHash,
@@ -51,5 +52,41 @@ describe("secretMatchesHash", () => {
 
   it("treats a hash of different length as a non-match rather than throwing", () => {
     expect(secretMatchesHash("abc", "00")).toBe(false);
+  });
+});
+
+describe("countOwnerWebhookTriggers", () => {
+  it("returns the row count scoped to the given tenant and owner", async () => {
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: async () => [{ count: 7 }],
+        }),
+      }),
+    };
+
+    const result = await countOwnerWebhookTriggers(
+      db as unknown as Parameters<typeof countOwnerWebhookTriggers>[0],
+      { tenantId: "tenant-1", ownerPrincipalId: "principal-1" },
+    );
+
+    expect(result).toBe(7);
+  });
+
+  it("returns 0 when the query yields no row", async () => {
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: async () => [],
+        }),
+      }),
+    };
+
+    const result = await countOwnerWebhookTriggers(
+      db as unknown as Parameters<typeof countOwnerWebhookTriggers>[0],
+      { tenantId: "tenant-1", ownerPrincipalId: "principal-1" },
+    );
+
+    expect(result).toBe(0);
   });
 });

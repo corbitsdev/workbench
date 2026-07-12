@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { WebhookTrigger } from "@workbench/shared";
 import type { HubDb } from "../db";
 import { workflowTrigger, type WorkflowTriggerRow } from "../db/schema";
@@ -74,6 +74,24 @@ export async function listOwnerWebhookTriggers(
     limit: limit + 1,
   });
   return takePage(rows, limit);
+}
+
+// Count of the caller's own webhook triggers, for enforcing the
+// per-owner row cap before insert.
+export async function countOwnerWebhookTriggers(
+  db: HubDb,
+  args: { tenantId: string; ownerPrincipalId: string },
+): Promise<number> {
+  const [row] = await db
+    .select({ count: count() })
+    .from(workflowTrigger)
+    .where(
+      and(
+        eq(workflowTrigger.tenantId, args.tenantId),
+        eq(workflowTrigger.ownerMemberPrincipalId, args.ownerPrincipalId),
+      ),
+    );
+  return row?.count ?? 0;
 }
 
 // Creates a trigger and returns both the row and the plaintext secret. The
