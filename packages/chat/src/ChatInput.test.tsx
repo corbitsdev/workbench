@@ -415,8 +415,8 @@ describe("ChatInput abort (stop button)", () => {
 
   describe("mention autocomplete", () => {
     const MEMBERS = [
-      { id: "usr_1", name: "Jane Doe" },
-      { id: "usr_2", name: "Bob Smith" },
+      { id: "1", name: "Jane Doe" },
+      { id: "2", name: "Bob Smith" },
     ];
 
     it("opens a filtered dropdown after typing @ and a query", async () => {
