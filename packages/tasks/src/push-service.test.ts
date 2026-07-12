@@ -55,6 +55,103 @@ describe("createTaskPushService.pushTask", () => {
     store.putTask(makeTask());
   });
 
+  it("coalesces concurrent pushes for the same task and adapter into one execution", async () => {
+    const calls: Call[] = [];
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const service = createTaskPushService({
+      store,
+      resolveCredential: async () => credential,
+      adapters: {
+        fake: makeAdapter(async (op, input, config) => {
+          calls.push({ op, input, config });
+          await gate;
+          return { externalId: "ext-1", deduped: false };
+        }),
+      },
+    });
+
+    const request = {
+      taskId: "task-1",
+      adapterId: "fake",
+      operation: "create" as const,
+      actorPrincipalId: "principal-owner",
+    };
+    const first = service.pushTask(request);
+    const second = service.pushTask(request);
+    release?.();
+    const [a, b] = await Promise.all([first, second]);
+
+    expect(calls).toHaveLength(1);
+    expect(a).toEqual({ status: "synced", externalId: "ext-1", deduped: false });
+    expect(b).toEqual({ status: "synced", externalId: "ext-1", deduped: false });
+  });
+
+  it("does not coalesce pushes for different adapters of the same task", async () => {
+    const calls: string[] = [];
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slowAdapter = (id: string): TaskAdapter => ({
+      ...makeAdapter(async () => {
+        calls.push(id);
+        await gate;
+        return { externalId: `ext-${id}`, deduped: false };
+      }),
+      id,
+    });
+    const service = createTaskPushService({
+      store,
+      resolveCredential: async () => credential,
+      adapters: { one: slowAdapter("one"), two: slowAdapter("two") },
+    });
+
+    const first = service.pushTask({
+      taskId: "task-1",
+      adapterId: "one",
+      operation: "create",
+      actorPrincipalId: "principal-owner",
+    });
+    const second = service.pushTask({
+      taskId: "task-1",
+      adapterId: "two",
+      operation: "create",
+      actorPrincipalId: "principal-owner",
+    });
+    release?.();
+    await Promise.all([first, second]);
+
+    expect(calls.sort()).toEqual(["one", "two"]);
+  });
+
+  it("allows a new push after an in-flight one settles", async () => {
+    const calls: Call[] = [];
+    const service = createTaskPushService({
+      store,
+      resolveCredential: async () => credential,
+      adapters: {
+        fake: makeAdapter(async (op, input, config) => {
+          calls.push({ op, input, config });
+          return { externalId: "ext-1", deduped: false };
+        }),
+      },
+    });
+    const request = {
+      taskId: "task-1",
+      adapterId: "fake",
+      operation: "comment" as const,
+      actorPrincipalId: "principal-owner",
+    };
+
+    await service.pushTask({ ...request, operation: "create" });
+    await service.pushTask(request);
+
+    expect(calls).toHaveLength(2);
+  });
+
   it("inserts a pending ref then marks it synced on a successful create", async () => {
     const calls: Call[] = [];
     const service = createTaskPushService({
