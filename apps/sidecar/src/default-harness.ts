@@ -388,6 +388,21 @@ export function createDefaultHarnessBuilder({
             try {
               bundle = factory(env);
             } catch (err) {
+              // Tool packages load from published tarballs, so this may be a
+              // different bundle copy of ToolCredentialMissingError than the
+              // one in this process — `instanceof` can miss across bundles.
+              // `err.name` survives bundling, so match on it instead.
+              if (err instanceof Error && err.name === "ToolCredentialMissingError") {
+                logger.info(
+                  "Tool package {id} skipped for {address}: no credential configured for provider {providerName}",
+                  {
+                    id: factory.id,
+                    address: agentAddress,
+                    providerName: (err as { providerName?: string }).providerName,
+                  },
+                );
+                continue;
+              }
               logger.warn(
                 "Tool-package factory {id} failed to construct for {address}: {msg}",
                 {
