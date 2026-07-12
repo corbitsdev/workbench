@@ -9,7 +9,9 @@ import {
 import type { HubDb } from "../db";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import {
+  countTasksCreatedBy,
   createOwnerTask,
+  findOwnerTaskBySourceRef,
   listOwnerTasks,
   resolveTriageTaskDefaultStatus,
   updateOwnerTask,
@@ -30,6 +32,13 @@ type TaskToolContext = {
 function jsonResult(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
+
+// Triage runs one ephemeral agent instance per mail item (see
+// mailbox-triage.ts), so this bounds how many tasks a single mail item can
+// spawn regardless of how many times the model calls task_create in that
+// turn. Chat-Myra task_create is unaffected — the cap only applies when
+// `resolveTriageTaskDefaultStatus` detects a triage session.
+const MAX_TRIAGE_TASKS_PER_MAIL_ITEM = 2;
 
 const CreateArgs = type({
   title: "string > 0",
@@ -62,6 +71,11 @@ export const TASK_CREATE_DEFINITION: ToolDefinition = {
       title: { type: "string", description: "Short imperative title." },
       body: { type: "string", description: "Optional detail / context." },
       due: { type: "string", description: "Optional due date (ISO 8601)." },
+      sourceRef: {
+        type: "string",
+        description:
+          "Optional reference back to the originating message/object (e.g. the mail message this task came from) — used to avoid creating duplicate tasks for the same source.",
+      },
       links: {
         type: "array",
         description:
@@ -137,6 +151,28 @@ function createTaskCreateTool(context: TaskToolContext): AgentTool {
         tenantId: context.tenantId,
         principalId: context.principalId,
       });
+      const isTriage = defaultStatus !== undefined;
+      if (isTriage && parsed.sourceRef !== undefined) {
+        const existing = await findOwnerTaskBySourceRef(context.db, {
+          tenantId: context.tenantId,
+          ownerPrincipalId: owner,
+          sourceRef: parsed.sourceRef,
+        });
+        if (existing !== null) {
+          return jsonResult(existing);
+        }
+      }
+      if (isTriage) {
+        const existingCount = await countTasksCreatedBy(context.db, {
+          tenantId: context.tenantId,
+          createdByPrincipalId: context.principalId,
+        });
+        if (existingCount >= MAX_TRIAGE_TASKS_PER_MAIL_ITEM) {
+          throw new Error(
+            "task_create: a task for this message already exists — no more tasks can be created for this message",
+          );
+        }
+      }
       const created = await createOwnerTask(context.db, {
         tenantId: context.tenantId,
         ownerPrincipalId: owner,
