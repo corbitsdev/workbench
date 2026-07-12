@@ -298,7 +298,10 @@ async function listNotes(
     throw new Error(`granola_list_notes: ${args.summary}`);
   }
 
-  if (args.enabledSources !== undefined && !args.enabledSources.includes("granola")) {
+  if (
+    args.enabledSources !== undefined &&
+    !args.enabledSources.includes("granola")
+  ) {
     return { notes: [], hasMore: false, skipped: true };
   }
 
@@ -416,6 +419,12 @@ export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
         type: "string",
         description:
           "Return only notes in this folder and its child folders. Use granola_list_folders to discover folder IDs.",
+      },
+      enabledSources: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          'Workbench-internal: the calling member\'s currently-enabled brief source keys. When set and it omits "granola", this call is skipped (returns an empty, `skipped: true` result) instead of hitting the Granola API.',
       },
     },
   },
