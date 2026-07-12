@@ -8,6 +8,9 @@ import {
   preferenceValueSchema,
   validatePreferencePatch,
   resolvePreferenceSettings,
+  BRIEF_SOURCE_CATALOG,
+  briefSourcePreferenceKey,
+  resolveEnabledBriefSources,
 } from "./preferences-registry";
 
 describe("PREFERENCE_REGISTRY", () => {
@@ -72,6 +75,37 @@ describe("PREFERENCE_REGISTRY", () => {
     for (const entry of PREFERENCE_REGISTRY) {
       expect(PREFERENCE_DEFAULTS[entry.key]).toBe(entry.default);
     }
+  });
+
+  test("registers a boolean toggle for every brief source, defaulting on", () => {
+    for (const source of BRIEF_SOURCE_CATALOG) {
+      const entry = getPreferenceEntry(briefSourcePreferenceKey(source.key));
+      expect(entry?.type).toBe("boolean");
+      expect(entry?.category).toBe("Automations");
+      expect(entry?.default).toBe(source.defaultEnabled);
+    }
+  });
+});
+
+describe("resolveEnabledBriefSources", () => {
+  test("defaults to every catalog source's default when nothing is stored", () => {
+    expect(resolveEnabledBriefSources({})).toEqual(
+      BRIEF_SOURCE_CATALOG.filter((s) => s.defaultEnabled).map((s) => s.key),
+    );
+  });
+
+  test("excludes a source explicitly disabled in stored preferences", () => {
+    const enabled = resolveEnabledBriefSources({
+      [briefSourcePreferenceKey("granola")]: false,
+    });
+    expect(enabled).not.toContain("granola");
+  });
+
+  test("includes a source explicitly re-enabled in stored preferences", () => {
+    const enabled = resolveEnabledBriefSources({
+      [briefSourcePreferenceKey("granola")]: true,
+    });
+    expect(enabled).toContain("granola");
   });
 });
 

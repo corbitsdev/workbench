@@ -47,7 +47,7 @@ export const PreferenceEntrySchema = type({
 });
 export type PreferenceEntry = typeof PreferenceEntrySchema.infer;
 
-export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
+const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
   {
     key: "agentAutonomy",
     type: "select",
@@ -93,6 +93,47 @@ export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
     description: "Notify me when an agent needs my approval to proceed.",
     category: "Notifications",
   },
+];
+
+/**
+ * Catalog of sources the morning brief can pull from. Adding a source is
+ * purely additive here — a new catalog row and, when the source is wired
+ * into an intake step, a check of `enabledSources` at that step. No registry
+ * restructuring is needed. `granola` is the only source with a live intake
+ * step today; the rest are declared for future wiring.
+ */
+export const BRIEF_SOURCE_CATALOG: readonly {
+  key: string;
+  label: string;
+  description: string;
+  defaultEnabled: boolean;
+}[] = [
+  {
+    key: "granola",
+    label: "Granola calls",
+    description: "Pull in recent call notes from Granola.",
+    defaultEnabled: true,
+  },
+];
+
+/** The registry key a brief source's enablement toggle is stored under. */
+export function briefSourcePreferenceKey(sourceKey: string): string {
+  return `briefSource:${sourceKey}`;
+}
+
+const BRIEF_SOURCE_ENTRIES: readonly PreferenceEntry[] =
+  BRIEF_SOURCE_CATALOG.map((source) => ({
+    key: briefSourcePreferenceKey(source.key),
+    type: "boolean",
+    default: source.defaultEnabled,
+    label: source.label,
+    description: source.description,
+    category: "Automations",
+  }));
+
+export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
+  ...PREFERENCE_REGISTRY_BASE,
+  ...BRIEF_SOURCE_ENTRIES,
 ];
 
 const registryByKey = new Map(PREFERENCE_REGISTRY.map((e) => [e.key, e]));
@@ -210,4 +251,21 @@ export function resolvePreferenceSettings(
     ...entry,
     value: resolveValue(entry, stored[entry.key]),
   }));
+}
+
+/**
+ * Resolves the member's currently-enabled brief source keys (e.g.
+ * `["granola"]`) against their stored preferences, defaulting each source to
+ * its catalog default when unset. This is what the hub scheduler reads at
+ * heartbeat fire time, and what the workflow's trigger payload carries so an
+ * intake step can skip a disabled source honestly instead of calling it.
+ */
+export function resolveEnabledBriefSources(
+  stored: Record<string, unknown>,
+): string[] {
+  return BRIEF_SOURCE_CATALOG.filter((source) => {
+    const entry = registryByKey.get(briefSourcePreferenceKey(source.key));
+    if (!entry) return source.defaultEnabled;
+    return resolveValue(entry, stored[entry.key]) === true;
+  }).map((source) => source.key);
 }

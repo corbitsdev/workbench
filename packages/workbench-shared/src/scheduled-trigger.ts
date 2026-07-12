@@ -38,12 +38,16 @@ export type CreateScheduledTriggerBody =
 // The trigger payload a heartbeat schedule fires with. The seeder validates
 // every payload through this before writing, and the workflow reads it as its
 // trigger input. `userAddress`/`userRefId` are server-derived identity — never
-// accepted from a client.
+// accepted from a client. `enabledSources` is re-derived from the member's
+// current `briefSource:*` preferences at fire time (see the scheduler wiring),
+// not carried in the durably-stored schedule row — so a source toggle takes
+// effect on the very next fire, not just future schedules.
 export const HeartbeatTriggerPayloadSchema = type({
   reason: "'scheduled-heartbeat'",
   userAddress: "string > 0",
   userRefId: "string > 0",
   "createdAfter?": "string",
+  "enabledSources?": "string[]",
 });
 export type HeartbeatTriggerPayload =
   typeof HeartbeatTriggerPayloadSchema.infer;
