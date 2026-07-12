@@ -12,6 +12,8 @@ import {
   type TaskRow,
 } from "../db/schema";
 import type { HubDb } from "../db";
+import { deliverTaskMail } from "./deliver-task-mail";
+import type { MailboxEventBus } from "./mailbox-events";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
 export type TaskPage = {
@@ -35,16 +37,20 @@ export type CreateTaskInput = {
   sourceRef?: string;
   due?: string;
   links?: TaskLink[];
+  mailboxEventBus?: MailboxEventBus;
 };
 
 export type UpdateTaskInput = {
   tenantId: string;
   ownerPrincipalId: string;
+  /** The principal making this update — used to attribute "waiting on you" mail. */
+  actorPrincipalId: string;
   id: string;
   title?: string;
   body?: string;
   status?: TaskStatus;
   due?: string | null;
+  mailboxEventBus?: MailboxEventBus;
 };
 
 function toExternalRef(row: TaskExternalRefRow): TaskExternalRef {
@@ -179,7 +185,16 @@ export async function createOwnerTask(
   if (input.due !== undefined) values.due = new Date(input.due);
   const [row] = await db.insert(task).values(values).returning();
   if (!row) throw new Error("Failed to create task");
-  return toApiTask(row, []);
+  const created = toApiTask(row, []);
+  await deliverTaskMail({
+    db,
+    tenantId: input.tenantId,
+    task: created,
+    event: input.source === "agent" ? "assigned" : "created",
+    actorPrincipalId: input.createdByPrincipalId,
+    ...(input.mailboxEventBus ? { mailboxEventBus: input.mailboxEventBus } : {}),
+  });
+  return created;
 }
 
 export async function updateOwnerTask(
@@ -206,5 +221,16 @@ export async function updateOwnerTask(
     .returning();
   if (!row) return null;
   const refs = await loadRefsByTaskIds(db, [row.id]);
-  return toApiTask(row, refs.get(row.id) ?? []);
+  const updated = toApiTask(row, refs.get(row.id) ?? []);
+  if (input.status === "waiting") {
+    await deliverTaskMail({
+      db,
+      tenantId: input.tenantId,
+      task: updated,
+      event: "waiting",
+      actorPrincipalId: input.actorPrincipalId,
+      ...(input.mailboxEventBus ? { mailboxEventBus: input.mailboxEventBus } : {}),
+    });
+  }
+  return updated;
 }

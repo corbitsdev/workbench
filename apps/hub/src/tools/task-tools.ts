@@ -163,6 +163,7 @@ function createTaskUpdateTool(context: TaskToolContext): AgentTool {
       const updated = await updateOwnerTask(context.db, {
         tenantId: context.tenantId,
         ownerPrincipalId: owner,
+        actorPrincipalId: context.principalId,
         id: parsed.taskId,
         ...(parsed.title !== undefined ? { title: parsed.title } : {}),
         ...(parsed.body !== undefined ? { body: parsed.body } : {}),

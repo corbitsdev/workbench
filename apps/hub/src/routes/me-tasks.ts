@@ -22,6 +22,7 @@ import { ErrorResponse, requestBodySchema } from "../lib/openapi";
 import { UuidParam } from "../lib/uuid";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
+import type { MailboxEventBus } from "../lib/mailbox-events";
 
 const DEFAULT_TASKS_PAGE_LIMIT = 50;
 
@@ -31,6 +32,7 @@ const DEFAULT_TASKS_PAGE_LIMIT = 50;
 export function createMeTasksRouter(
   db: HubDb,
   pushService: TaskPushService,
+  mailboxEventBus?: MailboxEventBus,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -194,6 +196,7 @@ export function createMeTasksRouter(
         ...(body.body !== undefined ? { body: body.body } : {}),
         ...(body.due !== undefined ? { due: body.due } : {}),
         ...(body.links !== undefined ? { links: body.links } : {}),
+        ...(mailboxEventBus ? { mailboxEventBus } : {}),
       });
       return c.json(created, 201);
     },
@@ -256,11 +259,13 @@ export function createMeTasksRouter(
       const updated = await updateOwnerTask(db, {
         tenantId: member.tenantId,
         ownerPrincipalId: member.principalId,
+        actorPrincipalId: member.principalId,
         id,
         ...(body.title !== undefined ? { title: body.title } : {}),
         ...(body.body !== undefined ? { body: body.body } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
         ...(body.due !== undefined ? { due: body.due } : {}),
+        ...(mailboxEventBus ? { mailboxEventBus } : {}),
       });
       if (!updated) return c.json({ error: "task not found" }, 404);
       return c.json(updated);

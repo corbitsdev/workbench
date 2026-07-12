@@ -94,6 +94,15 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     description: "Notify me when an agent needs my approval to proceed.",
     category: "Notifications",
   },
+  {
+    key: "taskMailEnabled",
+    type: "boolean",
+    default: true,
+    label: "Task activity mail",
+    description:
+      "Notify me in my inbox when a task is created for me, assigned to me, or waiting on me.",
+    category: "Notifications",
+  },
 ];
 
 /**
