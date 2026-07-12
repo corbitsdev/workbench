@@ -9,10 +9,15 @@ import {
   validatePreferencePatch,
   resolvePreferenceSettings,
   BRIEF_SOURCE_CATALOG,
+  WIRED_BRIEF_SOURCES,
   briefSourcePreferenceKey,
   resolveEnabledBriefSources,
   resolveAvailableBriefSources,
   AvailableBriefSourceSchema,
+  BriefSourceFetchInputSchema,
+  BriefSourceSkippedMarkerSchema,
+  BRIEF_SOURCE_SKIPPED_MARKER,
+  isBriefSourceFetchEnabled,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -260,5 +265,71 @@ describe("resolvePreferenceSettings", () => {
     expect(resolvePreferenceSettings({}).length).toBe(
       PREFERENCE_REGISTRY.length,
     );
+  });
+});
+
+describe("brief-source fetch contract", () => {
+  test("BriefSourceFetchInputSchema accepts enabledSources + createdAfter, both optional", () => {
+    expect(
+      BriefSourceFetchInputSchema({
+        enabledSources: ["granola"],
+        createdAfter: "2026-07-04T00:00:00Z",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(BriefSourceFetchInputSchema({}) instanceof type.errors).toBe(false);
+  });
+
+  test("BriefSourceFetchInputSchema rejects a non-array enabledSources", () => {
+    expect(
+      BriefSourceFetchInputSchema({ enabledSources: "granola" }) instanceof
+        type.errors,
+    ).toBe(true);
+  });
+
+  test("BriefSourceSkippedMarkerSchema only accepts skipped: true", () => {
+    expect(
+      BriefSourceSkippedMarkerSchema({ skipped: true }) instanceof
+        type.errors,
+    ).toBe(false);
+    expect(
+      BriefSourceSkippedMarkerSchema({ skipped: false }) instanceof
+        type.errors,
+    ).toBe(true);
+  });
+
+  test("BRIEF_SOURCE_SKIPPED_MARKER satisfies its own schema", () => {
+    expect(
+      BriefSourceSkippedMarkerSchema(
+        BRIEF_SOURCE_SKIPPED_MARKER,
+      ) instanceof type.errors,
+    ).toBe(false);
+  });
+
+  test("isBriefSourceFetchEnabled: undefined enabledSources means no restriction", () => {
+    expect(isBriefSourceFetchEnabled("granola", undefined)).toBe(true);
+  });
+
+  test("isBriefSourceFetchEnabled: true only when the source key is present", () => {
+    expect(isBriefSourceFetchEnabled("granola", ["granola", "linear"])).toBe(
+      true,
+    );
+    expect(isBriefSourceFetchEnabled("granola", ["linear"])).toBe(false);
+    expect(isBriefSourceFetchEnabled("granola", [])).toBe(false);
+  });
+});
+
+describe("WIRED_BRIEF_SOURCES", () => {
+  test("is the subset of BRIEF_SOURCE_CATALOG with a tool", () => {
+    expect(WIRED_BRIEF_SOURCES.every((s) => typeof s.tool === "string")).toBe(
+      true,
+    );
+    expect(WIRED_BRIEF_SOURCES.length).toBe(
+      BRIEF_SOURCE_CATALOG.filter((s) => s.tool !== undefined).length,
+    );
+  });
+
+  test("includes granola with its granola_list_notes tool today", () => {
+    const granola = WIRED_BRIEF_SOURCES.find((s) => s.key === "granola");
+    expect(granola?.tool).toBe("granola_list_notes");
   });
 });
