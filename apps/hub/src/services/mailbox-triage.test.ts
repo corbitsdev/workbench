@@ -306,6 +306,24 @@ describe("createMailboxTriage", () => {
     expect(launchMock).not.toHaveBeenCalled();
   });
 
+  it("does not misclassify a bounce sender when the local part itself contains an @ (splitMailAddress lastIndexOf semantics)", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    // A first `@` inside the local part (e.g. an imported/synced refId) must
+    // not be mistaken for the address's domain separator — splitMailAddress
+    // anchors on the LAST `@`, so the local part here is "bounce@import",
+    // which is NOT in BOUNCE_SENDER_LOCAL_PARTS, and the mail triages.
+    triage.enqueue({
+      ...ITEM,
+      senderAddress: "bounce@import@outside.example",
+    });
+    await triage.waitForDrain();
+
+    expect(launchMock).toHaveBeenCalled();
+  });
+
   it("skips mail with the triage handoff subject prefix", async () => {
     const { db } = makeDb({ sender: undefined });
     const session = makeSessionService();

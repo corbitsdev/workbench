@@ -59,6 +59,17 @@ describe("buildMailFrame", () => {
     expect(headers.get("subject")).toBe("Re: hi X-Evil: injected");
   });
 
+  it("falls back to hub.invalid for the message-id domain when from has no @", () => {
+    const raw = buildMailFrame({
+      from: "not-an-address",
+      to: ARGS.address,
+      subject: "s",
+      body: "b",
+    });
+    const { headers } = parseHeaderSection(raw);
+    expect(headers.get("message-id")).toMatch(/^<.+@hub\.invalid>$/);
+  });
+
   it("omits in-reply-to when there is no source message id", () => {
     const raw = buildMailFrame({
       from: ARGS.fromAddress,

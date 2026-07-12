@@ -11,6 +11,7 @@ import type { GrantStore } from "@intx/types/authz";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { TurnFinalized } from "@workbench/event-collector";
 import { resolveAgentAutonomy } from "@workbench/shared";
+import { splitMailAddress } from "@workbench/hub-agent";
 import { resolveMailboxLoadout } from "@workbench/myra";
 import type { HubDb } from "../db";
 import { memberAgentInstance } from "../db/schema";
@@ -94,8 +95,7 @@ export type MailboxTriage = {
 };
 
 function localPart(address: string): string {
-  const at = address.indexOf("@");
-  return at === -1 ? address : address.slice(0, at);
+  return splitMailAddress(address)?.local ?? address;
 }
 
 function isSystemSender(item: UserMailboxRowEvent): boolean {

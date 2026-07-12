@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { getLogger } from "@intx/log";
+import { splitMailAddress } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
 import type { MailboxEventBus } from "./mailbox-events";
@@ -30,7 +31,7 @@ function headerValue(value: string): string {
  */
 export function buildMailFrame(args: MailFrameArgs): Uint8Array {
   const from = headerValue(args.from);
-  const domain = from.slice(from.indexOf("@") + 1) || "hub.invalid";
+  const domain = splitMailAddress(from)?.domain ?? "hub.invalid";
   const headers = [
     `From: ${from}`,
     `To: ${headerValue(args.to)}`,
