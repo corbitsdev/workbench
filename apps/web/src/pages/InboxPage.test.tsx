@@ -18,6 +18,15 @@ import type {
   Task,
 } from "@workbench/shared";
 
+class TestApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 type MailboxState = {
   data: MailboxMessage[] | undefined;
   isLoading: boolean;
@@ -28,12 +37,20 @@ type DetailState = {
   data: MailboxMessageDetail | undefined;
   isLoading: boolean;
   isError: boolean;
+  error?: unknown;
 };
 
 type ListState<T> = {
   data: T[] | undefined;
   isLoading: boolean;
   isError: boolean;
+};
+
+type TaskLookupState = {
+  data: Task | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  error?: unknown;
 };
 
 type PageState = {
@@ -47,11 +64,13 @@ let detail: DetailState;
 let tasksState: ListState<Task>;
 let tasksPaging: PageState;
 let runsState: ListState<NowRun>;
+let taskLookup: TaskLookupState;
 let refetchCalls = 0;
 let fetchNextMailboxCalls = 0;
 let fetchNextTasksCalls = 0;
 const markReadIds: string[] = [];
 const detailQueryIds: (string | null)[] = [];
+const taskLookupIds: (string | null)[] = [];
 
 mock.module("../hooks/use-tasks", () => ({
   TASKS_QUERY_KEY: ["tasks"],
@@ -65,6 +84,17 @@ mock.module("../hooks/use-tasks", () => ({
       fetchNextTasksCalls += 1;
     },
   }),
+  useTask: (id: string | null) => {
+    taskLookupIds.push(id);
+    return {
+      data: taskLookup.data,
+      isLoading: taskLookup.isLoading,
+      isError: taskLookup.isError,
+      error: taskLookup.error,
+    };
+  },
+  isTaskNotFound: (error: unknown) =>
+    error instanceof TestApiError && error.status === 404,
 }));
 
 mock.module("../hooks/use-workflow", () => ({
@@ -96,6 +126,7 @@ mock.module("../hooks/use-mailbox", () => ({
       data: detail.data,
       isLoading: detail.isLoading,
       isError: detail.isError,
+      error: detail.error,
     };
   },
   useMarkMailboxRead: () => ({
@@ -103,6 +134,8 @@ mock.module("../hooks/use-mailbox", () => ({
       markReadIds.push(id);
     },
   }),
+  isMessageNotFound: (error: unknown) =>
+    error instanceof TestApiError && error.status === 404,
 }));
 
 const { InboxPage } = require("./InboxPage");
@@ -178,6 +211,7 @@ function resetStates() {
   tasksState = { data: [], isLoading: false, isError: false };
   tasksPaging = { hasNextPage: false, isFetchingNextPage: false };
   runsState = { data: [], isLoading: false, isError: false };
+  taskLookup = { data: undefined, isLoading: false, isError: false };
 }
 
 afterEach(() => {
@@ -188,6 +222,7 @@ afterEach(() => {
   fetchNextTasksCalls = 0;
   markReadIds.length = 0;
   detailQueryIds.length = 0;
+  taskLookupIds.length = 0;
 });
 
 // Reset before the first test too.
@@ -356,6 +391,43 @@ describe("InboxPage", () => {
     };
     renderInbox("/inbox/msg-1");
     expect(markReadIds).toEqual([]);
+  });
+
+  it("renders the pane for a message beyond the loaded mailbox pages, from the detail fetch alone", () => {
+    mailbox = {
+      data: [makeMessage({ id: "msg-1", subject: "Morning brief" })],
+      isLoading: false,
+      isError: false,
+    };
+    detail = {
+      data: {
+        ...makeMessage({ id: "msg-old", subject: "Archived note" }),
+        body: "This message is far past the first loaded page.",
+      },
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox/msg-old");
+    screen.getByRole("heading", { name: "Archived note" });
+    const article = screen.getByRole("article");
+    within(article).getByText(
+      "This message is far past the first loaded page.",
+    );
+    expect(detailQueryIds.at(-1)).toBe("msg-old");
+  });
+
+  it("shows an unavailable state for a message id that genuinely does not exist", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    detail = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new TestApiError("not found", 404),
+    };
+    renderInbox("/inbox/msg-gone");
+    const article = screen.getByRole("article");
+    within(article).getByText("This message is unavailable.");
+    expect(within(article).queryByRole("heading")).toBeNull();
   });
 });
 
@@ -539,6 +611,58 @@ describe("InboxPage Now feed", () => {
     expect(
       screen.queryByText("That task is no longer in your feed."),
     ).toBeNull();
+  });
+
+  it("tells an unloaded-but-still-open task apart from a genuinely missing one", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Still here" })],
+      isLoading: false,
+      isError: false,
+    };
+    taskLookup = {
+      data: makeTask({ id: "task-far", title: "Further down", status: "open" }),
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?task=task-far");
+    screen.getByText(
+      "That task is further down your feed — use Show older to bring it in.",
+    );
+    expect(taskLookupIds.at(-1)).toBe("task-far");
+  });
+
+  it("tells a closed unloaded task apart from a genuinely missing one", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Still here" })],
+      isLoading: false,
+      isError: false,
+    };
+    taskLookup = {
+      data: makeTask({ id: "task-done", title: "Wrapped up", status: "done" }),
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?task=task-done");
+    screen.getByText("That task is no longer open.");
+  });
+
+  it("keeps the existing wording for a task that truly no longer exists", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    tasksState = {
+      data: [makeTask({ id: "task-1", title: "Still here" })],
+      isLoading: false,
+      isError: false,
+    };
+    taskLookup = {
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new TestApiError("not found", 404),
+    };
+    renderInbox("/inbox?task=task-missing");
+    screen.getByText("That task is no longer in your feed.");
   });
 });
 

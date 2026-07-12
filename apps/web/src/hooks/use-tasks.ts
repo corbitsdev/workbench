@@ -1,7 +1,7 @@
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
-import { TaskListResponseSchema, type Task } from "@workbench/shared";
-import { api } from "../lib/api";
+import { TaskListResponseSchema, TaskSchema, type Task } from "@workbench/shared";
+import { api, ApiError } from "../lib/api";
 
 export type { Task };
 
@@ -40,4 +40,30 @@ export function useTasks(options?: {
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     select: (data) => data.pages.flatMap((page) => page.items),
   });
+}
+
+// A single task fetched directly by id, independent of which pages of
+// /me/tasks have been loaded. Used to resolve the honest state for a
+// `?task=<id>` deep link that points past the loaded window: the task may
+// still be open (just further down the feed), closed, or genuinely gone.
+export function useTask(id: string | null) {
+  return useQuery<Task, ApiError>({
+    queryKey: [...TASKS_QUERY_KEY, "item", id],
+    enabled: id !== null,
+    queryFn: async () => {
+      if (id === null) {
+        throw new Error("No task selected");
+      }
+      const raw = await api<unknown>("GET", `/me/tasks/${encodeURIComponent(id)}`);
+      const parsed = TaskSchema(raw);
+      if (parsed instanceof type.errors) {
+        throw new Error(`Unexpected task response: ${parsed.summary}`);
+      }
+      return parsed;
+    },
+  });
+}
+
+export function isTaskNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
 }

@@ -6,9 +6,19 @@ import { renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import type { MailboxMessage } from "@workbench/shared";
 
+class TestApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 let apiResponses: unknown[];
 let apiCalls: { method: string; path: string }[];
 mock.module("../lib/api", () => ({
+  ApiError: TestApiError,
   api: (method: string, path: string) => {
     apiCalls.push({ method, path });
     const next = apiResponses.shift();
@@ -25,6 +35,7 @@ const {
   useMailbox,
   useMailboxMessage,
   useMarkMailboxRead,
+  isMessageNotFound,
 } = require("./use-mailbox");
 
 function msg(over: Partial<MailboxMessage>): MailboxMessage {
@@ -173,6 +184,33 @@ describe("useMailboxMessage", () => {
     apiResponses = [{ ...msg({ id: "m-1" }), body: "x" }];
     renderHook(() => useMailboxMessage(null), { wrapper: wrapper() });
     expect(apiCalls).toEqual([]);
+  });
+
+  it("fetches by id regardless of which mailbox pages are loaded", async () => {
+    apiResponses = [{ ...msg({ id: "m-old" }), body: "Archived note" }];
+    const { result } = renderHook(() => useMailboxMessage("m-old"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.id).toBe("m-old");
+  });
+
+  it("surfaces a 404 so the caller can tell a genuinely missing message apart from any other failure", async () => {
+    apiResponses = [new TestApiError("not found", 404)];
+    const { result } = renderHook(() => useMailboxMessage("m-gone"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(isMessageNotFound(result.current.error)).toBe(true);
+  });
+
+  it("does not treat a non-404 failure as not-found", async () => {
+    apiResponses = [new TestApiError("server error", 500)];
+    const { result } = renderHook(() => useMailboxMessage("m-broken"), {
+      wrapper: wrapper(),
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(isMessageNotFound(result.current.error)).toBe(false);
   });
 });
 

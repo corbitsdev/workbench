@@ -5,16 +5,18 @@ import { Inbox as InboxIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
 import {
   buildNowFeed,
+  openTaskStatuses,
   type MailboxMessage,
   type MailboxMessageDetail,
 } from "@workbench/shared";
 import {
+  isMessageNotFound,
   MAILBOX_POLL_MS,
   useMailbox,
   useMailboxMessage,
   useMarkMailboxRead,
 } from "../hooks/use-mailbox";
-import { useTasks } from "../hooks/use-tasks";
+import { isTaskNotFound, useTask, useTasks } from "../hooks/use-tasks";
 import { useWorkflowRuns } from "../hooks/use-workflow";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { formatRelativeTime } from "../lib/relative-time";
@@ -69,20 +71,43 @@ export function InboxPage() {
     [runList, data, taskList],
   );
   const nowReady = !isLoading && !tasks.isLoading && !runs.isLoading;
-  const selectedTaskMissing =
-    nowReady &&
+  const taskInFeed =
     selectedTaskId !== null &&
-    !nowItems.some(
+    nowItems.some(
       (item) => item.type === "task" && item.task.id === selectedTaskId,
     );
-  const selected = messages.find((m) => m.id === messageId) ?? null;
-  const detail = useMailboxMessage(selected?.id ?? null);
+  // A deep-linked task the loaded /me/tasks pages don't cover yet is not
+  // necessarily gone — fetch it by id directly so the notice can tell "still
+  // open, just further down your feed" apart from "no longer open" apart
+  // from "no longer exists", instead of flatly claiming it's missing.
+  const taskLookup = useTask(
+    nowReady && selectedTaskId !== null && !taskInFeed ? selectedTaskId : null,
+  );
+  const selectedTaskNotice = describeMissingTaskNotice({
+    selectedTaskId,
+    nowReady,
+    taskInFeed,
+    taskLookup,
+  });
 
-  // Reading a message clears its unread state. Driving this from the selected
-  // resource (not the click handler) marks read on a deep-link open too, and
+  // The pane's identity comes from the route param alone — never from list
+  // membership — so a deep link to a message beyond the loaded mailbox pages
+  // still opens: `useMailboxMessage` fetches its full detail directly by id.
+  // The loaded row (when present) still drives the rail's highlight.
+  const listRow = messages.find((m) => m.id === messageId) ?? null;
+  const detail = useMailboxMessage(messageId ?? null);
+  // Header fields (subject/from/date) prefer the loaded list row, falling
+  // back to the detail fetch's own copy of those fields for a message that
+  // isn't in the loaded pages.
+  const headerSource: MailboxMessage | MailboxMessageDetail | null =
+    listRow ?? detail.data ?? null;
+
+  // Reading a message clears its unread state. Driving this from the loaded
+  // list row (not the click handler) marks read on a deep-link open too, and
   // deriving a null-when-read id makes it idempotent — an already-read
-  // message never re-fires the mutation.
-  const unreadSelectedId = selected && !selected.read ? selected.id : null;
+  // message never re-fires the mutation. A message beyond the loaded pages
+  // isn't marked read here; it will be the next time its page loads.
+  const unreadSelectedId = listRow && !listRow.read ? listRow.id : null;
   useEffect(() => {
     if (unreadSelectedId !== null) {
       markReadMutate(unreadSelectedId);
@@ -103,7 +128,7 @@ export function InboxPage() {
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           <MessageList
             messages={messages}
-            selectedId={selected?.id ?? null}
+            selectedId={listRow?.id ?? null}
             isLoading={isLoading}
             isError={isError}
             reduceMotion={reduceMotion ?? false}
@@ -115,19 +140,20 @@ export function InboxPage() {
 
       <section className="min-w-0 flex-1 overflow-y-auto bg-page">
         <ErrorBoundary>
-          {selected ? (
+          {messageId ? (
             <ReadingPane
-              message={selected}
+              headerSource={headerSource}
               detail={detail.data}
               detailLoading={detail.isLoading}
+              detailNotFound={isMessageNotFound(detail.error)}
               detailError={detail.isError}
               reduceMotion={reduceMotion ?? false}
             />
           ) : (
             <>
-              {selectedTaskMissing && (
+              {selectedTaskNotice && (
                 <p className="mx-auto max-w-[720px] px-8 pt-4 text-xs text-text-3">
-                  That task is no longer in your feed.
+                  {selectedTaskNotice}
                 </p>
               )}
               <NowSection
@@ -152,6 +178,38 @@ export function InboxPage() {
       </section>
     </div>
   );
+}
+
+// Resolves the honest notice for a `?task=<id>` deep link that matches no row
+// in the loaded Now feed. Rather than flatly claiming the task is gone (which
+// is often false — it may simply be further down an unloaded page), this
+// fetches the task by id and reports what's actually true: still open (just
+// unloaded), no longer open, or genuinely absent. Returns null while there is
+// nothing to say (no id selected, sources still loading, or the task is
+// already visible in the feed).
+function describeMissingTaskNotice(input: {
+  selectedTaskId: string | null;
+  nowReady: boolean;
+  taskInFeed: boolean;
+  taskLookup: ReturnType<typeof useTask>;
+}): string | null {
+  const { selectedTaskId, nowReady, taskInFeed, taskLookup } = input;
+  if (selectedTaskId === null || !nowReady || taskInFeed) return null;
+  if (taskLookup.isLoading) return null;
+  if (taskLookup.data) {
+    const openStatuses: readonly string[] = openTaskStatuses;
+    if (openStatuses.includes(taskLookup.data.status)) {
+      return "That task is further down your feed — use Show older to bring it in.";
+    }
+    return "That task is no longer open.";
+  }
+  if (isTaskNotFound(taskLookup.error)) {
+    return "That task is no longer in your feed.";
+  }
+  // Any other lookup failure (network, 5xx): fall back to the same honest
+  // wording as "not found" rather than inventing a distinct error copy for a
+  // transient failure — the notice is advisory, not the source of truth.
+  return "That task is no longer in your feed.";
 }
 
 interface MessageListProps {
@@ -294,9 +352,10 @@ function MessageRow({
 }
 
 interface ReadingPaneProps {
-  message: MailboxMessage;
+  headerSource: MailboxMessage | MailboxMessageDetail | null;
   detail: MailboxMessageDetail | undefined;
   detailLoading: boolean;
+  detailNotFound: boolean;
   detailError: boolean;
   reduceMotion: boolean;
 }
@@ -304,8 +363,17 @@ interface ReadingPaneProps {
 function MessageBody({
   detail,
   detailLoading,
+  detailNotFound,
   detailError,
-}: Pick<ReadingPaneProps, "detail" | "detailLoading" | "detailError">) {
+}: Pick<
+  ReadingPaneProps,
+  "detail" | "detailLoading" | "detailNotFound" | "detailError"
+>) {
+  if (detailNotFound) {
+    return (
+      <p className="text-sm text-text-3">This message is unavailable.</p>
+    );
+  }
   if (detailLoading) {
     return (
       <p className="text-sm text-text-3" role="status">
@@ -328,37 +396,56 @@ function MessageBody({
   return <Markdown>{detail.body}</Markdown>;
 }
 
+// Renders off the id-keyed detail fetch, not list membership — a message
+// beyond the loaded mailbox pages still gets its own pane the moment its
+// detail resolves. `headerSource` prefers the loaded list row (has the fields
+// instantly) and falls back to the detail response itself (which carries the
+// same subject/from/date fields), so a deep link to an unloaded message still
+// shows a real header instead of nothing.
 function ReadingPane({
-  message,
+  headerSource,
   detail,
   detailLoading,
+  detailNotFound,
   detailError,
   reduceMotion,
 }: ReadingPaneProps) {
   return (
     <AnimatePresence mode="wait" initial={false}>
       <motion.article
-        key={message.id}
+        key={headerSource?.id ?? "pending"}
         initial={reduceMotion ? false : { opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         exit={reduceMotion ? undefined : { opacity: 0, y: -6 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
         className="mx-auto max-w-[720px] px-8 py-8"
       >
-        <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-text">
-          {message.subject ?? "(no subject)"}
-        </h2>
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-2">
-          <span className="font-medium text-text">{message.from}</span>
-          <span className="text-text-3">·</span>
-          <time className="text-text-3">
-            {formatRelativeTime(message.date)}
-          </time>
-        </div>
-        <div className="mt-6 border-t border-border pt-6">
+        {headerSource && (
+          <>
+            <h2 className="text-[22px] font-semibold tracking-[-0.01em] text-text">
+              {headerSource.subject ?? "(no subject)"}
+            </h2>
+            <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-2">
+              <span className="font-medium text-text">
+                {headerSource.from}
+              </span>
+              <span className="text-text-3">·</span>
+              <time className="text-text-3">
+                {formatRelativeTime(headerSource.date)}
+              </time>
+            </div>
+          </>
+        )}
+        <div
+          className={cn(
+            "border-t border-border pt-6",
+            headerSource ? "mt-6" : "mt-0",
+          )}
+        >
           <MessageBody
             detail={detail}
             detailLoading={detailLoading}
+            detailNotFound={detailNotFound}
             detailError={detailError}
           />
         </div>

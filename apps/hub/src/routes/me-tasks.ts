@@ -101,6 +101,52 @@ export function createMeTasksRouter(
     },
   );
 
+  app.get(
+    "/me/tasks/:id",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Read one of the caller's tasks by id",
+      parameters: [
+        {
+          name: "id",
+          in: "path",
+          required: true,
+          schema: { type: "string", format: "uuid" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "The task",
+          content: { "application/json": { schema: resolver(TaskSchema) } },
+        },
+        400: {
+          description: "Invalid task id",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "No such task owned by the caller",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const id = UuidParam(c.req.param("id"));
+      if (id instanceof type.errors) {
+        return c.json({ error: "Task id must be a UUID" }, 400);
+      }
+      const member = await resolveCallerMember(db, userId);
+      if (!member) return c.json({ error: "task not found" }, 404);
+      const found = await getOwnerTask(db, {
+        tenantId: member.tenantId,
+        ownerPrincipalId: member.principalId,
+        id,
+      });
+      if (!found) return c.json({ error: "task not found" }, 404);
+      return c.json(found);
+    },
+  );
+
   app.post(
     "/me/tasks",
     describeRoute({

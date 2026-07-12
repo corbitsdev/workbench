@@ -177,6 +177,46 @@ describe("GET /me/tasks", () => {
   });
 });
 
+describe("GET /me/tasks/:id", () => {
+  it("400s on a non-uuid id", async () => {
+    const res = await mountApp().fetch(
+      req("/me/tasks/not-a-uuid", { user: "user-a" }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns the caller's task by id", async () => {
+    storeCalls.length = 0;
+    ownedResult = apiTask({ id: VALID_ID, status: "open" });
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, { user: "user-a" }),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(apiTask({ id: VALID_ID, status: "open" }));
+    const get = storeCalls.find((c) => c.fn === "get");
+    expect(get?.args).toMatchObject({
+      tenantId: "tenant-root",
+      ownerPrincipalId: "principal-a",
+      id: VALID_ID,
+    });
+  });
+
+  it("404s when the caller does not own the task", async () => {
+    ownedResult = null;
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, { user: "user-a" }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("404s when the caller has no membership", async () => {
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, { user: "user-none" }),
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("POST /me/tasks", () => {
   it("creates a task owned by the caller with source=user", async () => {
     storeCalls.length = 0;

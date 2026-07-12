@@ -11,7 +11,7 @@ import {
   MailboxMessageDetail,
   type MailboxMessage,
 } from "@workbench/shared";
-import { api } from "../lib/api";
+import { api, ApiError } from "../lib/api";
 
 export type { MailboxMessage, MailboxMessageDetail };
 
@@ -68,10 +68,14 @@ export function useMailbox(options?: {
 }
 
 // The reading pane's full-body fetch. Keyed under the mailbox root so a
-// sweep of ["mailbox"] clears details too; enabled only while a message
-// is selected.
+// sweep of ["mailbox"] clears details too; enabled only while a message is
+// selected. Resolves purely by id — independent of whether the message's row
+// is present in the currently-loaded mailbox pages — so a deep link to an
+// older, unloaded message still opens. Typed error channel (ApiError) lets
+// the caller distinguish a 404 (message genuinely gone) from any other
+// failure (network, 5xx).
 export function useMailboxMessage(id: string | null) {
-  return useQuery<MailboxMessageDetail>({
+  return useQuery<MailboxMessageDetail, ApiError>({
     queryKey: [...MAILBOX_QUERY_KEY, "message", id],
     enabled: id !== null,
     queryFn: async () => {
@@ -89,6 +93,10 @@ export function useMailboxMessage(id: string | null) {
       return parsed;
     },
   });
+}
+
+export function isMessageNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
 }
 
 // Marks one message read (idempotent server-side). Optimistically flips the
