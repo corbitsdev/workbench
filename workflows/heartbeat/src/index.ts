@@ -1,7 +1,8 @@
 import { defineWorkflow } from "@intx/workflow";
 import type { StepPrimitive } from "@intx/workflow";
 import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
-import { WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import { heartbeatIntakeStepKey, WIRED_BRIEF_SOURCES } from "@workbench/shared";
+export { heartbeatIntakeStepKey };
 import { buildMorningBriefSystemPrompt } from "./prompts";
 
 export const label = "Company Heartbeat";
@@ -38,11 +39,6 @@ export const kind = "heartbeat";
 // registry, not inference sources. Declaring them as credentialRequirements
 // breaks the sidecar launch ("Source provider <x> is not registered").
 // -------------------------------------------------------------------------
-
-/** The step key + step-agent id an intake step for a given source key uses. */
-export function heartbeatIntakeStepKey(sourceKey: string): string {
-  return `intake-${sourceKey}`;
-}
 
 function heartbeatIntakeAgentId(sourceKey: string): string {
   return `heartbeat-${heartbeatIntakeStepKey(sourceKey)}`;

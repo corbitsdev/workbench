@@ -136,6 +136,11 @@ export const BRIEF_SOURCE_CATALOG: readonly {
  * and its tests share the same derivation rather than re-filtering the
  * catalog inline.
  */
+/** The heartbeat intake step key generated for a wired brief source. */
+export function heartbeatIntakeStepKey(sourceKey: string): string {
+  return `intake-${sourceKey}`;
+}
+
 export const WIRED_BRIEF_SOURCES: readonly ((typeof BRIEF_SOURCE_CATALOG)[number] &
   { tool: string })[] = BRIEF_SOURCE_CATALOG.filter(
   (source): source is (typeof BRIEF_SOURCE_CATALOG)[number] & { tool: string } =>

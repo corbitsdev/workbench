@@ -30,7 +30,10 @@ describe("heartbeat Panel", () => {
       <Panel
         {...baseProps}
         state={stateWith("running", {
-          intake: { phase: "completed" },
+          "intake-granola": { phase: "completed" },
+          "intake-linear": { phase: "completed" },
+          "intake-attio": { phase: "completed" },
+          "intake-vercel": { phase: "completed" },
           brief: { phase: "in-flight" },
         })}
       />,
@@ -48,7 +51,10 @@ describe("heartbeat Panel", () => {
       <Panel
         {...baseProps}
         state={stateWith("completed", {
-          intake: { phase: "completed" },
+          "intake-granola": { phase: "completed" },
+          "intake-linear": { phase: "completed" },
+          "intake-attio": { phase: "completed" },
+          "intake-vercel": { phase: "completed" },
           brief: { phase: "completed" },
           notify: { phase: "completed" },
           persist: { phase: "completed" },
@@ -96,7 +102,10 @@ describe("heartbeat Panel", () => {
       <Panel
         {...baseProps}
         state={stateWith("failed", {
-          intake: { phase: "completed" },
+          "intake-granola": { phase: "completed" },
+          "intake-linear": { phase: "completed" },
+          "intake-attio": { phase: "completed" },
+          "intake-vercel": { phase: "completed" },
           brief: { phase: "failed" },
         })}
         stepOutputs={{
