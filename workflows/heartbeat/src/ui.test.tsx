@@ -64,6 +64,33 @@ describe("heartbeat Panel", () => {
     ).toBeDefined();
   });
 
+  test("surfaces a failed source intake step while the run is still running", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={stateWith("running", {
+          "intake-granola": { phase: "failed" },
+          "intake-linear": { phase: "completed" },
+        })}
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Run failed");
+  });
+
+  test("labels intake as gathering while any source intake is incomplete", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={stateWith("running", {
+          "intake-granola": { phase: "completed" },
+          "intake-linear": { phase: "in-flight" },
+        })}
+      />,
+    );
+    expect(screen.getByText(/gathering your sources/i)).toBeDefined();
+  });
+
   test("shows the failure notice and no brief when a step fails", () => {
     render(
       <Panel
