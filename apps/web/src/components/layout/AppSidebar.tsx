@@ -30,8 +30,8 @@ import { WorkbenchSelector } from "./WorkbenchSelector";
 import { branding } from "../../lib/app-env";
 
 const NAV_ITEMS = [
-  { to: "/chats", label: "Chats", icon: Home, end: false },
   { to: "/inbox", label: "Inbox", icon: Mail, end: false },
+  { to: "/chats", label: "Chats", icon: Home, end: false },
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
