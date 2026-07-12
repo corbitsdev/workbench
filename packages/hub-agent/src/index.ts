@@ -52,7 +52,11 @@ export {
 export { applyAssetPack, type ApplyAssetPackArgs } from "./apply-asset-pack";
 export { readDeployTree, type DeployTree } from "./deploy-tree";
 export { agentDir, sanitizeAddress } from "./agent-paths";
-export { deriveUserMailAddress, UserMailAddressArgs } from "./mail-address";
+export {
+  deriveUserMailAddress,
+  UserMailAddressArgs,
+  USER_ADDRESS_PREFIX,
+} from "./mail-address";
 export {
   splitMailAddress,
   splitMailAddressList,

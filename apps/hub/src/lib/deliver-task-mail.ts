@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import type { Task } from "@workbench/shared";
 import { getConfig } from "../config";
 import { readMemberPreferences } from "./member-preferences";
@@ -11,8 +12,6 @@ import type { MailboxEventBus } from "./mailbox-events";
 const log = getLogger(["hub", "deliver-task-mail"]);
 
 const { principal, tenant, user, agent } = intxSchema;
-
-const USER_ADDRESS_PREFIX = "usr_";
 
 export type TaskMailEvent = "created" | "assigned" | "waiting";
 
@@ -48,7 +47,11 @@ async function resolveActorName(
   return agentRow?.name ?? "Your agent";
 }
 
-function subjectFor(event: TaskMailEvent, actorName: string, title: string): string {
+function subjectFor(
+  event: TaskMailEvent,
+  actorName: string,
+  title: string,
+): string {
   if (event === "assigned") return `${actorName} assigned you: ${title}`;
   if (event === "waiting") return `${actorName} is waiting on you: ${title}`;
   return `New task: ${title}`;
@@ -62,7 +65,9 @@ function bodyFor(args: {
   const lines = [args.task.title];
   if (args.task.body) lines.push("", args.task.body);
   if (args.task.externalRefs.length > 0) {
-    const adapters = args.task.externalRefs.map((ref) => ref.adapterId).join(", ");
+    const adapters = args.task.externalRefs
+      .map((ref) => ref.adapterId)
+      .join(", ");
     lines.push("", `Synced to: ${adapters}`);
   }
   lines.push("", args.deepLink);
@@ -80,7 +85,9 @@ function bodyFor(args: {
  * failure is caught and logged here so a mail problem never turns a
  * successful task write into a caller-visible error.
  */
-export async function deliverTaskMail(args: DeliverTaskMailArgs): Promise<void> {
+export async function deliverTaskMail(
+  args: DeliverTaskMailArgs,
+): Promise<void> {
   if (args.actorPrincipalId === args.task.ownerPrincipalId) return;
 
   try {
@@ -98,10 +105,13 @@ export async function deliverTaskMail(args: DeliverTaskMailArgs): Promise<void> 
       where: eq(principal.id, args.task.ownerPrincipalId),
     });
     if (!ownerPrincipal || ownerPrincipal.tenantId !== args.tenantId) {
-      log.warn("Skipping task mail: owner {ownerPrincipalId} not found in {tenantId}", {
-        ownerPrincipalId: args.task.ownerPrincipalId,
-        tenantId: args.tenantId,
-      });
+      log.warn(
+        "Skipping task mail: owner {ownerPrincipalId} not found in {tenantId}",
+        {
+          ownerPrincipalId: args.task.ownerPrincipalId,
+          tenantId: args.tenantId,
+        },
+      );
       return;
     }
 
@@ -129,7 +139,10 @@ export async function deliverTaskMail(args: DeliverTaskMailArgs): Promise<void> 
       {
         tenantId: args.tenantId,
         principalId: args.task.ownerPrincipalId,
-        address: `${USER_ADDRESS_PREFIX}${ownerPrincipal.refId}@${tenantRow.domain}`,
+        address: deriveUserMailAddress({
+          userRefId: ownerPrincipal.refId,
+          domain: tenantRow.domain,
+        }),
         fromAddress: `tasks@${tenantRow.domain}`,
         subject,
         body,

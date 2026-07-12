@@ -144,7 +144,11 @@ describe("createPrincipalMailboxPersist", () => {
     expect(sql).toContain("ref_id");
     expect(params).toContain("ten-1");
     expect(params).toContain("user");
-    expect(params).toContain("usr_alice");
+    // `principal.refId` is stored BARE (no `usr_` prefix) — the lookup must
+    // strip the address local part's prefix before matching, or it can
+    // never find the member (the CL-3406 latent bug).
+    expect(params).toContain("alice");
+    expect(params).not.toContain("usr_alice");
   });
 
   it("skips only the mailbox write for an unauthorized sender and still delegates upstream", async () => {
@@ -290,5 +294,30 @@ describe("createPrincipalMailboxPersist", () => {
       principalId: "pri-alice",
       direction: "inbound",
     });
+  });
+
+  it("still delivers to a legacy bare-format recipient address", async () => {
+    // Schedule rows seeded before the usr_ prefix unification carry bare
+    // `<refId>@<domain>` recipient addresses in their trigger payloads;
+    // those must keep delivering without a reseed.
+    const { db, inserted, principalFindFirst } = makeDb({
+      sender: SENDER,
+      tenantDomain: "tenant.example",
+      memberPrincipal: { id: "pri-alice" },
+    });
+    const { upstream } = makeUpstream();
+    const persist = createPrincipalMailboxPersist(db, upstream);
+
+    await persist({
+      senderAddress: SENDER.address,
+      recipients: ["alice@tenant.example"],
+      raw: RAW,
+    });
+
+    expect(inserted).toHaveLength(1);
+    const { params } = renderWhere(
+      (principalFindFirst.mock.calls[0] as { where: unknown }[])[0]?.where,
+    );
+    expect(params).toContain("alice");
   });
 });

@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { agentInstance, principal, tenant } from "@intx/db/schema";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
-import { splitMailAddress } from "@workbench/hub-agent";
+import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
 import { tryParseHeaderSection } from "./mail-headers";
@@ -10,8 +10,6 @@ import { tryParseHeaderSection } from "./mail-headers";
 const logger = getLogger(["hub", "principal-mailbox"]);
 
 export type PersistMailFn = NonNullable<SidecarLookups["persistMail"]>;
-
-const USER_ADDRESS_PREFIX = "usr_";
 
 // The idempotency key for a workflow gate mailbox item: one per (run, signal)
 // occurrence, so a re-projected open gate never writes a duplicate inbox item.
@@ -135,11 +133,15 @@ export function createPrincipalMailboxPersist(
       return;
     }
 
+    // A user recipient is `usr_<refId>` (the canonical format) or, for
+    // trigger payloads seeded before the prefix unification, a bare
+    // `<refId>` — accept both so old schedule rows keep delivering without
+    // a reseed. Agent (`ins_`) addresses are never user mailboxes.
     const candidates = recipients
       .map(splitMailAddress)
       .filter(
         (parts): parts is NonNullable<typeof parts> =>
-          parts !== null && parts.local.startsWith(USER_ADDRESS_PREFIX),
+          parts !== null && !parts.local.startsWith("ins_"),
       );
     if (candidates.length === 0) return;
 
@@ -164,17 +166,24 @@ export function createPrincipalMailboxPersist(
         );
         continue;
       }
+      // `parts.local` is the `usr_`-prefixed address local part
+      // (`deriveUserMailAddress`'s output shape) or a legacy bare refId;
+      // `principal.refId` is stored BARE. Strip the prefix when present, or
+      // this lookup can never find the member.
+      const bareRefId = parts.local.startsWith(USER_ADDRESS_PREFIX)
+        ? parts.local.slice(USER_ADDRESS_PREFIX.length)
+        : parts.local;
       const member = await db.query.principal.findFirst({
         where: and(
           eq(principal.tenantId, sender.tenantId),
           eq(principal.kind, "user"),
-          eq(principal.refId, parts.local),
+          eq(principal.refId, bareRefId),
         ),
       });
       if (!member) {
         logger.warn(
           "Skipping user recipient {address}: no member principal with refId {refId} in tenant {tenantId}",
-          { address, refId: parts.local, tenantId: sender.tenantId },
+          { address, refId: bareRefId, tenantId: sender.tenantId },
         );
         continue;
       }

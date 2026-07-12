@@ -7,9 +7,25 @@ export const UserMailAddressArgs = type({
 export type UserMailAddressArgs = typeof UserMailAddressArgs.infer;
 
 /**
- * Derive a human user's deliverable mail address from their principal's
- * `refId` (the `usr_`-prefixed auth user id) and the tenant's domain (the
- * value threaded to workflow deploy as `deploymentDomain`).
+ * The one local-part prefix every principal-mailbox writer must use for a
+ * human `user` recipient. Exported so every seam that needs to recognize or
+ * strip the prefix (e.g. `principal-mailbox.ts` resolving a recipient's bare
+ * `principal.refId` back out of an inbound address) shares this literal
+ * instead of re-declaring it.
+ */
+export const USER_ADDRESS_PREFIX = "usr_";
+
+/**
+ * Derive a human user's deliverable mail address — the ONE canonical format
+ * every principal-mailbox writer (mention mail, task mail, workflow gate
+ * mail, the scheduler/heartbeat identity resolver, and the persistMail
+ * override path) must produce: `usr_<refId>@<tenant domain>`, built from the
+ * principal's bare `refId` (the un-prefixed auth user id stored on the
+ * `principal` row) and the tenant's domain (the value threaded to workflow
+ * deploy as `deploymentDomain`).
+ *
+ * `userRefId` is the BARE refId — this helper adds the `usr_` prefix, so
+ * callers must never pre-prefix it themselves (that would double-prefix).
  *
  * Mirrors the production address shape interchange uses for user
  * recipients. NOT `deriveDeploymentAddress` (that helper hardcodes the
@@ -18,7 +34,7 @@ export type UserMailAddressArgs = typeof UserMailAddressArgs.infer;
  */
 export function deriveUserMailAddress(args: UserMailAddressArgs): string {
   const parsed = UserMailAddressArgs.assert(args);
-  return `${parsed.userRefId}@${parsed.domain}`;
+  return `${USER_ADDRESS_PREFIX}${parsed.userRefId}@${parsed.domain}`;
 }
 
 export type SplitMailAddress = { local: string; domain: string };
