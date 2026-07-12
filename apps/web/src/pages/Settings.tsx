@@ -87,19 +87,19 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
 
 const INITIAL_VALUES: SettingsValues = {};
 
-interface SettingsSectionProps {
+interface SettingsGroupProps {
   readonly id: string;
   readonly title: string;
   readonly description?: string;
   readonly children: ReactNode;
 }
 
-function SettingsSection({
+function SettingsGroup({
   id,
   title,
   description,
   children,
-}: SettingsSectionProps) {
+}: SettingsGroupProps) {
   return (
     <section id={id} className="scroll-mt-4">
       <div className="mb-3">
@@ -200,15 +200,15 @@ export default function Settings() {
         <div className="flex flex-col gap-10 lg:flex-row lg:gap-8">
           <SettingsSectionNav />
           <div className="flex min-w-0 flex-1 flex-col gap-12">
-            <SettingsSection
+            <SettingsGroup
               id="your-agent"
               title="Your agent"
               description="How Myra acts on your behalf."
             >
               <PreferencesPanel categories={["Agent"]} />
-            </SettingsSection>
+            </SettingsGroup>
 
-            <SettingsSection
+            <SettingsGroup
               id="inbox-capabilities"
               title="Your inbox & brief"
               description="What lands in your inbox, and when your morning brief arrives."
@@ -217,9 +217,9 @@ export default function Settings() {
                 <PreferencesPanel categories={["Automations"]} />
               </div>
               <PreferencesPanel categories={["Inbox", "Notifications"]} />
-            </SettingsSection>
+            </SettingsGroup>
 
-            <SettingsSection id="account" title="Account">
+            <SettingsGroup id="account" title="Account">
               <PreferencesPanel categories={["General"]} />
               <div className="rounded-xl border border-border bg-surface p-5">
                 <SettingsPage
@@ -311,11 +311,11 @@ export default function Settings() {
                   Sign out
                 </button>
               </div>
-            </SettingsSection>
+            </SettingsGroup>
 
-            <SettingsSection id="whats-new" title="What's new">
+            <SettingsGroup id="whats-new" title="What's new">
               <WhatsNewSection />
-            </SettingsSection>
+            </SettingsGroup>
           </div>
         </div>
       </div>
