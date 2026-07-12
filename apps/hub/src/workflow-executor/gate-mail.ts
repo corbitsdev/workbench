@@ -5,6 +5,7 @@ import type { RepoStore } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { gateMailMessageKey } from "../lib/principal-mailbox";
 import { writeMailboxMessage } from "../lib/mailbox-write";
+import type { MailboxEventBus } from "../lib/mailbox-events";
 import { describePendingGates } from "./pending-gate-info";
 import { loadDeploymentMeta } from "./run-store";
 
@@ -30,6 +31,7 @@ export type DeliverPendingGateMailDeps = {
   db: HubDb;
   repoStore: RepoStore;
   deploymentDomain: string;
+  mailboxEventBus?: MailboxEventBus;
 };
 
 function composeGateBody(args: {
@@ -110,20 +112,24 @@ export async function deliverPendingGateMail(
   const deepLinkPath = `${RUN_TRACE_PATH_PREFIX}/${run.runId}`;
 
   for (const gate of gates) {
-    await writeMailboxMessage(deps.db, {
-      tenantId: run.tenantId,
-      principalId: owner.id,
-      address: recipientAddress,
-      fromAddress: senderAddress,
-      subject: `A workflow needs you: ${label}`,
-      body: composeGateBody({
-        label,
-        runId: run.runId,
-        signalName: gate.signalName,
-        choices: gate.payloadSchema,
-        deepLinkPath,
-      }),
-      messageKey: gateMailMessageKey(run.runId, gate.signalName),
-    });
+    await writeMailboxMessage(
+      deps.db,
+      {
+        tenantId: run.tenantId,
+        principalId: owner.id,
+        address: recipientAddress,
+        fromAddress: senderAddress,
+        subject: `A workflow needs you: ${label}`,
+        body: composeGateBody({
+          label,
+          runId: run.runId,
+          signalName: gate.signalName,
+          choices: gate.payloadSchema,
+          deepLinkPath,
+        }),
+        messageKey: gateMailMessageKey(run.runId, gate.signalName),
+      },
+      deps.mailboxEventBus,
+    );
   }
 }

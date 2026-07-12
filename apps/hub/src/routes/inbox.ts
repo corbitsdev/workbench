@@ -1,6 +1,8 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
+import { streamSSE } from "hono/streaming";
+import { getLogger } from "@intx/log";
 import { MailboxListResponse, MailboxMessageDetail } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import {
@@ -8,20 +10,26 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "../lib/mailbox-read";
+import type { MailboxEventBus } from "../lib/mailbox-events";
 import { UuidParam } from "../lib/uuid";
 import { ErrorResponse } from "../lib/openapi";
 import { clampLimit, decodeCursor, MAX_PAGE_LIMIT } from "../lib/keyset";
 import type { HubDb } from "../db";
 
+const log = getLogger(["api", "inbox"]);
+
 const MarkReadResponse = type({ id: "string", read: "boolean" });
 
 const DEFAULT_INBOX_LIMIT = 50;
+
+const HEARTBEAT_INTERVAL_MS = 25_000;
 
 // The signed-in user's durable mailbox: mail addressed to their usr_
 // address, persisted to principal_mailbox by the sidecar persistMail
 // override. Scoped strictly to the caller's own member principal.
 export function createInboxRouter(
   db: HubDb,
+  bus: MailboxEventBus,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -93,6 +101,60 @@ export function createInboxRouter(
         ...(page.nextCursor !== undefined
           ? { nextCursor: page.nextCursor }
           : {}),
+      });
+    },
+  );
+
+  app.get(
+    "/me/inbox/events",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Stream a live signal when a new mailbox message is delivered",
+      description:
+        "Server-Sent Events stream of minimal delivery signals ({type:'mailbox', id}) for the caller's own mailbox — never mail content; the client reacts by refetching GET /me/inbox. BetterAuth-authenticated; identity is derived from the session, never a path parameter.",
+      responses: {
+        200: {
+          description: "Server-Sent Events stream of mailbox delivery signals",
+          content: { "text/event-stream": {} },
+        },
+        409: {
+          description: "Caller has no provisioned membership yet",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const member = await resolveCallerMember(db, userId);
+      if (!member) {
+        return c.json({ error: "No provisioned membership" }, 409);
+      }
+      const { principalId } = member;
+
+      return streamSSE(c, async (stream) => {
+        const unsubscribe = bus.subscribe(principalId, (event) => {
+          void stream.writeSSE({
+            event: "mailbox",
+            data: JSON.stringify(event),
+          });
+        });
+
+        stream.onAbort(() => unsubscribe());
+
+        try {
+          while (!stream.aborted) {
+            await stream.sleep(HEARTBEAT_INTERVAL_MS);
+            if (stream.aborted) break;
+            await stream.write(": heartbeat\n\n");
+          }
+        } catch (err) {
+          log.warn("mailbox stream ended", {
+            principalId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        } finally {
+          unsubscribe();
+        }
       });
     },
   );

@@ -148,6 +148,7 @@ import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
+import { createMailboxEventBus } from "./lib/mailbox-events";
 import { createInboxRouter } from "./routes/inbox";
 import { createMeTasksRouter } from "./routes/me-tasks";
 import { createHubToolsRouter } from "./routes/hub-tools";
@@ -377,6 +378,7 @@ const repoStore = wrapRepoStoreWithProjection(
           db,
           repoStore: args.repoStore,
           deploymentDomain: config.rootTenant.domain,
+          mailboxEventBus,
         },
         {
           runId: args.runId,
@@ -410,6 +412,13 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
   );
 }
 
+// Workbench-owned mailbox live-delivery bus (CL-3336). One in-process instance
+// shared by every principal_mailbox write path (external mail via persistMail,
+// workflow gate mail, and triage handoffs) and the /me/inbox/events SSE route,
+// so a connected client is notified the instant any of those write a row —
+// never mail content, only {type:"mailbox", id}.
+const mailboxEventBus = createMailboxEventBus();
+
 // Late-bound: constructed below once sessionService exists. The persist hook
 // and the turn-finalized fan-out both fire only after boot completes, so the
 // brief window where this is undefined can never drop a real event.
@@ -420,6 +429,10 @@ const lookups: SidecarLookups = {
   persistMail: createPrincipalMailboxPersist(db, baseLookups.persistMail, {
     onUserMailboxRow(event) {
       mailboxTriage?.enqueue(event);
+      mailboxEventBus.publish(event.memberPrincipalId, {
+        type: "mailbox",
+        id: event.rowId,
+      });
     },
   }),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
@@ -561,6 +574,7 @@ mailboxTriage = createMailboxTriage({
   grantStore,
   eventCollectors,
   cryptoProvider: createEd25519Crypto(registry.active),
+  mailboxEventBus,
 });
 
 // The disconnect reconciler above only ENDS a stale session; nothing re-registers
@@ -1129,7 +1143,7 @@ v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
-v1.route("/", createInboxRouter(db));
+v1.route("/", createInboxRouter(db, mailboxEventBus));
 v1.route("/", createMeTasksRouter(db));
 
 // Resolves a member principal to the user mail identity trigger payloads

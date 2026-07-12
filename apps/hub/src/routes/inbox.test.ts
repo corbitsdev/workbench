@@ -67,15 +67,19 @@ import { Hono } from "hono";
 import type { HubDb } from "../db";
 import { encodeCursor } from "../lib/keyset";
 import { createInboxRouter } from "./inbox";
+import {
+  createMailboxEventBus,
+  type MailboxEventBus,
+} from "../lib/mailbox-events";
 
-function mountApp() {
+function mountApp(bus: MailboxEventBus = createMailboxEventBus()) {
   const app = new Hono();
   const v1 = new Hono<{ Variables: { userId: string } }>();
   v1.use("*", async (c, next) => {
     c.set("userId", c.req.header("x-test-user-id") ?? "user-a");
     await next();
   });
-  v1.route("/", createInboxRouter({} as unknown as HubDb));
+  v1.route("/", createInboxRouter({} as unknown as HubDb, bus));
   app.route("/api/v1", v1);
   return app;
 }
@@ -303,5 +307,110 @@ describe("POST /me/inbox/:id/read", () => {
       }),
     );
     expect(res.status).toBe(409);
+  });
+});
+
+async function readWithTimeout(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  ms: number,
+): Promise<string> {
+  const timeout = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("stream read timed out")), ms),
+  );
+  const { value } = await Promise.race([reader.read(), timeout]);
+  return value ? new TextDecoder().decode(value) : "";
+}
+
+describe("GET /me/inbox/events", () => {
+  it("409s when the caller has no provisioned membership", async () => {
+    member = null;
+    const res = await mountApp().request(
+      new Request("http://localhost/api/v1/me/inbox/events"),
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("streams a mailbox signal published for the caller's own principal", async () => {
+    const bus = createMailboxEventBus();
+    const app = mountApp(bus);
+    const res = await app.request(
+      new Request("http://localhost/api/v1/me/inbox/events", {
+        headers: { "x-test-user-id": "user-a" },
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const reader =
+      res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+    bus.publish("pri-a", { type: "mailbox", id: "row-1" });
+
+    const frame = await readWithTimeout(reader, 1000);
+    expect(frame).toContain("event: mailbox");
+    const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+    const payload = JSON.parse(dataLine!.replace(/^data:\s*/, "")) as Record<
+      string,
+      unknown
+    >;
+    expect(payload).toEqual({ type: "mailbox", id: "row-1" });
+
+    await reader.cancel().catch(() => {});
+  });
+
+  it("does not deliver a signal published for another principal", async () => {
+    const bus = createMailboxEventBus();
+    member = { tenantId: "ten-1", principalId: "pri-a" };
+    const app = mountApp(bus);
+    const res = await app.request(
+      new Request("http://localhost/api/v1/me/inbox/events", {
+        headers: { "x-test-user-id": "user-a" },
+      }),
+    );
+    const reader =
+      res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+    bus.publish("pri-b", { type: "mailbox", id: "row-1" });
+
+    const frame = await readWithTimeout(reader, 200).catch(() => "");
+    expect(frame).toBe("");
+
+    await reader.cancel().catch(() => {});
+  });
+
+  it("cleans up its subscription when the connection aborts", async () => {
+    const realBus = createMailboxEventBus();
+    let subscribed = false;
+    let unsubscribed = false;
+    const bus: MailboxEventBus = {
+      publish: (principalId, event) => realBus.publish(principalId, event),
+      subscribe: (principalId, listener) => {
+        const off = realBus.subscribe(principalId, listener);
+        subscribed = true;
+        return () => {
+          unsubscribed = true;
+          off();
+        };
+      },
+    };
+    const app = mountApp(bus);
+    const controller = new AbortController();
+    const res = await app.request(
+      new Request("http://localhost/api/v1/me/inbox/events", {
+        headers: { "x-test-user-id": "user-a" },
+        signal: controller.signal,
+      }),
+    );
+    const reader =
+      res.body!.getReader() as ReadableStreamDefaultReader<Uint8Array>;
+    for (let i = 0; i < 100 && !subscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    expect(subscribed).toBe(true);
+
+    await reader.cancel().catch(() => {});
+    controller.abort();
+    for (let i = 0; i < 50 && !unsubscribed; i += 1) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(unsubscribed).toBe(true);
   });
 });

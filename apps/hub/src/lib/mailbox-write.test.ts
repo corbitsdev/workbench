@@ -2,6 +2,7 @@ import { describe, expect, it, mock } from "bun:test";
 import { parseHeaderSection } from "@intx/mime";
 import type { HubDb } from "../db";
 import { buildMailFrame, writeMailboxMessage } from "./mailbox-write";
+import { createMailboxEventBus, type MailboxEvent } from "./mailbox-events";
 
 const ARGS = {
   tenantId: "ten-1",
@@ -96,5 +97,41 @@ describe("writeMailboxMessage", () => {
     const { db } = makeDb({ returned: [] });
     const written = await writeMailboxMessage(db, ARGS);
     expect(written).toBeNull();
+  });
+
+  it("publishes a mailbox event to the recipient principal on a successful insert", async () => {
+    const { db } = makeDb({ returned: [{ id: "row-9" }] });
+    const bus = createMailboxEventBus();
+    const received: MailboxEvent[] = [];
+    bus.subscribe(ARGS.principalId, (e) => received.push(e));
+
+    await writeMailboxMessage(db, ARGS, bus);
+
+    expect(received).toEqual([{ type: "mailbox", id: "row-9" }]);
+  });
+
+  it("does not publish when the dedupe key already exists", async () => {
+    const { db } = makeDb({ returned: [] });
+    const bus = createMailboxEventBus();
+    const received: MailboxEvent[] = [];
+    bus.subscribe(ARGS.principalId, (e) => received.push(e));
+
+    await writeMailboxMessage(db, ARGS, bus);
+
+    expect(received).toEqual([]);
+  });
+
+  it("does not fail the write when the emitter throws", async () => {
+    const { db } = makeDb({ returned: [{ id: "row-9" }] });
+    const throwingBus = {
+      publish: () => {
+        throw new Error("boom");
+      },
+      subscribe: () => () => {},
+    };
+
+    const written = await writeMailboxMessage(db, ARGS, throwingBus);
+
+    expect(written).toEqual({ id: "row-9" });
   });
 });

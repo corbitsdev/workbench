@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
+import { getLogger } from "@intx/log";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
+import type { MailboxEventBus } from "./mailbox-events";
+
+const logger = getLogger(["hub", "mailbox-write"]);
 
 export type MailFrameArgs = {
   from: string;
@@ -38,9 +42,7 @@ export function buildMailFrame(args: MailFrameArgs): Uint8Array {
     headers.push(`In-Reply-To: ${headerValue(args.inReplyTo)}`);
   }
   const body = args.body.replace(/\r?\n/g, "\r\n");
-  return new TextEncoder().encode(
-    `${headers.join("\r\n")}\r\n\r\n${body}\r\n`,
-  );
+  return new TextEncoder().encode(`${headers.join("\r\n")}\r\n\r\n${body}\r\n`);
 }
 
 export type MailboxWriteArgs = {
@@ -62,10 +64,15 @@ export type MailboxWriteArgs = {
  * seam (so a hub-written row can never re-trigger mail-driven automation).
  * Deduped per (tenant, principal, messageKey); returns null when the key was
  * already written.
+ *
+ * When `bus` is provided, a successful insert publishes a live delivery signal
+ * to the recipient principal — best-effort: a publish failure is logged and
+ * never turns a successful mailbox write into a caller-visible error.
  */
 export async function writeMailboxMessage(
   db: HubDb,
   args: MailboxWriteArgs,
+  bus?: MailboxEventBus,
 ): Promise<{ id: string } | null> {
   const frameArgs: MailFrameArgs = {
     from: args.fromAddress,
@@ -100,5 +107,15 @@ export async function writeMailboxMessage(
     .returning({ id: principalMailbox.id });
   const row = rows[0];
   if (!row) return null;
+  if (bus) {
+    try {
+      bus.publish(args.principalId, { type: "mailbox", id: row.id });
+    } catch (err) {
+      logger.error("mailbox event publish failed for {rowId}", {
+        rowId: row.id,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
   return { id: row.id };
 }

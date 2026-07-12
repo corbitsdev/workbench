@@ -18,6 +18,7 @@ import { getConfig } from "../config";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { decodeMailFrame } from "../lib/mailbox-read";
 import { writeMailboxMessage } from "../lib/mailbox-write";
+import type { MailboxEventBus } from "../lib/mailbox-events";
 import { readMemberPreferences } from "../lib/member-preferences";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import { launchAgentSession } from "./agent-provisioning";
@@ -55,6 +56,7 @@ export type MailboxTriageDeps = {
   cryptoProvider: CryptoProvider;
   /** Hard cap on how long one triage turn may run before teardown. */
   turnTimeoutMs?: number;
+  mailboxEventBus?: MailboxEventBus;
 };
 
 export type MailboxTriage = {
@@ -276,16 +278,20 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
         return;
       }
 
-      await writeMailboxMessage(deps.db, {
-        tenantId: item.tenantId,
-        principalId: item.memberPrincipalId,
-        address: item.recipientAddress,
-        fromAddress: `myra@${tenantDomain}`,
-        subject: `Myra triaged: ${subject}`,
-        body: text,
-        messageKey: `triage:${item.rowId}`,
-        ...(inReplyTo !== undefined ? { inReplyTo } : {}),
-      });
+      await writeMailboxMessage(
+        deps.db,
+        {
+          tenantId: item.tenantId,
+          principalId: item.memberPrincipalId,
+          address: item.recipientAddress,
+          fromAddress: `myra@${tenantDomain}`,
+          subject: `Myra triaged: ${subject}`,
+          body: text,
+          messageKey: `triage:${item.rowId}`,
+          ...(inReplyTo !== undefined ? { inReplyTo } : {}),
+        },
+        deps.mailboxEventBus,
+      );
     } finally {
       if (address !== undefined) {
         pending.delete(address);
