@@ -67,6 +67,7 @@ export function ConnectedToInboxPanel() {
   const settings = settingsQuery.data;
   const briefHourUtc = findValue(settings, "briefHourUtc");
   const notifyGateAsks = findValue(settings, "notifyGateAsks") === true;
+  const notifyInboxMail = findValue(settings, "notifyInboxMail") === true;
   const taskMailEnabled = findValue(settings, "taskMailEnabled") === true;
   const tasksTriageCreate = findValue(settings, "tasksTriageCreate") === true;
 
@@ -102,7 +103,10 @@ export function ConnectedToInboxPanel() {
               : "Scheduled"
           }
         />
-        <FeedRow label="Mentions" status="Always on" />
+        <FeedRow
+          label="Mentions & new mail"
+          status={notifyInboxMail ? "On" : "Off"}
+        />
         <FeedRow
           label="Approvals & gates"
           status={notifyGateAsks ? "On" : "Off"}
@@ -118,6 +122,12 @@ export function ConnectedToInboxPanel() {
           <h4 className="mb-1 text-sm font-semibold text-text">
             External sources
           </h4>
+          {tasksTriageCreate && (
+            <p className="mb-1 text-xs text-text-3">
+              Myra&apos;s triage may leave a task behind for actionable mail
+              from any source in your inbox.
+            </p>
+          )}
           {sourceKeys.map((key) => {
             const brief = briefSources.find((s) => s.key === key);
             const inbox = inboxSources.find((s) => s.key === key);
@@ -125,12 +135,9 @@ export function ConnectedToInboxPanel() {
             const description = inbox?.description ?? brief?.description ?? "";
             const feedsInbox = inbox?.enabled === true;
             const feedsBrief = brief?.enabled === true;
-            const createsTasks = feedsInbox && tasksTriageCreate;
-
             const capabilities: string[] = [];
             if (feedsBrief) capabilities.push("brief");
             if (feedsInbox) capabilities.push("inbox");
-            if (createsTasks) capabilities.push("can create tasks");
 
             return (
               <div
