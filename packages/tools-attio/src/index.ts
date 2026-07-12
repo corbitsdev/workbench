@@ -390,6 +390,137 @@ async function updateTask(
   );
 }
 
+// Workbench-internal brief-source self-skip contract (see
+// BriefSourceFetchInputSchema / BRIEF_SOURCE_SKIPPED_MARKER in
+// @workbench/shared). Duplicated locally rather than imported — this package
+// has no dependency on @workbench/shared, following the tools-granola
+// precedent.
+const BRIEF_SOURCE_SKIPPED_MARKER = { skipped: true as const };
+
+function isBriefSourceFetchEnabled(
+  sourceKey: string,
+  enabledSources: string[] | undefined,
+): boolean {
+  return enabledSources === undefined || enabledSources.includes(sourceKey);
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function attributeValue(
+  record: unknown,
+  attribute: string,
+): string | null {
+  if (!isRecord(record) || !isRecord(record.values)) {
+    return null;
+  }
+  const entries = record.values[attribute];
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return null;
+  }
+  const first = entries[0];
+  if (isRecord(first) && typeof first.value === "string") {
+    return first.value;
+  }
+  return null;
+}
+
+function recordId(record: unknown): string | null {
+  if (!isRecord(record) || !isRecord(record.id)) {
+    return null;
+  }
+  return optionalString(record.id.record_id);
+}
+
+function compactCompany(record: unknown): {
+  id: string | null;
+  name: string | null;
+  createdAt: string | null;
+} {
+  return {
+    id: recordId(record),
+    name: attributeValue(record, "name"),
+    createdAt: isRecord(record) && typeof record.created_at === "string"
+      ? record.created_at
+      : null,
+  };
+}
+
+function compactTask(task: unknown): {
+  id: string | null;
+  content: string | null;
+  deadlineAt: string | null;
+} {
+  return {
+    id: isRecord(task) && isRecord(task.id) && typeof task.id.task_id === "string"
+      ? task.id.task_id
+      : null,
+    content:
+      isRecord(task) && typeof task.content_plaintext === "string"
+        ? task.content_plaintext
+        : null,
+    deadlineAt:
+      isRecord(task) && typeof task.deadline_at === "string"
+        ? task.deadline_at
+        : null,
+  };
+}
+
+async function recentActivity(
+  config: AttioToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const enabledSources = optionalStringArray(args.enabledSources);
+  if (!isBriefSourceFetchEnabled("attio", enabledSources)) {
+    return BRIEF_SOURCE_SKIPPED_MARKER;
+  }
+
+  const createdAfter = optionalString(args.createdAfter);
+
+  const companiesUrl = attioUrl(config, "/v2/objects/companies/records/query");
+  const companiesBody: Record<string, unknown> = {
+    limit: DEFAULT_LIMIT,
+    offset: DEFAULT_OFFSET,
+    sorts: [{ attribute: "created_at", direction: "desc" }],
+  };
+  if (createdAfter !== null) {
+    companiesBody.filter = { created_at: { $gte: createdAfter } };
+  }
+  const companiesRaw = await fetchAttioJSON(
+    config,
+    companiesUrl,
+    { method: "POST", body: companiesBody },
+    signal,
+  );
+  const companies = parseDataResponse(companiesRaw);
+
+  const tasksUrl = attioUrl(config, "/v2/tasks");
+  tasksUrl.searchParams.set("limit", String(DEFAULT_LIMIT));
+  tasksUrl.searchParams.set("offset", String(DEFAULT_OFFSET));
+  tasksUrl.searchParams.set("is_completed", "false");
+  const tasksRaw = await fetchAttioJSON(
+    config,
+    tasksUrl,
+    { method: "GET" },
+    signal,
+  );
+  const tasks = parseDataResponse(tasksRaw);
+
+  return {
+    attioActivity: {
+      newCompanies: Array.isArray(companies)
+        ? companies.map(compactCompany)
+        : [],
+      openTasks: Array.isArray(tasks) ? tasks.map(compactTask) : [],
+    },
+  };
+}
+
 function idempotencyMarker(key: string): string {
   return `<!-- idem:${key} -->`;
 }
@@ -802,6 +933,30 @@ export const ATTIO_CREATE_RECORD_DEFINITION: ToolDefinition = {
   inputSchema: CREATE_RECORD_INPUT_SCHEMA,
 };
 
+const RECENT_ACTIVITY_INPUT_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    createdAfter: {
+      type: "string",
+      description:
+        "Return only companies created after this ISO date-time.",
+    },
+    enabledSources: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        'Workbench-internal: the calling member\'s currently-enabled brief source keys. When set and it omits "attio", this call is skipped (returns a `{ skipped: true }` result) instead of hitting the Attio API.',
+    },
+  },
+};
+
+export const ATTIO_RECENT_ACTIVITY_DEFINITION: ToolDefinition = {
+  name: "attio_recent_activity",
+  description:
+    "Compact snapshot of recent Attio CRM activity: companies created since createdAfter and currently open tasks. Read-only.",
+  inputSchema: RECENT_ACTIVITY_INPUT_SCHEMA,
+};
+
 function buildListObjectsHandler(config: AttioToolsConfig) {
   return async (_args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await listObjects(config, signal));
@@ -850,6 +1005,11 @@ function buildCreateNoteHandler(config: AttioToolsConfig) {
 function buildCreateRecordHandler(config: AttioToolsConfig) {
   return async (args: Record<string, unknown>, signal: AbortSignal) =>
     jsonResult(await createRecord(config, args, signal));
+}
+
+function buildRecentActivityHandler(config: AttioToolsConfig) {
+  return async (args: Record<string, unknown>, signal: AbortSignal) =>
+    jsonResult(await recentActivity(config, args, signal));
 }
 
 export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
@@ -906,6 +1066,11 @@ export function createAttioTools(config: AttioToolsConfig): AgentTool[] {
       definition: ATTIO_CREATE_RECORD_DEFINITION,
       handler: buildCreateRecordHandler(config),
     },
+    {
+      kind: "string",
+      definition: ATTIO_RECENT_ACTIVITY_DEFINITION,
+      handler: buildRecentActivityHandler(config),
+    },
   ];
 }
 
@@ -931,6 +1096,8 @@ function handlerForDefinition(config: AttioToolsConfig, name: string) {
       return buildCreateNoteHandler(config);
     case ATTIO_CREATE_RECORD_DEFINITION.name:
       return buildCreateRecordHandler(config);
+    case ATTIO_RECENT_ACTIVITY_DEFINITION.name:
+      return buildRecentActivityHandler(config);
     default:
       throw new Error(`Unknown attio tool: ${name}`);
   }
@@ -1050,6 +1217,16 @@ export const ATTIO_HUB_TOOLS = {
       createAttioToolFor(
         resolveBaseUrl(config),
         ATTIO_CREATE_RECORD_DEFINITION,
+      ),
+  },
+  attio_recent_activity: {
+    sideEffect: "read" as const,
+    definition: ATTIO_RECENT_ACTIVITY_DEFINITION,
+    providerName: "attio" as const,
+    createTools: (config: { apiKey: string; baseURL: string }) =>
+      createAttioToolFor(
+        resolveBaseUrl(config),
+        ATTIO_RECENT_ACTIVITY_DEFINITION,
       ),
   },
 };
