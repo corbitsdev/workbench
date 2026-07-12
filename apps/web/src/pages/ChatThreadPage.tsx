@@ -6,6 +6,7 @@ import { MyraChatSurface } from "../components/MyraChatSurface";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
+import { useMembers } from "../hooks/use-members";
 import { useConversationGates } from "../hooks/use-conversation-gates";
 import { useResumeConversationGate } from "../hooks/use-workflow";
 import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
@@ -35,6 +36,11 @@ export function ChatThreadPage() {
   const { data, isLoading, isError, refetch } = useMyraThreads();
   const threads = data?.threads;
   const createThread = useCreateMyraThread();
+  const { data: members } = useMembers(activeTenantId);
+  const mentionCandidates = (members ?? []).map((m) => ({
+    id: m.refId,
+    name: m.name,
+  }));
 
   const active = resolveActiveThread(threads ?? [], threadId);
 
@@ -201,6 +207,7 @@ export function ChatThreadPage() {
                 .then(() => undefined)
             }
             inserts={inserts}
+            mentionCandidates={mentionCandidates}
           />
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,

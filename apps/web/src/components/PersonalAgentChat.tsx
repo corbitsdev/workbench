@@ -10,6 +10,7 @@ import {
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useMyraSession } from "../hooks/use-myra-session";
+import { useMembers } from "../hooks/use-members";
 import {
   resolveActiveThread,
   useAutoTitleFirstMessage,
@@ -60,6 +61,11 @@ export function PersonalAgentChat() {
   const { data: threadPage } = useMyraThreads();
   const threads = threadPage?.threads;
   const createThread = useCreateMyraThread();
+  const { data: members } = useMembers(activeTenantId);
+  const mentionCandidates = (members ?? []).map((m) => ({
+    id: m.refId,
+    name: m.name,
+  }));
 
   const activeThread = resolveActiveThread(threads ?? [], selectedThreadId);
   const session = useMyraSession(
@@ -166,6 +172,7 @@ export function PersonalAgentChat() {
           expanded={expanded}
           onToggleExpand={toggleExpand}
           onClose={() => setOpen(false)}
+          mentionCandidates={mentionCandidates}
         />
       </div>
     </div>

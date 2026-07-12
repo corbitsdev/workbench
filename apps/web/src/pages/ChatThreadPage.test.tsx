@@ -46,6 +46,9 @@ let sessionResult: any = {
   activity: null,
 };
 
+mock.module("../hooks/use-members", () => ({
+  useMembers: () => ({ data: [] }),
+}));
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => threadsResult,
   useCreateMyraThread: () => ({ mutate: createMutate, isPending: false }),
