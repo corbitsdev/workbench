@@ -40,11 +40,15 @@ export const workflow = defineWorkflow({
   steps: {
     // Pull the user's recent calls. The trigger payload is passed verbatim;
     // granola_list_notes reads `createdAfter` from it and ignores the rest.
+    // nonFatal: a missing/rejected Granola credential must degrade the brief
+    // to "call notes aren't available" (see prompts.ts) rather than fail the
+    // whole unattended run.
     intake: deterministicToolStep({
       id: "heartbeat-intake",
       title: "Pull recent calls",
       tool: "granola_list_notes",
       input: { from: "trigger.payload" },
+      nonFatal: true,
     }),
 
     // Synthesize the brief. Inline single-turn inference on the deploy default

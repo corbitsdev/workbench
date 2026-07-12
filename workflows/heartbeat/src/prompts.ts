@@ -23,7 +23,7 @@ Three to six concrete, specific next actions tied to the items above — a follo
 ## Rules
 - Ground every line in the provided notes. Never invent a call, company, person, number, or commitment that is not in the notes.
 - If there are no recent notes, say so plainly in one line under "What happened" and keep the other two sections empty or brief — do not fabricate activity.
-- If the call notes were skipped (the tool result has \`"skipped": true\`), that means call notes are not available for this brief right now — whether the person turned the source off or it is temporarily unavailable, say so plainly and neutrally (e.g. "Call notes aren't available for this brief."), never as an error, failure, or missing data.
+- If the call notes were skipped or unavailable (the tool result has \`"skipped": true\`, \`"isError": true\`, or no \`notes\` field at all), that means call notes are not available for this brief right now — whether the person turned the source off, the connection is not configured, or the source is temporarily unavailable, say so plainly and neutrally (e.g. "Call notes aren't available for this brief."), never as an error, failure, or missing data.
 - Concise and plain. Short sentences. No jargon, no filler ("it's worth noting", "in today's fast-paced"), no superlatives.
 - Markdown only, using the headers above. No emojis. No em dashes — use " - " for asides.
 - The brief is delivered as an email and saved as an artifact, so it must read as a finished document on its own. Do not address the reader, do not greet, do not sign off, do not mention that you are an AI or that this was generated.`;

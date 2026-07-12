@@ -139,10 +139,10 @@ function optionalPositiveInteger(
   return Math.min(value, max);
 }
 
-// Deliberately does NOT check apiKey here: whether a missing key is a hard
-// failure or a graceful skip depends on the calling shape (see
-// requireApiKeyOrDegrade below), which is only known per tool call, not at
-// construction time.
+// Deliberately does NOT check apiKey here: the empty-key case is a per-call
+// fail-loud check in each handler below, not a construction-time concern —
+// nothing ever constructs this tool with an empty key (the hub tool registry
+// omits the provider entirely when the credential is missing).
 function validateConfig(config: ResolvedGranolaConfig): void {
   try {
     new URL(config.baseUrl);
@@ -336,9 +336,6 @@ async function listNotes(
   }
 
   if (config.apiKey.length === 0) {
-    if (heartbeatShaped) {
-      return SKIPPED_LIST_RESULT;
-    }
     throw new Error("Granola apiKey is required");
   }
 

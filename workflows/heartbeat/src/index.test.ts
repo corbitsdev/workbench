@@ -6,6 +6,7 @@ import {
   INLINE_INFERENCE_KIND,
   STEP_ARGMAP_TAG,
   STEP_KIND_TAG,
+  STEP_NONFATAL_TAG,
   STEP_TOOL_TAG,
 } from "@workbench/agents";
 
@@ -101,6 +102,11 @@ describe("heartbeat native workflow", () => {
     expect(intake.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
     expect(intake.agent.inference.sources).toEqual([]);
+  });
+
+  test("intake is nonFatal — a missing/rejected Granola credential cannot fail the run", () => {
+    const intake = stepPrimitive("intake");
+    expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
   });
 
   test("notify is a deterministic mail_send step with no inference source", () => {

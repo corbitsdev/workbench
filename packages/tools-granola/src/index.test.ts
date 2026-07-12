@@ -463,7 +463,7 @@ describe("createGranolaTools", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("degrades to skipped with no network call when the heartbeat caller's key is missing", async () => {
+  it("throws for a heartbeat caller too when the key is missing (nothing constructs the tool with an empty key)", async () => {
     const fetcher = mock(async () => {
       throw new Error("should not be called");
     });
@@ -481,13 +481,12 @@ describe("createGranolaTools", () => {
       new AbortController().signal,
     );
 
-    expect(result.isError).toBeUndefined();
-    expect(fetcher).not.toHaveBeenCalled();
-    expect(JSON.parse(String(result.content))).toEqual({
-      notes: [],
-      hasMore: false,
-      skipped: true,
+    expect(result).toEqual({
+      callId: "call_missing_key_heartbeat",
+      content: "Granola apiKey is required",
+      isError: true,
     });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("degrades to skipped when the heartbeat caller's key is rejected with 401", async () => {
