@@ -107,6 +107,10 @@ function mountApp(
       db: {} as unknown as HubDb,
       runStarter,
       heartbeatKind: HEARTBEAT_KIND,
+      resolveUserIdentity: async (memberPrincipalId: string) => ({
+        userAddress: `usr_${memberPrincipalId}@tenant.example`,
+        userRefId: memberPrincipalId,
+      }),
       now,
     }),
   );
@@ -203,5 +207,41 @@ describe("POST /me/brief-run", () => {
     const body = await res.json();
     expect(body).toEqual({ error: "The brief could not be started" });
     expect(JSON.stringify(body)).not.toContain("sidecar unroutable");
+  });
+
+  it("starts a run with a fallback payload when no schedule row exists", async () => {
+    startRunCalls = [];
+    startRunResult = { ok: true, deploymentId: "dep-2" };
+    scheduleRowsByPrincipal["principal-a"] = [];
+    const app = mountApp();
+    const res = await app.fetch(req("/me/brief-run", "user-a"));
+    expect(res.status).toBe(200);
+    const call = startRunCalls[0];
+    expect(call?.input.userAddress).toBe("usr_principal-a@tenant.example");
+    expect(call?.input.enabledSources).toBeDefined();
+    expect(call?.input.createdAfter).toBeDefined();
+    scheduleRowsByPrincipal["principal-a"] = [
+      {
+        workflowKind: HEARTBEAT_KIND,
+        hourUtc: 13,
+        lastFiredDayUtc: null,
+        triggerPayload: { reason: "scheduled-heartbeat" },
+      },
+    ];
+  });
+
+  it("does not consume the rate window when the run fails to start", async () => {
+    startRunCalls = [];
+    startRunResult = {
+      ok: false,
+      reason: "delivery_failed",
+      message: "sidecar exploded",
+    };
+    const app = mountApp();
+    const first = await app.fetch(req("/me/brief-run", "user-a"));
+    expect(first.status).toBe(502);
+    startRunResult = { ok: true, deploymentId: "dep-3" };
+    const second = await app.fetch(req("/me/brief-run", "user-a"));
+    expect(second.status).toBe(200);
   });
 });
