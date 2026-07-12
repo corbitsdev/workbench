@@ -1,19 +1,23 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, ListTodo } from "lucide-react";
 import { cn } from "@workbench/ui";
-import type { MailboxMessage } from "@workbench/shared";
+import type { MailboxMessage, Task } from "@workbench/shared";
 import {
   MAILBOX_POLL_MS,
   unreadCount,
   useMailbox,
 } from "../../hooks/use-mailbox";
 import { useMailboxLive } from "../../hooks/use-mailbox-live";
+import { useTasks } from "../../hooks/use-tasks";
 import { formatRelativeTime } from "../../lib/relative-time";
 
 const RECENT_LIMIT = 8;
+const RECENT_TASK_LIMIT = 5;
 const BADGE_MAX = 9;
+
+const OPEN_TASK_STATUSES = new Set(["open", "in_progress", "waiting"]);
 
 /**
  * Ambient notifications surface in the app-frame top bar. Reads the same
@@ -29,10 +33,18 @@ export function NotificationsBell() {
   const reduceMotion = useReducedMotion();
   const { data } = useMailbox({ refetchInterval: MAILBOX_POLL_MS });
   useMailboxLive();
+  const { data: taskData } = useTasks({ refetchInterval: MAILBOX_POLL_MS });
 
   const messages = data ?? [];
+  // Badge count stays mailbox-only: tasks have no "new since last seen" signal
+  // yet (no per-member last-viewed watermark), so folding them in would fake
+  // an unread state rather than report one — house rule bars fabricated
+  // unread semantics.
   const unread = unreadCount(messages);
   const recent = messages.slice(0, RECENT_LIMIT);
+  const recentTasks = (taskData ?? [])
+    .filter((task) => OPEN_TASK_STATUSES.has(task.status))
+    .slice(0, RECENT_TASK_LIMIT);
 
   useEffect(() => {
     if (!open) return;
@@ -111,13 +123,13 @@ export function NotificationsBell() {
               )}
             </div>
 
-            {recent.length === 0 ? (
+            {recent.length === 0 && recentTasks.length === 0 ? (
               <BellEmptyState />
             ) : (
               <ul className="max-h-[22rem] overflow-y-auto py-1">
                 {recent.map((message, index) => (
                   <motion.li
-                    key={message.id}
+                    key={`mail:${message.id}`}
                     initial={reduceMotion ? false : { opacity: 0, x: 6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{
@@ -128,6 +140,25 @@ export function NotificationsBell() {
                   >
                     <NotificationItem
                       message={message}
+                      onSelect={() => setOpen(false)}
+                    />
+                  </motion.li>
+                ))}
+                {recentTasks.map((task, index) => (
+                  <motion.li
+                    key={`task:${task.id}`}
+                    initial={reduceMotion ? false : { opacity: 0, x: 6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      duration: 0.15,
+                      ease: "easeOut",
+                      delay: reduceMotion
+                        ? 0
+                        : Math.min((recent.length + index) * 0.03, 0.21),
+                    }}
+                  >
+                    <TaskNotificationItem
+                      task={task}
                       onSelect={() => setOpen(false)}
                     />
                   </motion.li>
@@ -184,6 +215,38 @@ function NotificationItem({ message, onSelect }: NotificationItemProps) {
         </span>
         <span className="mt-0.5 block truncate text-[13px] text-text-2">
           {message.subject ?? "(no subject)"}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+interface TaskNotificationItemProps {
+  task: Task;
+  onSelect: () => void;
+}
+
+function TaskNotificationItem({ task, onSelect }: TaskNotificationItemProps) {
+  return (
+    <Link
+      to="/inbox"
+      onClick={onSelect}
+      className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
+    >
+      <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center text-text-3">
+        <ListTodo size={14} aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline justify-between gap-2">
+          <span className="truncate text-[13px] font-semibold text-text">
+            {task.title}
+          </span>
+          <time className="shrink-0 text-[11px] text-text-3">
+            {formatRelativeTime(task.updatedAt)}
+          </time>
+        </span>
+        <span className="mt-0.5 block truncate text-[13px] text-text-2">
+          Task
         </span>
       </span>
     </Link>

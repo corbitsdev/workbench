@@ -9,6 +9,7 @@ import type {
   Task,
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
+import { TaskSendToAdapter } from "./TaskSendToAdapter";
 
 interface NowSectionProps {
   items: NowItem[];
@@ -137,14 +138,19 @@ function collapsedLabel(item: NowMailItem): string | undefined {
 function TaskRow({ item }: { item: NowTaskItem }) {
   const href = taskHref(item.task);
   return (
-    <RowShell
-      href={href}
-      accent="bg-border-strong"
-      title={item.task.title}
-      note={item.task.body}
-      source="Task"
-      at={item.task.updatedAt}
-    />
+    <div>
+      <RowShell
+        href={href}
+        accent="bg-border-strong"
+        title={item.task.title}
+        note={item.task.body}
+        source="Task"
+        at={item.task.updatedAt}
+      />
+      <div className="pl-5">
+        <TaskSendToAdapter task={item.task} />
+      </div>
+    </div>
   );
 }
 

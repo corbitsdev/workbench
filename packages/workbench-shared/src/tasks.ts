@@ -123,3 +123,21 @@ export const PushTaskResponseSchema = type({
   "deduped?": "boolean",
 });
 export type PushTaskResponse = typeof PushTaskResponseSchema.infer;
+
+// The display-only half of the adapter registry (id + label), so the web
+// client can render a chip/action without importing the server-side
+// `@workbench/tasks` package (which pulls in adapter execution and fetcher
+// deps that have no place in a browser bundle). Kept in lockstep by hand with
+// `TASK_ADAPTERS` in `packages/tasks/src/registry.ts` — the same
+// hand-maintained-catalog convention as `CREDENTIAL_PROVIDER_CATALOG`.
+export const TaskAdapterCatalogEntrySchema = type({
+  id: "string",
+  label: "string",
+});
+export type TaskAdapterCatalogEntry =
+  typeof TaskAdapterCatalogEntrySchema.infer;
+
+export const TASK_ADAPTER_CATALOG: TaskAdapterCatalogEntry[] = [
+  { id: "attio", label: "Attio" },
+  { id: "linear", label: "Linear" },
+];
