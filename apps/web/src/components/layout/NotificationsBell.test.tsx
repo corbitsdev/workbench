@@ -14,6 +14,9 @@ mock.module("../../hooks/use-mailbox", () => ({
   unreadCount: realUnreadCount,
   MAILBOX_POLL_MS: 30_000,
 }));
+mock.module("../../hooks/use-mailbox-live", () => ({
+  useMailboxLive: () => {},
+}));
 
 const { NotificationsBell } = require("./NotificationsBell");
 

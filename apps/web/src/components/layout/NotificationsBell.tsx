@@ -9,6 +9,7 @@ import {
   unreadCount,
   useMailbox,
 } from "../../hooks/use-mailbox";
+import { useMailboxLive } from "../../hooks/use-mailbox-live";
 import { formatRelativeTime } from "../../lib/relative-time";
 
 const RECENT_LIMIT = 8;
@@ -27,6 +28,7 @@ export function NotificationsBell() {
   const panelId = useId();
   const reduceMotion = useReducedMotion();
   const { data } = useMailbox({ refetchInterval: MAILBOX_POLL_MS });
+  useMailboxLive();
 
   const messages = data ?? [];
   const unread = unreadCount(messages);
