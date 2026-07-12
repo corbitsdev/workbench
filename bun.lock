@@ -895,6 +895,7 @@
         "@intx/log": "workspace:*",
         "@workbench/shared": "workspace:*",
         "@workbench/tools-attio": "workspace:*",
+        "@workbench/tools-linear": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
