@@ -137,6 +137,24 @@ describe("createLinearTaskAdapter create", () => {
     expect(fetcher.mock.calls).toHaveLength(0);
   });
 
+  it("fails loudly when the task carries conflicting linear team links", async () => {
+    const fetcher = makeRouterStub([]);
+    const adapter = createLinearTaskAdapter({ fetcher });
+    const input = makeInput({
+      task: makeTask({
+        links: [
+          { kind: "url", ref: "linear:team:team_123", label: "Engineering" },
+          { kind: "url", ref: "linear:team:team_456", label: "Design" },
+        ],
+      }),
+    });
+
+    await expect(adapter.execute("create", input, credential)).rejects.toThrow(
+      /ambiguous/i,
+    );
+    expect(fetcher.mock.calls).toHaveLength(0);
+  });
+
   it("propagates a non-2xx Linear response as a thrown error", async () => {
     const fetcher = makeRouterStub([
       {
@@ -205,6 +223,50 @@ describe("createLinearTaskAdapter close", () => {
     };
     expect(body.variables.id).toBe("issue_1");
     expect(body.variables.input.stateId).toBe("state_done");
+  });
+
+  it("fails loudly when the team has no workflow state of the target type", async () => {
+    const fetcher = makeRouterStub([
+      {
+        match: (query) => query.includes("TeamStates"),
+        body: {
+          data: {
+            team: {
+              states: {
+                nodes: [
+                  { id: "state_started", name: "In Progress", type: "started" },
+                ],
+              },
+            },
+          },
+        },
+      },
+      {
+        match: (query) => query.includes("issueUpdate"),
+        body: {
+          data: {
+            issueUpdate: {
+              success: true,
+              issue: { id: "issue_1", identifier: "ENG-1", url: "https://linear.app/x/issue/ENG-1" },
+            },
+          },
+        },
+      },
+    ]);
+    const adapter = createLinearTaskAdapter({ fetcher });
+    const input = makeInput({
+      task: makeTask({ status: "done" }),
+      externalRef: { adapterId: "linear", externalId: "issue_1", syncState: "synced" },
+      idempotencyKey: "task:task-1:close",
+    });
+
+    await expect(adapter.execute("close", input, credential)).rejects.toThrow(
+      /no workflow state of type "completed"/i,
+    );
+    const updateCall = fetcher.mock.calls.find(([, init]) =>
+      String(init.body).includes("issueUpdate"),
+    );
+    expect(updateCall).toBeUndefined();
   });
 
   it("fails loudly when closing without an external ref", async () => {
