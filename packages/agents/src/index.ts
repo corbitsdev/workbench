@@ -52,7 +52,6 @@ export {
   resolveDynamicToolConfig,
   createDynamicToolsDirector,
   dynamicToolsDirector,
-  hasDynamicToolsEnv,
   type DynamicToolConfig,
 } from "./dynamic-tools";
 
@@ -87,6 +86,8 @@ export {
   firecrawlDirector,
   triageBudgetDirector,
   TRIAGE_BUDGET_DIRECTOR_ID,
+  workflowStepBudgetDirector,
+  WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
 } from "./director-registry";
 
 // Walter agent

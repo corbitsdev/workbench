@@ -31,7 +31,7 @@ import {
   ToolManifestResponse,
   providerFromEnvKey,
 } from "@workbench/tool-credentials";
-import { ArgMap } from "@workbench/agents";
+import { ArgMap, WORKFLOW_STEP_BUDGET_DIRECTOR_ID } from "@workbench/agents";
 import {
   fetchToolCredentials,
   loadToolPackages,
@@ -649,6 +649,14 @@ export function createStepAgentFactory(opts: StepAgentFactoryOpts = {}) {
       toolFactories: [toolsFactory] as const,
       capabilities: [],
       inference: { sources: [] as const },
+      // A workflow step turns unattended, between HITL gates, exactly like
+      // an ephemeral triage session — nobody watches a turn in progress. The
+      // original `def` never carries a `director` (deploy-time capability
+      // walk stubs), so without this every step ran under the interchange
+      // default director with no runaway-loop cap (gap 2 of the CL-3384
+      // runaway-inference audit). Pin every step agent to the budget-capped
+      // director unconditionally.
+      director: { id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID, config: {} },
     };
 
     const agentEnv = { ...env, authorize };

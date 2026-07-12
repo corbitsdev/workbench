@@ -56,18 +56,6 @@ function isDynamicToolsEnvShape(value: unknown): value is DynamicToolsEnv {
   );
 }
 
-/**
- * True when `env` carries a well-formed dynamic-tools env at
- * `DYNAMIC_TOOLS_ENV_KEY`. The harness only sets this key when the launched
- * agent resolved a `DynamicToolConfig`, so a director factory can use this to
- * decide whether to compose in `createDynamicToolsDirector` without itself
- * throwing on an agent that never opted in (e.g. a triage session without
- * dynamic tools).
- */
-export function hasDynamicToolsEnv(env: unknown): boolean {
-  return isDynamicToolsEnvShape((env as Record<string, unknown>)[DYNAMIC_TOOLS_ENV_KEY]);
-}
-
 export function readDynamicEnv(env: unknown): DynamicToolsEnv {
   const value = (env as Record<string, unknown>)[DYNAMIC_TOOLS_ENV_KEY];
   if (!isDynamicToolsEnvShape(value)) {
