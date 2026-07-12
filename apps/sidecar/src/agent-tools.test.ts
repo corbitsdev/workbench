@@ -1,4 +1,7 @@
 import { describe, it, expect, mock } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   createMemoizingImportModule,
   createMemoizingManifestLoad,
@@ -263,5 +266,68 @@ describe("createMemoizingManifestLoad", () => {
     expect(bundleA.apiKeyUsed).toBe("instance-a-key");
     expect(bundleB.apiKeyUsed).toBe("instance-b-key");
     expect(bundleA.apiKeyUsed).not.toBe(bundleB.apiKeyUsed);
+  });
+
+  it("a cached-hit factory still constructs and runs after instance A's store dir is deleted", async () => {
+    // This proves the assumption `loadToolPackages`'s doc comment relies on:
+    // a manifest-hash cache hit hands back a factory FUNCTION (pure JS in
+    // the V8 heap, imported once per integrity by `createMemoizingImportModule`)
+    // that does not re-read anything from the store/scratch directory the
+    // loader materialized for the instance that first populated the cache.
+    // We simulate that by importing a real module from a real temp dir,
+    // deleting the dir, and calling the cached factory again — the module
+    // object stays resolvable and callable because Bun/Node keep the parsed
+    // module in memory once imported; only a call-time `fs.readFileSync`
+    // relative to that dir would fail, which is exactly the pattern the
+    // convention test in `@workbench/tools-interchange-contract` forbids.
+    //
+    // What this does NOT cover: it does not exercise the real
+    // `@intx/tool-packaging` loader or a real per-agent scratch-dir layout —
+    // it is a targeted seam test for the in-memory-module assumption only.
+    const instanceADir = mkdtempSync(join(tmpdir(), "agent-tools-store-a-"));
+    const moduleFile = join(instanceADir, "factory-module.mjs");
+    writeFileSync(
+      moduleFile,
+      "export const factory = Object.assign(" +
+        "(env) => ({ definitions: [], run: async () => ({ env }) }), " +
+        '{ id: "pkg-a", requires: [] });\n',
+    );
+
+    const cache = createMemoizingManifestLoad();
+    const loadFn = mock(async () => {
+      const imported = (await import(moduleFile)) as {
+        factory: (env: unknown) => { definitions: unknown[] };
+      };
+      const pkg: LoadedToolPackage = {
+        name: "pkg-a",
+        version: "1.0.0",
+        factories: [
+          imported.factory,
+        ] as unknown as LoadedToolPackage["factories"],
+        plugins: [],
+        directors: [],
+      };
+      return [pkg];
+    });
+
+    const loadedForInstanceA = await cache.load("hash-1", loadFn);
+
+    // Instance A's per-instance store directory is torn down after launch,
+    // as it would be by the sidecar's normal cleanup — but the cache holds
+    // the resolved `LoadedToolPackage[]` from the load, independent of it.
+    rmSync(instanceADir, { recursive: true, force: true });
+
+    const loadedForInstanceB = await cache.load("hash-1", loadFn);
+    expect(loadFn).toHaveBeenCalledTimes(1);
+    expect(loadedForInstanceB).toBe(loadedForInstanceA);
+
+    const cachedFactory = loadedForInstanceB[0]?.factories[0] as unknown as (
+      env: unknown,
+    ) => { definitions: unknown[]; run: (call: unknown) => Promise<unknown> };
+    const bundle = cachedFactory({ some: "instance-b-env" });
+    expect(bundle.definitions).toEqual([]);
+    await expect(bundle.run({})).resolves.toEqual({
+      env: { some: "instance-b-env" },
+    });
   });
 });
