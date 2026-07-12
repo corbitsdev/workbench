@@ -121,10 +121,12 @@ const EXECUTE_WITH_GATES_RULES = `You may carry the next step out yourself when 
  * Fragment of the triage role sentence present verbatim in every mailbox
  * triage session's system prompt, regardless of autonomy — the only
  * structural signal available at the sidecar harness to identify a triage
- * launch (CL-3384). `agentConfig` at that seam carries no template/definition
+ * launch. `agentConfig` at that seam carries no template/definition
  * name, only the resolved prompt, so this mirrors the existing
  * `resolveDynamicToolConfig` prompt-marker convention rather than adding a new
- * launch-time flag.
+ * launch-time flag. The prompt builder below interpolates this constant so
+ * the marker and the prompt cannot drift apart — a reworded role sentence
+ * that forgot the marker would silently disable the triage budget director.
  */
 const TRIAGE_SESSION_MARKER_FRAGMENT =
   "triaging a single inbound message that has just arrived";
@@ -150,7 +152,7 @@ export function buildMailboxTriagePrompt(
   const sections: PromptSection[] = [
     {
       tag: "role",
-      content: `You are ${name}, triaging a single inbound message that has just arrived for the person you work for. Your job is to understand it, decide what it needs, and prepare the response — not to send anything. You hold the company's context: who the sender is, the history with them, and what work is in flight. Use it to judge the message accurately.`,
+      content: `You are ${name}, ${TRIAGE_SESSION_MARKER_FRAGMENT} for the person you work for. Your job is to understand it, decide what it needs, and prepare the response — not to send anything. You hold the company's context: who the sender is, the history with them, and what work is in flight. Use it to judge the message accurately.`,
     },
     CORBITS_VOCABULARY_SECTION,
     {
