@@ -18,6 +18,11 @@ import {
   BriefSourceSkippedMarkerSchema,
   BRIEF_SOURCE_SKIPPED_MARKER,
   isBriefSourceFetchEnabled,
+  INBOX_SOURCE_CATALOG,
+  inboxSourcePreferenceKey,
+  resolveEnabledInboxSources,
+  resolveAvailableInboxSources,
+  AvailableInboxSourceSchema,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -115,6 +120,15 @@ describe("PREFERENCE_REGISTRY", () => {
       expect(entry?.default).toBe(source.defaultEnabled);
     }
   });
+
+  test("registers a boolean toggle for every inbox source, defaulting enabled", () => {
+    for (const source of INBOX_SOURCE_CATALOG) {
+      const entry = getPreferenceEntry(inboxSourcePreferenceKey(source.key));
+      expect(entry?.type).toBe("boolean");
+      expect(entry?.category).toBe("Inbox");
+      expect(entry?.default).toBe(true);
+    }
+  });
 });
 
 describe("resolveEnabledBriefSources", () => {
@@ -190,6 +204,66 @@ describe("resolveAvailableBriefSources", () => {
 
   test("ignores a configured provider name absent from the brief-source catalog", () => {
     const sources = resolveAvailableBriefSources(["not-a-brief-source"], {});
+    expect(sources).toEqual([]);
+  });
+});
+
+describe("INBOX_SOURCE_CATALOG", () => {
+  test("mirrors BRIEF_SOURCE_CATALOG's keys, defaulting every source to enabled", () => {
+    expect(INBOX_SOURCE_CATALOG.map((s) => s.key).sort()).toEqual(
+      BRIEF_SOURCE_CATALOG.map((s) => s.key).sort(),
+    );
+    for (const source of INBOX_SOURCE_CATALOG) {
+      expect(source.defaultEnabled).toBe(true);
+    }
+  });
+});
+
+describe("resolveEnabledInboxSources", () => {
+  test("defaults to every catalog source enabled when nothing is stored", () => {
+    expect(resolveEnabledInboxSources({}).sort()).toEqual(
+      INBOX_SOURCE_CATALOG.map((s) => s.key).sort(),
+    );
+  });
+
+  test("excludes a source explicitly disabled in stored preferences", () => {
+    const enabled = resolveEnabledInboxSources({
+      [inboxSourcePreferenceKey("granola")]: false,
+    });
+    expect(enabled).not.toContain("granola");
+  });
+
+  test("toggling the inbox source off does not affect the brief source's enablement", () => {
+    const stored = { [inboxSourcePreferenceKey("granola")]: false };
+    expect(resolveEnabledInboxSources(stored)).not.toContain("granola");
+    expect(resolveEnabledBriefSources(stored)).toContain("granola");
+  });
+});
+
+describe("resolveAvailableInboxSources", () => {
+  test("excludes a catalog source with no configured credential", () => {
+    expect(resolveAvailableInboxSources([], {})).toEqual([]);
+  });
+
+  test("includes a catalog source whose credential is configured, enabled by default", () => {
+    const sources = resolveAvailableInboxSources(["granola"], {});
+    expect(sources.map((s) => s.key)).toEqual(["granola"]);
+    expect(sources[0]?.enabled).toBe(true);
+    for (const source of sources) {
+      const parsed = AvailableInboxSourceSchema(source);
+      expect(parsed instanceof type.errors).toBe(false);
+    }
+  });
+
+  test("resolves a stored disablement", () => {
+    const disabled = resolveAvailableInboxSources(["granola"], {
+      [inboxSourcePreferenceKey("granola")]: false,
+    });
+    expect(disabled[0]?.enabled).toBe(false);
+  });
+
+  test("ignores a configured provider name absent from the inbox-source catalog", () => {
+    const sources = resolveAvailableInboxSources(["not-a-source"], {});
     expect(sources).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AvailableBriefSource,
+  AvailableInboxSource,
   PreferenceSetting,
 } from "@workbench/shared";
 
@@ -63,16 +64,35 @@ const BRIEF_SOURCES: AvailableBriefSource[] = [
   },
 ];
 
+// Distinct labels from BRIEF_SOURCES (same underlying keys) so the two
+// independently-rendered toggle groups don't collide in the test DOM.
+const INBOX_SOURCES: AvailableInboxSource[] = [
+  {
+    key: "granola",
+    label: "Granola inbox notes",
+    description: "Deliver call notes from Granola to your inbox.",
+    enabled: true,
+  },
+  {
+    key: "exa",
+    label: "Exa inbox research",
+    description: "Deliver research from Exa to your inbox.",
+    enabled: true,
+  },
+];
+
 const getMePreferenceSettings = mock(async () => SETTINGS);
 const patchMePreferences = mock(
   async (_patch: Record<string, unknown>) => ({}),
 );
 const getMeBriefSources = mock(async () => BRIEF_SOURCES);
+const getMeInboxSources = mock(async () => INBOX_SOURCES);
 
 mock.module("../lib/hub-api", () => ({
   getMePreferenceSettings,
   patchMePreferences,
   getMeBriefSources,
+  getMeInboxSources,
 }));
 
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -96,6 +116,7 @@ afterEach(() => {
   getMePreferenceSettings.mockClear();
   patchMePreferences.mockClear();
   getMeBriefSources.mockClear();
+  getMeInboxSources.mockClear();
   cleanup();
 });
 
@@ -209,5 +230,52 @@ describe("PreferencesPanel", () => {
     expect(patchMePreferences.mock.calls[0][0]).toEqual({
       "briefSource:exa": true,
     });
+  });
+
+  it("renders a toggle for every inbox source the hub returns, independently of brief sources", async () => {
+    renderPanel();
+    await screen.findByText("Granola inbox notes");
+    expect(screen.getByText("Exa inbox research")).toBeDefined();
+    const granolaToggle = screen.getByRole("switch", {
+      name: "Granola inbox notes",
+    });
+    expect(granolaToggle.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("PATCHes the inbox-source-prefixed key when an inbox toggle flips", async () => {
+    renderPanel();
+    const inboxToggle = await screen.findByRole("switch", {
+      name: "Granola inbox notes",
+    });
+    fireEvent.click(inboxToggle);
+    await waitFor(() => {
+      if (patchMePreferences.mock.calls.length === 0)
+        throw new Error("no patch");
+    });
+    expect(patchMePreferences.mock.calls[0][0]).toEqual({
+      "inboxSource:granola": false,
+    });
+  });
+
+  it("toggling an inbox source off leaves the corresponding brief-source toggle on", async () => {
+    renderPanel();
+    const inboxToggle = await screen.findByRole("switch", {
+      name: "Granola inbox notes",
+    });
+    fireEvent.click(inboxToggle);
+    await waitFor(() => {
+      const inboxCalls = patchMePreferences.mock.calls.filter(
+        (call) => "inboxSource:granola" in call[0],
+      );
+      if (inboxCalls.length === 0) throw new Error("no inbox patch");
+    });
+
+    const briefToggle = screen.getByRole("switch", { name: "Granola calls" });
+    expect(briefToggle.getAttribute("aria-checked")).toBe("true");
+    expect(
+      patchMePreferences.mock.calls.some(
+        (call) => "briefSource:granola" in call[0],
+      ),
+    ).toBe(false);
   });
 });
