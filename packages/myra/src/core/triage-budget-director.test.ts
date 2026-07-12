@@ -11,6 +11,7 @@ import type {
 import {
   createTriageBudgetDirector,
   TRIAGE_MAX_TOOL_CALLS,
+  TRIAGE_MAX_INFERENCE_TURNS,
   TRIAGE_BUDGET_STOP_MARKER,
 } from "./triage-budget-director";
 
@@ -282,6 +283,97 @@ describe("createTriageBudgetDirector", () => {
     if (reply?.type === "reply") {
       const occurrences = reply.content.split(TRIAGE_BUDGET_STOP_MARKER).length - 1;
       expect(occurrences).toBe(1);
+    }
+  });
+});
+
+describe("createTriageBudgetDirector inference-turn ceiling", () => {
+  const tools: ToolDefinition[] = [];
+  const systemPrompt = "You are Myra, triaging.";
+
+  function makeLoopingInnerDirector(): import("@intx/types/runtime").ReactorDirector {
+    return {
+      async decide(_event, _state, capabilities) {
+        return capabilities.infer({ tools, systemPrompt });
+      },
+    };
+  }
+
+  it("trips the turn ceiling with zero tool calls and zero reported tokens", async () => {
+    const director = createTriageBudgetDirector(
+      systemPrompt,
+      tools,
+      makeLoopingInnerDirector(),
+    );
+    const cap = makeCapabilities();
+    const state = makeState();
+
+    let actions: Awaited<ReturnType<typeof director.decide>> = [];
+    for (let i = 0; i < TRIAGE_MAX_INFERENCE_TURNS + 1; i++) {
+      actions = await director.decide(makeMessageEvent(), state, cap);
+    }
+    const arr = Array.isArray(actions) ? actions : [actions];
+
+    const infer = arr.find((a) => a.type === "infer");
+    expect(infer).toBeDefined();
+    if (infer?.type === "infer") {
+      expect(infer.options?.tools).toEqual([]);
+      expect(infer.options?.systemPrompt).toContain(TRIAGE_BUDGET_STOP_MARKER);
+    }
+  });
+
+  it("leaves a session below the turn ceiling unaffected", async () => {
+    const director = createTriageBudgetDirector(
+      systemPrompt,
+      tools,
+      makeLoopingInnerDirector(),
+    );
+    const cap = makeCapabilities();
+    const state = makeState();
+
+    let actions: Awaited<ReturnType<typeof director.decide>> = [];
+    for (let i = 0; i < TRIAGE_MAX_INFERENCE_TURNS - 1; i++) {
+      actions = await director.decide(makeMessageEvent(), state, cap);
+    }
+    const arr = Array.isArray(actions) ? actions : [actions];
+
+    const infer = arr.find((a) => a.type === "infer");
+    expect(infer).toBeDefined();
+    if (infer?.type === "infer") {
+      expect(infer.options?.tools).toEqual(tools);
+      expect(infer.options?.systemPrompt).toBe(systemPrompt);
+    }
+  });
+
+  it("forces the terminal done action once the model keeps inferring past the grace window, and the loop actually ends", async () => {
+    const director = createTriageBudgetDirector(
+      systemPrompt,
+      tools,
+      makeLoopingInnerDirector(),
+    );
+    const cap = makeCapabilities();
+    const state = makeState();
+
+    let actions: Awaited<ReturnType<typeof director.decide>> = [];
+    let sawDone = false;
+    // A model that never stops on its own must still be bounded — drive well
+    // past the ceiling + grace window and confirm the loop terminates.
+    for (let i = 0; i < TRIAGE_MAX_INFERENCE_TURNS + 20; i++) {
+      actions = await director.decide(makeMessageEvent(), state, cap);
+      const arr = Array.isArray(actions) ? actions : [actions];
+      if (arr.some((a) => a.type === "done")) {
+        sawDone = true;
+        break;
+      }
+    }
+
+    expect(sawDone).toBe(true);
+    const arr = Array.isArray(actions) ? actions : [actions];
+    expect(arr.some((a) => a.type === "infer")).toBe(false);
+    const reply = arr.find((a) => a.type === "reply");
+    expect(reply).toBeDefined();
+    if (reply?.type === "reply") {
+      expect(reply.content).toContain(TRIAGE_BUDGET_STOP_MARKER);
     }
   });
 });
