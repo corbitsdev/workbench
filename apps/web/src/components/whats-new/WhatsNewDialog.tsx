@@ -86,10 +86,12 @@ export function WhatsNewDialog({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-medium text-text-3">{release.date}</p>
-            <h2 className="mt-1 text-base font-semibold text-text">
+            <h2 className="text-base font-semibold text-text">
               New in Workbench {release.version}
             </h2>
+            <p className="mt-1 text-xs font-medium text-text-3">
+              {release.date}
+            </p>
             <p className="mt-1 text-sm text-text-2">{release.title}</p>
           </div>
           <button

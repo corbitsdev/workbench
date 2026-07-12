@@ -29,7 +29,10 @@ export type TtlMemoOptions = {
 // injectable-clock expiry and in-flight de-dup so a burst of concurrent
 // callers for the same key collapses onto one `resolve()`. In-process only,
 // no redis — each caller owns one instance (module-level singleton) keyed by
-// whatever discriminator its domain needs.
+// whatever discriminator its domain needs. `ttlMs: 0` is the cache-off
+// escape hatch: a freshly stored entry is never younger than a 0ms TTL, so
+// every call re-resolves (concurrent callers for the same key still collapse
+// onto one in-flight promise).
 export function createTtlMemo<T>(options: TtlMemoOptions = {}): TtlMemo<T> {
   type Entry = { value: T; storedAt: number };
 

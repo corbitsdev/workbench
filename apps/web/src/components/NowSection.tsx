@@ -167,7 +167,8 @@ function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
       aria-current={selected ? "true" : undefined}
       className={cn(
         "rounded-[10px] transition-colors duration-300",
-        selected && "bg-row-hover ring-1 ring-inset ring-border-strong",
+        selected &&
+          "bg-row-hover ring-1 ring-inset ring-border-strong hover:ring-2",
       )}
     >
       <RowShell

@@ -26,6 +26,22 @@ describe("createTtlMemo", () => {
     expect(calls).toBe(2);
   });
 
+  it("re-resolves on every call when ttlMs is 0 (cache-off contract)", async () => {
+    const memo = createTtlMemo<string>();
+    let calls = 0;
+    const resolve = async () => {
+      calls += 1;
+      return `value-${calls}`;
+    };
+
+    const first = await memo.get({ key: "a", resolve, ttlMs: 0, now: () => 1_000 });
+    const second = await memo.get({ key: "a", resolve, ttlMs: 0, now: () => 1_000 });
+
+    expect(first).toBe("value-1");
+    expect(second).toBe("value-2");
+    expect(calls).toBe(2);
+  });
+
   it("evicts the stalest entry when inserting beyond maxEntries", async () => {
     const memo = createTtlMemo<string>({ maxEntries: 2 });
     const resolve = async (value: string) => value;
