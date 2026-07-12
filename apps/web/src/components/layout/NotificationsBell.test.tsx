@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import type { MailboxMessage } from "@workbench/shared";
+import type { MailboxMessage, Task } from "@workbench/shared";
 import { unreadCount as realUnreadCount } from "../../hooks/use-mailbox";
 
 let bellData: MailboxMessage[] | undefined;
+let bellTaskData: Task[] | undefined;
 
 mock.module("../../hooks/use-mailbox", () => ({
   useMailbox: () => ({ data: bellData }),
@@ -16,6 +17,9 @@ mock.module("../../hooks/use-mailbox", () => ({
 }));
 mock.module("../../hooks/use-mailbox-live", () => ({
   useMailboxLive: () => {},
+}));
+mock.module("../../hooks/use-tasks", () => ({
+  useTasks: () => ({ data: bellTaskData }),
 }));
 
 const { NotificationsBell } = require("./NotificationsBell");
@@ -48,11 +52,30 @@ function renderBell() {
   return router;
 }
 
+function makeTask(over: Partial<Task>): Task {
+  return {
+    id: "task-x",
+    tenantId: "tenant-1",
+    ownerPrincipalId: "principal-1",
+    createdByPrincipalId: "principal-1",
+    title: "Follow up with Acme",
+    status: "open",
+    source: "user",
+    links: [],
+    externalRefs: [],
+    createdAt: "2026-07-11T09:00:00.000Z",
+    updatedAt: "2026-07-11T09:00:00.000Z",
+    ...over,
+  };
+}
+
 afterEach(() => {
   cleanup();
   bellData = undefined;
+  bellTaskData = undefined;
 });
 bellData = undefined;
+bellTaskData = undefined;
 
 describe("NotificationsBell", () => {
   it("shows the unread count on the bell", () => {
@@ -118,5 +141,26 @@ describe("NotificationsBell", () => {
     renderBell();
     fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
     screen.getByText("You're all caught up");
+  });
+
+  it("lists open tasks alongside mail and links them to the inbox", () => {
+    bellData = [];
+    bellTaskData = [
+      makeTask({ id: "t-1", title: "Draft renewal note", status: "open" }),
+      makeTask({ id: "t-2", title: "Done task", status: "done" }),
+    ];
+    const router = renderBell();
+    fireEvent.click(screen.getByRole("button", { name: /notifications/i }));
+    screen.getByText("Draft renewal note");
+    expect(screen.queryByText("Done task")).toBeNull();
+    fireEvent.click(screen.getByText("Draft renewal note"));
+    expect(router.state.location.pathname).toBe("/inbox");
+  });
+
+  it("does not count open tasks toward the unread badge", () => {
+    bellData = [];
+    bellTaskData = [makeTask({ id: "t-1", status: "open" })];
+    renderBell();
+    expect(screen.queryByRole("button", { name: /unread/i })).toBeNull();
   });
 });
