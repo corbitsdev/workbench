@@ -20,6 +20,7 @@ here rather than duplicated — duplicated detail drifts.
 | Operating the hub (seeding, tenancy, tools, workflows) | [`ADMIN_CLI.md`](ADMIN_CLI.md) — the single operator entrypoint                                                             |
 | Standing up a client deployment                        | [`CLIENT_STANDUP.md`](CLIENT_STANDUP.md) — per-client profile + ordered Railway standup runbook                             |
 | Bumping the Interchange pin / vendored code            | [`VENDORED.md`](VENDORED.md) — every vendored `@intx/*` change (files + `@workbench/workflow-host`) and when it was added   |
+| Designing the Slack integration                        | [`design/SLACK_INTEGRATION.md`](design/SLACK_INTEGRATION.md) — @Myra in Slack + Slack-as-context design and ticket breakdown |
 | Setting up / following engineering rules               | [`../AGENTS.md`](../AGENTS.md)                                                                                              |
 | Deploying / running coverage                           | [`../README.md`](../README.md)                                                                                              |
 
