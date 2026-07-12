@@ -1031,10 +1031,17 @@ export function createSidecarStepInvoker(args: {
       });
     }
     if (tags?.[STEP_KIND_TAG] === INLINE_INFERENCE_KIND) {
+      // WORKBENCH-LOCAL (CL-3379): forward this invocation's `onEvent` (the
+      // same per-step sink the inference branch below wires) so inline
+      // single-turn steps stop discarding their event stream -- the
+      // heartbeat brief's per-member inline inference now reaches
+      // `analytics_event` through the same `onInferenceEvent` ->
+      // `publishInferenceEvent` rail launched steps use.
       return runInlineInferenceStep({
         req,
         buildEnv,
         agentFactory: inlineAgentFactory,
+        ...(args.onEvent !== undefined ? { onEvent: args.onEvent } : {}),
       });
     }
     return inferenceInvoker(req);
