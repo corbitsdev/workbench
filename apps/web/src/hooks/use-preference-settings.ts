@@ -8,6 +8,7 @@ import {
   getMeBriefSources,
   getMePreferenceSettings,
   patchMePreferences,
+  postMeBriefRun,
 } from "../lib/hub-api";
 
 const PREFERENCE_SETTINGS_KEY = ["me", "preference-settings"] as const;
@@ -74,7 +75,9 @@ export function useUpdatePreference() {
 }
 
 type UpdateBriefSourceVars = { key: string; enabled: boolean };
-type UpdateBriefSourceContext = { previous: AvailableBriefSource[] | undefined };
+type UpdateBriefSourceContext = {
+  previous: AvailableBriefSource[] | undefined;
+};
 
 /** Toggles one brief source's enablement, keyed by its preference key (see
  * `briefSourcePreferenceKey`), optimistically against the brief-sources
@@ -93,9 +96,8 @@ export function useUpdateBriefSource() {
     },
     onMutate: async ({ key, enabled }) => {
       await queryClient.cancelQueries({ queryKey: BRIEF_SOURCES_KEY });
-      const previous = queryClient.getQueryData<AvailableBriefSource[]>(
-        BRIEF_SOURCES_KEY,
-      );
+      const previous =
+        queryClient.getQueryData<AvailableBriefSource[]>(BRIEF_SOURCES_KEY);
       if (previous) {
         queryClient.setQueryData<AvailableBriefSource[]>(
           BRIEF_SOURCES_KEY,
@@ -112,5 +114,14 @@ export function useUpdateBriefSource() {
     onSuccess: (sources) => {
       queryClient.setQueryData(BRIEF_SOURCES_KEY, sources);
     },
+  });
+}
+
+/** Fires the caller's own morning brief right now, outside its daily
+ * schedule. The hub rate-limits this to one manual run per member per 10
+ * minutes and returns 429 on a repeat within the window. */
+export function useSendBriefNow() {
+  return useMutation<{ deploymentId: string }, Error, void>({
+    mutationFn: postMeBriefRun,
   });
 }

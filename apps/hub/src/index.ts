@@ -145,6 +145,7 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeBriefRunRouter } from "./routes/me-brief-run";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
 import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
@@ -1316,6 +1317,17 @@ const runStarter = createWorkflowRunStarter({
 // the per-trigger secret. Mounted directly on the parent app, outside the v1
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
+
+// Member-initiated brief-on-demand: lets a member fire their own heartbeat
+// brief outside its daily schedule (CL-3430).
+v1.route(
+  "/",
+  createMeBriefRunRouter({
+    db,
+    runStarter,
+    heartbeatKind: config.scheduler.heartbeatKind,
+  }),
+);
 
 v1.route(
   "/",
