@@ -180,10 +180,13 @@ describe("GET /api/v1/me/brief-sources", () => {
     const res = await mountApp().request(briefSourcesRequest());
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      sources: { key: string; enabled: boolean }[];
+      sources: { key: string; enabled: boolean; description: string }[];
     };
     expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
     expect(body.sources[0]?.enabled).toBe(true);
+    expect(body.sources[0]?.description).toBe(
+      "Call notes from meetings since your last brief.",
+    );
   });
 
   it("omits a source whose provider has no configured credential", async () => {
@@ -206,7 +209,9 @@ describe("GET /api/v1/me/brief-sources", () => {
   it("reflects a disabled stored preference", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
     availableProviderNames = new Set(["granola"]);
-    readMemberPreferences.mockResolvedValueOnce({ "briefSource:granola": false });
+    readMemberPreferences.mockResolvedValueOnce({
+      "briefSource:granola": false,
+    });
     const res = await mountApp().request(briefSourcesRequest());
     const body = (await res.json()) as { sources: { enabled: boolean }[] };
     expect(body.sources[0]?.enabled).toBe(false);
