@@ -13,7 +13,7 @@ const { principal } = intxSchema;
 // Response shapes for the OpenAPI spec. The hub admin CLI consumes /openapi.json
 // to discover this operation; these schemas document (they do not replace) the
 // handler's existing manual validation.
-const Member = type({ id: "string", name: "string" });
+const Member = type({ id: "string", name: "string", refId: "string" });
 const MembersResponse = type({ members: Member.array() });
 const ErrorResponse = type({ error: "string" });
 
@@ -28,7 +28,7 @@ export function createMembersRouter(
       tags: ["Members"],
       summary: "List workbench members",
       description:
-        "Lists the user members of a tenant. Requires `?tenantId=<id>`; the caller must be a user member of that tenant. Returns each member as `{ id, name }`, where `id` is the user principal id.",
+        "Lists the user members of a tenant. Requires `?tenantId=<id>`; the caller must be a user member of that tenant. Returns each member as `{ id, name, refId }`, where `id` is the user principal id and `refId` is the user id (the `usr_<id>` mention/mailbox address token).",
       parameters: [
         {
           name: "tenantId",
@@ -96,7 +96,7 @@ export function createMembersRouter(
 
       const userById = new Map(users.map((u) => [u.id, u]));
 
-      const members: { id: string; name: string }[] = [];
+      const members: { id: string; name: string; refId: string }[] = [];
       for (const p of userPrincipals) {
         const userRow = userById.get(p.refId);
         if (!userRow) {
@@ -110,7 +110,7 @@ export function createMembersRouter(
           );
           continue;
         }
-        members.push({ id: p.id, name: userRow.name });
+        members.push({ id: p.id, name: userRow.name, refId: p.refId });
       }
 
       return c.json({ members });

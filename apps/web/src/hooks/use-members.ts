@@ -4,7 +4,11 @@ import { api } from "../lib/api";
 
 // A tenant member as returned by `GET /members`: `id` is the user's principal
 // id (the value the delegate endpoint expects), `name` is the human label.
-export const MemberSchema = type({ id: "string", name: "string" });
+export const MemberSchema = type({
+  id: "string",
+  name: "string",
+  refId: "string",
+});
 export type Member = typeof MemberSchema.infer;
 
 const MembersResponseSchema = type({ members: MemberSchema.array() });
