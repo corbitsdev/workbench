@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS "scheduled_trigger" (
   "owner_member_principal_id" text NOT NULL,
   "workflow_kind" text NOT NULL,
   "hour_utc" integer NOT NULL,
-  "cron" text,
   "trigger_payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
   "enabled" boolean NOT NULL DEFAULT true,
   "last_fired_day_utc" integer,

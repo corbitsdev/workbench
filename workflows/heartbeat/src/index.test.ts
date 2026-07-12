@@ -86,12 +86,11 @@ describe("heartbeat native workflow", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Schedule trigger
+  // No trigger declaration: firing is owned entirely by the hub's
+  // scheduled_trigger table, so the definition declares no schedule trigger.
   // -------------------------------------------------------------------------
-  test("declares a daily schedule trigger matching the hub scheduler's cadence", () => {
-    expect(workflow.triggers).toEqual([
-      { type: "schedule", cron: "0 13 * * *" },
-    ]);
+  test("declares no trigger; firing is owned by the hub scheduler", () => {
+    expect(workflow.triggers).toEqual([{ type: "manual" }]);
   });
 
   // -------------------------------------------------------------------------

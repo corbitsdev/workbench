@@ -20,7 +20,6 @@ function dbRow(
     ownerMemberPrincipalId: "principal-1",
     workflowKind: "heartbeat",
     hourUtc: 13,
-    cron: null,
     triggerPayload: { reason: "scheduled-heartbeat" },
     enabled: true,
     lastFiredDayUtc: null,

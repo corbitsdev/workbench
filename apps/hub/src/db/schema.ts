@@ -673,9 +673,8 @@ export type PrincipalMailboxRow = typeof principalMailbox.$inferSelect;
 // workflow run on a daily UTC-hour cadence. The hub scheduler loads enabled
 // rows each tick and starts a run for any whose target hour has arrived and has
 // not fired today (tracked by `last_fired_day_utc`, the integer UTC day index
-// floor(ms / 86_400_000)). `cron` is reserved for a future arbitrary-cadence
-// field; only `hour_utc` is honored today. Unique per (tenant, owner, kind) so
-// the boot heartbeat seeder is idempotent.
+// floor(ms / 86_400_000)). Only `hour_utc` is honored today. Unique per
+// (tenant, owner, kind) so the boot heartbeat seeder is idempotent.
 export const scheduledTrigger = pgTable(
   "scheduled_trigger",
   {
@@ -684,7 +683,6 @@ export const scheduledTrigger = pgTable(
     ownerMemberPrincipalId: text("owner_member_principal_id").notNull(),
     workflowKind: text("workflow_kind").notNull(),
     hourUtc: integer("hour_utc").notNull(),
-    cron: text("cron"),
     triggerPayload: jsonb("trigger_payload")
       .$type<Record<string, unknown>>()
       .notNull()

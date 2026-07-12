@@ -460,7 +460,6 @@ describe("0047 creates scheduled_trigger", () => {
       "owner_member_principal_id",
       "workflow_kind",
       "hour_utc",
-      "cron",
       "trigger_payload",
       "enabled",
       "last_fired_day_utc",
