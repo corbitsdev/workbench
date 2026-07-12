@@ -209,4 +209,140 @@ describe("createWorkflowRunStarter", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("delivery_failed");
   });
+
+  it("starts runs while under the per-tenant hourly budget", async () => {
+    chainRef = ["t-root"];
+    const starter = createWorkflowRunStarter({
+      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      sessionService: {
+        sendUserMessage: async () => {},
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      now: () => 1_000,
+    });
+
+    const result = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("returns rate_limited once the per-tenant hourly budget is exhausted", async () => {
+    chainRef = ["t-root"];
+    let sends = 0;
+    const starter = createWorkflowRunStarter({
+      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      sessionService: {
+        sendUserMessage: async () => {
+          sends += 1;
+        },
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      now: () => 1_000,
+    });
+
+    for (let i = 0; i < 60; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await starter.startRun({
+        kind: "heartbeat",
+        tenantId: "t-root",
+        input: {},
+      });
+      expect(ok.ok).toBe(true);
+    }
+    expect(sends).toBe(60);
+
+    const blocked = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) expect(blocked.reason).toBe("rate_limited");
+    expect(sends).toBe(60);
+  });
+
+  it("slides the window: the budget frees up once old starts expire", async () => {
+    chainRef = ["t-root"];
+    let clock = 1_000;
+    const starter = createWorkflowRunStarter({
+      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      sessionService: {
+        sendUserMessage: async () => {},
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      now: () => clock,
+    });
+
+    for (let i = 0; i < 60; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await starter.startRun({ kind: "heartbeat", tenantId: "t-root", input: {} });
+    }
+    const blocked = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+    });
+    expect(blocked.ok).toBe(false);
+
+    clock += 60 * 60 * 1000 + 1;
+    const afterWindow = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+    });
+    expect(afterWindow.ok).toBe(true);
+  });
+
+  it("isolates the start budget per tenant", async () => {
+    chainRef = ["t-a"];
+    const db = {
+      query: {
+        workflowRun: {
+          findMany: async () =>
+            chainRef[0] === "t-a"
+              ? [candidate({ deploymentId: "dep-a", tenantId: "t-a" })]
+              : [candidate({ deploymentId: "dep-b", tenantId: "t-b" })],
+        },
+      },
+    } as unknown as HubDb;
+    const starter = createWorkflowRunStarter({
+      db,
+      sessionService: {
+        sendUserMessage: async () => {},
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      now: () => 1_000,
+    });
+
+    for (let i = 0; i < 60; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      await starter.startRun({ kind: "heartbeat", tenantId: "t-a", input: {} });
+    }
+    const blockedA = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-a",
+      input: {},
+    });
+    expect(blockedA.ok).toBe(false);
+
+    chainRef = ["t-b"];
+    const okB = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-b",
+      input: {},
+    });
+    expect(okB.ok).toBe(true);
+  });
 });

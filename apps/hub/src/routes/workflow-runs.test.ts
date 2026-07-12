@@ -518,6 +518,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     db: HubDb,
     capture: { msg?: { tenantId: string } },
     ensure?: EnsureDeploymentRoutableFn,
+    now?: () => number,
   ) {
     const sessionService = {
       sendUserMessage: (args: { tenantId: string }) => {
@@ -548,6 +549,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
             ensure ?? (() => Promise.resolve({ reestablished: false })),
           deploymentDomain: "deploy.example.com",
           cryptoProvider: noopCrypto,
+          ...(now ? { now } : {}),
         }),
       }),
     );
@@ -657,6 +659,50 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     );
     expect(res.status).toBe(202);
     expect(capture.msg?.tenantId).toBe("tenant-global");
+  });
+
+  it("maps a rate_limited run-start result to 429", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: "tenant-1", principalId: "p-1" },
+        forbidden: false,
+      });
+    ancestorChain = ["tenant-1"];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: "dep-wb",
+        kind: "deck",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        tenantId: "tenant-1",
+      },
+    ];
+    const capture: { msg?: { tenantId: string } } = {};
+    const app = startApp(
+      makeListDb([], candidates),
+      capture,
+      undefined,
+      () => 1_000,
+    );
+    const fire = () =>
+      app.request(
+        new Request(
+          "http://local/workflow-runs/deck/start?tenantId=tenant-1",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          },
+        ),
+      );
+
+    for (let i = 0; i < 60; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await fire();
+      expect(ok.status).toBe(202);
+    }
+    const blocked = await fire();
+    expect(blocked.status).toBe(429);
   });
 
   it("403s for a tenant the caller is not a principal of", async () => {

@@ -856,6 +856,11 @@ export function createWorkflowRunsRouter(deps: {
           description: "No deployed workflow of the given kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
+        429: {
+          description:
+            "Too many workflow run starts for this workbench in the current window",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
         500: {
           description: "Failed to start the workflow run",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
@@ -906,6 +911,9 @@ export function createWorkflowRunsRouter(deps: {
       });
       if (!result.ok && result.reason === "not_found") {
         return c.json({ error: result.message }, 404);
+      }
+      if (!result.ok && result.reason === "rate_limited") {
+        return c.json({ error: result.message }, 429);
       }
       if (!result.ok) {
         return c.json({ error: "failed to start workflow run" }, 500);

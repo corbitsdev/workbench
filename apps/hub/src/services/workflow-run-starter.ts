@@ -8,8 +8,19 @@ import type { CryptoProvider } from "@intx/types/runtime";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
+import { slidingWindowLimiter } from "../lib/sliding-window";
 
 const log = getLogger(["services", "workflow-run-starter"]);
+
+// Per-tenant ceiling on run starts per rolling hour. This is the choke point
+// every trigger path (webhook, scheduler, manual) funnels through, so it is
+// the one place that closes off amplification — a webhook flood defeats the
+// per-(ip,triggerId) rate limit by spreading across many triggers or IPs,
+// but every one of those still calls startRun for the same tenant. 60/hour
+// is one run per minute sustained, comfortably above legitimate manual/
+// scheduled traffic and far below what a runaway trigger loop would produce.
+const WORKFLOW_MAX_STARTS_PER_HOUR_PER_TENANT = 60;
+const WORKFLOW_START_WINDOW_MS = 60 * 60 * 1000;
 
 // Callable run-start: resolves a deployed workflow by kind along the tenant
 // chain, ensures its supervisor is routable, and delivers the trigger payload as
@@ -32,7 +43,11 @@ export type StartRunInput = {
 
 export type StartRunResult =
   | { ok: true; deploymentId: string }
-  | { ok: false; reason: "not_found" | "delivery_failed"; message: string };
+  | {
+      ok: false;
+      reason: "not_found" | "delivery_failed" | "rate_limited";
+      message: string;
+    };
 
 export interface WorkflowRunStarter {
   startRun(args: StartRunInput): Promise<StartRunResult>;
@@ -44,13 +59,34 @@ export function createWorkflowRunStarter(deps: {
   ensureDeploymentRoutable: EnsureDeploymentRoutableFn;
   deploymentDomain: string;
   cryptoProvider: CryptoProvider;
+  /** Clock injection point for the per-tenant start-budget window in tests. */
+  now?: () => number;
 }): WorkflowRunStarter {
+  const startBudget = slidingWindowLimiter(
+    WORKFLOW_MAX_STARTS_PER_HOUR_PER_TENANT,
+    WORKFLOW_START_WINDOW_MS,
+    deps.now,
+  );
+
   async function startRun({
     kind,
     tenantId,
     input,
     creatorPrincipalId,
   }: StartRunInput): Promise<StartRunResult> {
+    if (!startBudget.tryAcquire(tenantId)) {
+      log.error("workflow run-start budget exceeded", {
+        kind,
+        tenantId,
+        maxStartsPerHour: WORKFLOW_MAX_STARTS_PER_HOUR_PER_TENANT,
+      });
+      return {
+        ok: false,
+        reason: "rate_limited",
+        message: "too many workflow run starts for this workbench",
+      };
+    }
+
     const chain = await getAncestorChain(deps.db, tenantId);
 
     const candidates = await deps.db.query.workflowRun.findMany({
