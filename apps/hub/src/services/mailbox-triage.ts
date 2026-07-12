@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { getLogger } from "@intx/log";
@@ -372,28 +372,57 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
         deps.mailboxEventBus,
       );
     } finally {
+      // `endSession` sends the sidecar an `agent.undeploy` frame; the sidecar
+      // handler (`handleAgentUndeploy`) both stops the harness AND deletes the
+      // on-disk agent directory (`deleteAgentDir`) — the same directory
+      // `restoreSessions()` scans on reconnect to decide which addresses are
+      // wakeable. A successful `endSession` is therefore the actual
+      // deprovision: nothing sidecar-side survives to be re-registered.
+      //
+      // Only hard-delete the DB rows (`teardownThreadRows`) once that
+      // succeeded, or once nothing was ever launched (`address === undefined`
+      // — no sidecar-side state exists to leak). If `endSession` fails (e.g.
+      // the sidecar is mid-reconnect), deleting the DB rows anyway would
+      // orphan the on-disk directory with no record left to retry
+      // deprovisioning it — that's the mechanism behind triage Myras "staying
+      // registered forever". Leaving the rows in place lets the boot sweep
+      // (`sweepStaleTriageInstances`) retry `endSession` later.
+      //
+      // This is distinct from the idle-session-reaper's chat-sleep, which
+      // deliberately leaves the `agent_instance` row relaunchable so a
+      // member's conversation history survives a sleep/wake cycle. A triage
+      // instance retains no conversation anyone revisits — full retirement
+      // (session end + row deletion) is the correct terminal state, not a
+      // park.
+      let sessionEnded = address === undefined;
       if (address !== undefined) {
         pending.delete(address);
         try {
           await deps.sessionService.endSession(address, "mailbox_triage_done");
+          sessionEnded = true;
         } catch (err) {
-          log.warn("Mailbox triage session end failed; tearing down rows", {
-            instanceId,
-            error: err instanceof Error ? err.message : String(err),
-          });
+          log.warn(
+            "Mailbox triage session end failed; leaving instance for the boot sweep to retry",
+            {
+              instanceId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
         }
       }
-      try {
-        await teardownThreadRows(deps.db, {
-          instanceId,
-          mappingId,
-          instancePrincipalId,
-        });
-      } catch (err) {
-        log.error("Mailbox triage teardown failed for {instanceId}", {
-          instanceId,
-          error: err instanceof Error ? err : new Error(String(err)),
-        });
+      if (sessionEnded) {
+        try {
+          await teardownThreadRows(deps.db, {
+            instanceId,
+            mappingId,
+            instancePrincipalId,
+          });
+        } catch (err) {
+          log.error("Mailbox triage teardown failed for {instanceId}", {
+            instanceId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
       }
     }
   }
@@ -479,4 +508,115 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
       });
     },
   };
+}
+
+/** Age past which a leftover `myra-triage` instance is swept as backlog. */
+const TRIAGE_STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Bound on rows retired per sweep pass. Bookkeeping cleanup, not a hot path —
+ * a large one-off backlog drains over a few boot cycles rather than blocking
+ * hub startup.
+ */
+const TRIAGE_SWEEP_LIMIT = 500;
+
+/**
+ * Idempotent boot-time cleanup for `myra-triage` instances `runOne` could not
+ * fully retire (its `endSession` call failed, so it left the DB rows in
+ * place for a retry rather than orphaning the sidecar-side directory — see
+ * the comment in `runOne`'s `finally` block). Targets rows by age rather than
+ * a status column: a leftover row's `agent_instance` is still `deployed`
+ * (nothing here ever demotes it, since the whole point of leaving it behind
+ * was to retry the SAME deprovision path), so age since creation is the only
+ * available staleness signal. Real triage runs finish in well under an hour;
+ * `TRIAGE_STALE_AFTER_MS` gives a wide margin so this never races a run still
+ * in flight.
+ *
+ * Each row gets a best-effort `endSession` retry, then its DB rows are
+ * deleted unconditionally — unlike `runOne`, indefinite retry has no payoff
+ * for rows this old (the sidecar has very likely long since disconnected,
+ * reconnected, or been redeployed since they were created), so the sweep is
+ * the backstop that guarantees the backlog actually drains rather than
+ * accumulating retries forever. Bounded by `TRIAGE_SWEEP_LIMIT` and logged
+ * once per pass; a second pass over an already-clean backlog finds nothing
+ * and is a no-op.
+ */
+export async function sweepStaleTriageInstances(
+  db: HubDb,
+  sessionService: Pick<SessionService, "endSession">,
+  opts?: { staleAfterMs?: number; limit?: number; now?: () => number },
+): Promise<{ scanned: number; retired: number }> {
+  const staleAfterMs = opts?.staleAfterMs ?? TRIAGE_STALE_AFTER_MS;
+  const limit = opts?.limit ?? TRIAGE_SWEEP_LIMIT;
+  const nowFn = opts?.now ?? (() => Date.now());
+  const cutoff = new Date(nowFn() - staleAfterMs);
+
+  const stale = await db
+    .select({
+      mappingId: memberAgentInstance.id,
+      instanceId: memberAgentInstance.instanceId,
+      instancePrincipalId: agentInstance.principalId,
+      address: agentInstance.address,
+    })
+    .from(memberAgentInstance)
+    .innerJoin(
+      agentInstance,
+      eq(memberAgentInstance.instanceId, agentInstance.id),
+    )
+    .where(
+      and(
+        eq(memberAgentInstance.templateKey, TRIAGE_TEMPLATE_KEY),
+        lt(memberAgentInstance.createdAt, cutoff),
+      ),
+    )
+    .limit(limit);
+
+  let retired = 0;
+  let deferred = 0;
+  for (const row of stale) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await sessionService.endSession(
+        row.address,
+        "mailbox_triage_boot_sweep",
+      );
+    } catch (err) {
+      // Same rule as runOne's teardown: rows are only deleted once the
+      // sidecar undeploy succeeded. At hub boot the sidecar is often not
+      // reconnected yet and endSession rejects immediately — deleting the
+      // rows then would orphan the on-disk agent dir with no record, the
+      // exact leak this sweep exists to drain. Leave the row; the next
+      // boot's sweep retries.
+      deferred += 1;
+      log.warn(
+        "Triage boot sweep: endSession failed; keeping rows for a later retry",
+        {
+          instanceId: row.instanceId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+      continue;
+    }
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await teardownThreadRows(db, {
+        instanceId: row.instanceId,
+        mappingId: row.mappingId,
+        instancePrincipalId: row.instancePrincipalId,
+      });
+      retired += 1;
+    } catch (err) {
+      log.error("Triage boot sweep: teardown failed for {instanceId}", {
+        instanceId: row.instanceId,
+        error: err instanceof Error ? err : new Error(String(err)),
+      });
+    }
+  }
+
+  log.info("Triage boot sweep complete", {
+    scanned: stale.length,
+    retired,
+    deferred,
+  });
+  return { scanned: stale.length, retired };
 }
