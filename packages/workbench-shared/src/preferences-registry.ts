@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
 /**
  * The preferences registry: the single, hand-maintained source of truth for
@@ -96,25 +97,30 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
 ];
 
 /**
- * Catalog of sources the morning brief can pull from. Adding a source is
- * purely additive here — a new catalog row and, when the source is wired
- * into an intake step, a check of `enabledSources` at that step. No registry
- * restructuring is needed. `granola` is the only source with a live intake
- * step today; the rest are declared for future wiring.
+ * Catalog of sources the morning brief can pull from — every
+ * `CREDENTIAL_PROVIDER_CATALOG` entry tagged `briefSource` (see
+ * `governance.ts`). Adding a source is purely additive: tag the provider's
+ * catalog entry and, when it is wired into an intake step, check
+ * `enabledSources` there. No registry restructuring is needed and no
+ * composer code changes. `granola` is the only source with a live intake
+ * step today; the rest can be tagged for future wiring without touching this
+ * file. Which of these a given tenant actually sees is a further,
+ * credential-configured intersection — see `resolveAvailableBriefSources`.
  */
 export const BRIEF_SOURCE_CATALOG: readonly {
   key: string;
   label: string;
   description: string;
   defaultEnabled: boolean;
-}[] = [
-  {
-    key: "granola",
-    label: "Granola calls",
-    description: "Pull in recent call notes from Granola.",
-    defaultEnabled: true,
-  },
-];
+}[] = CREDENTIAL_PROVIDER_CATALOG.filter(
+  (entry): entry is typeof entry & { briefSource: NonNullable<typeof entry.briefSource> } =>
+    entry.briefSource !== undefined,
+).map((entry) => ({
+  key: entry.providerName,
+  label: entry.label,
+  description: entry.briefSource.description,
+  defaultEnabled: entry.briefSource.defaultEnabled ?? false,
+}));
 
 /** The registry key a brief source's enablement toggle is stored under. */
 export function briefSourcePreferenceKey(sourceKey: string): string {
@@ -274,4 +280,53 @@ export function resolveEnabledBriefSources(
     if (!entry) return source.defaultEnabled;
     return resolveValue(entry, stored[entry.key]) === true;
   }).map((source) => source.key);
+}
+
+/** One brief source the caller's tenant can actually toggle: catalog copy
+ * plus their currently-resolved enablement. Never emitted for a source whose
+ * provider has no credential configured for the tenant — the hub route
+ * filters `BRIEF_SOURCE_CATALOG` down to `availableProviderNames` before
+ * calling this, so an unconfigured source is silently absent, never shown
+ * disabled-with-reason. */
+export const AvailableBriefSourceSchema = type({
+  key: "string",
+  label: "string",
+  description: "string",
+  enabled: "boolean",
+});
+export type AvailableBriefSource = typeof AvailableBriefSourceSchema.infer;
+
+export const AvailableBriefSourcesResponseSchema = type({
+  sources: AvailableBriefSourceSchema.array(),
+});
+export type AvailableBriefSourcesResponse =
+  typeof AvailableBriefSourcesResponseSchema.infer;
+
+/**
+ * Projects `BRIEF_SOURCE_CATALOG` down to the sources the tenant has a
+ * configured credential for (`availableProviderNames`, computed by the hub
+ * via the same `resolveCredentialRequirement` the launch/tool-gallery paths
+ * use), each resolved against the member's stored preference. This is what
+ * the composer renders: a source is either fully present with a working
+ * toggle, or entirely absent — never present-but-broken.
+ */
+export function resolveAvailableBriefSources(
+  availableProviderNames: readonly string[],
+  stored: Record<string, unknown>,
+): AvailableBriefSource[] {
+  const available = new Set(availableProviderNames);
+  return BRIEF_SOURCE_CATALOG.filter((source) => available.has(source.key)).map(
+    (source) => {
+      const entry = registryByKey.get(briefSourcePreferenceKey(source.key));
+      const enabled = entry
+        ? resolveValue(entry, stored[entry.key]) === true
+        : source.defaultEnabled;
+      return {
+        key: source.key,
+        label: source.label,
+        description: source.description,
+        enabled,
+      };
+    },
+  );
 }

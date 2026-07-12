@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Select, Toggle } from "@workbench/settings";
 import {
+  briefSourcePreferenceKey,
   PREFERENCE_CATEGORIES,
   type PreferenceCategory,
   type PreferenceSetting,
@@ -10,8 +11,11 @@ import {
   usePreferenceSettings,
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
+import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
+
+const BRIEF_SOURCE_KEY_PREFIX = briefSourcePreferenceKey("");
 
 type PreferenceValue = boolean | string | number;
 
@@ -153,7 +157,10 @@ function PreferenceSection({
         ))}
       </div>
       {category === "Automations" && (
-        <BriefWorkflowAttachments tenantId={activeTenantId} />
+        <>
+          <BriefSourcesToggles />
+          <BriefWorkflowAttachments tenantId={activeTenantId} />
+        </>
       )}
     </motion.section>
   );
@@ -213,13 +220,21 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
     );
   }
 
+  // Brief-source toggles are rendered by BriefSourcesToggles (driven by
+  // GET /me/brief-sources, which hides unconfigured sources); excluded here
+  // to avoid a second, credential-unaware toggle for the same key.
   const visibleCategories = categories ?? PREFERENCE_CATEGORIES;
   const grouped = visibleCategories
     .map((category) => ({
       category,
-      items: settings.filter((s) => s.category === category),
+      items: settings.filter(
+        (s) =>
+          s.category === category && !s.key.startsWith(BRIEF_SOURCE_KEY_PREFIX),
+      ),
     }))
-    .filter((group) => group.items.length > 0);
+    .filter(
+      (group) => group.items.length > 0 || group.category === "Automations",
+    );
 
   return (
     <div className="flex flex-col gap-6">

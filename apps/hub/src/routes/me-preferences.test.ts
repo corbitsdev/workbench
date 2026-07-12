@@ -25,6 +25,14 @@ mock.module("../lib/member-preferences", () => ({
   readMemberPreferences,
 }));
 
+let availableProviderNames = new Set<string>(["granola"]);
+const resolveAvailableProviderNames = mock(
+  async (_db, _tenantId, _wanted: Set<string>) => availableProviderNames,
+);
+mock.module("../lib/tenant-tools", () => ({
+  resolveAvailableProviderNames,
+}));
+
 import { Hono } from "hono";
 import { createMePreferencesRouter } from "./me-preferences";
 
@@ -155,6 +163,53 @@ describe("GET /api/v1/me/preferences/settings", () => {
     expect(body.settings.find((s) => s.key === "agentAutonomy")?.value).toBe(
       "prepare_only",
     );
+  });
+});
+
+describe("GET /api/v1/me/brief-sources", () => {
+  function briefSourcesRequest(): Request {
+    return new Request("http://localhost/api/v1/me/brief-sources", {
+      headers: { "x-test-user-id": "user-1" },
+    });
+  }
+
+  it("returns a source whose provider is configured for the tenant", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set(["granola"]);
+    readMemberPreferences.mockResolvedValueOnce({});
+    const res = await mountApp().request(briefSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sources: { key: string; enabled: boolean }[];
+    };
+    expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
+    expect(body.sources[0]?.enabled).toBe(true);
+  });
+
+  it("omits a source whose provider has no configured credential", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set();
+    readMemberPreferences.mockResolvedValueOnce({});
+    const res = await mountApp().request(briefSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sources: unknown[] };
+    expect(body.sources).toEqual([]);
+  });
+
+  it("returns no sources when the caller has no membership", async () => {
+    member = null;
+    const res = await mountApp().request(briefSourcesRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sources: [] });
+  });
+
+  it("reflects a disabled stored preference", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set(["granola"]);
+    readMemberPreferences.mockResolvedValueOnce({ "briefSource:granola": false });
+    const res = await mountApp().request(briefSourcesRequest());
+    const body = (await res.json()) as { sources: { enabled: boolean }[] };
+    expect(body.sources[0]?.enabled).toBe(false);
   });
 });
 

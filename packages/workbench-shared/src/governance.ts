@@ -418,6 +418,14 @@ export interface CredentialProviderCatalogEntry {
    * (e.g. ScrapeCreators → Reddit, TikTok, …); the user-facing tool surface
    * still names the individual platform, not the provider. */
   platforms?: readonly string[];
+  /** Marks this provider as usable as a morning-brief source. When set, the
+   * brief composer (`BRIEF_SOURCE_CATALOG` in `preferences-registry.ts`)
+   * offers a toggle for it whenever the tenant has the credential configured
+   * — adding a new brief-eligible provider is purely additive here, no
+   * composer code change required. `description` is the toggle's copy;
+   * `defaultEnabled` seeds a brand-new member's preference (defaults to
+   * `false` when omitted). */
+  briefSource?: { description: string; defaultEnabled?: boolean };
 }
 
 /** Provider name for the default Bifrost /v1 (openai-compatible) surface.
@@ -487,6 +495,10 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       label: "Granola",
       kind: "tool",
       defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
+      briefSource: {
+        description: "Pull in recent call notes from Granola.",
+        defaultEnabled: true,
+      },
     },
     { providerName: "exa", providerPlugin: "exa", label: "Exa", kind: "tool" },
     {
