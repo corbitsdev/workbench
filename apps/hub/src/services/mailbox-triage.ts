@@ -37,6 +37,27 @@ export const TRIAGE_TEMPLATE_KEY = "myra-triage";
  */
 const SYSTEM_SENDER_LOCAL_PARTS = new Set(["hub", "myra"]);
 
+/**
+ * Sender local-parts used by bounce/mailer-daemon rails. Mail from these
+ * never triages — a triage handoff to a bounce address would either loop
+ * (auto-reply to an auto-reply) or triage noise no human should see.
+ * Matched case-insensitively, and against the base local-part with any
+ * `+`-suffix stripped (e.g. `bounces+abc123` matches `bounces`).
+ */
+const BOUNCE_SENDER_LOCAL_PARTS = new Set([
+  "mailer-daemon",
+  "postmaster",
+  "no-reply",
+  "noreply",
+  "do-not-reply",
+  "donotreply",
+  "bounce",
+  "bounces",
+]);
+
+/** Subject prefix `writeMailboxMessage` stamps on every triage handoff. */
+const TRIAGE_HANDOFF_SUBJECT_PREFIX = "Myra triaged: ";
+
 const DEFAULT_TURN_TIMEOUT_MS = 180_000;
 
 /**
@@ -77,6 +98,20 @@ function localPart(address: string): string {
   return at === -1 ? address : address.slice(0, at);
 }
 
+function isSystemSender(item: UserMailboxRowEvent): boolean {
+  return SYSTEM_SENDER_LOCAL_PARTS.has(localPart(item.senderAddress));
+}
+
+function isBounceSender(item: UserMailboxRowEvent): boolean {
+  const local = localPart(item.senderAddress).toLowerCase();
+  const base = local.split("+")[0] ?? local;
+  return BOUNCE_SENDER_LOCAL_PARTS.has(base);
+}
+
+function isTriageHandoffSubject(item: UserMailboxRowEvent): boolean {
+  return (item.subject ?? "").startsWith(TRIAGE_HANDOFF_SUBJECT_PREFIX);
+}
+
 function buildTriageMessage(item: UserMailboxRowEvent): {
   content: string;
   inReplyTo: string | undefined;
@@ -107,10 +142,17 @@ function buildTriageMessage(item: UserMailboxRowEvent): {
  * into the member's inbox, and tear the session down.
  *
  * Eligibility (checked per item, in order): the kill switch must be on; system
- * senders (hub/myra local-parts) never triage; mail from an agent instance the
- * member owns — either directly (the instance principal IS the member, e.g. a
- * workflow deployment launched by them) or via a member_agent_instance mapping
- * (their own Myra threads) — never triages. Everything else is external.
+ * senders (hub/myra local-parts) never triage; bounce/mailer-daemon-style
+ * senders (mailer-daemon, postmaster, no-reply, bounce(s), etc., including
+ * `+`-suffixed variants) never triage; mail whose subject carries the triage
+ * handoff prefix never triages (a structural signal that this is a handoff,
+ * not fresh mail); mail from an agent instance ANY member in the tenant owns
+ * — either directly (the instance principal IS that member, e.g. a workflow
+ * deployment launched by them) or via a member_agent_instance mapping (a
+ * Myra thread, triage or otherwise) — never triages, which also closes off
+ * cross-member triage-to-triage ping-pong (each handoff would otherwise get
+ * a fresh message_key, so dedupe alone can't stop a loop). Everything else
+ * is external.
  *
  * The queue is bounded to one in-flight triage; items process strictly in
  * arrival order and a failure in one item never affects the next.
@@ -123,18 +165,24 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
   let running = false;
 
   async function isEligible(item: UserMailboxRowEvent): Promise<boolean> {
-    if (SYSTEM_SENDER_LOCAL_PARTS.has(localPart(item.senderAddress))) {
-      return false;
-    }
+    if (isSystemSender(item)) return false;
+    if (isBounceSender(item)) return false;
+    if (isTriageHandoffSubject(item)) return false;
+
     const sender = await deps.db.query.agentInstance.findFirst({
       where: eq(agentInstance.address, item.senderAddress),
     });
     if (!sender) return true;
     if (sender.principalId === item.memberPrincipalId) return false;
+
+    // Any member's agent instance in the tenant — not just this member's —
+    // is a terminal handoff sender. Without this, two members' triage Myras
+    // can hand off to each other in a loop: each handoff mail gets a fresh
+    // message_key, so dedupe alone never stops it.
     const mapping = await deps.db.query.memberAgentInstance.findFirst({
       where: and(
         eq(memberAgentInstance.instanceId, sender.id),
-        eq(memberAgentInstance.memberPrincipalId, item.memberPrincipalId),
+        eq(memberAgentInstance.tenantId, item.tenantId),
       ),
     });
     return mapping === undefined;
