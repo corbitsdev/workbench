@@ -3,10 +3,13 @@ import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
 import {
   AvailableBriefSourcesResponseSchema,
+  AvailableInboxSourcesResponseSchema,
   BRIEF_SOURCE_CATALOG,
+  INBOX_SOURCE_CATALOG,
   MemberPreferences,
   PreferenceSettingsResponseSchema,
   resolveAvailableBriefSources,
+  resolveAvailableInboxSources,
   resolvePreferenceSettings,
   validatePreferencePatch,
 } from "@workbench/shared";
@@ -113,6 +116,40 @@ export function createMePreferencesRouter(
       ]);
 
       const sources = resolveAvailableBriefSources([...available], stored);
+      return c.json({ sources });
+    },
+  );
+
+  app.get(
+    "/me/inbox-sources",
+    describeRoute({
+      tags: ["Me"],
+      summary: "Get the inbox sources the caller can toggle",
+      description:
+        "Every INBOX_SOURCE_CATALOG entry whose provider has a credential configured for the caller's tenant, resolved against their stored enablement — independent of the caller's brief-source toggles. A source with no configured credential is silently absent — never shown disabled.",
+      responses: {
+        200: {
+          description: "Available inbox sources",
+          content: {
+            "application/json": {
+              schema: resolver(AvailableInboxSourcesResponseSchema),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const userId = c.get("userId");
+      const member = await resolveCallerMember(db, userId);
+      if (!member) return c.json({ sources: [] });
+
+      const wanted = new Set(INBOX_SOURCE_CATALOG.map((s) => s.key));
+      const [available, stored] = await Promise.all([
+        resolveAvailableProviderNames(db, member.tenantId, wanted),
+        readMemberPreferences(db, member.tenantId, member.principalId),
+      ]);
+
+      const sources = resolveAvailableInboxSources([...available], stored);
       return c.json({ sources });
     },
   );

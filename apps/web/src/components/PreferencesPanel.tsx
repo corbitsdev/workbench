@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Select, Toggle } from "@workbench/settings";
 import {
   briefSourcePreferenceKey,
+  inboxSourcePreferenceKey,
   PREFERENCE_CATEGORIES,
   type PreferenceCategory,
   type PreferenceSetting,
@@ -12,11 +13,13 @@ import {
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
 import { BriefSourcesToggles } from "./BriefSourcesToggles";
+import { InboxSourcesToggles } from "./InboxSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
 import { SendBriefNowButton } from "./SendBriefNowButton";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 const BRIEF_SOURCE_KEY_PREFIX = briefSourcePreferenceKey("");
+const INBOX_SOURCE_KEY_PREFIX = inboxSourcePreferenceKey("");
 
 type PreferenceValue = boolean | string | number;
 
@@ -167,6 +170,7 @@ function PreferenceSection({
           <SendBriefNowButton />
         </>
       )}
+      {category === "Inbox" && <InboxSourcesToggles />}
     </motion.section>
   );
 }
@@ -225,20 +229,27 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
     );
   }
 
-  // Brief-source toggles are rendered by BriefSourcesToggles (driven by
-  // GET /me/brief-sources, which hides unconfigured sources); excluded here
-  // to avoid a second, credential-unaware toggle for the same key.
+  // Brief-source and inbox-source toggles are rendered by
+  // BriefSourcesToggles / InboxSourcesToggles (driven by
+  // GET /me/brief-sources and GET /me/inbox-sources, which hide unconfigured
+  // sources); excluded here to avoid a second, credential-unaware toggle for
+  // the same keys.
   const visibleCategories = categories ?? PREFERENCE_CATEGORIES;
   const grouped = visibleCategories
     .map((category) => ({
       category,
       items: settings.filter(
         (s) =>
-          s.category === category && !s.key.startsWith(BRIEF_SOURCE_KEY_PREFIX),
+          s.category === category &&
+          !s.key.startsWith(BRIEF_SOURCE_KEY_PREFIX) &&
+          !s.key.startsWith(INBOX_SOURCE_KEY_PREFIX),
       ),
     }))
     .filter(
-      (group) => group.items.length > 0 || group.category === "Automations",
+      (group) =>
+        group.items.length > 0 ||
+        group.category === "Automations" ||
+        group.category === "Inbox",
     );
 
   return (

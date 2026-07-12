@@ -26,6 +26,8 @@ import {
   type PreferenceSetting,
   AvailableBriefSourcesResponseSchema,
   type AvailableBriefSource,
+  AvailableInboxSourcesResponseSchema,
+  type AvailableInboxSource,
   ScheduledTriggerSchema,
   ScheduledTriggerListResponseSchema,
   type ScheduledTrigger,
@@ -418,6 +420,19 @@ export async function postMeBriefRun(): Promise<{ deploymentId: string }> {
     throw new Error(`Unexpected brief-run response: ${parsed.summary}`);
   }
   return { deploymentId: parsed.deploymentId };
+}
+
+/** The inbox sources the caller can toggle: every catalog source with a
+ * credential configured for their tenant, resolved against their stored
+ * enablement — independent of the caller's brief-source toggles. A source
+ * without a configured credential is simply absent. */
+export async function getMeInboxSources(): Promise<AvailableInboxSource[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/inbox-sources");
+  const parsed = AvailableInboxSourcesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected inbox sources response: ${parsed.summary}`);
+  }
+  return parsed.sources;
 }
 
 /** Merge a partial patch into the caller's persisted UI preferences. */

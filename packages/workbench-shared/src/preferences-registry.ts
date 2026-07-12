@@ -200,6 +200,38 @@ export function briefSourcePreferenceKey(sourceKey: string): string {
 }
 
 /**
+ * Catalog of sources the inbox can pull from. A source eligible for the
+ * brief is eligible for the inbox — both dimensions are derived from the
+ * same `briefSource`-tagged `CREDENTIAL_PROVIDER_CATALOG` entries; there is
+ * no separate `inboxSource` tag on the catalog today. If inbox eligibility
+ * ever needs to diverge from brief eligibility (a source that can feed the
+ * inbox but not the brief, or vice versa), add a dedicated `inboxSource` tag
+ * to `CredentialProviderCatalogEntry` and derive this catalog from it
+ * instead of re-using `BRIEF_SOURCE_CATALOG`.
+ *
+ * Unlike the brief (opt-in, `defaultEnabled` per source, commonly `false`),
+ * inbox sources default to ENABLED so a member's inbox does not go dark the
+ * moment this dimension ships — nothing new is disabled by having a second,
+ * independent toggle appear.
+ */
+export const INBOX_SOURCE_CATALOG: readonly {
+  key: string;
+  label: string;
+  description: string;
+  defaultEnabled: boolean;
+}[] = BRIEF_SOURCE_CATALOG.map((source) => ({
+  key: source.key,
+  label: source.label,
+  description: source.description,
+  defaultEnabled: true,
+}));
+
+/** The registry key an inbox source's enablement toggle is stored under. */
+export function inboxSourcePreferenceKey(sourceKey: string): string {
+  return `inboxSource:${sourceKey}`;
+}
+
+/**
  * The brief-source fetch contract every source's intake tool shares —
  * formalizes the shape `granola_list_notes` pioneered (see
  * `@workbench/tools-granola`) so a new source's fetch tool and the heartbeat
@@ -265,9 +297,20 @@ const BRIEF_SOURCE_ENTRIES: readonly PreferenceEntry[] =
     category: "Automations",
   }));
 
+const INBOX_SOURCE_ENTRIES: readonly PreferenceEntry[] =
+  INBOX_SOURCE_CATALOG.map((source) => ({
+    key: inboxSourcePreferenceKey(source.key),
+    type: "boolean",
+    default: source.defaultEnabled,
+    label: source.label,
+    description: source.description,
+    category: "Inbox",
+  }));
+
 export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
   ...PREFERENCE_REGISTRY_BASE,
   ...BRIEF_SOURCE_ENTRIES,
+  ...INBOX_SOURCE_ENTRIES,
 ];
 
 const registryByKey = new Map(PREFERENCE_REGISTRY.map((e) => [e.key, e]));
@@ -446,6 +489,73 @@ export function resolveAvailableBriefSources(
   return BRIEF_SOURCE_CATALOG.filter((source) => available.has(source.key)).map(
     (source) => {
       const entry = registryByKey.get(briefSourcePreferenceKey(source.key));
+      const enabled = entry
+        ? resolveValue(entry, stored[entry.key]) === true
+        : source.defaultEnabled;
+      return {
+        key: source.key,
+        label: source.label,
+        description: source.description,
+        enabled,
+      };
+    },
+  );
+}
+
+/**
+ * Resolves the member's currently-enabled inbox source keys against their
+ * stored preferences, defaulting each source to ENABLED when unset (see
+ * `INBOX_SOURCE_CATALOG`'s default-enabled note). This is the resolver
+ * inbox-side consumers (triage source filtering, task-mail generation per
+ * source) MUST resolve through — never read the raw `inboxSource:<key>`
+ * preference key directly, so the enabled-by-default semantics stay in one
+ * place.
+ */
+export function resolveEnabledInboxSources(
+  stored: Record<string, unknown>,
+): string[] {
+  return INBOX_SOURCE_CATALOG.filter((source) => {
+    const entry = registryByKey.get(inboxSourcePreferenceKey(source.key));
+    if (!entry) return source.defaultEnabled;
+    return resolveValue(entry, stored[entry.key]) === true;
+  }).map((source) => source.key);
+}
+
+/** One inbox source the caller's tenant can actually toggle: catalog copy
+ * plus their currently-resolved enablement. Never emitted for a source whose
+ * provider has no credential configured for the tenant — the hub route
+ * filters `INBOX_SOURCE_CATALOG` down to `availableProviderNames` before
+ * calling this, so an unconfigured source is silently absent, never shown
+ * disabled-with-reason. */
+export const AvailableInboxSourceSchema = type({
+  key: "string",
+  label: "string",
+  description: "string",
+  enabled: "boolean",
+});
+export type AvailableInboxSource = typeof AvailableInboxSourceSchema.infer;
+
+export const AvailableInboxSourcesResponseSchema = type({
+  sources: AvailableInboxSourceSchema.array(),
+});
+export type AvailableInboxSourcesResponse =
+  typeof AvailableInboxSourcesResponseSchema.infer;
+
+/**
+ * Projects `INBOX_SOURCE_CATALOG` down to the sources the tenant has a
+ * configured credential for (`availableProviderNames`), each resolved
+ * against the member's stored preference. Mirrors
+ * `resolveAvailableBriefSources` for the inbox dimension: a source is either
+ * fully present with a working toggle, or entirely absent.
+ */
+export function resolveAvailableInboxSources(
+  availableProviderNames: readonly string[],
+  stored: Record<string, unknown>,
+): AvailableInboxSource[] {
+  const available = new Set(availableProviderNames);
+  return INBOX_SOURCE_CATALOG.filter((source) => available.has(source.key)).map(
+    (source) => {
+      const entry = registryByKey.get(inboxSourcePreferenceKey(source.key));
       const enabled = entry
         ? resolveValue(entry, stored[entry.key]) === true
         : source.defaultEnabled;

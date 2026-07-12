@@ -1,5 +1,5 @@
-import { Toggle } from "@workbench/settings";
 import { useBriefSources, useUpdateBriefSource } from "../hooks/use-preference-settings";
+import { SourceTogglesList } from "./SourceTogglesList";
 
 /**
  * Renders a toggle per morning-brief source the caller's tenant has a
@@ -12,44 +12,16 @@ export function BriefSourcesToggles() {
   const query = useBriefSources();
   const update = useUpdateBriefSource();
 
-  if (query.isPending) {
-    return null;
-  }
-
-  if (query.isError || query.data.length === 0) {
+  if (query.isPending || query.isError) {
     return null;
   }
 
   return (
-    <div className="mt-4 flex flex-col gap-1 border-t border-border pt-4">
-      <h3 className="mb-1 text-sm font-semibold text-text">Brief sources</h3>
-      {query.data.map((source) => {
-        const controlId = `brief-source-${source.key}`;
-        return (
-          <div
-            key={source.key}
-            className="flex flex-col gap-1.5 border-b border-border py-3 last:border-b-0"
-          >
-            <div className="flex items-center justify-between gap-4">
-              <label
-                htmlFor={controlId}
-                className="text-sm font-medium text-text"
-              >
-                {source.label}
-              </label>
-              <Toggle
-                id={controlId}
-                aria-label={source.label}
-                checked={source.enabled}
-                onCheckedChange={(checked) =>
-                  update.mutate({ key: source.key, enabled: checked })
-                }
-              />
-            </div>
-            <p className="text-xs text-text-3">{source.description}</p>
-          </div>
-        );
-      })}
-    </div>
+    <SourceTogglesList
+      heading="In your daily brief"
+      controlIdPrefix="brief-source"
+      sources={query.data}
+      onToggle={(key, enabled) => update.mutate({ key, enabled })}
+    />
   );
 }
