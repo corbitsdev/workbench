@@ -22,11 +22,9 @@ export interface TaskReconcilerService {
 // reentrancy guard; this wrapper only drives it on an interval and is gated by
 // the `tasks-reconciler` feature grant (env override OR owner grant on the
 // root tenant, checked fresh every tick so a live toggle takes effect without
-// a restart; default OFF). `enabled` is the static fallback used when
-// `isEnabled` is absent (back-compat / simple tests).
+// a restart; default OFF).
 export function createTaskReconcilerService(deps: {
-  enabled: boolean;
-  isEnabled?: () => Promise<boolean>;
+  isEnabled: () => Promise<boolean>;
   db: HubDb;
   intervalMs?: number;
 }): TaskReconcilerService {
@@ -44,7 +42,8 @@ export function createTaskReconcilerService(deps: {
     start() {
       if (timer) return;
       timer = setInterval(() => {
-        void (deps.isEnabled ? deps.isEnabled() : Promise.resolve(deps.enabled))
+        void deps
+          .isEnabled()
           .then((enabled) => {
             if (!enabled) return undefined;
             return reconciler.reconcileOnce().then((pass) => {

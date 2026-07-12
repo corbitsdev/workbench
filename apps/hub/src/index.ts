@@ -1349,7 +1349,6 @@ const listMyraTargets = async () => {
 };
 
 const scheduler = createScheduler({
-  enabled: config.scheduler.enabled,
   isTenantEnabled: (tenantId) =>
     isFeatureEnabledForTenantCached(
       db,
@@ -1395,7 +1394,6 @@ scheduler.start();
 // reconciler is not tenant-partitioned (`reconcileOnce` scans all pending
 // refs), so the grant check is scoped to the deployment's root tenant.
 const taskReconciler = createTaskReconcilerService({
-  enabled: config.tasksReconciler.enabled,
   isEnabled: () =>
     isFeatureEnabledForTenantCached(
       db,
