@@ -117,6 +117,28 @@ const PREPARE_ONLY_RULES = `You are prepare-only. Do not send mail, message anyo
 
 const EXECUTE_WITH_GATES_RULES = `You may carry the next step out yourself when your tools allow it. Every externally visible or irreversible action is gated behind the person's approval rail, so request it when it is the right next step — it will be reviewed before anything happens. Still lead with the classification and plan, and still prepare a draft whenever a reply is warranted.`;
 
+/**
+ * Fragment of the triage role sentence present verbatim in every mailbox
+ * triage session's system prompt, regardless of autonomy — the only
+ * structural signal available at the sidecar harness to identify a triage
+ * launch (CL-3384). `agentConfig` at that seam carries no template/definition
+ * name, only the resolved prompt, so this mirrors the existing
+ * `resolveDynamicToolConfig` prompt-marker convention rather than adding a new
+ * launch-time flag.
+ */
+const TRIAGE_SESSION_MARKER_FRAGMENT =
+  "triaging a single inbound message that has just arrived";
+
+/**
+ * True when `systemPrompt` is a mailbox-triage session's prompt (either
+ * autonomy variant of `buildMailboxTriagePrompt`). Used at the sidecar
+ * harness to select the budget-capped director for ephemeral triage Myras
+ * without threading a new launch-time signal through `agentConfig`.
+ */
+export function isTriageSessionPrompt(systemPrompt: string): boolean {
+  return systemPrompt.includes(TRIAGE_SESSION_MARKER_FRAGMENT);
+}
+
 export function buildMailboxTriagePrompt(
   name: string,
   autonomy: AgentAutonomy = "prepare_only",

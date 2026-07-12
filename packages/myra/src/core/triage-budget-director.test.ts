@@ -285,3 +285,84 @@ describe("createTriageBudgetDirector", () => {
     }
   });
 });
+
+describe("createTriageBudgetDirector composed over a supplied inner director", () => {
+  const tools: ToolDefinition[] = [];
+  const systemPrompt = "You are Myra, triaging.";
+
+  function makeFakeInnerDirector(): {
+    director: import("@intx/types/runtime").ReactorDirector;
+    calls: unknown[];
+  } {
+    const calls: unknown[] = [];
+    return {
+      calls,
+      director: {
+        async decide(event, _state, capabilities) {
+          calls.push(event);
+          if (
+            event.type === "inference.done" &&
+            event.turn.content.some((c) => c.type === "tool_call")
+          ) {
+            const toolCalls = event.turn.content
+              .filter((c) => c.type === "tool_call")
+              .map((c) => ({
+                id: (c as { id: string }).id,
+                name: (c as { name: string }).name,
+                arguments: {},
+              }));
+            return capabilities.executeTools(toolCalls);
+          }
+          if (event.type === "inference.done") {
+            return capabilities.reply("fake-inner-director-reply");
+          }
+          return capabilities.infer({ tools, systemPrompt });
+        },
+      },
+    };
+  }
+
+  it("below cap: the wrapped inner director's actions pass through unmodified", async () => {
+    const { director: inner } = makeFakeInnerDirector();
+    const director = createTriageBudgetDirector(systemPrompt, tools, inner);
+    const cap = makeCapabilities();
+
+    const actions = await director.decide(
+      makeMessageEvent(),
+      makeState(),
+      cap,
+    );
+    const arr = Array.isArray(actions) ? actions : [actions];
+    const infer = arr.find((a) => a.type === "infer");
+    expect(infer).toBeDefined();
+    if (infer?.type === "infer") {
+      expect(infer.options?.tools).toEqual(tools);
+      expect(infer.options?.systemPrompt).toBe(systemPrompt);
+    }
+  });
+
+  it("over cap: strips tools and appends the stop marker onto the supplied inner director's reply", async () => {
+    const { director: inner } = makeFakeInnerDirector();
+    const director = createTriageBudgetDirector(systemPrompt, tools, inner);
+    const cap = makeCapabilities();
+
+    await director.decide(
+      inferenceDoneEvent(toolCallTurn(TRIAGE_MAX_TOOL_CALLS)),
+      makeState(),
+      cap,
+    );
+
+    const actions = await director.decide(
+      inferenceDoneEvent(textTurn("still working")),
+      makeState(),
+      cap,
+    );
+    const arr = Array.isArray(actions) ? actions : [actions];
+    const reply = arr.find((a) => a.type === "reply");
+    expect(reply).toBeDefined();
+    if (reply?.type === "reply") {
+      expect(reply.content).toContain("fake-inner-director-reply");
+      expect(reply.content).toContain(TRIAGE_BUDGET_STOP_MARKER);
+    }
+  });
+});

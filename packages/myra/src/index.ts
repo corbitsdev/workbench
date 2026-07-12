@@ -37,5 +37,6 @@ export {
 // ephemeral, per-item Myra triage session.
 export {
   resolveMailboxLoadout,
+  isTriageSessionPrompt,
   type MailboxLoadout,
 } from "./personas/mailbox";

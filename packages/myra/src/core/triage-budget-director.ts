@@ -75,10 +75,14 @@ function appendStopMarker(action: ReactorAction): ReactorAction {
 }
 
 /**
- * Wraps the interchange default director with hard, construction-time
- * budget caps for the ephemeral mailbox-triage Myra (CL-3384): a tool-call
- * cap and cumulative token caps. Below the caps this delegates entirely to
- * the default director, so ordinary triage sessions are unaffected.
+ * Wraps an inner director — the interchange default director unless the
+ * caller supplies one (e.g. the dynamic-tools director, so a triage session
+ * with dynamic tool exposure keeps that behavior) — with hard,
+ * construction-time budget caps for the ephemeral mailbox-triage Myra
+ * (CL-3384): a tool-call cap and cumulative token caps. Below the caps this
+ * delegates entirely to the inner director's decisions, so ordinary triage
+ * sessions (and whatever tool-exposure shaping the inner director applies)
+ * are unaffected.
  *
  * Once a cap is reached, the wrapper stops offering tools on every
  * subsequent `infer` action (shrinks `options.tools` to `[]`) and steers the
@@ -97,8 +101,9 @@ function appendStopMarker(action: ReactorAction): ReactorAction {
 export function createTriageBudgetDirector(
   systemPrompt: string,
   toolDefinitions: ToolDefinition[],
+  innerDirector?: ReactorDirector,
 ): ReactorDirector {
-  const base = createDefaultDirector(systemPrompt, toolDefinitions);
+  const base = innerDirector ?? createDefaultDirector(systemPrompt, toolDefinitions);
   let toolCallTotal = 0;
 
   return {

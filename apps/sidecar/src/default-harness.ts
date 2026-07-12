@@ -7,6 +7,7 @@ import {
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
+  TRIAGE_BUDGET_DIRECTOR_ID,
   APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
@@ -42,7 +43,7 @@ import { createBlobReader } from "@intx/types/runtime";
 import type { InferenceSource } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
 import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
-import { PERSONAL_AGENT_NAME } from "@workbench/myra";
+import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
@@ -57,6 +58,23 @@ import type { ContextStore } from "@intx/types/runtime";
 const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
+
+/**
+ * Pure director-id selection (CL-3384): a triage session always gets the
+ * budget-capped director — regardless of whether it also resolved dynamic
+ * tool config, since `triageBudgetDirector`'s factory composes the
+ * dynamic-tools director internally when the harness env carries it. A
+ * non-triage agent with dynamic tool config gets the dynamic-tools director
+ * unchanged; everything else falls back to the registry default.
+ */
+export function selectDirectorId(params: {
+  isTriageSession: boolean;
+  hasDynamicToolConfig: boolean;
+}): string | undefined {
+  if (params.isTriageSession) return TRIAGE_BUDGET_DIRECTOR_ID;
+  if (params.hasDynamicToolConfig) return DYNAMIC_TOOLS_DIRECTOR_ID;
+  return undefined;
+}
 
 /**
  * Repair the durable context before the harness loads it so an
@@ -194,6 +212,7 @@ export function createDefaultHarnessBuilder({
       // The catalog runner itself is built later, once the loaded tool set is
       // known, so packages whose credential is missing are never advertised.
       const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
+      const isTriageSession = isTriageSessionPrompt(cleanedPrompt);
       const exposureState: ToolExposureState = { exposed: new Set<string>() };
 
       const grantsRef = { current: agentConfig.grants };
@@ -489,14 +508,19 @@ export function createDefaultHarnessBuilder({
           }),
         });
 
+        const directorId = selectDirectorId({
+          isTriageSession,
+          hasDynamicToolConfig: dynamicToolConfig !== undefined,
+        });
+
         const def = {
           id: agentConfig.agentId,
           systemPrompt,
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
-          ...(dynamicToolConfig !== undefined
-            ? { director: { id: DYNAMIC_TOOLS_DIRECTOR_ID, config: {} } }
+          ...(directorId !== undefined
+            ? { director: { id: directorId, config: {} } }
             : {}),
         };
 
