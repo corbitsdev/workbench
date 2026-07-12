@@ -586,9 +586,7 @@ describe("0049 creates task and task_external_ref", () => {
   });
 
   it("adds the (task_id, adapter_id) unique constraint — the create idempotency backstop", () => {
-    expect(sql).toMatch(
-      /UNIQUE \("task_id", "adapter_id"\)/i,
-    );
+    expect(sql).toMatch(/UNIQUE \("task_id", "adapter_id"\)/i);
   });
 
   it("indexes the inbox query on (tenant_id, owner_principal_id, status)", () => {
@@ -602,6 +600,45 @@ describe("0049 creates task and task_external_ref", () => {
   });
 
   it("touches NO interchange-owned table — the task store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0051 adds assignee_principal_id to task", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0051_task_assignee.sql"),
+    "utf-8",
+  );
+
+  it("adds a nullable assignee_principal_id column", () => {
+    expect(sql).toMatch(/ALTER TABLE "task"/i);
+    expect(sql).toMatch(
+      /ADD COLUMN IF NOT EXISTS "assignee_principal_id" text/i,
+    );
+    expect(sql).not.toMatch(/"assignee_principal_id" text NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+
+  it("indexes the (tenant, assignee, status) read path", () => {
+    expect(sql).toMatch(
+      /"task_tenant_assignee_status_idx"[\s\S]*"tenant_id", "assignee_principal_id", "status"/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — assignment is a workbench-owned column", () => {
     for (const table of [
       "agent_session",
       "session_mail",

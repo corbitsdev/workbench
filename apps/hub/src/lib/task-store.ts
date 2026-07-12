@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type {
   Task,
@@ -63,6 +63,8 @@ export type UpdateTaskInput = {
   body?: string;
   status?: TaskStatus;
   due?: string | null;
+  /** `null` clears the assignee; omitted leaves it untouched. */
+  assigneePrincipalId?: string | null;
   mailboxEventBus?: MailboxEventBus;
 };
 
@@ -101,6 +103,9 @@ export function toApiTask(row: TaskRow, refs: TaskExternalRefRow[]): Task {
   if (row.body !== null) result.body = row.body;
   if (row.sourceRef !== null) result.sourceRef = row.sourceRef;
   if (row.due !== null) result.due = row.due.toISOString();
+  if (row.assigneePrincipalId !== null) {
+    result.assigneePrincipalId = row.assigneePrincipalId;
+  }
   return result;
 }
 
@@ -122,6 +127,10 @@ async function loadRefsByTaskIds(
   return byTask;
 }
 
+// The caller's "my tasks" feed: everything they own PLUS everything assigned
+// to them, newest first in one merged, keyset-paginated stream. A single
+// (tenant, member) principal id drives both sides of the OR, so the existing
+// keyset cursor (createdAt, id) still orders the combined set correctly.
 export async function listOwnerTasks(
   db: HubDb,
   args: {
@@ -132,10 +141,14 @@ export async function listOwnerTasks(
     cursor?: KeysetCursor;
   },
 ): Promise<TaskPage> {
-  const conditions = [
-    eq(task.tenantId, args.tenantId),
+  const ownerOrAssignee = or(
     eq(task.ownerPrincipalId, args.ownerPrincipalId),
-  ];
+    eq(task.assigneePrincipalId, args.ownerPrincipalId),
+  );
+  if (ownerOrAssignee === undefined) {
+    throw new Error("Owner/assignee predicate construction failed");
+  }
+  const conditions = [eq(task.tenantId, args.tenantId), ownerOrAssignee];
   if (args.statuses !== undefined && args.statuses.length > 0) {
     conditions.push(inArray(task.status, args.statuses));
   }
@@ -175,6 +188,31 @@ export async function getOwnerTask(
         eq(task.ownerPrincipalId, args.ownerPrincipalId),
       ),
     )
+    .limit(1);
+  if (!row) return null;
+  const refs = await loadRefsByTaskIds(db, [row.id]);
+  return toApiTask(row, refs.get(row.id) ?? []);
+}
+
+// Read-only counterpart to getOwnerTask that also admits the caller as the
+// task's assignee — used by the single-task deep-link route (GET
+// /me/tasks/:id) so an assignee can open a task from their feed. Mutation
+// routes (PATCH, push) stay on getOwnerTask: only the owner may write.
+export async function getVisibleTask(
+  db: HubDb,
+  args: { tenantId: string; principalId: string; id: string },
+): Promise<Task | null> {
+  const visible = or(
+    eq(task.ownerPrincipalId, args.principalId),
+    eq(task.assigneePrincipalId, args.principalId),
+  );
+  if (visible === undefined) {
+    throw new Error("Owner/assignee predicate construction failed");
+  }
+  const [row] = await db
+    .select()
+    .from(task)
+    .where(and(eq(task.id, args.id), eq(task.tenantId, args.tenantId), visible))
     .limit(1);
   if (!row) return null;
   const refs = await loadRefsByTaskIds(db, [row.id]);
@@ -299,7 +337,9 @@ export async function createOwnerTask(
     task: created,
     event: input.source === "agent" ? "assigned" : "created",
     actorPrincipalId: input.createdByPrincipalId,
-    ...(input.mailboxEventBus ? { mailboxEventBus: input.mailboxEventBus } : {}),
+    ...(input.mailboxEventBus
+      ? { mailboxEventBus: input.mailboxEventBus }
+      : {}),
   });
   return created;
 }
@@ -308,12 +348,35 @@ export async function updateOwnerTask(
   db: HubDb,
   input: UpdateTaskInput,
 ): Promise<Task | null> {
+  // Only fetched when the assignee is in play, to detect a real change (vs. a
+  // re-save of the same assignee) before mailing — every other field is a
+  // blind write, same as before this feature.
+  let priorAssigneePrincipalId: string | null | undefined;
+  if (input.assigneePrincipalId !== undefined) {
+    const [priorRow] = await db
+      .select({ assigneePrincipalId: task.assigneePrincipalId })
+      .from(task)
+      .where(
+        and(
+          eq(task.id, input.id),
+          eq(task.tenantId, input.tenantId),
+          eq(task.ownerPrincipalId, input.ownerPrincipalId),
+        ),
+      )
+      .limit(1);
+    if (!priorRow) return null;
+    priorAssigneePrincipalId = priorRow.assigneePrincipalId;
+  }
+
   const set: Partial<typeof task.$inferInsert> = {};
   if (input.title !== undefined) set.title = input.title;
   if (input.body !== undefined) set.body = input.body;
   if (input.status !== undefined) set.status = input.status;
   if (input.due !== undefined) {
     set.due = input.due === null ? null : new Date(input.due);
+  }
+  if (input.assigneePrincipalId !== undefined) {
+    set.assigneePrincipalId = input.assigneePrincipalId;
   }
   const [row] = await db
     .update(task)
@@ -336,7 +399,27 @@ export async function updateOwnerTask(
       task: updated,
       event: "waiting",
       actorPrincipalId: input.actorPrincipalId,
-      ...(input.mailboxEventBus ? { mailboxEventBus: input.mailboxEventBus } : {}),
+      ...(input.mailboxEventBus
+        ? { mailboxEventBus: input.mailboxEventBus }
+        : {}),
+    });
+  }
+  const newAssigneePrincipalId = input.assigneePrincipalId;
+  if (
+    newAssigneePrincipalId !== undefined &&
+    newAssigneePrincipalId !== null &&
+    newAssigneePrincipalId !== (priorAssigneePrincipalId ?? null)
+  ) {
+    await deliverTaskMail({
+      db,
+      tenantId: input.tenantId,
+      task: updated,
+      event: "assigned",
+      actorPrincipalId: input.actorPrincipalId,
+      recipientPrincipalId: newAssigneePrincipalId,
+      ...(input.mailboxEventBus
+        ? { mailboxEventBus: input.mailboxEventBus }
+        : {}),
     });
   }
   return updated;

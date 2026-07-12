@@ -60,6 +60,7 @@ export const TaskSchema = type({
   tenantId: "string",
   ownerPrincipalId: "string",
   createdByPrincipalId: "string",
+  "assigneePrincipalId?": "string",
   title: "string",
   "body?": "string",
   status: TaskStatusSchema,
@@ -98,11 +99,15 @@ export type CreateTaskBody = typeof CreateTaskBodySchema.infer;
 
 // Request body for PATCH /me/tasks/:id. Every field optional; an empty patch is
 // rejected by the route.
+// `assigneePrincipalId: null` clears the assignee; omitted leaves it
+// untouched. Only the task owner may set this (enforced server-side — the
+// update WHERE clause is already scoped to the caller's own owned tasks).
 export const UpdateTaskBodySchema = type({
   "title?": "string > 0",
   "body?": "string",
   "status?": TaskStatusSchema,
   "due?": "string | null",
+  "assigneePrincipalId?": "string | null",
 });
 export type UpdateTaskBody = typeof UpdateTaskBodySchema.infer;
 
