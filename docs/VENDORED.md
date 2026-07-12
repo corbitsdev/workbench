@@ -249,6 +249,32 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   `src/assistant-loop-guard.test.ts` and
   `src/session-manager-assistant-loop.test.ts`.
 
+- **WORKBENCH-LOCAL (CL-3415) — bounded workflow-run pack bootstrap-retry
+  quarantine** (`src/ws/hub-link.ts`): the pre-existing bootstrap-retry arm
+  in `pushWorkflowRunPack` (retry the FIRST push to a never-bootstrapped
+  `(repoId, ref)` once, absorbing the hub's `initRepo` CAS race) assumed a
+  retry failure could only be transient. On staging, a sidecar restart
+  drops the in-memory `lastAckedTip` cursor (CL-2340) and the
+  `workflowRunPackBootstrapped` flag at the same time, so a genuinely
+  diverged repo state — not just the race — made both the initial attempt
+  and the retry reject with `reason=corrupt`, and every subsequent
+  workflow-run event repeated the identical two-attempt failure forever
+  (`Workflow-run pack push bootstrap retry ... reason=corrupt` recurring
+  without bound). `workflowRunPackFailureCount` now counts consecutive
+  two-attempt failures per `(repoId, ref)`; at
+  `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES` (3) the key moves into
+  `workflowRunPackQuarantined` — further pushes fail fast with no network
+  attempt, and a single ERROR (not a WARN per push) logs the pack size,
+  commit sha, and last rejection reason for triage. Quarantine and the
+  failure counter are cleared at the same undeploy/hibernate prune sites
+  that already clear `workflowRunPackBootstrapped`, so a redeploy gets a
+  clean slate. Root cause of the underlying repo divergence is NOT fixed
+  here — it needs the quarantined artifacts from staging to diagnose
+  further; this change bounds the blast radius (log spam + wasted receiver
+  round-trips) and gives a clear, one-shot diagnostic signal instead.
+  Guarded by the `"a persistently corrupt (repoId, ref) quarantines..."`
+  test in `src/ws/hub-link.test.ts`.
+
 ---
 
 ## Vendored sidecar files
