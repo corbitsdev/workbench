@@ -122,16 +122,22 @@ describe("heartbeat native workflow", () => {
     }
   });
 
-  // Load-bearing: today's catalog (Granola only) must generate a step graph
-  // behaviorally identical to the old hand-written definition — one intake
-  // step calling granola_list_notes, nonFatal, with brief depending on it.
-  test("today's catalog (Granola only) generates the same graph shape as the hand-written v0", () => {
-    expect(WIRED_BRIEF_SOURCES.map((s) => s.key)).toEqual(["granola"]);
+  // Load-bearing: today's catalog generates one nonFatal intake step per
+  // wired source, with brief depending on all of them.
+  test("today's catalog generates one intake step per wired source", () => {
+    expect(WIRED_BRIEF_SOURCES.map((s) => s.key).sort()).toEqual([
+      "attio",
+      "granola",
+      "linear",
+      "vercel",
+    ]);
     const intake = stepPrimitive(heartbeatIntakeStepKey("granola"));
     expect(intake.agent.id).toBe("heartbeat-intake-granola");
     expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
     expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-    expect(stepPrimitive("brief").after).toEqual(["intake-granola"]);
+    expect(stepPrimitive("brief").after).toEqual(
+      WIRED_BRIEF_SOURCES.map((s) => heartbeatIntakeStepKey(s.key)),
+    );
   });
 
   test("notify is a deterministic mail_send step with no inference source", () => {
@@ -219,6 +225,9 @@ describe("heartbeat native workflow", () => {
       "heartbeat-intake-granola": {
         notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
       },
+      "heartbeat-intake-linear": { nodes: [] },
+      "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
+      "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
@@ -235,6 +244,9 @@ describe("heartbeat native workflow", () => {
 
     const ranIds = ran.map((r) => r.id);
     expect(ranIds).toContain("heartbeat-intake-granola");
+    expect(ranIds).toContain("heartbeat-intake-linear");
+    expect(ranIds).toContain("heartbeat-intake-attio");
+    expect(ranIds).toContain("heartbeat-intake-vercel");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
@@ -248,6 +260,9 @@ describe("heartbeat native workflow", () => {
     const briefReply = "# Morning brief\n\nAll clear today.";
     const { invoker, ran } = makeRecordingInvoker({
       "heartbeat-intake-granola": { notes: [] },
+      "heartbeat-intake-linear": { nodes: [] },
+      "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
+      "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
