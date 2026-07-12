@@ -117,6 +117,30 @@ describe("listUserMailbox", () => {
     });
   });
 
+  it("does not split a quoted display name containing a comma in the To header", async () => {
+    const { db } = makeListDb([
+      makeRow({
+        raw: Buffer.from(
+          "From: ins_dep-heartbeat@tenant.example\r\n" +
+            'To: "Doe, Jane" <usr_alice@tenant.example>, usr_bob@tenant.example\r\n' +
+            "Subject: Morning brief\r\n" +
+            "\r\n" +
+            "Your brief is ready.\r\n",
+        ),
+      }),
+    ]);
+    const page = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+
+    expect(page.items[0]?.to).toEqual([
+      '"Doe, Jane" <usr_alice@tenant.example>',
+      "usr_bob@tenant.example",
+    ]);
+  });
+
   it("falls back to created_at when the Date header is unparseable", async () => {
     const { db } = makeListDb([
       makeRow({
