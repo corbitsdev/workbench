@@ -131,9 +131,7 @@ describe("task_create", () => {
       signal,
     );
     expect(JSON.parse(raw).id).toBe("task-1");
-    expect(storeCalls.some((c) => c.fn === "countTasksCreatedBy")).toBe(
-      false,
-    );
+    expect(storeCalls.some((c) => c.fn === "countTasksCreatedBy")).toBe(false);
     expect(storeCalls.some((c) => c.fn === "create")).toBe(true);
   });
 
@@ -161,9 +159,9 @@ describe("task_create", () => {
       { title: "New task", sourceRef: "mail:123" },
       signal,
     );
-    expect(
-      storeCalls.some((c) => c.fn === "findOwnerTaskBySourceRef"),
-    ).toBe(false);
+    expect(storeCalls.some((c) => c.fn === "findOwnerTaskBySourceRef")).toBe(
+      false,
+    );
     expect(storeCalls.some((c) => c.fn === "create")).toBe(true);
   });
 });

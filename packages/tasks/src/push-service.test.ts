@@ -34,7 +34,12 @@ type Call = {
 
 function makeAdapter(
   execute: TaskAdapter["execute"],
-  operations: TaskAdapter["operations"] = ["create", "update", "close", "comment"],
+  operations: TaskAdapter["operations"] = [
+    "create",
+    "update",
+    "close",
+    "comment",
+  ],
 ): TaskAdapter {
   return {
     id: "fake",
@@ -85,8 +90,16 @@ describe("createTaskPushService.pushTask", () => {
     const [a, b] = await Promise.all([first, second]);
 
     expect(calls).toHaveLength(1);
-    expect(a).toEqual({ status: "synced", externalId: "ext-1", deduped: false });
-    expect(b).toEqual({ status: "synced", externalId: "ext-1", deduped: false });
+    expect(a).toEqual({
+      status: "synced",
+      externalId: "ext-1",
+      deduped: false,
+    });
+    expect(b).toEqual({
+      status: "synced",
+      externalId: "ext-1",
+      deduped: false,
+    });
   });
 
   it("does not coalesce a concurrent create and comment on the same task and adapter", async () => {
@@ -201,7 +214,11 @@ describe("createTaskPushService.pushTask", () => {
       adapters: {
         fake: makeAdapter(async (op, input, config) => {
           calls.push({ op, input, config });
-          return { externalId: "ext-99", externalUrl: "https://x/99", deduped: false };
+          return {
+            externalId: "ext-99",
+            externalUrl: "https://x/99",
+            deduped: false,
+          };
         }),
       },
     });
@@ -352,9 +369,10 @@ describe("createTaskPushService.pushTask", () => {
       store,
       resolveCredential: async () => credential,
       adapters: {
-        fake: makeAdapter(async () => ({ externalId: "ext-1", deduped: false }), [
-          "create",
-        ]),
+        fake: makeAdapter(
+          async () => ({ externalId: "ext-1", deduped: false }),
+          ["create"],
+        ),
       },
     });
     await expect(
@@ -397,7 +415,11 @@ describe("createTaskPushService.pushTask", () => {
     });
 
     expect(resolveCalls).toEqual([
-      { ownerPrincipalId: "principal-owner", adapterId: "fake", tenantId: "tenant-1" },
+      {
+        ownerPrincipalId: "principal-owner",
+        adapterId: "fake",
+        tenantId: "tenant-1",
+      },
     ]);
     expect(calls[0]?.input.assignee).toBe("assignee-1");
   });
@@ -406,7 +428,9 @@ describe("createTaskPushService.pushTask", () => {
     const service = createTaskPushService({
       store,
       resolveCredential: async () => credential,
-      adapters: { fake: makeAdapter(async () => ({ externalId: "e", deduped: false })) },
+      adapters: {
+        fake: makeAdapter(async () => ({ externalId: "e", deduped: false })),
+      },
     });
     await expect(
       service.pushTask({

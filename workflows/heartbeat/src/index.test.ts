@@ -173,9 +173,9 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("every intake step reads the trigger payload verbatim", () => {
     for (const source of WIRED_BRIEF_SOURCES) {
-      expect(stepPrimitive(heartbeatIntakeStepKey(source.key)).input).toEqual(
-        { from: "trigger.payload" },
-      );
+      expect(stepPrimitive(heartbeatIntakeStepKey(source.key)).input).toEqual({
+        from: "trigger.payload",
+      });
     }
   });
 
@@ -226,7 +226,9 @@ describe("heartbeat native workflow", () => {
         notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
       },
       "heartbeat-intake-linear": { issues: [] },
-      "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
+      "heartbeat-intake-attio": {
+        attioActivity: { newCompanies: [], openTasks: [] },
+      },
       "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
@@ -261,7 +263,9 @@ describe("heartbeat native workflow", () => {
     const { invoker, ran } = makeRecordingInvoker({
       "heartbeat-intake-granola": { notes: [] },
       "heartbeat-intake-linear": { issues: [] },
-      "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
+      "heartbeat-intake-attio": {
+        attioActivity: { newCompanies: [], openTasks: [] },
+      },
       "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },

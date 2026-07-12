@@ -43,7 +43,7 @@ export function WhatsNewDialog({
     const container = dialogRef.current;
     if (!container) return;
     const focusable = container.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled])',
+      "a[href], button:not([disabled])",
     );
     if (focusable.length === 0) return;
     const first = focusable[0];

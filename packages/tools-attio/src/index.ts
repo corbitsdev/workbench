@@ -411,10 +411,7 @@ function optionalStringArray(value: unknown): string[] | undefined {
   return value.filter((entry): entry is string => typeof entry === "string");
 }
 
-function attributeValue(
-  record: unknown,
-  attribute: string,
-): string | null {
+function attributeValue(record: unknown, attribute: string): string | null {
   if (!isRecord(record) || !isRecord(record.values)) {
     return null;
   }
@@ -444,9 +441,10 @@ function compactCompany(record: unknown): {
   return {
     id: recordId(record),
     name: attributeValue(record, "name"),
-    createdAt: isRecord(record) && typeof record.created_at === "string"
-      ? record.created_at
-      : null,
+    createdAt:
+      isRecord(record) && typeof record.created_at === "string"
+        ? record.created_at
+        : null,
   };
 }
 
@@ -456,9 +454,10 @@ function compactTask(task: unknown): {
   deadlineAt: string | null;
 } {
   return {
-    id: isRecord(task) && isRecord(task.id) && typeof task.id.task_id === "string"
-      ? task.id.task_id
-      : null,
+    id:
+      isRecord(task) && isRecord(task.id) && typeof task.id.task_id === "string"
+        ? task.id.task_id
+        : null,
     content:
       isRecord(task) && typeof task.content_plaintext === "string"
         ? task.content_plaintext
@@ -938,8 +937,7 @@ const RECENT_ACTIVITY_INPUT_SCHEMA = {
   properties: {
     createdAfter: {
       type: "string",
-      description:
-        "Return only companies created after this ISO date-time.",
+      description: "Return only companies created after this ISO date-time.",
     },
     enabledSources: {
       type: "array",

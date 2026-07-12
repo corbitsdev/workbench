@@ -321,7 +321,11 @@ describe("createWorkflowRunStarter", () => {
 
     for (let i = 0; i < 60; i++) {
       // eslint-disable-next-line no-await-in-loop
-      await starter.startRun({ kind: "heartbeat", tenantId: "t-root", input: {} });
+      await starter.startRun({
+        kind: "heartbeat",
+        tenantId: "t-root",
+        input: {},
+      });
     }
     const blocked = await starter.startRun({
       kind: "heartbeat",

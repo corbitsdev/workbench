@@ -57,7 +57,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function noteId(value: unknown): string | null {
-  if (isRecord(value) && isRecord(value.id) && typeof value.id.note_id === "string") {
+  if (
+    isRecord(value) &&
+    isRecord(value.id) &&
+    typeof value.id.note_id === "string"
+  ) {
     return value.id.note_id;
   }
   return null;

@@ -1,5 +1,8 @@
 import type { ReactorDirector, ToolDefinition } from "@intx/types/runtime";
-import { createBudgetDirector, type BudgetDirectorOptions } from "./budget-director";
+import {
+  createBudgetDirector,
+  type BudgetDirectorOptions,
+} from "./budget-director";
 
 /**
  * Hard cap on tool calls in one ephemeral triage session (CL-3384). Triage is

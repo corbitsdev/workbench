@@ -58,8 +58,7 @@ export function splitMentionSegments(text: string): MentionSegment[] {
     const name = match[1];
     const id = match[2];
     const index = match.index;
-    if (name === undefined || id === undefined || index === undefined)
-      continue;
+    if (name === undefined || id === undefined || index === undefined) continue;
     if (index > cursor) {
       segments.push({ type: "text", value: text.slice(cursor, index) });
     }

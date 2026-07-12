@@ -52,7 +52,8 @@ function msg(over: Partial<MailboxMessage>): MailboxMessage {
 
 function wrapper(client?: QueryClient) {
   const queryClient =
-    client ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client ??
+    new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return ({ children }: { children: React.ReactNode }) =>
     React.createElement(QueryClientProvider, { client: queryClient }, children);
 }
@@ -221,12 +222,17 @@ describe("useMarkMailboxRead across pages", () => {
       { messages: [msg({ id: "3" })] },
     ];
     const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     const mailboxHook = renderHook(() => useMailbox(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(mailboxHook.result.current.isSuccess).toBe(true));
+    await waitFor(() =>
+      expect(mailboxHook.result.current.isSuccess).toBe(true),
+    );
     mailboxHook.result.current.fetchNextPage();
     await waitFor(() =>
       expect(
@@ -250,21 +256,25 @@ describe("useMarkMailboxRead across pages", () => {
     // Every other message stays exactly as loaded — a mark-read on page two
     // never touches page one's rows.
     expect(
-      mailboxHook.result.current.data?.find(
-        (m: MailboxMessage) => m.id === "1",
-      )?.read,
+      mailboxHook.result.current.data?.find((m: MailboxMessage) => m.id === "1")
+        ?.read,
     ).toBe(false);
   });
 
   it("rolls back the optimistic mark on a failed request", async () => {
     apiResponses = [{ messages: [msg({ id: "1", read: false })] }];
     const client = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
     });
     const mailboxHook = renderHook(() => useMailbox(), {
       wrapper: wrapper(client),
     });
-    await waitFor(() => expect(mailboxHook.result.current.isSuccess).toBe(true));
+    await waitFor(() =>
+      expect(mailboxHook.result.current.isSuccess).toBe(true),
+    );
 
     apiResponses.push(new Error("boom"));
     const markHook = renderHook(() => useMarkMailboxRead(), {
@@ -274,9 +284,8 @@ describe("useMarkMailboxRead across pages", () => {
 
     await waitFor(() => expect(markHook.result.current.isError).toBe(true));
     expect(
-      mailboxHook.result.current.data?.find(
-        (m: MailboxMessage) => m.id === "1",
-      )?.read,
+      mailboxHook.result.current.data?.find((m: MailboxMessage) => m.id === "1")
+        ?.read,
     ).toBe(false);
   });
 });

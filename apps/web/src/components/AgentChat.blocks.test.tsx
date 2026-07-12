@@ -101,9 +101,7 @@ beforeEach(() => {
   globalThis.fetch = mock((url: string, init?: RequestInit) => {
     const u = String(url);
     if (u.includes("/sessions")) {
-      return Promise.resolve(
-        jsonResponse({ launched: true, sessionId: null }),
-      );
+      return Promise.resolve(jsonResponse({ launched: true, sessionId: null }));
     }
     if (u.includes("/feedback")) {
       return Promise.resolve(jsonResponse({ ratings: [] }));

@@ -13,7 +13,12 @@ describe("createTtlMemo", () => {
       return `value-${calls}`;
     };
 
-    const first = await memo.get({ key: "a", resolve, ttlMs: TTL, now: () => 1_000 });
+    const first = await memo.get({
+      key: "a",
+      resolve,
+      ttlMs: TTL,
+      now: () => 1_000,
+    });
     const second = await memo.get({
       key: "a",
       resolve,
@@ -34,8 +39,18 @@ describe("createTtlMemo", () => {
       return `value-${calls}`;
     };
 
-    const first = await memo.get({ key: "a", resolve, ttlMs: 0, now: () => 1_000 });
-    const second = await memo.get({ key: "a", resolve, ttlMs: 0, now: () => 1_000 });
+    const first = await memo.get({
+      key: "a",
+      resolve,
+      ttlMs: 0,
+      now: () => 1_000,
+    });
+    const second = await memo.get({
+      key: "a",
+      resolve,
+      ttlMs: 0,
+      now: () => 1_000,
+    });
 
     expect(first).toBe("value-1");
     expect(second).toBe("value-2");
@@ -46,12 +61,27 @@ describe("createTtlMemo", () => {
     const memo = createTtlMemo<string>({ maxEntries: 2 });
     const resolve = async (value: string) => value;
 
-    await memo.get({ key: "a", resolve: () => resolve("a-1"), ttlMs: TTL, now: () => 1_000 });
-    await memo.get({ key: "b", resolve: () => resolve("b-1"), ttlMs: TTL, now: () => 2_000 });
+    await memo.get({
+      key: "a",
+      resolve: () => resolve("a-1"),
+      ttlMs: TTL,
+      now: () => 1_000,
+    });
+    await memo.get({
+      key: "b",
+      resolve: () => resolve("b-1"),
+      ttlMs: TTL,
+      now: () => 2_000,
+    });
     // inserting "c" should evict "a" (oldest storedAt), keeping "b" and "c"
     // resident. We never re-query "a" afterward — doing so would itself
     // trigger another eviction at this same cap and confound the assertion.
-    await memo.get({ key: "c", resolve: () => resolve("c-1"), ttlMs: TTL, now: () => 3_000 });
+    await memo.get({
+      key: "c",
+      resolve: () => resolve("c-1"),
+      ttlMs: TTL,
+      now: () => 3_000,
+    });
 
     let bCalls = 0;
     let cCalls = 0;

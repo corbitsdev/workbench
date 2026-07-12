@@ -86,7 +86,12 @@ describe("TASK_ADAPTERS registry", () => {
     expect(descriptor).not.toBeInstanceOf(type.errors);
     expect(linear?.id).toBe("linear");
     expect(linear?.providerName).toBe("linear");
-    expect(linear?.operations).toEqual(["create", "update", "close", "comment"]);
+    expect(linear?.operations).toEqual([
+      "create",
+      "update",
+      "close",
+      "comment",
+    ]);
   });
 });
 
@@ -99,7 +104,11 @@ describe("createLinearTaskAdapter create", () => {
           data: {
             issueCreate: {
               success: true,
-              issue: { id: "issue_1", identifier: "ENG-1", url: "https://linear.app/x/issue/ENG-1" },
+              issue: {
+                id: "issue_1",
+                identifier: "ENG-1",
+                url: "https://linear.app/x/issue/ENG-1",
+              },
             },
           },
         },
@@ -116,7 +125,9 @@ describe("createLinearTaskAdapter create", () => {
     });
     const call = fetcher.mock.calls[0];
     const body = JSON.parse(String(call?.[1].body)) as {
-      variables: { input: { teamId: string; title: string; description: string } };
+      variables: {
+        input: { teamId: string; title: string; description: string };
+      };
     };
     expect(body.variables.input.teamId).toBe("team_123");
     expect(body.variables.input.title).toBe("Follow up with Acme");
@@ -195,7 +206,11 @@ describe("createLinearTaskAdapter close", () => {
           data: {
             issueUpdate: {
               success: true,
-              issue: { id: "issue_1", identifier: "ENG-1", url: "https://linear.app/x/issue/ENG-1" },
+              issue: {
+                id: "issue_1",
+                identifier: "ENG-1",
+                url: "https://linear.app/x/issue/ENG-1",
+              },
             },
           },
         },
@@ -204,7 +219,11 @@ describe("createLinearTaskAdapter close", () => {
     const adapter = createLinearTaskAdapter({ fetcher });
     const input = makeInput({
       task: makeTask({ status: "done" }),
-      externalRef: { adapterId: "linear", externalId: "issue_1", syncState: "synced" },
+      externalRef: {
+        adapterId: "linear",
+        externalId: "issue_1",
+        syncState: "synced",
+      },
       idempotencyKey: "task:task-1:close",
     });
 
@@ -247,7 +266,11 @@ describe("createLinearTaskAdapter close", () => {
           data: {
             issueUpdate: {
               success: true,
-              issue: { id: "issue_1", identifier: "ENG-1", url: "https://linear.app/x/issue/ENG-1" },
+              issue: {
+                id: "issue_1",
+                identifier: "ENG-1",
+                url: "https://linear.app/x/issue/ENG-1",
+              },
             },
           },
         },
@@ -256,7 +279,11 @@ describe("createLinearTaskAdapter close", () => {
     const adapter = createLinearTaskAdapter({ fetcher });
     const input = makeInput({
       task: makeTask({ status: "done" }),
-      externalRef: { adapterId: "linear", externalId: "issue_1", syncState: "synced" },
+      externalRef: {
+        adapterId: "linear",
+        externalId: "issue_1",
+        syncState: "synced",
+      },
       idempotencyKey: "task:task-1:close",
     });
 
@@ -302,7 +329,11 @@ describe("createLinearTaskAdapter update", () => {
           data: {
             issueUpdate: {
               success: true,
-              issue: { id: "issue_1", identifier: "ENG-1", url: "https://linear.app/x/issue/ENG-1" },
+              issue: {
+                id: "issue_1",
+                identifier: "ENG-1",
+                url: "https://linear.app/x/issue/ENG-1",
+              },
             },
           },
         },
@@ -311,7 +342,11 @@ describe("createLinearTaskAdapter update", () => {
     const adapter = createLinearTaskAdapter({ fetcher });
     const input = makeInput({
       task: makeTask({ status: "in_progress" }),
-      externalRef: { adapterId: "linear", externalId: "issue_1", syncState: "synced" },
+      externalRef: {
+        adapterId: "linear",
+        externalId: "issue_1",
+        syncState: "synced",
+      },
       idempotencyKey: "task:task-1:update",
     });
 
@@ -334,7 +369,11 @@ describe("createLinearTaskAdapter comment", () => {
     const fetcher = makeRouterStub([
       {
         match: (query) => query.includes("commentCreate"),
-        body: { data: { commentCreate: { success: true, comment: { id: "comment_1" } } } },
+        body: {
+          data: {
+            commentCreate: { success: true, comment: { id: "comment_1" } },
+          },
+        },
       },
     ]);
     const adapter = createLinearTaskAdapter({ fetcher });

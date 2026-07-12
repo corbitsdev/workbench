@@ -145,9 +145,7 @@ export function ConnectedToInboxPanel() {
                 className="flex flex-col gap-1 border-b border-border py-2.5 last:border-b-0"
               >
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-sm font-medium text-text">
-                    {label}
-                  </span>
+                  <span className="text-sm font-medium text-text">{label}</span>
                   <span className="text-xs text-text-3">
                     {capabilities.length > 0
                       ? capabilities.join(" · ")

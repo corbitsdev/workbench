@@ -201,7 +201,8 @@ function buildIssueFilter(
   // updatedAfter takes precedence; createdAfter (the heartbeat's fire-time
   // lookback cutoff, see BriefSourceFetchInputSchema in @workbench/shared)
   // is used as the updatedAt bound only when updatedAfter is absent.
-  const updatedAfter = optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
+  const updatedAfter =
+    optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
   const filter: Record<string, unknown> = {};
   if (state !== null) {
     filter.state = { name: { eqIgnoreCase: state } };
@@ -414,8 +415,7 @@ const LIST_ISSUES_INPUT_SCHEMA = {
     },
     updatedAfter: {
       type: "string",
-      description:
-        "Return only issues updated after this ISO date-time.",
+      description: "Return only issues updated after this ISO date-time.",
     },
     createdAfter: {
       type: "string",

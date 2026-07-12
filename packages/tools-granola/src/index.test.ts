@@ -580,7 +580,11 @@ describe("createGranolaTools", () => {
     );
 
     const result = await runner.run(
-      { id: "call_list_folders_missing_key", name: "granola_list_folders", arguments: {} },
+      {
+        id: "call_list_folders_missing_key",
+        name: "granola_list_folders",
+        arguments: {},
+      },
       new AbortController().signal,
     );
 

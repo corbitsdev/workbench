@@ -20,7 +20,9 @@ mock.module("../lib/task-push-store", () => ({
 const { createTaskReconcilerService } = await import("./task-reconciler");
 
 const db = {} as unknown as HubDb;
-const stubPushService = { pushTask: async () => ({ status: "pending" as const }) };
+const stubPushService = {
+  pushTask: async () => ({ status: "pending" as const }),
+};
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

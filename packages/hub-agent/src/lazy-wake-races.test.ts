@@ -597,9 +597,7 @@ describe("critique: lazy wake races", () => {
     // address. The message is retained (parked) for a later trigger rather
     // than dropped.
     expect(manager.hasSession(address)).toBe(false);
-    expect(() => transport.getTransportFor(address)).toThrow(
-      /not registered/,
-    );
+    expect(() => transport.getTransportFor(address)).toThrow(/not registered/);
   });
 
   test("a parked message retained after a failed wake is delivered by a later successful wake", async () => {

@@ -109,5 +109,4 @@ describe("useReportConnectionStatus — overlay visibility", () => {
     advance(5000);
     expect(screen.queryByRole("status")).toBeNull();
   });
-
 });

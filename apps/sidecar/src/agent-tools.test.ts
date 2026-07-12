@@ -257,9 +257,10 @@ describe("createMemoizingManifestLoad", () => {
     expect(loadFn).toHaveBeenCalledTimes(1);
     expect(loadedForInstanceA).toBe(loadedForInstanceB);
 
-    const sharedFactory = loadedForInstanceA[0]?.factories[0] as unknown as (env: {
-      apiKey: string;
-    }) => { apiKeyUsed: string };
+    const sharedFactory = loadedForInstanceA[0]
+      ?.factories[0] as unknown as (env: { apiKey: string }) => {
+      apiKeyUsed: string;
+    };
     const bundleA = sharedFactory({ apiKey: "instance-a-key" });
     const bundleB = sharedFactory({ apiKey: "instance-b-key" });
 

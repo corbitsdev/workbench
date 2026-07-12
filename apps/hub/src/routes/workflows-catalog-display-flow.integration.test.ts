@@ -127,9 +127,7 @@ describe("GET /workflows — declared display flow drives the preview", () => {
       gamma.DISPLAY_STEPS.map((g) => g.label),
     );
     // The preview is genuinely grouped: fewer entries than runtime steps.
-    expect(entry!.steps.length).toBeLessThan(
-      gamma.workflow.stepOrder.length,
-    );
+    expect(entry!.steps.length).toBeLessThan(gamma.workflow.stepOrder.length);
     expect(entry!.steps.length).toBe(gamma.DISPLAY_STEPS.length);
   });
 });

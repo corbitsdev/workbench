@@ -35,9 +35,7 @@ export type DecodedFrame = {
 export function decodeMailFrame(raw: Uint8Array): DecodedFrame | null {
   const parsed = tryParseHeaderSection(raw);
   if (parsed === null) return null;
-  const body = new TextDecoder()
-    .decode(raw.subarray(parsed.bodyOffset))
-    .trim();
+  const body = new TextDecoder().decode(raw.subarray(parsed.bodyOffset)).trim();
   return { headers: parsed.headers, body };
 }
 

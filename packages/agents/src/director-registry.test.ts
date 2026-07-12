@@ -85,7 +85,9 @@ describe("triageBudgetDirector.factory composition", () => {
     inputSchema: { type: "object", properties: {}, required: [] },
   };
 
-  function recordingCapabilities(sink: ToolDefinition[][]): ReactorCapabilities {
+  function recordingCapabilities(
+    sink: ToolDefinition[][],
+  ): ReactorCapabilities {
     const noop: ReactorAction = { type: "wait" };
     return {
       infer: (options) => {
@@ -122,7 +124,13 @@ describe("triageBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",
@@ -146,7 +154,9 @@ describe("workflowStepBudgetDirector.factory composition", () => {
     inputSchema: { type: "object", properties: {}, required: [] },
   };
 
-  function recordingCapabilities(sink: ToolDefinition[][]): ReactorCapabilities {
+  function recordingCapabilities(
+    sink: ToolDefinition[][],
+  ): ReactorCapabilities {
     const noop: ReactorAction = { type: "wait" };
     return {
       infer: (options) => {
@@ -193,7 +203,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",
@@ -210,12 +226,15 @@ describe("workflowStepBudgetDirector.factory composition", () => {
     const director = workflowStepBudgetDirector.factory({}, {}, agent);
     const cap = recordingCapabilities([]);
 
-    const manyCalls = Array.from({ length: WORKFLOW_STEP_MAX_TOOL_CALLS }, (_, i) => ({
-      type: "tool_call" as const,
-      id: `call-${i}`,
-      name: readToolDef.name,
-      arguments: {},
-    }));
+    const manyCalls = Array.from(
+      { length: WORKFLOW_STEP_MAX_TOOL_CALLS },
+      (_, i) => ({
+        type: "tool_call" as const,
+        id: `call-${i}`,
+        name: readToolDef.name,
+        arguments: {},
+      }),
+    );
 
     const actions = await director.decide(
       {
@@ -226,7 +245,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
           timestamp: Date.now(),
           content: manyCalls,
         },
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         source: { id: "test-source", provider: "test", model: "test" },
       } as never,
       {
@@ -234,7 +259,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",

@@ -158,7 +158,6 @@ describe("POST /me/brief-run", () => {
     expect(res.status).toBe(404);
   });
 
-
   it("rejects a second manual run from the same member within the window", async () => {
     startRunCalls = [];
     startRunResult = { ok: true, deploymentId: "dep-1" };

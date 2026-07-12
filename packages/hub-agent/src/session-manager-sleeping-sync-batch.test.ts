@@ -219,9 +219,9 @@ describe("session-manager sleeping-agent sync batching", () => {
     expect(summaryLines[0]).toContain("max=2");
 
     // Per-agent lines no longer land at INF.
-    expect(infoLines.some((l) => l.includes("Updated grants for sleeping"))).toBe(
-      false,
-    );
+    expect(
+      infoLines.some((l) => l.includes("Updated grants for sleeping")),
+    ).toBe(false);
     expect(debugSpy).toHaveBeenCalledTimes(3);
     expect(warnSpy).not.toHaveBeenCalled();
   });

@@ -1,6 +1,10 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
-import { TaskListResponseSchema, TaskSchema, type Task } from "@workbench/shared";
+import {
+  TaskListResponseSchema,
+  TaskSchema,
+  type Task,
+} from "@workbench/shared";
 import { api, ApiError } from "../lib/api";
 
 export type { Task };
@@ -54,7 +58,10 @@ export function useTask(id: string | null) {
       if (id === null) {
         throw new Error("No task selected");
       }
-      const raw = await api<unknown>("GET", `/me/tasks/${encodeURIComponent(id)}`);
+      const raw = await api<unknown>(
+        "GET",
+        `/me/tasks/${encodeURIComponent(id)}`,
+      );
       const parsed = TaskSchema(raw);
       if (parsed instanceof type.errors) {
         throw new Error(`Unexpected task response: ${parsed.summary}`);

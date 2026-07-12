@@ -134,7 +134,9 @@ export function useUpdateBriefSource() {
 }
 
 type UpdateInboxSourceVars = { key: string; enabled: boolean };
-type UpdateInboxSourceContext = { previous: AvailableInboxSource[] | undefined };
+type UpdateInboxSourceContext = {
+  previous: AvailableInboxSource[] | undefined;
+};
 
 /** Toggles one inbox source's enablement, keyed by its preference key (see
  * `inboxSourcePreferenceKey`), optimistically against the inbox-sources
@@ -154,9 +156,8 @@ export function useUpdateInboxSource() {
     },
     onMutate: async ({ key, enabled }) => {
       await queryClient.cancelQueries({ queryKey: INBOX_SOURCES_KEY });
-      const previous = queryClient.getQueryData<AvailableInboxSource[]>(
-        INBOX_SOURCES_KEY,
-      );
+      const previous =
+        queryClient.getQueryData<AvailableInboxSource[]>(INBOX_SOURCES_KEY);
       if (previous) {
         queryClient.setQueryData<AvailableInboxSource[]>(
           INBOX_SOURCES_KEY,

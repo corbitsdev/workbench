@@ -37,9 +37,7 @@ function countInferTurns(action: ReactorAction): number {
   return action.type === "infer" ? 1 : 0;
 }
 
-function toArray(
-  actions: ReactorAction | ReactorAction[],
-): ReactorAction[] {
+function toArray(actions: ReactorAction | ReactorAction[]): ReactorAction[] {
   return Array.isArray(actions) ? actions : [actions];
 }
 
@@ -72,7 +70,8 @@ function steerToConclude(
       ...action.options,
       tools: [],
       systemPrompt:
-        (action.options?.systemPrompt ?? "") + buildSteerInstruction(stopMarker),
+        (action.options?.systemPrompt ?? "") +
+        buildSteerInstruction(stopMarker),
     },
   };
 }
@@ -128,7 +127,8 @@ export function createBudgetDirector(
   toolDefinitions: ToolDefinition[],
   opts: BudgetDirectorOptions,
 ): ReactorDirector {
-  const base = opts.inner ?? createDefaultDirector(systemPrompt, toolDefinitions);
+  const base =
+    opts.inner ?? createDefaultDirector(systemPrompt, toolDefinitions);
   const stopMarker = opts.stopMarker ?? GENERIC_BUDGET_STOP_MARKER;
   const hardTurnCeiling = opts.maxInferenceTurns + BUDGET_INFERENCE_TURN_GRACE;
   let toolCallTotal = 0;

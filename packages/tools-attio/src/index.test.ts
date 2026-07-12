@@ -1293,7 +1293,10 @@ describe("attio_recent_activity handler", () => {
   it("forwards createdAfter as a companies filter and returns a uniquely-keyed compact snapshot", async () => {
     const calls: { url: string; body: unknown }[] = [];
     const fetcher: AttioFetch = mock(async (url: string, init: RequestInit) => {
-      calls.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
+      calls.push({
+        url,
+        body: init.body ? JSON.parse(String(init.body)) : undefined,
+      });
       if (url.includes("/records/query")) {
         return new Response(
           JSON.stringify({

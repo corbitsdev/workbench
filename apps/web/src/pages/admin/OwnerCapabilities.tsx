@@ -84,9 +84,7 @@ export function OwnerCapabilities() {
                     className="flex items-center justify-between gap-4 p-3"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-text">
-                        {f.label}
-                      </p>
+                      <p className="text-sm font-medium text-text">{f.label}</p>
                       <p className="mt-0.5 text-xs text-text-2">
                         {f.description}
                       </p>

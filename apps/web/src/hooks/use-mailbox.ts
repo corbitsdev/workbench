@@ -34,7 +34,9 @@ export const MAILBOX_PAGE_LIMIT = 50;
 
 type MailboxPage = typeof MailboxListResponse.infer;
 
-async function fetchMailboxPage(cursor: string | undefined): Promise<MailboxPage> {
+async function fetchMailboxPage(
+  cursor: string | undefined,
+): Promise<MailboxPage> {
   const params = new URLSearchParams({ limit: String(MAILBOX_PAGE_LIMIT) });
   if (cursor !== undefined) params.set("cursor", cursor);
   const raw = await api<unknown>("GET", `/me/inbox?${params.toString()}`);
@@ -112,9 +114,8 @@ export function useMarkMailboxRead() {
     },
     onMutate: async (id: string) => {
       await queryClient.cancelQueries({ queryKey: MAILBOX_QUERY_KEY });
-      const previous = queryClient.getQueryData<InfiniteData<MailboxPage>>(
-        MAILBOX_QUERY_KEY,
-      );
+      const previous =
+        queryClient.getQueryData<InfiniteData<MailboxPage>>(MAILBOX_QUERY_KEY);
       if (previous) {
         queryClient.setQueryData<InfiniteData<MailboxPage>>(MAILBOX_QUERY_KEY, {
           ...previous,

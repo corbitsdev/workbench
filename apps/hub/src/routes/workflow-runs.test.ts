@@ -686,14 +686,11 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     );
     const fire = () =>
       app.request(
-        new Request(
-          "http://local/workflow-runs/deck/start?tenantId=tenant-1",
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          },
-        ),
+        new Request("http://local/workflow-runs/deck/start?tenantId=tenant-1", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }),
       );
 
     for (let i = 0; i < 60; i++) {

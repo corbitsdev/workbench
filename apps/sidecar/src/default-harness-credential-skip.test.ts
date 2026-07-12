@@ -169,9 +169,9 @@ describe("default harness: missing-credential skip is quiet", () => {
 
     await buildAgentEnv();
     const warnMessages = warnSpy.mock.calls.map((c) => c[0] as string);
-    expect(
-      warnMessages.some((m) => m.includes("failed to construct")),
-    ).toBe(false);
+    expect(warnMessages.some((m) => m.includes("failed to construct"))).toBe(
+      false,
+    );
     const skipCall = infoSpy.mock.calls.find((c) =>
       (c[0] as string).includes("no credential configured"),
     );
@@ -201,6 +201,8 @@ describe("default harness: missing-credential skip is quiet", () => {
       true,
     );
     const infoMessages = infoSpy.mock.calls.map((c) => c[0] as string);
-    expect(infoMessages.some((m) => m.includes("no credential configured"))).toBe(false);
+    expect(
+      infoMessages.some((m) => m.includes("no credential configured")),
+    ).toBe(false);
   });
 });
