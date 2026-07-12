@@ -59,6 +59,18 @@ export function createMyTools(config: {
 
 Tools never read `process.env`; credentials/baseURL come from the caller.
 
+**Tools never read their store directory at runtime either.** The sidecar's
+`loadToolPackages` memoizes `loadManifest` results per manifest hash across
+agent instance launches (`apps/sidecar/src/agent-tools.ts`); a factory
+closure that resolves paths relative to its own module location
+(`__dirname`, `import.meta.url`/`import.meta.dir`) and reads the filesystem
+at call time can outlive the per-instance store directory it was imported
+from, silently reading a different instance's files or a directory that no
+longer exists. Read any file the tool needs from paths passed in via the
+factory's `env`/args, not from the module's own location. This is enforced
+by a static scan over every `packages/tools-*/src` file in
+`packages/tools-interchange-contract/src/no-runtime-store-reads.test.ts`.
+
 ### 2. Add the `interchange.tools` entry
 
 In `package.json` add a `version` (required — the registry rejects versionless
