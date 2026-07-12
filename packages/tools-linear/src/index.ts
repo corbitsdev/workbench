@@ -254,6 +254,17 @@ async function listIssues(
   const teamId = optionalString(args.teamId);
   const filter = buildIssueFilter(args);
 
+  // Brief-shaped calls (enabledSources present) get a source-unique key so the
+  // heartbeat's shallow merge can never collide with another source's output;
+  // the raw GraphQL shape is preserved for every other caller.
+  const briefShaped = enabledSources !== undefined;
+  const shapeResult = (issues: unknown): unknown => {
+    if (!briefShaped) return issues;
+    const nodes =
+      isRecord(issues) && Array.isArray(issues.nodes) ? issues.nodes : [];
+    return { issues: nodes };
+  };
+
   if (teamId !== null) {
     const data = await fetchLinearGraphQL(
       config,
@@ -264,7 +275,7 @@ async function listIssues(
     if (!isRecord(data.team)) {
       throw new Error(`Linear team not found: ${teamId}`);
     }
-    return data.team.issues;
+    return shapeResult(data.team.issues);
   }
 
   const data = await fetchLinearGraphQL(
@@ -273,7 +284,7 @@ async function listIssues(
     { first, ...(filter !== null ? { filter } : {}) },
     signal,
   );
-  return data.issues;
+  return shapeResult(data.issues);
 }
 
 async function getIssue(

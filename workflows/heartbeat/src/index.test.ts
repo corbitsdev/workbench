@@ -225,7 +225,7 @@ describe("heartbeat native workflow", () => {
       "heartbeat-intake-granola": {
         notes: [{ id: "note_1", title: "Acme call", summary: "Discovery" }],
       },
-      "heartbeat-intake-linear": { nodes: [] },
+      "heartbeat-intake-linear": { issues: [] },
       "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
       "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
@@ -260,7 +260,7 @@ describe("heartbeat native workflow", () => {
     const briefReply = "# Morning brief\n\nAll clear today.";
     const { invoker, ran } = makeRecordingInvoker({
       "heartbeat-intake-granola": { notes: [] },
-      "heartbeat-intake-linear": { nodes: [] },
+      "heartbeat-intake-linear": { issues: [] },
       "heartbeat-intake-attio": { attioActivity: { newCompanies: [], openTasks: [] } },
       "heartbeat-intake-vercel": { deployments: [] },
       "heartbeat-brief": { reply: briefReply },
