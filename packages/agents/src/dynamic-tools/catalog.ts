@@ -32,6 +32,12 @@ export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
   // teammate's inbox; gated behind human approval (APPROVAL_GATED_TOOL_NAMES)
   // and excluded from the mailbox-triage persona (isMailboxReadOnlyTool).
   "mail_send",
+  // Hub-backed native task tool (apps/hub/src/tools/task-tools.ts), not a
+  // pinned package. Unlike every other write here, this one IS admitted into
+  // the mailbox-triage persona (see `READ_ONLY_EXTRA_TOOLS` in
+  // packages/myra/src/personas/mailbox.ts) — leaving a durable, unsent task
+  // behind is triage's own prepare-only output, not an irreversible action.
+  "task_create",
 ];
 
 /**

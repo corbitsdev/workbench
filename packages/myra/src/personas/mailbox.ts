@@ -23,6 +23,14 @@ const READ_ONLY_NAME_PATTERN =
 
 // Read-only grounding tools whose names carry no read verb. Kept deliberately
 // short: a tool earns a place here only after a manual read-only audit.
+//
+// `task_create` is the sole audited EXCEPTION to "read-only": it is a write,
+// but the one write triage's whole job is to produce — leaving a durable,
+// unsent `waiting`-status task behind is the prepare-only output itself, not
+// an irreversible action taken on the person's behalf (task_update/task_list
+// and every other write stay excluded). See `resolveTriageTaskDefaultStatus`
+// in apps/hub/src/tools/task-tools.ts for how a triage-created task is forced
+// into `waiting` regardless of the member's autonomy setting.
 const READ_ONLY_EXTRA_TOOLS = new Set([
   "parse_file",
   "firecrawl_scrape",
@@ -32,6 +40,7 @@ const READ_ONLY_EXTRA_TOOLS = new Set([
   "scrapecreators_instagram",
   "scrapecreators_threads",
   "scrapecreators_pinterest",
+  "task_create",
 ]);
 
 /**
@@ -49,7 +58,10 @@ export function isMailboxReadOnlyTool(toolName: string): boolean {
 
 // The platform core Myra always advertises (CL-3190), minus its write members
 // (memory_save, artifact_create, artifact_write, workflow_start) — catalog
-// discovery plus the always-visible read primitives.
+// discovery plus the always-visible read primitives. `task_create` is added
+// deliberately despite being a write — see the comment on
+// `READ_ONLY_EXTRA_TOOLS` above; it is the sole write this loadout ever
+// admits, and `isMailboxReadOnlyTool` is still what gates it in.
 const PLATFORM_CORE_BARE_TOOLS = new Set([
   "search_tools",
   "load_tools",
@@ -61,6 +73,7 @@ const PLATFORM_CORE_BARE_TOOLS = new Set([
   "load_skill",
   "list_skill_drafts",
   "load_skill_draft",
+  "task_create",
 ]);
 
 /**
@@ -101,7 +114,9 @@ const MINIMAL_LOADOUT_BARE_TOOLS = new Set([
  */
 function isMailboxMinimalTool(toolName: string): boolean {
   const bare = toolName.slice(toolName.lastIndexOf(":") + 1);
-  return isMailboxReadOnlyTool(toolName) && MINIMAL_LOADOUT_BARE_TOOLS.has(bare);
+  return (
+    isMailboxReadOnlyTool(toolName) && MINIMAL_LOADOUT_BARE_TOOLS.has(bare)
+  );
 }
 
 /**
@@ -109,9 +124,8 @@ function isMailboxMinimalTool(toolName: string): boolean {
  * allow predicate, so the mailbox persona can never advertise a tool Myra
  * does not otherwise carry, and cannot exceed the curated minimal set.
  */
-export const MAILBOX_PERSONA_TOOLS: string[] = PERSONAL_AGENT_BASE_TOOLS.filter(
-  isMailboxMinimalTool,
-);
+export const MAILBOX_PERSONA_TOOLS: string[] =
+  PERSONAL_AGENT_BASE_TOOLS.filter(isMailboxMinimalTool);
 
 const PREPARE_ONLY_RULES = `You are prepare-only. Do not send mail, message anyone, create or change any record, start a workflow, or take any other irreversible action. If the right next step is one of those, name it in your plan and leave it for the person to approve — never do it yourself in this pass.`;
 
@@ -141,9 +155,23 @@ export function isTriageSessionPrompt(systemPrompt: string): boolean {
   return systemPrompt.includes(TRIAGE_SESSION_MARKER_FRAGMENT);
 }
 
+/**
+ * The `(4)` task-creation instruction, present only when the member's
+ * `tasksTriageCreate` toggle is on (default true — see
+ * `packages/workbench-shared/src/preferences-registry.ts`). When the toggle
+ * is off the tool is also absent from the mounted loadout
+ * (`resolveMailboxLoadout`), so this doubles as the prompt-side half of that
+ * gate rather than a second, driftable source of truth.
+ */
+function tasksSectionFor(tasksEnabled: boolean): string {
+  if (!tasksEnabled) return "";
+  return `(4) When the message is actionable — it needs a reply, a follow-up, or a hand-off — call \`task_create\` once with a short title and a \`sourceRef\` pointing back to this message. Skip it for messages that need no action.`;
+}
+
 export function buildMailboxTriagePrompt(
   name: string,
   autonomy: AgentAutonomy = "prepare_only",
+  tasksEnabled = true,
 ): string {
   const actionRules =
     autonomy === "execute_with_gates"
@@ -159,7 +187,9 @@ export function buildMailboxTriagePrompt(
       tag: "task",
       content: `Do three things and stop. (1) Classify the message: what it is, who it is from, and how it relates to existing people, deals, or work. (2) Assess priority and what it needs — a reply, an internal action, a hand-off, or nothing. (3) Prepare a draft response the person can review and send themselves.
 
-${actionRules}`,
+${actionRules}
+
+${tasksSectionFor(tasksEnabled)}`,
     },
     {
       tag: "knowledge",
@@ -191,19 +221,43 @@ export type MailboxLoadout = {
 
 /**
  * The prompt + tool loadout a triage session mounts for a member's autonomy
- * setting. `prepare_only` is read-only (the audited allow-list);
- * `execute_with_gates` mounts the full base toolset with the gated-action
- * prompt — writes still flow through the approval rail, never around it.
+ * setting. `prepare_only` is read-only (the audited allow-list) plus the sole
+ * `task_create` exception; `execute_with_gates` mounts the full base toolset
+ * with the gated-action prompt — writes still flow through the approval
+ * rail, never around it. `tasksEnabled` is the member's `tasksTriageCreate`
+ * preference (default true); false drops `task_create` from the mounted
+ * tools in both branches and from the prompt's task-creation instruction, so
+ * a member who opts out gets neither the capability nor the instruction to
+ * use it.
  */
-export function resolveMailboxLoadout(autonomy: AgentAutonomy): MailboxLoadout {
+export function resolveMailboxLoadout(
+  autonomy: AgentAutonomy,
+  tasksEnabled = true,
+): MailboxLoadout {
   if (autonomy === "execute_with_gates") {
+    const toolNames = tasksEnabled
+      ? PERSONAL_AGENT_BASE_TOOLS
+      : PERSONAL_AGENT_BASE_TOOLS.filter(
+          (name) => !name.endsWith("task_create"),
+        );
     return {
-      systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME, autonomy),
-      toolNames: PERSONAL_AGENT_BASE_TOOLS,
+      systemPrompt: buildMailboxTriagePrompt(
+        PERSONAL_AGENT_NAME,
+        autonomy,
+        tasksEnabled,
+      ),
+      toolNames,
     };
   }
+  const toolNames = tasksEnabled
+    ? MAILBOX_PERSONA_TOOLS
+    : MAILBOX_PERSONA_TOOLS.filter((name) => !name.endsWith("task_create"));
   return {
-    systemPrompt: buildMailboxTriagePrompt(PERSONAL_AGENT_NAME),
-    toolNames: MAILBOX_PERSONA_TOOLS,
+    systemPrompt: buildMailboxTriagePrompt(
+      PERSONAL_AGENT_NAME,
+      "prepare_only",
+      tasksEnabled,
+    ),
+    toolNames,
   };
 }

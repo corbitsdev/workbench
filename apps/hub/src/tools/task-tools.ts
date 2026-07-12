@@ -11,6 +11,7 @@ import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import {
   createOwnerTask,
   listOwnerTasks,
+  resolveTriageTaskDefaultStatus,
   updateOwnerTask,
 } from "../lib/task-store";
 import type { ContextToolEntry } from "../lib/tool-registry";
@@ -132,12 +133,17 @@ function createTaskCreateTool(context: TaskToolContext): AgentTool {
         throw new Error(`task_create: ${parsed.summary}`);
       }
       const owner = await requireOwner(context);
+      const defaultStatus = await resolveTriageTaskDefaultStatus(context.db, {
+        tenantId: context.tenantId,
+        principalId: context.principalId,
+      });
       const created = await createOwnerTask(context.db, {
         tenantId: context.tenantId,
         ownerPrincipalId: owner,
         createdByPrincipalId: context.principalId,
         title: parsed.title,
         source: "agent",
+        ...(defaultStatus !== undefined ? { status: defaultStatus } : {}),
         ...(parsed.body !== undefined ? { body: parsed.body } : {}),
         ...(parsed.due !== undefined ? { due: parsed.due } : {}),
         ...(parsed.sourceRef !== undefined
