@@ -275,6 +275,57 @@ describe("createMailboxTriage", () => {
     expect(launchMock).not.toHaveBeenCalled();
   });
 
+  it.each([
+    "mailer-daemon",
+    "postmaster",
+    "no-reply",
+    "noreply",
+    "do-not-reply",
+    "donotreply",
+    "bounce",
+    "bounces",
+    "MAILER-DAEMON",
+    "bounces+abc123",
+    "No-Reply+campaign42",
+  ])("skips bounce/postmaster sender %s", async (localPart) => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue({
+      ...ITEM,
+      senderAddress: `${localPart}@outside.example`,
+    });
+    await triage.waitForDrain();
+
+    expect(launchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips mail with the triage handoff subject prefix", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue({ ...ITEM, subject: "Myra triaged: Partnership intro" });
+    await triage.waitForDrain();
+
+    expect(launchMock).not.toHaveBeenCalled();
+  });
+
+  it("skips mail from another member's agent instance in the same tenant", async () => {
+    const { db } = makeDb({
+      sender: { id: "ins_other-member-myra", principalId: "pri-bob" },
+      senderMappedToMember: true,
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await triage.waitForDrain();
+
+    expect(launchMock).not.toHaveBeenCalled();
+  });
+
   it("triages external mail end to end and writes the handoff", async () => {
     const { db, txInserts } = makeDb({
       sender: { id: "ins_dep-ext", principalId: "pri-someone-else" },
