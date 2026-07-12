@@ -18,6 +18,7 @@ import { memberAgentInstance } from "../db/schema";
 import { getConfig } from "../config";
 import { isFeatureEnabledForTenantCached } from "../lib/feature-grants";
 import { decodeMailFrame } from "../lib/mailbox-read";
+import { slidingWindowLimiter } from "../lib/sliding-window";
 import { writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 import { readMemberPreferences } from "../lib/member-preferences";
@@ -70,6 +71,18 @@ const DEFAULT_TURN_TIMEOUT_MS = 180_000;
  */
 const MAX_QUEUE = 50;
 
+/**
+ * Per-tenant ceiling on triage session spawns per rolling hour. The queue and
+ * single-flight processing bound how much can be in flight at once, but not
+ * how many sessions a sustained mail loop spawns over a day — 30/hour is one
+ * spawn per 2 minutes sustained, generous for real inbound traffic but far
+ * below what an unattended loop would otherwise produce. Over budget, the
+ * item is dropped with the same server-side-only visibility posture as queue
+ * overflow (no member-facing error).
+ */
+const TRIAGE_MAX_SESSIONS_PER_HOUR = 30;
+const TRIAGE_WINDOW_MS = 60 * 60 * 1000;
+
 export type MailboxTriageDeps = {
   db: HubDb;
   sessionService: SessionService;
@@ -79,6 +92,8 @@ export type MailboxTriageDeps = {
   /** Hard cap on how long one triage turn may run before teardown. */
   turnTimeoutMs?: number;
   mailboxEventBus?: MailboxEventBus;
+  /** Clock injection point for the per-tenant spawn-budget window in tests. */
+  now?: () => number;
 };
 
 export type MailboxTriage = {
@@ -159,6 +174,11 @@ function buildTriageMessage(item: UserMailboxRowEvent): {
  */
 export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
   const turnTimeoutMs = deps.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+  const sessionBudget = slidingWindowLimiter(
+    TRIAGE_MAX_SESSIONS_PER_HOUR,
+    TRIAGE_WINDOW_MS,
+    deps.now,
+  );
   const queue: UserMailboxRowEvent[] = [];
   const pending = new Map<string, (turn: TurnFinalized) => void>();
   const drainWaiters: Array<() => void> = [];
@@ -395,6 +415,15 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
             next = queue.shift();
             continue;
           }
+        }
+        if (!sessionBudget.tryAcquire(next.tenantId)) {
+          log.error("Mailbox triage session budget exceeded; dropped item", {
+            tenantId: next.tenantId,
+            rowId: next.rowId,
+            maxSessionsPerHour: TRIAGE_MAX_SESSIONS_PER_HOUR,
+          });
+          next = queue.shift();
+          continue;
         }
         try {
           await runOne(next);

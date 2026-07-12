@@ -156,6 +156,7 @@ function makeTriage(
   db: HubDb,
   session: ReturnType<typeof makeSessionService>,
   turnTimeoutMs = 2_000,
+  now?: () => number,
 ) {
   return createMailboxTriage({
     db,
@@ -164,6 +165,7 @@ function makeTriage(
     eventCollectors: DUMMY_COLLECTORS,
     cryptoProvider: DUMMY_CRYPTO,
     turnTimeoutMs,
+    ...(now ? { now } : {}),
   });
 }
 
@@ -478,7 +480,14 @@ describe("createMailboxTriage", () => {
       transaction: mock(async () => undefined),
     } as unknown as HubDb;
     const session = makeSessionService();
-    const triage = makeTriage(db, session);
+    // Advance the clock well past the spawn-budget window on every tick so
+    // this test — which exercises queue capping, not the spawn budget —
+    // never trips the (unrelated) per-tenant session ceiling.
+    let clock = 0;
+    const triage = makeTriage(db, session, 2_000, () => {
+      clock += 60 * 60 * 1000 + 1;
+      return clock;
+    });
 
     // The head-of-line item blocks inside isEligible, so it stays "in
     // flight" (already shifted out of the internal queue array) while the
@@ -500,6 +509,97 @@ describe("createMailboxTriage", () => {
     // MAX_QUEUE queued: the oldest OVERFLOW queued items are dropped, so
     // only 1 + MAX_QUEUE ever reach the DB.
     expect(findFirst).toHaveBeenCalledTimes(1 + MAX_QUEUE);
+  });
+});
+
+describe("createMailboxTriage session spawn budget", () => {
+  it("spawns while under the per-tenant hourly budget", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session, 2_000, () => 1_000);
+
+    triage.enqueue({ ...ITEM, rowId: "row-1" });
+    await triage.waitForDrain();
+
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops and logs once the per-tenant budget is exhausted, without spawning", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = createMailboxTriage({
+      db,
+      sessionService: session.service,
+      grantStore: DUMMY_GRANTS,
+      eventCollectors: DUMMY_COLLECTORS,
+      cryptoProvider: DUMMY_CRYPTO,
+      turnTimeoutMs: 5,
+      now: () => 1_000,
+    });
+
+    for (let i = 0; i < 31; i++) {
+      triage.enqueue({ ...ITEM, rowId: `row-${i}` });
+      // eslint-disable-next-line no-await-in-loop
+      await triage.waitForDrain();
+    }
+
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(30);
+  });
+
+  it("slides the window: budget frees up as old spawns expire", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    let clock = 1_000;
+    const triage = createMailboxTriage({
+      db,
+      sessionService: session.service,
+      grantStore: DUMMY_GRANTS,
+      eventCollectors: DUMMY_COLLECTORS,
+      cryptoProvider: DUMMY_CRYPTO,
+      turnTimeoutMs: 5,
+      now: () => clock,
+    });
+
+    for (let i = 0; i < 30; i++) {
+      triage.enqueue({ ...ITEM, rowId: `row-${i}` });
+      // eslint-disable-next-line no-await-in-loop
+      await triage.waitForDrain();
+    }
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(30);
+
+    triage.enqueue({ ...ITEM, rowId: "row-blocked" });
+    await triage.waitForDrain();
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(30);
+
+    clock += 60 * 60 * 1000 + 1;
+    triage.enqueue({ ...ITEM, rowId: "row-after-window" });
+    await triage.waitForDrain();
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(31);
+  });
+
+  it("isolates the budget per tenant: one tenant's cap does not block another's", async () => {
+    const { db } = makeDb({ sender: undefined });
+    const session = makeSessionService();
+    const triage = createMailboxTriage({
+      db,
+      sessionService: session.service,
+      grantStore: DUMMY_GRANTS,
+      eventCollectors: DUMMY_COLLECTORS,
+      cryptoProvider: DUMMY_CRYPTO,
+      turnTimeoutMs: 5,
+      now: () => 1_000,
+    });
+
+    for (let i = 0; i < 31; i++) {
+      triage.enqueue({ ...ITEM, tenantId: "ten-a", rowId: `ten-a-${i}` });
+      // eslint-disable-next-line no-await-in-loop
+      await triage.waitForDrain();
+    }
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(30);
+
+    triage.enqueue({ ...ITEM, tenantId: "ten-b", rowId: "ten-b-1" });
+    await triage.waitForDrain();
+    expect(session.sendUserMessage).toHaveBeenCalledTimes(31);
   });
 });
 
