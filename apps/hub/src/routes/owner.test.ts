@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Hono } from "hono";
 import type { GrantStore } from "@intx/authz";
 
@@ -61,6 +61,7 @@ function buildApp(db: unknown = {}) {
       grantStore: grantStoreFor(),
       rootTenantId: "ten_root",
       showDemos: ownerRouterShowDemos,
+      featureEnvOverrides: ownerRouterFeatureEnvOverrides,
     }),
   );
   return app;
@@ -69,6 +70,13 @@ function buildApp(db: unknown = {}) {
 // Toggled per-test to exercise the SHOW_DEMOS env override surfaced as
 // `forcedByEnv`. Reset to false by default.
 let ownerRouterShowDemos = false;
+
+// Toggled per-test to exercise a feature's emergency env override surfaced as
+// `forcedByEnv`. Reset to all-false by default.
+let ownerRouterFeatureEnvOverrides: Record<
+  "scheduler" | "triage" | "tasks-reconciler",
+  boolean
+> = { scheduler: false, triage: false, "tasks-reconciler": false };
 
 describe("owner grant gate", () => {
   it("allows an owner (holds */* wildcard grant)", async () => {
@@ -483,7 +491,9 @@ describe("owner demos routes", () => {
     const { db } = demosDb({ allowGrant: false });
     const res = await buildApp(db).request("/owner/demos");
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: false,
     });
@@ -494,7 +504,9 @@ describe("owner demos routes", () => {
     ownerRouterShowDemos = false;
     const { db } = demosDb({ allowGrant: true });
     const res = await buildApp(db).request("/owner/demos");
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: true,
       forcedByEnv: false,
     });
@@ -505,7 +517,9 @@ describe("owner demos routes", () => {
     ownerRouterShowDemos = true;
     const { db } = demosDb({ allowGrant: false });
     const res = await buildApp(db).request("/owner/demos");
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: true,
     });
@@ -522,7 +536,9 @@ describe("owner demos routes", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: true,
       forcedByEnv: false,
     });
@@ -544,7 +560,9 @@ describe("owner demos routes", () => {
       body: JSON.stringify({ enabled: false }),
     });
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: false,
     });
@@ -555,6 +573,189 @@ describe("owner demos routes", () => {
     callerPrincipalId = "prn_owner";
     const { db } = demosDb();
     const res = await buildApp(db).request("/owner/demos", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: "yes" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+// Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace the
+// env-only kill switches: same deny-by-default grant CRUD shape as demos, one
+// row per feature name.
+describe("owner features routes", () => {
+  function featuresDb(opts: { grantedFeatures?: string[] } = {}) {
+    const memberRole = { id: "rol_member" };
+    const granted = new Set(opts.grantedFeatures ?? []);
+    const grantRows = [...granted].map((name) => ({
+      id: `grt_${name}`,
+      resource: `feature:${name}`,
+      action: "enable",
+      effect: "allow" as const,
+      origin: "system",
+      conditions: null,
+      expiresAt: null,
+      roleId: "rol_member",
+      principalId: null,
+    }));
+    const insertedGrants: Record<string, unknown>[] = [];
+    let deleteCalls = 0;
+
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: async () => [] }) }),
+      }),
+      query: {
+        grant: {
+          findFirst: async () => grantRows[0],
+        },
+      },
+      delete: () => ({
+        where: () => {
+          deleteCalls += 1;
+          return Promise.resolve();
+        },
+      }),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          insertedGrants.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+
+    const db = {
+      query: {
+        role: {
+          findMany: async () => [memberRole],
+          findFirst: async () => memberRole,
+        },
+        grant: {
+          findMany: async () => grantRows,
+        },
+      },
+      transaction: async (fn: (t: typeof tx) => Promise<void>) => fn(tx),
+      insert: () => ({ values: () => Promise.resolve() }),
+    };
+    return { db, insertedGrants, deleteCalls: () => deleteCalls };
+  }
+
+  beforeEach(() => {
+    ownerRouterFeatureEnvOverrides = {
+      scheduler: false,
+      triage: false,
+      "tasks-reconciler": false,
+    };
+  });
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET lists the full catalog, disabled by default", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      features: { name: string; enabled: boolean; forcedByEnv: boolean }[];
+    };
+    expect(body.features.map((f) => f.name).sort()).toEqual([
+      "scheduler",
+      "tasks-reconciler",
+      "triage",
+    ]);
+    expect(body.features.every((f) => !f.enabled)).toBe(true);
+    expect(body.features.every((f) => !f.forcedByEnv)).toBe(true);
+  });
+
+  it("GET reports a feature enabled when its member-role grant exists", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb({ grantedFeatures: ["scheduler"] });
+    const res = await buildApp(db).request("/owner/features");
+    const body = (await res.json()) as {
+      features: { name: string; enabled: boolean }[];
+    };
+    const scheduler = body.features.find((f) => f.name === "scheduler");
+    const triage = body.features.find((f) => f.name === "triage");
+    expect(scheduler?.enabled).toBe(true);
+    expect(triage?.enabled).toBe(false);
+  });
+
+  it("GET reports forcedByEnv for a feature whose env override is on", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterFeatureEnvOverrides = {
+      scheduler: false,
+      triage: true,
+      "tasks-reconciler": false,
+    };
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    const body = (await res.json()) as {
+      features: { name: string; forcedByEnv: boolean }[];
+    };
+    const triage = body.features.find((f) => f.name === "triage");
+    expect(triage?.forcedByEnv).toBe(true);
+  });
+
+  it("PUT enable writes an allow grant for the named feature", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, insertedGrants } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/scheduler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { name: string; enabled: boolean }).toEqual({
+      name: "scheduler",
+      enabled: true,
+    });
+    expect(insertedGrants).toHaveLength(1);
+    expect(insertedGrants[0]).toMatchObject({
+      resource: "feature:scheduler",
+      action: "enable",
+      effect: "allow",
+    });
+  });
+
+  it("PUT disable removes the allow grant for the named feature", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, deleteCalls } = featuresDb({
+      grantedFeatures: ["tasks-reconciler"],
+    });
+    const res = await buildApp(db).request("/owner/features/tasks-reconciler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { name: string; enabled: boolean }).toEqual({
+      name: "tasks-reconciler",
+      enabled: false,
+    });
+    expect(deleteCalls()).toBe(1);
+  });
+
+  it("PUT rejects an unknown feature name with 404", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/not-a-feature", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("PUT rejects a non-boolean body with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/scheduler", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: "yes" }),

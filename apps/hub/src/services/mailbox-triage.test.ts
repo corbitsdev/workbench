@@ -8,6 +8,7 @@ import {
 const prepareOnlyLoadout = resolveMailboxLoadout("prepare_only");
 import type { MemberPreferences } from "@workbench/shared";
 import type { HubDb } from "../db";
+import { resetFeatureGrantCache } from "../lib/feature-grants";
 
 const configState = { triageEnabled: true };
 mock.module("../config", () => ({
@@ -80,6 +81,7 @@ type SenderRow = { id: string; principalId: string } | undefined;
 function makeDb(opts: {
   sender: SenderRow;
   senderMappedToMember?: boolean;
+  featureGranted?: boolean;
 }): { db: HubDb; txInserts: Record<string, unknown>[] } {
   const txInserts: Record<string, unknown>[] = [];
   const tx = {
@@ -102,6 +104,28 @@ function makeDb(opts: {
           id: "ten-1",
           domain: "tenant.example",
         })),
+      },
+      role: {
+        findMany: mock(async () => [{ id: "rol_member" }]),
+      },
+      grant: {
+        findMany: mock(async () =>
+          opts.featureGranted
+            ? [
+                {
+                  id: "grt_1",
+                  resource: "feature:triage",
+                  action: "enable",
+                  effect: "allow",
+                  origin: "role",
+                  conditions: null,
+                  expiresAt: null,
+                  roleId: "rol_member",
+                  principalId: null,
+                },
+              ]
+            : [],
+        ),
       },
     },
     transaction: mock(async (fn: (t: typeof tx) => Promise<void>) => fn(tx)),
@@ -161,6 +185,7 @@ function completedTurn(text: string): TurnFinalized {
 
 beforeEach(() => {
   configState.triageEnabled = true;
+  resetFeatureGrantCache();
   prefs = {};
   launchMock.mockClear();
   teardownMock.mockClear();
@@ -180,6 +205,36 @@ describe("createMailboxTriage", () => {
 
     expect(launchMock).not.toHaveBeenCalled();
     expect(session.sendUserMessage).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the env kill switch is off and the tenant has no feature grant", async () => {
+    configState.triageEnabled = false;
+    const { db } = makeDb({
+      sender: { id: "ins_x", principalId: "pri-b" },
+      featureGranted: false,
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await triage.waitForDrain();
+
+    expect(launchMock).not.toHaveBeenCalled();
+  });
+
+  it("runs triage when the env kill switch is off but the tenant's member role grants the feature", async () => {
+    configState.triageEnabled = false;
+    const { db } = makeDb({
+      sender: { id: "ins_x", principalId: "pri-b" },
+      featureGranted: true,
+    });
+    const session = makeSessionService();
+    const triage = makeTriage(db, session);
+
+    triage.enqueue(ITEM);
+    await triage.waitForDrain();
+
+    expect(launchMock).toHaveBeenCalled();
   });
 
   it("skips mail from the member's own workflow deployment", async () => {

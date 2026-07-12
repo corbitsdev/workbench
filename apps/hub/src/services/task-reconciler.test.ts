@@ -60,4 +60,32 @@ describe("createTaskReconcilerService", () => {
     await delay(20);
     expect(reconcileCalls).toBe(afterStop);
   });
+
+  it("uses isEnabled per tick when provided, overriding the static enabled flag", async () => {
+    reconcileCalls = 0;
+    const svc = createTaskReconcilerService({
+      enabled: false,
+      isEnabled: async () => true,
+      db,
+      intervalMs: 5,
+    });
+    svc.start();
+    await delay(30);
+    svc.stop();
+    expect(reconcileCalls).toBeGreaterThan(0);
+  });
+
+  it("does not run when isEnabled resolves false, even if the static flag is true", async () => {
+    reconcileCalls = 0;
+    const svc = createTaskReconcilerService({
+      enabled: true,
+      isEnabled: async () => false,
+      db,
+      intervalMs: 5,
+    });
+    svc.start();
+    await delay(30);
+    svc.stop();
+    expect(reconcileCalls).toBe(0);
+  });
 });

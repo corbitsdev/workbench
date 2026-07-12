@@ -208,4 +208,25 @@ describe("createScheduler", () => {
 
     expect(fires).toBe(0);
   });
+
+  it("uses isTenantEnabled per row when provided, overriding the static enabled flag", async () => {
+    const fired: string[] = [];
+    const store = makeStore([
+      row({ id: "sch-a", tenantId: "tenant-a", ownerMemberPrincipalId: "p-a" }),
+      row({ id: "sch-b", tenantId: "tenant-b", ownerMemberPrincipalId: "p-b" }),
+    ]);
+    const scheduler = createScheduler({
+      enabled: false,
+      isTenantEnabled: async (tenantId) => tenantId === "tenant-a",
+      ...store,
+      startWorkflowRun: async (a) => {
+        fired.push(a.tenantId);
+        return { deploymentId: `dep-${a.tenantId}`, accepted: true };
+      },
+    });
+
+    await scheduler.tick(AT_13);
+
+    expect(fired).toEqual(["tenant-a"]);
+  });
 });
