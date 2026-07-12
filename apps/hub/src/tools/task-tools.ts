@@ -169,7 +169,7 @@ function createTaskCreateTool(context: TaskToolContext): AgentTool {
         });
         if (existingCount >= MAX_TRIAGE_TASKS_PER_MAIL_ITEM) {
           throw new Error(
-            "task_create: a task for this message already exists — no more tasks can be created for this message",
+            "task_create: reached the limit of tasks for this message — no more can be created",
           );
         }
       }

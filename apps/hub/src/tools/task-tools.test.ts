@@ -116,7 +116,7 @@ describe("task_create", () => {
     storeCalls.length = 0;
     await expect(
       tool("task_create").handler({ title: "One too many" }, signal),
-    ).rejects.toThrow(/a task for this message already exists/i);
+    ).rejects.toThrow(/reached the limit of tasks for this message/i);
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
