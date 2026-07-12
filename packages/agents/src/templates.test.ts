@@ -78,9 +78,17 @@ describe("AGENT_TEMPLATES", () => {
     }
   });
 
-  it("no template has any mail tools", () => {
+  // CL-3407: Myra (chat and triage, which seed the same capabilities.tools —
+  // see the equality assertion above) carries mail_send so she can send a
+  // note to a teammate's mailbox. Every other template, and every other mail
+  // tool on Myra herself, stays out.
+  it("no template has any mail tool except Myra's mail_send", () => {
     for (const template of AGENT_TEMPLATES) {
-      expect(template.capabilities.tools).not.toContain("mail_send");
+      const expectsMailSend =
+        template.key === "myra" || template.key === "myra-triage";
+      expect(template.capabilities.tools.includes("mail_send")).toBe(
+        expectsMailSend,
+      );
       expect(template.capabilities.tools).not.toContain("mail_reply");
       expect(template.capabilities.tools).not.toContain("mail_search");
       expect(template.capabilities.tools).not.toContain("mail_read");

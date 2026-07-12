@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   APPROVAL_GATED_TOOL_NAMES,
+  NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
 } from "@workbench/agents";
 import { writeToolNamesFromEntries } from "@workbench/tool-credentials/factory";
@@ -24,7 +25,10 @@ function deriveGatedSet(): Set<string> {
     ...writeToolNamesFromEntries(VERCEL_HUB_TOOLS),
     ...writeToolNamesFromEntries(VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS),
   ]);
-  return approvalGatedWriteNames([...writeBareNames]);
+  return new Set([
+    ...approvalGatedWriteNames([...writeBareNames]),
+    ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
+  ]);
 }
 
 describe("APPROVAL_GATED_TOOL_NAMES drift guard", () => {
@@ -74,7 +78,17 @@ describe("APPROVAL_GATED_TOOL_NAMES drift guard", () => {
   test("every gated name is LLM-safe (no bare colon-form or raw name)", () => {
     for (const name of APPROVAL_GATED_TOOL_NAMES) {
       expect(name.includes(":")).toBe(false);
-      expect(name.includes("__")).toBe(true);
+      // Native local-runner tools (mail_send) pass through toLlmToolName
+      // unchanged — they carry no `<factoryId>:` prefix to begin with — so
+      // only the tool-package-derived names carry the `__` join.
+      if (!NATIVE_APPROVAL_GATED_TOOL_NAMES.has(name)) {
+        expect(name.includes("__")).toBe(true);
+      }
     }
+  });
+
+  test("gates mail_send as a hand-listed native write", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("mail_send")).toBe(true);
+    expect(NATIVE_APPROVAL_GATED_TOOL_NAMES.has("mail_send")).toBe(true);
   });
 });

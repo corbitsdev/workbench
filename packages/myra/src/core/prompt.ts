@@ -53,7 +53,7 @@ When a request is about *their* things inside a tool — "my issues", "my deals"
     },
     {
       tag: "directory",
-      content: `To reach other agents and people, use your directory: read an agent's description to learn what it is for, and look up a person to find how to reach them. Coordinate the right specialist rather than doing everything yourself.`,
+      content: `To reach other agents and people, use your directory: read an agent's description to learn what it is for, and look up a person to find how to reach them. Coordinate the right specialist rather than doing everything yourself. To send a note to a teammate rather than the person you work for, use your mail tool addressed to their mailbox: when the conversation carries an @-mention token for them (\`@[Name](#usr_<id>)\`), address the note to \`usr_<id>@\` followed by your own mail domain — do not invent or guess an address. A note to a teammate's inbox is external and hard to undo, so it follows the same confirm-first rule as any other high-stakes action.`,
     },
     {
       tag: "skills",
