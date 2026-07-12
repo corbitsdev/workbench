@@ -358,6 +358,54 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
   });
 });
 
+describe("0046 creates principal_mailbox", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0046_principal_mailbox.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "principal_mailbox"/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "principal_id",
+      "address",
+      "direction",
+      "raw",
+      "subject",
+      "from_address",
+      "created_at",
+      "read_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`, "i"));
+    }
+  });
+
+  it("indexes the per-principal list read path", () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "principal_mailbox_principal_created_idx"\s+ON "principal_mailbox" \("tenant_id", "principal_id", "created_at"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the mailbox is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
 describe("0050 adds message_key to principal_mailbox", () => {
   const sql = readFileSync(
     join(
