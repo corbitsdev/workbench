@@ -269,6 +269,42 @@ describe("createWorkflowRunStarter", () => {
     expect(sends).toBe(60);
   });
 
+  it("exempts scheduler-sourced starts from the budget so a large member fan-out is never dropped", async () => {
+    chainRef = ["t-root"];
+    let sends = 0;
+    const starter = createWorkflowRunStarter({
+      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      sessionService: {
+        sendUserMessage: async () => {
+          sends += 1;
+        },
+      } as unknown as SessionService,
+      ensureDeploymentRoutable: async () => ({ reestablished: false }),
+      deploymentDomain: DOMAIN,
+      cryptoProvider: {} as never,
+      now: () => 1_000,
+    });
+
+    for (let i = 0; i < 61; i++) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await starter.startRun({
+        kind: "heartbeat",
+        tenantId: "t-root",
+        input: {},
+        source: "scheduler",
+      });
+      expect(ok.ok).toBe(true);
+    }
+    expect(sends).toBe(61);
+
+    const nonScheduler = await starter.startRun({
+      kind: "heartbeat",
+      tenantId: "t-root",
+      input: {},
+    });
+    expect(nonScheduler.ok).toBe(true);
+  });
+
   it("slides the window: the budget frees up once old starts expire", async () => {
     chainRef = ["t-root"];
     let clock = 1_000;

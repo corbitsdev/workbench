@@ -1421,6 +1421,7 @@ const scheduler = createScheduler({
       tenantId: fire.tenantId,
       input: triggerPayload,
       creatorPrincipalId: fire.creatorPrincipalId,
+      source: "scheduler",
     });
     if (!result.ok) {
       throw new Error(`run-start ${result.reason}: ${result.message}`);

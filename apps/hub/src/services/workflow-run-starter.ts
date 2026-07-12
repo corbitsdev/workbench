@@ -39,6 +39,13 @@ export type StartRunInput = {
   // schedule's owning member principal so a scheduled run is attributed to its
   // owner, not to the shared deployment.
   creatorPrincipalId?: string;
+  // The trigger path that requested the run. The per-tenant start budget
+  // exists to stop amplification (webhook floods, runaway trigger loops);
+  // the daily scheduler is self-limiting — one fire per schedule row per UTC
+  // day — and its rows share one workbench tenant with a common brief hour,
+  // so budgeting it would silently drop the 61st member's brief for the day.
+  // Scheduler-sourced starts bypass the budget.
+  source?: "scheduler" | "webhook" | "manual";
 };
 
 export type StartRunResult =
@@ -73,8 +80,9 @@ export function createWorkflowRunStarter(deps: {
     tenantId,
     input,
     creatorPrincipalId,
+    source,
   }: StartRunInput): Promise<StartRunResult> {
-    if (!startBudget.tryAcquire(tenantId)) {
+    if (source !== "scheduler" && !startBudget.tryAcquire(tenantId)) {
       log.error("workflow run-start budget exceeded", {
         kind,
         tenantId,
