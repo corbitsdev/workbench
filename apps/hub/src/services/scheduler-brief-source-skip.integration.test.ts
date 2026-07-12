@@ -50,6 +50,9 @@ function fireAndCapturePayload(
         fire.kind,
         HEARTBEAT_KIND,
         enabledSources,
+        fire.nowMs,
+        fire.lastFiredDayUtc,
+        fire.hourUtc,
       );
       return { deploymentId: "dep-1", accepted: true };
     },
@@ -67,6 +70,9 @@ describe("scheduler -> payload enrichment -> granola tool skip seam", () => {
     expect(payload).toBeDefined();
     const enabledSources = payload?.enabledSources as string[];
     expect(enabledSources).toEqual([]);
+    expect(payload?.createdAfter).toBe(
+      new Date(AT_9 - 24 * 60 * 60 * 1000).toISOString(),
+    );
 
     let fetchCalls = 0;
     const runner = createToolRunner(
@@ -107,13 +113,19 @@ describe("scheduler -> payload enrichment -> granola tool skip seam", () => {
     expect(payload).toBeDefined();
     const enabledSources = payload?.enabledSources as string[];
     expect(enabledSources).toEqual(["granola"]);
+    const createdAfter = payload?.createdAfter as string;
+    expect(createdAfter).toBe(
+      new Date(AT_9 - 24 * 60 * 60 * 1000).toISOString(),
+    );
 
     let fetchCalls = 0;
+    let requestedUrl: string | undefined;
     const runner = createToolRunner(
       createGranolaTools({
         apiKey: "test-key",
-        fetcher: async () => {
+        fetcher: async (url) => {
           fetchCalls += 1;
+          requestedUrl = url;
           return new Response(JSON.stringify({ notes: [], hasMore: false }), {
             status: 200,
           });
@@ -125,12 +137,15 @@ describe("scheduler -> payload enrichment -> granola tool skip seam", () => {
       {
         id: "call_1",
         name: "granola_list_notes",
-        arguments: { enabledSources },
+        arguments: { enabledSources, createdAfter },
       },
       new AbortController().signal,
     );
 
     expect(fetchCalls).toBe(1);
+    expect(requestedUrl).toContain(
+      `created_after=${encodeURIComponent(createdAfter)}`,
+    );
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(String(result.content))).toEqual({
       notes: [],

@@ -62,6 +62,9 @@ describe("createScheduler", () => {
       tenantId: string;
       creatorPrincipalId: string;
       triggerPayload: Record<string, unknown>;
+      lastFiredDayUtc: number | null;
+      hourUtc: number;
+      nowMs: number;
     }[] = [];
     const store = makeStore([
       row({
@@ -93,12 +96,18 @@ describe("createScheduler", () => {
       tenantId: "tenant-root",
       creatorPrincipalId: "principal-a",
       triggerPayload: { reason: "scheduled-heartbeat", userRefId: "user-a" },
+      lastFiredDayUtc: null,
+      hourUtc: 13,
+      nowMs: AT_13,
     });
     expect(calls).toContainEqual({
       kind: "heartbeat",
       tenantId: "tenant-root",
       creatorPrincipalId: "principal-b",
       triggerPayload: { reason: "scheduled-heartbeat", userRefId: "user-b" },
+      lastFiredDayUtc: null,
+      hourUtc: 13,
+      nowMs: AT_13,
     });
   });
 
