@@ -27,6 +27,8 @@ import {
 } from "../lib/tool-grants";
 import { runDedupedRelaunch } from "./relaunch-breaker";
 import { getCachedCatalogSources } from "./workflow-model-source-cache";
+import { memberAgentInstance } from "../db/schema";
+import type { HubDb } from "../db";
 
 const log = getLogger(["api", "agents"]);
 
@@ -409,6 +411,24 @@ export async function launchAgentSession(
 
   const grants = await grantStore.collectGrants(instancePrincipalId, tenantId);
 
+  // Detection: the persisted set just written above (tool grants +
+  // requirement grants) is the floor collectGrants should return. A count far
+  // below that floor is the signature of a launch that reconciled a partial
+  // grant set (a torn-down instance re-syncing with a handful of grants
+  // instead of its full template) — cheap to catch here since both counts
+  // are already in hand.
+  const expectedGrantFloor =
+    toolNames.length +
+    ((agentRow.grantRequirements ?? []) as GrantRequirementRow[]).length;
+  if (expectedGrantFloor > 0 && grants.length < expectedGrantFloor / 2) {
+    log.warn("Persisted grant count far below expected at launch", {
+      instanceId,
+      principalId: instancePrincipalId,
+      actualGrantCount: grants.length,
+      expectedGrantFloor,
+    });
+  }
+
   // Interchange's sendAttachmentPack inserts into session_asset without an
   // upsert. Nothing deletes an instance's session_asset rows when its session
   // ends, so relaunching a previously-stopped instance with the same instanceId
@@ -519,18 +539,48 @@ export async function launchAgentSession(
       and(eq(agentSession.id, sessionId), eq(agentSession.status, "active")),
     );
 
-  // Clean up any tool grants written before the launch loop — they're orphaned
-  // since no session launched, and would otherwise be returned by collectGrants
-  // on the next reconnect attempt with incorrect scope.
-  await db
-    .delete(grant)
-    .where(
-      and(
-        eq(grant.principalId, instancePrincipalId),
-        eq(grant.origin, "system"),
-        like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`),
-      ),
+  // Clean up the tool + requirement grants written before the launch loop —
+  // they're orphaned since no session launched, and would otherwise be
+  // returned by collectGrants on the next reconnect attempt with incorrect
+  // scope. Only for a genuinely unbound instance (no member_agent_instance
+  // row): a bound instance's rows above already hold the CORRECT full set for
+  // its current definition, and a subsequent relaunch re-persists the same
+  // set from scratch regardless — deleting here bought nothing but a window
+  // where the instance sits on a partial grant set. (Deleting only the
+  // "system" tool grants here while leaving the "creator"/"invoker"
+  // requirement grants persisted moments earlier is an asymmetric partial
+  // rollback, not a clean one — it is what let a torn-down instance re-sync
+  // with a handful of grants instead of its full template.)
+  const hubDb = db as unknown as HubDb;
+  const binding = await hubDb.query.memberAgentInstance.findFirst({
+    where: eq(memberAgentInstance.instanceId, instanceId),
+  });
+  if (!binding) {
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(grant)
+        .where(
+          and(
+            eq(grant.principalId, instancePrincipalId),
+            eq(grant.origin, "system"),
+            like(grant.resource, `${TOOL_GRANT_RESOURCE_PREFIX}%`),
+          ),
+        );
+      await tx
+        .delete(grant)
+        .where(
+          and(
+            eq(grant.principalId, instancePrincipalId),
+            inArray(grant.origin, ["creator", "invoker"]),
+          ),
+        );
+    });
+  } else {
+    log.warn(
+      "Launch failed for a bound instance; leaving its just-persisted grants intact",
+      { instanceId, principalId: instancePrincipalId },
     );
+  }
 
   throw lastError;
 }

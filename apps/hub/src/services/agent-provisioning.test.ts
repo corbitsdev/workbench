@@ -138,6 +138,9 @@ function makeMockDb(overrides: Record<string, unknown> = {}) {
       agentSession: { findFirst: mock(() => Promise.resolve(undefined)) },
       credential: { findFirst: mock(() => Promise.resolve(undefined)) },
       provider: { findFirst: mock(() => Promise.resolve(undefined)) },
+      memberAgentInstance: {
+        findFirst: mock(() => Promise.resolve(undefined)),
+      },
     },
     select: mock(() => makeSelectChain([])),
     insert: mock(() => ({ values: mock(() => Promise.resolve()) })),
