@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 
 type MockField = { key: string; label: string; kind: string };
 
@@ -107,7 +108,9 @@ function renderSettings() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <Settings />
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Settings />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
