@@ -31,6 +31,17 @@ const RESERVED_PAYLOAD_KEYS = new Set(["userAddress", "userRefId"]);
 
 const MAX_PAYLOAD_BYTES = 8192;
 
+const UNIQUE_VIOLATION_CODE = "23505";
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === UNIQUE_VIOLATION_CODE
+  );
+}
+
 export type ResolveUserIdentity = (
   memberPrincipalId: string,
 ) => Promise<{ userAddress: string; userRefId: string }>;
@@ -137,7 +148,8 @@ export function createMeSchedulesRouter(
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         409: {
-          description: "Caller has no provisioned membership yet",
+          description:
+            "Caller has no provisioned membership yet, or already has a schedule for this workflow kind",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
       },
@@ -180,14 +192,24 @@ export function createMeSchedulesRouter(
         );
       }
 
-      const created = await createOwnerSchedule(db, {
-        tenantId: member.tenantId,
-        ownerPrincipalId: member.principalId,
-        kind: body.kind,
-        hourUtc: body.hourUtc,
-        payload,
-      });
-      return c.json(toApiSchedule(created), 201);
+      try {
+        const created = await createOwnerSchedule(db, {
+          tenantId: member.tenantId,
+          ownerPrincipalId: member.principalId,
+          kind: body.kind,
+          hourUtc: body.hourUtc,
+          payload,
+        });
+        return c.json(toApiSchedule(created), 201);
+      } catch (err) {
+        if (isUniqueViolation(err)) {
+          return c.json(
+            { error: "You already have a schedule for this workflow." },
+            409,
+          );
+        }
+        throw err;
+      }
     },
   );
 

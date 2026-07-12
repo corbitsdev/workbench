@@ -43,6 +43,7 @@ type OwnerRow = {
 let ownerRows: OwnerRow[] = [];
 let updateResult: OwnerRow | null = null;
 let deleteResult = false;
+let createThrows: unknown = null;
 mock.module("../lib/scheduled-triggers", () => ({
   toApiSchedule: (r: OwnerRow) => ({
     id: r.id,
@@ -66,6 +67,7 @@ mock.module("../lib/scheduled-triggers", () => ({
   },
   createOwnerSchedule: async (_db: unknown, args: Record<string, unknown>) => {
     storeCalls.push({ fn: "create", args });
+    if (createThrows) throw createThrows;
     return {
       id: "sch-new",
       workflowKind: args["kind"],
@@ -209,6 +211,7 @@ describe("GET /me/schedules", () => {
 describe("POST /me/schedules", () => {
   it("creates a schedule scoped to the caller for a runnable kind", async () => {
     storeCalls.length = 0;
+    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
@@ -299,6 +302,7 @@ describe("POST /me/schedules", () => {
   });
 
   it("409s when the caller has no membership", async () => {
+    createThrows = null;
     const res = await mountApp().fetch(
       req("/me/schedules", {
         method: "POST",
@@ -307,6 +311,25 @@ describe("POST /me/schedules", () => {
       }),
     );
     expect(res.status).toBe(409);
+  });
+
+  it("409s with a distinct message on a duplicate (tenant, owner, kind) schedule", async () => {
+    createThrows = Object.assign(
+      new Error("duplicate key value violates unique constraint"),
+      { code: "23505" },
+    );
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "deck", hourUtc: 9 }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: "You already have a schedule for this workflow.",
+    });
+    createThrows = null;
   });
 });
 
