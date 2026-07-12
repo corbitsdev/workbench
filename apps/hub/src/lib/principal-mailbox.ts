@@ -2,7 +2,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { agentInstance, principal, tenant } from "@intx/db/schema";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
-import { splitMailAddress } from "@workbench/hub-agent";
+import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
 import { tryParseHeaderSection } from "./mail-headers";
@@ -10,8 +10,6 @@ import { tryParseHeaderSection } from "./mail-headers";
 const logger = getLogger(["hub", "principal-mailbox"]);
 
 export type PersistMailFn = NonNullable<SidecarLookups["persistMail"]>;
-
-const USER_ADDRESS_PREFIX = "usr_";
 
 // The idempotency key for a workflow gate mailbox item: one per (run, signal)
 // occurrence, so a re-projected open gate never writes a duplicate inbox item.
@@ -164,17 +162,22 @@ export function createPrincipalMailboxPersist(
         );
         continue;
       }
+      // `parts.local` is the `usr_`-prefixed address local part
+      // (`deriveUserMailAddress`'s output shape); `principal.refId` is
+      // stored BARE. Strip the prefix before matching, or this lookup can
+      // never find the member.
+      const bareRefId = parts.local.slice(USER_ADDRESS_PREFIX.length);
       const member = await db.query.principal.findFirst({
         where: and(
           eq(principal.tenantId, sender.tenantId),
           eq(principal.kind, "user"),
-          eq(principal.refId, parts.local),
+          eq(principal.refId, bareRefId),
         ),
       });
       if (!member) {
         logger.warn(
           "Skipping user recipient {address}: no member principal with refId {refId} in tenant {tenantId}",
-          { address, refId: parts.local, tenantId: sender.tenantId },
+          { address, refId: bareRefId, tenantId: sender.tenantId },
         );
         continue;
       }

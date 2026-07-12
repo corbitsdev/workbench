@@ -144,7 +144,11 @@ describe("createPrincipalMailboxPersist", () => {
     expect(sql).toContain("ref_id");
     expect(params).toContain("ten-1");
     expect(params).toContain("user");
-    expect(params).toContain("usr_alice");
+    // `principal.refId` is stored BARE (no `usr_` prefix) — the lookup must
+    // strip the address local part's prefix before matching, or it can
+    // never find the member (the CL-3406 latent bug).
+    expect(params).toContain("alice");
+    expect(params).not.toContain("usr_alice");
   });
 
   it("skips only the mailbox write for an unauthorized sender and still delegates upstream", async () => {
