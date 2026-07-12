@@ -53,6 +53,24 @@ export async function deliverMentionMail(
       return;
     }
 
+    // The tenantId comes from the request URL before interchange's own
+    // membership middleware has run, so it is caller-supplied: deliver only
+    // when the sender is themselves a member of that tenant.
+    const sender = await args.db.query.principal.findFirst({
+      where: and(
+        eq(principal.tenantId, args.tenantId),
+        eq(principal.kind, "user"),
+        eq(principal.refId, args.senderUserId),
+      ),
+    });
+    if (!sender) {
+      log.warn(
+        "Skipping mention mail: sender {senderUserId} is not a member of {tenantId}",
+        { senderUserId: args.senderUserId, tenantId: args.tenantId },
+      );
+      return;
+    }
+
     const snippet =
       args.content.length > 280
         ? `${args.content.slice(0, 280)}…`

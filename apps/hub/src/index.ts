@@ -865,7 +865,13 @@ app.use(
   "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
   async (c, next) => {
     const tenantId = c.req.param("tenantId");
-    if (tenantId) {
+    // POST-only (this path also serves GET list-mail polling), and bounded
+    // before the clone-and-parse so an oversized payload is never read here —
+    // the real send route enforces its own body limit downstream.
+    const contentLength = Number(c.req.header("content-length") ?? "0");
+    const withinSizeLimit =
+      Number.isFinite(contentLength) && contentLength <= 1_000_000;
+    if (tenantId && c.req.method === "POST" && withinSizeLimit) {
       void (async () => {
         const session = await auth.api.getSession({
           headers: c.req.raw.headers,
