@@ -9,6 +9,7 @@ export * from "./gamma-presentation";
 export * from "./governance";
 export * from "./last30days";
 export * from "./mailbox";
+export * from "./mentions";
 export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
 export * from "./scheduled-trigger";
