@@ -224,6 +224,56 @@ export async function resolveTriageTaskDefaultStatus(
   return "waiting";
 }
 
+/**
+ * Counts tasks created by a given principal — used to cap how many tasks a
+ * single ephemeral triage session (one per mail item, see
+ * `mailbox-triage.ts`) may leave behind. Each triage run mints a fresh
+ * instance/principal, so `createdByPrincipalId` is already scoped to one
+ * mail item without needing to parse `sourceRef`.
+ */
+export async function countTasksCreatedBy(
+  db: HubDb,
+  args: { tenantId: string; createdByPrincipalId: string },
+): Promise<number> {
+  const rows = await db
+    .select({ id: task.id })
+    .from(task)
+    .where(
+      and(
+        eq(task.tenantId, args.tenantId),
+        eq(task.createdByPrincipalId, args.createdByPrincipalId),
+      ),
+    );
+  return rows.length;
+}
+
+/**
+ * Finds an existing non-cancelled task for this owner with a matching
+ * `sourceRef` — used to dedupe triage task creation against the same
+ * message/mail item instead of creating a duplicate.
+ */
+export async function findOwnerTaskBySourceRef(
+  db: HubDb,
+  args: { tenantId: string; ownerPrincipalId: string; sourceRef: string },
+): Promise<Task | null> {
+  const rows = await db
+    .select()
+    .from(task)
+    .where(
+      and(
+        eq(task.tenantId, args.tenantId),
+        eq(task.ownerPrincipalId, args.ownerPrincipalId),
+        eq(task.sourceRef, args.sourceRef),
+      ),
+    )
+    .orderBy(desc(task.createdAt))
+    .limit(10);
+  const match = rows.find((row) => row.status !== "cancelled");
+  if (!match) return null;
+  const refs = await loadRefsByTaskIds(db, [match.id]);
+  return toApiTask(match, refs.get(match.id) ?? []);
+}
+
 export async function createOwnerTask(
   db: HubDb,
   input: CreateTaskInput,
