@@ -133,11 +133,15 @@ export function createPrincipalMailboxPersist(
       return;
     }
 
+    // A user recipient is `usr_<refId>` (the canonical format) or, for
+    // trigger payloads seeded before the prefix unification, a bare
+    // `<refId>` — accept both so old schedule rows keep delivering without
+    // a reseed. Agent (`ins_`) addresses are never user mailboxes.
     const candidates = recipients
       .map(splitMailAddress)
       .filter(
         (parts): parts is NonNullable<typeof parts> =>
-          parts !== null && parts.local.startsWith(USER_ADDRESS_PREFIX),
+          parts !== null && !parts.local.startsWith("ins_"),
       );
     if (candidates.length === 0) return;
 
@@ -163,10 +167,12 @@ export function createPrincipalMailboxPersist(
         continue;
       }
       // `parts.local` is the `usr_`-prefixed address local part
-      // (`deriveUserMailAddress`'s output shape); `principal.refId` is
-      // stored BARE. Strip the prefix before matching, or this lookup can
-      // never find the member.
-      const bareRefId = parts.local.slice(USER_ADDRESS_PREFIX.length);
+      // (`deriveUserMailAddress`'s output shape) or a legacy bare refId;
+      // `principal.refId` is stored BARE. Strip the prefix when present, or
+      // this lookup can never find the member.
+      const bareRefId = parts.local.startsWith(USER_ADDRESS_PREFIX)
+        ? parts.local.slice(USER_ADDRESS_PREFIX.length)
+        : parts.local;
       const member = await db.query.principal.findFirst({
         where: and(
           eq(principal.tenantId, sender.tenantId),
