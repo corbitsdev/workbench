@@ -30,6 +30,57 @@ describe("createGranolaTools", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("skips the network call and reports skipped when granola is not in enabledSources", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["email"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.parse(String(result.content))).toEqual({
+      notes: [],
+      hasMore: false,
+      skipped: true,
+    });
+  });
+
+  it("calls granola normally when enabledSources includes granola", async () => {
+    const fetcher = mock(async () => {
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+        status: 200,
+      });
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["granola"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("returns the Granola agent tools", () => {
     const tools = createGranolaTools({
       apiKey: "tenant-api-key",

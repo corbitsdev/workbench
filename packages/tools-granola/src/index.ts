@@ -44,6 +44,11 @@ const ListNotesArgs = type({
   "createdBefore?": "string",
   "updatedAfter?": "string",
   "folderId?": "string",
+  // When present, this is the member's currently-enabled brief source keys
+  // (see @workbench/shared's BRIEF_SOURCE_CATALOG). Absent means "no
+  // restriction" (call as normal) — only an explicit list that omits
+  // "granola" skips the call.
+  "enabledSources?": "string[]",
 });
 
 const GetNoteArgs = type({ noteId: "string > 0" });
@@ -84,6 +89,10 @@ const GranolaListResponse = type({
   notes: GranolaNote.array(),
   hasMore: "boolean",
   "cursor?": "string",
+  // Set when the caller's `enabledSources` excluded "granola" — the call was
+  // never made. Read by consumers (e.g. the heartbeat brief) to describe this
+  // honestly as a disabled source, not a failed fetch.
+  "skipped?": "boolean",
 });
 
 const GranolaFolder = type({
@@ -287,6 +296,10 @@ async function listNotes(
   const args = ListNotesArgs(rawArgs);
   if (args instanceof type.errors) {
     throw new Error(`granola_list_notes: ${args.summary}`);
+  }
+
+  if (args.enabledSources !== undefined && !args.enabledSources.includes("granola")) {
+    return { notes: [], hasMore: false, skipped: true };
   }
 
   const limit = optionalPositiveInteger(
