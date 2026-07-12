@@ -10,6 +10,8 @@ import {
   usePreferenceSettings,
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
+import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
+import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 type PreferenceValue = boolean | string | number;
 
@@ -122,6 +124,7 @@ function PreferenceSection({
   reduceMotion,
   index,
 }: SectionProps) {
+  const { activeTenantId } = useActiveWorkbench();
   return (
     <motion.section
       aria-labelledby={`preference-section-${category}`}
@@ -149,6 +152,9 @@ function PreferenceSection({
           />
         ))}
       </div>
+      {category === "Automations" && (
+        <BriefWorkflowAttachments tenantId={activeTenantId} />
+      )}
     </motion.section>
   );
 }
