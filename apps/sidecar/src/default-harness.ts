@@ -172,12 +172,14 @@ export function createDefaultHarnessBuilder({
       onConnectorStateChanged,
     }): Promise<HarnessBundle> {
       const signer = (payload: string) => crypto.signSSH(payload);
+      const buildStart = performance.now();
 
       const storage = await createIsogitStore(storeDir, signer, gcPolicy);
       await healContextStore(storage, agentAddress);
       const mailStore = await createMailAuditStore(storeDir, signer);
 
       const deployTree = await readDeployTree(storeDir);
+      const provisionMs = performance.now() - buildStart;
       const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
 
       // Parse the memory-seed file list off the RAW base prompt, then strip the
@@ -265,6 +267,7 @@ export function createDefaultHarnessBuilder({
           skipped: seedResult.skipped,
         },
       );
+      const packApplyMs = performance.now() - buildStart - provisionMs;
 
       // Reverse-order disposal stack: each resource pushes its own disposer
       // right after it is allocated, so both the failure path (below) and the
@@ -315,6 +318,7 @@ export function createDefaultHarnessBuilder({
         // and inject them into env before instantiating each factory. A
         // factory that throws is skipped (fail-soft); only the names that
         // actually load are shadowed away from the proxy.
+        const toolLoadStart = performance.now();
         const loadedPackages = await loadToolPackages({
           rawManifestBytes: deployTree.toolPackageManifestRaw,
           assetMounts: deployTree.assetMounts,
@@ -324,6 +328,7 @@ export function createDefaultHarnessBuilder({
           cacheMaxBytes,
           registryMaxTarballBytes,
         });
+        const toolLoadMs = performance.now() - toolLoadStart;
 
         const requiredProviders = new Set<string>();
         for (const pkg of loadedPackages) {
@@ -550,7 +555,22 @@ export function createDefaultHarnessBuilder({
               }
             : env;
 
+        const harnessReadyStart = performance.now();
         const harness = await createHarness(def, harnessEnv);
+        const harnessReadyMs = performance.now() - harnessReadyStart;
+        const totalMs = performance.now() - buildStart;
+        logger.info(
+          "Harness build phases for {address}: provision={provisionMs}ms packApply={packApplyMs}ms toolLoad={toolLoadMs}ms harnessReady={harnessReadyMs}ms total={totalMs}ms packages={packageCount}",
+          {
+            address: agentAddress,
+            provisionMs: Math.round(provisionMs),
+            packApplyMs: Math.round(packApplyMs),
+            toolLoadMs: Math.round(toolLoadMs),
+            harnessReadyMs: Math.round(harnessReadyMs),
+            totalMs: Math.round(totalMs),
+            packageCount: loadedPackages.length,
+          },
+        );
 
         // Forward the reactor's event stream to the hub. This is the seam the
         // SessionManager builds around: it supplies `onEvent` and expects the
