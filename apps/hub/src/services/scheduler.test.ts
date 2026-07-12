@@ -77,7 +77,7 @@ describe("createScheduler", () => {
       }),
     ]);
     const scheduler = createScheduler({
-      enabled: true,
+      isTenantEnabled: async () => true,
       ...store,
       startWorkflowRun: async (a) => {
         calls.push(a);
@@ -106,7 +106,7 @@ describe("createScheduler", () => {
     let fires = 0;
     const store = makeStore([row()]);
     const scheduler = createScheduler({
-      enabled: true,
+      isTenantEnabled: async () => true,
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
@@ -127,7 +127,7 @@ describe("createScheduler", () => {
       row({ id: "sch-b", ownerMemberPrincipalId: "principal-b" }),
     ]);
     const scheduler = createScheduler({
-      enabled: true,
+      isTenantEnabled: async () => true,
       ...store,
       startWorkflowRun: async (a) => {
         if (a.creatorPrincipalId === "principal-a") {
@@ -143,11 +143,11 @@ describe("createScheduler", () => {
     expect(fired).toEqual(["principal-b"]);
   });
 
-  it("does not fire when disabled", async () => {
+  it("does not fire when the tenant predicate resolves false", async () => {
     let fires = 0;
     const store = makeStore([row()]);
     const scheduler = createScheduler({
-      enabled: false,
+      isTenantEnabled: async () => false,
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
@@ -168,7 +168,7 @@ describe("createScheduler", () => {
     let fires = 0;
     const store = makeStore([row()]);
     const scheduler = createScheduler({
-      enabled: true,
+      isTenantEnabled: async () => true,
       ...store,
       startWorkflowRun: async () => {
         fires += 1;
@@ -193,7 +193,7 @@ describe("createScheduler", () => {
   it("does not fire the run if the fired-marker cannot be persisted", async () => {
     let fires = 0;
     const scheduler = createScheduler({
-      enabled: true,
+      isTenantEnabled: async () => true,
       listSchedules: async () => [row()],
       markFired: async () => {
         throw new Error("db down");
@@ -209,14 +209,13 @@ describe("createScheduler", () => {
     expect(fires).toBe(0);
   });
 
-  it("uses isTenantEnabled per row when provided, overriding the static enabled flag", async () => {
+  it("evaluates isTenantEnabled per row so different tenants can differ", async () => {
     const fired: string[] = [];
     const store = makeStore([
       row({ id: "sch-a", tenantId: "tenant-a", ownerMemberPrincipalId: "p-a" }),
       row({ id: "sch-b", tenantId: "tenant-b", ownerMemberPrincipalId: "p-b" }),
     ]);
     const scheduler = createScheduler({
-      enabled: false,
       isTenantEnabled: async (tenantId) => tenantId === "tenant-a",
       ...store,
       startWorkflowRun: async (a) => {

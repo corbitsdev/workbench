@@ -32,10 +32,10 @@ function delay(ms: number): Promise<void> {
 }
 
 describe("createTaskReconcilerService", () => {
-  it("does not run any pass while disabled", async () => {
+  it("does not run any pass while isEnabled resolves false", async () => {
     reconcileCalls = 0;
     const svc = createTaskReconcilerService({
-      enabled: false,
+      isEnabled: async () => false,
       db,
       intervalMs: 5,
     });
@@ -45,10 +45,10 @@ describe("createTaskReconcilerService", () => {
     expect(reconcileCalls).toBe(0);
   });
 
-  it("drives reconcileOnce on its interval while enabled, and stops cleanly", async () => {
+  it("drives reconcileOnce on its interval while isEnabled resolves true, and stops cleanly", async () => {
     reconcileCalls = 0;
     const svc = createTaskReconcilerService({
-      enabled: true,
+      isEnabled: async () => true,
       db,
       intervalMs: 5,
     });
@@ -59,33 +59,5 @@ describe("createTaskReconcilerService", () => {
     expect(afterStop).toBeGreaterThan(0);
     await delay(20);
     expect(reconcileCalls).toBe(afterStop);
-  });
-
-  it("uses isEnabled per tick when provided, overriding the static enabled flag", async () => {
-    reconcileCalls = 0;
-    const svc = createTaskReconcilerService({
-      enabled: false,
-      isEnabled: async () => true,
-      db,
-      intervalMs: 5,
-    });
-    svc.start();
-    await delay(30);
-    svc.stop();
-    expect(reconcileCalls).toBeGreaterThan(0);
-  });
-
-  it("does not run when isEnabled resolves false, even if the static flag is true", async () => {
-    reconcileCalls = 0;
-    const svc = createTaskReconcilerService({
-      enabled: true,
-      isEnabled: async () => false,
-      db,
-      intervalMs: 5,
-    });
-    svc.start();
-    await delay(30);
-    svc.stop();
-    expect(reconcileCalls).toBe(0);
   });
 });
