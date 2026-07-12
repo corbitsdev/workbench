@@ -22,16 +22,23 @@ type LinearCredential = { apiKey: string; baseURL: string };
 const LINEAR_TEAM_LINK_PREFIX = "linear:team:";
 
 function findLinearTeamId(input: TaskPushInput): string | null {
+  const teamIds = new Set<string>();
   for (const link of input.task.links) {
     if (!link.ref.startsWith(LINEAR_TEAM_LINK_PREFIX)) {
       continue;
     }
     const teamId = link.ref.slice(LINEAR_TEAM_LINK_PREFIX.length);
     if (teamId.length > 0) {
-      return teamId;
+      teamIds.add(teamId);
     }
   }
-  return null;
+  if (teamIds.size > 1) {
+    throw new Error(
+      `Linear adapter: task ${input.task.id} carries ambiguous linear team links (${[...teamIds].join(", ")})`,
+    );
+  }
+  const [teamId] = teamIds;
+  return teamId ?? null;
 }
 
 function requireLinearTeamId(input: TaskPushInput): string {
@@ -112,7 +119,7 @@ async function resolveStateId(
   config: LinearToolsConfig,
   teamId: string,
   stateType: LinearWorkflowStateType,
-): Promise<string | null> {
+): Promise<string> {
   const data = await fetchLinearGraphQL(
     config,
     TEAM_STATES_QUERY,
@@ -132,7 +139,12 @@ async function resolveStateId(
     (node): node is Record<string, unknown> =>
       isRecord(node) && node.type === stateType,
   );
-  return typeof match?.id === "string" ? match.id : null;
+  if (typeof match?.id !== "string") {
+    throw new Error(
+      `Linear adapter: team ${teamId} has no workflow state of type "${stateType}"`,
+    );
+  }
+  return match.id;
 }
 
 type LinearIssueRef = { id: string; url: string };
@@ -196,10 +208,7 @@ export function createLinearTaskAdapter(deps: LinearAdapterDeps): TaskAdapter {
     const stateType = forcedStateType ?? targetStateType(input.task.status);
     if (stateType !== null) {
       const teamId = requireLinearTeamId(input);
-      const stateId = await resolveStateId(config, teamId, stateType);
-      if (stateId !== null) {
-        patch.stateId = stateId;
-      }
+      patch.stateId = await resolveStateId(config, teamId, stateType);
     }
     const data = await fetchLinearGraphQL(
       config,

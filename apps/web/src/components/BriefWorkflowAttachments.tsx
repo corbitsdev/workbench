@@ -28,16 +28,20 @@ function briefHourFromSettings(
 function AttachedRow({
   schedule,
   label,
+  onError,
 }: {
   schedule: ScheduledTrigger;
   label: string;
+  onError: (message: string) => void;
 }) {
   const deleteSchedule = useDeleteSchedule();
   const reduceMotion = useReducedMotion();
 
   const handleDetach = () => {
-    deleteSchedule.mutateAsync({ id: schedule.id }).catch(() => {
-      /* optimistic removal rolled back in the hook */
+    deleteSchedule.mutateAsync({ id: schedule.id }).catch((err: unknown) => {
+      onError(
+        err instanceof Error ? err.message : "Could not detach the workflow.",
+      );
     });
   };
 
@@ -171,6 +175,7 @@ export function BriefWorkflowAttachments({
                 key={schedule.id}
                 schedule={schedule}
                 label={labelForKind(schedule.workflowKind)}
+                onError={setError}
               />
             ))}
           </AnimatePresence>
