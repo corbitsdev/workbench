@@ -219,6 +219,16 @@ pack-recv-gc-*.pack`, plus bare `TypeError`s from torn `.idx` loads).
   depend on this package); a guard test in
   `apps/hub/src/services/workflow-reconciler.test.ts` pins the two literals
   byte-identical. Guarded by `src/ws/hub-link-hibernate.test.ts`.
+- **WORKBENCH-LOCAL (CL-3409) — sleeping-agent sync log batching**
+  (`src/session-manager.ts`): the per-agent "Updated grants/sources for
+  sleeping agent" info lines on hub reconnect are demoted to debug and
+  collected into an in-memory per-address batch flushed as ONE info summary
+  after a quiet window (`sleepingSyncFlushDelayMs`, default 250ms), with any
+  agent whose grant rule count falls below half the batch median logged
+  individually at warn so outliers stay visible. Logging-only — persist
+  ordering unchanged. Guarded by
+  `session-manager-sleeping-sync-batch.test.ts`.
+
 - **WORKBENCH-LOCAL (CL-3340) — assistant output loop guard**
   (`src/assistant-loop-guard.ts`, wired in `src/session-manager.ts`): the
   per-session `onEvent` wrapper checks each `inference.done` for the same
