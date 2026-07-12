@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { principal, tenant } from "@intx/db/schema";
 import { getLogger } from "@intx/log";
 import type { RepoStore } from "@intx/hub-sessions";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import type { HubDb } from "../db";
 import { gateMailMessageKey } from "../lib/principal-mailbox";
 import { writeMailboxMessage } from "../lib/mailbox-write";
@@ -107,7 +108,10 @@ export async function deliverPendingGateMail(
 
   const meta = await loadDeploymentMeta(deps.db, run.deploymentId);
   const label = meta?.label ?? run.kind;
-  const recipientAddress = `${owner.refId}@${tenantRow.domain}`;
+  const recipientAddress = deriveUserMailAddress({
+    userRefId: owner.refId,
+    domain: tenantRow.domain,
+  });
   const senderAddress = `hub@${deps.deploymentDomain}`;
   const deepLinkPath = `${RUN_TRACE_PATH_PREFIX}/${run.runId}`;
 

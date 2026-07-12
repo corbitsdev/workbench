@@ -10,9 +10,9 @@ export interface HeartbeatSeederDeps {
   hourUtc: number;
   // Members with a Myra instance — the users a morning heartbeat targets.
   listMyraTargets: () => Promise<{ memberPrincipalId: string }[]>;
-  // Resolves the member principal's user mail address (`${refId}@${domain}`,
-  // via deriveUserMailAddress at the wiring site) together with the refId it
-  // was derived from.
+  // Resolves the member principal's user mail address
+  // (`usr_<refId>@<domain>`, via deriveUserMailAddress at the wiring site)
+  // together with the refId it was derived from.
   resolveUserIdentity: (
     memberPrincipalId: string,
   ) => Promise<{ userAddress: string; userRefId: string }>;

@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import type { Task } from "@workbench/shared";
 import type { HubDb } from "../db";
 
@@ -17,7 +18,12 @@ mock.module("./member-preferences", () => ({
 const { deliverTaskMail } = await import("./deliver-task-mail");
 
 const TENANT_ROW = { id: "ten-1", domain: "tenant.example" };
-const OWNER_PRINCIPAL = { id: "prn-owner", tenantId: "ten-1", refId: "owner-1", kind: "user" };
+const OWNER_PRINCIPAL = {
+  id: "prn-owner",
+  tenantId: "ten-1",
+  refId: "owner-1",
+  kind: "user",
+};
 const ACTOR_USER_PRINCIPAL = {
   id: "prn-actor",
   tenantId: "ten-1",
@@ -163,7 +169,15 @@ describe("deliverTaskMail", () => {
     expect(inserted).toHaveLength(1);
     const row = inserted[0] as Record<string, unknown>;
     expect(row.principalId).toBe("prn-owner");
-    expect(row.address).toBe("usr_owner-1@tenant.example");
+    // Pins the ONE canonical principal-mailbox address format: this writer
+    // must match deriveUserMailAddress's output, not a locally reconstructed
+    // string.
+    expect(row.address).toBe(
+      deriveUserMailAddress({
+        userRefId: "owner-1",
+        domain: "tenant.example",
+      }),
+    );
     expect(row.subject).toBe("Myra assigned you: Follow up with Acme");
     expect(row.messageKey).toBe("task:task-1:assigned");
     const raw = new TextDecoder().decode(row.raw as Uint8Array);
@@ -215,7 +229,9 @@ describe("deliverTaskMail", () => {
         principal: {
           findFirst: mock(async () => ACTOR_AGENT_PRINCIPAL),
         },
-        agent: { findFirst: mock(async () => ({ id: "agent-1", name: "Myra" })) },
+        agent: {
+          findFirst: mock(async () => ({ id: "agent-1", name: "Myra" })),
+        },
       },
     } as unknown as HubDb;
 

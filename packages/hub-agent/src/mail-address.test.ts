@@ -4,14 +4,15 @@ import {
   deriveUserMailAddress,
   splitMailAddress,
   splitMailAddressList,
+  USER_ADDRESS_PREFIX,
   UserMailAddressArgs,
 } from "./mail-address";
 
 describe("deriveUserMailAddress", () => {
-  test("derives `${userRefId}@${domain}` for a user principal", () => {
+  test("derives `usr_<refId>@<domain>` from a BARE refId for a user principal", () => {
     expect(
       deriveUserMailAddress({
-        userRefId: "usr_alice",
+        userRefId: "alice",
         domain: "tenant.example",
       }),
     ).toBe("usr_alice@tenant.example");
@@ -19,11 +20,19 @@ describe("deriveUserMailAddress", () => {
 
   test("never produces an ins_-prefixed (agent) address", () => {
     const address = deriveUserMailAddress({
-      userRefId: "usr_bob",
+      userRefId: "bob",
       domain: "corbits.dev",
     });
     expect(address.startsWith("ins_")).toBe(false);
     expect(address).toBe("usr_bob@corbits.dev");
+  });
+
+  test("does not double-prefix a refId that already starts with usr_", () => {
+    const address = deriveUserMailAddress({
+      userRefId: "usr_carol",
+      domain: "tenant.example",
+    });
+    expect(address).toBe(`${USER_ADDRESS_PREFIX}usr_carol@tenant.example`);
   });
 
   test("rejects a non-string refId", () => {
@@ -84,9 +93,7 @@ describe("splitMailAddressList", () => {
 
   test("does not split a comma inside a quoted display name", () => {
     expect(
-      splitMailAddressList(
-        '"Doe, Jane" <a@b>, usr_bob@tenant.example',
-      ),
+      splitMailAddressList('"Doe, Jane" <a@b>, usr_bob@tenant.example'),
     ).toEqual(['"Doe, Jane" <a@b>', "usr_bob@tenant.example"]);
   });
 

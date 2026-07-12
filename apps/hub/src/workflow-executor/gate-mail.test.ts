@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import type { HubDb } from "../db";
 import type { MailboxWriteArgs } from "../lib/mailbox-write";
 
@@ -86,7 +87,7 @@ describe("deliverPendingGateMail", () => {
     ];
     deploymentMeta = { label: "Pain Point Collateral" };
     const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "usr_alice" },
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
     });
 
@@ -100,7 +101,13 @@ describe("deliverPendingGateMail", () => {
     expect(first).toMatchObject({
       tenantId: "ten-1",
       principalId: "prn-alice",
-      address: "usr_alice@tenant.example",
+      // Pins the ONE canonical principal-mailbox address format: this
+      // writer must match deriveUserMailAddress's output, not a locally
+      // reconstructed string.
+      address: deriveUserMailAddress({
+        userRefId: "alice",
+        domain: "tenant.example",
+      }),
       fromAddress: "hub@wf.example",
       subject: "A workflow needs you: Pain Point Collateral",
       messageKey: "gate:wfr-1:approval",
@@ -119,7 +126,7 @@ describe("deliverPendingGateMail", () => {
     pendingGates = [{ signalName: "approval" }];
     deploymentMeta = null;
     const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "usr_alice" },
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
     });
 
@@ -166,7 +173,7 @@ describe("deliverPendingGateMail", () => {
   it("skips and logs an error when the tenant row is missing", async () => {
     pendingGates = [{ signalName: "approval" }];
     const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "usr_alice" },
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: undefined,
     });
 
@@ -183,7 +190,7 @@ describe("deliverPendingGateMail", () => {
   it("writes nothing when no open gate is readable from the log", async () => {
     pendingGates = [];
     const db = makeDb({
-      owner: { id: "prn-alice", kind: "user", refId: "usr_alice" },
+      owner: { id: "prn-alice", kind: "user", refId: "alice" },
       tenant: { domain: "tenant.example" },
     });
 

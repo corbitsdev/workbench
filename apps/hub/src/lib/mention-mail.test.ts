@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import type { HubDb } from "../db";
 import { deliverMentionMail } from "./mention-mail";
 
@@ -89,8 +90,18 @@ describe("deliverMentionMail", () => {
     const row = inserted[0] as Record<string, unknown>;
     expect(row.tenantId).toBe("ten-1");
     expect(row.principalId).toBe("prn-bob");
-    expect(row.address).toBe("usr_bob-1@tenant.example");
-    expect(row.fromAddress).toBe("usr_sender-1@tenant.example");
+    // Pins the ONE canonical principal-mailbox address format: every writer
+    // must match deriveUserMailAddress's output, not a locally reconstructed
+    // string.
+    expect(row.address).toBe(
+      deriveUserMailAddress({ userRefId: "bob-1", domain: "tenant.example" }),
+    );
+    expect(row.fromAddress).toBe(
+      deriveUserMailAddress({
+        userRefId: "sender-1",
+        domain: "tenant.example",
+      }),
+    );
     expect(row.subject).toBe("Alice mentioned you");
     expect(row.messageKey).toMatch(/^mention:bob-1:/);
   });

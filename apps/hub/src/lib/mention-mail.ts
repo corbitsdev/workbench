@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { extractMentions } from "@workbench/shared";
 import { writeMailboxMessage } from "./mailbox-write";
 import type { HubDb } from "../db";
@@ -10,8 +11,6 @@ import type { MailboxEventBus } from "./mailbox-events";
 const log = getLogger(["hub", "mention-mail"]);
 
 const { principal, tenant } = intxSchema;
-
-const USER_ADDRESS_PREFIX = "usr_";
 
 export type DeliverMentionMailArgs = {
   db: HubDb;
@@ -107,8 +106,14 @@ export async function deliverMentionMail(
         {
           tenantId: args.tenantId,
           principalId: member.id,
-          address: `${USER_ADDRESS_PREFIX}${mention.id}@${tenantRow.domain}`,
-          fromAddress: `${USER_ADDRESS_PREFIX}${args.senderUserId}@${tenantRow.domain}`,
+          address: deriveUserMailAddress({
+            userRefId: mention.id,
+            domain: tenantRow.domain,
+          }),
+          fromAddress: deriveUserMailAddress({
+            userRefId: args.senderUserId,
+            domain: tenantRow.domain,
+          }),
           subject: `${args.senderName} mentioned you`,
           body,
           messageKey: `mention:${mention.id}:${contentHash}`,

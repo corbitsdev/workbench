@@ -1227,9 +1227,10 @@ v1.route("/", createInboxRouter(db, mailboxEventBus));
 v1.route("/", createMeTasksRouter(db, taskPushService, mailboxEventBus));
 
 // Resolves a member principal to the user mail identity trigger payloads
-// carry (`${refId}@${domain}` via deriveUserMailAddress). Shared by the
-// schedules route (server-side identity, never client-supplied) and the
-// boot-time heartbeat seeder.
+// carry (`usr_<refId>@<domain>` via deriveUserMailAddress, the one canonical
+// principal-mailbox address format). Shared by the schedules route
+// (server-side identity, never client-supplied) and the boot-time heartbeat
+// seeder.
 const resolveUserIdentity = async (
   memberPrincipalId: string,
 ): Promise<{ userAddress: string; userRefId: string }> => {
