@@ -13,6 +13,7 @@ import {
 } from "../hooks/use-preference-settings";
 import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
+import { SendBriefNowButton } from "./SendBriefNowButton";
 import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 const BRIEF_SOURCE_KEY_PREFIX = briefSourcePreferenceKey("");
@@ -163,6 +164,7 @@ function PreferenceSection({
         <>
           <BriefSourcesToggles />
           <BriefWorkflowAttachments tenantId={activeTenantId} />
+          <SendBriefNowButton />
         </>
       )}
     </motion.section>

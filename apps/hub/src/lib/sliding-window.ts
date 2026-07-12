@@ -7,6 +7,7 @@ export interface SlidingWindowLimiter {
    * count against the budget.
    */
   tryAcquire: (key: string) => boolean;
+  refund: (key: string) => void;
 }
 
 /**
@@ -37,5 +38,15 @@ export function slidingWindowLimiter(
     return true;
   }
 
-  return { tryAcquire };
+  // Returns the most recently acquired slot for a key — used when the guarded
+  // action fails downstream, so a transient failure does not lock the caller
+  // out for the rest of the window.
+  function refund(key: string): void {
+    const existing = timestamps.get(key);
+    if (!existing || existing.length === 0) return;
+    existing.pop();
+    timestamps.set(key, existing);
+  }
+
+  return { tryAcquire, refund };
 }

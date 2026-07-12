@@ -403,6 +403,23 @@ export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
   return parsed.sources;
 }
 
+const BriefRunResponseSchema = type({
+  status: "'started'",
+  deploymentId: "string",
+});
+
+/** Triggers the caller's own morning brief right now, outside its daily
+ * schedule. Rate-limited server-side to one manual run per member per 10
+ * minutes (429 on a repeat). */
+export async function postMeBriefRun(): Promise<{ deploymentId: string }> {
+  const raw = await hubFetch<unknown>("POST", "v1/me/brief-run");
+  const parsed = BriefRunResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected brief-run response: ${parsed.summary}`);
+  }
+  return { deploymentId: parsed.deploymentId };
+}
+
 /** Merge a partial patch into the caller's persisted UI preferences. */
 export async function patchMePreferences(
   patch: Record<string, unknown>,
