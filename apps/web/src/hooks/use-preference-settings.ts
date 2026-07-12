@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   briefSourcePreferenceKey,
+  inboxSourcePreferenceKey,
   type AvailableBriefSource,
+  type AvailableInboxSource,
   type PreferenceSetting,
 } from "@workbench/shared";
 import {
   getMeBriefSources,
+  getMeInboxSources,
   getMePreferenceSettings,
   patchMePreferences,
   postMeBriefRun,
@@ -13,6 +16,7 @@ import {
 
 const PREFERENCE_SETTINGS_KEY = ["me", "preference-settings"] as const;
 const BRIEF_SOURCES_KEY = ["me", "brief-sources"] as const;
+const INBOX_SOURCES_KEY = ["me", "inbox-sources"] as const;
 
 type PreferenceValue = boolean | string | number;
 
@@ -32,6 +36,18 @@ export function useBriefSources() {
   return useQuery({
     queryKey: BRIEF_SOURCES_KEY,
     queryFn: getMeBriefSources,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/** Loads the inbox sources the caller can toggle — catalog sources with a
+ * credential configured for their tenant, each resolved against their stored
+ * enablement. Independent of `useBriefSources`: toggling one dimension never
+ * affects the other's cache or stored keys. */
+export function useInboxSources() {
+  return useQuery({
+    queryKey: INBOX_SOURCES_KEY,
+    queryFn: getMeInboxSources,
     staleTime: 5 * 60_000,
   });
 }
@@ -113,6 +129,49 @@ export function useUpdateBriefSource() {
     },
     onSuccess: (sources) => {
       queryClient.setQueryData(BRIEF_SOURCES_KEY, sources);
+    },
+  });
+}
+
+type UpdateInboxSourceVars = { key: string; enabled: boolean };
+type UpdateInboxSourceContext = { previous: AvailableInboxSource[] | undefined };
+
+/** Toggles one inbox source's enablement, keyed by its preference key (see
+ * `inboxSourcePreferenceKey`), optimistically against the inbox-sources
+ * cache. Writes only the `inboxSource:<key>` preference — never the
+ * `briefSource:<key>` counterpart. */
+export function useUpdateInboxSource() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    AvailableInboxSource[],
+    Error,
+    UpdateInboxSourceVars,
+    UpdateInboxSourceContext
+  >({
+    mutationFn: async ({ key, enabled }) => {
+      await patchMePreferences({ [inboxSourcePreferenceKey(key)]: enabled });
+      return getMeInboxSources();
+    },
+    onMutate: async ({ key, enabled }) => {
+      await queryClient.cancelQueries({ queryKey: INBOX_SOURCES_KEY });
+      const previous = queryClient.getQueryData<AvailableInboxSource[]>(
+        INBOX_SOURCES_KEY,
+      );
+      if (previous) {
+        queryClient.setQueryData<AvailableInboxSource[]>(
+          INBOX_SOURCES_KEY,
+          previous.map((s) => (s.key === key ? { ...s, enabled } : s)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(INBOX_SOURCES_KEY, context.previous);
+      }
+    },
+    onSuccess: (sources) => {
+      queryClient.setQueryData(INBOX_SOURCES_KEY, sources);
     },
   });
 }

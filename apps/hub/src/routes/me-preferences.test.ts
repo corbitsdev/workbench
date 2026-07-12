@@ -218,6 +218,70 @@ describe("GET /api/v1/me/brief-sources", () => {
   });
 });
 
+describe("GET /api/v1/me/inbox-sources", () => {
+  function inboxSourcesRequest(): Request {
+    return new Request("http://localhost/api/v1/me/inbox-sources", {
+      headers: { "x-test-user-id": "user-1" },
+    });
+  }
+
+  it("returns a source whose provider is configured for the tenant, enabled by default", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set(["granola"]);
+    readMemberPreferences.mockResolvedValueOnce({});
+    const res = await mountApp().request(inboxSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sources: { key: string; enabled: boolean }[];
+    };
+    expect(body.sources.map((s) => s.key)).toEqual(["granola"]);
+    expect(body.sources[0]?.enabled).toBe(true);
+  });
+
+  it("omits a source whose provider has no configured credential", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set();
+    readMemberPreferences.mockResolvedValueOnce({});
+    const res = await mountApp().request(inboxSourcesRequest());
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sources: unknown[] };
+    expect(body.sources).toEqual([]);
+  });
+
+  it("returns no sources when the caller has no membership", async () => {
+    member = null;
+    const res = await mountApp().request(inboxSourcesRequest());
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ sources: [] });
+  });
+
+  it("reflects a disabled stored preference independent of the brief-source toggle", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    availableProviderNames = new Set(["granola"]);
+    readMemberPreferences.mockResolvedValueOnce({
+      "inboxSource:granola": false,
+      "briefSource:granola": true,
+    });
+    const res = await mountApp().request(inboxSourcesRequest());
+    const body = (await res.json()) as { sources: { enabled: boolean }[] };
+    expect(body.sources[0]?.enabled).toBe(false);
+
+    readMemberPreferences.mockResolvedValueOnce({
+      "inboxSource:granola": false,
+      "briefSource:granola": true,
+    });
+    const briefRes = await mountApp().request(
+      new Request("http://localhost/api/v1/me/brief-sources", {
+        headers: { "x-test-user-id": "user-1" },
+      }),
+    );
+    const briefBody = (await briefRes.json()) as {
+      sources: { enabled: boolean }[];
+    };
+    expect(briefBody.sources[0]?.enabled).toBe(true);
+  });
+});
+
 describe("GET /api/v1/me/preferences", () => {
   it("returns the stored preferences for the caller", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
