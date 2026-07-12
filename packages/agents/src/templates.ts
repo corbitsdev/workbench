@@ -6,6 +6,8 @@ import {
   PERSONAL_AGENT_BASE_TOOLS,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_MODEL_CONFIG,
+  PERSONAL_AGENT_TRIAGE_NAME,
+  PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
   buildPersonalAgentGrantRequirements,
 } from "@workbench/myra";
 import { MYRA_TOOL_PACKAGES } from "./dynamic-tools/catalog";
@@ -158,6 +160,28 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     // (PERSONAL_AGENT_PLATFORM_TOOLS); everything else stays hidden until
     // search_tools/load_tools. No gamma/last30days: those run through workflows
     // only. Version "*": latest on the registry at deploy assembly (CL-3190).
+    toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
+  },
+  {
+    // Ephemeral inbox-triage variant of Myra (CL-3364). Model binds at the
+    // definition level, so triage needs its own agent-definition row to run
+    // on the cheap flash model rather than Myra's own chat model — this is
+    // NOT shown in the user-facing catalog (deployable: false) and is never
+    // launched as a chat agent; mailbox-triage.ts resolves it by name and
+    // launches it with the mailbox persona's (narrower) advertised tools.
+    // Grants (capabilities.tools) stay the full Myra base toolset so the
+    // launch-time intersection enforcement is the only safety boundary that
+    // matters — mirrors the main "myra" entry above.
+    key: "myra-triage",
+    name: PERSONAL_AGENT_TRIAGE_NAME,
+    description:
+      "Ephemeral inbox-triage session — classifies one inbound message and prepares a response. Not a chat agent.",
+    systemPrompt: PERSONAL_AGENT_DEPLOY_PROMPT,
+    credentialRequirements: PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
+    grantRequirements: MYRA_STATIC_GRANT_REQUIREMENTS,
+    capabilities: { tools: [...PERSONAL_AGENT_BASE_TOOLS] },
+    modelConfig: PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
+    deployable: false,
     toolPackages: MYRA_TOOL_PACKAGES.map((name) => ({ name, version: "*" })),
   },
   {

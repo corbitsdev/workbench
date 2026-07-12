@@ -47,13 +47,70 @@ export function isMailboxReadOnlyTool(toolName: string): boolean {
   return READ_ONLY_NAME_PATTERN.test(bare) || READ_ONLY_EXTRA_TOOLS.has(bare);
 }
 
+// The platform core Myra always advertises (CL-3190), minus its write members
+// (memory_save, artifact_create, artifact_write, workflow_start) — catalog
+// discovery plus the always-visible read primitives.
+const PLATFORM_CORE_BARE_TOOLS = new Set([
+  "search_tools",
+  "load_tools",
+  "memory_load",
+  "artifact_read",
+  "artifact_list",
+  "workflow_list_kinds",
+  "search_skills",
+  "load_skill",
+  "list_skill_drafts",
+  "load_skill_draft",
+]);
+
 /**
- * The triage loadout: the base toolset intersected with the read-only allow
- * predicate, so the mailbox persona can never advertise a tool Myra does not
- * otherwise carry.
+ * The read essentials the triage prompt's "knowledge" section actually
+ * instructs gathering before judging a message: the sender/company
+ * relationship (Attio), recent call history (Granola), and open work
+ * (Linear). There is no dedicated mail-read tool in Myra's base toolset — the
+ * inbound message is already the turn's content (see `buildTriageMessage` in
+ * mailbox-triage.ts), not something triage calls a tool to fetch.
+ */
+const READ_ESSENTIAL_BARE_TOOLS = new Set([
+  "attio_search_records",
+  "attio_get_record",
+  "attio_query_records",
+  "attio_list_objects",
+  "granola_list_notes",
+  "granola_get_note",
+  "linear_list_issues",
+  "linear_get_issue",
+]);
+
+const MINIMAL_LOADOUT_BARE_TOOLS = new Set([
+  ...PLATFORM_CORE_BARE_TOOLS,
+  ...READ_ESSENTIAL_BARE_TOOLS,
+]);
+
+/**
+ * Allow predicate for the minimal `prepare_only` loadout: read-only (the
+ * existing safety net) AND on the curated minimal set. Triage volume runs in
+ * the hundreds/day, so turn 1 advertises only the platform core plus the
+ * handful of internal-lookup tools the prompt calls for — every research /
+ * social / third-party tool in Myra's base toolset (web search, Notion,
+ * Vercel, Firecrawl, GitHub, YouTube, Reddit, Bluesky, X, HackerNews,
+ * Polymarket, ...) is dropped from the advertised list. Grants stay the full
+ * base toolset (`capabilities.tools` on the triage agent definition) — the
+ * intersection enforcement at launch already keeps an unadvertised tool from
+ * being callable, so shrinking only the advertised list cannot widen access.
+ */
+function isMailboxMinimalTool(toolName: string): boolean {
+  const bare = toolName.slice(toolName.lastIndexOf(":") + 1);
+  return isMailboxReadOnlyTool(toolName) && MINIMAL_LOADOUT_BARE_TOOLS.has(bare);
+}
+
+/**
+ * The triage loadout: the base toolset intersected with the minimal-loadout
+ * allow predicate, so the mailbox persona can never advertise a tool Myra
+ * does not otherwise carry, and cannot exceed the curated minimal set.
  */
 export const MAILBOX_PERSONA_TOOLS: string[] = PERSONAL_AGENT_BASE_TOOLS.filter(
-  isMailboxReadOnlyTool,
+  isMailboxMinimalTool,
 );
 
 const PREPARE_ONLY_RULES = `You are prepare-only. Do not send mail, message anyone, create or change any record, start a workflow, or take any other irreversible action. If the right next step is one of those, name it in your plan and leave it for the person to approve — never do it yourself in this pass.`;
@@ -82,7 +139,7 @@ ${actionRules}`,
     },
     {
       tag: "knowledge",
-      content: `Ground the triage in what the company already knows before reaching outside. When the sender or subject names a person, company, or deal, look up the relationship, recent calls, and open work first, and lead with that internal picture. Your tools here are read-only by design: gather context, do not change it. Web search is supplemental — for external facts you cannot find internally.`,
+      content: `Ground the triage in what the company already knows. When the sender or subject names a person, company, or deal, look up the relationship, recent calls, and open work first, and lead with that internal picture. Your tools here are read-only and deliberately narrow: gather context, do not change it, and do not reach beyond the company's own records.`,
     },
     {
       tag: "output",

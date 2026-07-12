@@ -22,7 +22,7 @@ import type { MailboxEventBus } from "../lib/mailbox-events";
 import { readMemberPreferences } from "../lib/member-preferences";
 import type { UserMailboxRowEvent } from "../lib/principal-mailbox";
 import { launchAgentSession } from "./agent-provisioning";
-import { resolveMyraDefinition, teardownThreadRows } from "./myra-threads";
+import { resolveMyraTriageDefinition, teardownThreadRows } from "./myra-threads";
 
 const log = getLogger(["api", "mailbox-triage"]);
 
@@ -206,11 +206,12 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
     const eligible = await isEligible(item);
     if (!eligible) return;
 
-    const def = await resolveMyraDefinition(deps.db, item.tenantId);
+    const def = await resolveMyraTriageDefinition(deps.db, item.tenantId);
     if (!def) {
-      log.error("Mailbox triage skipped: no Myra definition for {tenantId}", {
-        tenantId: item.tenantId,
-      });
+      log.error(
+        "Mailbox triage skipped: no Myra Triage definition for {tenantId}",
+        { tenantId: item.tenantId },
+      );
       return;
     }
 

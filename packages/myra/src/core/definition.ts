@@ -32,6 +32,29 @@ export const PERSONAL_AGENT_MODEL_CONFIG = {
 /** Display name of the personal agent; also the per-tenant seed idempotency key. */
 export const PERSONAL_AGENT_NAME = "Myra";
 
+/**
+ * Display name of the ephemeral inbox-triage variant of Myra; the per-tenant
+ * seed idempotency key for its own agent definition row (see
+ * `MYRA_TRIAGE_MODEL_CONFIG`). A distinct definition — not a per-launch
+ * override — because model binds at the agent-definition level
+ * (`agent.modelRequirements`, resolved from `modelConfig` at seed time); there
+ * is no per-session model override in `launchAgentSession` /
+ * `SessionService.launchSession`.
+ */
+export const PERSONAL_AGENT_TRIAGE_NAME = "Myra Triage";
+
+/**
+ * Triage volume runs in the hundreds/day, so the ephemeral per-item triage
+ * session launches on the cheap flash model rather than Myra's own chat
+ * model — `deepseek-v4-flash` is the established convention for
+ * cost/latency-sensitive agents (Loop, Oat, Walter, Hammy, Lincoln, Firecrawl
+ * all use it). `@intx/types` `modelConfig` has no reasoning/effort field, so
+ * there is nothing to set for "low reasoning" here.
+ */
+export const PERSONAL_AGENT_TRIAGE_MODEL_CONFIG = {
+  defaultModel: "deepseek-v4-flash",
+} as const;
+
 export const PERSONAL_AGENT_DEPLOY_PROMPT: string =
   buildPersonalAgentSystemPrompt(PERSONAL_AGENT_NAME, {
     xml: true,

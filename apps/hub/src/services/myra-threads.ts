@@ -12,7 +12,7 @@ import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "@workbench/agents";
-import { PERSONAL_AGENT_NAME } from "@workbench/myra";
+import { PERSONAL_AGENT_NAME, PERSONAL_AGENT_TRIAGE_NAME } from "@workbench/myra";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,
@@ -63,16 +63,14 @@ function defaultThreadLabel(index: number): string {
  * specific one (nearest to the active tenant). Returns null when no Myra
  * definition exists anywhere in the chain.
  */
-export async function resolveMyraDefinition(
+async function resolveAgentDefinitionByName(
   db: HubDb,
   tenantId: string,
+  name: string,
 ): Promise<typeof agent.$inferSelect | null> {
   const chain = await getAncestorChain(db as never, tenantId);
   const defs = await db.query.agent.findMany({
-    where: and(
-      inArray(agent.tenantId, chain),
-      eq(agent.name, PERSONAL_AGENT_NAME),
-    ),
+    where: and(inArray(agent.tenantId, chain), eq(agent.name, name)),
   });
   if (defs.length === 0) return null;
 
@@ -86,6 +84,26 @@ export async function resolveMyraDefinition(
     }
   }
   return best;
+}
+
+export async function resolveMyraDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_NAME);
+}
+
+/**
+ * Resolve the ephemeral inbox-triage variant of Myra (CL-3364) — a distinct
+ * agent definition ("Myra Triage") bound to the cheap flash model, since
+ * model binds at the definition level and there is no per-launch override in
+ * `launchAgentSession`. Same ancestor-chain resolution as `resolveMyraDefinition`.
+ */
+export async function resolveMyraTriageDefinition(
+  db: HubDb,
+  tenantId: string,
+): Promise<typeof agent.$inferSelect | null> {
+  return resolveAgentDefinitionByName(db, tenantId, PERSONAL_AGENT_TRIAGE_NAME);
 }
 
 export type MyraThreadPage = {

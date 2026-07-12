@@ -11,6 +11,8 @@ export {
   PERSONAL_AGENT_PLATFORM_TOOLS,
   PERSONAL_AGENT_NAME,
   PERSONAL_AGENT_MODEL_CONFIG,
+  PERSONAL_AGENT_TRIAGE_NAME,
+  PERSONAL_AGENT_TRIAGE_MODEL_CONFIG,
 } from "./core/definition";
 export { createPersonalAgentDirector } from "./core/director";
 export {
