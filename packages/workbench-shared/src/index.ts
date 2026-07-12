@@ -17,6 +17,7 @@ export * from "./tasks";
 export * from "./pain-point-collateral";
 export * from "./web-site";
 export * from "./preferences-registry";
+export * from "./changelog";
 export { toHumanLabel } from "./tool-labels";
 export { unwrapArgsEnvelope } from "./tool-args";
 export {

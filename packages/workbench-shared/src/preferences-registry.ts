@@ -167,6 +167,11 @@ export function preferenceValueSchema(entry: PreferenceEntry) {
  * `MemberPreferences` schema, plus the legacy keys that ride its index
  * signature (per-page view-mode toggles), so the registry can reject
  * genuinely unknown keys without breaking those subsystems.
+ *
+ * `changelogSeenVersion` rides this list rather than the registry proper: it
+ * is a stamped version string (not a boolean/select/hourUtc control), and it
+ * must never render as an editable row on the Settings page — the "what's
+ * new" pop-up and dialog are its only writers.
  */
 export const NON_REGISTRY_PREFERENCE_KEYS = [
   "theme",
@@ -178,6 +183,7 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "artifactsViewMode",
   "toolsViewMode",
   "skillsViewMode",
+  "changelogSeenVersion",
 ] as const;
 
 function isNonRegistryKey(key: string): boolean {

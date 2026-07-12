@@ -165,6 +165,20 @@ describe("validatePreferencePatch", () => {
       }),
     ).toBeNull();
   });
+
+  test("accepts changelogSeenVersion without a registry entry", () => {
+    expect(getPreferenceEntry("changelogSeenVersion")).toBeUndefined();
+    expect(
+      validatePreferencePatch({ changelogSeenVersion: "0.6.0" }),
+    ).toBeNull();
+  });
+});
+
+describe("changelogSeenVersion", () => {
+  test("is excluded from resolvePreferenceSettings so it never renders as a control", () => {
+    const settings = resolvePreferenceSettings({ changelogSeenVersion: "0.6.0" });
+    expect(settings.find((s) => s.key === "changelogSeenVersion")).toBeUndefined();
+  });
 });
 
 describe("resolvePreferenceSettings", () => {
