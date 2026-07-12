@@ -198,6 +198,10 @@ function buildIssueFilter(
 ): Record<string, unknown> | null {
   const state = optionalString(args.state);
   const assignee = optionalString(args.assignee);
+  // updatedAfter takes precedence; createdAfter (the heartbeat's fire-time
+  // lookback cutoff, see BriefSourceFetchInputSchema in @workbench/shared)
+  // is used as the updatedAt bound only when updatedAfter is absent.
+  const updatedAfter = optionalString(args.updatedAfter) ?? optionalString(args.createdAfter);
   const filter: Record<string, unknown> = {};
   if (state !== null) {
     filter.state = { name: { eqIgnoreCase: state } };
@@ -205,7 +209,31 @@ function buildIssueFilter(
   if (assignee !== null) {
     filter.assignee = { name: { eqIgnoreCase: assignee } };
   }
+  if (updatedAfter !== null) {
+    filter.updatedAt = { gt: updatedAfter };
+  }
   return Object.keys(filter).length > 0 ? filter : null;
+}
+
+// Workbench-internal brief-source self-skip contract (see
+// BriefSourceFetchInputSchema / BRIEF_SOURCE_SKIPPED_MARKER in
+// @workbench/shared). Duplicated locally rather than imported — this package
+// has no dependency on @workbench/shared, following the tools-granola
+// precedent.
+const BRIEF_SOURCE_SKIPPED_MARKER = { skipped: true as const };
+
+function isBriefSourceFetchEnabled(
+  sourceKey: string,
+  enabledSources: string[] | undefined,
+): boolean {
+  return enabledSources === undefined || enabledSources.includes(sourceKey);
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.filter((entry): entry is string => typeof entry === "string");
 }
 
 async function listIssues(
@@ -213,6 +241,11 @@ async function listIssues(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<unknown> {
+  const enabledSources = optionalStringArray(args.enabledSources);
+  if (!isBriefSourceFetchEnabled("linear", enabledSources)) {
+    return BRIEF_SOURCE_SKIPPED_MARKER;
+  }
+
   const first = optionalPositiveInteger(
     args.first,
     DEFAULT_ISSUE_LIMIT,
@@ -367,6 +400,22 @@ const LIST_ISSUES_INPUT_SCHEMA = {
     assignee: {
       type: "string",
       description: "Optional assignee name to filter by. Case-insensitive.",
+    },
+    updatedAfter: {
+      type: "string",
+      description:
+        "Return only issues updated after this ISO date-time.",
+    },
+    createdAfter: {
+      type: "string",
+      description:
+        "Workbench-internal: used as the updatedAt lower bound when updatedAfter is absent.",
+    },
+    enabledSources: {
+      type: "array",
+      items: { type: "string" },
+      description:
+        'Workbench-internal: the calling member\'s currently-enabled brief source keys. When set and it omits "linear", this call is skipped (returns a `{ skipped: true }` result) instead of hitting the Linear API.',
     },
   },
   required: [],
