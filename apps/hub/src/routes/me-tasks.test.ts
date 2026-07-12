@@ -67,7 +67,40 @@ mock.module("../lib/task-store", () => ({
     storeCalls.push({ fn: "get", args });
     return ownedResult;
   },
+  getVisibleTask: async (_db: unknown, args: Record<string, unknown>) => {
+    storeCalls.push({ fn: "getVisible", args });
+    return ownedResult;
+  },
 }));
+
+// Tenant members the assignee-validation check may see, keyed by principal
+// id. Populated per-test; empty by default (every assignee id is rejected).
+let tenantMembers: Record<string, { tenantId: string; kind: string }> = {};
+
+function makeDb(): HubDb {
+  return {
+    query: {
+      principal: {
+        findFirst: async ({ where }: { where: unknown }) => {
+          const seen = new Set<unknown>();
+          const walk = (value: unknown): string | undefined => {
+            if (typeof value === "string" && tenantMembers[value]) return value;
+            if (value === null || typeof value !== "object" || seen.has(value))
+              return undefined;
+            seen.add(value);
+            for (const v of Object.values(value)) {
+              const found = walk(v);
+              if (found) return found;
+            }
+            return undefined;
+          };
+          const id = walk(where);
+          return id ? { id, ...tenantMembers[id] } : undefined;
+        },
+      },
+    },
+  } as unknown as HubDb;
+}
 
 let pushOutcome: unknown = {
   status: "synced",
@@ -98,7 +131,7 @@ function mountApp() {
   v1.route(
     "/",
     createMeTasksRouter(
-      {} as unknown as HubDb,
+      makeDb(),
       stubPushService as unknown as Parameters<typeof createMeTasksRouter>[1],
     ),
   );
@@ -193,10 +226,10 @@ describe("GET /me/tasks/:id", () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(apiTask({ id: VALID_ID, status: "open" }));
-    const get = storeCalls.find((c) => c.fn === "get");
+    const get = storeCalls.find((c) => c.fn === "getVisible");
     expect(get?.args).toMatchObject({
       tenantId: "tenant-root",
-      ownerPrincipalId: "principal-a",
+      principalId: "principal-a",
       id: VALID_ID,
     });
   });
@@ -305,6 +338,56 @@ describe("PATCH /me/tasks/:id", () => {
       id: VALID_ID,
       status: "done",
     });
+  });
+
+  it("assigns to a valid tenant member and passes assigneePrincipalId through", async () => {
+    storeCalls.length = 0;
+    tenantMembers = {
+      "principal-c": { tenantId: "tenant-root", kind: "user" },
+    };
+    updateResult = apiTask({ assigneePrincipalId: "principal-c" });
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({ assigneePrincipalId: "principal-c" }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const update = storeCalls.find((c) => c.fn === "update");
+    expect(update?.args).toMatchObject({
+      assigneePrincipalId: "principal-c",
+    });
+  });
+
+  it("clears the assignee with assigneePrincipalId: null, no membership check", async () => {
+    storeCalls.length = 0;
+    tenantMembers = {};
+    updateResult = apiTask({});
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({ assigneePrincipalId: null }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const update = storeCalls.find((c) => c.fn === "update");
+    expect(update?.args).toMatchObject({ assigneePrincipalId: null });
+  });
+
+  it("400s when the assignee is not a member of the caller's tenant", async () => {
+    storeCalls.length = 0;
+    tenantMembers = {};
+    const res = await mountApp().fetch(
+      req(`/me/tasks/${VALID_ID}`, {
+        method: "PATCH",
+        user: "user-a",
+        body: JSON.stringify({ assigneePrincipalId: "principal-ghost" }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "update")).toBe(false);
   });
 });
 

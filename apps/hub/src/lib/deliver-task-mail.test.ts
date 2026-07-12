@@ -271,6 +271,59 @@ describe("deliverTaskMail", () => {
     expect(inserted).toHaveLength(0);
   });
 
+  it("addresses a reassignment to the new assignee, not the owner", async () => {
+    preferences = {};
+    const NEW_ASSIGNEE_PRINCIPAL = {
+      id: "prn-assignee",
+      tenantId: "ten-1",
+      refId: "assignee-1",
+      kind: "user",
+    };
+    const { db, inserted } = makeDb({
+      principals: {
+        "prn-owner": OWNER_PRINCIPAL,
+        "prn-actor": ACTOR_USER_PRINCIPAL,
+        "prn-assignee": NEW_ASSIGNEE_PRINCIPAL,
+      },
+      users: {
+        "actor-1": { id: "actor-1", name: "Alice" },
+        "assignee-1": { id: "assignee-1", name: "Bob" },
+      },
+    });
+    await deliverTaskMail({
+      db,
+      tenantId: "ten-1",
+      task: baseTask(),
+      event: "assigned",
+      actorPrincipalId: "prn-actor",
+      recipientPrincipalId: "prn-assignee",
+    });
+    expect(inserted).toHaveLength(1);
+    const row = inserted[0] as Record<string, unknown>;
+    expect(row.principalId).toBe("prn-assignee");
+    expect(row.subject).toBe("Alice assigned you: Follow up with Acme");
+    expect(row.messageKey).toBe("task:task-1:assigned:prn-assignee");
+  });
+
+  it("skips a reassignment self-event (actor assigns the task to themself)", async () => {
+    preferences = {};
+    const { db, inserted } = makeDb({
+      principals: {
+        "prn-owner": OWNER_PRINCIPAL,
+        "prn-actor": ACTOR_USER_PRINCIPAL,
+      },
+    });
+    await deliverTaskMail({
+      db,
+      tenantId: "ten-1",
+      task: baseTask(),
+      event: "assigned",
+      actorPrincipalId: "prn-actor",
+      recipientPrincipalId: "prn-actor",
+    });
+    expect(inserted).toHaveLength(0);
+  });
+
   it("never throws when the db lookup fails", async () => {
     preferences = {};
     const db = {
