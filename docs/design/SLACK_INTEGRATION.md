@@ -61,7 +61,7 @@ OAuth install (like Gamma's) is a fast-follow ticket.
   `SLACK_BOT_TOKEN`, metadata carries `SLACK_SIGNING_SECRET` + `SLACK_TEAM_ID`)
   and to `CREDENTIAL_PROVIDER_CATALOG` in
   `packages/workbench-shared/src/governance.ts` (`kind: "tool"`, `secretLabel:
-  "Bot token"`, `secondaryField` = signing secret, `platforms: ["slack"]`).
+"Bot token"`, `secondaryField` = signing secret, `platforms: ["slack"]`).
 
 **Workspace→tenant routing.** Events carry `team_id`. The endpoint maps
 `team_id` → tenant by looking up the tenant whose `slack` credential metadata
@@ -103,8 +103,8 @@ session-auth wall**, exactly like the webhook rail (`apps/hub/src/index.ts`:
 
 1. **Resolve member.** `users.info` on `event.user` → email → member principal.
    Persist the mapping as a `member_identity` row (`provider: "slack"`, `value:
-   <slack user id>`, unique on `(tenantId, memberPrincipalId, provider,
-   value)`) so subsequent mentions skip the email lookup; resolution order is
+<slack user id>`, unique on `(tenantId, memberPrincipalId, provider,
+value)`) so subsequent mentions skip the email lookup; resolution order is
    member_identity first, email fallback second. Email→member matching goes
    through the same member lookup the auth layer uses (better-auth account
    email), tenant-scoped.
@@ -130,7 +130,7 @@ session-auth wall**, exactly like the webhook rail (`apps/hub/src/index.ts`:
    - teardown in `finally`: `endSession(address, "slack_mention_done")` +
      `teardownThreadRows` (`myra-threads.ts`).
 4. **Reply.** `chat.postMessage` with `channel: event.channel`, `thread_ts:
-   event.thread_ts ?? event.ts` — always in-thread, never top-level channel
+event.thread_ts ?? event.ts` — always in-thread, never top-level channel
    spam. On turn timeout/failure, post a brief "I couldn't finish that — try
    again in the Workbench" (never a raw error; house rule: hide failures).
 
@@ -202,7 +202,7 @@ New package `packages/tools-slack`, modeled on `@workbench/tools-firecrawl`
   (kimi-safe, per CL-2319): `channel` (name or id), `thread_ts?`, `limit`
   (default 30, max 100), `oldest?`/`latest?` (ISO). Resolves channel name → id
   via `conversations.list` (cached). Returns `{ channel, messages: [{ ts, user,
-  userName, text, threadTs? }] }`. Errors like `not_in_channel` surface as an
+userName, text, threadTs? }] }`. Errors like `not_in_channel` surface as an
   actionable message ("invite @Myra to #chan").
 - `slack_post_message` — `chat.postMessage` (write; `sideEffect: true`).
   Params: `channel`, `text`, `thread_ts?`. The one write tool; excluded from any

@@ -70,6 +70,7 @@ export const TOOL_PACKAGES: ToolPackageSpec[] = [
   { name: "@workbench/tools-attio", packageDir: "packages/tools-attio" },
   { name: "@workbench/tools-notion", packageDir: "packages/tools-notion" },
   { name: "@workbench/tools-vercel", packageDir: "packages/tools-vercel" },
+  { name: "@workbench/tools-slack", packageDir: "packages/tools-slack" },
   {
     name: "@workbench/tools-fileparser",
     packageDir: "packages/tools-fileparser",

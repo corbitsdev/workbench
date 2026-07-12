@@ -82,5 +82,6 @@ export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "deploy-artifact__vercel_deploy_artifact",
   "notion__create_page",
   "linear__create_issue",
+  "slack__post_message",
   ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
 ]);

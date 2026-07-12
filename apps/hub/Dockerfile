@@ -58,6 +58,7 @@ COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-skills/package.json packages/tools-skills/
+COPY packages/tools-slack/package.json packages/tools-slack/
 COPY packages/tools-workflows/package.json packages/tools-workflows/
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
@@ -120,6 +121,7 @@ COPY packages/tools-polymarket/ packages/tools-polymarket/
 COPY packages/tools-reddit/ packages/tools-reddit/
 COPY packages/tools-scrapecreators/ packages/tools-scrapecreators/
 COPY packages/tools-skills/ packages/tools-skills/
+COPY packages/tools-slack/ packages/tools-slack/
 COPY packages/tools-workflows/ packages/tools-workflows/
 COPY packages/tools-x/ packages/tools-x/
 COPY packages/tools-youtube/ packages/tools-youtube/

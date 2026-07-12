@@ -147,6 +147,12 @@ const PACKAGE_TOOLS: Record<string, readonly string[]> = {
     "scrapecreators_threads",
     "scrapecreators_pinterest",
   ],
+  "@workbench/tools-slack/slack": [
+    "slack_list_channels",
+    "slack_get_channel_history",
+    "slack_search",
+    "slack_post_message",
+  ],
   "@workbench/tools-skills/skills": [
     "list_skills",
     "search_skills",
@@ -190,6 +196,7 @@ const PACKAGE_PROVIDERS: Record<string, string> = {
   "@workbench/tools-granola": "granola",
   "@workbench/tools-reddit": "scrapecreators",
   "@workbench/tools-scrapecreators": "scrapecreators",
+  "@workbench/tools-slack": "slack",
   "@workbench/tools-x": "xai",
   "@workbench/tools-youtube": "youtube",
 };
