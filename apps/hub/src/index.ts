@@ -82,6 +82,7 @@ import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createScheduler } from "./services/scheduler";
 import { createTaskReconcilerService } from "./services/task-reconciler";
 import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
+import { enrichHeartbeatTriggerPayload } from "./lib/heartbeat-trigger-payload";
 import {
   ensureOwnerSchedule,
   listEnabledSchedules,
@@ -138,6 +139,7 @@ import {
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
+import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
@@ -1358,10 +1360,26 @@ const scheduler = createScheduler({
   listSchedules: () => listEnabledSchedules(db, rootTenantId),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
   startWorkflowRun: async (fire) => {
+    // Re-read the member's brief-source preferences at the moment the
+    // schedule actually fires, rather than trusting whatever `enabledSources`
+    // (if any) was baked into the schedule row when it was created — a source
+    // toggle in Settings must take effect on the very next brief, not the next
+    // time the schedule row itself is edited.
+    const prefs = await readMemberPreferences(
+      db,
+      fire.tenantId,
+      fire.creatorPrincipalId,
+    );
+    const triggerPayload = enrichHeartbeatTriggerPayload(
+      fire.triggerPayload,
+      fire.kind,
+      config.scheduler.heartbeatKind,
+      resolveEnabledBriefSources(prefs),
+    );
     const result = await runStarter.startRun({
       kind: fire.kind,
       tenantId: fire.tenantId,
-      input: fire.triggerPayload,
+      input: triggerPayload,
       creatorPrincipalId: fire.creatorPrincipalId,
     });
     if (!result.ok) {
