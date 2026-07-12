@@ -9,7 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { PreferenceSetting } from "@workbench/shared";
+import type { AvailableBriefSource, PreferenceSetting } from "@workbench/shared";
 
 const SETTINGS: PreferenceSetting[] = [
   {
@@ -36,14 +36,31 @@ const SETTINGS: PreferenceSetting[] = [
   },
 ];
 
+const BRIEF_SOURCES: AvailableBriefSource[] = [
+  {
+    key: "granola",
+    label: "Granola calls",
+    description: "Pull in recent call notes from Granola.",
+    enabled: true,
+  },
+  {
+    key: "exa",
+    label: "Exa research",
+    description: "Pull in recent research from Exa.",
+    enabled: false,
+  },
+];
+
 const getMePreferenceSettings = mock(async () => SETTINGS);
 const patchMePreferences = mock(
   async (_patch: Record<string, unknown>) => ({}),
 );
+const getMeBriefSources = mock(async () => BRIEF_SOURCES);
 
 mock.module("../lib/hub-api", () => ({
   getMePreferenceSettings,
   patchMePreferences,
+  getMeBriefSources,
 }));
 
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -66,6 +83,7 @@ beforeEach(() => {
 afterEach(() => {
   getMePreferenceSettings.mockClear();
   patchMePreferences.mockClear();
+  getMeBriefSources.mockClear();
   cleanup();
 });
 
@@ -105,6 +123,39 @@ describe("PreferencesPanel", () => {
     });
     expect(patchMePreferences.mock.calls[0][0]).toEqual({
       notifyInboxMail: false,
+    });
+  });
+
+  it("renders a toggle for every brief source the hub returns, dynamically", async () => {
+    renderPanel();
+    await screen.findByText("Granola calls");
+    expect(screen.getByText("Exa research")).toBeDefined();
+    const granolaToggle = screen.getByRole("switch", {
+      name: "Granola calls",
+    });
+    const exaToggle = screen.getByRole("switch", { name: "Exa research" });
+    expect(granolaToggle.getAttribute("aria-checked")).toBe("true");
+    expect(exaToggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("does not render a brief source absent from the hub response", async () => {
+    renderPanel();
+    await screen.findByText("Granola calls");
+    expect(screen.queryByText("Slack digest")).toBeNull();
+  });
+
+  it("PATCHes the brief-source-prefixed key when a source toggle flips", async () => {
+    renderPanel();
+    const exaToggle = await screen.findByRole("switch", {
+      name: "Exa research",
+    });
+    fireEvent.click(exaToggle);
+    await waitFor(() => {
+      if (patchMePreferences.mock.calls.length === 0)
+        throw new Error("no patch");
+    });
+    expect(patchMePreferences.mock.calls[0][0]).toEqual({
+      "briefSource:exa": true,
     });
   });
 });

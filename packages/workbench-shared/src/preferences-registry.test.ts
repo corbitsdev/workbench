@@ -11,7 +11,10 @@ import {
   BRIEF_SOURCE_CATALOG,
   briefSourcePreferenceKey,
   resolveEnabledBriefSources,
+  resolveAvailableBriefSources,
+  AvailableBriefSourceSchema,
 } from "./preferences-registry";
+import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
 describe("PREFERENCE_REGISTRY", () => {
   test("every entry validates against the entry schema", () => {
@@ -106,6 +109,61 @@ describe("resolveEnabledBriefSources", () => {
       [briefSourcePreferenceKey("granola")]: true,
     });
     expect(enabled).toContain("granola");
+  });
+});
+
+describe("BRIEF_SOURCE_CATALOG", () => {
+  test("is derived from every CREDENTIAL_PROVIDER_CATALOG entry tagged briefSource", () => {
+    const tagged = CREDENTIAL_PROVIDER_CATALOG.filter(
+      (e) => e.briefSource !== undefined,
+    );
+    expect(BRIEF_SOURCE_CATALOG.length).toBe(tagged.length);
+    expect(BRIEF_SOURCE_CATALOG.map((s) => s.key).sort()).toEqual(
+      tagged.map((e) => e.providerName).sort(),
+    );
+  });
+
+  test("includes granola", () => {
+    expect(BRIEF_SOURCE_CATALOG.some((s) => s.key === "granola")).toBe(true);
+  });
+});
+
+describe("resolveAvailableBriefSources", () => {
+  test("excludes a catalog source with no configured credential", () => {
+    const sources = resolveAvailableBriefSources([], {});
+    expect(sources).toEqual([]);
+  });
+
+  test("includes a catalog source whose credential is configured", () => {
+    const sources = resolveAvailableBriefSources(["granola"], {});
+    expect(sources.map((s) => s.key)).toEqual(["granola"]);
+    for (const source of sources) {
+      const parsed = AvailableBriefSourceSchema(source);
+      expect(parsed instanceof type.errors).toBe(false);
+    }
+  });
+
+  test("a catalog addition appears once its provider is configured, with no other change", () => {
+    const beforeAll = resolveAvailableBriefSources(
+      CREDENTIAL_PROVIDER_CATALOG.map((e) => e.providerName),
+      {},
+    );
+    expect(beforeAll.length).toBe(BRIEF_SOURCE_CATALOG.length);
+  });
+
+  test("resolves enabled from stored preferences, defaulting per catalog entry", () => {
+    const enabledByDefault = resolveAvailableBriefSources(["granola"], {});
+    expect(enabledByDefault[0]?.enabled).toBe(true);
+
+    const disabled = resolveAvailableBriefSources(["granola"], {
+      [briefSourcePreferenceKey("granola")]: false,
+    });
+    expect(disabled[0]?.enabled).toBe(false);
+  });
+
+  test("ignores a configured provider name absent from the brief-source catalog", () => {
+    const sources = resolveAvailableBriefSources(["not-a-brief-source"], {});
+    expect(sources).toEqual([]);
   });
 });
 
