@@ -1,7 +1,12 @@
 import { useEffect, useMemo } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Inbox as InboxIcon } from "lucide-react";
+import { Inbox as InboxIcon, Settings } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
 import {
   buildNowFeed,
@@ -121,9 +126,19 @@ export function InboxPage() {
           <h1 className="text-[17px] font-semibold tracking-[-0.01em] text-text">
             Inbox
           </h1>
-          {messages.length > 0 && (
-            <span className="text-xs text-text-3">{messages.length}</span>
-          )}
+          <div className="flex items-center gap-2">
+            {messages.length > 0 && (
+              <span className="text-xs text-text-3">{messages.length}</span>
+            )}
+            <Link
+              to="/settings#morning-brief"
+              title="Inbox settings"
+              aria-label="Inbox settings"
+              className="grid h-7 w-7 place-items-center rounded-[8px] text-text-3 transition-colors hover:bg-page hover:text-text"
+            >
+              <Settings size={15} aria-hidden="true" />
+            </Link>
+          </div>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           <MessageList

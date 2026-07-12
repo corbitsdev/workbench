@@ -251,6 +251,27 @@ describe("InboxPage", () => {
     );
   });
 
+  it("explains what fills the inbox and links to the morning brief settings", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    renderInbox();
+    screen.getByText(
+      /morning brief.*workflow approvals.*task updates.*mail from your agents/i,
+    );
+    const settingsLink = screen.getByRole("link", {
+      name: /set up your morning brief/i,
+    }) as HTMLAnchorElement;
+    expect(settingsLink.getAttribute("href")).toBe("/settings#morning-brief");
+  });
+
+  it("links the inbox header to the morning brief settings section", () => {
+    mailbox = { data: [], isLoading: false, isError: false };
+    renderInbox();
+    const settingsLink = screen.getByRole("link", {
+      name: /inbox settings/i,
+    }) as HTMLAnchorElement;
+    expect(settingsLink.getAttribute("href")).toBe("/settings#morning-brief");
+  });
+
   it("renders every message in the list, not just the first", () => {
     mailbox = {
       data: [
