@@ -44,7 +44,30 @@ export function createTaskPushService(deps: {
   adapters: Record<string, TaskAdapter>;
   resolveAssignee?: ResolveAssignee;
 }): TaskPushService {
+  // Concurrent pushes for the same (task, adapter) coalesce onto one in-flight
+  // execution. The ref-row check below only dedupes AFTER a push has synced;
+  // without this guard, two overlapping creates both see a pending ref and both
+  // reach the downstream API — which duplicates the object on providers with no
+  // wire-level dedupe of their own (Linear). The hub runs single-replica, so an
+  // in-process guard closes the window.
+  const inflight = new Map<string, Promise<TaskPushOutcome>>();
+
   async function pushTask(request: TaskPushRequest): Promise<TaskPushOutcome> {
+    const key = `${request.taskId}:${request.adapterId}`;
+    const pending = inflight.get(key);
+    if (pending) {
+      return pending;
+    }
+    const run = executePush(request).finally(() => {
+      inflight.delete(key);
+    });
+    inflight.set(key, run);
+    return run;
+  }
+
+  async function executePush(
+    request: TaskPushRequest,
+  ): Promise<TaskPushOutcome> {
     const adapter = deps.adapters[request.adapterId];
     if (!adapter) {
       throw new Error(`Unknown task adapter: ${request.adapterId}`);
