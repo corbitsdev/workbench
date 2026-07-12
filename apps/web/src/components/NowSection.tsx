@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router";
-import { CheckCircle2 } from "lucide-react";
+import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { cn } from "@workbench/ui";
 import type {
   NowItem,
@@ -55,10 +55,17 @@ export function NowSection({
             <p className="text-sm font-medium text-text">
               You're all caught up
             </p>
-            <p className="mt-1 text-xs text-text-3">
-              Approvals, new mail, and open tasks will show up here as they
-              arrive.
+            <p className="mt-1 max-w-[420px] text-xs text-text-3">
+              Your morning brief, workflow approvals, task updates, and mail
+              from your agents will land here as they arrive.
             </p>
+            <Link
+              to="/settings#morning-brief"
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-orange hover:underline"
+            >
+              Set up your morning brief
+              <ArrowRight size={12} aria-hidden="true" />
+            </Link>
           </div>
         </div>
       </div>
