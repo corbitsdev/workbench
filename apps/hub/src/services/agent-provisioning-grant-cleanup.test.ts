@@ -180,7 +180,7 @@ const BASE_OPTS = {
 
 describe("launchAgentSession failure cleanup", () => {
   it("deletes both tool and requirement grants when an unbound instance's launch ultimately fails", async () => {
-    const { db } = makeMockDb({ bound: false });
+    const { db, deleteCalls } = makeMockDb({ bound: false });
     const launchSession = mock(() =>
       Promise.reject(new Error("sidecar unavailable")),
     );
@@ -207,10 +207,14 @@ describe("launchAgentSession failure cleanup", () => {
     // cleanup transaction that deletes both origin sets — a clean rollback to
     // zero, not an asymmetric partial state.
     expect(db.transaction).toHaveBeenCalledTimes(3);
+    // Three launch-path deletes (tool-grant persist, requirement-grant
+    // persist, session-asset reset) plus TWO cleanup deletes — one per grant
+    // origin set. The asymmetric cleanup this guards against issued only one.
+    expect(deleteCalls).toHaveLength(5);
   }, 10000);
 
   it("does not strip a bound instance's just-persisted grants when launch ultimately fails", async () => {
-    const { db } = makeMockDb({ bound: true });
+    const { db, deleteCalls } = makeMockDb({ bound: true });
     const launchSession = mock(() =>
       Promise.reject(new Error("sidecar unavailable")),
     );
@@ -236,6 +240,9 @@ describe("launchAgentSession failure cleanup", () => {
     // Only the two persist-phase transactions ran; the cleanup transaction was
     // skipped because the instance is still bound to a member.
     expect(db.transaction).toHaveBeenCalledTimes(2);
+    // Only the launch-path deletes ran — no cleanup delete touched the
+    // bound instance's grants.
+    expect(deleteCalls).toHaveLength(3);
     expect(
       warnLogs.some((l) =>
         l.msg.includes("Launch failed for a bound instance"),
