@@ -42,6 +42,9 @@ Two ways work can start without a user opening the app:
   request returns a generic not-found rather than revealing which triggers
   exist.
 
+Turning these on for an environment, plus the admin and member setup that
+makes them useful, is covered in [SETUP_V06.md](SETUP_V06.md).
+
 ## Ephemeral triage Myra
 
 When a message from outside the platform lands in a user's inbox, an
