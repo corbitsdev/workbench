@@ -21,7 +21,12 @@ to a user's inbox, but only within the tenant it's provisioned in — and every
 inbox list and detail route derives the caller's identity from their session,
 never from a client-supplied id.
 
-A notifications bell in the app chrome surfaces unread counts, and a
+The inbox is live: new mail, a landing brief, or a triage handoff appears the
+moment it is delivered (a content-free push signal tells the open app to
+refresh; a gentle poll remains as fallback).
+
+A notifications bell in the app chrome surfaces unread counts (and lists
+recent open tasks alongside mail), and a
 registry-driven onboarding tour (its shown/dismissed state is a persisted user
 preference, not local-only UI state) introduces new users to the inbox model
 on first login.
@@ -34,13 +39,20 @@ Two ways work can start without a user opening the app:
   cadence) that fires a workflow run. Users manage their own schedules from a
   dedicated page. One heartbeat schedule is seeded automatically per Myra
   instance so Myra can check in on a cadence even if the user never sets up a
-  schedule themselves. This is opt-in at the deployment level — an operator
-  turns automation scheduling on for an environment.
+  schedule themselves. The **owner turns automations on or off** from the
+  Capabilities page — scheduling, triage, and task sync are each a toggle,
+  disabled by default, with no deploy needed to flip them.
 - **Webhook triggers** — a user can mint a webhook that starts a workflow run
   when an external system posts to it. The public endpoint is secret-authenticated
   and rate-limited per source IP to prevent abuse; a failed or unauthorized
   request returns a generic not-found rather than revealing which triggers
   exist.
+
+Users shape their own morning brief: when it arrives (their brief hour), which
+sources feed it (per-source toggles — Granola calls today, more as
+integrations land; a toggled-off or unavailable source is simply absent, never
+reported as a failure), and which catalog workflows run alongside it, their
+outputs landing in the inbox as their own items.
 
 ## Ephemeral triage Myra
 
@@ -48,8 +60,11 @@ When a message from outside the platform lands in a user's inbox, an
 ephemeral, read-only instance of Myra can triage it before the user sees it —
 summarizing, flagging what needs a decision, and handing back a threaded
 "Myra triaged: …" note in the same inbox. Triage runs as a short-lived
-per-message session (not a standing agent), is bounded so a burst of inbound
-mail can't runwild the queue, and is opt-in at the deployment level. The
+per-message session (not a standing agent) on a fast, economical model with a
+lean toolset, is bounded so a burst of inbound mail can't run the queue wild,
+ignores bounce/no-reply mail and mail from other agents (a triage handoff is
+terminal — two people's triage agents can never loop), and is a toggle the
+owner controls. The
 default autonomy level for this and other agent-initiated action is
 **prepare-only** — the agent drafts and hands back, it does not send or act on
 the user's behalf, unless the user raises their own autonomy preference.
@@ -58,9 +73,11 @@ the user's behalf, unless the user raises their own autonomy preference.
 
 Tasks are now a first-class object in the workbench, not something that only
 exists in a connected CRM. A user (or an agent acting for them) can create a
-task, and the workbench can optionally push it out to an external system (for
-example Attio) and reconcile state back — pushes and reconciliation happen
-server-side; a push failure never surfaces as a user-facing error, it's
+task, and the workbench can push it out to a connected external system (Attio
+and Linear today) and reconcile state back. From a task in the inbox, the user
+sends it to a system with an explicit confirmation; a quiet chip on the task
+shows where it's linked or that it's on its way. Pushes and reconciliation
+happen server-side; a push failure never surfaces as a user-facing error, it's
 retried in the background.
 
 ## Agents
