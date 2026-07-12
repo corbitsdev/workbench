@@ -27,6 +27,7 @@ import { fetchBuildSha } from "../lib/api";
 import { getMe, patchMeProfile } from "../lib/hub-api";
 import { useAuth } from "../components/AuthProvider";
 import { PreferencesPanel } from "../components/PreferencesPanel";
+import { ConnectedToInboxPanel } from "../components/ConnectedToInboxPanel";
 import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 import { SettingsSectionNav } from "./SettingsSectionNav";
@@ -217,6 +218,7 @@ export default function Settings() {
                 <PreferencesPanel categories={["Automations"]} />
               </div>
               <PreferencesPanel categories={["Inbox", "Notifications"]} />
+              <ConnectedToInboxPanel />
             </SettingsGroup>
 
             <SettingsGroup id="account" title="Account">
