@@ -162,6 +162,8 @@ convention to copy — new `/me/*` list routes should use `items`.
 GET   /me/inbox              # { limit, cursor } → { messages, nextCursor? }
 GET   /me/inbox/:id          # message detail
 POST  /me/inbox/:id/read     # marks a message read
+GET   /me/inbox/events       # SSE — content-free { type: "mailbox", id } delivery
+                             # signals; client refetches through the routes above
 ```
 
 Backed by the workbench-owned `principal_mailbox` table — every principal
@@ -176,18 +178,31 @@ GET/POST/DELETE        /me/webhook-triggers        # workflow_trigger rows
 POST                   /triggers/webhook/:triggerId  # public — secret-authenticated, IP-rate-limited
 ```
 
-The scheduler and its heartbeat seeder, and the webhook trigger route, are
-each gated behind an opt-in environment kill switch (default off) — see
-`IMPLEMENTATION.md`.
+The scheduler, triage, and task-reconciler engines are owner-managed feature
+grants (see Owner routes below); the legacy environment kill switches remain
+only as emergency overrides — see `IMPLEMENTATION.md`.
 
 ### Tasks
 
 ```
-GET/POST/PATCH  /me/tasks   # { limit, cursor } → { items, nextCursor? }
+GET/POST/PATCH  /me/tasks            # { limit, cursor } → { items, nextCursor? }
+GET             /me/tasks/:id        # single task, owner-scoped, 404 if not caller's
+POST            /me/tasks/:id/push   # { adapterId } → send the task to an external
+                                     # system (Attio, Linear); ownership-checked
 ```
 
 Backed by the workbench-owned `task` table, with optional external-system
 linkage in `task_external_ref`.
+
+### Owner: features
+
+```
+GET  /owner/features         # feature-grant state per feature (+ forcedByEnv)
+PUT  /owner/features/:name   # { enabled } → write/revoke the tenant feature grant
+```
+
+Owner-guarded; toggles write `admin_audit` records. Features are
+deny-by-default; an env-forced feature reports `forcedByEnv: true`.
 
 ---
 
