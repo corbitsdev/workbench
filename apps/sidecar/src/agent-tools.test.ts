@@ -21,7 +21,6 @@ function fakeManifest(
       source: { kind: "asset", assetId: `${e.name}-asset` },
     })),
     topLevel: entries.map((e) => ({ name: e.name, version: e.version })),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test fixture, loose manifest shape
   } as any;
 }
 

@@ -67,7 +67,7 @@ let tokensResponse: {
   runId: string;
   available: boolean;
   totals?: typeof TOKEN_COUNTS & { inputTokens: number; outputTokens: number };
-  steps?: Array<{ stepId: string } & typeof TOKEN_COUNTS>;
+  steps?: ({ stepId: string } & typeof TOKEN_COUNTS)[];
 } = { runId: "run-1", available: false };
 
 mock.module("../../lib/api", () => ({

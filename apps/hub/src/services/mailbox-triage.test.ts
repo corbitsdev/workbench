@@ -573,7 +573,7 @@ describe("createMailboxTriage session spawn budget", () => {
 
     for (let i = 0; i < 31; i++) {
       triage.enqueue({ ...ITEM, rowId: `row-${i}` });
-      // eslint-disable-next-line no-await-in-loop
+
       await triage.waitForDrain();
     }
 
@@ -596,7 +596,7 @@ describe("createMailboxTriage session spawn budget", () => {
 
     for (let i = 0; i < 30; i++) {
       triage.enqueue({ ...ITEM, rowId: `row-${i}` });
-      // eslint-disable-next-line no-await-in-loop
+
       await triage.waitForDrain();
     }
     expect(session.sendUserMessage).toHaveBeenCalledTimes(30);
@@ -626,7 +626,7 @@ describe("createMailboxTriage session spawn budget", () => {
 
     for (let i = 0; i < 31; i++) {
       triage.enqueue({ ...ITEM, tenantId: "ten-a", rowId: `ten-a-${i}` });
-      // eslint-disable-next-line no-await-in-loop
+
       await triage.waitForDrain();
     }
     expect(session.sendUserMessage).toHaveBeenCalledTimes(30);

@@ -249,7 +249,6 @@ describe("createWorkflowRunStarter", () => {
     });
 
     for (let i = 0; i < 60; i++) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await starter.startRun({
         kind: "heartbeat",
         tenantId: "t-root",
@@ -286,7 +285,6 @@ describe("createWorkflowRunStarter", () => {
     });
 
     for (let i = 0; i < 61; i++) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await starter.startRun({
         kind: "heartbeat",
         tenantId: "t-root",
@@ -320,7 +318,6 @@ describe("createWorkflowRunStarter", () => {
     });
 
     for (let i = 0; i < 60; i++) {
-      // eslint-disable-next-line no-await-in-loop
       await starter.startRun({
         kind: "heartbeat",
         tenantId: "t-root",
@@ -367,7 +364,6 @@ describe("createWorkflowRunStarter", () => {
     });
 
     for (let i = 0; i < 60; i++) {
-      // eslint-disable-next-line no-await-in-loop
       await starter.startRun({ kind: "heartbeat", tenantId: "t-a", input: {} });
     }
     const blockedA = await starter.startRun({

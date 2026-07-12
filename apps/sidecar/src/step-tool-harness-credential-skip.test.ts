@@ -45,7 +45,7 @@ const loadToolPackagesMock = mock(async (): Promise<LoadedPackage[]> => []);
 mock.module("./agent-tools", () => ({
   loadToolPackages: loadToolPackagesMock,
   fetchToolCredentials: mock(async () => ({})),
-  mergeToolRunners: (runners: unknown[]) => ({
+  mergeToolRunners: (_runners: unknown[]) => ({
     definitions: [],
     run: async () => ({ callId: "x", content: "" }),
   }),

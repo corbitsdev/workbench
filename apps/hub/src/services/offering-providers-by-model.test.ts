@@ -2,12 +2,12 @@ import { describe, expect, mock, test } from "bun:test";
 
 const listVisibleOfferings = mock(
   async (): Promise<
-    Array<{
+    {
       offering: { id: string; priority: number };
       model: { canonicalName: string };
       provider: { name: string };
       origin: { tenantId: string; direct: boolean };
-    }>
+    }[]
   > => [],
 );
 

@@ -112,7 +112,7 @@ export function isPlaceholderUrl(url: string): boolean {
 }
 
 export function assertResolvedUrls(env: ClientEnvironment): void {
-  const urls: Array<[string, string]> = [["hub_url", env.hub_url]];
+  const urls: [string, string][] = [["hub_url", env.hub_url]];
   if (env.web_url !== undefined) urls.push(["web_url", env.web_url]);
   const unresolved = urls
     .filter(([, url]) => isPlaceholderUrl(url))

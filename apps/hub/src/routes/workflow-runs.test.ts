@@ -694,7 +694,6 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
       );
 
     for (let i = 0; i < 60; i++) {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await fire();
       expect(ok.status).toBe(202);
     }

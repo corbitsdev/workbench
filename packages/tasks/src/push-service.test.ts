@@ -386,11 +386,11 @@ describe("createTaskPushService.pushTask", () => {
   });
 
   it("resolves the assignee with the task's own tenantId, not a caller-supplied one", async () => {
-    const resolveCalls: Array<{
+    const resolveCalls: {
       ownerPrincipalId: string;
       adapterId: string;
       tenantId: string;
-    }> = [];
+    }[] = [];
     const calls: Call[] = [];
     const service = createTaskPushService({
       store,
