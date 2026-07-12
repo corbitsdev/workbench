@@ -120,6 +120,7 @@ import { createMyraThreadsRouter } from "./routes/myra-threads";
 import { recordMyraThreadActivity } from "./services/myra-threads";
 import {
   createMailboxTriage,
+  sweepStaleTriageInstances,
   type MailboxTriage,
 } from "./services/mailbox-triage";
 import { createArtifactsRouter } from "./routes/artifacts";
@@ -582,6 +583,16 @@ mailboxTriage = createMailboxTriage({
   eventCollectors,
   cryptoProvider,
   mailboxEventBus,
+});
+
+// Retires any `myra-triage` instances a prior process left behind because
+// their `endSession` call failed mid-teardown (see `runOne`'s finally block
+// in mailbox-triage.ts). Bounded, logged once, fire-and-forget — a failure
+// here just leaves the backlog for the next boot to retry.
+void sweepStaleTriageInstances(db, sessionService).catch((err) => {
+  log.error("Triage boot sweep failed", {
+    error: err instanceof Error ? err : new Error(String(err)),
+  });
 });
 
 // The disconnect reconciler above only ENDS a stale session; nothing re-registers
