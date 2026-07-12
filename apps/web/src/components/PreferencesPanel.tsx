@@ -159,7 +159,12 @@ function PreferenceSection({
   );
 }
 
-export function PreferencesPanel() {
+interface PreferencesPanelProps {
+  /** Restricts rendering to these categories; omit to render every category. */
+  readonly categories?: readonly PreferenceCategory[];
+}
+
+export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
   const query = usePreferenceSettings();
   const update = useUpdatePreference();
   const reduceMotion = useReducedMotion() ?? false;
@@ -208,10 +213,13 @@ export function PreferencesPanel() {
     );
   }
 
-  const grouped = PREFERENCE_CATEGORIES.map((category) => ({
-    category,
-    items: settings.filter((s) => s.category === category),
-  })).filter((group) => group.items.length > 0);
+  const visibleCategories = categories ?? PREFERENCE_CATEGORIES;
+  const grouped = visibleCategories
+    .map((category) => ({
+      category,
+      items: settings.filter((s) => s.category === category),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <div className="flex flex-col gap-6">

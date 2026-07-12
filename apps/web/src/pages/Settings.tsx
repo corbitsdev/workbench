@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SettingsPage,
@@ -29,6 +29,8 @@ import { useAuth } from "../components/AuthProvider";
 import { PreferencesPanel } from "../components/PreferencesPanel";
 import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
+import { SettingsSectionNav } from "./SettingsSectionNav";
+import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -84,6 +86,32 @@ const SECTIONS: readonly SettingsSectionDescriptor[] = [
 ];
 
 const INITIAL_VALUES: SettingsValues = {};
+
+interface SettingsGroupProps {
+  readonly id: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly children: ReactNode;
+}
+
+function SettingsGroup({
+  id,
+  title,
+  description,
+  children,
+}: SettingsGroupProps) {
+  return (
+    <section id={id} className="scroll-mt-4">
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold text-text">{title}</h2>
+        {description !== undefined && (
+          <p className="mt-0.5 text-sm text-text-3">{description}</p>
+        )}
+      </div>
+      <div className="flex flex-col gap-6">{children}</div>
+    </section>
+  );
+}
 
 export default function Settings() {
   const { signOut } = useAuth();
@@ -162,96 +190,134 @@ export default function Settings() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <SettingsPage
-        sections={SECTIONS}
-        values={{
-          ...values,
-          displayName,
-          theme,
-          compactToolActivity,
-          toolSummaryStyle,
-          experimentalArtifactCards,
-        }}
-        onChange={handleChange}
-        description="Manage your workbench preferences."
-      />
-      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
-        <PreferencesPanel />
-      </div>
-      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
-        <WhatsNewSection />
-      </div>
-      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
-        <button
-          type="button"
-          onClick={startTour}
-          className="rounded-[10px] border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
-        >
-          Take the tour
-        </button>
-        <p className="mt-1 text-xs text-text-3">
-          Replay the five-step introduction.
-        </p>
-      </div>
-      <div
-        className={`mx-auto w-full max-w-2xl px-4 pb-6${compactToolActivity ? "" : " opacity-50"}`}
-      >
-        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-3">
-          Example
-          {!compactToolActivity && " (turn on compact tool activity to use)"}
-        </p>
-        <p className="text-sm text-text-2">
-          {summarizeToolCalls(TOOL_SUMMARY_PREVIEW_CALLS, toolSummaryStyle)}
-        </p>
-      </div>
-      {displayNameDirty && (
-        <div className="mx-auto w-full max-w-2xl px-4 pb-4">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleSaveDisplayName}
-              disabled={saveMutation.isPending}
-              className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
+      <div className="mx-auto w-full max-w-5xl px-4 py-6">
+        <div className="mb-6">
+          <h1 className="text-xl font-semibold text-text">Settings</h1>
+          <p className="mt-0.5 text-sm text-text-3">
+            Manage your workbench preferences.
+          </p>
+        </div>
+        <div className="flex flex-col gap-10 lg:flex-row lg:gap-8">
+          <SettingsSectionNav />
+          <div className="flex min-w-0 flex-1 flex-col gap-12">
+            <SettingsGroup
+              id="your-agent"
+              title="Your agent"
+              description="How Myra acts on your behalf."
             >
-              {saveMutation.isPending ? "Saving…" : "Save display name"}
-            </button>
-            {saveMutation.isError && (
-              <span className="text-sm text-red">
-                Couldn't save. Try again.
-              </span>
-            )}
+              <PreferencesPanel categories={["Agent"]} />
+            </SettingsGroup>
+
+            <SettingsGroup
+              id="inbox-capabilities"
+              title="Your inbox & brief"
+              description="What lands in your inbox, and when your morning brief arrives."
+            >
+              <div id={MORNING_BRIEF_ANCHOR_ID} className="scroll-mt-4">
+                <PreferencesPanel categories={["Automations"]} />
+              </div>
+              <PreferencesPanel categories={["Inbox", "Notifications"]} />
+            </SettingsGroup>
+
+            <SettingsGroup id="account" title="Account">
+              <PreferencesPanel categories={["General"]} />
+              <div className="rounded-xl border border-border bg-surface p-5">
+                <SettingsPage
+                  title="Profile & appearance"
+                  className="w-full max-w-none px-0 py-0"
+                  sections={SECTIONS}
+                  values={{
+                    ...values,
+                    displayName,
+                    theme,
+                    compactToolActivity,
+                    toolSummaryStyle,
+                    experimentalArtifactCards,
+                  }}
+                  onChange={handleChange}
+                />
+                {displayNameDirty && (
+                  <div className="mt-4 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSaveDisplayName}
+                      disabled={saveMutation.isPending}
+                      className="rounded-lg bg-orange px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-deep disabled:opacity-50"
+                    >
+                      {saveMutation.isPending ? "Saving…" : "Save display name"}
+                    </button>
+                    {saveMutation.isError && (
+                      <span className="text-sm text-red">
+                        Couldn't save. Try again.
+                      </span>
+                    )}
+                  </div>
+                )}
+                {saveMutation.isSuccess && (
+                  <p className="mt-4 text-sm text-green">Display name saved.</p>
+                )}
+                <div
+                  className={`mt-4 border-t border-border pt-4${compactToolActivity ? "" : " opacity-50"}`}
+                >
+                  <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-3">
+                    Example
+                    {!compactToolActivity &&
+                      " (turn on compact tool activity to use)"}
+                  </p>
+                  <p className="text-sm text-text-2">
+                    {summarizeToolCalls(
+                      TOOL_SUMMARY_PREVIEW_CALLS,
+                      toolSummaryStyle,
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-5">
+                <button
+                  type="button"
+                  onClick={startTour}
+                  className="rounded-[10px] border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
+                >
+                  Take the tour
+                </button>
+                <p className="mt-1 text-xs text-text-3">
+                  Replay the five-step introduction.
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border bg-surface p-5">
+                {buildShaQuery.isPending ? (
+                  // Reserve the line's height while loading so settling the
+                  // query causes no layout shift.
+                  <p className="h-4 animate-pulse font-mono text-xs text-text-3">
+                    build …
+                  </p>
+                ) : (
+                  // An unavailable SHA (null in local dev, an error, or an
+                  // unexpected shape) degrades to "build unknown" on purpose:
+                  // this is an operator diagnostic, not a user-facing
+                  // failure, so it must never surface a scary error.
+                  <p className="font-mono text-xs text-text-3">
+                    build {buildLabel}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void signOut()}
+                  className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border bg-page px-3 py-2 text-sm text-text transition-colors hover:bg-surface"
+                >
+                  <LogOut size={14} />
+                  Sign out
+                </button>
+              </div>
+            </SettingsGroup>
+
+            <SettingsGroup id="whats-new" title="What's new">
+              <WhatsNewSection />
+            </SettingsGroup>
           </div>
         </div>
-      )}
-      {saveMutation.isSuccess && (
-        <div className="mx-auto w-full max-w-2xl px-4 pb-4">
-          <p className="text-sm text-green">Display name saved.</p>
-        </div>
-      )}
-      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
-        {buildShaQuery.isPending ? (
-          // Reserve the line's height while loading so settling the query
-          // causes no layout shift.
-          <p className="h-4 animate-pulse font-mono text-xs text-text-3">
-            build …
-          </p>
-        ) : (
-          // An unavailable SHA (null in local dev, an error, or an unexpected
-          // shape) degrades to "build unknown" on purpose: this is an operator
-          // diagnostic, not a user-facing failure, so it must never surface a
-          // scary error.
-          <p className="font-mono text-xs text-text-3">build {buildLabel}</p>
-        )}
-      </div>
-      <div className="mx-auto w-full max-w-2xl border-t border-border px-4 pb-8 pt-6">
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text transition-colors hover:bg-page"
-        >
-          <LogOut size={14} />
-          Sign out
-        </button>
       </div>
     </div>
   );

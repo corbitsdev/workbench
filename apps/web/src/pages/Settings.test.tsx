@@ -9,6 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 
 type MockField = { key: string; label: string; kind: string };
 
@@ -107,7 +108,9 @@ function renderSettings() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <Settings />
+      <MemoryRouter initialEntries={["/settings"]}>
+        <Settings />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -230,6 +233,38 @@ describe("Settings build version display", () => {
       if (!bodyText().includes("build unknown"))
         throw new Error("unknown not rendered");
     });
+  });
+});
+
+describe("Settings general preferences", () => {
+  it("renders General-category preferences in the Account section", async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/me/preferences/settings"))
+        return jsonResponse({
+          settings: [
+            {
+              key: "onboardingTourDone",
+              label: "Onboarding tour completed",
+              description:
+                "Whether the guided introduction has been completed.",
+              type: "boolean",
+              default: false,
+              value: true,
+              category: "General",
+            },
+          ],
+        });
+      if (url.includes("/api/v1/me"))
+        return jsonResponse({ userId: "u1", userName: "" });
+      if (url.includes("/version")) return jsonResponse({ buildSha: null });
+      throw new Error(`unexpected fetch to ${url}`);
+    }) as typeof fetch;
+
+    renderSettings();
+
+    const label = await screen.findByText("Onboarding tour completed");
+    expect(label.closest("section#account")).not.toBeNull();
   });
 });
 
