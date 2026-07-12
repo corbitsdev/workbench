@@ -29,8 +29,8 @@ beforeEach(() => {
     Promise.resolve(
       jsonResponse({
         members: [
-          { id: "prn_a", name: "Ada" },
-          { id: "prn_b", name: "Grace" },
+          { id: "prn_a", name: "Ada", refId: "usr_a" },
+          { id: "prn_b", name: "Grace", refId: "usr_b" },
         ],
       }),
     ),
@@ -47,8 +47,8 @@ describe("useMembers", () => {
     const { result } = renderHook(() => useMembers("tenant-1"), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([
-      { id: "prn_a", name: "Ada" },
-      { id: "prn_b", name: "Grace" },
+      { id: "prn_a", name: "Ada", refId: "usr_a" },
+      { id: "prn_b", name: "Grace", refId: "usr_b" },
     ]);
   });
 

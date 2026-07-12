@@ -152,6 +152,7 @@ import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
+import { deliverMentionMail } from "./lib/mention-mail";
 import { createMailboxEventBus } from "./lib/mailbox-events";
 import { createInboxRouter } from "./routes/inbox";
 import { createMeTasksRouter } from "./routes/me-tasks";
@@ -842,6 +843,60 @@ app.use(
       void recordMyraThreadActivity(db, instanceId).catch((err) => {
         log.error("failed to record Myra thread activity", {
           instanceId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    }
+    await next();
+  },
+);
+
+// Chat mentions (`@[Name](#usr_<id>)` tokens in the outbound message) are
+// delivered as mail to each mentioned member's principal mailbox — see
+// deliverMentionMail. This runs on the same mail-send route as the
+// activity-recording middleware above, ahead of the hub app mount, since
+// interchange's own /:instanceId/mail route (mounted below) owns the actual
+// send and is out of scope to modify. Best-effort and fire-and-forget: a
+// failure here is logged by deliverMentionMail and never blocks or slows the
+// chat send.
+const ChatMentionBody = type({ content: "string" });
+const conversationBaseUrl = corsOrigins[0] ?? config.auth.baseUrl;
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  async (c, next) => {
+    const tenantId = c.req.param("tenantId");
+    // POST-only (this path also serves GET list-mail polling), and bounded
+    // before the clone-and-parse so an oversized payload is never read here —
+    // the real send route enforces its own body limit downstream.
+    const contentLength = Number(c.req.header("content-length") ?? "0");
+    const withinSizeLimit =
+      Number.isFinite(contentLength) && contentLength <= 1_000_000;
+    if (tenantId && c.req.method === "POST" && withinSizeLimit) {
+      void (async () => {
+        const session = await auth.api.getSession({
+          headers: c.req.raw.headers,
+        });
+        if (!session) return;
+        let body: unknown;
+        try {
+          body = await c.req.raw.clone().json();
+        } catch {
+          return;
+        }
+        const parsed = ChatMentionBody(body);
+        if (parsed instanceof type.errors) return;
+        await deliverMentionMail({
+          db,
+          tenantId,
+          senderUserId: session.user.id,
+          senderName: session.user.name ?? session.user.email ?? "A teammate",
+          content: parsed.content,
+          conversationUrl: `${conversationBaseUrl}/inbox`,
+          mailboxEventBus,
+        });
+      })().catch((err) => {
+        log.error("mention mail dispatch failed", {
+          tenantId,
           error: err instanceof Error ? err : new Error(String(err)),
         });
       });

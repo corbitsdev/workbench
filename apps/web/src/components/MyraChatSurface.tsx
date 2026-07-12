@@ -10,6 +10,7 @@ import {
   type UIResponse,
   type PendingAttachment,
   type SignalRouting,
+  type MentionCandidate,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
@@ -171,6 +172,8 @@ type MyraChatSurfaceProps = {
    * one resume fires per gate (CL-2681).
    */
   resumeInFlight?: boolean;
+  /** Workspace members eligible for `@` mention autocomplete in the composer. */
+  mentionCandidates?: MentionCandidate[];
 };
 
 export function MyraChatSurface({
@@ -188,6 +191,7 @@ export function MyraChatSurface({
   signalRouting,
   onResumeSignal,
   resumeInFlight,
+  mentionCandidates,
 }: MyraChatSurfaceProps) {
   const agent: ChatAgentIdentity = threadLabel
     ? { ...MYRA, tagline: threadLabel }
@@ -232,6 +236,9 @@ export function MyraChatSurface({
     // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
     composerFullWidth: dockState === "docked" && expanded !== true,
     ...(headerLeft !== undefined ? { headerLeft } : {}),
+    ...(mentionCandidates !== undefined && mentionCandidates.length > 0
+      ? { mentionCandidates }
+      : {}),
   };
 
   const { state } = session;

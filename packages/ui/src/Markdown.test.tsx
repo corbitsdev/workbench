@@ -32,6 +32,13 @@ describe("Markdown", () => {
     expect(link.getAttribute("rel")).toContain("noopener");
   });
 
+  it("renders a chat mention token as a pill, not a link", () => {
+    render(<Markdown>{"cc @[Jane Doe](#usr_abc123) please review"}</Markdown>);
+    expect(screen.queryByRole("link", { name: "Jane Doe" })).toBeNull();
+    const mention = screen.getByText("@Jane Doe");
+    expect(mention.tagName).toBe("SPAN");
+  });
+
   it("renders a GFM pipe table into a real <table> with header and body cells", () => {
     render(
       <Markdown>

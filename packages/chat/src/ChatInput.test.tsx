@@ -412,4 +412,54 @@ describe("ChatInput abort (stop button)", () => {
         .disabled,
     ).toBe(false);
   });
+
+  describe("mention autocomplete", () => {
+    const MEMBERS = [
+      { id: "usr_1", name: "Jane Doe" },
+      { id: "usr_2", name: "Bob Smith" },
+    ];
+
+    it("opens a filtered dropdown after typing @ and a query", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      await user.type(screen.getByLabelText("Message"), "hey @jan");
+      expect(screen.getByRole("listbox")).toBeTruthy();
+      expect(screen.getByRole("option", { name: "Jane Doe" })).toBeTruthy();
+      expect(screen.queryByRole("option", { name: "Bob Smith" })).toBeNull();
+    });
+
+    it("inserts the wire-format token on Enter and closes the dropdown", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "hey @jan{Enter}");
+      expect(input.value).toBe("hey @[Jane Doe](#usr_1) ");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("navigates candidates with arrow keys before inserting", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "@");
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(input.value).toBe("@[Bob Smith](#usr_2) ");
+    });
+
+    it("closes the dropdown on Escape without inserting a token", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "hey @jan{Escape}");
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(input.value).toBe("hey @jan");
+    });
+
+    it("does not open a dropdown when no mention candidates are given", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} />);
+      await user.type(screen.getByLabelText("Message"), "hey @jan");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+  });
 });

@@ -60,7 +60,11 @@ export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 export { QuickReplyChips, type QuickReplyChipsProps } from "./QuickReplyChips";
-export { ChatInput, type ChatInputProps } from "./ChatInput";
+export {
+  ChatInput,
+  type ChatInputProps,
+  type MentionCandidate,
+} from "./ChatInput";
 export {
   validateFiles,
   formatBytes,

@@ -52,16 +52,24 @@ const components: Components = {
   del: ({ children }) => (
     <del className="text-text-3 line-through">{children}</del>
   ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-medium text-accent underline decoration-accent/30 underline-offset-2 transition-[text-decoration-color] hover-hover:decoration-accent"
-    >
-      {children}
-    </a>
-  ),
+  // A chat mention token (`@[Name](#usr_<id>)`) is a valid markdown link whose
+  // href is a fragment carrying a `usr_` user id rather than a URL. Render it
+  // as a distinct mention pill instead of a clickable anchor.
+  a: ({ href, children }) =>
+    typeof href === "string" && href.startsWith("#usr_") ? (
+      <span className="rounded-sm bg-accent/15 px-1 py-0.5 font-medium text-accent">
+        @{children}
+      </span>
+    ) : (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-accent underline decoration-accent/30 underline-offset-2 transition-[text-decoration-color] hover-hover:decoration-accent"
+      >
+        {children}
+      </a>
+    ),
   blockquote: ({ children }) => (
     <blockquote className="my-4 rounded-sm border-l-2 border-accent/40 bg-surface-2/50 py-2 pl-4 pr-3 italic text-text-2 [&>p]:my-1">
       {children}
