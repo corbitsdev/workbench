@@ -88,19 +88,22 @@ function PreferenceRow({ setting, status, onChange }: RowProps) {
       )}
 
       {setting.type === "hourUtc" && (
-        <Select
-          id={controlId}
-          value={
-            typeof setting.value === "number" ? String(setting.value) : "13"
-          }
-          onChange={(event) => onChange(Number(event.target.value))}
-        >
-          {HOURS.map((h) => (
-            <option key={h} value={String(h)}>
-              {utcHourToLocalLabel(h)}
-            </option>
-          ))}
-        </Select>
+        <>
+          <Select
+            id={controlId}
+            value={
+              typeof setting.value === "number" ? String(setting.value) : "13"
+            }
+            onChange={(event) => onChange(Number(event.target.value))}
+          >
+            {HOURS.map((h) => (
+              <option key={h} value={String(h)}>
+                {utcHourToLocalLabel(h)}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-text-3">Shown in your local time.</p>
+        </>
       )}
 
       <p className="text-xs text-text-3">{setting.description}</p>

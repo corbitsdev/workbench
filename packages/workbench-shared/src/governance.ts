@@ -433,7 +433,11 @@ export interface CredentialProviderCatalogEntry {
    * (`preferences-registry.ts`) and self-skip per
    * `isBriefSourceFetchEnabled` when called with `enabledSources` that omit
    * this provider's name. */
-  briefSource?: { description: string; defaultEnabled?: boolean; tool?: string };
+  briefSource?: {
+    description: string;
+    defaultEnabled?: boolean;
+    tool?: string;
+  };
 }
 
 /** Provider name for the default Bifrost /v1 (openai-compatible) surface.
@@ -504,7 +508,7 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       kind: "tool",
       defaultMetadata: { baseURL: "https://public-api.granola.ai/v1" },
       briefSource: {
-        description: "Pull in recent call notes from Granola.",
+        description: "Call notes from meetings since your last brief.",
         defaultEnabled: true,
         tool: "granola_list_notes",
       },
