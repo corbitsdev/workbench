@@ -1223,7 +1223,7 @@ v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
 v1.route("/", createInboxRouter(db, mailboxEventBus));
-v1.route("/", createMeTasksRouter(db, taskPushService));
+v1.route("/", createMeTasksRouter(db, taskPushService, mailboxEventBus));
 
 // Resolves a member principal to the user mail identity trigger payloads
 // carry (`${refId}@${domain}` via deriveUserMailAddress). Shared by the
