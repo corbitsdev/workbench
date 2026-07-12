@@ -153,6 +153,13 @@ export type SessionManagerConfig = {
    * without wall-clock waits.
    */
   now?: () => number;
+  // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching.
+  // A sidecar reconnect pushes grants+sources updates to every wakeable
+  // (sleeping) agent in quick succession — dozens of near-simultaneous
+  // per-agent INF lines that drown a real outlier. Successive updates
+  // are folded into one summary line, flushed after this much quiet time.
+  /** Debounce window before a batch of sleeping-agent syncs is summarized (default 250ms). */
+  sleepingSyncFlushDelayMs?: number;
 };
 
 // WORKBENCH-LOCAL (CL-3103): idle-eviction disabled by default here; the
@@ -164,6 +171,15 @@ const DEFAULT_WAKE_MAX_ATTEMPTS = 5;
 const DEFAULT_WAKE_BASE_DELAY_MS = 200;
 const DEFAULT_WAKE_MAX_DELAY_MS = 5_000;
 const DEFAULT_MAX_PARKED_MAIL = 256;
+
+// WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching default.
+const DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS = 250;
+
+interface SleepingSyncBatchEntry {
+  agentAddress: string;
+  grantRuleCount?: number;
+  sourcesSynced?: boolean;
+}
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
@@ -390,6 +406,8 @@ export function createSessionManager(
     // WORKBENCH-LOCAL (CL-3103): idle-eviction tuning.
     idleEvictMs = DEFAULT_IDLE_EVICT_MS,
     now = Date.now,
+    // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching.
+    sleepingSyncFlushDelayMs = DEFAULT_SLEEPING_SYNC_FLUSH_DELAY_MS,
   } = config;
   if (!Number.isInteger(wakeMaxAttempts) || wakeMaxAttempts < 1) {
     throw new Error(
@@ -1607,6 +1625,72 @@ export function createSessionManager(
     deliverLive(agentAddress, rawMessage);
   }
 
+  // WORKBENCH-LOCAL (CL-3409): sleeping-agent grant/source sync batching.
+  // A reconnect fans updateGrants/updateSources out to every wakeable
+  // agent within a few milliseconds of each other. Collect those into one
+  // batch and summarize on a quiet-window flush instead of one INF line
+  // per agent — while still surfacing (at WARN) any agent whose grant
+  // rule count is a real outlier against the batch, so a sync anomaly
+  // (e.g. one agent syncing 1 rule instead of 104) stays visible.
+  const sleepingSyncBatch = new Map<string, SleepingSyncBatchEntry>();
+  let sleepingSyncFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function recordSleepingSync(
+    agentAddress: string,
+    update: { grantRuleCount?: number; sourcesSynced?: boolean },
+  ): void {
+    const entry = sleepingSyncBatch.get(agentAddress) ?? { agentAddress };
+    if (update.grantRuleCount !== undefined) {
+      entry.grantRuleCount = update.grantRuleCount;
+    }
+    if (update.sourcesSynced === true) {
+      entry.sourcesSynced = true;
+    }
+    sleepingSyncBatch.set(agentAddress, entry);
+    if (sleepingSyncFlushTimer !== undefined) {
+      clearTimeout(sleepingSyncFlushTimer);
+    }
+    sleepingSyncFlushTimer = setTimeout(
+      flushSleepingSyncBatch,
+      sleepingSyncFlushDelayMs,
+    );
+  }
+
+  function flushSleepingSyncBatch(): void {
+    sleepingSyncFlushTimer = undefined;
+    if (sleepingSyncBatch.size === 0) return;
+    const entries = [...sleepingSyncBatch.values()];
+    sleepingSyncBatch.clear();
+
+    const ruleCounts = entries
+      .map((e) => e.grantRuleCount)
+      .filter((count): count is number => count !== undefined);
+    const sourcesCount = entries.filter((e) => e.sourcesSynced).length;
+
+    if (ruleCounts.length > 0) {
+      const min = Math.min(...ruleCounts);
+      const max = Math.max(...ruleCounts);
+      logger.info`Synced grants+sources for ${String(entries.length)} sleeping agents (rules min=${String(min)} max=${String(max)}, sources=${String(sourcesCount)})`;
+
+      const sorted = [...ruleCounts].sort((a, b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      const median =
+        sorted.length % 2 === 0
+          ? (sorted[mid - 1]! + sorted[mid]!) / 2
+          : sorted[mid]!;
+      for (const entry of entries) {
+        if (
+          entry.grantRuleCount !== undefined &&
+          entry.grantRuleCount < median / 2
+        ) {
+          logger.warn`Grant sync outlier for sleeping agent ${entry.agentAddress}: ${String(entry.grantRuleCount)} rules (batch median ${String(median)})`;
+        }
+      }
+    } else {
+      logger.info`Synced sources for ${String(entries.length)} sleeping agents`;
+    }
+  }
+
   async function updateGrants(
     agentAddress: string,
     grants: GrantRule[],
@@ -1621,7 +1705,8 @@ export function createSessionManager(
       if (entry !== undefined) {
         entry.config = { ...entry.config, grants };
         await repoStore.persistConfig(agentAddress, entry.config);
-        logger.info`Updated grants for sleeping agent ${agentAddress} (${String(grants.length)} rules)`;
+        logger.debug`Updated grants for sleeping agent ${agentAddress} (${String(grants.length)} rules)`;
+        recordSleepingSync(agentAddress, { grantRuleCount: grants.length });
         return;
       }
       throw new Error(`No session exists for agent "${agentAddress}"`);
@@ -1653,7 +1738,8 @@ export function createSessionManager(
       if (entry !== undefined) {
         entry.config = { ...entry.config, sources, defaultSource };
         await repoStore.persistConfig(agentAddress, entry.config);
-        logger.info`Updated sources for sleeping agent ${agentAddress}`;
+        logger.debug`Updated sources for sleeping agent ${agentAddress}`;
+        recordSleepingSync(agentAddress, { sourcesSynced: true });
         return;
       }
       throw new Error(`No session exists for agent "${agentAddress}"`);
