@@ -1869,6 +1869,134 @@ describe("sidecar↔hub integration", () => {
       await wfrServer.stop(true);
     }
   });
+
+  // CL-3415: on staging, a sidecar restart drops the in-memory
+  // `lastAckedTip` cursor AND the `workflowRunPackBootstrapped` flag resets
+  // too (pruned on undeploy/hibernate), so the first push after restart
+  // re-enters the bootstrap-retry arm. If the hub- and sidecar-side repo
+  // states have genuinely diverged (not just the transient initRepo race
+  // the retry exists for), BOTH the initial attempt and the retry reject
+  // with `reason=corrupt`, and — before this fix — every subsequent
+  // workflow-run event repeated the same two-attempt failure forever with
+  // an unbounded `Workflow-run pack push bootstrap retry` warning. This
+  // test pins the bounded quarantine: after
+  // `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES` consecutive two-attempt
+  // failures for the same (repoId, ref), further pushes fail fast without
+  // reaching the receiver at all.
+  test("a persistently corrupt (repoId, ref) quarantines after bounded bootstrap-retry failures", async () => {
+    const transport = createInMemoryTransport();
+    const sessions = createMockSessionManager();
+
+    let receiveCount = 0;
+    const wfrRouter = createSidecarRouter({
+      requestTimeoutMs: 5000,
+      hubPublicKey: "a".repeat(64),
+      lookups: {
+        async receiveWorkflowRunPack(_repoId, _pack, _ref, _commitSha) {
+          receiveCount += 1;
+          // Every attempt rejects — a persistent divergence, not the
+          // one-shot initRepo race the bootstrap-retry arm is built for.
+          return { accepted: false, reason: "corrupt" };
+        },
+      },
+    });
+
+    const wfrApp = new Hono();
+    wfrApp.get(
+      "/ws",
+      upgradeWebSocket((_c) => {
+        let handle: WsHandle;
+        return {
+          onOpen(_evt, ws) {
+            handle = {
+              send(data: string) {
+                ws.send(data);
+              },
+              close() {
+                ws.close();
+              },
+            };
+            wfrRouter.handleOpen(handle);
+          },
+          onMessage(evt, _ws) {
+            if (typeof evt.data === "string") {
+              wfrRouter.handleMessage(handle, evt.data);
+            }
+          },
+          onClose(_evt, _ws) {
+            wfrRouter.handleClose(handle);
+          },
+        };
+      }),
+    );
+
+    const wfrServer = Bun.serve({
+      fetch: wfrApp.fetch,
+      websocket,
+      port: 0,
+    });
+
+    const client = createHubLink({
+      hubURL: `ws://localhost:${wfrServer.port}/ws`,
+      sidecarId: "sc-wfr-quarantine",
+      token: "test-token",
+      transport,
+      sessions,
+      ...withTestDeployBindings(sessions),
+    });
+
+    client.connect();
+    try {
+      await waitFor(() =>
+        wfrRouter.getConnectedSidecars().includes("sc-wfr-quarantine"),
+      );
+
+      const agentAddress = "quarantine-agent@test.interchange";
+      await wfrRouter.sendAgentDeploy(agentAddress, TEST_CONFIG);
+      await waitFor(() =>
+        wfrRouter.getRoutableAddresses().includes(agentAddress),
+      );
+
+      const repoId = {
+        kind: "workflow-run",
+        id: "dep-quarantine",
+      } as const;
+      const ref = "refs/heads/events";
+      const commitSha = "b".repeat(40);
+      const pack = new Uint8Array([9, 8, 7]);
+
+      const pushOnce = () =>
+        client.pushWorkflowRunPack({
+          agentAddress,
+          repoId,
+          pack,
+          ref,
+          commitSha,
+        });
+
+      // Each of the first 3 pushes runs the full bootstrap arm (initial
+      // attempt + retry = 2 receiver hits) and fails.
+      await expect(pushOnce()).rejects.toThrow();
+      await expect(pushOnce()).rejects.toThrow();
+      await expect(pushOnce()).rejects.toThrow();
+      expect(receiveCount).toBe(6);
+
+      // The 4th push must fail fast without touching the receiver at all —
+      // the quarantine short-circuits before `sendOnce`.
+      await expect(pushOnce()).rejects.toThrow(/quarantined/);
+      expect(receiveCount).toBe(6);
+
+      // A 5th push, for good measure, confirms the quarantine is sticky.
+      await expect(pushOnce()).rejects.toThrow(/quarantined/);
+      expect(receiveCount).toBe(6);
+    } finally {
+      client.close();
+      await waitFor(
+        () => !wfrRouter.getConnectedSidecars().includes("sc-wfr-quarantine"),
+      );
+      await wfrServer.stop(true);
+    }
+  });
 });
 
 describe("routability decoupled from restore", () => {
