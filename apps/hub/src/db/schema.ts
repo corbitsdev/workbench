@@ -358,6 +358,9 @@ export const task = pgTable(
     tenantId: text("tenant_id").notNull(),
     ownerPrincipalId: text("owner_principal_id").notNull(),
     createdByPrincipalId: text("created_by_principal_id").notNull(),
+    // Nullable: an unassigned task is owner-only, same as before this column
+    // existed. Set/cleared via PATCH /me/tasks/:id by the task's owner.
+    assigneePrincipalId: text("assignee_principal_id"),
     title: text("title").notNull(),
     body: text("body"),
     status: text("status", { enum: taskStatuses }).notNull().default("open"),
@@ -375,6 +378,11 @@ export const task = pgTable(
     taskTenantOwnerStatusIdx: index("task_tenant_owner_status_idx").on(
       t.tenantId,
       t.ownerPrincipalId,
+      t.status,
+    ),
+    taskTenantAssigneeStatusIdx: index("task_tenant_assignee_status_idx").on(
+      t.tenantId,
+      t.assigneePrincipalId,
       t.status,
     ),
   }),

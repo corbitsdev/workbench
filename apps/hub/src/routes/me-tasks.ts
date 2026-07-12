@@ -1,6 +1,8 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
+import { and, eq } from "drizzle-orm";
+import { schema as intxSchema } from "@intx/db";
 import {
   CreateTaskBodySchema,
   PushTaskBodySchema,
@@ -15,6 +17,7 @@ import { resolveCallerMember } from "../lib/tenant-provisioning";
 import {
   createOwnerTask,
   getOwnerTask,
+  getVisibleTask,
   listOwnerTasks,
   updateOwnerTask,
 } from "../lib/task-store";
@@ -25,6 +28,25 @@ import type { HubDb } from "../db";
 import type { MailboxEventBus } from "../lib/mailbox-events";
 
 const DEFAULT_TASKS_PAGE_LIMIT = 50;
+
+const { principal } = intxSchema;
+
+// An assignee must be a real user member of the caller's own tenant — never
+// another tenant's principal, an agent principal, or a stale/garbage id.
+async function isTenantUserMember(
+  db: HubDb,
+  tenantId: string,
+  principalId: string,
+): Promise<boolean> {
+  const row = await db.query.principal.findFirst({
+    where: and(
+      eq(principal.id, principalId),
+      eq(principal.tenantId, tenantId),
+      eq(principal.kind, "user"),
+    ),
+  });
+  return row !== undefined;
+}
 
 // Owner-scoped CRUD over the caller's native tasks plus a downstream push. Every
 // read and write is bound to the caller's own member principal, so a member can
@@ -139,9 +161,9 @@ export function createMeTasksRouter(
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) return c.json({ error: "task not found" }, 404);
-      const found = await getOwnerTask(db, {
+      const found = await getVisibleTask(db, {
         tenantId: member.tenantId,
-        ownerPrincipalId: member.principalId,
+        principalId: member.principalId,
         id,
       });
       if (!found) return c.json({ error: "task not found" }, 404);
@@ -248,13 +270,32 @@ export function createMeTasksRouter(
         body.title === undefined &&
         body.body === undefined &&
         body.status === undefined &&
-        body.due === undefined
+        body.due === undefined &&
+        body.assigneePrincipalId === undefined
       ) {
         return c.json({ error: "no fields to update" }, 400);
       }
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
+      }
+      // Assignment is owner-only: the update itself is already scoped to the
+      // caller's own owned tasks below (ownerPrincipalId in the WHERE
+      // clause) — an assignee cannot reassign a task they don't own. Here we
+      // additionally validate the target is a real member of this tenant.
+      if (
+        body.assigneePrincipalId !== undefined &&
+        body.assigneePrincipalId !== null &&
+        !(await isTenantUserMember(
+          db,
+          member.tenantId,
+          body.assigneePrincipalId,
+        ))
+      ) {
+        return c.json(
+          { error: "assignee is not a member of this tenant" },
+          400,
+        );
       }
       const updated = await updateOwnerTask(db, {
         tenantId: member.tenantId,
@@ -265,6 +306,9 @@ export function createMeTasksRouter(
         ...(body.body !== undefined ? { body: body.body } : {}),
         ...(body.status !== undefined ? { status: body.status } : {}),
         ...(body.due !== undefined ? { due: body.due } : {}),
+        ...(body.assigneePrincipalId !== undefined
+          ? { assigneePrincipalId: body.assigneePrincipalId }
+          : {}),
         ...(mailboxEventBus ? { mailboxEventBus } : {}),
       });
       if (!updated) return c.json({ error: "task not found" }, 404);

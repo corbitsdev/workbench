@@ -10,6 +10,7 @@ import type {
   Task,
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
+import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskSendToAdapter } from "./TaskSendToAdapter";
 
 interface NowSectionProps {
@@ -17,6 +18,8 @@ interface NowSectionProps {
   ready: boolean;
   reduceMotion: boolean;
   selectedTaskId?: string | null;
+  tenantId?: string | null;
+  myPrincipalId?: string | null;
 }
 
 // The inbox-as-dashboard "Now" feed: one prioritized list of everything that
@@ -27,6 +30,8 @@ export function NowSection({
   ready,
   reduceMotion,
   selectedTaskId = null,
+  tenantId = null,
+  myPrincipalId = null,
 }: NowSectionProps) {
   if (!ready) {
     return (
@@ -95,7 +100,12 @@ export function NowSection({
                 delay: reduceMotion ? 0 : Math.min(index * 0.03, 0.24),
               }}
             >
-              <NowRow item={item} selectedTaskId={selectedTaskId} />
+              <NowRow
+                item={item}
+                selectedTaskId={selectedTaskId}
+                tenantId={tenantId}
+                myPrincipalId={myPrincipalId}
+              />
             </motion.li>
           ))}
         </AnimatePresence>
@@ -113,9 +123,13 @@ function nowItemKey(item: NowItem): string {
 function NowRow({
   item,
   selectedTaskId,
+  tenantId,
+  myPrincipalId,
 }: {
   item: NowItem;
   selectedTaskId: string | null;
+  tenantId: string | null;
+  myPrincipalId: string | null;
 }) {
   if (item.type === "gate") {
     return (
@@ -133,7 +147,12 @@ function NowRow({
     return <MailRow item={item} />;
   }
   return (
-    <TaskRow item={item} selected={item.task.id === selectedTaskId} />
+    <TaskRow
+      item={item}
+      selected={item.task.id === selectedTaskId}
+      tenantId={tenantId}
+      myPrincipalId={myPrincipalId}
+    />
   );
 }
 
@@ -157,7 +176,17 @@ function collapsedLabel(item: NowMailItem): string | undefined {
   return `${item.collapsed.length} earlier items handled by Myra`;
 }
 
-function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
+function TaskRow({
+  item,
+  selected,
+  tenantId,
+  myPrincipalId,
+}: {
+  item: NowTaskItem;
+  selected: boolean;
+  tenantId: string | null;
+  myPrincipalId: string | null;
+}) {
   const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -186,7 +215,12 @@ function TaskRow({ item, selected }: { item: NowTaskItem; selected: boolean }) {
         source="Task"
         at={item.task.updatedAt}
       />
-      <div className="pl-5">
+      <div className="flex flex-wrap items-center gap-1.5 pl-5">
+        <TaskAssigneePicker
+          task={item.task}
+          tenantId={tenantId}
+          myPrincipalId={myPrincipalId}
+        />
         <TaskSendToAdapter task={item.task} />
       </div>
     </div>

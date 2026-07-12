@@ -1,10 +1,5 @@
 import { useEffect, useMemo } from "react";
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Inbox as InboxIcon, Settings } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
@@ -44,7 +39,7 @@ export function InboxPage() {
   const selectedTaskId = searchParams.get("task");
   const navigate = useNavigate();
   const reduceMotion = useReducedMotion();
-  const { activeTenantId } = useActiveWorkbench();
+  const { activeTenantId, activeWorkbench } = useActiveWorkbench();
   const {
     data,
     isLoading,
@@ -176,9 +171,13 @@ export function InboxPage() {
                 ready={nowReady}
                 reduceMotion={reduceMotion ?? false}
                 selectedTaskId={selectedTaskId}
+                tenantId={activeTenantId}
+                myPrincipalId={activeWorkbench?.id ?? null}
               />
               <LoadMoreControl
-                hasMore={Boolean(mailboxHasNextPage) || Boolean(tasks.hasNextPage)}
+                hasMore={
+                  Boolean(mailboxHasNextPage) || Boolean(tasks.hasNextPage)
+                }
                 loading={
                   isFetchingNextMailboxPage || Boolean(tasks.isFetchingNextPage)
                 }
@@ -385,9 +384,7 @@ function MessageBody({
   "detail" | "detailLoading" | "detailNotFound" | "detailError"
 >) {
   if (detailNotFound) {
-    return (
-      <p className="text-sm text-text-3">This message is unavailable.</p>
-    );
+    return <p className="text-sm text-text-3">This message is unavailable.</p>;
   }
   if (detailLoading) {
     return (
@@ -441,9 +438,7 @@ function ReadingPane({
               {headerSource.subject ?? "(no subject)"}
             </h2>
             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-2">
-              <span className="font-medium text-text">
-                {headerSource.from}
-              </span>
+              <span className="font-medium text-text">{headerSource.from}</span>
               <span className="text-text-3">·</span>
               <time className="text-text-3">
                 {formatRelativeTime(headerSource.date)}
