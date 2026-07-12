@@ -1,10 +1,11 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { getLogger } from "@intx/log";
-import { parseHeaderSection } from "@intx/mime";
+import { splitMailAddressList } from "@workbench/hub-agent";
 import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger("mailbox-read");
 
@@ -32,13 +33,12 @@ export type DecodedFrame = {
 // list headers written alongside the raw bytes rather than failing the
 // whole inbox for one malformed row.
 export function decodeMailFrame(raw: Uint8Array): DecodedFrame | null {
-  try {
-    const { headers, bodyOffset } = parseHeaderSection(raw);
-    const body = new TextDecoder().decode(raw.subarray(bodyOffset)).trim();
-    return { headers, body };
-  } catch {
-    return null;
-  }
+  const parsed = tryParseHeaderSection(raw);
+  if (parsed === null) return null;
+  const body = new TextDecoder()
+    .decode(raw.subarray(parsed.bodyOffset))
+    .trim();
+  return { headers: parsed.headers, body };
 }
 
 // The UI never parses RFC-2822: an unparseable (or absent) Date header falls
@@ -56,12 +56,7 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
 
   const toHeader = headers?.get("to");
   const to =
-    toHeader === undefined
-      ? [row.address]
-      : toHeader
-          .split(",")
-          .map((part) => part.trim())
-          .filter((part) => part.length > 0);
+    toHeader === undefined ? [row.address] : splitMailAddressList(toHeader);
 
   const message: MailboxMessage = {
     id: row.id,

@@ -2,9 +2,10 @@ import { and, eq, isNull } from "drizzle-orm";
 import { agentInstance, principal, tenant } from "@intx/db/schema";
 import type { SidecarLookups } from "@intx/hub-sessions";
 import { getLogger } from "@intx/log";
-import { parseHeaderSection } from "@intx/mime";
+import { splitMailAddress } from "@workbench/hub-agent";
 import { principalMailbox } from "../db/schema";
 import type { HubDb } from "../db";
+import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger(["hub", "principal-mailbox"]);
 
@@ -39,14 +40,6 @@ export async function markGateMailboxItemRead(
     );
 }
 
-function splitAddress(
-  address: string,
-): { local: string; domain: string } | null {
-  const at = address.indexOf("@");
-  if (at <= 0 || at === address.length - 1) return null;
-  return { local: address.slice(0, at), domain: address.slice(at + 1) };
-}
-
 // Cached list headers, parsed once at write. A frame whose header section
 // the MIME parser rejects still persists — `raw` stays authoritative and
 // the read path re-derives what it can — so the parse failure is the
@@ -55,15 +48,12 @@ function readCachedHeaders(raw: Uint8Array): {
   subject: string | null;
   from: string | null;
 } {
-  try {
-    const { headers } = parseHeaderSection(raw);
-    return {
-      subject: headers.get("subject") ?? null,
-      from: headers.get("from") ?? null,
-    };
-  } catch {
-    return { subject: null, from: null };
-  }
+  const parsed = tryParseHeaderSection(raw);
+  if (parsed === null) return { subject: null, from: null };
+  return {
+    subject: parsed.headers.get("subject") ?? null,
+    from: parsed.headers.get("from") ?? null,
+  };
 }
 
 /**
@@ -146,7 +136,7 @@ export function createPrincipalMailboxPersist(
     }
 
     const candidates = recipients
-      .map(splitAddress)
+      .map(splitMailAddress)
       .filter(
         (parts): parts is NonNullable<typeof parts> =>
           parts !== null && parts.local.startsWith(USER_ADDRESS_PREFIX),
