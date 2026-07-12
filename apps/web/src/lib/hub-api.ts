@@ -396,6 +396,18 @@ export async function patchMePreferences(
   return hubFetch<MemberPreferences>("PATCH", "v1/me/preferences", patch);
 }
 
+/** The caller's raw persisted preferences, parsed at the boundary. Used for
+ * keys (like `changelogSeenVersion`) that ride the open jsonb map rather than
+ * the registry-driven settings list. */
+export async function getMePreferences(): Promise<MemberPreferences> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences");
+  const parsed = MemberPreferencesSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected preferences response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
 /** Persist the caller's display name; returns the saved value as `userName`. */
 export async function patchMeProfile(
   displayName: string,

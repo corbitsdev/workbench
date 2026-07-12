@@ -28,6 +28,7 @@ import { getMe, patchMeProfile } from "../lib/hub-api";
 import { useAuth } from "../components/AuthProvider";
 import { PreferencesPanel } from "../components/PreferencesPanel";
 import { useTourLauncher } from "../components/tour/OnboardingTour";
+import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
 
 const SECTIONS: readonly SettingsSectionDescriptor[] = [
   {
@@ -176,6 +177,9 @@ export default function Settings() {
       />
       <div className="mx-auto w-full max-w-2xl px-4 pb-6">
         <PreferencesPanel />
+      </div>
+      <div className="mx-auto w-full max-w-2xl px-4 pb-6">
+        <WhatsNewSection />
       </div>
       <div className="mx-auto w-full max-w-2xl px-4 pb-6">
         <button

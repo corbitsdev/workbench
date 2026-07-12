@@ -19,6 +19,7 @@ import { RequireWorkbenchAccess } from "./components/RequireWorkbenchAccess";
 import { ActiveContextProvider } from "./lib/active-context-store";
 import { ConnectionStatusProvider } from "./lib/connection-status-context";
 import { OnboardingTourProvider } from "./components/tour/OnboardingTour";
+import { WhatsNewPopup } from "./components/whats-new/WhatsNewPopup";
 import { WorkbenchLoadingScreen } from "./components/WorkbenchBootScreen";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
@@ -208,6 +209,7 @@ function AppShell() {
                       </main>
                       <PersonalAgentChat />
                     </div>
+                    <WhatsNewPopup />
                   </div>
                 </OnboardingTourProvider>
               </ConnectionStatusProvider>
