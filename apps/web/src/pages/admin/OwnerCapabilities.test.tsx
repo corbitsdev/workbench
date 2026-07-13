@@ -17,8 +17,15 @@ type Outcome =
 
 let credentialsOutcome: Outcome = { kind: "resolve", data: [] };
 let featuresOutcome: Outcome = { kind: "resolve", data: { features: [] } };
+let oauthCapabilitiesOutcome: Outcome = {
+  kind: "resolve",
+  data: { capabilities: [] },
+};
 const setOwnerFeatureEnabledMock = mock(
   async (name: string, enabled: boolean) => ({ name, enabled }),
+);
+const setOwnerCapabilityEnabledMock = mock(
+  async (provider: string, enabled: boolean) => ({ provider, enabled }),
 );
 
 function resolveOutcome(outcome: Outcome): Promise<unknown> {
@@ -35,6 +42,9 @@ mock.module("../../lib/hub-api", () => ({
   getOwnerFeatures: () => resolveOutcome(featuresOutcome),
   setOwnerFeatureEnabled: (name: string, enabled: boolean) =>
     setOwnerFeatureEnabledMock(name, enabled),
+  getOwnerCapabilities: () => resolveOutcome(oauthCapabilitiesOutcome),
+  setOwnerCapabilityEnabled: (provider: string, enabled: boolean) =>
+    setOwnerCapabilityEnabledMock(provider, enabled),
 }));
 
 import { OwnerCapabilities } from "./OwnerCapabilities";
@@ -55,7 +65,9 @@ afterEach(() => {
   cleanup();
   credentialsOutcome = { kind: "resolve", data: [] };
   featuresOutcome = { kind: "resolve", data: { features: [] } };
+  oauthCapabilitiesOutcome = { kind: "resolve", data: { capabilities: [] } };
   setOwnerFeatureEnabledMock.mockClear();
+  setOwnerCapabilityEnabledMock.mockClear();
 });
 
 describe("OwnerCapabilities", () => {
@@ -164,6 +176,25 @@ describe("OwnerCapabilities", () => {
       expect(setOwnerFeatureEnabledMock).toHaveBeenCalledWith(
         "scheduler",
         true,
+      ),
+    );
+  });
+
+  it("toggles an OAuth capability on click, calling the hub API with the flipped state", async () => {
+    oauthCapabilitiesOutcome = {
+      kind: "resolve",
+      data: {
+        capabilities: [{ provider: "linear", label: "Linear", enabled: true }],
+      },
+    };
+    renderCapabilities();
+    await waitFor(() => expect(screen.getByText("Linear")));
+    expect(screen.getByText("Enabled"));
+    screen.getByRole("button", { name: "Hide" }).click();
+    await waitFor(() =>
+      expect(setOwnerCapabilityEnabledMock).toHaveBeenCalledWith(
+        "linear",
+        false,
       ),
     );
   });
