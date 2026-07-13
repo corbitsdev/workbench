@@ -306,6 +306,10 @@ export const MemberConnectionState = type({
   toggleEnabled: "boolean",
   /** Set when the credential needs re-authorization (refresh failed / revoked). */
   needsReconnect: "boolean",
+  /** Whether the owner has registered this provider's OAuth app (client id +
+   * secret). When false, `authorize` will 400 — the UI should disable Connect
+   * and explain rather than let the member hit that error. */
+  configured: "boolean",
 });
 export type MemberConnectionState = typeof MemberConnectionState.infer;
 

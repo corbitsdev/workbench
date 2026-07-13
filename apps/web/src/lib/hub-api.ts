@@ -33,6 +33,14 @@ import {
   type ScheduledTrigger,
   type CreateScheduledTriggerBody,
   type UpdateScheduledTriggerBody,
+  OwnerCapabilitiesResponse,
+  type OwnerCapabilities as OwnerCapabilitiesState,
+  OwnerCapabilityToggleResult,
+  type OwnerCapabilityToggleResult as OwnerCapabilityToggleResultType,
+  MemberConnectionsResponse,
+  type MemberConnections,
+  ConnectionAuthorizeResponse,
+  type ConnectionAuthorize,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
@@ -225,6 +233,62 @@ export async function setOwnerFeatureEnabled(
   const parsed = OwnerFeatureToggleResult(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed owner feature response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Connectable OAuth providers and whether each is enabled (owner-guarded). */
+export async function getOwnerCapabilities(): Promise<OwnerCapabilitiesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/capabilities");
+  const parsed = OwnerCapabilitiesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/capabilities response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Enable (allow) or hide (deny) a connectable provider org-wide (owner-guarded). */
+export async function setOwnerCapabilityEnabled(
+  provider: string,
+  enabled: boolean,
+): Promise<OwnerCapabilityToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/capabilities/${encodeURIComponent(provider)}`,
+    { enabled },
+  );
+  const parsed = OwnerCapabilityToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner capability response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** The caller's connectable providers + connection state (Settings → Connections). */
+export async function getMeConnections(): Promise<MemberConnections> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/connections");
+  const parsed = MemberConnectionsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /me/connections response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Begin the OAuth connect flow for a provider; returns the authorize URL to redirect to. */
+export async function authorizeMeConnection(
+  provider: string,
+): Promise<ConnectionAuthorize> {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/me/connections/${encodeURIComponent(provider)}/authorize`,
+  );
+  const parsed = ConnectionAuthorizeResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed connection authorize response: ${parsed.summary}`,
+    );
   }
   return parsed;
 }

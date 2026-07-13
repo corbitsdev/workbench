@@ -4,9 +4,12 @@ import { useState } from "react";
 import { Button } from "@workbench/ui";
 import { adminTableCard } from "./admin-ui";
 import { CredentialRow } from "./CredentialRow";
+import type { OwnerCapabilityState } from "@workbench/shared";
 import {
+  getOwnerCapabilities,
   getOwnerCredentials,
   getOwnerFeatures,
+  setOwnerCapabilityEnabled,
   setOwnerFeatureEnabled,
 } from "../../lib/hub-api";
 
@@ -53,6 +56,26 @@ export function OwnerCapabilities() {
       queryClient.invalidateQueries({ queryKey: ["owner", "features"] }),
     onError: () =>
       setFeatureError("Could not update the feature. Try again in a moment."),
+  });
+
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const oauthCapabilities = useQuery({
+    queryKey: ["owner", "capabilities"],
+    queryFn: getOwnerCapabilities,
+    staleTime: 5 * 60_000,
+  });
+  const toggleOauthCapability = useMutation({
+    mutationFn: ({
+      provider,
+      enabled,
+    }: {
+      provider: string;
+      enabled: boolean;
+    }) => setOwnerCapabilityEnabled(provider, enabled),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ["owner", "capabilities"] }),
+    onError: () =>
+      setOauthError("Could not update the capability. Try again in a moment."),
   });
 
   return (
@@ -120,6 +143,65 @@ export function OwnerCapabilities() {
                   </li>
                 );
               })}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-text">
+          Member connections
+        </h2>
+        <p className="mb-2 text-sm text-text-2">
+          Which OAuth providers members can connect from Settings → Connections.
+          Hiding a provider removes it from every member's Connections page.
+        </p>
+        {oauthError && (
+          <p className="mb-2 text-sm text-red" role="status">
+            {oauthError}
+          </p>
+        )}
+        {oauthCapabilities.isLoading ? (
+          <p className="p-3 text-sm text-text-2">Loading…</p>
+        ) : oauthCapabilities.isError || !oauthCapabilities.data ? (
+          <p className="p-3 text-sm text-text-2">
+            Could not load capabilities. Try again in a moment.
+          </p>
+        ) : (
+          <div className={adminTableCard}>
+            <ul className="divide-y divide-border">
+              {oauthCapabilities.data.capabilities.map(
+                (cap: OwnerCapabilityState) => (
+                  <li
+                    key={cap.provider}
+                    className="flex items-center justify-between gap-4 p-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-text">
+                        {cap.label}
+                      </p>
+                      <p className="mt-0.5 text-xs text-text-3">
+                        {cap.enabled ? "Enabled" : "Hidden from members"}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant={cap.enabled ? "ghost" : "primary"}
+                      size="sm"
+                      disabled={toggleOauthCapability.isPending}
+                      onClick={() => {
+                        setOauthError(null);
+                        toggleOauthCapability.mutate({
+                          provider: cap.provider,
+                          enabled: !cap.enabled,
+                        });
+                      }}
+                    >
+                      {cap.enabled ? "Hide" : "Enable"}
+                    </Button>
+                  </li>
+                ),
+              )}
             </ul>
           </div>
         )}

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   KeyRound,
   ExternalLink,
+  Link2,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink, Link, useNavigate } from "react-router";
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
   { to: "/skills", label: "Skills", icon: BookOpen, end: false },
   { to: "/insights", label: "Insights", icon: BarChart2, end: false },
+  { to: "/connections", label: "Connections", icon: Link2, end: false },
 ] as const;
 
 // Footer icon only, shown to admins (Tools moved under Admin — CL-2719). The
