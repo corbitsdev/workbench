@@ -4,6 +4,7 @@ import {
   MailboxListResponse,
   MailboxMessage,
   MailboxMessageDetail,
+  mailboxSenderLabel,
 } from "./mailbox";
 
 const goodMessage = {
@@ -20,6 +21,11 @@ const goodMessage = {
 describe("MailboxMessage", () => {
   test("accepts a full message", () => {
     expect(MailboxMessage(goodMessage)).toEqual(goodMessage);
+  });
+
+  test("accepts optional fromDisplay", () => {
+    const withDisplay = { ...goodMessage, fromDisplay: "Heartbeat" };
+    expect(MailboxMessage(withDisplay)).toEqual(withDisplay);
   });
 
   test("accepts a message without the optional subject and snippet", () => {
@@ -56,6 +62,20 @@ describe("MailboxMessageDetail", () => {
 
   test("rejects a missing body", () => {
     expect(MailboxMessageDetail(goodMessage) instanceof type.errors).toBe(true);
+  });
+});
+
+describe("mailboxSenderLabel", () => {
+  test("prefers fromDisplay over the raw From header", () => {
+    expect(
+      mailboxSenderLabel({
+        from: "ins_dep@tenant.example",
+        fromDisplay: "Heartbeat",
+      }),
+    ).toBe("Heartbeat");
+    expect(mailboxSenderLabel({ from: "ins_dep@tenant.example" })).toBe(
+      "ins_dep@tenant.example",
+    );
   });
 });
 
