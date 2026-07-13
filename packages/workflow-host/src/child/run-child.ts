@@ -1462,26 +1462,47 @@ function reclaimRunStorageIfCold(opts: {
 }
 
 // WORKBENCH-LOCAL (CL-3468): hub run-start mail carries JSON.stringify(input)
-// from hub@<domain>; decode to an object for trigger.payload only for that
-// sender. Ordinary user mail keeps plain conversation text.
+// from hub@<deploymentDomain>; decode to an object for trigger.payload only for
+// that sender. Ordinary user mail keeps plain conversation text.
 function normalizeMailFromAddress(fromHeader: string): string {
   const trimmed = fromHeader.trim();
   const angle = /<([^>]+)>/.exec(trimmed);
   return (angle?.[1] ?? trimmed).trim().toLowerCase();
 }
 
+function mailAddressDomain(address: string): string {
+  const normalized = address.trim().toLowerCase();
+  const at = normalized.lastIndexOf("@");
+  if (at < 0) {
+    return "";
+  }
+  return normalized.slice(at + 1);
+}
+
 /**
  * Hub run-start delivers `from: hub@<deploymentDomain>` with
- * `JSON.stringify(input)` as the conversation body. Only that sender is
- * decoded as structured trigger JSON; ordinary user mail stays plain text.
+ * `JSON.stringify(input)` as the conversation body to the deployment's own
+ * mailbox. Only that sender is decoded as structured trigger JSON; ordinary
+ * user mail stays plain text.
+ *
+ * Trust model: this is a naming convention enforced by caller discipline at
+ * every `sendUserMessage` site (each hardcodes `from` from server config, never
+ * from request/user input), NOT a cryptographically verified sender — the
+ * detached signature covers the message body, not the envelope `from` header.
+ * The `hub` local-part is paired with the deployment domain here as
+ * defense-in-depth so a stray `hub@<other-domain>` cannot reach the JSON path.
+ * Do not add a `sendUserMessage` caller that lets `from` be request-supplied.
  */
-function isHubWorkflowRunStarterSender(fromHeader: string): boolean {
+function isHubWorkflowRunStarterSender(
+  fromHeader: string,
+  expectedDomain: string,
+): boolean {
   const addr = normalizeMailFromAddress(fromHeader);
   const at = addr.lastIndexOf("@");
   if (at <= 0) {
     return false;
   }
-  return addr.slice(0, at) === "hub";
+  return addr.slice(0, at) === "hub" && addr.slice(at + 1) === expectedDomain;
 }
 
 function decodeHubWorkflowTriggerBody(
@@ -1509,8 +1530,9 @@ function materializeTriggerPayload(
   bodyText: string,
   messageId: string,
   fromHeader: string,
+  expectedDomain: string,
 ): unknown {
-  if (!isHubWorkflowRunStarterSender(fromHeader)) {
+  if (!isHubWorkflowRunStarterSender(fromHeader, expectedDomain)) {
     return bodyText;
   }
   return decodeHubWorkflowTriggerBody(bodyText, messageId);
@@ -1560,7 +1582,12 @@ async function resolveTriggerPayload(args: {
   const { headers } = parseHeaderSection(raw);
   const fromHeader = headers.get("from") ?? "";
   const bodyText = extractConversationText(raw, args.messageId);
-  return materializeTriggerPayload(bodyText, args.messageId, fromHeader);
+  return materializeTriggerPayload(
+    bodyText,
+    args.messageId,
+    fromHeader,
+    mailAddressDomain(args.mailboxAddress),
+  );
 }
 
 /**
