@@ -23,6 +23,8 @@ const importers: Record<string, () => Promise<WorkflowUIModule>> = {
     import("@workbench/workflow-reddit-opportunity-scanner/ui"),
   "last30days-research": () =>
     import("@workbench/workflow-last30days-research/ui"),
+  "sumble-account-intel": () =>
+    import("@workbench/workflow-sumble-account-intel/ui"),
 };
 
 export async function loadWorkflowUI(

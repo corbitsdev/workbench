@@ -15,6 +15,8 @@ import {
   PainPointNoteSelectionPayloadSchema,
   PainPointReviewPayloadSchema,
   PainPointSelectionPayloadSchema,
+  SumbleIntakePayloadSchema,
+  SumbleReviewPayloadSchema,
   SyncApprovalPayloadSchema,
   TaskSelectionPayloadSchema,
 } from "@workbench/shared";
@@ -109,6 +111,15 @@ const RESUME_PAYLOAD_SCHEMAS: Record<string, Record<string, Type>> = {
     "pain-point-selection": PainPointSelectionPayloadSchema,
     "format-selection": PainPointFormatSelectionPayloadSchema,
     review: PainPointReviewPayloadSchema,
+  },
+  // sumble-account-intel (CL-3424): the intake gate REQUIRES a non-empty
+  // organization domain/slug — every Sumble lookup keys off it, so a blank
+  // intake is rejected at the /resume boundary rather than resolving nothing.
+  // The review gate carries the approval decision and the optional Attio-push
+  // flag. The block form and the run-page panel POST the same shapes.
+  "sumble-account-intel": {
+    intake: SumbleIntakePayloadSchema,
+    review: SumbleReviewPayloadSchema,
   },
 };
 

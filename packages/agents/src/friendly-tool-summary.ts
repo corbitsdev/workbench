@@ -311,6 +311,36 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   // X / Twitter
   x_search: searching("X"),
 
+  // Slack
+  slack_list_channels: "Listing Slack channels",
+  slack_get_channel_history: "Reading a Slack channel",
+  slack_search: searching("Slack"),
+  slack_post_message: (args) => {
+    const channel = firstStringArg(args, [
+      "channel",
+      "channelId",
+      "channel_id",
+    ]);
+    return channel === null
+      ? "Posting to Slack"
+      : `Posting to Slack ${truncate(channel)}`;
+  },
+
+  // Sumble — account intelligence
+  sumble_resolve_organization: (args) => {
+    const term = firstStringArg(args, ["domain", "slug", "name"]);
+    return term === null
+      ? "Resolving an organization"
+      : `Resolving ${truncate(term)}`;
+  },
+  sumble_search_organizations: searching("Sumble organizations"),
+  sumble_get_org_tech_stack: "Reading an org's tech stack",
+  sumble_list_teams: "Listing org teams",
+  sumble_search_people: "Finding people at an org",
+  sumble_list_jobs: "Listing open jobs",
+  sumble_search_signals: "Checking account signals",
+  sumble_get_intelligence_brief: "Building an account brief",
+
   // YouTube
   youtube_search: searching("YouTube"),
 
@@ -795,6 +825,11 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
   scrapecreators: {
     verb: "pulled social data",
     altVerb: "gathered social data",
+  },
+  slack: { verb: "worked in Slack", altVerb: "checked Slack" },
+  sumble: {
+    verb: "researched the account",
+    altVerb: "dug into account intelligence",
   },
   gamma: { verb: "worked on a presentation", altVerb: "built a presentation" },
   dispatch: {

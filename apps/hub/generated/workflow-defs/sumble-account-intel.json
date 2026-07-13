@@ -1,0 +1,371 @@
+{
+  "kind": "sumble-account-intel",
+  "version": "0.1.0",
+  "label": "Sumble Account Intelligence",
+  "description": "Research an account across Sumble (org, teams, jobs, tech stack, contacts, signals), enrich contacts on X, and synthesize a reviewable account intelligence brief.",
+  "displayFlow": [
+    {
+      "key": "account",
+      "label": "Account",
+      "stepIds": [
+        "intake"
+      ]
+    },
+    {
+      "key": "research",
+      "label": "Research",
+      "stepIds": [
+        "resolve",
+        "teams",
+        "jobs",
+        "techStack",
+        "contacts",
+        "signals",
+        "enrichSocial"
+      ],
+      "activityLabel": "Researching the account"
+    },
+    {
+      "key": "brief",
+      "label": "Brief",
+      "stepIds": [
+        "synthesize",
+        "review"
+      ],
+      "activityLabel": "Writing the account brief"
+    },
+    {
+      "key": "done",
+      "label": "Done",
+      "stepIds": [
+        "packageArtifact"
+      ],
+      "activityLabel": "Saving to workbench"
+    }
+  ],
+  "definition": {
+    "id": "sumble-account-intel",
+    "triggers": [
+      {
+        "type": "manual"
+      }
+    ],
+    "steps": {
+      "intake": {
+        "kind": "awaitSignal",
+        "id": "intake",
+        "name": "intake",
+        "drainBehavior": "wait"
+      },
+      "resolve": {
+        "kind": "step",
+        "id": "resolve",
+        "agent": {
+          "id": "sumble-account-intel-resolve",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_resolve_organization"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_resolve_organization",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_resolve_organization",
+            "workbench.argMap": "{\"identifier\":{\"from\":\"organizationDomain\"}}",
+            "workbench.title": "Resolve the organization"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.intake.output"
+        },
+        "after": [
+          "intake"
+        ]
+      },
+      "teams": {
+        "kind": "step",
+        "id": "teams",
+        "agent": {
+          "id": "sumble-account-intel-teams",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_list_teams"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_list_teams",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_teams",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "List the teams"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.resolve.output.content"
+        },
+        "after": [
+          "resolve"
+        ]
+      },
+      "jobs": {
+        "kind": "step",
+        "id": "jobs",
+        "agent": {
+          "id": "sumble-account-intel-jobs",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_list_jobs"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_list_jobs",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_jobs",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "List the open jobs"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.resolve.output.content"
+        },
+        "after": [
+          "teams"
+        ]
+      },
+      "techStack": {
+        "kind": "step",
+        "id": "techStack",
+        "agent": {
+          "id": "sumble-account-intel-tech-stack",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
+            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Read the tech stack"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.resolve.output.content"
+        },
+        "after": [
+          "jobs"
+        ]
+      },
+      "contacts": {
+        "kind": "step",
+        "id": "contacts",
+        "agent": {
+          "id": "sumble-account-intel-contacts",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_search_people"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_search_people",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_people",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":10}}",
+            "workbench.title": "Find the contacts"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.resolve.output.content"
+        },
+        "after": [
+          "techStack"
+        ]
+      },
+      "signals": {
+        "kind": "step",
+        "id": "signals",
+        "agent": {
+          "id": "sumble-account-intel-signals",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-sumble/sumble:sumble_search_signals"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-sumble/sumble:sumble_search_signals",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_signals",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Scan the buying signals"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps.resolve.output.content"
+        },
+        "after": [
+          "contacts"
+        ]
+      },
+      "enrichSocial": {
+        "kind": "map",
+        "id": "enrichSocial",
+        "over": {
+          "from": "steps.contacts.output.content.people"
+        },
+        "step": {
+          "kind": "step",
+          "id": "",
+          "agent": {
+            "id": "sumble-account-intel-enrich-social",
+            "systemPrompt": "",
+            "toolFactories": [],
+            "capabilities": [
+              "@workbench/tools-x/x:x_search"
+            ],
+            "inference": {
+              "sources": []
+            },
+            "description": "Deterministic tool call: @workbench/tools-x/x:x_search",
+            "tags": {
+              "workbench.stepKind": "deterministic-tool",
+              "workbench.tool": "@workbench/tools-x/x:x_search",
+              "workbench.argMap": "{\"query\":{\"from\":\"name\"},\"limit\":{\"literal\":5}}",
+              "workbench.nonFatal": "true",
+              "workbench.title": "Find the contact on X"
+            }
+          },
+          "drainBehavior": "cancel",
+          "input": {
+            "from": "trigger.payload"
+          }
+        },
+        "after": [
+          "signals"
+        ]
+      },
+      "synthesize": {
+        "kind": "step",
+        "id": "synthesize",
+        "agent": {
+          "id": "sumble-account-intel-synthesize",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are a GTM account researcher assembling an account intelligence brief for a sales team.\n\nYou receive the raw outputs of several data-gathering steps under a top-level \"steps\" object:\n- resolve: the matched Sumble organization (name, slug, url, industry, employee_count).\n- teams: the organization's teams, each with a name and ICP-fit score.\n- jobs: open job posts, with titles, descriptions, and detected technologies.\n- techStack: the organization's technology stack, with per-technology job-post counts.\n- contacts: people at the organization (name, title, email — LinkedIn-sourced).\n- enrichSocial: per-contact X/Twitter search results used to enrich each contact with a public social presence.\n- signals: buying/intent signals for the organization.\n\nSome steps may be missing, empty, or contain an error envelope (a best-effort source failed). Never invent data: when a source is missing, say so plainly and work from what is present. Ground every claim in the provided data.\n\nWrite for a seller who will act on this today. Be concrete and specific. No filler, no hype, no buzzwords, no em dashes.\n\nThe brief content (markdown) must include, in this order:\n1. Account summary: the company, industry, size, and what they do, in two or three sentences.\n2. Org shape: the notable teams and hiring signals from jobs — where they are investing headcount and which functions are growing.\n3. Technology stack: the technologies that matter for positioning, and what they imply about the account's priorities.\n4. Buying signals: the intent signals worth acting on, and why.\n5. Key contacts: the highest-value people to reach, their role, and — when the X enrichment surfaced one — their public social presence.\n6. Recommended next step: one concrete, specific outreach action.\n\nReturn STRICT JSON only. No markdown fences, no preamble, no trailing text. Match this exact shape:\n{\n  \"title\": \"<company name or account> — account brief\",\n  \"content\": \"<the full markdown brief described above, newlines escaped as \\n>\",\n  \"contactsCsv\": \"<a CSV string with a header row 'name,title,email,x_handle' and one row per contact; use an empty field when a value is unknown; newlines escaped as \\n>\",\n  \"slackDraft\": \"<a short, paste-ready Slack message (3-5 sentences) summarizing the account and the recommended next step, addressed to the sales team>\"\n}\n\nIf there are no contacts, set contactsCsv to just the header row. Keep the slackDraft plain text with no markdown headers.",
+          "toolFactories": [],
+          "capabilities": [],
+          "inference": {
+            "sources": [
+              {
+                "provider": "openai-compatible",
+                "model": "kimi-k2.6",
+                "parameters": {
+                  "maxTokens": 8192
+                }
+              }
+            ]
+          },
+          "description": "Inline single-turn inference: sumble-account-intel-synthesize",
+          "tags": {
+            "workbench.stepKind": "inline-inference",
+            "workbench.title": "Write the account brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "steps"
+        },
+        "after": [
+          "enrichSocial"
+        ]
+      },
+      "review": {
+        "kind": "awaitSignal",
+        "id": "review",
+        "name": "review",
+        "drainBehavior": "wait",
+        "after": [
+          "synthesize"
+        ]
+      },
+      "packageArtifact": {
+        "kind": "step",
+        "id": "packageArtifact",
+        "agent": {
+          "id": "sumble-account-intel-package",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-artifact/artifact:write_artifact"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-artifact/artifact:write_artifact",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
+            "workbench.argMap": "{\"title\":{\"from\":\"organizationDomain\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Sumble account intel\"}}",
+            "workbench.title": "Save the account brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "steps.intake.output"
+            },
+            {
+              "from": "steps.synthesize.output"
+            },
+            {
+              "from": "steps.review.output"
+            }
+          ]
+        },
+        "after": [
+          "review"
+        ]
+      }
+    },
+    "stepOrder": [
+      "intake",
+      "resolve",
+      "teams",
+      "jobs",
+      "techStack",
+      "contacts",
+      "signals",
+      "enrichSocial",
+      "synthesize",
+      "review",
+      "packageArtifact"
+    ]
+  }
+}
