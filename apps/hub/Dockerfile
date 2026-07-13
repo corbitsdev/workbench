@@ -35,6 +35,7 @@ COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
+COPY packages/tool-manifest/package.json packages/tool-manifest/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
@@ -102,6 +103,7 @@ COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/timeline/ packages/timeline/
 COPY packages/tool-credentials/ packages/tool-credentials/
+COPY packages/tool-manifest/ packages/tool-manifest/
 COPY packages/tools-agents/ packages/tools-agents/
 COPY packages/tools-artifact/ packages/tools-artifact/
 COPY packages/tools-bluesky/ packages/tools-bluesky/
@@ -113,6 +115,7 @@ COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/
 COPY packages/tools-notion/ packages/tools-notion/
 COPY packages/tools-vercel/ packages/tools-vercel/
+COPY packages/tools-ab-compare/ packages/tools-ab-compare/
 COPY packages/tools-attio/ packages/tools-attio/
 COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/tools-github/ packages/tools-github/

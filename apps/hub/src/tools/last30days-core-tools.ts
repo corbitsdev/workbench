@@ -6,9 +6,13 @@
 // coexistence window; the proxy and these entries are removed in M3.8.
 
 import {
+  LAST30DAYS_COLLECT_DEFINITION,
   LAST30DAYS_CORE_EXTRACT_DEFINITION,
   LAST30DAYS_CORE_REPORT_DEFINITION,
+  LAST30DAYS_ENTITY_QUERIES_DEFINITION,
+  LAST30DAYS_GROUND_QUERIES_DEFINITION,
   LAST30DAYS_VALIDATE_DEFINITION,
+  LAST30DAYS_WORKFLOW_BRIEF_DEFINITION,
   createLast30daysTools,
 } from "@workbench/tools-last30days";
 import type { ContextToolEntry } from "../lib/tool-registry";
@@ -39,5 +43,25 @@ export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
     sideEffect: "read",
     definition: LAST30DAYS_VALIDATE_DEFINITION,
     createTools: toolByName("last30days_validate"),
+  },
+  last30days_workflow_brief: {
+    sideEffect: "read",
+    definition: LAST30DAYS_WORKFLOW_BRIEF_DEFINITION,
+    createTools: toolByName("last30days_workflow_brief"),
+  },
+  last30days_ground_queries: {
+    sideEffect: "read",
+    definition: LAST30DAYS_GROUND_QUERIES_DEFINITION,
+    createTools: toolByName("last30days_ground_queries"),
+  },
+  last30days_collect: {
+    sideEffect: "read",
+    definition: LAST30DAYS_COLLECT_DEFINITION,
+    createTools: toolByName("last30days_collect"),
+  },
+  last30days_entity_queries: {
+    sideEffect: "read",
+    definition: LAST30DAYS_ENTITY_QUERIES_DEFINITION,
+    createTools: toolByName("last30days_entity_queries"),
   },
 };

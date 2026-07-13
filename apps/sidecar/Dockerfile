@@ -40,6 +40,7 @@ COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
+COPY packages/tool-manifest/package.json packages/tool-manifest/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
@@ -105,6 +106,7 @@ COPY packages/workflow-host/ packages/workflow-host/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tool-credentials/ packages/tool-credentials/
+COPY packages/tool-manifest/ packages/tool-manifest/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]

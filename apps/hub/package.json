@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "build:workflow-defs": "bun run bin/build-workflow-defs.ts",
+    "build:tool-manifests": "bun run bin/build-tool-manifests.ts",
     "build": "bun run build:workflow-defs && bun build src/index.ts --outdir dist --target bun",
     "typecheck": "tsc --noEmit",
     "start": "bun run dist/index.js",
@@ -39,6 +40,7 @@
     "@intx/workflow-deploy": "workspace:*",
     "@intx/workflow-host": "workspace:*",
     "@workbench/agents": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
     "@workbench/analytics": "workspace:*",
     "@workbench/catalog": "workspace:*",
     "@workbench/event-collector": "workspace:*",
@@ -54,6 +56,7 @@
     "@workbench/timeline": "workspace:*",
     "@workbench/tool-credentials": "workspace:*",
     "@workbench/tools-agents": "workspace:*",
+    "@workbench/tools-ab-compare": "workspace:*",
     "@workbench/tools-artifact": "workspace:*",
     "@workbench/tools-attio": "workspace:*",
     "@workbench/tools-bluesky": "workspace:*",

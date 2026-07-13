@@ -79,6 +79,7 @@ COPY workflows/smoke-test/package.json workflows/smoke-test/
 COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
+COPY packages/tool-manifest/package.json packages/tool-manifest/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-last30days/package.json packages/tools-last30days/
 RUN bun install --frozen-lockfile
