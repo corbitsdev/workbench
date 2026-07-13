@@ -15,6 +15,12 @@ import {
   deriveToolPackageSpecs,
   loadCommittedToolManifestFactories,
 } from "@workbench/tool-manifest";
+import {
+  type EmbeddedToolPackageManifest,
+  type EmbeddedToolPackageRow,
+  embeddedToolPackagesDir,
+  serializeEmbeddedManifestJson,
+} from "../src/lib/tool-packages-embedded";
 
 export interface ToolPackageSpec {
   /** npm package name as it appears in `package.json#name`. */
@@ -291,11 +297,73 @@ export async function buildToolPackages(
   return built;
 }
 
-if (import.meta.main) {
-  const built = await buildToolPackages();
-  for (const entry of built) {
-    process.stdout.write(
-      `  ${entry.name}@${entry.version} → ${entry.tarballPath} (${entry.integrity})\n`,
+export function builtToolPackageToManifestRow(
+  entry: BuiltToolPackage,
+): EmbeddedToolPackageRow {
+  return {
+    name: entry.name,
+    version: entry.version,
+    integrity: entry.integrity,
+    tarballFilename: path.basename(entry.tarballPath),
+  };
+}
+
+/** Build every TOOL_PACKAGES tarball and return manifest rows (no embed I/O). */
+export async function computeEmbeddedToolPackageManifest(
+  outDir?: string,
+): Promise<EmbeddedToolPackageManifest> {
+  const scratch =
+    outDir ??
+    path.join(
+      await fs.mkdtemp(path.join(path.dirname(DEFAULT_OUT_DIR), ".tool-embed-")),
     );
+  const ownsScratch = outDir === undefined;
+  try {
+    const built = await buildToolPackages(TOOL_PACKAGES, scratch);
+    return built.map(builtToolPackageToManifestRow);
+  } finally {
+    if (ownsScratch) {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Pack into `apps/hub/generated/tool-packages/tarballs/` and write
+ * `manifest.json` (CL-3093 embed step).
+ */
+export async function embedToolPackages(): Promise<EmbeddedToolPackageManifest> {
+  const embedRoot = embeddedToolPackagesDir();
+  const tarballsDir = path.join(embedRoot, "tarballs");
+  await fs.mkdir(tarballsDir, { recursive: true });
+  const built = await buildToolPackages(TOOL_PACKAGES, tarballsDir);
+  const rows = built.map(builtToolPackageToManifestRow);
+  await fs.writeFile(
+    path.join(embedRoot, "manifest.json"),
+    serializeEmbeddedManifestJson(rows),
+    "utf8",
+  );
+  return rows;
+}
+
+if (import.meta.main) {
+  if (process.argv.includes("--print-manifest")) {
+    const rows = await computeEmbeddedToolPackageManifest();
+    process.stdout.write(serializeEmbeddedManifestJson(rows));
+    process.exit(0);
+  }
+  const embed = process.argv.includes("--embed");
+  if (embed) {
+    const rows = await embedToolPackages();
+    process.stdout.write(
+      `build-tool-packages: embedded ${rows.length} packages under ${embeddedToolPackagesDir()}\n`,
+    );
+  } else {
+    const built = await buildToolPackages();
+    for (const entry of built) {
+      process.stdout.write(
+        `  ${entry.name}@${entry.version} → ${entry.tarballPath} (${entry.integrity})\n`,
+      );
+    }
   }
 }
