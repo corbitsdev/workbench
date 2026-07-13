@@ -1279,6 +1279,7 @@ describe("attio_recent_activity handler", () => {
               {
                 id: { record_id: "rec_1" },
                 created_at: "2026-07-05T00:00:00Z",
+                web_url: "https://app.attio.com/textql/company/rec_1",
                 values: { name: [{ value: "Acme Corp" }] },
               },
             ],
@@ -1348,6 +1349,7 @@ describe("attio_recent_activity handler", () => {
               {
                 id: { record_id: "rec_1" },
                 created_at: "2026-07-05T00:00:00Z",
+                web_url: "https://app.attio.com/textql/company/rec_1",
                 values: { name: [{ value: "Acme Corp" }] },
               },
             ],
@@ -1389,7 +1391,12 @@ describe("attio_recent_activity handler", () => {
     expect(JSON.parse(String(result.content))).toEqual({
       attioActivity: {
         newCompanies: [
-          { id: "rec_1", name: "Acme Corp", createdAt: "2026-07-05T00:00:00Z" },
+          {
+            id: "rec_1",
+            name: "Acme Corp",
+            createdAt: "2026-07-05T00:00:00Z",
+            url: "https://app.attio.com/textql/company/rec_1",
+          },
         ],
         openTasks: [
           {
@@ -1407,5 +1414,49 @@ describe("attio_recent_activity handler", () => {
     });
     const tasksCall = calls.find((c) => c.url.includes("/v2/tasks"));
     expect(tasksCall?.url).toContain("is_completed=false");
+  });
+
+  it("omits url rather than fabricating one when a company record has no web_url", async () => {
+    const fetcher: AttioFetch = mock(async (url: string) => {
+      if (url.includes("/records/query")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: { record_id: "rec_2" },
+                created_at: "2026-07-05T00:00:00Z",
+                values: { name: [{ value: "No Link Inc" }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    });
+
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: { enabledSources: ["attio"] },
+      },
+      new AbortController().signal,
+    );
+
+    const newCompanies = JSON.parse(String(result.content)).attioActivity
+      .newCompanies;
+    expect(newCompanies).toEqual([
+      {
+        id: "rec_2",
+        name: "No Link Inc",
+        createdAt: "2026-07-05T00:00:00Z",
+        url: null,
+      },
+    ]);
   });
 });

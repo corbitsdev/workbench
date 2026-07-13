@@ -437,6 +437,7 @@ function compactCompany(record: unknown): {
   id: string | null;
   name: string | null;
   createdAt: string | null;
+  url: string | null;
 } {
   return {
     id: recordId(record),
@@ -444,6 +445,14 @@ function compactCompany(record: unknown): {
     createdAt:
       isRecord(record) && typeof record.created_at === "string"
         ? record.created_at
+        : null,
+    // Attio's record API returns a top-level `web_url` with the record's
+    // canonical Attio deep link — normalized to `url` here so the heartbeat's
+    // clickable-links prompt rule (CL-3504) can operate on a guaranteed field
+    // name across every brief source rather than a source-specific key.
+    url:
+      isRecord(record) && typeof record.web_url === "string"
+        ? record.web_url
         : null,
   };
 }
