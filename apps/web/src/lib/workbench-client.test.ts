@@ -14,10 +14,10 @@ describe("@workbench/client artifacts", () => {
     const fetchMock = mock(
       (_url: string | URL | Request, _init?: RequestInit) =>
         Promise.resolve(
-          new Response(
-            JSON.stringify({ artifacts: [], nextCursor: null }),
-            { status: 200, headers: { "Content-Type": "application/json" } },
-          ),
+          new Response(JSON.stringify({ artifacts: [], nextCursor: null }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
         ),
     );
     const fetcher: typeof fetch = Object.assign(

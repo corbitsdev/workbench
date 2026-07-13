@@ -94,7 +94,9 @@ export const WORKFLOW_STEP_BUDGET_STOP_MARKER =
  * needs the same provider-independent bound. `apps/sidecar`'s
  * `createStepAgentFactory` pins every step agent to this director id.
  */
-export const workflowStepBudgetDirector = defineDirector<typeof EmptyConfig.infer>({
+export const workflowStepBudgetDirector = defineDirector<
+  typeof EmptyConfig.infer
+>({
   id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
   configSchema: EmptyConfig,
   factory: (_config, _env, agent) =>

@@ -8,7 +8,7 @@ export type TtlMemo<T> = {
     key: string;
     resolve: () => Promise<T>;
     ttlMs: number;
-    now?: () => number;
+    now?: (() => number) | undefined;
   }): Promise<T>;
   /** Test-only: clears every cached and in-flight entry. */
   reset(): void;

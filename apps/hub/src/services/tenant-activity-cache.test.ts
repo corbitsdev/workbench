@@ -170,7 +170,7 @@ describe("getCachedTenantActivityPage", () => {
     const MAX_ENTRIES = 200;
     for (let i = 0; i < MAX_ENTRIES; i += 1) {
       nextResult = () => ({ entries: [{ id: `row-${i}` }], nextCursor: null });
-      // eslint-disable-next-line no-await-in-loop
+
       await getCachedTenantActivityPage({
         db,
         tenantId: `tenant-${i}`,

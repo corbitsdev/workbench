@@ -85,13 +85,7 @@ afterEach(() => {
 describe("tour step registry", () => {
   it("declares the v0.6 steps in order with content", () => {
     const ids = TOUR_STEPS.map((s) => s.id);
-    expect(ids).toEqual([
-      "myra",
-      "inbox",
-      "bell",
-      "schedule",
-      "autonomy",
-    ]);
+    expect(ids).toEqual(["myra", "inbox", "bell", "schedule", "autonomy"]);
     for (const step of TOUR_STEPS) {
       expect(step.title.length).toBeGreaterThan(0);
       expect(step.body.length).toBeGreaterThan(0);

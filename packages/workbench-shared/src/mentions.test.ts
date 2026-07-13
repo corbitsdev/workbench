@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { extractMentions, formatMention, splitMentionSegments } from "./mentions";
+import {
+  extractMentions,
+  formatMention,
+  splitMentionSegments,
+} from "./mentions";
 
 const UUID = "252b009f-c844-4c23-8250-2db3815dabe7";
 

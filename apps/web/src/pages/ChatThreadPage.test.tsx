@@ -57,10 +57,7 @@ mock.module("../hooks/use-myra-threads", () => ({
     return autoTitle;
   },
   writeLastActiveThreadId: () => {},
-  resolveActiveThread: (
-    threads: ThreadsResult["data"],
-    explicit?: string | null,
-  ) => {
+  resolveActiveThread: (threads: ThreadItem[], explicit?: string | null) => {
     if (!threads || threads.length === 0) return null;
     if (explicit) {
       const m = threads.find((t) => t.id === explicit);

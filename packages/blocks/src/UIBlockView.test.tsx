@@ -227,7 +227,7 @@ describe("UIBlockView", () => {
   });
 
   it("remeasures height when the textarea width changes (CL-3234)", () => {
-    const observers: Array<() => void> = [];
+    const observers: (() => void)[] = [];
     const original = globalThis.ResizeObserver;
     class FakeResizeObserver {
       constructor(private cb: () => void) {

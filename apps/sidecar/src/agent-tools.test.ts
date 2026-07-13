@@ -21,7 +21,6 @@ function fakeManifest(
       source: { kind: "asset", assetId: `${e.name}-asset` },
     })),
     topLevel: entries.map((e) => ({ name: e.name, version: e.version })),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test fixture, loose manifest shape
   } as any;
 }
 
@@ -257,9 +256,10 @@ describe("createMemoizingManifestLoad", () => {
     expect(loadFn).toHaveBeenCalledTimes(1);
     expect(loadedForInstanceA).toBe(loadedForInstanceB);
 
-    const sharedFactory = loadedForInstanceA[0]?.factories[0] as unknown as (env: {
-      apiKey: string;
-    }) => { apiKeyUsed: string };
+    const sharedFactory = loadedForInstanceA[0]
+      ?.factories[0] as unknown as (env: { apiKey: string }) => {
+      apiKeyUsed: string;
+    };
     const bundleA = sharedFactory({ apiKey: "instance-a-key" });
     const bundleB = sharedFactory({ apiKey: "instance-b-key" });
 

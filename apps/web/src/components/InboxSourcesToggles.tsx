@@ -1,4 +1,7 @@
-import { useInboxSources, useUpdateInboxSource } from "../hooks/use-preference-settings";
+import {
+  useInboxSources,
+  useUpdateInboxSource,
+} from "../hooks/use-preference-settings";
 import { SourceTogglesList } from "./SourceTogglesList";
 
 /**

@@ -266,7 +266,11 @@ describe("runDeterministicToolStep", () => {
     expect(tr.isError).not.toBe(true);
     expect(tr.content).toEqual({ messageId: "m1" });
     expect(sent).toEqual([
-      { to: "usr_x@tenant.example", content: "hi", type: "conversation.message" },
+      {
+        to: "usr_x@tenant.example",
+        content: "hi",
+        type: "conversation.message",
+      },
     ]);
   });
 

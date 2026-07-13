@@ -45,7 +45,7 @@ const loadToolPackagesMock = mock(async (): Promise<LoadedPackage[]> => []);
 mock.module("./agent-tools", () => ({
   loadToolPackages: loadToolPackagesMock,
   fetchToolCredentials: mock(async () => ({})),
-  mergeToolRunners: (runners: unknown[]) => ({
+  mergeToolRunners: (_runners: unknown[]) => ({
     definitions: [],
     run: async () => ({ callId: "x", content: "" }),
   }),
@@ -142,10 +142,7 @@ describe("step tool harness: missing-credential skip is quiet", () => {
     const factory = createStepAgentFactory({
       agentFactory: async () => fakeAgent as never,
     });
-    await factory(
-      { id: "step-def" } as never,
-      env as never,
-    );
+    await factory({ id: "step-def" } as never, env as never);
 
     expect(
       warnCalls.some((c) => c.message.includes("failed to construct")),
@@ -176,10 +173,7 @@ describe("step tool harness: missing-credential skip is quiet", () => {
     const factory = createStepAgentFactory({
       agentFactory: async () => fakeAgent as never,
     });
-    await factory(
-      { id: "step-def" } as never,
-      env as never,
-    );
+    await factory({ id: "step-def" } as never, env as never);
 
     expect(
       warnCalls.some((c) => c.message.includes("failed to construct")),

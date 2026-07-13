@@ -1,4 +1,7 @@
-import { useBriefSources, useUpdateBriefSource } from "../hooks/use-preference-settings";
+import {
+  useBriefSources,
+  useUpdateBriefSource,
+} from "../hooks/use-preference-settings";
 import { SourceTogglesList } from "./SourceTogglesList";
 
 /**

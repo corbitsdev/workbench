@@ -196,7 +196,11 @@ function inferenceDone(
       ? content
       : [
           ...content,
-          { type: "tool_call" as const, id: `call-${String(seq)}`, ...toolCall },
+          {
+            type: "tool_call" as const,
+            id: `call-${String(seq)}`,
+            ...toolCall,
+          },
         ];
   return {
     type: "inference.done",

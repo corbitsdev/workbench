@@ -1,4 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
+import type { MemberPreferences } from "@workbench/shared";
 import type { HubDb } from "../db";
 
 mock.module("../config", () => ({
@@ -14,12 +15,19 @@ mock.module("../lib/tenant-provisioning", () => ({
 }));
 
 const mergeMemberPreferences = mock(
-  async (_db, _t, _p, patch: Record<string, unknown>) => ({
+  async (
+    _db,
+    _t,
+    _p,
+    patch: Record<string, unknown>,
+  ): Promise<MemberPreferences> => ({
     theme: "notion",
     ...patch,
   }),
 );
-const readMemberPreferences = mock(async () => ({ theme: "notion" }));
+const readMemberPreferences = mock(
+  async (): Promise<MemberPreferences> => ({ theme: "notion" }),
+);
 mock.module("../lib/member-preferences", () => ({
   mergeMemberPreferences,
   readMemberPreferences,

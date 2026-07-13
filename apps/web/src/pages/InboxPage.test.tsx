@@ -695,9 +695,7 @@ describe("InboxPage load-more control", () => {
       isError: false,
     };
     renderInbox();
-    expect(
-      screen.queryByRole("button", { name: /show older/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /show older/i })).toBeNull();
   });
 
   it("shows the control when the mailbox has another page and fetches it on click", () => {
@@ -742,8 +740,6 @@ describe("InboxPage load-more control", () => {
     };
     mailboxPaging = { hasNextPage: true, isFetchingNextPage: false };
     renderInbox("/inbox/msg-1");
-    expect(
-      screen.queryByRole("button", { name: /show older/i }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /show older/i })).toBeNull();
   });
 });

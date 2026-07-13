@@ -125,8 +125,7 @@ describe("createAttioTaskAdapter create", () => {
           data: [
             {
               id: { note_id: "note_existing" },
-              content_markdown:
-                "Follow up\n\n<!-- idem:task:task-1:create -->",
+              content_markdown: "Follow up\n\n<!-- idem:task:task-1:create -->",
             },
           ],
         },

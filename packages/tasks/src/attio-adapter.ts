@@ -57,7 +57,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function noteId(value: unknown): string | null {
-  if (isRecord(value) && isRecord(value.id) && typeof value.id.note_id === "string") {
+  if (
+    isRecord(value) &&
+    isRecord(value.id) &&
+    typeof value.id.note_id === "string"
+  ) {
     return value.id.note_id;
   }
   return null;
@@ -71,6 +75,9 @@ export function createAttioTaskAdapter(deps: AttioAdapterDeps): TaskAdapter {
     const tool = tools.find((entry) => entry.definition.name === name);
     if (tool === undefined) {
       throw new Error(`Attio adapter could not resolve tool: ${name}`);
+    }
+    if (tool.kind !== "string") {
+      throw new Error(`Attio adapter expected a string-handler tool: ${name}`);
     }
     return tool.handler;
   }

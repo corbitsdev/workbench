@@ -2,6 +2,7 @@ import { type } from "arktype";
 import type { RunState, StepState } from "@intx/workflow";
 import { heartbeatIntakeStepKey, WIRED_BRIEF_SOURCES } from "@workbench/shared";
 import {
+  activeDisplayStep,
   buildRunStepperSteps,
   Button,
   type DisplayStep,
@@ -111,12 +112,11 @@ function Spinner({ label }: { label: string }) {
 }
 
 function PreparingCard({ state }: { state: RunState | null }) {
-  const intakeRunning = INTAKE_STEP_IDS.some(
-    (id) => phaseFor(state, id) !== "completed",
-  );
-  const label = intakeRunning
-    ? "Gathering your sources…"
-    : "Writing your brief…";
+  const active = activeDisplayStep(state, DISPLAY_STEPS);
+  const label =
+    active?.key === "intake"
+      ? "Gathering your sources…"
+      : "Writing your brief…";
   return (
     <Card>
       <h3 className="mb-3 text-[14px] font-semibold text-text">

@@ -121,7 +121,11 @@ export function createTaskPushService(deps: {
     }
 
     const assignee = deps.resolveAssignee
-      ? await deps.resolveAssignee(task.ownerPrincipalId, adapter.id, task.tenantId)
+      ? await deps.resolveAssignee(
+          task.ownerPrincipalId,
+          adapter.id,
+          task.tenantId,
+        )
       : null;
 
     try {

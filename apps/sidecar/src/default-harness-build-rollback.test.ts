@@ -60,9 +60,7 @@ mock.module("./agent-tools", () => ({
     return [{ factories: [toolFactory] }];
   }),
   fetchToolCredentials: mock(async () => ({})),
-  mergeToolRunners: (
-    runners: Array<{ definitions?: Array<{ name: string }> }>,
-  ) => {
+  mergeToolRunners: (runners: { definitions?: { name: string }[] }[]) => {
     if (throwInMergeToolRunners) {
       throw new Error("mergeToolRunners exploded pre-createHarness");
     }

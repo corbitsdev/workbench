@@ -113,8 +113,8 @@ describe("TracerFacetNav", () => {
     render(
       <FacetTabs
         facets={[
-          { id: "a", label: "One" },
-          { id: "b", label: "Two" },
+          { id: "a", label: "One", hasGap: false },
+          { id: "b", label: "Two", hasGap: false },
         ]}
         activeId="a"
         onSelect={onSelect}

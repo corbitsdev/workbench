@@ -430,6 +430,7 @@ const mailboxEventBus = createMailboxEventBus();
 // Late-bound: constructed below once sessionService exists. The persist hook
 // and the turn-finalized fan-out both fire only after boot completes, so the
 // brief window where this is undefined can never drop a real event.
+// eslint-disable-next-line prefer-const -- assigned once, after sessionService below; can't be const at declaration
 let mailboxTriage: MailboxTriage | undefined;
 
 const lookups: SidecarLookups = {

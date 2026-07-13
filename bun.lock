@@ -901,6 +901,7 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+        "undici-types": "7.24.6",
       },
     },
     "packages/test-utils": {
@@ -1391,6 +1392,10 @@
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
       },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
     },
     "workflows/ab-compare-quality": {
       "name": "@workbench/workflow-ab-compare-quality",
@@ -1482,6 +1487,7 @@
         "@intx/agent": "workspace:*",
         "@intx/workflow": "workspace:*",
         "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/ui": "workspace:*",
         "arktype": "catalog:",
         "react": "^19.0.0",

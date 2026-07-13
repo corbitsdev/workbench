@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import type { HubDb } from "../db";
 
-const teardownMock = mock(async () => undefined);
+const teardownMock = mock(
+  async (_db: unknown, _opts: Record<string, unknown>) => undefined,
+);
 mock.module("./myra-threads", () => ({
   resolveMyraTriageDefinition: mock(async () => null),
   teardownThreadRows: teardownMock,
@@ -38,8 +40,12 @@ function makeDb(rows: StaleRow[]): HubDb {
   } as unknown as HubDb;
 }
 
-function makeSessionService(impl?: () => Promise<void>) {
-  const endSession = mock(impl ?? (async () => undefined));
+function makeSessionService(
+  impl?: (address: string, reason: string) => Promise<void>,
+) {
+  const endSession = mock(
+    impl ?? (async (_address: string, _reason: string) => undefined),
+  );
   return { endSession };
 }
 

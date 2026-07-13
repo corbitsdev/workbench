@@ -187,7 +187,7 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
   );
   const queue: UserMailboxRowEvent[] = [];
   const pending = new Map<string, (turn: TurnFinalized) => void>();
-  const drainWaiters: Array<() => void> = [];
+  const drainWaiters: (() => void)[] = [];
   let running = false;
 
   async function isEligible(item: UserMailboxRowEvent): Promise<boolean> {
@@ -575,11 +575,7 @@ export async function sweepStaleTriageInstances(
   let deferred = 0;
   for (const row of stale) {
     try {
-      // eslint-disable-next-line no-await-in-loop
-      await sessionService.endSession(
-        row.address,
-        "mailbox_triage_boot_sweep",
-      );
+      await sessionService.endSession(row.address, "mailbox_triage_boot_sweep");
     } catch (err) {
       // Same rule as runOne's teardown: rows are only deleted once the
       // sidecar undeploy succeeded. At hub boot the sidecar is often not
@@ -598,7 +594,6 @@ export async function sweepStaleTriageInstances(
       continue;
     }
     try {
-      // eslint-disable-next-line no-await-in-loop
       await teardownThreadRows(db, {
         instanceId: row.instanceId,
         mappingId: row.mappingId,

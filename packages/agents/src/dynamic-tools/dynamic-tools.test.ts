@@ -260,6 +260,8 @@ describe("Myra loadout partition (CL-3190)", () => {
       "@workbench/tools-skills/skills:load_skill",
       "@workbench/tools-skills/skills:list_skill_drafts",
       "@workbench/tools-skills/skills:load_skill_draft",
+      "mail_send",
+      "task_create",
     ]);
   });
 
@@ -279,7 +281,15 @@ describe("Myra loadout partition (CL-3190)", () => {
 
   test("every non-local platform tool is producible from Myra's pins", () => {
     const producible = producibleLlmToolNamesForPins(myraPins);
-    const locals = new Set(["search_tools", "load_tools"]);
+    // mail_send/task_create are native sidecar/hub tools (see
+    // MYRA_PLATFORM_BARE_TOOL_NAMES) — always mounted by the harness, not
+    // shipped by a pinned package, so they are locals like search_tools.
+    const locals = new Set([
+      "search_tools",
+      "load_tools",
+      "mail_send",
+      "task_create",
+    ]);
     const missing = [...platformLlm].filter(
       (n) => !locals.has(n) && !producible.has(n),
     );
@@ -342,6 +352,11 @@ describe("advertised turn-1 loadout == platform (CL-3190)", () => {
     const toolDefs = [
       def("search_tools"),
       def("load_tools"),
+      // Native sidecar/hub tools, not from a pinned package (see
+      // MYRA_PLATFORM_BARE_TOOL_NAMES) — the harness always mounts these
+      // alongside the pinned-package tool set at launch.
+      def(toLlmToolName("mail_send")),
+      def(toLlmToolName("task_create")),
       ...producible.map(def),
     ];
     const exposure: ToolExposureState = { exposed: new Set() };

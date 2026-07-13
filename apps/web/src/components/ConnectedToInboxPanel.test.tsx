@@ -102,9 +102,7 @@ describe("ConnectedToInboxPanel", () => {
     await screen.findByText("Connected to your inbox");
     expect(screen.getByText("Morning brief")).toBeDefined();
     // notifyInboxMail is absent from the fixture, so mail/mention pings read Off
-    const mentionsRow = screen
-      .getByText("Mentions & new mail")
-      .closest("div");
+    const mentionsRow = screen.getByText("Mentions & new mail").closest("div");
     expect(mentionsRow?.textContent).toContain("Off");
     // notifyGateAsks is true
     const approvalsRow = screen.getByText("Approvals & gates").closest("div");
@@ -125,9 +123,7 @@ describe("ConnectedToInboxPanel", () => {
     expect(row?.textContent).toContain("inbox");
     // Task creation is a single global gate, stated once — never per source.
     expect(row?.textContent).not.toContain("can create tasks");
-    expect(
-      screen.getByText(/triage may leave a task behind/i),
-    ).toBeDefined();
+    expect(screen.getByText(/triage may leave a task behind/i)).toBeDefined();
   });
 
   it("renders nothing when no preferences or sources are configured", () => {

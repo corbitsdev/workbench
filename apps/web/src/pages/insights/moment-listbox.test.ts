@@ -48,7 +48,7 @@ describe("moment-listbox", () => {
       target: button,
       currentTarget: listbox,
       preventDefault: () => {},
-    } as unknown as KeyboardEvent;
+    } as unknown as KeyboardEvent<HTMLElement>;
     expect(listboxShouldHandleKeyDown(event)).toBe(false);
   });
 });

@@ -142,17 +142,17 @@ describe("getUsageByPerson — workflow attribution through the run record (CL-2
     // with NO member_agent_instance mapping. The human lives only on the run
     // record.
     await seedInstance({
-      instanceId: "ins_dep-1",
+      instanceId: "ins_dep1",
       syntheticPrincipalId: "prn-workflow-def",
-      address: "ins_dep-1@wb.local",
+      address: "ins_dep1@wb.local",
     });
     await seedRunRecord({
       id: "run-1",
-      deploymentId: "dep-1",
+      deploymentId: "dep1",
       principalId: "prn-human-runner",
     });
     await seedRollup({
-      instanceId: "ins_dep-1",
+      instanceId: "ins_dep1",
       inputTokens: 500,
       outputTokens: 200,
       toolCallCount: 3,
@@ -194,17 +194,17 @@ describe("getUsageByPerson — workflow attribution through the run record (CL-2
 
     // Workflow per-run instance → human B via run record.
     await seedInstance({
-      instanceId: "ins_dep-9",
+      instanceId: "ins_dep9",
       syntheticPrincipalId: "prn-workflow-def",
-      address: "ins_dep-9@wb.local",
+      address: "ins_dep9@wb.local",
     });
     await seedRunRecord({
       id: "run-9",
-      deploymentId: "dep-9",
+      deploymentId: "dep9",
       principalId: "prn-member-b",
     });
     await seedRollup({
-      instanceId: "ins_dep-9",
+      instanceId: "ins_dep9",
       inputTokens: 400,
       outputTokens: 100,
     });
@@ -229,30 +229,36 @@ describe("getUsageByPerson — workflow attribution through the run record (CL-2
     });
 
     const byPrincipal = new Map(rows.map((r) => [r.principalId, r]));
+    // CL-2746: the mapping-less, run-less shared instance is not dropped — its
+    // usage surfaces under the explicit Unattributed bucket, and its synthetic
+    // principal is never used as a person.
     expect([...byPrincipal.keys()].sort()).toEqual([
       "prn-member-a",
       "prn-member-b",
+      "unattributed",
     ]);
     expect(byPrincipal.get("prn-member-a")?.inputTokens).toBe(100);
     expect(byPrincipal.get("prn-member-b")?.inputTokens).toBe(400);
-    // The shared agent's synthetic principal never appears.
+    // The shared agent's synthetic principal never appears as itself; its usage
+    // is bucketed as Unattributed instead.
     expect(byPrincipal.has("prn-shared-agent")).toBe(false);
+    expect(byPrincipal.get("unattributed")?.inputTokens).toBe(9999);
   });
 
   test("ignores a soft-deleted run record and a run record in another tenant", async () => {
     await seedInstance({
-      instanceId: "ins_dep-del",
+      instanceId: "ins_depDel",
       syntheticPrincipalId: "prn-workflow-def",
-      address: "ins_dep-del@wb.local",
+      address: "ins_depDel@wb.local",
     });
     await seedRunRecord({
       id: "run-del",
-      deploymentId: "dep-del",
+      deploymentId: "depDel",
       principalId: "prn-human-deleted",
       deleted: true,
     });
     await seedRollup({
-      instanceId: "ins_dep-del",
+      instanceId: "ins_depDel",
       inputTokens: 300,
       outputTokens: 300,
     });
@@ -260,18 +266,18 @@ describe("getUsageByPerson — workflow attribution through the run record (CL-2
     // A same-deployment run record owned by a different tenant must not bleed
     // attribution across the boundary.
     await seedInstance({
-      instanceId: "ins_dep-x",
+      instanceId: "ins_depX",
       syntheticPrincipalId: "prn-workflow-def",
-      address: "ins_dep-x@wb.local",
+      address: "ins_depX@wb.local",
     });
     await seedRunRecord({
       id: "run-x",
-      deploymentId: "dep-x",
+      deploymentId: "depX",
       principalId: "prn-foreign-human",
       tenantId: OTHER_TENANT,
     });
     await seedRollup({
-      instanceId: "ins_dep-x",
+      instanceId: "ins_depX",
       inputTokens: 700,
       outputTokens: 700,
     });
@@ -282,8 +288,14 @@ describe("getUsageByPerson — workflow attribution through the run record (CL-2
       callerPrincipalId: null,
     });
 
-    // The soft-deleted run's instance and the foreign-tenant run's instance are
-    // both unattributed in this tenant.
-    expect(rows).toHaveLength(0);
+    // Neither the soft-deleted run's human nor the foreign-tenant run's human is
+    // attributed. CL-2746: the in-tenant instance usage that cannot be tied to a
+    // person is not dropped — it surfaces under the single Unattributed bucket
+    // (300+700 in, 300+700 out), never against prn-human-deleted or
+    // prn-foreign-human.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.principalId).toBe("unattributed");
+    expect(rows[0]?.inputTokens).toBe(1000);
+    expect(rows[0]?.outputTokens).toBe(1000);
   });
 });

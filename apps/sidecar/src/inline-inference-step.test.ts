@@ -31,12 +31,10 @@ const STUB_SOURCE: InferenceSource = {
 };
 
 function stubContextStore(): ContextStore {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; never read on this path
   return {} as ContextStore;
 }
 
 function stubBlobReader(): BlobReader {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub; never read on this path
   return {} as BlobReader;
 }
 
@@ -79,7 +77,6 @@ function buildRequest(): StepInvokeRequest {
 }
 
 const stubEvent = (type: string): InferenceEvent =>
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-type-assertion -- test stub event; only `type` is read by the forwarder
   ({ type, seq: 1, data: {} }) as unknown as InferenceEvent;
 
 /**

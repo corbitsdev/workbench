@@ -61,8 +61,7 @@ export function createMeBriefRunRouter(deps: {
           },
         },
         404: {
-          description:
-            "Caller has no provisioned membership",
+          description: "Caller has no provisioned membership",
           content: { "application/json": { schema: resolver(ErrorResponse) } },
         },
         429: {

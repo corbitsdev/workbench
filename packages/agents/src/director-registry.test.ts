@@ -1,10 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { defaultDirectorFactory } from "@intx/agent";
+import type { BaseEnv } from "@intx/agent";
 import type {
   ReactorAction,
   ReactorCapabilities,
   ToolDefinition,
 } from "@intx/types/runtime";
+
+// These budget directors wrap the interchange default director and never read
+// env in their constructor, so a bare stub is the correct fixture — mirrors the
+// upstream default-director.test.ts pattern.
+const stubEnv = {} as BaseEnv;
 import {
   createWorkbenchDirectorRegistry,
   firecrawlDirector,
@@ -85,7 +91,9 @@ describe("triageBudgetDirector.factory composition", () => {
     inputSchema: { type: "object", properties: {}, required: [] },
   };
 
-  function recordingCapabilities(sink: ToolDefinition[][]): ReactorCapabilities {
+  function recordingCapabilities(
+    sink: ToolDefinition[][],
+  ): ReactorCapabilities {
     const noop: ReactorAction = { type: "wait" };
     return {
       infer: (options) => {
@@ -111,7 +119,7 @@ describe("triageBudgetDirector.factory composition", () => {
   };
 
   it("wraps the interchange default director unconditionally — a triage prompt never carries the dynamic-tools opt-in marker", async () => {
-    const director = triageBudgetDirector.factory({}, {}, agent);
+    const director = triageBudgetDirector.factory({}, stubEnv, agent);
     const sink: ToolDefinition[][] = [];
     const cap = recordingCapabilities(sink);
 
@@ -122,7 +130,13 @@ describe("triageBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",
@@ -146,7 +160,9 @@ describe("workflowStepBudgetDirector.factory composition", () => {
     inputSchema: { type: "object", properties: {}, required: [] },
   };
 
-  function recordingCapabilities(sink: ToolDefinition[][]): ReactorCapabilities {
+  function recordingCapabilities(
+    sink: ToolDefinition[][],
+  ): ReactorCapabilities {
     const noop: ReactorAction = { type: "wait" };
     return {
       infer: (options) => {
@@ -182,7 +198,7 @@ describe("workflowStepBudgetDirector.factory composition", () => {
       id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
       config: {},
     });
-    const director = factory({}, {}, agent);
+    const director = factory({}, stubEnv, agent);
     const sink: ToolDefinition[][] = [];
     const cap = recordingCapabilities(sink);
 
@@ -193,7 +209,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",
@@ -207,15 +229,18 @@ describe("workflowStepBudgetDirector.factory composition", () => {
   });
 
   it("caps tool calls at the workflow-step preset, above the triage preset", async () => {
-    const director = workflowStepBudgetDirector.factory({}, {}, agent);
+    const director = workflowStepBudgetDirector.factory({}, stubEnv, agent);
     const cap = recordingCapabilities([]);
 
-    const manyCalls = Array.from({ length: WORKFLOW_STEP_MAX_TOOL_CALLS }, (_, i) => ({
-      type: "tool_call" as const,
-      id: `call-${i}`,
-      name: readToolDef.name,
-      arguments: {},
-    }));
+    const manyCalls = Array.from(
+      { length: WORKFLOW_STEP_MAX_TOOL_CALLS },
+      (_, i) => ({
+        type: "tool_call" as const,
+        id: `call-${i}`,
+        name: readToolDef.name,
+        arguments: {},
+      }),
+    );
 
     const actions = await director.decide(
       {
@@ -226,7 +251,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
           timestamp: Date.now(),
           content: manyCalls,
         },
-        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         source: { id: "test-source", provider: "test", model: "test" },
       } as never,
       {
@@ -234,7 +265,13 @@ describe("workflowStepBudgetDirector.factory composition", () => {
         activeForks: [],
         pendingOperations: [],
         activeGates: [],
-        tokenUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, thinking: 0 },
+        tokenUsage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          thinking: 0,
+        },
         lastCycleUsage: null,
         lastCycleSource: null,
         sessionId: "s1",

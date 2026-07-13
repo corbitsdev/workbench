@@ -12,7 +12,10 @@ import type { AnalyticsSubscriber } from "@workbench/analytics";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { AGENT_TEMPLATES } from "@workbench/agents";
-import { PERSONAL_AGENT_NAME, PERSONAL_AGENT_TRIAGE_NAME } from "@workbench/myra";
+import {
+  PERSONAL_AGENT_NAME,
+  PERSONAL_AGENT_TRIAGE_NAME,
+} from "@workbench/myra";
 import {
   isDefaultMyraThreadLabel,
   myraThreadTitleFromFirstMessage,

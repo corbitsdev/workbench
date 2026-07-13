@@ -262,7 +262,7 @@ describe("POST /me/webhook-triggers", () => {
       }),
     );
     expect(res.status).toBe(409);
-    const body = await res.json();
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe(
       "You've reached the webhook trigger limit. Delete one to create another.",
     );

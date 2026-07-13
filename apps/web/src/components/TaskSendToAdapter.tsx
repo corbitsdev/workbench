@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { ConfirmButton } from "@workbench/ui";
-import { adapterLabel, TASK_ADAPTER_CATALOG, type Task } from "@workbench/shared";
+import {
+  adapterLabel,
+  TASK_ADAPTER_CATALOG,
+  type Task,
+} from "@workbench/shared";
 import { TaskExternalRefChip } from "./TaskExternalRefChip";
 import { useTaskPush } from "../hooks/use-task-push";
 
@@ -29,9 +33,7 @@ function uncoveredAdapterIds(task: Task): string[] {
  * state on the task itself).
  */
 export function TaskSendToAdapter({ task }: { task: Task }) {
-  const [sendingAdapterId, setSendingAdapterId] = useState<string | null>(
-    null,
-  );
+  const [sendingAdapterId, setSendingAdapterId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const push = useTaskPush();
 
@@ -80,9 +82,7 @@ export function TaskSendToAdapter({ task }: { task: Task }) {
           <span
             key={adapterId}
             title={
-              disabledByOtherSend
-                ? "Another send is in progress"
-                : undefined
+              disabledByOtherSend ? "Another send is in progress" : undefined
             }
           >
             <ConfirmButton

@@ -137,7 +137,11 @@ describe("createTaskReconciler", () => {
     });
     expect(executeCount).toBe(1);
 
-    const reconciler = createTaskReconciler({ store, pushService, maxAttempts: 3 });
+    const reconciler = createTaskReconciler({
+      store,
+      pushService,
+      maxAttempts: 3,
+    });
     const pass = await reconciler.reconcileOnce();
 
     expect(pass).toEqual({ scanned: 0, retried: 0, synced: 0 });

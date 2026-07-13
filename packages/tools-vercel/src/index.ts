@@ -69,7 +69,7 @@ function isBriefSourceFetchEnabled(
   return enabledSources === undefined || enabledSources.includes(sourceKey);
 }
 
-const CompactDeploymentSchema = type({
+export const CompactDeploymentSchema = type({
   name: "string | null",
   state: "string | null",
   url: "string | null",

@@ -26,7 +26,11 @@ function makeCapabilities(): ReactorCapabilities {
         ...(options !== undefined ? { options } : {}),
       };
     },
-    executeTools(calls: ToolCall[], parallel?: boolean, addToHistory?: boolean) {
+    executeTools(
+      calls: ToolCall[],
+      parallel?: boolean,
+      addToHistory?: boolean,
+    ) {
       return {
         type: "execute_tools" as const,
         calls,
@@ -142,11 +146,7 @@ describe("createTriageBudgetDirector", () => {
     const director = createTriageBudgetDirector(systemPrompt, tools);
     const cap = makeCapabilities();
 
-    const actions = await director.decide(
-      makeMessageEvent(),
-      makeState(),
-      cap,
-    );
+    const actions = await director.decide(makeMessageEvent(), makeState(), cap);
     const arr = Array.isArray(actions) ? actions : [actions];
 
     const infer = arr.find((a) => a.type === "infer");
@@ -281,7 +281,8 @@ describe("createTriageBudgetDirector", () => {
     const arr = Array.isArray(actions) ? actions : [actions];
     const reply = arr.find((a) => a.type === "reply");
     if (reply?.type === "reply") {
-      const occurrences = reply.content.split(TRIAGE_BUDGET_STOP_MARKER).length - 1;
+      const occurrences =
+        reply.content.split(TRIAGE_BUDGET_STOP_MARKER).length - 1;
       expect(occurrences).toBe(1);
     }
   });
@@ -419,11 +420,7 @@ describe("createTriageBudgetDirector composed over a supplied inner director", (
     const director = createTriageBudgetDirector(systemPrompt, tools, inner);
     const cap = makeCapabilities();
 
-    const actions = await director.decide(
-      makeMessageEvent(),
-      makeState(),
-      cap,
-    );
+    const actions = await director.decide(makeMessageEvent(), makeState(), cap);
     const arr = Array.isArray(actions) ? actions : [actions];
     const infer = arr.find((a) => a.type === "infer");
     expect(infer).toBeDefined();
