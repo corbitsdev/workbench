@@ -39,16 +39,18 @@ Object.defineProperty(window, "location", {
   writable: true,
 });
 
-const { Connections } = await import("./Connections");
+const { MemberConnectionsPanel } = await import(
+  "../components/MemberConnectionsPanel"
+);
 
-function renderPage() {
+function renderPanel() {
   return render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <Connections />
+      <MemberConnectionsPanel />
     </QueryClientProvider>,
   );
 }
@@ -61,7 +63,7 @@ afterEach(() => {
   assignMock.mockClear();
 });
 
-describe("Connections page", () => {
+describe("Member connections panel", () => {
   it("renders both providers from the connections map", async () => {
     connectionsOutcome = {
       kind: "resolve",
@@ -88,7 +90,7 @@ describe("Connections page", () => {
         ],
       },
     };
-    renderPage();
+    renderPanel();
     await waitFor(() => expect(screen.getByText("Linear")));
     expect(screen.getByText("Attio"));
   });
@@ -110,7 +112,7 @@ describe("Connections page", () => {
         ],
       },
     };
-    renderPage();
+    renderPanel();
     await waitFor(() => expect(screen.getByText("Linear")));
     screen.getByRole("button", { name: "Connect" }).click();
     await waitFor(() => expect(authorizeMock).toHaveBeenCalledWith("linear"));
@@ -138,7 +140,7 @@ describe("Connections page", () => {
         ],
       },
     };
-    renderPage();
+    renderPanel();
     await waitFor(() =>
       expect(
         screen.getByText(
@@ -155,7 +157,7 @@ describe("Connections page", () => {
   it("shows a success banner from the connected query param", async () => {
     searchString = "connected=linear";
     connectionsOutcome = { kind: "resolve", data: { connections: [] } };
-    renderPage();
+    renderPanel();
     await waitFor(() =>
       expect(screen.getByText("Connected linear successfully.")),
     );
@@ -164,7 +166,7 @@ describe("Connections page", () => {
   it("shows an error banner from the connect_error query param", async () => {
     searchString = "connect_error=denied";
     connectionsOutcome = { kind: "resolve", data: { connections: [] } };
-    renderPage();
+    renderPanel();
     await waitFor(() =>
       expect(screen.getByText("You declined the connection request.")),
     );

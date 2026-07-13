@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   SettingsPage,
@@ -30,6 +31,7 @@ import { PreferencesPanel } from "../components/PreferencesPanel";
 import { ConnectedToInboxPanel } from "../components/ConnectedToInboxPanel";
 import { useTourLauncher } from "../components/tour/OnboardingTour";
 import { WhatsNewSection } from "../components/whats-new/WhatsNewSection";
+import { MemberConnectionsPanel } from "../components/MemberConnectionsPanel";
 import { SettingsSectionNav } from "./SettingsSectionNav";
 import { MORNING_BRIEF_ANCHOR_ID } from "./settings-section-nav";
 
@@ -115,6 +117,7 @@ function SettingsGroup({
 }
 
 export default function Settings() {
+  const location = useLocation();
   const { signOut } = useAuth();
   const { startTour } = useTourLauncher();
   const { theme, setTheme } = useTheme();
@@ -189,6 +192,12 @@ export default function Settings() {
     saveMutation.mutate(name);
   };
 
+  useEffect(() => {
+    if (location.pathname !== "/settings/connections") return;
+    const el = document.getElementById("connections");
+    el?.scrollIntoView({ block: "start" });
+  }, [location.pathname]);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-6">
@@ -219,6 +228,14 @@ export default function Settings() {
               </div>
               <PreferencesPanel categories={["Inbox", "Notifications"]} />
               <ConnectedToInboxPanel />
+            </SettingsGroup>
+
+            <SettingsGroup
+              id="connections"
+              title="Connections"
+              description="Connect your accounts to bring outside data into the workbench."
+            >
+              <MemberConnectionsPanel />
             </SettingsGroup>
 
             <SettingsGroup id="account" title="Account">
