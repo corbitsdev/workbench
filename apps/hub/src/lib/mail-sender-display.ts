@@ -1,8 +1,8 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import type { HubDb } from "../db";
-import { workflowRun } from "../db/schema";
+import { workflowRun, workflowRunRecord } from "../db/schema";
 import { loadWorkflowKindLabels } from "./workflow-kind-labels";
 
 const { agent, agentInstance, principal, user } = intxSchema;
@@ -160,7 +160,9 @@ export async function resolveSenderDisplayNames(
       ];
       if (deploymentIds.length > 0) {
         const kindLabels = await loadWorkflowKindLabels();
-        const depRows = await db
+        const depToLabel = new Map<string, string>();
+
+        const indexRows = await db
           .select({
             deploymentId: workflowRun.deploymentId,
             kind: workflowRun.kind,
@@ -171,15 +173,40 @@ export async function resolveSenderDisplayNames(
             and(
               eq(workflowRun.tenantId, tenantId),
               inArray(workflowRun.deploymentId, deploymentIds),
+              isNull(workflowRun.deletedAt),
             ),
           );
-        const depToLabel = new Map<string, string>();
-        for (const row of depRows) {
+        for (const row of indexRows) {
           if (row.deploymentId === null) continue;
           depToLabel.set(
             row.deploymentId,
             labelFromWorkflowRunMeta(row.meta, row.kind, kindLabels),
           );
+        }
+
+        const unresolvedDepIds = deploymentIds.filter((id) => !depToLabel.has(id));
+        if (unresolvedDepIds.length > 0) {
+          const recordRows = await db
+            .select({
+              deploymentId: workflowRunRecord.deploymentId,
+              kind: workflowRunRecord.kind,
+            })
+            .from(workflowRunRecord)
+            .where(
+              and(
+                eq(workflowRunRecord.tenantId, tenantId),
+                inArray(workflowRunRecord.deploymentId, unresolvedDepIds),
+                isNull(workflowRunRecord.deletedAt),
+              ),
+            );
+          for (const row of recordRows) {
+            if (row.deploymentId === null) continue;
+            if (depToLabel.has(row.deploymentId)) continue;
+            depToLabel.set(
+              row.deploymentId,
+              kindLabels.get(row.kind) ?? row.kind,
+            );
+          }
         }
         for (const addr of stillUnresolved) {
           const depId = deploymentIdFromInsMailboxAddress(addr);
