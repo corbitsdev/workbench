@@ -4,8 +4,15 @@ import {
   parseWebSiteContentJson,
   WebSiteContentError,
 } from "@workbench/shared";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Markdown } from "@workbench/ui";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { FileWarning, Link2Off, User } from "lucide-react";
+import { buttonVariants, Markdown } from "@workbench/ui";
 import CompareBody from "./CompareBody";
 import { CsvTable, CsvTooLarge } from "./CsvTable";
 import GammaPresentationBody from "./GammaPresentationBody";
@@ -21,6 +28,31 @@ interface ArtifactBodyArtifact {
   // Used by the interactive `selection` renderer (to PATCH the pick back) and
   // the `csv-export` download link; optional because most kinds don't need it.
   id?: string;
+  // The real name of the artifact's owner, when known — used to give the
+  // LinkedIn preview a genuine identity instead of fabricated chrome text.
+  ownerName?: string | null;
+}
+
+// Shared "designed" fallback for weak/unparseable previews (invalid URL,
+// missing id, malformed payload): an icon + message inside the same muted
+// card treatment used elsewhere in this file, never a raw `<pre>` dump or a
+// bare sentence.
+function PreviewFallback({
+  icon: Icon = FileWarning,
+  message,
+  action,
+}: {
+  icon?: typeof FileWarning;
+  message: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded border border-border bg-surface-2/40 px-6 py-10 text-center">
+      <Icon className="h-8 w-8 text-text-3" aria-hidden="true" />
+      <p className="max-w-[42ch] text-sm text-text-3">{message}</p>
+      {action}
+    </div>
+  );
 }
 
 interface ArtifactBodyProps {
@@ -44,17 +76,36 @@ function EmailBody({ body }: { body: string }) {
   );
 }
 
-function LinkedInBody({ body }: { body: string }) {
+// Two initials from a real name (e.g. "Jane Doe" -> "JD"); a single-word name
+// yields its first letter only.
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "";
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+function LinkedInBody({
+  body,
+  authorName,
+}: {
+  body: string;
+  authorName?: string | null;
+}) {
   return (
     <div className="bg-surface-2 rounded border border-border p-5">
       <div className="flex items-center gap-3 mb-4 pb-4 border-b border-border">
         <div className="w-10 h-10 rounded-full bg-surface border border-border flex items-center justify-center text-text-3 text-xs font-bold">
-          YOU
+          {authorName ? (
+            initialsFromName(authorName)
+          ) : (
+            <User className="h-5 w-5" aria-hidden="true" />
+          )}
         </div>
-        <div>
-          <div className="text-sm font-semibold text-text">Your Name</div>
-          <div className="text-xs text-text-3">Your Title · 1st</div>
-        </div>
+        {authorName && (
+          <div className="text-sm font-semibold text-text">{authorName}</div>
+        )}
       </div>
       <p className="text-sm text-text-2 leading-relaxed whitespace-pre-wrap">
         {body}
@@ -72,12 +123,13 @@ function OnePagerBody({ body }: { body: string }) {
 
 function DownloadCsvLink({ artifactId }: { artifactId: string }) {
   // Same-origin download route; the session cookie authorizes it. A plain anchor
-  // is sufficient — no JS fetch needed.
+  // is sufficient — no JS fetch needed. Styled with the shared Button variants
+  // so it reads as the same primitive as every other action in the app.
   return (
     <a
       href={buildApiUrl(`/artifacts/${artifactId}/download`)}
       download
-      className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+      className={buttonVariants({ variant: "secondary", size: "sm" })}
     >
       Download CSV
     </a>
@@ -194,7 +246,7 @@ function ImageBody({
       <a
         href={src}
         download
-        className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+        className={buttonVariants({ variant: "secondary", size: "sm" })}
       >
         Download {filename ?? "image"}
       </a>
@@ -213,7 +265,7 @@ function FileBody({
     <a
       href={buildApiUrl(`/artifacts/${artifactId}/download`)}
       download
-      className="inline-block rounded bg-accent px-4 py-2 text-sm font-medium text-white"
+      className={buttonVariants({ variant: "secondary", size: "sm" })}
     >
       Download {filename ?? "file"}
     </a>
@@ -399,7 +451,7 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
   const uploadFilename = extractUploadFilename(artifact.source);
 
   if (usesSocialPostPreview(type)) {
-    return <LinkedInBody body={body} />;
+    return <LinkedInBody body={body} authorName={artifact.ownerName} />;
   }
 
   switch (type) {
@@ -421,7 +473,7 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
     case "csv-export": {
       if (!artifact.id) {
         return (
-          <pre className="overflow-x-auto p-3 text-xs text-text-2">{body}</pre>
+          <PreviewFallback message="This CSV export can't be identified — no artifact id was found, so it can't be previewed or downloaded." />
         );
       }
       return <CsvExportBody body={body} artifactId={artifact.id} />;
@@ -466,9 +518,10 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       }
       if (!isValidUrl) {
         return (
-          <p className="text-sm text-text-3 p-4">
-            Presentation URL is invalid or unavailable.
-          </p>
+          <PreviewFallback
+            icon={Link2Off}
+            message="Presentation link is invalid or unavailable."
+          />
         );
       }
       return <PresentationBody url={body} />;
@@ -488,6 +541,11 @@ export default function ArtifactBody({ artifact }: ArtifactBodyProps) {
       const parsedBrief = parseResearchBrief(brief);
       if (parsedBrief !== null) {
         return <ResearchBody brief={parsedBrief} body={body} />;
+      }
+      if (body.trim().length === 0) {
+        return (
+          <PreviewFallback message="This research artifact has no readable content — the underlying data couldn't be parsed." />
+        );
       }
       return <OnePagerBody body={body} />;
     }

@@ -2,6 +2,7 @@ import { Link, useNavigate, useParams } from "react-router";
 import { Archive, ArrowLeft, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ConfirmButton } from "@workbench/ui";
+import { ArtifactMeta } from "@workbench/artifact";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
@@ -85,6 +86,14 @@ export function ArtifactDetailPage() {
     );
   }
 
+  function handleOpenSession(sessionId: string) {
+    navigate(`/insights/trace/${sessionId}`);
+  }
+
+  function handleOpenParent(parentId: string) {
+    navigate(`/artifacts/${parentId}`);
+  }
+
   // Owner-or-admin gate; the server re-checks. Archiving redirects back to the
   // gallery, whose list query the mutation invalidates.
   const canArchive =
@@ -115,9 +124,16 @@ export function ArtifactDetailPage() {
           <h1 className="truncate text-sm font-semibold text-text">
             {artifact.title}
           </h1>
-          <p className="text-xs text-text-3">
-            {resolveKindLabel(artifact.kind)}
-          </p>
+          <ArtifactMeta
+            kindLabel={resolveKindLabel(artifact.kind)}
+            createdAt={artifact.createdAt}
+            sessionId={artifact.sessionId}
+            sessionName={artifact.sessionName}
+            sessionStatus={artifact.sessionStatus}
+            parentId={artifact.parentId}
+            onOpenSession={handleOpenSession}
+            onOpenParent={handleOpenParent}
+          />
         </div>
         {canArchive && (
           <div className="flex shrink-0 items-center gap-2">
