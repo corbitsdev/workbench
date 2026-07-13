@@ -193,6 +193,12 @@ export function ArtifactGallery({
     setSelected(null);
   }
 
+  // `/insights/trace/:runId` resolves a `workflow_run_record` id (see
+  // WorkflowTracePage). `ArtifactWithSession.sessionId` is emitted as null by
+  // the hub today (session enrichment is not wired up — see artifacts.ts), so
+  // this destination is unverified: re-check it resolves a real run once the
+  // hub starts populating sessionId, rather than assuming the old pre-M6
+  // "session" concept lines up with a workflow_run_record id.
   function handleOpenSession(sessionId: string) {
     setSelected(null);
     navigate(`/insights/trace/${sessionId}`);
