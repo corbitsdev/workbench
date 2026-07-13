@@ -373,6 +373,24 @@ describe("rate limiting (HTTP 429)", () => {
     expect(fetcher.attempts).toBe(4);
   });
 
+  it("does NOT retry a non-429 error (500 throws immediately, one attempt)", async () => {
+    let attempts = 0;
+    const fetcher = (async () => {
+      attempts += 1;
+      return new Response("", { status: 500 });
+    }) as SlackFetch;
+    const tool = toolFor("slack_list_channels", { botToken: "xoxb", fetcher });
+    await expect(
+      (
+        tool.handler as (
+          a: Record<string, unknown>,
+          s: AbortSignal,
+        ) => Promise<string>
+      )({}, new AbortController().signal),
+    ).rejects.toThrow(/HTTP error: 500/);
+    expect(attempts).toBe(1);
+  });
+
   it("aborts a backoff wait when the signal fires", async () => {
     const fetcher = (async () =>
       new Response("", {
@@ -421,6 +439,47 @@ describe("channel name resolution cache", () => {
     // conversations.list should fire once (first resolve); second call is cached.
     expect(calls.filter((m) => m === "conversations.list").length).toBe(1);
     expect(calls.filter((m) => m === "conversations.history").length).toBe(2);
+  });
+
+  it("does not leak a cached channel id across different bot tokens", async () => {
+    const listCalls: string[] = [];
+    const fetcher = (async (input: string, init: RequestInit) => {
+      const method = input.split("/").pop() ?? "";
+      const token =
+        (init.headers as Record<string, string>).Authorization ?? "";
+      if (method === "conversations.list") {
+        listCalls.push(token);
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            channels: [{ id: "C_SHARED", name: "shared" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ ok: true, messages: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as SlackFetch;
+
+    await run(
+      "slack_get_channel_history",
+      { botToken: "xoxb-workspace-A", fetcher },
+      { channel: "shared" },
+    );
+    await run(
+      "slack_get_channel_history",
+      { botToken: "xoxb-workspace-B", fetcher },
+      { channel: "shared" },
+    );
+
+    // Each distinct token resolves "shared" independently — no cross-workspace
+    // cache hit.
+    expect(listCalls).toEqual([
+      "Bearer xoxb-workspace-A",
+      "Bearer xoxb-workspace-B",
+    ]);
   });
 });
 
