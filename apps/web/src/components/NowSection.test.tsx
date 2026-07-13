@@ -90,6 +90,43 @@ describe("NowSection taskHref resolution", () => {
     expect(title.closest("a")).toBeNull();
   });
 
+  it("refuses a javascript: url link rather than rendering it as clickable", () => {
+    renderNow(
+      makeTask([{ kind: "url", ref: "javascript:alert(document.cookie)" }]),
+    );
+    const title = screen.getByText("Follow up with Acme");
+    expect(title.closest("a")).toBeNull();
+  });
+
+  it("refuses a non-http(s) scheme (e.g. data:) as a url link", () => {
+    renderNow(
+      makeTask([{ kind: "url", ref: "data:text/html,<script>1</script>" }]),
+    );
+    const title = screen.getByText("Follow up with Acme");
+    expect(title.closest("a")).toBeNull();
+  });
+
+  it("falls through to the next link when the first is an unsafe url", () => {
+    renderNow(
+      makeTask([
+        { kind: "url", ref: "data:text/html,x" },
+        { kind: "workflow_run", ref: "run-1" },
+      ]),
+    );
+    const link = screen.getByText("Follow up with Acme").closest("a");
+    expect(link?.getAttribute("href")).toBe("/workflows/run-1");
+  });
+
+  it("drops an unsafe url extra link instead of rendering it", () => {
+    renderNow(
+      makeTask([
+        { kind: "workflow_run", ref: "run-1" },
+        { kind: "url", ref: "data:text/html,x", label: "Bad link" },
+      ]),
+    );
+    expect(screen.queryByText("Bad link")).toBeNull();
+  });
+
   it("surfaces every link, not just the first", () => {
     renderNow(
       makeTask([
