@@ -172,10 +172,15 @@ async function projectRunRows(
       projected += 1;
     } catch (err) {
       skipped += 1;
-      log.warn(`${label}: failed to project run facts`, {
+      const payload = {
         runId: row.runId,
         error: err instanceof Error ? err.message : String(err),
-      });
+      };
+      if (label === "backfill") {
+        log.error(`${label}: failed to project run facts`, payload);
+      } else {
+        log.warn(`${label}: failed to project run facts`, payload);
+      }
     }
   }
   return { projected, skipped };

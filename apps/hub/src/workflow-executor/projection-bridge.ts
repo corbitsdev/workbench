@@ -10,7 +10,12 @@ import type {
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
-import { applyRunProjection, loadRunRecord, upsertRunSteps } from "./run-store";
+import {
+  applyRunProjection,
+  insertRunRecord,
+  loadRunRecord,
+  upsertRunSteps,
+} from "./run-store";
 import { projectRunStateFromLog } from "./run-state-from-log";
 import { becameTerminal } from "./run-status";
 import { WorkflowMeta } from "../lib/workflow-meta";
@@ -25,8 +30,8 @@ import { WorkflowMeta } from "../lib/workflow-meta";
 // here — it is read on demand from the log (`run-state-from-log.ts`).
 //
 // The fold is UPDATE-ONLY: rows are seeded at /start with their full tenancy +
-// ownership metadata, so a runId with no row (e.g. a run started outside the
-// records path) is a harmless no-op. Re-projection on a later pack is idempotent
+// ownership metadata. A runId with no row means the start path never seeded the
+// index (logged at ERROR). Re-projection on a later pack is idempotent
 // (the full log replays to the same run-level state), so the bridge is safe to
 // run on every pack.
 
@@ -390,6 +395,46 @@ async function drainRunEvents(
   return entries;
 }
 
+export interface OrphanRunSeedMetadata {
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string;
+}
+
+export async function seedMissingRunRecordsFromRepo(
+  repoStore: RepoStore,
+  db: HubDb,
+  repoId: RepoId,
+  metadata: OrphanRunSeedMetadata,
+): Promise<string[]> {
+  const entries = await drainRunEvents(repoStore, repoId);
+  if (entries.length === 0) return [];
+  const runs = foldRunEvents(entries);
+  const seeded: string[] = [];
+  for (const [runId, projected] of runs) {
+    const existing = await loadRunRecord(db, runId);
+    if (existing !== null) continue;
+    await insertRunRecord(db, {
+      runId,
+      deploymentId: metadata.deploymentId,
+      kind: metadata.kind,
+      tenantId: metadata.tenantId,
+      principalId: metadata.principalId,
+      input: {},
+      originConversationId: null,
+      status: projected.status,
+    });
+    seeded.push(runId);
+    log.info("backfill: seeded workflow_run_record for orphan run log", {
+      runId,
+      repoId: repoId.id,
+      foldedStatus: projected.status,
+    });
+  }
+  return seeded;
+}
+
 // Project one workflow-run repo into the run records it owns.
 //
 // NOT UNIT-TESTED — substrate seam. This drives @intx `subscribeKind` (an
@@ -418,7 +463,17 @@ export async function projectWorkflowRunRepo(
 
   for (const [runId, projected] of runs) {
     const existing = await loadRunRecord(db, runId);
-    if (existing === null) continue;
+    if (existing === null) {
+      log.error(
+        "workflow projection skipped run with no workflow_run_record row",
+        {
+          runId,
+          repoId: repoId.id,
+          foldedStatus: projected.status,
+        },
+      );
+      continue;
+    }
 
     // Clear the durable pending-signal record once the log PROVES a signal
     // landed. Terminal → unconditional clear (no further gate exists).
