@@ -71,15 +71,15 @@
           "systemPrompt": "",
           "toolFactories": [],
           "capabilities": [
-            "attio_recent_activity"
+            "@workbench/tools-attio/attio:attio_recent_activity"
           ],
           "inference": {
             "sources": []
           },
-          "description": "Deterministic tool call: attio_recent_activity",
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_recent_activity",
           "tags": {
             "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "attio_recent_activity",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_recent_activity",
             "workbench.nonFatal": "true",
             "workbench.title": "Pull Attio"
           }

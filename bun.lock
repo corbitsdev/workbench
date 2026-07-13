@@ -57,6 +57,8 @@
         "@workbench/tasks": "workspace:*",
         "@workbench/timeline": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
+        "@workbench/tools-ab-compare": "workspace:*",
         "@workbench/tools-agents": "workspace:*",
         "@workbench/tools-artifact": "workspace:*",
         "@workbench/tools-attio": "workspace:*",
@@ -603,6 +605,7 @@
         "@workbench/myra": "workspace:*",
         "@workbench/prompts": "workspace:*",
         "@workbench/shared": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "@workbench/tools-catalog": "workspace:*",
         "arktype": "catalog:",
       },
@@ -941,10 +944,24 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/tool-manifest": {
+      "name": "@workbench/tool-manifest",
+      "version": "0.1.0",
+      "dependencies": {
+        "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "@workbench/agents": "workspace:*",
+        "@workbench/shared": "workspace:*",
+        "typescript": "^5.9.0",
+      },
+    },
     "packages/tools-ab-compare": {
       "name": "@workbench/tools-ab-compare",
       "version": "0.1.0",
       "dependencies": {
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -959,6 +976,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -975,6 +993,7 @@
       "dependencies": {
         "@intx/types": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -987,6 +1006,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1001,6 +1021,7 @@
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1026,6 +1047,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1045,6 +1067,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1060,6 +1083,7 @@
       "dependencies": {
         "@intx/types": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1072,6 +1096,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1086,6 +1111,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1101,6 +1127,7 @@
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1115,6 +1142,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1129,6 +1157,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1171,6 +1200,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1185,6 +1215,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1198,6 +1229,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1211,6 +1243,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1225,6 +1258,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1239,6 +1273,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1253,6 +1288,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1267,6 +1303,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1282,6 +1319,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1296,6 +1334,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1311,6 +1350,7 @@
       "dependencies": {
         "@intx/types": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1323,6 +1363,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -1338,6 +1379,7 @@
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
         "@workbench/tool-credentials": "workspace:*",
+        "@workbench/tool-manifest": "workspace:*",
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
@@ -1401,6 +1443,7 @@
     "packages/workbench-shared": {
       "name": "@workbench/shared",
       "dependencies": {
+        "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
       "devDependencies": {
@@ -2564,6 +2607,8 @@
     "@workbench/timeline": ["@workbench/timeline@workspace:packages/timeline"],
 
     "@workbench/tool-credentials": ["@workbench/tool-credentials@workspace:packages/tool-credentials"],
+
+    "@workbench/tool-manifest": ["@workbench/tool-manifest@workspace:packages/tool-manifest"],
 
     "@workbench/tools-ab-compare": ["@workbench/tools-ab-compare@workspace:packages/tools-ab-compare"],
 

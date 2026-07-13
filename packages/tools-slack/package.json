@@ -16,7 +16,8 @@
   },
   "dependencies": {
     "@workbench/tool-credentials": "workspace:*",
-    "arktype": "catalog:"
+    "arktype": "catalog:",
+    "@workbench/tool-manifest": "workspace:*"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",
@@ -26,6 +27,7 @@
     "typescript": "^5.9.0"
   },
   "interchange": {
-    "tools": "./dist/interchange-tools.js"
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

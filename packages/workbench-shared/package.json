@@ -10,6 +10,7 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
+    "@workbench/tool-manifest": "workspace:*",
     "arktype": "catalog:"
   },
   "devDependencies": {

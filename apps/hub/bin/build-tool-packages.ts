@@ -11,6 +11,10 @@ import ssri from "ssri";
 import { type } from "arktype";
 
 import { PackageJSON } from "@intx/types/package-json";
+import {
+  deriveToolPackageSpecs,
+  loadCommittedToolManifestFactories,
+} from "@workbench/tool-manifest";
 
 export interface ToolPackageSpec {
   /** npm package name as it appears in `package.json#name`. */
@@ -26,61 +30,10 @@ export interface BuiltToolPackage {
   tarballPath: string;
 }
 
-// The Workbench tool packages distributed through the registry. Adding a
-// package means appending here, declaring `interchange.tools` in the
-// package, and pinning it on whichever agent definition wants it.
-export const TOOL_PACKAGES: ToolPackageSpec[] = [
-  {
-    name: "@workbench/tools-ab-compare",
-    packageDir: "packages/tools-ab-compare",
-  },
-  { name: "@workbench/tools-artifact", packageDir: "packages/tools-artifact" },
-  { name: "@workbench/tools-agents", packageDir: "packages/tools-agents" },
-  { name: "@workbench/tools-skills", packageDir: "packages/tools-skills" },
-  { name: "@workbench/tools-dispatch", packageDir: "packages/tools-dispatch" },
-  {
-    name: "@workbench/tools-hackernews",
-    packageDir: "packages/tools-hackernews",
-  },
-  {
-    name: "@workbench/tools-polymarket",
-    packageDir: "packages/tools-polymarket",
-  },
-  {
-    name: "@workbench/tools-last30days",
-    packageDir: "packages/tools-last30days",
-  },
-  {
-    name: "@workbench/tools-firecrawl",
-    packageDir: "packages/tools-firecrawl",
-  },
-  { name: "@workbench/tools-exa", packageDir: "packages/tools-exa" },
-  { name: "@workbench/tools-granola", packageDir: "packages/tools-granola" },
-  { name: "@workbench/tools-reddit", packageDir: "packages/tools-reddit" },
-  { name: "@workbench/tools-x", packageDir: "packages/tools-x" },
-  {
-    name: "@workbench/tools-scrapecreators",
-    packageDir: "packages/tools-scrapecreators",
-  },
-  { name: "@workbench/tools-github", packageDir: "packages/tools-github" },
-  { name: "@workbench/tools-youtube", packageDir: "packages/tools-youtube" },
-  { name: "@workbench/tools-bluesky", packageDir: "packages/tools-bluesky" },
-  { name: "@workbench/tools-gamma", packageDir: "packages/tools-gamma" },
-  { name: "@workbench/tools-linear", packageDir: "packages/tools-linear" },
-  { name: "@workbench/tools-attio", packageDir: "packages/tools-attio" },
-  { name: "@workbench/tools-notion", packageDir: "packages/tools-notion" },
-  { name: "@workbench/tools-vercel", packageDir: "packages/tools-vercel" },
-  { name: "@workbench/tools-slack", packageDir: "packages/tools-slack" },
-  { name: "@workbench/tools-sumble", packageDir: "packages/tools-sumble" },
-  {
-    name: "@workbench/tools-fileparser",
-    packageDir: "packages/tools-fileparser",
-  },
-  {
-    name: "@workbench/tools-workflows",
-    packageDir: "packages/tools-workflows",
-  },
-];
+/** Derived from committed tool manifests; run `bun run build:tool-manifests` after manifest edits. */
+export const TOOL_PACKAGES: ToolPackageSpec[] = deriveToolPackageSpecs(
+  loadCommittedToolManifestFactories(),
+);
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, "dist", "tool-packages");
