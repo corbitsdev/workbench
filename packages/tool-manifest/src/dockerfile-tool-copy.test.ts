@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  dockerfileDirectoryCopyLines,
   dockerfileHubSourceCopyLines,
   dockerfileManifestCopyLines,
   extractDockerfileLines,
+  SIDECAR_TOOL_MANIFEST_RUNTIME_COPY_DIRS,
   toolPackageDirsForDockerfiles,
 } from "./dockerfile-tool-copy";
 
@@ -61,5 +63,16 @@ describe("Dockerfile tool COPY blocks vs committed manifests", () => {
     const hub = readDockerfile("apps/hub/Dockerfile");
     const actual = extractDockerfileLines(hub, HUB_TOOL_SOURCE_PREDICATE);
     expect(sorted(actual)).toEqual(sorted(expectedHubSource));
+  });
+
+  test("sidecar ships tool-manifest package and committed index for runtime resolution", () => {
+    const sidecar = readDockerfile("apps/sidecar/Dockerfile");
+    const expected = dockerfileDirectoryCopyLines(
+      SIDECAR_TOOL_MANIFEST_RUNTIME_COPY_DIRS,
+    );
+    const actual = extractDockerfileLines(sidecar, (line) =>
+      expected.includes(line),
+    );
+    expect(sorted(actual)).toEqual(sorted(expected));
   });
 });

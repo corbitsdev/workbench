@@ -7,6 +7,21 @@ export const DOCKERFILE_TOOL_MANIFEST_EXTRA_DIRS = [
   "packages/tools-interchange-contract",
 ] as const;
 
+/** Committed index read at runtime by `@workbench/tool-manifest` / `@workbench/agents`. */
+export const COMMITTED_TOOL_MANIFESTS_DIR = "apps/hub/generated/tool-manifests";
+
+/** Minimal sidecar image paths for committed-index resolution (not full hub source). */
+export const SIDECAR_TOOL_MANIFEST_RUNTIME_COPY_DIRS = [
+  "packages/tool-manifest",
+  COMMITTED_TOOL_MANIFESTS_DIR,
+] as const;
+
+export function dockerfileDirectoryCopyLines(
+  dirs: readonly string[],
+): string[] {
+  return dirs.map((dir) => `COPY ${dir}/ ${dir}/`);
+}
+
 const HUB_SOURCE_EXCLUDED_TOOL_DIRS = new Set([
   "packages/tools-interchange-contract",
 ]);

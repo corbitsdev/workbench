@@ -107,6 +107,7 @@ COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tool-credentials/ packages/tool-credentials/
 COPY packages/tool-manifest/ packages/tool-manifest/
+COPY apps/hub/generated/tool-manifests/ apps/hub/generated/tool-manifests/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]
