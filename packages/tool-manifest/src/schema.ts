@@ -1,4 +1,5 @@
 import { type } from "arktype";
+import { assertToolManifestFactoryInvariants } from "./invariants";
 
 export const ToolSideEffectSchema = type("'read' | 'write'");
 export type ToolSideEffect = typeof ToolSideEffectSchema.infer;
@@ -59,5 +60,10 @@ export function parseToolManifestIndex(
 ): ToolManifestIndex | string {
   const parsed = ToolManifestIndexSchema(value);
   if (parsed instanceof type.errors) return parsed.summary;
+  try {
+    assertToolManifestFactoryInvariants(parsed.factories);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
   return parsed;
 }

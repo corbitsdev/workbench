@@ -66,6 +66,13 @@ export function deriveMyraCatalogPackages(
           `Package ${manifest.packageName} has conflicting myraCatalog metadata`,
         );
       }
+      const priorTags = [...existing.tags].sort().join("\0");
+      const nextTags = [...next.tags].sort().join("\0");
+      if (priorTags !== nextTags) {
+        throw new Error(
+          `Package ${manifest.packageName} has conflicting myraCatalog tags across factories`,
+        );
+      }
       continue;
     }
     byPin.set(manifest.packageName, next);

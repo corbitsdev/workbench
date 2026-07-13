@@ -22,6 +22,7 @@ export {
   type DerivedMyraCatalogPackage,
   type DerivedToolCredentialCatalogEntry,
 } from "./derive";
+export { assertToolManifestFactoryInvariants } from "./invariants";
 export {
   parseToolManifestFile,
   parseToolManifestIndex,

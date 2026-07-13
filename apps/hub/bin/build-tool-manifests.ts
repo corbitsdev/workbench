@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { type } from "arktype";
 import { PackageJSON } from "@intx/types/package-json";
 import {
+  assertToolManifestFactoryInvariants,
   parseToolManifestFile,
   sortFactoryManifests,
   type ToolFactoryManifest,
@@ -35,11 +36,6 @@ export function toolManifestIndexPath(): string {
     "index.json",
   );
 }
-
-const InterchangeManifest = type({
-  "manifest?": "string",
-  "tools?": "string",
-});
 
 function packageHasManifest(packageJsonPath: string): boolean {
   try {
@@ -117,6 +113,7 @@ export async function collectToolFactoryManifests(): Promise<
 
 export async function buildToolManifestIndex(): Promise<ToolManifestIndex> {
   const factories = await collectToolFactoryManifests();
+  assertToolManifestFactoryInvariants(factories);
   return {
     generatedAt: new Date().toISOString(),
     factories,
