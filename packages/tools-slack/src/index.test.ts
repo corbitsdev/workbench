@@ -326,24 +326,34 @@ describe("slack_search", () => {
 
 describe("SLACK_HUB_TOOLS registry entries", () => {
   it("builds a tool from a resolved credential (apiKey + baseURL)", async () => {
-    const fetcher = makeSlackFetch({
-      "conversations.list": () => ({ ok: true, channels: [] }),
-    });
-    // The credential config carries the fetcher through so the registry path is
-    // exercised end-to-end (createTools -> handler -> Slack call).
+    // createTools builds the named tool from a resolved credential.
     const [tool] = SLACK_HUB_TOOLS.slack_list_channels.createTools({
       apiKey: "xoxb",
       baseURL: "https://slack.test/api",
     });
     expect(tool?.definition.name).toBe("slack_list_channels");
 
-    // And prove baseURL is honored by the handler via a direct config.
-    await run(
+    // And the built handler honors the resolved baseURL: driving it calls
+    // conversations.list against that endpoint with the default channel type.
+    let calledUrl: string | undefined;
+    const capturingFetch = (async (input: string, init: RequestInit) => {
+      calledUrl = input;
+      return new Response(JSON.stringify({ ok: true, channels: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as SlackFetch;
+    const result = await run(
       "slack_list_channels",
-      { botToken: "xoxb", baseUrl: "https://slack.test/api", fetcher },
+      {
+        botToken: "xoxb",
+        baseUrl: "https://slack.test/api",
+        fetcher: capturingFetch,
+      },
       {},
     );
-    expect(fetcher.calls[0]).toBeDefined();
+    expect(calledUrl).toBe("https://slack.test/api/conversations.list");
+    expect(result).toEqual({ channels: [], nextCursor: undefined });
   });
 
   it("marks read tools read and the post tool write", () => {

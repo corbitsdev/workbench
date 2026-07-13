@@ -598,10 +598,6 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       kind: "tool",
       defaultMetadata: { baseURL: "https://slack.com/api" },
       secretLabel: "Bot token",
-      secondaryField: {
-        label: "Signing secret",
-        placeholder: "Slack app signing secret",
-      },
       platforms: ["Slack"],
     },
   ] as const;

@@ -53,15 +53,26 @@ OAuth install (like Gamma's) is a fast-follow ticket.
 **Storage per the credential model:**
 
 - Credential row: tenant-owned (`principalId: null`), `providerName: "slack"`,
-  secret = bot token, metadata = `{ teamId, signingSecret? }` — resolved at
+  secret = bot token, `metadata.baseURL = "https://slack.com/api"` — resolved at
   tool/endpoint execution time via `resolveCredentialRequirement`
   (`apps/hub/src/lib/tenant-tools.ts` `providerAvailable` pattern). Never in
   `credentialRequirements` (tool-only provider; would break sidecar launch).
-- `slack` added to `buildEntries()` in `apps/hub/bin/seed-credentials.ts` (env
-  `SLACK_BOT_TOKEN`, metadata carries `SLACK_SIGNING_SECRET` + `SLACK_TEAM_ID`)
-  and to `CREDENTIAL_PROVIDER_CATALOG` in
-  `packages/workbench-shared/src/governance.ts` (`kind: "tool"`, `secretLabel:
-"Bot token"`, `secondaryField` = signing secret, `platforms: ["slack"]`).
+- **What ships in this PR:** the bot token is the only field the four tools
+  need. `slack` is added to `CREDENTIAL_PROVIDER_CATALOG` in
+  `packages/workbench-shared/src/governance.ts` with `kind: "tool"`,
+  `secretLabel: "Bot token"`, `defaultMetadata.baseURL`, and
+  `platforms: ["Slack"]` — no `secondaryField`. The generic `secondaryField`
+  mechanism stores/reads its value as the credential `baseURL` (it is wired to
+  the endpoint override), so it cannot carry a signing secret without silently
+  redirecting every Slack API call; adding a signing-secret field is deferred to
+  T1/T2 when the Events endpoint actually consumes it.
+- **Future (T1/T2), needs its own storage:** `team_id` and the signing secret —
+  required for the Events endpoint's team→tenant routing and HMAC verification —
+  must be persisted under a real metadata shape (e.g. `metadata.teamId` +
+  `metadata.signingSecret`, kept distinct from `baseURL`), NOT via the current
+  single-`baseURL` `secondaryField`. Per AGENTS.md the provider credential is
+  OWNER-SET on the Owner → Capabilities page, not via a seed env var, so there
+  is deliberately no `buildEntries()`/`.env.example` entry.
 
 **Workspace→tenant routing.** Events carry `team_id`. The endpoint maps
 `team_id` → tenant by looking up the tenant whose `slack` credential metadata
@@ -200,7 +211,8 @@ New package `packages/tools-slack`, modeled on `@workbench/tools-firecrawl`
 - `slack_get_channel_history` (aka `slack_read`) — `conversations.history` /
   `conversations.replies` for a named channel or thread. Flat convenience params
   (kimi-safe, per CL-2319): `channel` (name or id), `thread_ts?`, `limit`
-  (default 30, max 100), `oldest?`/`latest?` (ISO). Resolves channel name → id
+  (default 30, max 100), `oldest?`/`latest?` (Slack `ts`, e.g.
+  "1234567890.123456" — not ISO). Resolves channel name → id
   via `conversations.list` (cached). Returns `{ channel, messages: [{ ts, user,
 userName, text, threadTs? }] }`. Errors like `not_in_channel` surface as an
   actionable message ("invite @Myra to #chan").
