@@ -26,6 +26,7 @@ const schedule = {
   enabled: true,
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
+  lastFiredDayUtc: null,
 };
 
 const catalog = {
@@ -124,6 +125,33 @@ describe("MySchedules", () => {
     await waitFor(() => expect(patch).not.toBeNull());
     expect(patch!.url).toContain("/me/schedules/sch_1");
     expect(patch!.body).toEqual({ enabled: false });
+  });
+
+  it("shows last-fired and next-fire status derived from lastFiredDayUtc", async () => {
+    globalThis.fetch = makeFetch([
+      { ...schedule, lastFiredDayUtc: null },
+    ]) as unknown as typeof fetch;
+    renderList();
+    await waitFor(() => screen.getByText("Morning Brief"));
+    expect(screen.getByText(/Last fired: Not yet fired/)).toBeTruthy();
+  });
+
+  it("changes the fire hour via PATCH when a new hour is selected", async () => {
+    let patch: { url: string; body: unknown } | null = null;
+    globalThis.fetch = makeFetch([schedule], (url, init) => {
+      if (init.method === "PATCH")
+        patch = { url, body: JSON.parse(init.body as string) };
+    }) as unknown as typeof fetch;
+    const user = userEvent.setup();
+    renderList();
+
+    const select = await screen.findByLabelText(
+      "Change fire time for Morning Brief",
+    );
+    await user.selectOptions(select, "9");
+    await waitFor(() => expect(patch).not.toBeNull());
+    expect(patch!.url).toContain("/me/schedules/sch_1");
+    expect(patch!.body).toEqual({ hourUtc: 9 });
   });
 
   it("removes a schedule via DELETE after confirmation", async () => {

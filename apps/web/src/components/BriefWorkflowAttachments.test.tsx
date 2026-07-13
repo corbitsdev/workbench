@@ -72,6 +72,7 @@ function makeFetch(
           enabled: true,
           triggerPayload: {},
           createdAt: "2026-01-01T00:00:00.000Z",
+          lastFiredDayUtc: null,
         };
         schedules = [...schedules, created];
         return Promise.resolve(jsonResponse(created, 201));
@@ -147,6 +148,7 @@ describe("BriefWorkflowAttachments", () => {
         enabled: true,
         triggerPayload: {},
         createdAt: "2026-01-01T00:00:00.000Z",
+        lastFiredDayUtc: null,
       },
     ]) as unknown as typeof fetch;
     renderAttachments();

@@ -38,7 +38,14 @@ describe("toApiSchedule", () => {
       enabled: false,
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-02T00:00:00.000Z",
+      lastFiredDayUtc: null,
     });
+  });
+
+  it("carries a non-null lastFiredDayUtc through", () => {
+    expect(toApiSchedule(dbRow({ lastFiredDayUtc: 42 })).lastFiredDayUtc).toBe(
+      42,
+    );
   });
 });
 

@@ -1,9 +1,12 @@
 /// <reference types="bun" />
 import { describe, expect, it } from "bun:test";
 import {
+  formatLastFired,
+  formatNextFire,
   formatUtcHourLocal,
   localHourToUtc,
   localMinutesOfDay,
+  nextFireAt,
   utcHourOptions,
 } from "./schedule-time";
 
@@ -43,5 +46,47 @@ describe("schedule-time", () => {
 
   it("formats a UTC hour as a local wall-clock time", () => {
     expect(formatUtcHourLocal(localHourToUtc(0))).toContain("12:00");
+  });
+
+  it("reports never-fired schedules distinctly from fired ones", () => {
+    expect(formatLastFired(null)).toBe("Not yet fired");
+    expect(formatLastFired(0)).not.toBe("Not yet fired");
+  });
+
+  it("computes the next fire as today when the hour hasn't passed and it hasn't fired today", () => {
+    const now = new Date("2026-01-05T10:00:00.000Z");
+    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
+    const next = nextFireAt(14, null, now);
+    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay);
+    expect(next.getUTCHours()).toBe(14);
+  });
+
+  it("rolls the next fire to tomorrow once the hour has passed today", () => {
+    const now = new Date("2026-01-05T15:00:00.000Z");
+    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
+    const next = nextFireAt(14, null, now);
+    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay + 1);
+  });
+
+  it("rolls the next fire to tomorrow when it already fired today", () => {
+    const now = new Date("2026-01-05T10:00:00.000Z");
+    const todayUtcDay = Math.floor(now.getTime() / 86_400_000);
+    const next = nextFireAt(14, todayUtcDay, now);
+    expect(Math.floor(next.getTime() / 86_400_000)).toBe(todayUtcDay + 1);
+  });
+
+  it("reports paused schedules as paused regardless of hour", () => {
+    expect(formatNextFire(14, null, false)).toBe("Paused");
+  });
+
+  it("reports a next-fire label for enabled schedules", () => {
+    const label = formatNextFire(
+      14,
+      null,
+      true,
+      new Date("2026-01-05T10:00:00.000Z"),
+    );
+    expect(label).not.toBe("Paused");
+    expect(label.length).toBeGreaterThan(0);
   });
 });
