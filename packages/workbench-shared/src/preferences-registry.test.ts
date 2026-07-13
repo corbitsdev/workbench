@@ -331,6 +331,15 @@ describe("validatePreferencePatch", () => {
       validatePreferencePatch({ changelogSeenVersion: "0.6.0" }),
     ).toBeNull();
   });
+
+  test("accepts onboarding.welcomeSentAt without a registry entry", () => {
+    expect(getPreferenceEntry("onboarding.welcomeSentAt")).toBeUndefined();
+    expect(
+      validatePreferencePatch({
+        "onboarding.welcomeSentAt": "2026-07-12T00:00:00.000Z",
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("changelogSeenVersion", () => {
@@ -340,6 +349,17 @@ describe("changelogSeenVersion", () => {
     });
     expect(
       settings.find((s) => s.key === "changelogSeenVersion"),
+    ).toBeUndefined();
+  });
+});
+
+describe("onboarding.welcomeSentAt", () => {
+  test("is excluded from resolvePreferenceSettings so it never renders as a control", () => {
+    const settings = resolvePreferenceSettings({
+      "onboarding.welcomeSentAt": "2026-07-12T00:00:00.000Z",
+    });
+    expect(
+      settings.find((s) => s.key === "onboarding.welcomeSentAt"),
     ).toBeUndefined();
   });
 });
