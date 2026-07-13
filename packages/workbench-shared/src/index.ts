@@ -20,6 +20,7 @@ export * from "./sumble-account-intel";
 export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./changelog";
+export * from "./welcome-mail";
 export { toHumanLabel } from "./tool-labels";
 export { unwrapArgsEnvelope } from "./tool-args";
 export {

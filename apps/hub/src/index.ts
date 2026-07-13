@@ -158,6 +158,7 @@ import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
 import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
 import { deliverMentionMail } from "./lib/mention-mail";
+import { deliverWelcomeMail } from "./lib/deliver-welcome-mail";
 import { createMailboxEventBus } from "./lib/mailbox-events";
 import { createInboxRouter } from "./routes/inbox";
 import { createMeTasksRouter } from "./routes/me-tasks";
@@ -1117,6 +1118,21 @@ v1.post("/me", async (c) => {
     userId,
   );
   const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
+
+  // Called on every /me bootstrap, not gated on `provisionedMyra`:
+  // `deliverWelcomeMail` itself is the idempotency boundary (guards on the
+  // `onboarding.welcomeSentAt` preference), so a transient failure on the
+  // member's actual first login still gets a retry on their next one instead
+  // of being silently missed forever.
+  if (workingTenantId && memberPrincipalId && paInstanceId) {
+    await deliverWelcomeMail({
+      db,
+      tenantId: workingTenantId,
+      memberPrincipalId,
+      myraInstanceId: paInstanceId,
+      mailboxEventBus,
+    });
+  }
 
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
