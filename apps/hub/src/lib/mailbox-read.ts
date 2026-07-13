@@ -5,6 +5,7 @@ import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+import { extractConversationBodyFromRaw } from "./conversation-mail-body";
 import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger("mailbox-read");
@@ -35,7 +36,7 @@ export type DecodedFrame = {
 export function decodeMailFrame(raw: Uint8Array): DecodedFrame | null {
   const parsed = tryParseHeaderSection(raw);
   if (parsed === null) return null;
-  const body = new TextDecoder().decode(raw.subarray(parsed.bodyOffset)).trim();
+  const body = extractConversationBodyFromRaw(raw);
   return { headers: parsed.headers, body };
 }
 

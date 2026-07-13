@@ -1,4 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
+import { generateKeyPair, createEd25519Crypto } from "@intx/crypto";
+import {
+  assembleMessage,
+  assembleSignedContent,
+  createDetachedSignatureFromProvider,
+  generateMessageId,
+  type MessageHeaders,
+} from "@intx/mime";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { HubDb } from "../db";
@@ -7,6 +15,38 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "./mailbox-read";
+
+function signedMorningBriefHeaders(): MessageHeaders {
+  return {
+    from: "ins_ses_dep@tenant.example",
+    to: ["usr_alice@tenant.example"],
+    cc: undefined,
+    date: new Date("2026-07-10T07:00:00Z"),
+    messageId: generateMessageId("ins_ses_dep@tenant.example"),
+    subject: "Your morning brief",
+    inReplyTo: undefined,
+    references: undefined,
+    mimeVersion: "1.0",
+    interchangeType: "conversation.message",
+    interchangeCorrelationId: undefined,
+    interchangeTenantId: undefined,
+    interchangeAgentId: undefined,
+    interchangeSessionId: undefined,
+    interchangeOfferingId: undefined,
+    interchangeSchemaVersion: undefined,
+    traceparent: undefined,
+    tracestate: undefined,
+  };
+}
+
+async function assembleSignedConversationFrame(text: string): Promise<Buffer> {
+  const kp = await generateKeyPair();
+  const crypto = createEd25519Crypto(kp);
+  const content = assembleSignedContent({ kind: "conversation", text });
+  const sig = await createDetachedSignatureFromProvider(content, crypto);
+  const raw = assembleMessage(signedMorningBriefHeaders(), content, sig);
+  return Buffer.from(raw);
+}
 
 const RAW = Buffer.from(
   "From: ins_dep-heartbeat@tenant.example\r\n" +
@@ -76,6 +116,23 @@ describe("listUserMailbox", () => {
       read: false,
     });
     expect(messages[1]?.read).toBe(true);
+  });
+
+  it("decodes PGP/MIME signed conversation frames to plain text for snippets", async () => {
+    const briefText = "## Morning brief\n\nGranola notes here.";
+    const raw = await assembleSignedConversationFrame(briefText);
+    const { db } = makeListDb([
+      makeRow({ raw, subject: "Your morning brief" }),
+    ]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+
+    expect(messages[0]?.snippet).toBe(briefText.slice(0, 160));
+    expect(messages[0]?.snippet).not.toContain("multipart/mixed");
+    expect(messages[0]?.snippet).not.toContain("=_Part_");
   });
 
   it("scopes the query to the caller's tenant, principal, and inbound direction", async () => {
@@ -189,6 +246,22 @@ describe("getMailboxMessage", () => {
       read: false,
       body: "Your brief is ready.",
     });
+  });
+
+  it("returns full brief text from a signed conversation frame", async () => {
+    const briefText = "## Morning brief\n\nGranola notes here.";
+    const raw = await assembleSignedConversationFrame(briefText);
+    const { db } = makeDetailDb(
+      makeRow({ raw, subject: "Your morning brief" }),
+    );
+    const message = await getMailboxMessage(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      id: "5e0f8c9a-0000-4000-8000-000000000001",
+    });
+
+    expect(message?.body).toBe(briefText);
+    expect(message?.body).not.toContain("application/pgp-signature");
   });
 
   it("degrades to an empty body when the stored frame is malformed", async () => {
