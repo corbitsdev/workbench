@@ -1,7 +1,7 @@
 # @workbench/workflow-sumble-account-intel
 
 A human-in-the-loop account intelligence workflow. Given an account (company
-domain or Sumble slug), it researches the account across Sumble — resolving the
+domain or Sumble company ID), it researches the account across Sumble — resolving the
 organization, then pulling teams, open jobs, technology stack, contacts, and
 buying signals — enriches each contact with an X/Twitter search (Sumble returns
 LinkedIn-sourced people only), synthesizes a reviewable account intelligence

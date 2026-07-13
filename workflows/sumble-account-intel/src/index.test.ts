@@ -117,6 +117,15 @@ describe("sumble-account-intel workflow structure", () => {
     }
   });
 
+  test("the bounded Sumble steps cap per-call cost with limit 25", () => {
+    for (const stepId of ["teams", "jobs", "techStack", "signals"]) {
+      const argMap = stepPrimitive(stepId).agent.tags?.[STEP_ARGMAP_TAG];
+      if (argMap === undefined)
+        throw new Error(`expected argMap on ${stepId} step`);
+      expect(JSON.parse(argMap).limit).toEqual({ literal: 25 });
+    }
+  });
+
   test("the best-effort Sumble steps are marked non-fatal", () => {
     for (const stepId of ["teams", "jobs", "techStack", "signals"]) {
       expect(stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG]).toBe(

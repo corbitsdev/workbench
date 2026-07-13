@@ -6,7 +6,7 @@ import { type } from "arktype";
 // completeness/shape invariant to the /resume boundary so a malformed payload is
 // rejected with 400 instead of poisoning the downstream steps that read it.
 
-// A non-empty account identifier (a company domain or a Sumble slug). Every
+// A non-empty account identifier (a company domain or Sumble company ID). Every
 // downstream Sumble call and the artifact title derive from it, so a blank value
 // would resolve no organization — reject it at the boundary.
 export const SumbleOrganizationDomainSchema = type("string").narrow(
@@ -14,7 +14,7 @@ export const SumbleOrganizationDomainSchema = type("string").narrow(
 );
 
 // `intake`: the account to research. `organizationDomain` is REQUIRED and
-// non-empty (a company domain or Sumble slug); `pushToAttio` is an optional flag
+// non-empty (a company domain or Sumble company ID); `pushToAttio` is an optional flag
 // carried through to the review gate so the operator can request a CRM note.
 export const SumbleIntakePayloadSchema = type({
   organizationDomain: SumbleOrganizationDomainSchema,

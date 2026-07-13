@@ -489,14 +489,7 @@ async function getOrgTechStack(
   signal: AbortSignal,
 ): Promise<string> {
   const parsed = parseArgs(TechStackArgs, args);
-  const orgRef: Record<string, string> = {};
-  if (parsed.slug !== undefined && parsed.slug.length > 0) {
-    orgRef.slug = parsed.slug;
-  } else if (parsed.domain !== undefined && parsed.domain.length > 0) {
-    orgRef.url = parsed.domain;
-  } else if (parsed.name !== undefined && parsed.name.length > 0) {
-    orgRef.name = parsed.name;
-  }
+  const orgRef = buildOrgRef(parsed);
   if (Object.keys(orgRef).length === 0) {
     throw new Error(
       "sumble_get_org_tech_stack requires one of: slug, domain, or name",
@@ -676,7 +669,7 @@ export const SUMBLE_RESOLVE_ORGANIZATION_DEFINITION: ToolDefinition = {
       identifier: {
         type: "string",
         description:
-          "A single account identifier — a domain/URL or a Sumble slug. Classified by shape when domain/slug/name are not given explicitly.",
+          "A single account identifier — a company domain/URL or a Sumble company ID. Classified by shape when domain/slug/name are not given explicitly.",
       },
       domain: { type: "string", description: "Company domain or URL." },
       slug: { type: "string", description: "Sumble organization slug." },
