@@ -30,6 +30,10 @@ export function buildMorningBriefSystemPrompt(
       : sourceLabels.join(", ");
   const sourceBullets = sources.map((s) => `- ${s.label}`).join("\n");
 
+  // The Linear/Attio url examples in the "Rules" section below are intentional
+  // forward-priming: they name those sources ahead of the row in
+  // WIRED_BRIEF_SOURCES this describes, and stay accurate now that
+  // tools-linear/tools-attio normalize a `url` field (CL-3504).
   return `You write a concise morning brief for a go-to-market operator, synthesized from their recent activity.
 
 You are given, as JSON, recent data pulled from this person's connected brief sources:
