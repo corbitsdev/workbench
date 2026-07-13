@@ -88,6 +88,7 @@ const ATTIO_CONNECTED: MemberConnectionState[] = [
     scopes: [],
     toggleEnabled: true,
     needsReconnect: false,
+    configured: true,
   },
 ];
 
@@ -133,7 +134,7 @@ const patchMePreferences = mock(
 const getMeBriefSources = mock(async () => BRIEF_SOURCES);
 const getMeInboxSources = mock(async () => INBOX_SOURCES);
 const getWorkflowsCatalog = mock(async () => workflowCatalogResult);
-const getMeConnections = mock(async () => connectionsResult);
+const getMeConnections = mock(async () => ({ connections: connectionsResult }));
 
 mock.module("../lib/hub-api", () => ({
   getMePreferenceSettings,

@@ -223,7 +223,7 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
     (workflowsCatalog.data?.entries ?? []).map((entry) => entry.kind),
   );
   const connectedProviders = new Set(
-    (connections.data ?? [])
+    (connections.data?.connections ?? [])
       .filter((connection) => connection.connected)
       .map((connection) => connection.provider),
   );
