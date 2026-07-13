@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { sortFactoryManifests } from "@workbench/tool-manifest";
+import {
+  loadCommittedToolManifestFactories,
+  sortFactoryManifests,
+} from "@workbench/tool-manifest";
 import {
   collectToolFactoryManifests,
   toolManifestIndexPath,
@@ -16,5 +19,10 @@ describe("build-tool-manifests", () => {
       raw.factories as Parameters<typeof sortFactoryManifests>[0],
     );
     expect(live).toEqual(committed);
+  });
+
+  test("committed generated module matches live package manifests", async () => {
+    const live = sortFactoryManifests(await collectToolFactoryManifests());
+    expect(loadCommittedToolManifestFactories()).toEqual(live);
   });
 });

@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 // Generalization of the search_tools loop guard: a model repeating the exact
 // same failing tool call (same name + same serialized args) is not converging
 // and must be pushed off the loop. The escalation keys on CONSECUTIVE
@@ -71,11 +69,30 @@ function stableStringify(value: unknown): string {
 }
 
 // Digest rather than the raw serialized args: lastKey is retained per session
-// for the lifetime of the LRU entry, and tool args can be large.
+// for the lifetime of the LRU entry, and tool args can be large. The key only
+// ever compares consecutive calls within one session, so a 64-bit non-crypto
+// hash is sufficient — and it keeps this package free of node builtins (the
+// web bundle reaches it through the @workbench/shared barrel).
+function hash64(input: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < input.length; i++) {
+    const ch = input.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (
+    (h1 >>> 0).toString(16).padStart(8, "0") +
+    (h2 >>> 0).toString(16).padStart(8, "0")
+  );
+}
+
 function callKey(toolName: string, args: unknown): string {
-  return createHash("sha256")
-    .update(`${toolName}\u0000${stableStringify(args)}`)
-    .digest("hex");
+  return hash64(`${toolName}\u0000${stableStringify(args)}`);
 }
 
 function blockedMessage(toolName: string): string {
