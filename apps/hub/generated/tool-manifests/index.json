@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-13T03:55:11.939Z",
+  "generatedAt": "2026-07-13T04:18:58.100Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -11,7 +11,7 @@
       ],
       "sideEffects": {
         "ab_preset_quorum": "read",
-        "ab_preset_compose": "write"
+        "ab_preset_compose": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

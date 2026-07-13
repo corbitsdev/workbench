@@ -113,7 +113,7 @@ export const myTools = defineCredentialedToolPackage({
 
 ### 3. Export a tool manifest, pin on agents, configure credentials in Owner UI
 
-- Add `src/tool-manifest.ts` exporting `ToolPackageManifest` (see any
+- Add `src/tool-manifest.ts` exporting `toolManifestFile` (`ToolManifestFile`; see any
   `packages/tools-*/src/tool-manifest.ts`) and wire `package.json` →
   `interchange.manifest` to that file.
 - Run `bun run build:tool-manifests` (hub) to refresh
@@ -127,9 +127,10 @@ export const myTools = defineCredentialedToolPackage({
   the agent's `AGENT_TEMPLATES` entry. `seedAgentTemplates` persists the pins to
   the agent DB row on hub boot; `launchAgentSession` reads them back via
   `parseAgentRow(row).toolPackages` at launch time.
-- Credentialed tools: add the provider to the package manifest's
-  `credentialProviders` (and `CREDENTIAL_PROVIDER_CATALOG` overrides in
-  `credential-provider-catalog.ts` when the owner form needs extra fields). Owners
+- Credentialed tools: set `providerName` and optional `credentialCatalog` on the
+  factory manifest (and `CREDENTIAL_PROVIDER_CATALOG` overrides in
+  `packages/workbench-shared/src/credential-provider-catalog.ts` when the owner
+  form needs extra fields). Owners
   configure secrets on the Capabilities page — not via env seeding.
 - `KNOWN_TOOLS` is a drift guard only: every bare tool name from manifests must
   appear there for the credential rail (`run-credential-tool`); it is not an
@@ -460,7 +461,7 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 - [ ] No `process.env` reads; no LLM calls
 - [ ] `bun run build:tool-manifests` run; Dockerfile tool `COPY` lines updated if the drift test fails
 - [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
-- [ ] Credentialed: provider in manifest + owner catalog (`governance` / `credential-provider-catalog.ts` overrides if needed) + agent `credentialProviderNames`
+- [ ] Credentialed: `providerName` / `credentialCatalog` in manifest + owner catalog (`packages/workbench-shared/src/credential-provider-catalog.ts` overrides if needed) + agent `credentialProviderNames`
 - [ ] Credentialed tools only: bare tool names from manifest appear in `KNOWN_TOOLS` (drift guard for the credential rail)
 - [ ] Built + published to the registry (admin CLI **Local actions → Build / Publish tool packages**); tool verified loading in the sidecar
 - [ ] Unit tests at ≥95% function coverage

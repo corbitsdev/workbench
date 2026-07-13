@@ -18,10 +18,9 @@ const toolManifestFactories = loadCommittedToolManifestFactories();
 // mail (`mail_*`), ask-principal — are merged directly (not loaded as packages)
 // and are NOT prefixed; they pass through unchanged.
 //
-// This table mirrors each package's `interchange.tools` factory id and the tool
-// definition names it exports. Keep it in sync when a tool package adds, renames,
-// or removes a tool. Names not present here (locals, or not-yet-real tools) are
-// returned verbatim.
+// Bare tool names per factory id, derived from committed manifests — update
+// manifests and run `bun run build:tool-manifests` instead of editing here.
+// Names not present here (locals, or not-yet-real tools) are returned verbatim.
 
 /** Derived from committed per-package tool manifests (`apps/hub/generated/tool-manifests/index.json`). */
 export const PACKAGE_TOOLS_TABLE: Record<string, readonly string[]> =

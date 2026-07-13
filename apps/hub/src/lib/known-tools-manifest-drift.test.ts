@@ -31,4 +31,21 @@ describe("KNOWN_TOOLS drift guard (CL-3447)", () => {
     );
     expect(extra).toEqual([]);
   });
+
+  it("matches KNOWN_TOOLS sideEffect to committed manifest sideEffects", () => {
+    const mismatches: string[] = [];
+    for (const factory of loadCommittedToolManifestFactories()) {
+      for (const name of factory.bareToolNames) {
+        const manifestEffect = factory.sideEffects[name];
+        const known = KNOWN_TOOLS[name];
+        if (known == null) continue;
+        if (known.sideEffect !== manifestEffect) {
+          mismatches.push(
+            `${name}: KNOWN_TOOLS=${known.sideEffect} manifest=${manifestEffect}`,
+          );
+        }
+      }
+    }
+    expect(mismatches).toEqual([]);
+  });
 });

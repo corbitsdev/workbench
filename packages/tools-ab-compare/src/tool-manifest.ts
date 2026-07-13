@@ -11,7 +11,7 @@ export const toolManifestFile = {
           sideEffect: "read",
         },
         ab_preset_compose: {
-          sideEffect: "write",
+          sideEffect: "read",
         },
       },
       myraCatalog: null,

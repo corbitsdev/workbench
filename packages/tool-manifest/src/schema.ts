@@ -43,7 +43,7 @@ export type ToolManifestFile = typeof ToolManifestFileSchema.infer;
 
 export const ToolManifestIndexSchema = type({
   generatedAt: "string",
-  factories: ToolFactoryManifestSchema.array(),
+  factories: ToolFactoryManifestSchema.array().atLeastLength(1),
 });
 export type ToolManifestIndex = typeof ToolManifestIndexSchema.infer;
 
