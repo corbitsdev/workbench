@@ -9,7 +9,7 @@ import {
   type NowItem,
   type NowMailItem,
   type NowTaskItem,
-  type Task,
+  type TaskLink,
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
@@ -197,7 +197,13 @@ function TaskRow({
     }
   }, [selected]);
 
-  const href = taskHref(item.task);
+  const resolvedLinks = item.task.links
+    .map((link) => ({ link, href: taskLinkHref(link) }))
+    .filter(
+      (entry): entry is { link: TaskLink; href: string } => entry.href !== null,
+    );
+  const [primary, ...extraLinks] = resolvedLinks;
+  const href = primary?.href ?? null;
   return (
     <div
       ref={rowRef}
@@ -224,24 +230,90 @@ function TaskRow({
           myPrincipalId={myPrincipalId}
         />
         <TaskSendToAdapter task={item.task} />
+        {extraLinks.map(({ link }, index) => (
+          <TaskExtraLink
+            key={`${link.kind}-${link.ref}-${index}`}
+            link={link}
+          />
+        ))}
       </div>
     </div>
   );
 }
 
-// Task rows with an internal link deep-link to that surface. A task with no
-// internal link has nowhere to go — its row renders as a non-interactive
-// shell (see RowShell) rather than a dead-end link to its own URL; the bell's
-// `?task=` deep-link still highlights it via the row's `id`, not a href.
-function taskHref(task: Task): string | null {
-  const link = task.links[0];
-  if (link?.kind === "workflow_run")
-    return deepLinkPath("workflow_run", link.ref);
-  if (link?.kind === "mail") return deepLinkPath("mail", link.ref);
-  if (link?.kind === "artifact") return deepLinkPath("artifact", link.ref);
-  if (link?.kind === "conversation")
-    return deepLinkPath("conversation", link.ref);
-  return null;
+// Task rows with a link deep-link to that surface. A task with no resolvable
+// link has nowhere to go — its row renders as a non-interactive shell (see
+// RowShell) rather than a dead-end link to its own URL; the bell's `?task=`
+// deep-link still highlights it via the row's `id`, not a href. Every
+// `TaskLink` kind resolves to an href so an open task with at least one
+// resolvable link is never a dead end; extra links beyond the first are
+// surfaced as `TaskExtraLink` chips rather than silently dropped.
+//
+// `url`-kind refs are free-form strings an agent can set via the task tool
+// (see apps/hub/src/tools/task-tools.ts) — never trust them as-is. Only
+// http(s) URLs resolve to a clickable href; anything else (e.g. a
+// `javascript:` scheme) resolves to `null` and the row falls through to the
+// next link, or renders non-interactive if it was the only one.
+function taskLinkHref(link: TaskLink): string | null {
+  switch (link.kind) {
+    case "workflow_run":
+      return deepLinkPath("workflow_run", link.ref);
+    case "mail":
+      return deepLinkPath("mail", link.ref);
+    case "artifact":
+      return deepLinkPath("artifact", link.ref);
+    case "conversation":
+      return deepLinkPath("conversation", link.ref);
+    case "url":
+      return isSafeExternalUrl(link.ref) ? link.ref : null;
+  }
+}
+
+function isSafeExternalUrl(ref: string): boolean {
+  try {
+    const url = new URL(ref);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//.test(href);
+}
+
+function TaskExtraLink({ link }: { link: TaskLink }) {
+  const href = taskLinkHref(link);
+  if (href === null) return null;
+  const label = link.label ?? taskLinkFallbackLabel(link.kind);
+  const className =
+    "text-xs text-text-3 underline decoration-dotted hover:text-text";
+
+  if (isExternalHref(href)) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={className}
+      >
+        {label}
+      </a>
+    );
+  }
+  return (
+    <Link to={href} className={className}>
+      {label}
+    </Link>
+  );
+}
+
+function taskLinkFallbackLabel(kind: TaskLink["kind"]): string {
+  if (kind === "workflow_run") return "Workflow";
+  if (kind === "mail") return "Mail";
+  if (kind === "artifact") return "Artifact";
+  if (kind === "conversation") return "Conversation";
+  return "Link";
 }
 
 interface RowShellProps {
@@ -283,6 +355,18 @@ function RowShell({ href, accent, title, note, source, at }: RowShellProps) {
 
   if (href === null) {
     return <div className={rowClass}>{body}</div>;
+  }
+  if (isExternalHref(href)) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={cn(rowClass, "hover:bg-row-hover")}
+      >
+        {body}
+      </a>
+    );
   }
   return (
     <Link to={href} className={cn(rowClass, "hover:bg-row-hover")}>
