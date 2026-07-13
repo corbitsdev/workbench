@@ -3,11 +3,12 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router";
 import { ArrowRight, CheckCircle2 } from "lucide-react";
 import { cn } from "@workbench/ui";
-import type {
-  NowItem,
-  NowMailItem,
-  NowTaskItem,
-  Task,
+import {
+  mailboxSenderLabel,
+  type NowItem,
+  type NowMailItem,
+  type NowTaskItem,
+  type Task,
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
@@ -164,7 +165,7 @@ function MailRow({ item }: { item: NowMailItem }) {
       accent="bg-border-strong"
       title={item.message.subject ?? "(no subject)"}
       note={collapsedNote ?? item.message.snippet}
-      source={item.message.from}
+      source={mailboxSenderLabel(item.message)}
       at={item.message.date}
     />
   );

@@ -3,7 +3,11 @@ import { Link } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Bell, CheckCheck, ListTodo } from "lucide-react";
 import { cn } from "@workbench/ui";
-import type { MailboxMessage, Task } from "@workbench/shared";
+import {
+  mailboxSenderLabel,
+  type MailboxMessage,
+  type Task,
+} from "@workbench/shared";
 import {
   MAILBOX_POLL_MS,
   unreadCount,
@@ -207,7 +211,7 @@ function NotificationItem({ message, onSelect }: NotificationItemProps) {
               message.read ? "text-text-2" : "font-semibold text-text",
             )}
           >
-            {message.from}
+            {mailboxSenderLabel(message)}
           </span>
           <time className="shrink-0 text-[11px] text-text-3">
             {formatRelativeTime(message.date)}

@@ -1,4 +1,25 @@
 import { describe, expect, it, mock } from "bun:test";
+
+const resolveSenderDisplayNamesMock = mock(
+  async (
+    _db: unknown,
+    _tenantId: string,
+    _fromHeaders: string[],
+  ): Promise<Map<string, string>> => new Map(),
+);
+
+mock.module("./mail-sender-display", () => ({
+  extractSenderMailboxAddress: (fromHeader: string) => fromHeader.trim(),
+  attachFromDisplay: (
+    fromHeader: string,
+    displays: Map<string, string>,
+  ): string | undefined => {
+    const display = displays.get(fromHeader.trim());
+    return display === undefined ? undefined : display;
+  },
+  resolveSenderDisplayNames: resolveSenderDisplayNamesMock,
+}));
+
 import { generateKeyPair, createEd25519Crypto } from "@intx/crypto";
 import {
   assembleMessage,
@@ -116,6 +137,19 @@ describe("listUserMailbox", () => {
       read: false,
     });
     expect(messages[1]?.read).toBe(true);
+  });
+
+  it("attaches fromDisplay when sender labels resolve", async () => {
+    resolveSenderDisplayNamesMock.mockImplementationOnce(
+      async () => new Map([["ins_dep-heartbeat@tenant.example", "Heartbeat"]]),
+    );
+    const { db } = makeListDb([makeRow()]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.fromDisplay).toBe("Heartbeat");
   });
 
   it("decodes PGP/MIME signed conversation frames to plain text for snippets", async () => {
