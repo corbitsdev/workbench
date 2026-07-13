@@ -135,6 +135,31 @@ describe("buildNowFeed", () => {
     expect(item.collapsed.map((m) => m.id)).toEqual(["msg-raw"]);
   });
 
+  test("collapses a legacy handoff with no refs via the subject-prefix fallback", () => {
+    // Simulates a mailbox row written before CL-3507 shipped: no refs field
+    // at all, only the old subject convention. Must still collapse.
+    const raw = makeMessage({
+      id: "msg-raw",
+      subject: "Pricing question from Acme",
+      read: false,
+    });
+    const handoff = makeMessage({
+      id: "msg-handoff",
+      subject: "Myra triaged: Pricing question from Acme",
+      date: "2026-07-11T10:00:00.000Z",
+    });
+    const feed = buildNowFeed({
+      runs: [],
+      messages: [raw, handoff],
+      tasks: [],
+    });
+    expect(feed).toHaveLength(1);
+    const item = feed[0];
+    if (item?.type !== "mail") throw new Error("expected a mail item");
+    expect(item.message.id).toBe("msg-handoff");
+    expect(item.collapsed.map((m) => m.id)).toEqual(["msg-raw"]);
+  });
+
   test("a read handoff does not collapse the raw item", () => {
     const raw = makeMessage({ id: "msg-raw", subject: "Pricing question" });
     const handoff = makeMessage({

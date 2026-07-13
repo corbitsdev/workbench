@@ -18,6 +18,13 @@ export type NowRun = typeof NowRunSchema.infer;
 
 export const openTaskStatuses = ["open", "in_progress", "waiting"] as const;
 
+// Subject prefix Myra's triage handoffs carried before CL-3507 added a
+// structured `mail` ref. Existing mailbox rows written before this change
+// deployed have no refs at all, so the ref-based grouping below must fall back
+// to this match for those rows — otherwise every pre-existing triage handoff
+// ungroups from its raw source mail the moment this ships.
+const TRIAGE_SUBJECT_PREFIX = "Myra triaged: ";
+
 export type NowGateItem = { type: "gate"; run: NowRun };
 export type NowMailItem = {
   type: "mail";
@@ -47,16 +54,28 @@ export function buildNowFeed(input: {
   const collapsedByHandoff = new Map<string, MailboxMessage[]>();
   // A triage handoff links to the raw mail it triaged via a `mail` ref (its
   // source row id). Collapse the referenced raw message under the handoff by
-  // that structured linkage — no subject-string matching.
+  // that structured linkage. Rows written before CL-3507 carry no refs at
+  // all, so those fall back to the legacy subject-prefix match.
   for (const handoff of unread) {
     const sourceIds = (handoff.refs ?? [])
       .filter((ref) => ref.kind === "mail")
       .map((ref) => ref.ref);
-    if (sourceIds.length === 0) continue;
-    const collapsed: MailboxMessage[] = [];
-    for (const id of sourceIds) {
-      const source = byId.get(id);
-      if (source && source.id !== handoff.id) collapsed.push(source);
+    let collapsed: MailboxMessage[];
+    if (sourceIds.length > 0) {
+      collapsed = sourceIds
+        .map((id) => byId.get(id))
+        .filter(
+          (message): message is MailboxMessage =>
+            message !== undefined && message.id !== handoff.id,
+        );
+    } else if (handoff.subject?.startsWith(TRIAGE_SUBJECT_PREFIX)) {
+      const rawSubject = handoff.subject.slice(TRIAGE_SUBJECT_PREFIX.length);
+      collapsed = input.messages.filter(
+        (message) =>
+          message.id !== handoff.id && message.subject === rawSubject,
+      );
+    } else {
+      continue;
     }
     if (collapsed.length === 0) continue;
     collapsedByHandoff.set(handoff.id, collapsed);
