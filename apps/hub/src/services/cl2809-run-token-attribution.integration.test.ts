@@ -76,9 +76,9 @@ beforeEach(async () => {
 
 describe("CL-2809 per-run workflow token attribution", () => {
   test("a live (post-CL-2582) 1:1 run<->deployment attributes its rollup tokens to its own runId", async () => {
-    await instance("ins_dep-a", "ins_dep-a@wb.local");
-    await record("run-a", "dep-a", "2026-06-01T00:00:00Z");
-    await rollup("ins_dep-a", 300, 120);
+    await instance("ins_depA", "ins_depA@wb.local");
+    await record("run-a", "depA", "2026-06-01T00:00:00Z");
+    await rollup("ins_depA", 300, 120);
 
     const rows = await getUsageByWorkflowRun({ db, tenantId: TENANT });
     expect(rows).toHaveLength(1);
@@ -101,12 +101,12 @@ describe("CL-2809 per-run workflow token attribution", () => {
   });
 
   test("two independent live runs on two independent deployments never cross-attribute", async () => {
-    await instance("ins_dep-a", "ins_dep-a@wb.local");
-    await instance("ins_dep-b", "ins_dep-b@wb.local");
-    await record("run-a", "dep-a", "2026-06-01T00:00:00Z");
-    await record("run-b", "dep-b", "2026-06-02T00:00:00Z");
-    await rollup("ins_dep-a", 100, 50);
-    await rollup("ins_dep-b", 400, 200);
+    await instance("ins_depA", "ins_depA@wb.local");
+    await instance("ins_depB", "ins_depB@wb.local");
+    await record("run-a", "depA", "2026-06-01T00:00:00Z");
+    await record("run-b", "depB", "2026-06-02T00:00:00Z");
+    await rollup("ins_depA", 100, 50);
+    await rollup("ins_depB", 400, 200);
 
     const rows = await getUsageByWorkflowRun({ db, tenantId: TENANT });
     const byId = new Map(rows.map((r) => [r.runId, r]));
@@ -121,11 +121,11 @@ describe("CL-2809 per-run workflow token attribution", () => {
   });
 
   test("legacy shared deployment with TWO run records: tokens collapse to the most-recent runId, the earlier run has NO attributable totals (not duplicated)", async () => {
-    await instance("ins_dep-shared", "ins_dep-shared@wb.local");
+    await instance("ins_depShared", "ins_depShared@wb.local");
     // Two serial runs on ONE deployment (pre-CL-2582 model).
-    await record("run-early", "dep-shared", "2026-06-01T00:00:00Z");
-    await record("run-late", "dep-shared", "2026-06-30T00:00:00Z");
-    await rollup("ins_dep-shared", 1000, 1000);
+    await record("run-early", "depShared", "2026-06-01T00:00:00Z");
+    await record("run-late", "depShared", "2026-06-30T00:00:00Z");
+    await rollup("ins_depShared", 1000, 1000);
 
     const rows = await getUsageByWorkflowRun({ db, tenantId: TENANT });
 
@@ -157,8 +157,8 @@ describe("CL-2809 per-run workflow token attribution", () => {
   });
 
   test("a run with no attributable instance/rollup returns null, not zero", async () => {
-    await record("run-orphan", "dep-orphan", "2026-06-01T00:00:00Z");
-    // No agent_instance and no rollup row for dep-orphan at all.
+    await record("run-orphan", "depOrphan", "2026-06-01T00:00:00Z");
+    // No agent_instance and no rollup row for depOrphan at all.
 
     const totals = await getWorkflowRunTokenTotals({
       db,
@@ -171,15 +171,15 @@ describe("CL-2809 per-run workflow token attribution", () => {
   test("scopes strictly to the requesting tenant", async () => {
     await client.query(
       `insert into agent_instance (id, agent_id, tenant_id, principal_id, address, status)
-       values ('ins_dep-other','agt-x','tn-other','prn-def','ins_dep-other@wb.local','running')`,
+       values ('ins_depOther','agt-x','tn-other','prn-def','ins_depOther@wb.local','running')`,
     );
     await client.query(
       `insert into workflow_run_record (id, deployment_id, kind, tenant_id, principal_id, status, created_at, updated_at)
-       values ('run-other','dep-other','last30days','tn-other','prn-runner','completed','2026-06-01T00:00:00Z','2026-06-01T00:00:00Z')`,
+       values ('run-other','depOther','last30days','tn-other','prn-runner','completed','2026-06-01T00:00:00Z','2026-06-01T00:00:00Z')`,
     );
     await client.query(
       `insert into analytics_rollup_daily (id, tenant_id, instance_id, bucket_date, rollup_key, turn_count, tool_call_count, input_tokens, output_tokens)
-       values ('r-other','tn-other','ins_dep-other','2026-07-01','r-other',1,0,999,999)`,
+       values ('r-other','tn-other','ins_depOther','2026-07-01','r-other',1,0,999,999)`,
     );
 
     const rows = await getUsageByWorkflowRun({ db, tenantId: TENANT });
