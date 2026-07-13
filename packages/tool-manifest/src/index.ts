@@ -1,8 +1,6 @@
 export {
   clearCommittedToolManifestCache,
-  committedToolManifestIndexPath,
   loadCommittedToolManifestFactories,
-  monorepoRootFromToolManifestPackage,
 } from "./committed-index";
 export {
   bareToolNamesFromEntries,
