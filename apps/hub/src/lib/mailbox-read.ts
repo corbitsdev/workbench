@@ -6,7 +6,10 @@ import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
-import { attachFromDisplay, resolveSenderDisplayNames } from "./mail-sender-display";
+import {
+  attachFromDisplay,
+  resolveSenderDisplayNames,
+} from "./mail-sender-display";
 import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger("mailbox-read");

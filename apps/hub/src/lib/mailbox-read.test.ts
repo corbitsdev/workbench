@@ -140,8 +140,8 @@ describe("listUserMailbox", () => {
   });
 
   it("attaches fromDisplay when sender labels resolve", async () => {
-    resolveSenderDisplayNamesMock.mockImplementationOnce(async () =>
-      new Map([["ins_dep-heartbeat@tenant.example", "Heartbeat"]]),
+    resolveSenderDisplayNamesMock.mockImplementationOnce(
+      async () => new Map([["ins_dep-heartbeat@tenant.example", "Heartbeat"]]),
     );
     const { db } = makeListDb([makeRow()]);
     const { items: messages } = await listUserMailbox(db, {
