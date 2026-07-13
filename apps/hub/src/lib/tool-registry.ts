@@ -17,6 +17,7 @@ import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { POLYMARKET_HUB_TOOLS } from "@workbench/tools-polymarket";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 import { SCRAPECREATORS_HUB_TOOLS } from "@workbench/tools-scrapecreators";
+import { SLACK_HUB_TOOLS } from "@workbench/tools-slack";
 import { X_HUB_TOOLS } from "@workbench/tools-x";
 import { YOUTUBE_HUB_TOOLS } from "@workbench/tools-youtube";
 import { ARTIFACT_HUB_TOOLS } from "./artifact-tools";
@@ -71,6 +72,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...POLYMARKET_HUB_TOOLS,
   ...REDDIT_HUB_TOOLS,
   ...SCRAPECREATORS_HUB_TOOLS,
+  ...SLACK_HUB_TOOLS,
   ...X_HUB_TOOLS,
   ...YOUTUBE_HUB_TOOLS,
   ...LAST30DAYS_CORE_HUB_TOOLS,

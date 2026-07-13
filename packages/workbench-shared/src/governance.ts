@@ -591,6 +591,15 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
         required: true,
       },
     },
+    {
+      providerName: "slack",
+      providerPlugin: "slack",
+      label: "Slack",
+      kind: "tool",
+      defaultMetadata: { baseURL: "https://slack.com/api" },
+      secretLabel: "Bot token",
+      platforms: ["Slack"],
+    },
   ] as const;
 
 /** One provider row in the Catalog/Capabilities credentials sections —

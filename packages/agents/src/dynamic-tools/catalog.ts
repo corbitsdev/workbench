@@ -208,6 +208,13 @@ const MYRA_CATALOG_PACKAGES: CatalogPackage[] = [
     summary: "Polymarket — prediction market odds.",
     tags: ["polymarket", "markets", "odds", "predictions"],
   },
+  {
+    pin: "@workbench/tools-slack",
+    package: "slack",
+    summary:
+      "Slack — list channels, read channel/thread history, keyword-search bot-visible channels, and post messages.",
+    tags: ["slack", "channels", "messages", "chat", "search", "post"],
+  },
 ];
 
 const PLATFORM = new Set(MYRA_PLATFORM_BARE_TOOL_NAMES);
