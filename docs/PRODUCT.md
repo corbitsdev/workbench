@@ -141,6 +141,14 @@ dismissal, and similar) are validated against a shared preference registry
 rather than accepted as free-form values — a write to an unregistered
 preference key is rejected. Users manage these from the Settings page.
 
+A registry entry can declare `availableWhen` — a signal (a workflow kind
+deployed, a provider connected, or an owner-granted capability) the setting's
+control depends on. The Settings page hides (never disables) a control whose
+signal is unmet; a setting with no `availableWhen` always renders. The
+morning-brief time and its notification toggles require the heartbeat
+workflow to be deployed, and auto-sending tasks to a CRM requires the Attio
+connection.
+
 ## Target Users
 
 - Sales and marketing teams who want to turn call insights into usable content
