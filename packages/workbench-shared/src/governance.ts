@@ -81,6 +81,244 @@ export function workflowRunResource(kind: string): string {
   return `workflow:${kind}`;
 }
 
+// ─── Capability gate (CL-3356 #1) ──────────────────────────────────
+//
+// Per-user OAuth-backed inbox capabilities (Linear, Attio, …) are governed by
+// the SAME native grant model as the workflow-run gate (CL-2885): an
+// allow-by-default `capability:<provider>`/`use` gate on the tenant's system
+// `member` role. A capability is available unless the owner writes an explicit
+// `deny` on it — which HIDES the capability from every member (the provider
+// disappears from their Connections surface and neither user-OAuth nor the
+// tenant key resolves for it). The per-user `inbox.capability.<provider>`
+// preference is a second, independent layer BENEATH this ceiling: the grant is
+// the governance ceiling (owner hides), the preference is the user's opt-in.
+
+/** Action probed by the capability gate, paired with a `capability:<provider>`
+ * resource. Mirrors the run gate's `run` verb. */
+export const CAPABILITY_ACTION = "use";
+
+/** The resource string gating one connectable provider's capability. Like the
+ * run gate this is allow-by-default: available unless an explicit `member`-role
+ * `deny` exists (which the owner area writes to hide the capability). Prefer a
+ * per-provider deny over a `capability:*` wildcard for the same specificity
+ * reasons documented on `workflowRunResource`. */
+export function capabilityResource(provider: string): string {
+  return `capability:${provider}`;
+}
+
+// ─── Connectable (per-user OAuth) providers (CL-3356 #2) ───────────
+//
+// The provider-agnostic OAuth flow engine is parameterized entirely by this
+// catalog: authorize/token endpoints, requested scopes, and whether PKCE is
+// used. This is pure, serializable domain data (endpoints + scopes) and belongs
+// in the package; the per-tenant `client_id`/`client_secret`/redirect URI are
+// operator secrets resolved from the hub env at flow time (never here). A
+// provider is "connectable" (surfaces a per-user Connect button + capability
+// gate) iff it appears here.
+
+export const OAuthProviderConfigSchema = type({
+  /** Matches the Interchange `provider.name` and the credential catalog's
+   * `providerName`, so the token this flow mints resolves through the same
+   * `resolveCredentialRequirement` path the tools already use. */
+  providerName: "string",
+  /** Human-readable label shown on the Connections + owner Capabilities rows. */
+  label: "string",
+  /** The provider's OAuth2 authorization endpoint (where the user is sent). */
+  authorizationUrl: "string",
+  /** The provider's OAuth2 token endpoint (code-for-token exchange). */
+  tokenUrl: "string",
+  /** Scopes requested at authorize time and matched on the stored credential.
+   * Minimized per provider (see the design's security analysis). */
+  scopes: "string[]",
+  /** Plain-language label for each raw scope string, so the owner setup panel
+   * renders "Read and edit your issues" rather than `record_permission:...`.
+   * Every entry in `scopes` MUST have a description here (asserted by test). */
+  scopeDescriptions: {
+    "[string]": "string",
+  },
+  /** Whether to drive the flow with PKCE (code_verifier/code_challenge). Every
+   * v1 provider uses it; kept explicit so a provider that cannot is honest. */
+  usePkce: "boolean",
+  /** Whether the provider issues (and rotates) a refresh token. Linear tokens
+   * are effectively non-expiring (no refresh); Attio rotates a refresh token.
+   * Drives whether the refresh subsystem (ticket #5) engages for this row. */
+  hasRefresh: "boolean",
+  /** The `CREDENTIAL_PROVIDER_CATALOG` providerName under which the OWNER sets
+   * this provider's OAuth *app* client_id + client_secret on the Capabilities
+   * page. The flow resolves that tenant credential (source: tenant) at connect
+   * time — the app secret is owner-managed, NOT an env var. */
+  appCredentialProviderName: "string",
+  /** Semi-guided owner setup metadata for the Capabilities page. Drives the
+   * guided panel that tells the owner exactly what to register where, so they
+   * are not guessing what to paste. Pure, read-only domain data. */
+  setup: {
+    /** The provider's OFFICIAL OAuth-app creation / developer docs page (opened
+     * in a new tab). A documented URL, never a guessed deep link. */
+    registerUrl: "string",
+    /** The hub callback path the owner must register as the app's redirect URI.
+     * The owner-facing full URL is `<hubBase><callbackPath>`, computed in the
+     * UI from the hub origin (the callback is a hub route, not the web app). */
+    callbackPath: "string",
+    /** Ordered, human-readable setup steps shown as a numbered list. */
+    steps: "string[]",
+    /** Per-field hints shown beneath the Client ID / Client secret inputs. */
+    fieldHints: {
+      clientId: "string",
+      clientSecret: "string",
+    },
+  },
+});
+export type OAuthProviderConfig = typeof OAuthProviderConfigSchema.infer;
+
+/** The v1 connectable-provider catalog. GitHub is intentionally absent — it is
+ * a GitHub App (installation + PR-review inbox source), scoped to CL-3356 #8,
+ * not this OAuth-user-token engine. */
+export const OAUTH_PROVIDER_CATALOG: readonly OAuthProviderConfig[] = [
+  {
+    providerName: "linear",
+    label: "Linear",
+    authorizationUrl: "https://linear.app/oauth/authorize",
+    tokenUrl: "https://api.linear.app/oauth/token",
+    scopes: ["read", "write"],
+    scopeDescriptions: {
+      read: "Read your issues, projects, and comments",
+      write: "Create and update issues and comments on your behalf",
+    },
+    usePkce: true,
+    hasRefresh: false,
+    appCredentialProviderName: "linear-oauth-app",
+    setup: {
+      registerUrl: "https://developers.linear.app/docs/oauth/authentication",
+      callbackPath: "/oauth/callback/linear",
+      steps: [
+        "Open Linear's OAuth documentation and create a new OAuth application in your workspace settings (Settings → API → OAuth applications).",
+        "Set the application's redirect / callback URL to the Redirect URL shown below.",
+        "Enable the scopes listed below (read and write).",
+        "Copy the application's Client ID and Client secret into the fields below and save.",
+      ],
+      fieldHints: {
+        clientId: "From your Linear OAuth application's settings page.",
+        clientSecret:
+          "Shown once when you create the Linear OAuth application — copy it now.",
+      },
+    },
+  },
+  {
+    providerName: "attio",
+    label: "Attio",
+    authorizationUrl: "https://app.attio.com/authorize",
+    tokenUrl: "https://app.attio.com/oauth/token",
+    scopes: ["record_permission:read-write", "user_management:read"],
+    scopeDescriptions: {
+      "record_permission:read-write":
+        "Read and update CRM records (people, companies, deals)",
+      "user_management:read": "Read your workspace's members and teams",
+    },
+    usePkce: true,
+    hasRefresh: true,
+    appCredentialProviderName: "attio-oauth-app",
+    setup: {
+      registerUrl: "https://developers.attio.com/docs/oauth",
+      callbackPath: "/oauth/callback/attio",
+      steps: [
+        "Open Attio's OAuth documentation and create a new integration / OAuth app in your Attio developer settings.",
+        "Set the integration's redirect URI to the Redirect URL shown below.",
+        "Request the scopes listed below.",
+        "Copy the integration's Client ID and Client secret into the fields below and save.",
+      ],
+      fieldHints: {
+        clientId: "From your Attio integration's OAuth settings.",
+        clientSecret:
+          "Shown once when you create the Attio integration — copy it now.",
+      },
+    },
+  },
+] as const;
+
+export function findOAuthProviderConfig(
+  providerName: string,
+): OAuthProviderConfig | undefined {
+  return OAUTH_PROVIDER_CATALOG.find((p) => p.providerName === providerName);
+}
+
+/** Find the connectable provider whose OAuth *app* credential is set under
+ * `appCredentialProviderName` (e.g. "linear-oauth-app" → the Linear config).
+ * The owner Capabilities page uses this to render the guided setup panel on the
+ * app-credential row. */
+export function findOAuthProviderByAppCredential(
+  appCredentialProviderName: string,
+): OAuthProviderConfig | undefined {
+  return OAUTH_PROVIDER_CATALOG.find(
+    (p) => p.appCredentialProviderName === appCredentialProviderName,
+  );
+}
+
+/** The `inbox.capability.<provider>` per-member preference key — the user's
+ * opt-in toggle beneath the owner capability grant. */
+export function inboxCapabilityPreferenceKey(provider: string): string {
+  return `inbox.capability.${provider}`;
+}
+
+// ─── Owner capability wire schemas (CL-3356 #1) ────────────────────
+
+/** `GET /owner/capabilities` — one connectable provider with its owner-gate
+ * state. `enabled` is the effective capability-gate state: false when the org
+ * member role holds a `deny` for that provider. The owner toggle writes/removes
+ * that deny (mirror of `OwnerWorkflowState`). */
+export const OwnerCapabilityState = type({
+  provider: "string",
+  label: "string",
+  enabled: "boolean",
+});
+export type OwnerCapabilityState = typeof OwnerCapabilityState.infer;
+
+export const OwnerCapabilitiesResponse = type({
+  capabilities: OwnerCapabilityState.array(),
+});
+export type OwnerCapabilities = typeof OwnerCapabilitiesResponse.infer;
+
+export const OwnerCapabilityToggle = type({ enabled: "boolean" });
+export type OwnerCapabilityToggle = typeof OwnerCapabilityToggle.infer;
+
+export const OwnerCapabilityToggleResult = type({
+  provider: "string",
+  enabled: "boolean",
+});
+export type OwnerCapabilityToggleResult =
+  typeof OwnerCapabilityToggleResult.infer;
+
+// ─── Member connections wire schemas (CL-3356 #2) ──────────────────
+
+/** One connectable provider in the member's Settings → Connections surface.
+ * Write-only/masked like `OwnerCredentialStateSchema`: never carries the token,
+ * only whether the member has connected and the toggle state. Omitted entirely
+ * when the owner has hidden the capability (deny grant). */
+export const MemberConnectionState = type({
+  provider: "string",
+  label: "string",
+  /** Whether the member holds an active principal-owned OAuth credential. */
+  connected: "boolean",
+  /** The connected external-account label (from `member_identity`), if any. */
+  "accountLabel?": "string",
+  /** Scopes the stored credential carries (empty when not connected). */
+  scopes: "string[]",
+  /** The member's `inbox.capability.<provider>` opt-in beneath the owner gate. */
+  toggleEnabled: "boolean",
+  /** Set when the credential needs re-authorization (refresh failed / revoked). */
+  needsReconnect: "boolean",
+});
+export type MemberConnectionState = typeof MemberConnectionState.infer;
+
+export const MemberConnectionsResponse = type({
+  connections: MemberConnectionState.array(),
+});
+export type MemberConnections = typeof MemberConnectionsResponse.infer;
+
+/** `POST /me/connections/:provider/authorize` result — the provider authorize
+ * URL the client redirects the user to. */
+export const ConnectionAuthorizeResponse = type({ redirectUrl: "string" });
+export type ConnectionAuthorize = typeof ConnectionAuthorizeResponse.infer;
+
 // ─── Owner area wire schemas (CL-2874) ─────────────────────────────
 
 /** `GET /owner/context` — owner identity + the root tenant the owner governs.
@@ -553,6 +791,37 @@ export const CREDENTIAL_PROVIDER_CATALOG: readonly CredentialProviderCatalogEntr
       briefSource: {
         description: "New CRM records and open tasks since your last brief.",
         tool: "attio_recent_activity",
+      },
+    },
+    // OAuth *app* client registrations (CL-3356 #2). One per connectable
+    // provider: the owner enters the OAuth app's Client secret (stored as the
+    // credential `secret`) and Client ID (stored via `secondaryField` on the
+    // provider's `metadata.baseURL` slot — the existing owner-credential
+    // two-value mechanism) on the Capabilities page. The per-user OAuth flow
+    // resolves these as a tenant credential (`source: "tenant"`) at connect
+    // time; the client secret is never an env var.
+    {
+      providerName: "linear-oauth-app",
+      providerPlugin: "linear",
+      label: "Linear OAuth app",
+      kind: "tool",
+      secretLabel: "Client secret",
+      secondaryField: {
+        label: "Client ID",
+        placeholder: "OAuth application client ID",
+        required: true,
+      },
+    },
+    {
+      providerName: "attio-oauth-app",
+      providerPlugin: "attio",
+      label: "Attio OAuth app",
+      kind: "tool",
+      secretLabel: "Client secret",
+      secondaryField: {
+        label: "Client ID",
+        placeholder: "OAuth application client ID",
+        required: true,
       },
     },
     {

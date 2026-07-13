@@ -763,3 +763,91 @@ describe("owner features routes", () => {
     expect(res.status).toBe(400);
   });
 });
+
+describe("owner capability toggle audit (CL-3356)", () => {
+  // Grant writes go through db.transaction -> tx.insert; the fire-and-forget
+  // recordAudit writes through the OUTER db.insert. Capturing both lets us
+  // assert the logged action matches the grant effect actually written.
+  function capabilitiesDb() {
+    const memberRole = { id: "rol_member" };
+    const grantWrites: Record<string, unknown>[] = [];
+    const auditWrites: Record<string, unknown>[] = [];
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: async () => [] }) }),
+      }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          grantWrites.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+    const db = {
+      query: { role: { findFirst: async () => memberRole } },
+      transaction: async (fn: (t: typeof tx) => Promise<void>) => fn(tx),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          auditWrites.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+    return { db, grantWrites, auditWrites };
+  }
+
+  it("enabling logs grant_created/allow and writes an allow grant", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, grantWrites, auditWrites } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/linear", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(grantWrites[0]).toMatchObject({
+      resource: "capability:linear",
+      action: "use",
+      effect: "allow",
+    });
+    expect(auditWrites[0]).toMatchObject({
+      action: "grant_created",
+      resource: "capability:linear",
+    });
+    expect(
+      (auditWrites[0]?.detail as { effect?: string } | undefined)?.effect,
+    ).toBe("allow");
+  });
+
+  it("disabling logs grant_revoked and writes a deny grant", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, grantWrites, auditWrites } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/attio", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(grantWrites[0]).toMatchObject({
+      resource: "capability:attio",
+      action: "use",
+      effect: "deny",
+    });
+    expect(auditWrites[0]).toMatchObject({
+      action: "grant_revoked",
+      resource: "capability:attio",
+    });
+  });
+
+  it("rejects an unknown provider with 404", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/notreal", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(404);
+  });
+});

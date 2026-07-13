@@ -1,5 +1,9 @@
 import { type } from "arktype";
-import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
+import {
+  CREDENTIAL_PROVIDER_CATALOG,
+  OAUTH_PROVIDER_CATALOG,
+  inboxCapabilityPreferenceKey,
+} from "./governance";
 
 /**
  * The preferences registry: the single, hand-maintained source of truth for
@@ -307,10 +311,26 @@ const INBOX_SOURCE_ENTRIES: readonly PreferenceEntry[] =
     category: "Inbox",
   }));
 
+// One `inbox.capability.<provider>` toggle per connectable OAuth provider
+// (CL-3356). This is the user's per-provider opt-in BENEATH the owner capability
+// grant (the governance ceiling): default ON so a member who connected the
+// provider gets its inbox capability without an extra step, but the owner-deny
+// grant can hide it entirely regardless of this preference.
+const CONNECTION_CAPABILITY_ENTRIES: readonly PreferenceEntry[] =
+  OAUTH_PROVIDER_CATALOG.map((provider) => ({
+    key: inboxCapabilityPreferenceKey(provider.providerName),
+    type: "boolean",
+    default: true,
+    label: `${provider.label} inbox capability`,
+    description: `Let your inbox act in ${provider.label} using your connected account.`,
+    category: "Inbox",
+  }));
+
 export const PREFERENCE_REGISTRY: readonly PreferenceEntry[] = [
   ...PREFERENCE_REGISTRY_BASE,
   ...BRIEF_SOURCE_ENTRIES,
   ...INBOX_SOURCE_ENTRIES,
+  ...CONNECTION_CAPABILITY_ENTRIES,
 ];
 
 const registryByKey = new Map(PREFERENCE_REGISTRY.map((e) => [e.key, e]));
