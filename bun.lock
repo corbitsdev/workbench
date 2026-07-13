@@ -1556,30 +1556,6 @@
         "react": "*",
       },
     },
-    "workflows/gtm-scripts-briefs": {
-      "name": "@workbench/workflow-gtm-scripts-briefs",
-      "version": "0.1.0",
-      "dependencies": {
-        "@intx/workflow": "workspace:*",
-        "@workbench/agents": "workspace:*",
-        "@workbench/blocks": "workspace:*",
-        "@workbench/last30days-core": "workspace:*",
-        "@workbench/prompts": "workspace:*",
-        "@workbench/ui": "workspace:*",
-        "arktype": "catalog:",
-        "react": "^19.0.0",
-      },
-      "devDependencies": {
-        "@testing-library/react": "^16.3.2",
-        "@types/bun": "latest",
-        "@types/react": "^19.0.0",
-        "@workbench/test-utils": "workspace:*",
-        "typescript": "catalog:",
-      },
-      "peerDependencies": {
-        "react": "^19.0.0",
-      },
-    },
     "workflows/heartbeat": {
       "name": "@workbench/workflow-heartbeat",
       "version": "0.1.0",
@@ -2706,8 +2682,6 @@
     "@workbench/workflow-attio-task-agent": ["@workbench/workflow-attio-task-agent@workspace:workflows/attio-task-agent"],
 
     "@workbench/workflow-gamma-presentation-creator": ["@workbench/workflow-gamma-presentation-creator@workspace:workflows/gamma-presentation-creator"],
-
-    "@workbench/workflow-gtm-scripts-briefs": ["@workbench/workflow-gtm-scripts-briefs@workspace:workflows/gtm-scripts-briefs"],
 
     "@workbench/workflow-heartbeat": ["@workbench/workflow-heartbeat@workspace:workflows/heartbeat"],
 

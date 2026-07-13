@@ -104,6 +104,7 @@
       "hackernews_search"
     ],
     "@workbench/tools-last30days/core": [
+      "heartbeat_merge_brief_sources",
       "last30days_collect",
       "last30days_core_extract",
       "last30days_core_report",
