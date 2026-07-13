@@ -461,6 +461,39 @@ export function loadConfig() {
   return config;
 }
 
+// ─── OAuth-for-inbox: credential-encryption key (CL-3356 #2) ───────
+//
+// The OAuth *app* client_id/client_secret are NOT env vars — they are owner-set
+// tenant credentials entered on the Capabilities page and resolved via
+// `resolveCredentialRequirement` (see `oauth-flow.ts`). The only env here is the
+// envelope-encryption key for the per-user tokens, resolved LAZILY (at token
+// write) so a deployment that has not enabled OAuth-for-inbox still boots.
+
+/** Dedicated secret for signing the OAuth `state` HMAC. Kept separate from
+ * `BETTER_AUTH_SECRET` (least-privilege / blast-radius isolation): the state
+ * signer must not share a key with session auth. Resolved lazily (at
+ * authorize/callback) so a deployment that has not enabled OAuth-for-inbox
+ * still boots; fails loudly the moment the flow is exercised without it. */
+export function requireOAuthStateSecret(): string {
+  return requireEnv("OAUTH_STATE_SECRET");
+}
+
+/** The 32-byte key used to envelope-encrypt OAuth tokens at write. Base64 or
+ * hex; must decode to exactly 32 bytes for AES-256-GCM. Resolved lazily so a
+ * deployment that has not enabled OAuth-for-inbox still boots. */
+export function requireCredentialEncryptionKey(): Buffer {
+  const raw = requireEnv("CREDENTIAL_ENCRYPTION_KEY");
+  const hexCandidate = /^[0-9a-fA-F]{64}$/.test(raw)
+    ? Buffer.from(raw, "hex")
+    : Buffer.from(raw, "base64");
+  if (hexCandidate.length !== 32) {
+    throw new Error(
+      "CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 bytes (64 hex chars or base64 of 32 bytes) for AES-256-GCM",
+    );
+  }
+  return hexCandidate;
+}
+
 export function getConfig(): Config {
   if (!_config)
     throw new Error(

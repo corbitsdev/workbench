@@ -11,7 +11,11 @@ import {
   DEMOS_VIEW_ACTION,
   FEATURE_GRANT_CATALOG,
   type FeatureName,
+  findOAuthProviderConfig,
   MEMBER_ROLE_NAME,
+  OwnerCapabilitiesResponse,
+  OwnerCapabilityToggle,
+  OwnerCapabilityToggleResult,
   OwnerContextResponse,
   OwnerCredentialSetBody,
   OwnerCredentialsResponse,
@@ -29,6 +33,10 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import {
+  listOwnerCapabilityStates,
+  setCapabilityGrant,
+} from "../lib/capability-grants";
 import { demosViewAllowed } from "../lib/demos-gate";
 import { featureGrantAllowed, setFeatureGrant } from "../lib/feature-grants";
 import {
@@ -453,6 +461,104 @@ export function createOwnerRouter(
       });
 
       return c.json({ name: catalogEntry.name, enabled: parsed.enabled });
+    },
+  );
+
+  // Owner capability gate (CL-3356 #1). Which connectable OAuth providers
+  // (Linear, Attio, …) are available to members. Allow-by-default: a provider
+  // is enabled unless the owner writes a `member`-role `deny` on
+  // `capability:<provider>`/`use`, which HIDES it from every member's
+  // Connections surface. Mirror of the workflow-run gate.
+  router.get(
+    "/owner/capabilities",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Connectable OAuth providers and whether each capability is enabled (not owner-hidden).",
+      responses: {
+        200: {
+          description: "Owner capabilities",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCapabilitiesResponse),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const capabilities = await listOwnerCapabilityStates(db, [rootTenantId]);
+      return c.json({ capabilities });
+    },
+  );
+
+  router.put(
+    "/owner/capabilities/:provider",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Enable (allow) or hide (deny) a connectable provider's capability org-wide.",
+      parameters: [
+        {
+          name: "provider",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Updated capability state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCapabilityToggleResult),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const providerName = c.req.param("provider");
+      if (!findOAuthProviderConfig(providerName)) {
+        return c.json({ error: `unknown provider: ${providerName}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerCapabilityToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setCapabilityGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        provider: providerName,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `capability:${providerName}`,
+        detail: {
+          capability: "capability-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      return c.json({ provider: providerName, enabled: parsed.enabled });
     },
   );
 

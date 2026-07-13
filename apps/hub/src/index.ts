@@ -146,6 +146,9 @@ import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
 import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeConnectionsRouter } from "./routes/me-connections";
+import { createOAuthCallbackRouter } from "./routes/oauth-callback";
+import { createInMemoryPendingStore } from "./lib/oauth-flow";
 import { createMeBriefRunRouter } from "./routes/me-brief-run";
 import { createMeSchedulesRouter } from "./routes/me-schedules";
 import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
@@ -1241,6 +1244,30 @@ v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
 v1.route("/", createMePreferencesRouter(db));
+// Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
+// the public callback router below so an authorize on one request and its
+// callback on another find the same server-side verifier. `state` is signed
+// with the better-auth secret (always present) so the cookie-less callback can
+// trust the member principal it carries.
+const oauthPendingStore = createInMemoryPendingStore();
+// Where the browser lands after the flow (web app Connections page).
+const oauthRedirectBase = `${(config.cors.origins[0] ?? config.auth.baseUrl).replace(/\/$/, "")}/settings/connections`;
+// The hub's own public origin — the OAuth redirect_uri is derived from it and
+// must match what the owner registers with the provider.
+const oauthRedirectUriBase = new URL(config.auth.baseUrl).origin;
+// The OAuth `state` HMAC is signed with OAUTH_STATE_SECRET (a DEDICATED secret,
+// deliberately NOT BETTER_AUTH_SECRET — do not collapse them), resolved lazily
+// per request inside the routers so a deployment that has not enabled
+// OAuth-for-inbox still starts.
+v1.route(
+  "/",
+  createMeConnectionsRouter({
+    db,
+    grantStore,
+    pendingStore: oauthPendingStore,
+    redirectUriBase: oauthRedirectUriBase,
+  }),
+);
 v1.route("/", createInboxRouter(db, mailboxEventBus));
 v1.route("/", createMeTasksRouter(db, taskPushService, mailboxEventBus));
 
@@ -1336,6 +1363,20 @@ const runStarter = createWorkflowRunStarter({
 // the per-trigger secret. Mounted directly on the parent app, outside the v1
 // session-auth wall.
 app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
+
+// Public OAuth callback (CL-3356). Outside the v1 session-auth wall — a provider
+// redirect is a top-level browser navigation authenticated by the signed state,
+// not a session cookie. Shares the pending PKCE store with the authorize route.
+app.route(
+  "/",
+  createOAuthCallbackRouter({
+    db,
+    grantStore,
+    pendingStore: oauthPendingStore,
+    redirectBase: oauthRedirectBase,
+    redirectUriBase: oauthRedirectUriBase,
+  }),
+);
 
 // Member-initiated brief-on-demand: lets a member fire their own heartbeat
 // brief outside its daily schedule.
