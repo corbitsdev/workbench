@@ -68,7 +68,11 @@ export function nextFireAt(
 ): Date {
   const todayUtcDay = Math.floor(now.getTime() / MS_PER_DAY);
   const alreadyFiredToday = lastFiredDayUtc === todayUtcDay;
-  const hourAlreadyPassedToday = now.getUTCHours() >= hourUtc;
+  // Strictly greater: the target hour itself is still the firing window (the
+  // scheduler's `shouldFire` fires on the next tick while `now` sits inside
+  // it), so `>=` here would wrongly roll a not-yet-fired current hour to
+  // tomorrow.
+  const hourAlreadyPassedToday = now.getUTCHours() > hourUtc;
   const targetDay =
     alreadyFiredToday || hourAlreadyPassedToday ? todayUtcDay + 1 : todayUtcDay;
   const target = utcDayToDate(targetDay);
