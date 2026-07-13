@@ -121,7 +121,9 @@ describe("listUserMailbox", () => {
   it("decodes PGP/MIME signed conversation frames to plain text for snippets", async () => {
     const briefText = "## Morning brief\n\nGranola notes here.";
     const raw = await assembleSignedConversationFrame(briefText);
-    const { db } = makeListDb([makeRow({ raw, subject: "Your morning brief" })]);
+    const { db } = makeListDb([
+      makeRow({ raw, subject: "Your morning brief" }),
+    ]);
     const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
@@ -249,7 +251,9 @@ describe("getMailboxMessage", () => {
   it("returns full brief text from a signed conversation frame", async () => {
     const briefText = "## Morning brief\n\nGranola notes here.";
     const raw = await assembleSignedConversationFrame(briefText);
-    const { db } = makeDetailDb(makeRow({ raw, subject: "Your morning brief" }));
+    const { db } = makeDetailDb(
+      makeRow({ raw, subject: "Your morning brief" }),
+    );
     const message = await getMailboxMessage(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
