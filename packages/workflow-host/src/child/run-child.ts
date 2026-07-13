@@ -1461,13 +1461,93 @@ function reclaimRunStorageIfCold(opts: {
   });
 }
 
+// WORKBENCH-LOCAL (CL-3468): hub run-start mail carries JSON.stringify(input)
+// from hub@<deploymentDomain>; decode to an object for trigger.payload only for
+// that sender. Ordinary user mail keeps plain conversation text.
+function normalizeMailFromAddress(fromHeader: string): string {
+  const trimmed = fromHeader.trim();
+  const angle = /<([^>]+)>/.exec(trimmed);
+  return (angle?.[1] ?? trimmed).trim().toLowerCase();
+}
+
+function mailAddressDomain(address: string): string {
+  const normalized = address.trim().toLowerCase();
+  const at = normalized.lastIndexOf("@");
+  if (at < 0) {
+    return "";
+  }
+  return normalized.slice(at + 1);
+}
+
+/**
+ * Hub run-start delivers `from: hub@<deploymentDomain>` with
+ * `JSON.stringify(input)` as the conversation body to the deployment's own
+ * mailbox. Only that sender is decoded as structured trigger JSON; ordinary
+ * user mail stays plain text.
+ *
+ * Trust model: this is a naming convention enforced by caller discipline at
+ * every `sendUserMessage` site (each hardcodes `from` from server config, never
+ * from request/user input), NOT a cryptographically verified sender — the
+ * detached signature covers the message body, not the envelope `from` header.
+ * The `hub` local-part is paired with the deployment domain here as
+ * defense-in-depth so a stray `hub@<other-domain>` cannot reach the JSON path.
+ * Do not add a `sendUserMessage` caller that lets `from` be request-supplied.
+ */
+function isHubWorkflowRunStarterSender(
+  fromHeader: string,
+  expectedDomain: string,
+): boolean {
+  const addr = normalizeMailFromAddress(fromHeader);
+  const at = addr.lastIndexOf("@");
+  if (at <= 0) {
+    return false;
+  }
+  return addr.slice(0, at) === "hub" && addr.slice(at + 1) === expectedDomain;
+}
+
+function decodeHubWorkflowTriggerBody(
+  bodyText: string,
+  messageId: string,
+): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bodyText);
+  } catch (cause) {
+    throw new Error(
+      `workflow-child trigger.fire: hub-originated trigger body is not valid JSON for messageId ${messageId}`,
+      { cause },
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(
+      `workflow-child trigger.fire: hub-originated trigger body must be a JSON object for messageId ${messageId}`,
+    );
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function materializeTriggerPayload(
+  bodyText: string,
+  messageId: string,
+  fromHeader: string,
+  expectedDomain: string,
+): unknown {
+  if (!isHubWorkflowRunStarterSender(fromHeader, expectedDomain)) {
+    return bodyText;
+  }
+  return decodeHubWorkflowTriggerBody(bodyText, messageId);
+}
+
 /**
  * Resolve the run's trigger payload from the inbound mail message the
  * supervisor moved to the claim-check processing queue. Reads the
  * processing entry by messageId (a read-only snapshot of the
  * `refs/heads/events` tip that cannot race the supervisor's
  * `markConsumed` write), decodes the inlined raw MIME bytes, and
- * extracts the conversation text the agent's `agent.send` receives.
+ * materializes the payload for `trigger.payload` selectors.
+ *
+ * Hub-originated run-start mail (`from: hub@…`) decodes the body as a
+ * JSON object. All other senders keep the extracted conversation text.
  *
  * Defensive: a missing processing entry, an entry with no inlined
  * bytes, or unparseable mail all throw. The run cannot proceed without
@@ -1479,7 +1559,7 @@ async function resolveTriggerPayload(args: {
   workflowRunRepoId: RepoId;
   mailboxAddress: string;
   messageId: string;
-}): Promise<string> {
+}): Promise<unknown> {
   const entry = await readProcessingEntry(
     args.substrate,
     args.principal,
@@ -1499,7 +1579,15 @@ async function resolveTriggerPayload(args: {
     );
   }
   const raw = base64Decode(rawMessageBase64);
-  return extractConversationText(raw, args.messageId);
+  const { headers } = parseHeaderSection(raw);
+  const fromHeader = headers.get("from") ?? "";
+  const bodyText = extractConversationText(raw, args.messageId);
+  return materializeTriggerPayload(
+    bodyText,
+    args.messageId,
+    fromHeader,
+    mailAddressDomain(args.mailboxAddress),
+  );
 }
 
 /**

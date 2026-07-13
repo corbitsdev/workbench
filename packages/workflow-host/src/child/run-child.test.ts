@@ -202,6 +202,40 @@ async function seedWorkflowDefinition(
   );
 }
 
+async function seedTriggerPayloadWorkflow(
+  baseDir: string,
+  stepId: string,
+): Promise<void> {
+  const repoId: RepoId = { kind: "workflow", id: "workflow-asset" };
+  const dir = path.join(baseDir, repoId.kind, repoId.id);
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, "workflow.json"),
+    JSON.stringify({
+      id: "trigger-payload-workflow",
+      triggers: [{ type: "manual" }],
+      steps: {
+        [stepId]: {
+          kind: "step",
+          id: stepId,
+          agent: {
+            id: "trigger-agent",
+            systemPrompt: "stub",
+            toolFactories: [],
+            capabilities: [],
+            inference: {
+              sources: [{ provider: "anthropic", model: "stub-model" }],
+            },
+          },
+          input: { from: "trigger.payload" },
+          drainBehavior: "cancel",
+        },
+      },
+      stepOrder: [stepId],
+    }),
+  );
+}
+
 async function seedRun(
   baseDir: string,
   workflowRunRepoId: RepoId,
@@ -242,6 +276,7 @@ async function seedProcessingEntry(
     messageId: string;
     receivedAt: number;
     text: string;
+    from?: string;
   },
 ): Promise<void> {
   const dir = path.join(
@@ -253,7 +288,9 @@ async function seedProcessingEntry(
     "processing",
   );
   await fs.mkdir(dir, { recursive: true });
-  const rawMessage = assembleConversationMessage(opts.address, opts.text);
+  const rawMessage = assembleConversationMessage(opts.address, opts.text, {
+    from: opts.from,
+  });
   const envelope = {
     messageId: opts.messageId,
     receivedAt: opts.receivedAt,
@@ -273,9 +310,13 @@ async function seedProcessingEntry(
  * bytes are a placeholder: the child's input extraction reads the
  * conversation text at part `1.1` and never verifies the signature.
  */
-function assembleConversationMessage(to: string, text: string): Uint8Array {
+function assembleConversationMessage(
+  to: string,
+  text: string,
+  opts?: { from?: string | undefined },
+): Uint8Array {
   const headers: MessageHeaders = {
-    from: "user@example.com",
+    from: opts?.from ?? "user@example.com",
     to: [to],
     cc: undefined,
     date: new Date(0),
@@ -1213,6 +1254,383 @@ describe("runWorkflowChild", () => {
     supervisorToChild.close();
     childToSupervisor.close();
     await runPromise;
+  });
+
+  test("hub-originated JSON trigger body becomes trigger.payload object for step input", async () => {
+    const baseDir = await makeTempDir("child-hub-structured-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    const structured = {
+      contentName: "post",
+      channel: "x",
+      topic: "neobank launches",
+    };
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-hub",
+        receivedAt: 1,
+        from: "hub@example.com",
+        text: JSON.stringify(structured),
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const stepInputs: unknown[] = [];
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      invokeStep: async (req) => {
+        stepInputs.push(req.input);
+        return { output: null };
+      },
+    };
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-hub", messageId: "msg-hub", receivedAt: 1 },
+    });
+    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-hub"]);
+    expect(stepInputs[0]).toEqual(structured);
+  });
+
+  test("user-originated mail that looks like JSON stays plain text trigger payload", async () => {
+    const baseDir = await makeTempDir("child-user-json-text-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    const jsonText = '{"looks":"like json"}';
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-user",
+        receivedAt: 1,
+        text: jsonText,
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const stepInputs: unknown[] = [];
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      invokeStep: async (req) => {
+        stepInputs.push(req.input);
+        return { output: null };
+      },
+    };
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-user", messageId: "msg-user", receivedAt: 1 },
+    });
+    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-user"]);
+    expect(stepInputs[0]).toBe(jsonText);
+  });
+
+  test("hub-originated non-JSON trigger body fails closed", async () => {
+    const baseDir = await makeTempDir("child-hub-bad-json-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-bad",
+        receivedAt: 1,
+        from: "hub@example.com",
+        text: "not-json",
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-bad", messageId: "msg-bad", receivedAt: 1 },
+    });
+    supervisorToChild.close();
+    await expect(runPromise).rejects.toThrow(/not valid JSON/);
+  });
+
+  test("hub sender with a display-name from-header decodes to a trigger.payload object", async () => {
+    const baseDir = await makeTempDir("child-hub-displayname-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    const structured = { contentName: "post", channel: "x" };
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-hub-dn",
+        receivedAt: 1,
+        from: "Workbench Hub <hub@example.com>",
+        text: JSON.stringify(structured),
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const stepInputs: unknown[] = [];
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      invokeStep: async (req) => {
+        stepInputs.push(req.input);
+        return { output: null };
+      },
+    };
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-hub-dn", messageId: "msg-hub-dn", receivedAt: 1 },
+    });
+    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-hub-dn"]);
+    expect(stepInputs[0]).toEqual(structured);
+  });
+
+  test("hub local-part from a foreign domain stays plain text trigger payload", async () => {
+    const baseDir = await makeTempDir("child-hub-foreign-domain-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    const jsonText = '{"spoofed":"payload"}';
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-foreign",
+        receivedAt: 1,
+        from: "hub@attacker.example",
+        text: jsonText,
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const stepInputs: unknown[] = [];
+    const bindings: RunWorkflowChildBindings = {
+      ...buildBindings({ baseDir, childKeyPair }),
+      invokeStep: async (req) => {
+        stepInputs.push(req.input);
+        return { output: null };
+      },
+    };
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-foreign", messageId: "msg-foreign", receivedAt: 1 },
+    });
+    for (let i = 0; i < 400 && stepInputs.length < 1; i += 1) {
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await supervisorSender.send({
+      type: "shutdown",
+      data: { reason: "test done" },
+    });
+    supervisorToChild.close();
+    const result = await runPromise;
+    expect(result.triggeredRunIds).toEqual(["run-foreign"]);
+    expect(stepInputs[0]).toBe(jsonText);
+  });
+
+  test("hub-originated JSON array body fails closed", async () => {
+    const baseDir = await makeTempDir("child-hub-array-trigger-");
+    const supervisorKeyPair = await generateKeyPair();
+    const childKeyPair = await generateKeyPair();
+    const channelId = generateChannelId();
+    const hmacKey = generateHmacKey();
+    await seedTriggerPayloadWorkflow(baseDir, "step-1");
+    await seedProcessingEntry(
+      baseDir,
+      { kind: "workflow-run", id: "deployment-x" },
+      {
+        address: "deployment-x@example.com",
+        messageId: "msg-array",
+        receivedAt: 1,
+        from: "hub@example.com",
+        text: JSON.stringify([1, 2, 3]),
+      },
+    );
+
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventStream = createMemoryFrameStream();
+    const env = parseSpawnTimeEnv(
+      makeSpawnEnv({
+        channelId,
+        hmacKeyHex: hexEncode(hmacKey),
+        hostPubKeyHex: hexEncode(supervisorKeyPair.publicKey),
+      }),
+    );
+    const bindings = buildBindings({ baseDir, childKeyPair });
+    const supervisorSender = createControlChannelSender({
+      privateKeySeed: supervisorKeyPair.privateKey,
+      channelId,
+      writer: supervisorToChild.writer,
+    });
+    const runPromise = runWorkflowChild({
+      env,
+      controlReader: supervisorToChild.reader,
+      controlWriter: childToSupervisor.writer,
+      eventWriter: eventStream.writer,
+      bindings,
+    });
+    await waitForTriggeredRun(childToSupervisor, (lines) => lines.length > 0);
+    await supervisorSender.send({
+      type: "trigger.fire",
+      data: { runId: "run-array", messageId: "msg-array", receivedAt: 1 },
+    });
+    supervisorToChild.close();
+    await expect(runPromise).rejects.toThrow(/must be a JSON object/);
   });
 
   test("rejects a control frame whose signature does not verify", async () => {

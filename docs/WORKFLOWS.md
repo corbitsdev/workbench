@@ -75,6 +75,17 @@ Companion docs:
    grants (`:343`). No per-step session launch, no per-step WebSocket, no
    per-step deploy pack.
 
+The step input comes from the run's **trigger payload**, which the child
+resolves from the inbound trigger mail (`resolveTriggerPayload`,
+`run-child.ts`). Ordinary inbound mail keeps its plain conversation text, but
+hub-originated run starts (scheduler, manual, and webhook all funnel through
+`createWorkflowRunStarter`, which sends `from: hub@<deploymentDomain>` with the
+validated input `JSON.stringify`'d as the body) decode to a real object, so a
+first step whose input is `{ from: "trigger.payload" }` receives structured
+arguments rather than a JSON string. The sender check is caller-discipline over
+`sendUserMessage`, not a verified sender — see
+[`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) for the boundary contract.
+
 ### Contrast: Interchange's reference model launches a session per step
 
 Interchange's orchestrator, run unmodified, **launches a live agent session for

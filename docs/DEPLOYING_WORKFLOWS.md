@@ -63,6 +63,32 @@ never relying on the sidecar to self-restore:
 - The run-start and signal handlers (`apps/hub/src/routes/workflow-runs.ts`) call
   it before delivering, so a trigger/signal never dead-ends on an unreachable
   supervisor.
+
+### Mail trigger boundary (structured run-start input)
+
+Callable run-start (`createWorkflowRunStarter` in `apps/hub/src/services/workflow-run-starter.ts`)
+delivers the validated trigger `input` object as the conversation body of a signed mail message
+(`content: JSON.stringify(input)`, `from: hub@<deploymentDomain>`). The workflow child's
+`resolveTriggerPayload` (`packages/workflow-host/src/child/run-child.ts`) is the sole decode
+point:
+
+- **Hub sender** (`from` local-part is `hub`): parse the conversation body as JSON and require a
+  top-level object. That value becomes `trigger.payload` for selectors such as
+  `{ from: "trigger.payload" }`, so deterministic tool steps receive real objects (not a JSON
+  string).
+- **All other senders** (user mail, specialists, etc.): keep the extracted conversation text as
+  the payload. A user message whose body happens to look like JSON is not auto-decoded.
+
+Invalid JSON or a non-object root from a hub sender fails the trigger; the run does not start with
+a silent placeholder.
+
+The hub-sender check (`from` local-part is `hub` and the domain matches the deployment domain) is a
+naming convention enforced by caller discipline — every `sessionService.sendUserMessage` call site
+builds `from` from server config, never from request or user input — **not** a cryptographically
+verified sender. The detached signature covers the message body, not the envelope `from` header. Do
+not add a `sendUserMessage` caller that lets `from` be request-supplied; that would let ordinary mail
+reach the structured-JSON decode path.
+
 - The reconciler (`apps/hub/src/services/workflow-reconciler.ts`) calls it for
   every active deployment on hub startup and on each sidecar `agent.reconnected`,
   single-flight-guarded.
