@@ -369,6 +369,11 @@ export function preferenceValueSchema(entry: PreferenceEntry) {
  * is a stamped version string (not a boolean/select/hourUtc control), and it
  * must never render as an editable row on the Settings page — the "what's
  * new" pop-up and dialog are its only writers.
+ *
+ * `onboarding.welcomeSentAt` rides this list for the same reason: a stamped
+ * ISO timestamp, not an editable control. It is the idempotency guard for
+ * the one-time welcome mail (CL-3448) — `deliverWelcomeMail` is its only
+ * writer, set once the mail is durably written to the member's mailbox.
  */
 export const NON_REGISTRY_PREFERENCE_KEYS = [
   "theme",
@@ -381,6 +386,7 @@ export const NON_REGISTRY_PREFERENCE_KEYS = [
   "toolsViewMode",
   "skillsViewMode",
   "changelogSeenVersion",
+  "onboarding.welcomeSentAt",
 ] as const;
 
 function isNonRegistryKey(key: string): boolean {
