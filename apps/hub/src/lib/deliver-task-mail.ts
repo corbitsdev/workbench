@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { getLogger } from "@intx/log";
 import { deriveUserMailAddress } from "@workbench/hub-agent";
-import type { Task } from "@workbench/shared";
+import { deepLink, type MailboxRef, type Task } from "@workbench/shared";
 import { getConfig } from "../config";
 import { readMemberPreferences } from "./member-preferences";
 import { writeMailboxMessage } from "./mailbox-write";
@@ -63,6 +63,15 @@ function subjectFor(
   return `New task: ${title}`;
 }
 
+// A synced external ref (Linear issue, Attio task) rendered as a clickable
+// Markdown link when it carries a URL, so the reading pane autolinks it instead
+// of showing a bare "Synced to: linear" line. Refs without a URL are omitted
+// (nothing to link to); the structured `refs` row still surfaces them.
+function externalRefLink(ref: Task["externalRefs"][number]): string | null {
+  if (!ref.externalUrl) return null;
+  return `[${ref.adapterId} · ${ref.externalId}](${ref.externalUrl})`;
+}
+
 function bodyFor(args: {
   actorName: string;
   task: Task;
@@ -70,14 +79,35 @@ function bodyFor(args: {
 }): string {
   const lines = [args.task.title];
   if (args.task.body) lines.push("", args.task.body);
-  if (args.task.externalRefs.length > 0) {
-    const adapters = args.task.externalRefs
-      .map((ref) => ref.adapterId)
-      .join(", ");
-    lines.push("", `Synced to: ${adapters}`);
+  const links = args.task.externalRefs
+    .map(externalRefLink)
+    .filter((link): link is string => link !== null);
+  if (links.length > 0) {
+    lines.push("", "Synced to:", ...links);
   }
   lines.push("", args.deepLink);
   return lines.join("\n");
+}
+
+// The structured refs surfaced as the task mail's "Related" action row: the
+// task itself, plus every synced external object that has a URL (a Linear issue
+// becomes a `linear` ref; any other adapter a generic `url` ref).
+function taskMailRefs(task: Task): MailboxRef[] {
+  const refs: MailboxRef[] = [
+    { kind: "task", ref: task.id, label: "Open task" },
+  ];
+  for (const ref of task.externalRefs) {
+    if (!ref.externalUrl) continue;
+    const kind = ref.adapterId.toLowerCase().includes("linear")
+      ? "linear"
+      : "url";
+    refs.push({
+      kind,
+      ref: ref.externalUrl,
+      label: `${ref.adapterId} · ${ref.externalId}`,
+    });
+  }
+  return refs;
 }
 
 /**
@@ -139,9 +169,9 @@ export async function deliverTaskMail(
 
     const conversationBaseUrl =
       getConfig().cors.origins[0] ?? getConfig().auth.baseUrl;
-    const deepLink = `${conversationBaseUrl}/inbox?task=${args.task.id}`;
+    const taskLink = deepLink("task", args.task.id, conversationBaseUrl);
     const subject = subjectFor(args.event, actorName, args.task.title);
-    const body = bodyFor({ actorName, task: args.task, deepLink });
+    const body = bodyFor({ actorName, task: args.task, deepLink: taskLink });
     // A real reassignment (an explicit recipient override) is keyed
     // per-recipient so handing the same task to a new person always mails
     // them, while a re-save that leaves the assignee unchanged (task-store
@@ -167,6 +197,7 @@ export async function deliverTaskMail(
         subject,
         body,
         messageKey,
+        refs: taskMailRefs(args.task),
       },
       args.mailboxEventBus,
     );
