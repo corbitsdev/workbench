@@ -17,6 +17,18 @@ export function gateMailMessageKey(runId: string, signalName: string): string {
   return `gate:${runId}:${signalName}`;
 }
 
+// The idempotency key for a terminal-run mailbox item (CL-3517): one per (run,
+// terminal status), so re-projecting an already-terminal run (a stray
+// re-arrival of the same pack, or the coalescing scheduler re-running) never
+// writes a duplicate inbox item. Distinct namespace from `gateMailMessageKey`
+// so a run's gate mail and its terminal mail can never collide.
+export function runTerminalMailMessageKey(
+  runId: string,
+  status: "completed" | "failed",
+): string {
+  return `run:${runId}:${status}`;
+}
+
 /**
  * Mark a gate mailbox item read when its gate is resolved. Idempotent: stamps
  * `read_at` only for the keyed item that is still unread, so a re-accepted or

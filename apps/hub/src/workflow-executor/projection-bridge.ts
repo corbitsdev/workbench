@@ -200,6 +200,23 @@ export type ProjectRunFactsFn = (args: {
   tenantId: string;
 }) => void;
 
+// Fired once when a run's record transitions non-terminal → terminal (CL-3517),
+// so the caller can deliver a "your run finished" mailbox item to the run
+// creator. Decoupled from deployment reclaim and fact projection: fires for
+// every terminal run whether or not it owns a deployment, and never for
+// `awaiting` (`becameTerminal`). Best-effort — the callback owns its errors and
+// must not block pack receipt.
+export type OnRunTerminalFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string | null;
+  status: "completed" | "failed";
+  error?: string;
+  failedSteps: readonly { stepId: string; message: string }[];
+}) => void;
+
 // Fired when a run first parks on an awaitSignal gate — the running -> awaiting
 // transition — so the caller can deliver a "needs you" mailbox item to
 // the run owner. Also fires on a re-park within one pack (a SignalReceived
@@ -456,6 +473,7 @@ export async function projectWorkflowRunRepo(
   onTerminalRun?: ReclaimRunDeploymentFn,
   onRunFacts?: ProjectRunFactsFn,
   onNewlyAwaiting?: OnNewlyAwaitingFn,
+  onRunTerminalMail?: OnRunTerminalFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -528,6 +546,27 @@ export async function projectWorkflowRunRepo(
       becameTerminal(existing.status, projected.status)
     ) {
       onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
+    }
+
+    // Terminal-run mail (CL-3517): notify the run creator's mailbox the moment
+    // the run settles into `completed` or `failed`. Gated on the same
+    // non-terminal → terminal transition as the two callbacks above so it
+    // fires exactly once per run. Best-effort — the callback owns its errors.
+    if (
+      onRunTerminalMail !== undefined &&
+      becameTerminal(existing.status, projected.status) &&
+      (projected.status === "completed" || projected.status === "failed")
+    ) {
+      onRunTerminalMail({
+        runId,
+        kind: existing.kind,
+        tenantId: existing.tenantId,
+        principalId: existing.principalId,
+        deploymentId: existing.deploymentId ?? null,
+        status: projected.status,
+        ...(projected.error !== undefined ? { error: projected.error } : {}),
+        failedSteps: projected.failedSteps,
+      });
     }
 
     // Tear down the run's single-use deployment the moment it reaches a terminal
@@ -670,6 +709,9 @@ export function wrapRepoStoreWithProjection(
         repoStore: RepoStore;
       } & Parameters<OnNewlyAwaitingFn>[0],
     ) => void;
+    // Deliver a "your run finished" mailbox item on the terminal transition
+    // (CL-3517). Best-effort, fire-and-forget.
+    deliverRunMail?: OnRunTerminalFn;
   },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
@@ -686,6 +728,7 @@ export function wrapRepoStoreWithProjection(
         deps.deliverGateMail === undefined
           ? undefined
           : (a) => deps.deliverGateMail?.({ repoStore: base.repoStore, ...a }),
+        deps.deliverRunMail,
       );
     } catch (err) {
       log.error("workflow projection failed", {
