@@ -17,6 +17,7 @@ import {
   verifyState,
 } from "./oauth-crypto";
 import type { OAuthStatePayload } from "./oauth-crypto";
+import { decryptToolCredentialSecret } from "./credential-crypto";
 
 const { provider, oauthClient, credential } = intxSchema;
 
@@ -71,7 +72,11 @@ export async function resolveOwnerOAuthClient(
   const meta = (providerRow?.metadata ?? {}) as Record<string, unknown>;
   const clientId = typeof meta["baseURL"] === "string" ? meta["baseURL"] : "";
   if (!clientId) return null;
-  return { clientId, clientSecret: cred.secret, redirectUri };
+  return {
+    clientId,
+    clientSecret: decryptToolCredentialSecret(cred.secret),
+    redirectUri,
+  };
 }
 
 // ─── PKCE ──────────────────────────────────────────────────────────

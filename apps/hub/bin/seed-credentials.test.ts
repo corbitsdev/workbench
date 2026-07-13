@@ -455,6 +455,31 @@ describe("seed-credentials buildEntries", () => {
     expect(missing).toEqual([]);
   });
 
+  it("tags each entry's kind to match the Owner catalog (CL-3446 encryption gate)", () => {
+    // The `kind` field drives which secrets get encrypted at rest: tool → yes,
+    // inference → no (Interchange reads inference keys raw at launch). It must
+    // agree with CREDENTIAL_PROVIDER_CATALOG so the write paths encrypt exactly
+    // the same set the read paths decrypt.
+    process.env["GRANOLA_API_KEY"] = "k";
+    process.env["LINEAR_API_KEY"] = "k";
+    process.env["ANTHROPIC_API_KEY"] = "k";
+    process.env["OPENAI_API_KEY"] = "k";
+
+    const catalogKind = new Map(
+      CREDENTIAL_PROVIDER_CATALOG.map((e) => [e.providerName, e.kind]),
+    );
+
+    for (const entry of buildEntries()) {
+      const expected = INFERENCE_PLUGINS.has(entry.providerPlugin)
+        ? "inference"
+        : "tool";
+      expect(entry.kind).toBe(expected);
+      // Where the catalog also knows this provider, the two must not disagree.
+      const catalog = catalogKind.get(entry.providerName);
+      if (catalog) expect(entry.kind).toBe(catalog);
+    }
+  });
+
   it("does not collide numbered openai-compatible providers with the canonical one", () => {
     process.env["OPENAI_COMPATIBLE_API_KEY"] = "sk-canonical";
     process.env["OPENAI_COMPATIBLE_CREDENTIAL_NAME"] = "opencode-zen";

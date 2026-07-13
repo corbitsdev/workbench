@@ -6,9 +6,14 @@
  * run before the hub is listening (no HTTP auth loop). Skipped when
  * SEED_CREDENTIALS_ON_STARTUP is not "true".
  *
- * Credentials are stored plaintext (CL-1521 removed at-rest encryption).
  * Each entry is an upsert: existing name match → update secret + metadata;
  * no match → insert. Safe to run on every deploy.
+ *
+ * CL-3446: `kind: "tool"` secrets are encrypted (AES-256-GCM envelope) before
+ * being written; `kind: "inference"` secrets stay plaintext — Interchange
+ * reads `credential.secret` raw at agent-launch time and cannot be modified
+ * to decrypt first (CL-1521 removed a prior, store-wide encryption attempt
+ * for exactly this reason).
  */
 
 import { drizzle } from "drizzle-orm/postgres-js";
@@ -17,6 +22,7 @@ import { eq, and, isNull } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { generateId } from "@intx/hub-common";
 import { buildEntries } from "./seed-credentials";
+import { encryptSecret } from "../src/lib/credential-crypto";
 
 if (process.env["SEED_CREDENTIALS_ON_STARTUP"] !== "true") {
   console.log("[seed-startup] SEED_CREDENTIALS_ON_STARTUP not set — skipping");
@@ -120,11 +126,14 @@ try {
         ),
       });
 
+      const storedSecret =
+        entry.kind === "tool" ? encryptSecret(entry.secret) : entry.secret;
+
       if (existingCredential) {
         await db
           .update(intxSchema.credential)
           .set({
-            secret: entry.secret,
+            secret: storedSecret,
             ...(entry.metadata ? { metadata: entry.metadata } : {}),
             updatedAt: now,
           })
@@ -142,7 +151,7 @@ try {
           name: entry.credentialName,
           type: "api_key",
           description: null,
-          secret: entry.secret,
+          secret: storedSecret,
           refreshSecret: null,
           scopes: null,
           expiresAt: null,

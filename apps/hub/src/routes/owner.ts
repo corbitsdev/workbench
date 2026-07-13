@@ -33,6 +33,7 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import { encryptSecret } from "../lib/credential-crypto";
 import {
   listOwnerCapabilityStates,
   setCapabilityGrant,
@@ -723,12 +724,19 @@ export function createOwnerRouter(
         columns: { id: true },
       });
 
+      // CL-3446: only `kind: "tool"` secrets are encrypted at rest. `kind:
+      // "inference"` rows stay plaintext-compatible — Interchange reads
+      // `credential.secret` raw at agent-launch time and cannot be modified
+      // to decrypt first.
+      const storedSecret =
+        entry.kind === "tool" ? encryptSecret(parsed.secret) : parsed.secret;
+
       const actor = c.get("ownerPrincipalId");
       let updatedAt: Date;
       if (existingCredential) {
         const [updated] = await db
           .update(credential)
-          .set({ secret: parsed.secret, updatedAt: now })
+          .set({ secret: storedSecret, updatedAt: now })
           .where(eq(credential.id, existingCredential.id))
           .returning({ updatedAt: credential.updatedAt });
         updatedAt = updated?.updatedAt ?? now;
@@ -749,7 +757,7 @@ export function createOwnerRouter(
             providerId: providerRow.id,
             name: entry.label,
             type: "api_key",
-            secret: parsed.secret,
+            secret: storedSecret,
             metadata: entry.defaultMetadata ?? null,
             createdAt: now,
             updatedAt: now,

@@ -12,6 +12,7 @@ import {
 import { providersForToolPackages } from "@workbench/agents";
 import { ToolPackagePin } from "@intx/types/tool-packages";
 import { requestBodySchema } from "../lib/openapi";
+import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
 const log = getLogger(["api", "tool-credentials"]);
 
@@ -180,7 +181,7 @@ export function createToolCredentialsRouter(
         });
         const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
         credentials[providerName] = {
-          apiKey: resolved.secret,
+          apiKey: decryptToolCredentialSecret(resolved.secret),
           baseURL: metadata.baseURL ?? "",
         };
       }

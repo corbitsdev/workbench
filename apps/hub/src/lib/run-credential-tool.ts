@@ -1,6 +1,7 @@
 import { resolveCredentialRequirement } from "@intx/db";
 import type { HubDb } from "../db";
 import { KNOWN_TOOLS, isCredentialToolEntry } from "./tool-registry";
+import { decryptToolCredentialSecret } from "./credential-crypto";
 
 export async function runCredentialTool(
   db: HubDb,
@@ -36,7 +37,10 @@ export async function runCredentialTool(
   const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
   const baseURL = metadata.baseURL ?? "";
 
-  const tools = entry.createTools({ apiKey: resolved.secret, baseURL });
+  const tools = entry.createTools({
+    apiKey: decryptToolCredentialSecret(resolved.secret),
+    baseURL,
+  });
   const tool = tools.find((t) => t.definition.name === toolName);
   if (!tool) {
     throw new Error(`Tool ${toolName} not found in provider package`);
