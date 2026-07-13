@@ -13,6 +13,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
+import { createInMemoryTransport } from "@intx/mail-memory";
 import { createIsogitStore } from "@workbench/storage-isogit";
 
 import {
@@ -55,7 +57,9 @@ function stubHubFetch(): void {
   }) as unknown as typeof fetch;
 }
 
-async function makeEnv(): Promise<{
+async function makeEnv(opts?: {
+  transport?: ReturnType<typeof createInMemoryTransport>;
+}): Promise<{
   env: Record<string, unknown>;
   workdir: string;
 }> {
@@ -78,18 +82,42 @@ async function makeEnv(): Promise<{
     cacheMaxBytes: 1024 * 1024,
     registryMaxTarballBytes: 1024 * 1024,
   };
-  return {
-    env: {
-      sources: [],
-      defaultSource: "",
-      storage,
-      workdir,
-      audit: storage,
-      directors: {},
-      [STEP_TOOL_CONTEXT_KEY]: ctx,
-    },
+  const env: Record<string, unknown> = {
+    sources: [],
+    defaultSource: "",
+    storage,
     workdir,
+    audit: storage,
+    directors: {},
+    [STEP_TOOL_CONTEXT_KEY]: ctx,
   };
+  if (opts?.transport !== undefined) {
+    env.transport = opts.transport;
+  }
+  return { env, workdir };
+}
+
+async function mailSendUnregisteredSenderFixture(): Promise<{
+  env: Record<string, unknown>;
+  recipient: string;
+  mailInput: { to: string; content: string; subject: string };
+}> {
+  const transport = createInMemoryTransport();
+  const recipientKey = await generateKeyPair();
+  const recipient = "usr_member@tenant.example";
+  transport.register(recipient, createEd25519Crypto(recipientKey));
+  const senderAddress = "ins_ses_deploy@tenant.example";
+  const { env } = await makeEnv({ transport });
+  const ctx = env[STEP_TOOL_CONTEXT_KEY] as StepToolContext;
+  ctx.stepAddress = senderAddress;
+  ctx.stepAgentId = senderAddress;
+  ctx.principalId = senderAddress;
+  const mailInput = {
+    to: recipient,
+    content: "brief body",
+    subject: "Your morning brief",
+  };
+  return { env, recipient, mailInput };
 }
 
 describe("runDeterministicToolStep", () => {
@@ -135,16 +163,16 @@ describe("runDeterministicToolStep", () => {
     stubHubFetch();
     const { env } = await makeEnv();
     // A step with no `input` selector resolves to null; a no-arg tool call
-    // must run with {} rather than throwing. write_file will fail its own
-    // arg validation, but the point is the harness does NOT reject null at
-    // the argument-shape guard — it reaches the runner.
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "write_file",
-      input: null,
-      signal: new AbortController().signal,
-    });
-    expect(result.output).toBeDefined();
+    // must run with {} rather than throwing at the harness shape guard.
+    // write_file then returns isError for missing path, which fails the step.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: null,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/required argument "path"/);
   });
 
   test("fails loud when the declared tool is not in the loaded runner", async () => {
@@ -272,6 +300,37 @@ describe("runDeterministicToolStep", () => {
         type: "conversation.message",
       },
     ]);
+  });
+
+  test("mail_send isError envelope fails the step so notify cannot complete green on send_failed", async () => {
+    stubHubFetch();
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
+
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: mailInput,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/send_failed/);
+  });
+
+  test("nonFatal: mail_send isError envelope degrades to completed output", async () => {
+    stubHubFetch();
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
+
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: mailInput,
+      nonFatal: true,
+      signal: new AbortController().signal,
+    });
+    const output = result.output as Record<string, unknown>;
+    expect(output.isError).toBe(true);
+    const content = output.content as Record<string, unknown>;
+    expect(content.error).toMatch(/send_failed/);
   });
 
   test("mail_send stays unavailable when no transport is injected", async () => {

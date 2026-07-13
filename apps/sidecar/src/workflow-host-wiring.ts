@@ -1353,31 +1353,22 @@ export function createSidecarDeployRouter(deps: {
       // WORKBENCH-LOCAL-TEMP (CL-2780)
       const grantsMs = performance.now() - grantsStart;
 
-      // OUTBOUND half of mailbox ownership (§3a): register the spawned
-      // agent's signing key on the host transport so the supervisor's
-      // outbound mail path (`MailBusBindings.sendOutbound`) signs the
-      // agent's replies as the AGENT's identity, with parity to the
-      // in-process path's `transport.register(address, crypto)`.
-      //
-      // Gated on the single-step launched-agent deploy: there the
-      // deployment mail address IS the legacy agent identity whose
-      // keypair lives in the keyStore, so the supervisor can sign
-      // outbound mail as that address. A genuine multi-step deploy
-      // derives a distinct per-step address with no keypair on the host;
-      // per-step outbound signing for multi-step is out of 4.3 scope
-      // (the unified single-agent path 4.3 targets is the single-step
-      // case). The registration happens before `spawn()` so the agent's
-      // address is live the instant the first reply routes outbound.
-      if (projection.definition.stepOrder.length === 1) {
-        const { keyPair } = await deps.keyStore.loadOrGenerateKey(
-          frame.agentAddress,
-        );
-        deps.transport.register(
-          frame.agentAddress,
-          deps.createAgentCrypto(keyPair),
-        );
-        agentTransportRegistered = true;
-      }
+      // OUTBOUND half of mailbox ownership (§3a): register the deployment
+      // supervisor's signing key on the host transport so workflow-child
+      // outbound mail (`mail_send` / `outbound.message`) is signed as the
+      // deployment address. The child's MAILBOX_ADDRESS is always the
+      // deployment supervisor address (even for multi-step); per-step
+      // addresses are grant/repo isolation only. `loadOrGenerateKey` pins
+      // a stable keypair per deployment address on the sidecar. Register
+      // before `spawn()` so outbound is live as soon as the child runs.
+      const { keyPair } = await deps.keyStore.loadOrGenerateKey(
+        frame.agentAddress,
+      );
+      deps.transport.register(
+        frame.agentAddress,
+        deps.createAgentCrypto(keyPair),
+      );
+      agentTransportRegistered = true;
 
       const stepOrder = [...projection.definition.stepOrder];
       // Warm-keep is the single-step launched-agent deploy (design §3b):
@@ -1497,12 +1488,12 @@ export function createSidecarDeployRouter(deps: {
       // `routeInbound` so the sidecar's hub-link dispatches inbound
       // mail for the deployment address into the supervisor's mail-bus
       // subscription rather than the legacy session path. The legacy
-      // path is the wrong receiver for multi-step deployments: the
-      // deployment address is never registered on `transport` (no
-      // `startSession` runs against it) and there is no `sessions`
-      // entry to satisfy `commitInboundMail`. Registration happens
-      // after `spawn` succeeds so a spawn-time rejection leaves the
-      // registry untouched.
+      // session path is the wrong inbound receiver for multi-step
+      // deployments: no `startSession` on the deployment address and no
+      // `sessions` entry for `commitInboundMail`. Outbound signing for
+      // that same address is registered on `transport` before spawn (§3a).
+      // Inbound router registration happens after `spawn` succeeds so a
+      // spawn-time rejection leaves the mail router untouched.
       deps.multistepMailRouter?.register(frame.agentAddress, (message) => {
         wired.routeInbound(message);
       });
@@ -1559,10 +1550,9 @@ export function createSidecarDeployRouter(deps: {
           });
         }
         if (agentTransportRegistered) {
-          // Drop the agent's transport registration so a failed deploy
-          // does not leave the address live on the host transport with a
-          // dangling `CryptoProvider`. `unregister` is safe to call even
-          // if the address was never registered.
+          // Drop the deployment supervisor's transport registration so a
+          // failed deploy does not leave the address live on the host
+          // transport with a dangling `CryptoProvider`.
           deps.transport.unregister(frame.agentAddress);
         }
         if (deploymentRegistered) {
@@ -1777,12 +1767,9 @@ export function createSidecarDeployRouter(deps: {
           logger.warn`undeploy: workflow-run push drain failed for ${agentAddress}: ${reason}`;
         }
       }
-      // Drop the agent's transport registration installed at spawn for
-      // the single-step launched-agent deploy (OUTBOUND half of
-      // mailbox ownership, §3a). `unregister` is a no-op when the
-      // address was never registered (a genuine multi-step deploy
-      // whose derived per-step addresses carry no host keypair), so it
-      // is safe to call unconditionally for any spawned deployment.
+      // Drop the deployment supervisor's outbound transport registration
+      // installed at spawn (§3a). Runs only when this address still has an
+      // active supervisor entry; `unregister` is a no-op if absent.
       deps.transport.unregister(agentAddress);
       // Reclaim the deployment's per-step local-disk scratch now that
       // its supervisor + workflow-process child are torn down. The
