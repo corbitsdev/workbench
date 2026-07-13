@@ -34,9 +34,13 @@ describe("mail-sender-display", () => {
 
   it("returns fromDisplay only when a distinct label exists", () => {
     const map = new Map([["ins_dep@tenant.example", "Heartbeat"]]);
-    expect(
-      attachFromDisplay("ins_dep@tenant.example", map),
-    ).toBe("Heartbeat");
+    expect(attachFromDisplay("ins_dep@tenant.example", map)).toBe("Heartbeat");
     expect(attachFromDisplay("unknown@tenant.example", map)).toBeUndefined();
+    expect(
+      attachFromDisplay(
+        "ins_dep@tenant.example",
+        new Map([["ins_dep@tenant.example", "ins_dep@tenant.example"]]),
+      ),
+    ).toBeUndefined();
   });
 });

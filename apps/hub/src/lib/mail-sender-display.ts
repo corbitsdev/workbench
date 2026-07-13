@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import { splitMailAddress, USER_ADDRESS_PREFIX } from "@workbench/hub-agent";
 import type { HubDb } from "../db";
@@ -175,16 +175,20 @@ export async function resolveSenderDisplayNames(
               inArray(workflowRun.deploymentId, deploymentIds),
               isNull(workflowRun.deletedAt),
             ),
-          );
+          )
+          .orderBy(desc(workflowRun.updatedAt));
         for (const row of indexRows) {
           if (row.deploymentId === null) continue;
+          if (depToLabel.has(row.deploymentId)) continue;
           depToLabel.set(
             row.deploymentId,
             labelFromWorkflowRunMeta(row.meta, row.kind, kindLabels),
           );
         }
 
-        const unresolvedDepIds = deploymentIds.filter((id) => !depToLabel.has(id));
+        const unresolvedDepIds = deploymentIds.filter(
+          (id) => !depToLabel.has(id),
+        );
         if (unresolvedDepIds.length > 0) {
           const recordRows = await db
             .select({
@@ -198,7 +202,8 @@ export async function resolveSenderDisplayNames(
                 inArray(workflowRunRecord.deploymentId, unresolvedDepIds),
                 isNull(workflowRunRecord.deletedAt),
               ),
-            );
+            )
+            .orderBy(desc(workflowRunRecord.createdAt));
           for (const row of recordRows) {
             if (row.deploymentId === null) continue;
             if (depToLabel.has(row.deploymentId)) continue;
@@ -254,6 +259,8 @@ export function attachFromDisplay(
 ): string | undefined {
   const addr = extractSenderMailboxAddress(fromHeader);
   const display = displays.get(addr);
-  if (display === undefined || display === fromHeader) return undefined;
+  if (display === undefined || display === addr || display === fromHeader) {
+    return undefined;
+  }
   return display;
 }
