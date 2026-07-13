@@ -6,7 +6,9 @@ import {
   AvailableInboxSourcesResponseSchema,
   BRIEF_SOURCE_CATALOG,
   INBOX_SOURCE_CATALOG,
+  inboxCapabilityPreferenceKey,
   MemberPreferences,
+  OAUTH_PROVIDER_CATALOG,
   PreferenceSettingsResponseSchema,
   resolveAvailableBriefSources,
   resolveAvailableInboxSources,
@@ -14,6 +16,7 @@ import {
   validatePreferencePatch,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
+import { setPrincipalCapabilityGrant } from "../lib/capability-grants";
 import { resolveAvailableProviderNames } from "../lib/tenant-tools";
 import {
   readMemberPreferences,
@@ -208,6 +211,22 @@ export function createMePreferencesRouter(
         member.principalId,
         patch,
       );
+
+      // Self-service enablement (CL-3510): toggling `inbox.capability.<provider>`
+      // writes/revokes the member's per-principal capability grant so the
+      // toggle has real effect (least privilege — exactly that provider,
+      // revoked on toggle-off). Only providers present in this patch are
+      // touched; the rest are left as-is.
+      for (const cfg of OAUTH_PROVIDER_CATALOG) {
+        const key = inboxCapabilityPreferenceKey(cfg.providerName);
+        if (!(key in patch)) continue;
+        await setPrincipalCapabilityGrant(db, {
+          tenantId: member.tenantId,
+          principalId: member.principalId,
+          provider: cfg.providerName,
+          enabled: patch[key] !== false,
+        });
+      }
       return c.json(merged);
     },
   );

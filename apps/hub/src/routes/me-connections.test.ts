@@ -7,6 +7,7 @@ import type { GrantStore } from "@intx/authz";
 // disable Connect instead of letting the member hit the authorize 400.
 
 let allowedProviders: Set<string>;
+const revokeCalls: { provider: string; enabled: boolean }[] = [];
 mock.module("../lib/capability-grants", () => ({
   isCapabilityAllowedForPrincipal: async (
     _store: unknown,
@@ -14,6 +15,12 @@ mock.module("../lib/capability-grants", () => ({
     _principalId: string,
     providerName: string,
   ) => allowedProviders.has(providerName),
+  setPrincipalCapabilityGrant: async (
+    _db: unknown,
+    args: { provider: string; enabled: boolean },
+  ) => {
+    revokeCalls.push({ provider: args.provider, enabled: args.enabled });
+  },
 }));
 
 mock.module("../lib/member-preferences", () => ({
@@ -21,6 +28,7 @@ mock.module("../lib/member-preferences", () => ({
 }));
 
 let configuredProviders: Set<string>;
+const deletedProviders: string[] = [];
 mock.module("../lib/oauth-flow", () => ({
   findMemberConnection: async () => null,
   resolveOwnerOAuthClient: async (
@@ -29,6 +37,15 @@ mock.module("../lib/oauth-flow", () => ({
     cfg: { providerName: string },
   ) => (configuredProviders.has(cfg.providerName) ? { clientId: "x" } : null),
   beginConnect: () => ({ redirectUrl: "https://example.test/authorize" }),
+  deleteMemberConnection: async (
+    _db: unknown,
+    _tenantId: string,
+    _principalId: string,
+    providerName: string,
+  ) => {
+    deletedProviders.push(providerName);
+    return 1;
+  },
 }));
 
 mock.module("../lib/tenant-provisioning", () => ({
@@ -78,5 +95,32 @@ describe("GET /me/connections — configured field", () => {
     const attio = body.connections.find((c) => c.provider === "attio");
     expect(linear?.configured).toBe(true);
     expect(attio?.configured).toBe(false);
+  });
+});
+
+describe("DELETE /me/connections/:provider — disconnect (CL-3510)", () => {
+  beforeEach(() => {
+    allowedProviders = new Set(["linear", "attio"]);
+    configuredProviders = new Set(["linear"]);
+    revokeCalls.length = 0;
+    deletedProviders.length = 0;
+  });
+
+  it("deletes the credential and revokes the capability grant", async () => {
+    const res = await buildApp().request("/me/connections/linear", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(200);
+    expect(deletedProviders).toEqual(["linear"]);
+    expect(revokeCalls).toEqual([{ provider: "linear", enabled: false }]);
+  });
+
+  it("404s an unknown provider without touching credentials or grants", async () => {
+    const res = await buildApp().request("/me/connections/nope", {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+    expect(deletedProviders).toEqual([]);
+    expect(revokeCalls).toEqual([]);
   });
 });

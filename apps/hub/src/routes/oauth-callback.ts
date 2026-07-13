@@ -2,10 +2,17 @@ import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import type { GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
-import { findOAuthProviderConfig } from "@workbench/shared";
+import {
+  findOAuthProviderConfig,
+  inboxCapabilityPreferenceKey,
+} from "@workbench/shared";
 import { requireOAuthStateSecret } from "../config";
 import type { HubDb } from "../db";
-import { isCapabilityAllowedForPrincipal } from "../lib/capability-grants";
+import {
+  isCapabilityAllowedForPrincipal,
+  setPrincipalCapabilityGrant,
+} from "../lib/capability-grants";
+import { readMemberPreferences } from "../lib/member-preferences";
 import { completeConnect, resolveOwnerOAuthClient } from "../lib/oauth-flow";
 import { verifyState } from "../lib/oauth-crypto";
 import type { FetchLike, PendingAuthorizationStore } from "../lib/oauth-flow";
@@ -117,6 +124,24 @@ export function createOAuthCallbackRouter(deps: CreateOAuthCallbackDeps): Hono {
           stateSecret,
           pendingStore,
           fetchImpl,
+        });
+        // Self-service enablement (CL-3510): a completed connection with the
+        // member's `inbox.capability.<provider>` opt-in on (default on) writes
+        // the per-principal capability grant so the connection immediately has
+        // effect. The opt-in being off leaves the credential stored but the
+        // capability un-granted — the member connected but has not turned it on.
+        const prefs = await readMemberPreferences(
+          db,
+          result.tenantId,
+          result.memberPrincipalId,
+        );
+        const optedIn =
+          prefs[inboxCapabilityPreferenceKey(providerName)] !== false;
+        await setPrincipalCapabilityGrant(db, {
+          tenantId: result.tenantId,
+          principalId: result.memberPrincipalId,
+          provider: providerName,
+          enabled: optedIn,
         });
         log.info("oauth connect completed", {
           provider: providerName,
