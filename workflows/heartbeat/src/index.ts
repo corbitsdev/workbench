@@ -16,8 +16,10 @@ export const kind = "heartbeat";
 // Step graph (no awaitSignal anywhere):
 //   intake-<source>  deterministicToolStep  one per WIRED_BRIEF_SOURCES entry,
 //                     concurrent, input = trigger.payload, nonFatal: true
+//   merge-sources     deterministicToolStep  heartbeat_merge_brief_sources
+//                      project every intake step → { sources: { … } }
 //   brief             inlineInferenceStep    default model
-//                      merge(payload, every intake-<source> output)
+//                      merge(payload, merge-sources content)
 //   notify            deterministicToolStep  mail_send   to = userAddress
 //   persist           deterministicToolStep  write_artifact  body = brief reply
 //
@@ -72,6 +74,19 @@ export const workflow = defineWorkflow({
   steps: {
     ...Object.fromEntries(intakeStepEntries),
 
+    // Unwrap each intake envelope under sources.<key> — a flat merge of raw tool
+    // results would collide on callId/content/isError and drop all but the last.
+    "merge-sources": deterministicToolStep({
+      id: "heartbeat-merge-sources",
+      title: "Merge brief sources",
+      tool: "heartbeat_merge_brief_sources",
+      input: {
+        project: { from: "steps" },
+        fields: intakeStepIds,
+      },
+      after: intakeStepIds,
+    }),
+
     // Synthesize the brief. Inline single-turn inference on the deploy default
     // model (deepseek-v4-flash) — no per-step model preference declared.
     brief: inlineInferenceStep({
@@ -81,12 +96,10 @@ export const workflow = defineWorkflow({
       input: {
         merge: [
           { from: "trigger.payload" },
-          ...intakeStepIds.map((stepId) => ({
-            from: `steps.${stepId}.output`,
-          })),
+          { from: "steps.merge-sources.output.content" },
         ],
       },
-      after: intakeStepIds,
+      after: ["merge-sources"],
     }),
 
     // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).

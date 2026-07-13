@@ -13,6 +13,7 @@ import {
   ResearchItem,
   SkippedSource,
 } from "@workbench/last30days-core";
+import { mergeHeartbeatBriefSources } from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
   name: "last30days_core_extract",
@@ -81,6 +82,16 @@ export const LAST30DAYS_COLLECT_DEFINITION: ToolDefinition = {
   name: "last30days_collect",
   description:
     "Internal workflow helper. Parse every source step's result envelope (both research rounds), date-filter, dedupe, and structural-junk-filter the candidates, and return a single clean { topic, days, items, skippedSources } object for the LLM curate step to judge.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
+  name: "heartbeat_merge_brief_sources",
+  description:
+    "Internal heartbeat workflow helper. Parse each intake step's tool envelope and return { sources: { granola, linear, attio, vercel } } so the brief step sees every source without merge collisions on callId/content/isError.",
   inputSchema: {
     type: "object",
     additionalProperties: true,
@@ -620,6 +631,18 @@ function createValidateTool(): AgentTool {
   };
 }
 
+function createHeartbeatMergeBriefSourcesTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION,
+    handler: async (call) => {
+      const steps = coerceArgsObject(call.arguments);
+      const content = mergeHeartbeatBriefSources(steps);
+      return { callId: call.id, content };
+    },
+  };
+}
+
 /** The stateless last30days core tools (no credential, no host context). */
 export function createLast30daysTools(): AgentTool[] {
   return [
@@ -630,5 +653,6 @@ export function createLast30daysTools(): AgentTool[] {
     createCollectTool(),
     createWorkflowBriefTool(),
     createValidateTool(),
+    createHeartbeatMergeBriefSourcesTool(),
   ];
 }
