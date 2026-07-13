@@ -4,6 +4,7 @@ import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
 import {
   HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
   heartbeatIntakeStepKey,
+  morningBriefArtifactKind,
   WIRED_BRIEF_SOURCES,
 } from "@workbench/shared";
 export { heartbeatIntakeStepKey };
@@ -13,6 +14,8 @@ export const label = "Company Heartbeat";
 export const description =
   "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.";
 export const kind = "heartbeat";
+
+const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 
 // -------------------------------------------------------------------------
 // Workflow definition — gate-free, unattended
@@ -105,37 +108,61 @@ export const workflow = defineWorkflow({
       after: ["merge-sources"],
     }),
 
+    // Formats the brief's display name — "<User>'s Morning Brief - DD/MM/YY"
+    // — once, shared by both the notify subject and the persisted artifact
+    // title (CL-3502). Runs alongside merge-sources/brief; only needs
+    // trigger.payload's userDisplayName.
+    title: deterministicToolStep({
+      id: "heartbeat-title",
+      title: "Name the brief",
+      tool: "heartbeat_format_brief_title",
+      input: { from: "trigger.payload" },
+      argMap: {
+        userDisplayName: { from: "userDisplayName" },
+      },
+    }),
+
     // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
     notify: deterministicToolStep({
       id: "heartbeat-notify",
       title: "Send the brief",
       tool: "mail_send",
       input: {
-        merge: [{ from: "trigger.payload" }, { from: "steps.brief.output" }],
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.brief.output" },
+          { from: "steps.title.output.content" },
+        ],
       },
       argMap: {
         to: { from: "userAddress" },
-        subject: { literal: "Your morning brief" },
+        subject: { from: "title" },
         content: { from: "reply" },
       },
-      after: ["brief"],
+      after: ["brief", "title"],
     }),
 
-    // Persist the brief as a report artifact in the user's workbench.
+    // Persist the brief as a morning-brief artifact in the user's workbench.
+    // `kind` is the stable `morning-brief` literal (CL-3503) — never "report"
+    // — so the artifact's type never drifts across runs.
     persist: deterministicToolStep({
       id: "heartbeat-persist",
       title: "Save the brief",
       tool: "write_artifact",
       input: {
-        merge: [{ from: "trigger.payload" }, { from: "steps.brief.output" }],
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.brief.output" },
+          { from: "steps.title.output.content" },
+        ],
       },
       argMap: {
-        title: { literal: "Morning Brief" },
+        title: { from: "title" },
         body: { from: "reply" },
-        kind: { literal: "report" },
+        kind: { literal: MORNING_BRIEF_ARTIFACT_KIND },
         jobLabel: { literal: "Morning Brief" },
       },
-      after: ["brief"],
+      after: ["brief", "title"],
     }),
   },
 });

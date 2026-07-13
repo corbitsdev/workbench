@@ -66,6 +66,7 @@ export const HeartbeatRunTriggerPayloadSchema = type({
   userRefId: "string > 0",
   createdAfter: "string",
   enabledSources: "string[]",
+  "userDisplayName?": "string > 0",
 });
 export type HeartbeatRunTriggerPayload =
   typeof HeartbeatRunTriggerPayloadSchema.infer;

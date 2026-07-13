@@ -154,6 +154,40 @@ describe("enrichHeartbeatTriggerPayload", () => {
     expect(result.userRefId).toBe("abc");
   });
 
+  it("carries userDisplayName into the payload when the identity resolver knows it", () => {
+    const result = enrichHeartbeatTriggerPayload(
+      { reason: "scheduled-heartbeat" },
+      "heartbeat",
+      "heartbeat",
+      ["granola"],
+      NOW,
+      null,
+      9,
+      "scheduled",
+      {
+        userAddress: "usr_abc@d",
+        userRefId: "abc",
+        userDisplayName: "Jordan Lee",
+      },
+    );
+    expect(result.userDisplayName).toBe("Jordan Lee");
+  });
+
+  it("omits userDisplayName when the identity resolver has none", () => {
+    const result = enrichHeartbeatTriggerPayload(
+      { reason: "scheduled-heartbeat" },
+      "heartbeat",
+      "heartbeat",
+      ["granola"],
+      NOW,
+      null,
+      9,
+      "scheduled",
+      MEMBER_IDENTITY,
+    );
+    expect("userDisplayName" in result).toBe(false);
+  });
+
   it("manual-refresh ignores last fire and uses the 7-day window", () => {
     const yesterday = TODAY - 1;
     const result = enrichHeartbeatTriggerPayload(

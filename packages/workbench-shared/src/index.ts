@@ -20,6 +20,7 @@ export * from "./sumble-account-intel";
 export * from "./web-site";
 export * from "./preferences-registry";
 export * from "./heartbeat-brief-merge";
+export * from "./heartbeat-brief-title";
 export * from "./changelog";
 export * from "./welcome-mail";
 export { toHumanLabel } from "./tool-labels";

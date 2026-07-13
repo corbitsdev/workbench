@@ -42,4 +42,16 @@ describe("buildMorningBriefSystemPrompt", () => {
     expect(prompt).toContain('"isError": true');
     expect(prompt).toContain("never as an error, failure, or missing data");
   });
+
+  test("instructs tailoring the brief to the specific active user (CL-3501)", () => {
+    const prompt = buildMorningBriefSystemPrompt();
+    expect(prompt).toContain("userDisplayName");
+    expect(prompt).toContain("Write the brief FOR this specific person");
+  });
+
+  test("instructs rendering source items with a url as markdown links (CL-3504)", () => {
+    const prompt = buildMorningBriefSystemPrompt();
+    expect(prompt).toContain("must be rendered as a markdown link");
+    expect(prompt).toContain("Never fabricate a url");
+  });
 });

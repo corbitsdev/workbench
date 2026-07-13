@@ -11,6 +11,7 @@ import {
   LAST30DAYS_CORE_REPORT_DEFINITION,
   LAST30DAYS_ENTITY_QUERIES_DEFINITION,
   LAST30DAYS_GROUND_QUERIES_DEFINITION,
+  HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION,
   HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION,
   LAST30DAYS_VALIDATE_DEFINITION,
   LAST30DAYS_WORKFLOW_BRIEF_DEFINITION,
@@ -69,5 +70,10 @@ export const LAST30DAYS_CORE_HUB_TOOLS: Record<string, ContextToolEntry> = {
     sideEffect: "read",
     definition: HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION,
     createTools: toolByName("heartbeat_merge_brief_sources"),
+  },
+  heartbeat_format_brief_title: {
+    sideEffect: "read",
+    definition: HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION,
+    createTools: toolByName("heartbeat_format_brief_title"),
   },
 };

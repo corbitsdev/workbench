@@ -1295,19 +1295,30 @@ v1.route("/", createMeTasksRouter(db, taskPushService, mailboxEventBus));
 // seeder.
 const resolveUserIdentity = async (
   memberPrincipalId: string,
-): Promise<{ userAddress: string; userRefId: string }> => {
+): Promise<{
+  userAddress: string;
+  userRefId: string;
+  userDisplayName?: string;
+}> => {
   const member = await db.query.principal.findFirst({
     where: eq(intxSchema.principal.id, memberPrincipalId),
   });
   if (!member) {
     throw new Error(`principal not found: ${memberPrincipalId}`);
   }
+  const authUser =
+    member.kind === "user"
+      ? await db.query.user.findFirst({
+          where: eq(intxSchema.user.id, member.refId),
+        })
+      : undefined;
   return {
     userAddress: deriveUserMailAddress({
       userRefId: member.refId,
       domain: config.rootTenant.domain,
     }),
     userRefId: member.refId,
+    ...(authUser?.name !== undefined ? { userDisplayName: authUser.name } : {}),
   };
 };
 

@@ -72,6 +72,7 @@ const TRIGGER_PAYLOAD = {
   reason: "scheduled-heartbeat",
   userAddress: "usr_abc123@workbench.local",
   userRefId: "usr_abc123",
+  userDisplayName: "Jordan Lee",
   createdAfter: "2026-07-04T00:00:00Z",
 };
 
@@ -81,7 +82,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(4 + WIRED_BRIEF_SOURCES.length);
+    expect(kinds.length).toBe(5 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -114,7 +115,21 @@ describe("heartbeat native workflow", () => {
       "merge-sources",
       "notify",
       "persist",
+      "title",
     ]);
+  });
+
+  test("title is a deterministic call to heartbeat_format_brief_title with no inference source", () => {
+    const title = stepPrimitive("title");
+    expect(title.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
+    expect(title.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "heartbeat_format_brief_title",
+    );
+    expect(title.agent.inference.sources).toEqual([]);
+    expect(title.input).toEqual({ from: "trigger.payload" });
+    expect(argMapOf("title")).toEqual({
+      userDisplayName: { from: "userDisplayName" },
+    });
   });
 
   test("each generated intake step is a deterministic call to its source's tool, nonFatal, with no inference source", () => {
@@ -284,24 +299,26 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Mail addressing argMap
   // -------------------------------------------------------------------------
-  test("notify argMap addresses the mail to the firing user with the brief as content", () => {
+  test("notify argMap addresses the mail to the firing user with the computed title as subject and the brief as content", () => {
     expect(argMapOf("notify")).toEqual({
       to: { from: "userAddress" },
-      subject: { literal: "Your morning brief" },
+      subject: { from: "title" },
       content: { from: "reply" },
     });
+    expect(stepPrimitive("notify").after).toEqual(["brief", "title"]);
   });
 
   // -------------------------------------------------------------------------
   // Artifact persistence argMap
   // -------------------------------------------------------------------------
-  test("persist argMap saves the brief body as a report artifact", () => {
+  test("persist argMap saves the brief body as a stable morning-brief artifact, never 'report'", () => {
     expect(argMapOf("persist")).toEqual({
-      title: { literal: "Morning Brief" },
+      title: { from: "title" },
       body: { from: "reply" },
-      kind: { literal: "report" },
+      kind: { literal: "morning-brief" },
       jobLabel: { literal: "Morning Brief" },
     });
+    expect(stepPrimitive("persist").after).toEqual(["brief", "title"]);
   });
 
   // -------------------------------------------------------------------------
@@ -336,6 +353,9 @@ describe("heartbeat native workflow", () => {
         },
       },
       "heartbeat-brief": { reply: briefReply },
+      "heartbeat-title": {
+        content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
+      },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
     });
@@ -356,6 +376,7 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-intake-vercel");
     expect(ranIds).toContain("heartbeat-merge-sources");
     expect(ranIds).toContain("heartbeat-brief");
+    expect(ranIds).toContain("heartbeat-title");
     expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
   });
@@ -386,6 +407,9 @@ describe("heartbeat native workflow", () => {
         },
       },
       "heartbeat-brief": { reply: briefReply },
+      "heartbeat-title": {
+        content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
+      },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
     });
@@ -405,7 +429,7 @@ describe("heartbeat native workflow", () => {
     const mailArgs = resolveArgMap(argMapOf("notify"), notifyInput);
     expect(mailArgs.to).toBe(TRIGGER_PAYLOAD.userAddress);
     expect(String(mailArgs.to).startsWith("usr_")).toBe(true);
-    expect(mailArgs.subject).toBe("Your morning brief");
+    expect(mailArgs.subject).toBe("Jordan Lee's Morning Brief - 04/07/26");
     expect(mailArgs.content).toBe(briefReply);
 
     const persistInput = ran.find((r) => r.id === "heartbeat-persist")
@@ -414,7 +438,7 @@ describe("heartbeat native workflow", () => {
 
     const artifactArgs = resolveArgMap(argMapOf("persist"), persistInput);
     expect(artifactArgs.body).toBe(briefReply);
-    expect(artifactArgs.kind).toBe("report");
-    expect(artifactArgs.title).toBe("Morning Brief");
+    expect(artifactArgs.kind).toBe("morning-brief");
+    expect(artifactArgs.title).toBe("Jordan Lee's Morning Brief - 04/07/26");
   });
 });
