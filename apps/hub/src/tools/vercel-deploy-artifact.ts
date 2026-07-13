@@ -14,6 +14,7 @@ import {
 import type { HubDb } from "../db";
 import { artifact, artifactVersion } from "../db/schema";
 import type { ContextToolEntry } from "../lib/tool-registry";
+import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
 const DeployArtifactArgs = type({
   artifactId: "string > 0",
@@ -136,7 +137,7 @@ export function createVercelDeployArtifactTools(
         const metadata = (providerRow?.metadata ?? {}) as { baseURL?: string };
 
         const vercelConfig: { apiKey: string; baseUrl?: string } = {
-          apiKey: resolved.secret,
+          apiKey: decryptToolCredentialSecret(resolved.secret),
         };
         if (metadata.baseURL !== undefined) {
           vercelConfig.baseUrl = metadata.baseURL;

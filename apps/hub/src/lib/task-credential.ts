@@ -2,6 +2,7 @@ import { type } from "arktype";
 import { resolveCredentialRequirement } from "@intx/db";
 import type { ResolveAdapterCredential } from "@workbench/tasks";
 import type { HubDb } from "../db";
+import { decryptToolCredentialSecret } from "./credential-crypto";
 
 // The subset of a provider's metadata this resolver reads. `+: "ignore"` keeps
 // any other keys, so an unrelated metadata shape still parses.
@@ -32,6 +33,6 @@ export function resolveAdapterCredential(db: HubDb): ResolveAdapterCredential {
     });
     const parsed = ProviderMetadataSchema(providerRow?.metadata ?? {});
     const baseURL = parsed instanceof type.errors ? "" : (parsed.baseURL ?? "");
-    return { apiKey: resolved.secret, baseURL };
+    return { apiKey: decryptToolCredentialSecret(resolved.secret), baseURL };
   };
 }

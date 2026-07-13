@@ -1,6 +1,26 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from "bun:test";
+import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import type { GrantStore } from "@intx/authz";
+import { isEncryptedEnvelope, decryptSecret } from "../lib/credential-crypto";
+
+// CL-3446: PUT /owner/credentials/:providerName encrypts kind:"tool" secrets
+// at rest, which requires a real CREDENTIAL_ENCRYPTION_KEY in the test env.
+const CREDENTIAL_ENCRYPTION_TEST_KEY = randomBytes(32).toString("base64");
+beforeAll(() => {
+  process.env["CREDENTIAL_ENCRYPTION_KEY"] = CREDENTIAL_ENCRYPTION_TEST_KEY;
+});
+afterAll(() => {
+  delete process.env["CREDENTIAL_ENCRYPTION_KEY"];
+});
 
 // The guard resolves userId -> principalId via ensureMember; vary it per test.
 let callerPrincipalId = "prn_member";
@@ -298,9 +318,9 @@ describe("owner credentials routes", () => {
     expect(JSON.stringify(body)).not.toContain("secret");
   });
 
-  it("PUT on a tool-kind provider (granola) never echoes the secret", async () => {
+  it("PUT on a tool-kind provider (granola) never echoes the secret and encrypts it at rest", async () => {
     callerPrincipalId = "prn_owner";
-    const { db } = credentialsDb({});
+    const { db, insertedCredentials } = credentialsDb({});
     const res = await buildApp(db).request("/owner/credentials/granola", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -310,6 +330,44 @@ describe("owner credentials routes", () => {
     const body = (await res.json()) as { configured: boolean; kind: string };
     expect(body.kind).toBe("tool");
     expect(JSON.stringify(body)).not.toContain("grn-secret-token");
+
+    const stored = (insertedCredentials[0] as { secret: string }).secret;
+    expect(stored).not.toBe("grn-secret-token");
+    expect(isEncryptedEnvelope(stored)).toBe(true);
+    expect(decryptSecret(stored)).toBe("grn-secret-token");
+  });
+
+  it("PUT on an inference-kind provider (anthropic) stores the secret plaintext-compatible", async () => {
+    // kind:"inference" rows must stay plaintext: Interchange reads
+    // `credential.secret` raw at agent-launch time and cannot decrypt first.
+    callerPrincipalId = "prn_owner";
+    const { db, insertedCredentials } = credentialsDb({});
+    await buildApp(db).request("/owner/credentials/anthropic", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "sk-inference-secret" }),
+    });
+    const stored = (insertedCredentials[0] as { secret: string }).secret;
+    expect(stored).toBe("sk-inference-secret");
+    expect(isEncryptedEnvelope(stored)).toBe(false);
+  });
+
+  it("PUT UPDATE path (existing credential) also encrypts a tool-kind secret", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, updatedCredentials } = credentialsDb({
+      providers: [{ id: "provider_1", name: "granola" }],
+      credentials: [
+        { id: "credential_1", providerId: "provider_1", updatedAt: new Date() },
+      ],
+    });
+    await buildApp(db).request("/owner/credentials/granola", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "grn-rotated-token" }),
+    });
+    const stored = (updatedCredentials[0] as { secret: string }).secret;
+    expect(isEncryptedEnvelope(stored)).toBe(true);
+    expect(decryptSecret(stored)).toBe("grn-rotated-token");
   });
 });
 

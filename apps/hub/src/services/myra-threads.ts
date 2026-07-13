@@ -31,6 +31,7 @@ import {
 } from "../lib/tenant-provisioning";
 import { resolveInstanceSourcesFromDefinition } from "./agent-provisioning";
 import { getLogger } from "@intx/log";
+import { decryptToolCredentialSecret } from "../lib/credential-crypto";
 
 const log = getLogger(["api", "myra-threads"]);
 
@@ -478,7 +479,7 @@ async function resolveTitleSource(
         id: providerRow?.id ?? generateId("offering"),
         provider: providerRow?.plugin ?? "openai-compatible",
         baseURL: metadata.baseURL,
-        apiKey: resolved.secret,
+        apiKey: decryptToolCredentialSecret(resolved.secret),
         model: metadata.model,
         defaults: { maxTokens: 64 },
       };
