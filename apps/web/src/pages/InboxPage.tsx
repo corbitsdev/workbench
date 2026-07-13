@@ -7,8 +7,6 @@ import {
   buildNowFeed,
   openTaskStatuses,
   mailboxSenderLabel,
-  mailboxRefHref,
-  isExternalMailboxRef,
   type MailboxMessage,
   type MailboxMessageDetail,
   type MailboxRef,
@@ -26,6 +24,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { formatRelativeTime } from "../lib/relative-time";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { NowSection } from "../components/NowSection";
+import { RefChip } from "../components/RefChip";
 
 // The Now feed's liveness cadence, shared with the bell's mailbox poll so the
 // whole dashboard breathes at one rate.
@@ -485,50 +484,10 @@ function RelatedRefs({ refs }: { refs: MailboxRef[] | undefined }) {
         Related
       </span>
       {refs.map((ref, index) => (
-        <RelatedRefChip key={`${ref.kind}:${ref.ref}:${index}`} refItem={ref} />
+        <RefChip key={`${ref.kind}:${ref.ref}:${index}`} refItem={ref} />
       ))}
     </nav>
   );
-}
-
-function RelatedRefChip({ refItem }: { refItem: MailboxRef }) {
-  const label = refItem.label ?? defaultRefLabel(refItem);
-  const chipClass =
-    "inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text";
-  if (isExternalMailboxRef(refItem)) {
-    return (
-      <a
-        href={mailboxRefHref(refItem)}
-        target="_blank"
-        rel="noreferrer"
-        className={chipClass}
-      >
-        {label}
-      </a>
-    );
-  }
-  return (
-    <Link to={mailboxRefHref(refItem)} className={chipClass}>
-      {label}
-    </Link>
-  );
-}
-
-function defaultRefLabel(ref: MailboxRef): string {
-  switch (ref.kind) {
-    case "artifact":
-      return "Open artifact";
-    case "workflow_run":
-      return "Open run";
-    case "task":
-      return "Open task";
-    case "mail":
-      return "Open message";
-    case "linear":
-      return "Open in Linear";
-    case "url":
-      return "Open link";
-  }
 }
 
 interface LoadMoreControlProps {

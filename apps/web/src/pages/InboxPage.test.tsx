@@ -361,12 +361,15 @@ describe("InboxPage", () => {
     const runLink = within(related).getByRole("link", { name: "Open run" });
     expect(runLink.getAttribute("href")).toBe("/workflows/wfr-1");
     const linearLink = within(related).getByRole("link", {
-      name: "Open in Linear",
+      name: /Open in Linear/,
     });
     expect(linearLink.getAttribute("href")).toBe(
       "https://linear.app/x/ISSUE-1",
     );
     expect(linearLink.getAttribute("target")).toBe("_blank");
+    expect(linearLink.getAttribute("rel")).toBe("noreferrer");
+    // The external chip announces its new-tab behavior to assistive tech.
+    expect(linearLink.textContent).toContain("(opens in new tab)");
   });
 
   it("selects the deep-linked message without a click", () => {

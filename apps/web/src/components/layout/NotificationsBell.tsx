@@ -5,10 +5,7 @@ import { Bell, CheckCheck, ListTodo } from "lucide-react";
 import { cn } from "@workbench/ui";
 import {
   mailboxSenderLabel,
-  mailboxRefHref,
-  isExternalMailboxRef,
   type MailboxMessage,
-  type MailboxRef,
   type Task,
 } from "@workbench/shared";
 import {
@@ -19,10 +16,15 @@ import {
 import { useMailboxLive } from "../../hooks/use-mailbox-live";
 import { useTasks } from "../../hooks/use-tasks";
 import { formatRelativeTime } from "../../lib/relative-time";
+import { RefChip } from "../RefChip";
 
 const RECENT_LIMIT = 8;
 const RECENT_TASK_LIMIT = 5;
 const BADGE_MAX = 9;
+// The dropdown is a glanceable digest, not the reading pane: show at most this
+// many ref chips per message and fold the rest into a "+N more" link to the
+// full message, where every ref is listed.
+const BELL_REF_LIMIT = 2;
 
 const OPEN_TASK_STATUSES = new Set(["open", "in_progress", "waiting"]);
 
@@ -196,6 +198,8 @@ interface NotificationItemProps {
 
 function NotificationItem({ message, onSelect }: NotificationItemProps) {
   const refs = message.refs ?? [];
+  const visibleRefs = refs.slice(0, BELL_REF_LIMIT);
+  const overflow = refs.length - visibleRefs.length;
   return (
     <div>
       <Link
@@ -235,46 +239,25 @@ function NotificationItem({ message, onSelect }: NotificationItemProps) {
           aria-label="Related"
           className="flex flex-wrap items-center gap-1.5 px-4 pb-2 pl-[38px]"
         >
-          {refs.map((ref, index) => (
-            <BellRefChip
+          {visibleRefs.map((ref, index) => (
+            <RefChip
               key={`${ref.kind}:${ref.ref}:${index}`}
               refItem={ref}
               onSelect={onSelect}
             />
           ))}
+          {overflow > 0 && (
+            <Link
+              to={`/inbox/${message.id}`}
+              onClick={onSelect}
+              className="inline-flex min-h-[40px] items-center rounded-full px-2 text-xs font-medium text-text-3 transition-colors hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-orange"
+            >
+              +{overflow} more
+            </Link>
+          )}
         </nav>
       )}
     </div>
-  );
-}
-
-function BellRefChip({
-  refItem,
-  onSelect,
-}: {
-  refItem: MailboxRef;
-  onSelect: () => void;
-}) {
-  const label = refItem.label ?? refItem.kind;
-  const chipClass =
-    "inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-text-2 transition-colors hover:bg-page hover:text-text";
-  if (isExternalMailboxRef(refItem)) {
-    return (
-      <a
-        href={mailboxRefHref(refItem)}
-        target="_blank"
-        rel="noreferrer"
-        onClick={onSelect}
-        className={chipClass}
-      >
-        {label}
-      </a>
-    );
-  }
-  return (
-    <Link to={mailboxRefHref(refItem)} onClick={onSelect} className={chipClass}>
-      {label}
-    </Link>
   );
 }
 
