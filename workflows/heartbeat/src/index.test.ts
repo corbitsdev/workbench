@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { runLocal } from "@intx/workflow/runlocal";
 import type { StepInvoker } from "@intx/workflow/runtime";
+import { evaluateSelector } from "@intx/workflow/runtime";
+import { mergeHeartbeatBriefSources } from "@workbench/shared";
 import {
   DETERMINISTIC_TOOL_KIND,
   INLINE_INFERENCE_KIND,
@@ -79,7 +81,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   test("has no awaitSignal steps — every step is a plain step or map", () => {
     const kinds = Object.values(workflow.steps).map((s) => s.kind);
-    expect(kinds.length).toBe(3 + WIRED_BRIEF_SOURCES.length);
+    expect(kinds.length).toBe(4 + WIRED_BRIEF_SOURCES.length);
     for (const kind of kinds) {
       expect(kind === "step" || kind === "map").toBe(true);
       expect(kind).not.toBe("awaitSignal");
@@ -107,7 +109,12 @@ describe("heartbeat native workflow", () => {
     const nonIntakeSteps = Object.keys(workflow.steps).filter(
       (id) => !intakeStepIds.includes(id),
     );
-    expect(nonIntakeSteps.sort()).toEqual(["brief", "notify", "persist"]);
+    expect(nonIntakeSteps.sort()).toEqual([
+      "brief",
+      "merge-sources",
+      "notify",
+      "persist",
+    ]);
   });
 
   test("each generated intake step is a deterministic call to its source's tool, nonFatal, with no inference source", () => {
@@ -135,7 +142,8 @@ describe("heartbeat native workflow", () => {
     expect(intake.agent.id).toBe("heartbeat-intake-granola");
     expect(intake.agent.tags?.[STEP_TOOL_TAG]).toContain("granola_list_notes");
     expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
-    expect(stepPrimitive("brief").after).toEqual(
+    expect(stepPrimitive("brief").after).toEqual(["merge-sources"]);
+    expect(stepPrimitive("merge-sources").after).toEqual(
       WIRED_BRIEF_SOURCES.map((s) => heartbeatIntakeStepKey(s.key)),
     );
   });
@@ -179,17 +187,89 @@ describe("heartbeat native workflow", () => {
     }
   });
 
-  test("brief merges the trigger payload and every intake step's output, and depends on all of them", () => {
+  test("merge-sources projects every intake step into heartbeat_merge_brief_sources", () => {
     const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
       heartbeatIntakeStepKey(s.key),
     );
+    const mergeSources = stepPrimitive("merge-sources");
+    expect(mergeSources.agent.tags?.[STEP_TOOL_TAG]).toContain(
+      "heartbeat_merge_brief_sources",
+    );
+    expect(mergeSources.input).toEqual({
+      project: { from: "steps" },
+      fields: intakeStepIds,
+    });
+  });
+
+  test("brief merges the trigger payload and merged sources content", () => {
     expect(stepPrimitive("brief").input).toEqual({
       merge: [
         { from: "trigger.payload" },
-        ...intakeStepIds.map((stepId) => ({ from: `steps.${stepId}.output` })),
+        { from: "steps.merge-sources.output.content" },
       ],
     });
-    expect(stepPrimitive("brief").after).toEqual(intakeStepIds);
+    expect(stepPrimitive("brief").after).toEqual(["merge-sources"]);
+  });
+
+  test("brief input selector keeps every source when intake envelopes share callId/content/isError", () => {
+    const intakeStepIds = WIRED_BRIEF_SOURCES.map((s) =>
+      heartbeatIntakeStepKey(s.key),
+    );
+    const steps: Record<string, { output: unknown }> = {
+      "intake-granola": {
+        output: {
+          callId: "c1",
+          isError: false,
+          content: JSON.stringify({
+            notes: [{ id: "n1", title: "Acme call" }],
+          }),
+        },
+      },
+      "intake-linear": {
+        output: {
+          callId: "c2",
+          isError: false,
+          content: JSON.stringify({ issues: [{ id: "LIN-1" }] }),
+        },
+      },
+      "intake-attio": {
+        output: {
+          callId: "c3",
+          isError: false,
+          content: JSON.stringify({ attioActivity: { openTasks: [] } }),
+        },
+      },
+      "intake-vercel": {
+        output: {
+          callId: "c4",
+          isError: true,
+          content: "403 forbidden",
+        },
+      },
+    };
+    const mergedSources = mergeHeartbeatBriefSources(
+      Object.fromEntries(intakeStepIds.map((id) => [id, steps[id]])),
+    );
+    const briefSelector = stepPrimitive("brief").input;
+    if (briefSelector === undefined) {
+      throw new Error("brief step has no input selector");
+    }
+    const briefInput = evaluateSelector(briefSelector, {
+      trigger: { payload: TRIGGER_PAYLOAD },
+      steps: {
+        ...steps,
+        "merge-sources": {
+          output: { content: mergedSources, callId: "merge", isError: false },
+        },
+      },
+    }) as Record<string, unknown>;
+
+    const sources = briefInput.sources as Record<string, unknown>;
+    expect(sources.granola).toEqual(mergedSources.sources.granola);
+    expect(sources.linear).toEqual(mergedSources.sources.linear);
+    expect(sources.attio).toEqual(mergedSources.sources.attio);
+    expect(sources.vercel).toEqual(mergedSources.sources.vercel);
+    expect(briefInput.userAddress).toBe(TRIGGER_PAYLOAD.userAddress);
   });
 
   // -------------------------------------------------------------------------
@@ -230,6 +310,22 @@ describe("heartbeat native workflow", () => {
         attioActivity: { newCompanies: [], openTasks: [] },
       },
       "heartbeat-intake-vercel": { deployments: [] },
+      "heartbeat-merge-sources": {
+        content: {
+          sources: {
+            granola: {
+              notes: [
+                { id: "note_1", title: "Acme call", summary: "Discovery" },
+              ],
+            },
+            linear: { issues: [] },
+            attio: {
+              attioActivity: { newCompanies: [], openTasks: [] },
+            },
+            vercel: { deployments: [] },
+          },
+        },
+      },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
@@ -249,6 +345,7 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-intake-linear");
     expect(ranIds).toContain("heartbeat-intake-attio");
     expect(ranIds).toContain("heartbeat-intake-vercel");
+    expect(ranIds).toContain("heartbeat-merge-sources");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
@@ -267,6 +364,18 @@ describe("heartbeat native workflow", () => {
         attioActivity: { newCompanies: [], openTasks: [] },
       },
       "heartbeat-intake-vercel": { deployments: [] },
+      "heartbeat-merge-sources": {
+        content: {
+          sources: {
+            granola: { notes: [] },
+            linear: { issues: [] },
+            attio: {
+              attioActivity: { newCompanies: [], openTasks: [] },
+            },
+            vercel: { deployments: [] },
+          },
+        },
+      },
       "heartbeat-brief": { reply: briefReply },
       "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },

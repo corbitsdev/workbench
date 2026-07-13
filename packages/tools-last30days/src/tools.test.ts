@@ -487,3 +487,57 @@ describe("last30days_entity_queries (CL-2503)", () => {
     }
   });
 });
+
+describe("heartbeat_merge_brief_sources (CL-3485)", () => {
+  test("returns every wired source under sources.* from projected intake steps", async () => {
+    const handler = fullTool("heartbeat_merge_brief_sources");
+    const steps = {
+      "intake-granola": {
+        output: {
+          callId: "c1",
+          isError: false,
+          content: JSON.stringify({
+            notes: [{ id: "n1", title: "Acme" }],
+          }),
+        },
+      },
+      "intake-linear": {
+        output: {
+          callId: "c2",
+          isError: false,
+          content: JSON.stringify({ issues: [{ id: "LIN-1" }] }),
+        },
+      },
+      "intake-attio": {
+        output: {
+          callId: "c3",
+          isError: false,
+          content: JSON.stringify({ attioActivity: { openTasks: [] } }),
+        },
+      },
+      "intake-vercel": {
+        output: {
+          callId: "c4",
+          isError: true,
+          content: "403 forbidden",
+        },
+      },
+    };
+    const result = await handler(
+      { id: "merge", name: "heartbeat_merge_brief_sources", arguments: steps },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as {
+      sources: Record<string, Record<string, unknown>>;
+    };
+    expect(content.sources.granola?.notes).toEqual([{ id: "n1", title: "Acme" }]);
+    expect(content.sources.linear?.issues).toEqual([{ id: "LIN-1" }]);
+    expect(content.sources.vercel).toEqual({
+      isError: true,
+      error: "403 forbidden",
+    });
+  });
+});

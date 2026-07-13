@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-13T15:34:12.742Z",
+  "generatedAt": "2026-07-13T17:09:09.576Z",
   "factories": [
     {
       "factoryId": "@workbench/tools-ab-compare/compose",
@@ -433,6 +433,7 @@
       "packageName": "@workbench/tools-last30days",
       "providerName": null,
       "bareToolNames": [
+        "heartbeat_merge_brief_sources",
         "last30days_collect",
         "last30days_core_extract",
         "last30days_core_report",
@@ -448,7 +449,8 @@
         "last30days_entity_queries": "read",
         "last30days_collect": "read",
         "last30days_validate": "read",
-        "last30days_workflow_brief": "read"
+        "last30days_workflow_brief": "read",
+        "heartbeat_merge_brief_sources": "read"
       },
       "myraCatalog": null,
       "credentialCatalog": null

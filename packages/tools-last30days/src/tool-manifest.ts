@@ -28,6 +28,9 @@ export const toolManifestFile = {
         last30days_workflow_brief: {
           sideEffect: "read",
         },
+        heartbeat_merge_brief_sources: {
+          sideEffect: "read",
+        },
       },
       myraCatalog: null,
       credentialCatalog: null,

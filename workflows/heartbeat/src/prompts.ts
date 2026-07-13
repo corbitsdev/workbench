@@ -9,10 +9,9 @@ export interface BriefSourceDescriptor {
   label: string;
 }
 
-// The morning-brief writer. Its input is the merged trigger payload and every
-// wired source's fetch-tool result (recent data as JSON in the tool-result
-// content, one source's fields per `steps.intake-<source>.output` merged at
-// the top level — see workflows/heartbeat/src/index.ts). It emits a single
+// The morning-brief writer. Its input is the merged trigger payload plus
+// `sources` — each wired source's parsed fetch result under `sources.<key>`
+// (see the merge-sources step in workflows/heartbeat/src/index.ts). It emits a single
 // markdown brief that becomes BOTH the mail body and the saved artifact, so
 // the reply must stand entirely on its own — no preamble, no sign-off, no
 // "here is your brief" framing.
@@ -36,7 +35,7 @@ export function buildMorningBriefSystemPrompt(
 You are given, as JSON, recent data pulled from this person's connected brief sources:
 ${sourceBullets}
 
-Each source's data appears as its own fields in the JSON (field shape varies by source — e.g. a list of items with titles, dates, and summaries). Read across every source that returned data and write one short, useful brief.
+Each source's data lives under the \`sources\` object (e.g. \`sources.granola\`, \`sources.linear\`) — field shape varies by source. Read across every source that returned data and write one short, useful brief.
 
 ## Output — one markdown document, in exactly these sections
 # Your morning brief

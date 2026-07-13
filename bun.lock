@@ -1200,6 +1200,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@workbench/last30days-core": "workspace:*",
+        "@workbench/shared": "workspace:*",
         "@workbench/tool-manifest": "workspace:*",
         "arktype": "catalog:",
       },
