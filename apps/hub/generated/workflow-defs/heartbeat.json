@@ -163,7 +163,7 @@
         "id": "brief",
         "agent": {
           "id": "heartbeat-brief",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write a concise morning brief for a go-to-market operator, synthesized from their recent activity.\n\nYou are given, as JSON, recent data pulled from this person's connected brief sources:\n- Attio\n- Granola\n- Linear\n- Vercel\n\nEach source's data lives under the `sources` object (e.g. `sources.granola`, `sources.linear`) — field shape varies by source. Read across every source that returned data and write one short, useful brief.\n\n## Output — one markdown document, in exactly these sections\n# Your morning brief\n\n## What happened\nA tight synthesis of recent activity from Attio, Granola, Linear, Vercel: what happened, with whom or on what, and the throughline across it. Cover each source that returned data; do not list every item mechanically — group related items. Name the specific companies, people, and topics that appear in the data. If a source returned no data or was skipped (see below), do not invent activity for it — simply do not cover it here, unless every source was empty or skipped, in which case say so plainly in one line.\n\n## What needs attention today\nThe two to five things that genuinely need this person's attention now — an open commitment, an unanswered question, a stalled deal, a decision waiting on them, a risk surfaced in the data. Each as a single scannable line. Lead with the most consequential.\n\n## Suggested next actions\nThree to six concrete, specific next actions tied to the items above — a follow-up to send, a person to loop in, a document to prepare. Each starts with a verb and names the who/what. No generic advice.\n\n## Rules\n- Ground every line in the provided data. Never invent an item, company, person, number, or commitment that is not in the data.\n- If there is no recent data across every source, say so plainly in one line under \"What happened\" and keep the other two sections empty or brief — do not fabricate activity.\n- If a source's data was skipped or unavailable (its JSON has `\"skipped\": true`, `\"isError\": true`, or no data field at all), that means that source is not available for this brief right now — whether the person turned it off, the connection is not configured, or the source is temporarily unavailable, say so plainly and neutrally about that source (e.g. \"Call notes aren't available for this brief.\"), never as an error, failure, or missing data. Only mention this when it changes what \"What happened\" can say — do not pad the brief with per-source status lines when every source did return data.\n- Concise and plain. Short sentences. No jargon, no filler (\"it's worth noting\", \"in today's fast-paced\"), no superlatives.\n- Markdown only, using the headers above. No emojis. No em dashes — use \" - \" for asides.\n- The brief is delivered as an email and saved as an artifact, so it must read as a finished document on its own. Do not address the reader, do not greet, do not sign off, do not mention that you are an AI or that this was generated.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write a concise morning brief for a go-to-market operator, synthesized from their recent activity.\n\nYou are given, as JSON, recent data pulled from this person's connected brief sources:\n- Attio\n- Granola\n- Linear\n- Vercel\n\nThe input also carries `userDisplayName` — this person's name — and `userAddress`. Write the brief FOR this specific person: interpret every item through their evident role and priorities as shown in the data (their meetings, their open items, their deals), not as a generic industry summary. Do not address them by name or greet them in the prose (see rules below) — tailoring means the content and emphasis are theirs, not that you add a salutation.\n\nEach source's data lives under the `sources` object (e.g. `sources.granola`, `sources.linear`) — field shape varies by source. Read across every source that returned data and write one short, useful brief.\n\n## Output — one markdown document, in exactly these sections\n# Your morning brief\n\n## What happened\nA tight synthesis of recent activity from Attio, Granola, Linear, Vercel: what happened, with whom or on what, and the throughline across it. Cover each source that returned data; do not list every item mechanically — group related items. Name the specific companies, people, and topics that appear in the data. If a source returned no data or was skipped (see below), do not invent activity for it — simply do not cover it here, unless every source was empty or skipped, in which case say so plainly in one line.\n\n## What needs attention today\nThe two to five things that genuinely need this person's attention now — an open commitment, an unanswered question, a stalled deal, a decision waiting on them, a risk surfaced in the data. Each as a single scannable line. Lead with the most consequential.\n\n## Suggested next actions\nThree to six concrete, specific next actions tied to the items above — a follow-up to send, a person to loop in, a document to prepare. Each starts with a verb and names the who/what. No generic advice.\n\n## Rules\n- Any item drawn from a source record that carries a `url` field (a Linear issue, an Attio record, a Granola note, or any other linkable source item) must be rendered as a markdown link using that url — e.g. `[CL-3501](https://linear.app/...)` or `[Acme Corp](https://app.attio.com/...)` — instead of plain text. Never fabricate a url for an item that does not have one; render those as plain text.\n- Ground every line in the provided data. Never invent an item, company, person, number, or commitment that is not in the data.\n- If there is no recent data across every source, say so plainly in one line under \"What happened\" and keep the other two sections empty or brief — do not fabricate activity.\n- If a source's data was skipped or unavailable (its JSON has `\"skipped\": true`, `\"isError\": true`, or no data field at all), that means that source is not available for this brief right now — whether the person turned it off, the connection is not configured, or the source is temporarily unavailable, say so plainly and neutrally about that source (e.g. \"Call notes aren't available for this brief.\"), never as an error, failure, or missing data. Only mention this when it changes what \"What happened\" can say — do not pad the brief with per-source status lines when every source did return data.\n- Concise and plain. Short sentences. No jargon, no filler (\"it's worth noting\", \"in today's fast-paced\"), no superlatives.\n- Markdown only, using the headers above. No emojis. No em dashes — use \" - \" for asides.\n- The brief is delivered as an email and saved as an artifact, so it must read as a finished document on its own. Do not address the reader, do not greet, do not sign off, do not mention that you are an AI or that this was generated.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -190,6 +190,32 @@
           "merge-sources"
         ]
       },
+      "title": {
+        "kind": "step",
+        "id": "title",
+        "agent": {
+          "id": "heartbeat-title",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "heartbeat_format_brief_title"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: heartbeat_format_brief_title",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "heartbeat_format_brief_title",
+            "workbench.argMap": "{\"userDisplayName\":{\"from\":\"userDisplayName\"}}",
+            "workbench.title": "Name the brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
       "notify": {
         "kind": "step",
         "id": "notify",
@@ -207,7 +233,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "mail_send",
-            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"literal\":\"Your morning brief\"},\"content\":{\"from\":\"reply\"}}",
+            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"reply\"}}",
             "workbench.title": "Send the brief"
           }
         },
@@ -219,11 +245,15 @@
             },
             {
               "from": "steps.brief.output"
+            },
+            {
+              "from": "steps.title.output.content"
             }
           ]
         },
         "after": [
-          "brief"
+          "brief",
+          "title"
         ]
       },
       "persist": {
@@ -243,7 +273,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"literal\":\"Morning Brief\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"report\"},\"jobLabel\":{\"literal\":\"Morning Brief\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"title\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"morning-brief\"},\"jobLabel\":{\"literal\":\"Morning Brief\"}}",
             "workbench.title": "Save the brief"
           }
         },
@@ -255,11 +285,15 @@
             },
             {
               "from": "steps.brief.output"
+            },
+            {
+              "from": "steps.title.output.content"
             }
           ]
         },
         "after": [
-          "brief"
+          "brief",
+          "title"
         ]
       }
     },
@@ -270,6 +304,7 @@
       "intake-vercel",
       "merge-sources",
       "brief",
+      "title",
       "notify",
       "persist"
     ]
