@@ -24,6 +24,7 @@ import { workflowRunRecord } from "../db/schema";
 import { insertRunRecord, listRunSteps, loadRunRecord } from "./run-store";
 import {
   projectWorkflowRunRepo,
+  seedMissingRunRecordsFromRepo,
   type OnNewlyAwaitingFn,
 } from "./projection-bridge";
 import { createRunLivenessSweep } from "../services/run-liveness-sweep";
@@ -243,6 +244,31 @@ describe("projectWorkflowRunRepo — on-disk -> DB seam", () => {
     await projectWorkflowRunRepo(repoStore, db, REPO_ID);
 
     expect(await loadRunRecord(db, runId)).toBeNull();
+  });
+
+  test("seedMissingRunRecordsFromRepo backfills an orphan log then projection updates it", async () => {
+    const runId = "wfr-orphan-backfill";
+    await commitEvent(runId, 1, {
+      type: "RunStarted",
+      at: "2026-03-01T00:00:00.000Z",
+    });
+    await commitEvent(runId, 2, {
+      type: "RunCompleted",
+      at: "2026-03-01T00:00:05.000Z",
+    });
+
+    const seeded = await seedMissingRunRecordsFromRepo(repoStore, db, REPO_ID, {
+      kind: "test-workflow",
+      tenantId: "tn-it",
+      principalId: "prn-it",
+      deploymentId: REPO_ID.id,
+    });
+    expect(seeded).toEqual([runId]);
+
+    await projectWorkflowRunRepo(repoStore, db, REPO_ID);
+
+    const row = await loadRunRecord(db, runId);
+    expect(row?.status).toBe("completed");
   });
 
   // CL-2727: the per-step projection derived from the SAME native fold. Asserts

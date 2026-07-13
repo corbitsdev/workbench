@@ -9,6 +9,10 @@ import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import type { EnsureDeploymentRoutableFn } from "../routes/workflow-runs";
 import { slidingWindowLimiter } from "../lib/sliding-window";
+import {
+  failRunIfStillRunning,
+  insertRunRecord,
+} from "../workflow-executor/run-store";
 
 const log = getLogger(["services", "workflow-run-starter"]);
 
@@ -132,16 +136,28 @@ export function createWorkflowRunStarter(deps: {
       };
     }
 
+    const runId = randomUUID();
+    const principalId = creatorPrincipalId ?? deployment.principalId;
+
     try {
+      await insertRunRecord(deps.db, {
+        runId,
+        deploymentId: deployment.deploymentId,
+        kind: deployment.kind,
+        tenantId: deployment.tenantId,
+        principalId,
+        input,
+        originConversationId: null,
+      });
+
       // The supervisor may have been dropped from the hub's addressIndex by a
       // restart since deploy; re-establish it before delivering the trigger so
-      // the run does not dead-end on `agent is unreachable` with zero events
-      // to avoid dead-ending on `agent is unreachable` with zero events.
+      // the run does not dead-end on `agent is unreachable` with zero events.
       await deps.ensureDeploymentRoutable({
         deploymentId: deployment.deploymentId,
         kind: deployment.kind,
         tenantId: deployment.tenantId,
-        creatorPrincipalId: creatorPrincipalId ?? deployment.principalId,
+        creatorPrincipalId: principalId,
       });
       await deps.sessionService.sendUserMessage({
         agentAddress: deriveDeploymentAddress({
@@ -149,7 +165,7 @@ export function createWorkflowRunStarter(deps: {
           deploymentDomain: deps.deploymentDomain,
         }),
         from: `hub@${deps.deploymentDomain}`,
-        messageId: randomUUID(),
+        messageId: runId,
         date: new Date(),
         content: JSON.stringify(input),
         sessionId: randomUUID(),
@@ -157,8 +173,10 @@ export function createWorkflowRunStarter(deps: {
         cryptoProvider: deps.cryptoProvider,
       });
     } catch (err) {
+      await failRunIfStillRunning(deps.db, runId, new Date());
       log.error("workflow run-start failed", {
         kind,
+        runId,
         deploymentId: deployment.deploymentId,
         error: err instanceof Error ? err : new Error(String(err)),
       });

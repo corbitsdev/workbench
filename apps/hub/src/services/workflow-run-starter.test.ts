@@ -25,14 +25,40 @@ type Candidate = {
   deletedAt: Date | null;
 };
 
-function makeDb(candidates: Candidate[]): HubDb {
+type TestDb = HubDb & {
+  inserted: Record<string, unknown>[];
+  failUpdateCalls: number;
+};
+
+function makeDb(candidates: Candidate[]): TestDb {
+  const inserted: Record<string, unknown>[] = [];
+  let failUpdateCalls = 0;
   return {
     query: {
       workflowRun: {
         findMany: async () => candidates,
       },
     },
-  } as unknown as HubDb;
+    insert: () => ({
+      values: async (row: Record<string, unknown>) => {
+        inserted.push(row);
+      },
+    }),
+    update: () => ({
+      set: () => ({
+        where: () => ({
+          returning: async () => {
+            failUpdateCalls += 1;
+            return [{ id: "flipped" }];
+          },
+        }),
+      }),
+    }),
+    inserted,
+    get failUpdateCalls() {
+      return failUpdateCalls;
+    },
+  } as unknown as TestDb;
 }
 
 const DOMAIN = "workbench.example";
@@ -59,15 +85,16 @@ describe("createWorkflowRunStarter", () => {
       },
     } as unknown as SessionService;
 
+    const db = makeDb([
+      candidate({ deploymentId: "dep-root", tenantId: "t-root" }),
+      candidate({
+        deploymentId: "dep-child",
+        tenantId: "t-child",
+        principalId: "principal-child",
+      }),
+    ]);
     const starter = createWorkflowRunStarter({
-      db: makeDb([
-        candidate({ deploymentId: "dep-root", tenantId: "t-root" }),
-        candidate({
-          deploymentId: "dep-child",
-          tenantId: "t-child",
-          principalId: "principal-child",
-        }),
-      ]),
+      db,
       sessionService,
       ensureDeploymentRoutable: async () => ({ reestablished: false }),
       deploymentDomain: DOMAIN,
@@ -92,6 +119,9 @@ describe("createWorkflowRunStarter", () => {
     expect(sent[0]?.content).toBe(JSON.stringify(input));
     expect(sent[0]?.tenantId).toBe("t-child");
     expect(sent[0]?.from).toBe(`hub@${DOMAIN}`);
+    expect(db.inserted).toHaveLength(1);
+    expect(db.inserted[0]?.deploymentId).toBe("dep-child");
+    expect(sent[0]?.messageId).toBe(db.inserted[0]?.id);
   });
 
   it("returns not_found when no candidate is deployed for the kind", async () => {
@@ -188,8 +218,9 @@ describe("createWorkflowRunStarter", () => {
 
   it("returns delivery_failed when delivery throws", async () => {
     chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })]);
     const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      db,
       sessionService: {
         sendUserMessage: async () => {
           throw new Error("sidecar unreachable");
@@ -208,6 +239,8 @@ describe("createWorkflowRunStarter", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("delivery_failed");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.failUpdateCalls).toBe(1);
   });
 
   it("starts runs while under the per-tenant hourly budget", async () => {
@@ -342,16 +375,10 @@ describe("createWorkflowRunStarter", () => {
 
   it("isolates the start budget per tenant", async () => {
     chainRef = ["t-a"];
-    const db = {
-      query: {
-        workflowRun: {
-          findMany: async () =>
-            chainRef[0] === "t-a"
-              ? [candidate({ deploymentId: "dep-a", tenantId: "t-a" })]
-              : [candidate({ deploymentId: "dep-b", tenantId: "t-b" })],
-        },
-      },
-    } as unknown as HubDb;
+    const db = makeDb([
+      candidate({ deploymentId: "dep-a", tenantId: "t-a" }),
+      candidate({ deploymentId: "dep-b", tenantId: "t-b" }),
+    ]);
     const starter = createWorkflowRunStarter({
       db,
       sessionService: {
