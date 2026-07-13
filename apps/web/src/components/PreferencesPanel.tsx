@@ -12,6 +12,8 @@ import {
   usePreferenceSettings,
   useUpdatePreference,
 } from "../hooks/use-preference-settings";
+import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
+import { useMeConnections } from "../hooks/use-me-connections";
 import { BriefSourcesToggles } from "./BriefSourcesToggles";
 import { InboxSourcesToggles } from "./InboxSourcesToggles";
 import { BriefWorkflowAttachments } from "./BriefWorkflowAttachments";
@@ -20,6 +22,35 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 
 const BRIEF_SOURCE_KEY_PREFIX = briefSourcePreferenceKey("");
 const INBOX_SOURCE_KEY_PREFIX = inboxSourcePreferenceKey("");
+
+/**
+ * Whether a setting's backing signal is met, given the loaded deployed-
+ * workflow-kinds and connected-provider sets. A setting with no
+ * `availableWhen` is always available (backward compatible). While the
+ * relevant signal source is still loading, the setting is treated as
+ * unavailable — hidden rather than flashing on then off once the real
+ * answer arrives. `capability` has no wired projection endpoint yet (see
+ * CL-3452 PR notes), so it never hides a control.
+ */
+function isSettingAvailable(
+  setting: PreferenceSetting,
+  deployedWorkflowKinds: ReadonlySet<string>,
+  workflowsPending: boolean,
+  connectedProviders: ReadonlySet<string>,
+  connectionsPending: boolean,
+): boolean {
+  const signal = setting.availableWhen;
+  if (!signal) return true;
+  if (signal.kind === "workflow-deployed") {
+    if (workflowsPending) return false;
+    return deployedWorkflowKinds.has(signal.workflowKind);
+  }
+  if (signal.kind === "credential-connected") {
+    if (connectionsPending) return false;
+    return connectedProviders.has(signal.provider);
+  }
+  return true;
+}
 
 type PreferenceValue = boolean | string | number;
 
@@ -184,6 +215,18 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
   const query = usePreferenceSettings();
   const update = useUpdatePreference();
   const reduceMotion = useReducedMotion() ?? false;
+  const { activeTenantId } = useActiveWorkbench();
+  const workflowsCatalog = useWorkflowsCatalog(activeTenantId);
+  const connections = useMeConnections();
+
+  const deployedWorkflowKinds = new Set(
+    (workflowsCatalog.data?.entries ?? []).map((entry) => entry.kind),
+  );
+  const connectedProviders = new Set(
+    (connections.data?.connections ?? [])
+      .filter((connection) => connection.connected)
+      .map((connection) => connection.provider),
+  );
 
   const statusFor = (key: string): string | null => {
     if (update.variables?.key !== key) return null;
@@ -242,7 +285,14 @@ export function PreferencesPanel({ categories }: PreferencesPanelProps = {}) {
         (s) =>
           s.category === category &&
           !s.key.startsWith(BRIEF_SOURCE_KEY_PREFIX) &&
-          !s.key.startsWith(INBOX_SOURCE_KEY_PREFIX),
+          !s.key.startsWith(INBOX_SOURCE_KEY_PREFIX) &&
+          isSettingAvailable(
+            s,
+            deployedWorkflowKinds,
+            workflowsCatalog.isPending,
+            connectedProviders,
+            connections.isPending,
+          ),
       ),
     }))
     .filter(
