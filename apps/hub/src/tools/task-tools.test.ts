@@ -52,6 +52,9 @@ function tool(name: string) {
     (t) => t.definition.name === name,
   );
   if (!found) throw new Error(`tool not found: ${name}`);
+  if (found.kind !== "string") {
+    throw new Error(`tool is not a string-handler tool: ${name}`);
+  }
   return found;
 }
 

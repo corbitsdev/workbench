@@ -23,8 +23,12 @@ import { getLogger } from "@intx/log";
 import { ToolCredentialMissingError } from "@workbench/tool-credentials";
 
 const logger = getLogger(["sidecar", "harness-builder"]);
-const warnSpy = spyOn(logger, "warn").mockImplementation(() => {});
-const infoSpy = spyOn(logger, "info").mockImplementation(() => {});
+// logtape's warn/info are heavily overloaded (some overloads return a Promise),
+// so a bare `() => {}` is not assignable to the method type; the spy only needs
+// a silent no-op, so bridge the impl to the method signature.
+const silentLog = (() => {}) as unknown as typeof logger.warn;
+const warnSpy = spyOn(logger, "warn").mockImplementation(silentLog);
+const infoSpy = spyOn(logger, "info").mockImplementation(silentLog);
 
 const createIsogitStoreMock = mock(async () => ({
   type: "isogit",
@@ -168,15 +172,17 @@ describe("default harness: missing-credential skip is quiet", () => {
     ]);
 
     await buildAgentEnv();
-    const warnMessages = warnSpy.mock.calls.map((c) => c[0] as string);
+    const warnMessages = warnSpy.mock.calls.map((c) => String(c[0]));
     expect(warnMessages.some((m) => m.includes("failed to construct"))).toBe(
       false,
     );
     const skipCall = infoSpy.mock.calls.find((c) =>
-      (c[0] as string).includes("no credential configured"),
+      String(c[0]).includes("no credential configured"),
     );
     expect(skipCall).toBeTruthy();
-    const fields = skipCall?.[1] as Record<string, unknown> | undefined;
+    const fields = (skipCall as unknown[] | undefined)?.[1] as
+      | Record<string, unknown>
+      | undefined;
     expect(fields?.providerName).toBe("notion");
   });
 
@@ -196,11 +202,11 @@ describe("default harness: missing-credential skip is quiet", () => {
 
     await buildAgentEnv();
 
-    const warnMessages = warnSpy.mock.calls.map((c) => c[0] as string);
+    const warnMessages = warnSpy.mock.calls.map((c) => String(c[0]));
     expect(warnMessages.some((m) => m.includes("failed to construct"))).toBe(
       true,
     );
-    const infoMessages = infoSpy.mock.calls.map((c) => c[0] as string);
+    const infoMessages = infoSpy.mock.calls.map((c) => String(c[0]));
     expect(
       infoMessages.some((m) => m.includes("no credential configured")),
     ).toBe(false);

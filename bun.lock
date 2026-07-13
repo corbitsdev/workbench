@@ -901,6 +901,7 @@
       "devDependencies": {
         "@types/bun": "latest",
         "typescript": "^5.9.0",
+        "undici-types": "7.24.6",
       },
     },
     "packages/test-utils": {
@@ -1390,6 +1391,10 @@
         "@intx/types": "workspace:*",
         "@intx/workflow": "workspace:*",
         "arktype": "catalog:",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
       },
     },
     "workflows/ab-compare-quality": {

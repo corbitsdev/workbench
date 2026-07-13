@@ -136,7 +136,7 @@ describe("isFeatureEnabledForTenantCached", () => {
     db.query.grant.findMany = (async (...args: unknown[]) => {
       calls += 1;
       return originalFindMany(...(args as []));
-    }) as typeof db.query.grant.findMany;
+    }) as unknown as typeof db.query.grant.findMany;
 
     let clock = 1_000;
     const now = () => clock;
@@ -170,7 +170,7 @@ describe("isFeatureEnabledForTenantCached", () => {
     db.query.grant.findMany = (async (...args: unknown[]) => {
       calls += 1;
       return originalFindMany(...(args as []));
-    }) as typeof db.query.grant.findMany;
+    }) as unknown as typeof db.query.grant.findMany;
 
     let clock = 1_000;
     const now = () => clock;

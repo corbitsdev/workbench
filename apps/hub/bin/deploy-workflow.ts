@@ -39,7 +39,7 @@ export type DeployWorkflowOptions = {
   // Optional target tenant slug. Omitted → the hub deploys to the global
   // tenant (unchanged). A slug scopes the deploy to that workbench sub-tenant,
   // which the hub validates is the global tenant or a descendant of it.
-  tenantSlug?: string;
+  tenantSlug?: string | undefined;
 };
 
 // Build the request URL + headers for the chosen auth mode. Session auth posts

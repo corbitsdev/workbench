@@ -1,10 +1,16 @@
 import { describe, expect, it } from "bun:test";
 import { defaultDirectorFactory } from "@intx/agent";
+import type { BaseEnv } from "@intx/agent";
 import type {
   ReactorAction,
   ReactorCapabilities,
   ToolDefinition,
 } from "@intx/types/runtime";
+
+// These budget directors wrap the interchange default director and never read
+// env in their constructor, so a bare stub is the correct fixture — mirrors the
+// upstream default-director.test.ts pattern.
+const stubEnv = {} as BaseEnv;
 import {
   createWorkbenchDirectorRegistry,
   firecrawlDirector,
@@ -113,7 +119,7 @@ describe("triageBudgetDirector.factory composition", () => {
   };
 
   it("wraps the interchange default director unconditionally — a triage prompt never carries the dynamic-tools opt-in marker", async () => {
-    const director = triageBudgetDirector.factory({}, {}, agent);
+    const director = triageBudgetDirector.factory({}, stubEnv, agent);
     const sink: ToolDefinition[][] = [];
     const cap = recordingCapabilities(sink);
 
@@ -192,7 +198,7 @@ describe("workflowStepBudgetDirector.factory composition", () => {
       id: WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
       config: {},
     });
-    const director = factory({}, {}, agent);
+    const director = factory({}, stubEnv, agent);
     const sink: ToolDefinition[][] = [];
     const cap = recordingCapabilities(sink);
 
@@ -223,7 +229,7 @@ describe("workflowStepBudgetDirector.factory composition", () => {
   });
 
   it("caps tool calls at the workflow-step preset, above the triage preset", async () => {
-    const director = workflowStepBudgetDirector.factory({}, {}, agent);
+    const director = workflowStepBudgetDirector.factory({}, stubEnv, agent);
     const cap = recordingCapabilities([]);
 
     const manyCalls = Array.from(

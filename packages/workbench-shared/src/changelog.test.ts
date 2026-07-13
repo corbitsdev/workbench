@@ -36,7 +36,7 @@ describe("CHANGELOG", () => {
   });
 
   test("latestChangelogRelease returns the first release", () => {
-    expect(latestChangelogRelease()).toBe(CHANGELOG[0]);
+    expect(latestChangelogRelease()).toBe(CHANGELOG[0]!);
   });
 });
 

@@ -66,7 +66,7 @@ function makeDb(opts: {
     inserted.push(row);
     return { onConflictDoNothing };
   });
-  const findPrincipalByEmbeddedId = (where: unknown): unknown => {
+  const findPrincipalByEmbeddedId = (where: unknown): string | undefined => {
     // Walk the drizzle `eq(principal.id, X)` expression looking for a value
     // that matches a key in opts.principals.
     const seen = new Set<unknown>();

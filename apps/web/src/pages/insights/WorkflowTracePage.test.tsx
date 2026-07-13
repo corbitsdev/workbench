@@ -406,8 +406,8 @@ describe("WorkflowTracePage", () => {
     const steps = [
       {
         stepId: "intake",
-        phase: "completed",
-        stepType: "deterministic",
+        phase: "completed" as const,
+        stepType: "deterministic" as const,
         currentAttempt: 1,
         outputRef: 'inline:{"v":1}',
       },

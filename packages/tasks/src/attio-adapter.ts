@@ -76,6 +76,9 @@ export function createAttioTaskAdapter(deps: AttioAdapterDeps): TaskAdapter {
     if (tool === undefined) {
       throw new Error(`Attio adapter could not resolve tool: ${name}`);
     }
+    if (tool.kind !== "string") {
+      throw new Error(`Attio adapter expected a string-handler tool: ${name}`);
+    }
     return tool.handler;
   }
 

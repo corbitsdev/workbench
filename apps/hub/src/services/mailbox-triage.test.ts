@@ -50,7 +50,11 @@ mock.module("../lib/member-preferences", () => ({
   readMemberPreferences: readPrefsMock,
 }));
 
-const writeMock = mock(async () => ({ id: "handoff-1" }));
+const writeMock = mock(
+  async (_db: unknown, _opts: Record<string, unknown>) => ({
+    id: "handoff-1",
+  }),
+);
 mock.module("../lib/mailbox-write", () => ({
   writeMailboxMessage: writeMock,
 }));
@@ -139,7 +143,9 @@ function makeDb(opts: {
 }
 
 function makeSessionService() {
-  const sendUserMessage = mock(async () => new Uint8Array());
+  const sendUserMessage = mock(
+    async (_message: Record<string, unknown>) => new Uint8Array(),
+  );
   const endSession = mock(async () => undefined);
   return {
     service: { sendUserMessage, endSession } as never,
