@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildNowFeed, TRIAGE_SUBJECT_PREFIX, type NowRun } from "./now-feed";
+import { buildNowFeed, type NowRun } from "./now-feed";
 import type { MailboxMessage } from "./mailbox";
 import type { Task } from "./tasks";
 
@@ -111,7 +111,7 @@ describe("buildNowFeed", () => {
     ]);
   });
 
-  test("collapses the raw item behind an unread triage handoff", () => {
+  test("collapses the raw item behind an unread triage handoff via its mail ref", () => {
     const raw = makeMessage({
       id: "msg-raw",
       subject: "Pricing question from Acme",
@@ -119,8 +119,9 @@ describe("buildNowFeed", () => {
     });
     const handoff = makeMessage({
       id: "msg-handoff",
-      subject: `${TRIAGE_SUBJECT_PREFIX}Pricing question from Acme`,
+      subject: "Myra triaged: Pricing question from Acme",
       date: "2026-07-11T10:00:00.000Z",
+      refs: [{ kind: "mail", ref: "msg-raw", label: "Open original" }],
     });
     const feed = buildNowFeed({
       runs: [],
@@ -138,8 +139,9 @@ describe("buildNowFeed", () => {
     const raw = makeMessage({ id: "msg-raw", subject: "Pricing question" });
     const handoff = makeMessage({
       id: "msg-handoff",
-      subject: `${TRIAGE_SUBJECT_PREFIX}Pricing question`,
+      subject: "Myra triaged: Pricing question",
       read: true,
+      refs: [{ kind: "mail", ref: "msg-raw", label: "Open original" }],
     });
     const feed = buildNowFeed({
       runs: [],

@@ -367,6 +367,9 @@ export function createMailboxTriage(deps: MailboxTriageDeps): MailboxTriage {
           subject: `Myra triaged: ${subject}`,
           body: text,
           messageKey: `triage:${item.rowId}`,
+          // Links the handoff to the raw mail it triaged, so the Now feed can
+          // collapse the pair by ref instead of the old subject-prefix match.
+          refs: [{ kind: "mail", ref: item.rowId, label: `Open: ${subject}` }],
           ...(inReplyTo !== undefined ? { inReplyTo } : {}),
         },
         deps.mailboxEventBus,

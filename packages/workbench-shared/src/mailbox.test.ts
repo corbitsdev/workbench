@@ -4,6 +4,9 @@ import {
   MailboxListResponse,
   MailboxMessage,
   MailboxMessageDetail,
+  MailboxRefSchema,
+  mailboxRefHref,
+  isExternalMailboxRef,
   mailboxSenderLabel,
 } from "./mailbox";
 
@@ -62,6 +65,56 @@ describe("MailboxMessageDetail", () => {
 
   test("rejects a missing body", () => {
     expect(MailboxMessageDetail(goodMessage) instanceof type.errors).toBe(true);
+  });
+});
+
+describe("MailboxRefSchema", () => {
+  test("accepts each supported kind", () => {
+    for (const kind of [
+      "artifact",
+      "workflow_run",
+      "task",
+      "mail",
+      "linear",
+      "url",
+    ] as const) {
+      const ref = { kind, ref: "x", label: "L" };
+      expect(MailboxRefSchema(ref)).toEqual(ref);
+    }
+  });
+
+  test("rejects an unknown kind", () => {
+    const bad = { kind: "conversation", ref: "x" };
+    expect(MailboxRefSchema(bad) instanceof type.errors).toBe(true);
+  });
+
+  test("MailboxMessage carries an optional refs array", () => {
+    const withRefs = {
+      ...goodMessage,
+      refs: [
+        { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
+      ],
+    };
+    expect(MailboxMessage(withRefs)).toEqual(withRefs);
+  });
+});
+
+describe("mailboxRefHref", () => {
+  test("internal kinds resolve through the deepLink helper", () => {
+    expect(mailboxRefHref({ kind: "workflow_run", ref: "wfr-1" })).toBe(
+      "/workflows/wfr-1",
+    );
+    expect(mailboxRefHref({ kind: "mail", ref: "pm-1" })).toBe("/inbox/pm-1");
+    expect(
+      mailboxRefHref({ kind: "artifact", ref: "art-1" }, "https://app.example"),
+    ).toBe("https://app.example/artifacts/art-1");
+  });
+
+  test("external kinds return their raw URL and report as external", () => {
+    const linear = { kind: "linear" as const, ref: "https://linear.app/x/I-1" };
+    expect(mailboxRefHref(linear)).toBe("https://linear.app/x/I-1");
+    expect(isExternalMailboxRef(linear)).toBe(true);
+    expect(isExternalMailboxRef({ kind: "task", ref: "t-1" })).toBe(false);
   });
 });
 

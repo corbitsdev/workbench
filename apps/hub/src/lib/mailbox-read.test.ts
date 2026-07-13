@@ -36,6 +36,7 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "./mailbox-read";
+import { buildMailFrame } from "./mailbox-write";
 
 function signedMorningBriefHeaders(): MessageHeaders {
   return {
@@ -230,6 +231,59 @@ describe("listUserMailbox", () => {
       '"Doe, Jane" <usr_alice@tenant.example>',
       "usr_bob@tenant.example",
     ]);
+  });
+
+  it("round-trips the structured refs embedded by buildMailFrame", async () => {
+    const refs = [
+      { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
+      { kind: "linear" as const, ref: "https://linear.app/x/ISSUE-1" },
+    ];
+    const raw = Buffer.from(
+      buildMailFrame({
+        from: "ins_dep-heartbeat@tenant.example",
+        to: "usr_alice@tenant.example",
+        subject: "A workflow needs you",
+        body: "Respond here.",
+        refs,
+      }),
+    );
+    const { db } = makeListDb([makeRow({ raw })]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toEqual(refs);
+  });
+
+  it("omits refs when the frame carries no refs header", async () => {
+    const { db } = makeListDb([makeRow()]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toBeUndefined();
+  });
+
+  it("degrades to no refs when the refs header is not valid JSON", async () => {
+    const { db } = makeListDb([
+      makeRow({
+        raw: Buffer.from(
+          "From: ins_dep-heartbeat@tenant.example\r\n" +
+            "Subject: s\r\n" +
+            "X-Workbench-Refs: {not json\r\n" +
+            "\r\n" +
+            "Body.\r\n",
+        ),
+      }),
+    ]);
+    const { items: messages } = await listUserMailbox(db, {
+      tenantId: "ten-1",
+      principalId: "pri-alice",
+      limit: 50,
+    });
+    expect(messages[0]?.refs).toBeUndefined();
   });
 
   it("falls back to created_at when the Date header is unparseable", async () => {

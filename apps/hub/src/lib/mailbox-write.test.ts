@@ -70,6 +70,37 @@ describe("buildMailFrame", () => {
     expect(headers.get("message-id")).toMatch(/^<.+@hub\.invalid>$/);
   });
 
+  it("embeds the structured refs as a single-line JSON X-Workbench-Refs header", () => {
+    const refs = [
+      { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
+      { kind: "linear" as const, ref: "https://linear.app/x/ISSUE-1" },
+    ];
+    const raw = buildMailFrame({
+      from: ARGS.fromAddress,
+      to: ARGS.address,
+      subject: "s",
+      body: "b",
+      refs,
+    });
+    const { headers } = parseHeaderSection(raw);
+    const header = headers.get("x-workbench-refs");
+    expect(header).toBeString();
+    expect(header).not.toContain("\n");
+    expect(JSON.parse(header as string)).toEqual(refs);
+  });
+
+  it("omits the refs header when the refs list is empty", () => {
+    const raw = buildMailFrame({
+      from: ARGS.fromAddress,
+      to: ARGS.address,
+      subject: "s",
+      body: "b",
+      refs: [],
+    });
+    const { headers } = parseHeaderSection(raw);
+    expect(headers.get("x-workbench-refs")).toBeUndefined();
+  });
+
   it("omits in-reply-to when there is no source message id", () => {
     const raw = buildMailFrame({
       from: ARGS.fromAddress,

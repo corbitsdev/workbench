@@ -5,7 +5,10 @@ import { Bell, CheckCheck, ListTodo } from "lucide-react";
 import { cn } from "@workbench/ui";
 import {
   mailboxSenderLabel,
+  mailboxRefHref,
+  isExternalMailboxRef,
   type MailboxMessage,
+  type MailboxRef,
   type Task,
 } from "@workbench/shared";
 import {
@@ -192,35 +195,85 @@ interface NotificationItemProps {
 }
 
 function NotificationItem({ message, onSelect }: NotificationItemProps) {
+  const refs = message.refs ?? [];
   return (
-    <Link
-      to={`/inbox/${message.id}`}
-      onClick={onSelect}
-      className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
-    >
-      <span className="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center">
-        {!message.read && (
-          <span className="h-2 w-2 rounded-full bg-orange" aria-hidden="true" />
-        )}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-baseline justify-between gap-2">
-          <span
-            className={cn(
-              "truncate text-[13px]",
-              message.read ? "text-text-2" : "font-semibold text-text",
-            )}
-          >
-            {mailboxSenderLabel(message)}
+    <div>
+      <Link
+        to={`/inbox/${message.id}`}
+        onClick={onSelect}
+        className="flex items-start gap-2.5 px-4 py-2.5 transition-colors hover:bg-page"
+      >
+        <span className="mt-1.5 flex h-2 w-2 shrink-0 items-center justify-center">
+          {!message.read && (
+            <span
+              className="h-2 w-2 rounded-full bg-orange"
+              aria-hidden="true"
+            />
+          )}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-baseline justify-between gap-2">
+            <span
+              className={cn(
+                "truncate text-[13px]",
+                message.read ? "text-text-2" : "font-semibold text-text",
+              )}
+            >
+              {mailboxSenderLabel(message)}
+            </span>
+            <time className="shrink-0 text-[11px] text-text-3">
+              {formatRelativeTime(message.date)}
+            </time>
           </span>
-          <time className="shrink-0 text-[11px] text-text-3">
-            {formatRelativeTime(message.date)}
-          </time>
+          <span className="mt-0.5 block truncate text-[13px] text-text-2">
+            {message.subject ?? "(no subject)"}
+          </span>
         </span>
-        <span className="mt-0.5 block truncate text-[13px] text-text-2">
-          {message.subject ?? "(no subject)"}
-        </span>
-      </span>
+      </Link>
+      {refs.length > 0 && (
+        <nav
+          aria-label="Related"
+          className="flex flex-wrap items-center gap-1.5 px-4 pb-2 pl-[38px]"
+        >
+          {refs.map((ref, index) => (
+            <BellRefChip
+              key={`${ref.kind}:${ref.ref}:${index}`}
+              refItem={ref}
+              onSelect={onSelect}
+            />
+          ))}
+        </nav>
+      )}
+    </div>
+  );
+}
+
+function BellRefChip({
+  refItem,
+  onSelect,
+}: {
+  refItem: MailboxRef;
+  onSelect: () => void;
+}) {
+  const label = refItem.label ?? refItem.kind;
+  const chipClass =
+    "inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-text-2 transition-colors hover:bg-page hover:text-text";
+  if (isExternalMailboxRef(refItem)) {
+    return (
+      <a
+        href={mailboxRefHref(refItem)}
+        target="_blank"
+        rel="noreferrer"
+        onClick={onSelect}
+        className={chipClass}
+      >
+        {label}
+      </a>
+    );
+  }
+  return (
+    <Link to={mailboxRefHref(refItem)} onClick={onSelect} className={chipClass}>
+      {label}
     </Link>
   );
 }

@@ -7,8 +7,11 @@ import {
   buildNowFeed,
   openTaskStatuses,
   mailboxSenderLabel,
+  mailboxRefHref,
+  isExternalMailboxRef,
   type MailboxMessage,
   type MailboxMessageDetail,
+  type MailboxRef,
 } from "@workbench/shared";
 import {
   isMessageNotFound,
@@ -449,6 +452,7 @@ function ReadingPane({
             </div>
           </>
         )}
+        <RelatedRefs refs={headerSource?.refs ?? detail?.refs} />
         <div
           className={cn(
             "border-t border-border pt-6",
@@ -465,6 +469,66 @@ function ReadingPane({
       </motion.article>
     </AnimatePresence>
   );
+}
+
+// The structured "Related" action row: one clickable chip per typed ref on the
+// message. Internal refs (artifact/workflow_run/task/mail) route in-app via the
+// deepLink helper; external refs (linear/url) open in a new tab.
+function RelatedRefs({ refs }: { refs: MailboxRef[] | undefined }) {
+  if (!refs || refs.length === 0) return null;
+  return (
+    <nav
+      aria-label="Related"
+      className="mt-4 flex flex-wrap items-center gap-2"
+    >
+      <span className="text-xs font-medium uppercase tracking-wide text-text-3">
+        Related
+      </span>
+      {refs.map((ref, index) => (
+        <RelatedRefChip key={`${ref.kind}:${ref.ref}:${index}`} refItem={ref} />
+      ))}
+    </nav>
+  );
+}
+
+function RelatedRefChip({ refItem }: { refItem: MailboxRef }) {
+  const label = refItem.label ?? defaultRefLabel(refItem);
+  const chipClass =
+    "inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-row-hover hover:text-text";
+  if (isExternalMailboxRef(refItem)) {
+    return (
+      <a
+        href={mailboxRefHref(refItem)}
+        target="_blank"
+        rel="noreferrer"
+        className={chipClass}
+      >
+        {label}
+      </a>
+    );
+  }
+  return (
+    <Link to={mailboxRefHref(refItem)} className={chipClass}>
+      {label}
+    </Link>
+  );
+}
+
+function defaultRefLabel(ref: MailboxRef): string {
+  switch (ref.kind) {
+    case "artifact":
+      return "Open artifact";
+    case "workflow_run":
+      return "Open run";
+    case "task":
+      return "Open task";
+    case "mail":
+      return "Open message";
+    case "linear":
+      return "Open in Linear";
+    case "url":
+      return "Open link";
+  }
 }
 
 interface LoadMoreControlProps {

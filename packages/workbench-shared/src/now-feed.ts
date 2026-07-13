@@ -6,11 +6,6 @@ import type { Task } from "./tasks";
 // the user's attention right now, in one prioritized list. A gate ask blocks a
 // running workflow, so it outranks unread mail, which outranks open tasks.
 
-// Subject prefix Myra's triage handoffs carry. Mailbox rows expose no
-// In-Reply-To/thread linkage yet, so handoff-to-raw grouping matches on the
-// subject remainder — the simplest correct grouping until threading lands.
-export const TRIAGE_SUBJECT_PREFIX = "Myra triaged: ";
-
 // The structural slice of a workflow-run row the feed needs. The web run
 // schema lives beside its hook; this keeps the composition decoupled from it.
 export const NowRunSchema = type({
@@ -47,14 +42,22 @@ export function buildNowFeed(input: {
     .map((run) => ({ type: "gate", run }));
 
   const unread = input.messages.filter((message) => !message.read);
+  const byId = new Map(input.messages.map((message) => [message.id, message]));
   const collapsedIds = new Set<string>();
   const collapsedByHandoff = new Map<string, MailboxMessage[]>();
+  // A triage handoff links to the raw mail it triaged via a `mail` ref (its
+  // source row id). Collapse the referenced raw message under the handoff by
+  // that structured linkage — no subject-string matching.
   for (const handoff of unread) {
-    if (!handoff.subject?.startsWith(TRIAGE_SUBJECT_PREFIX)) continue;
-    const rawSubject = handoff.subject.slice(TRIAGE_SUBJECT_PREFIX.length);
-    const collapsed = input.messages.filter(
-      (message) => message.id !== handoff.id && message.subject === rawSubject,
-    );
+    const sourceIds = (handoff.refs ?? [])
+      .filter((ref) => ref.kind === "mail")
+      .map((ref) => ref.ref);
+    if (sourceIds.length === 0) continue;
+    const collapsed: MailboxMessage[] = [];
+    for (const id of sourceIds) {
+      const source = byId.get(id);
+      if (source && source.id !== handoff.id) collapsed.push(source);
+    }
     if (collapsed.length === 0) continue;
     collapsedByHandoff.set(handoff.id, collapsed);
     for (const message of collapsed) collapsedIds.add(message.id);

@@ -1,7 +1,14 @@
 import { and, desc, eq, sql } from "drizzle-orm";
+import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { splitMailAddressList } from "@workbench/hub-agent";
-import type { MailboxMessage, MailboxMessageDetail } from "@workbench/shared";
+import {
+  MailboxRefSchema,
+  type MailboxMessage,
+  type MailboxMessageDetail,
+  type MailboxRef,
+} from "@workbench/shared";
+import { MAILBOX_REFS_HEADER } from "./mailbox-write";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
@@ -53,6 +60,36 @@ function toISODate(dateHeader: string | undefined, createdAt: Date): string {
   return parsed.toISOString();
 }
 
+const MailboxRefArray = MailboxRefSchema.array();
+
+// Decode the structured refs the writer embedded as an X-Workbench-Refs frame
+// header. A malformed or unparseable value degrades to no refs (logged) rather
+// than failing the read — the frame is authoritative but a bad header must
+// never 500 the inbox.
+function parseRefsHeader(
+  headers: Map<string, string> | undefined,
+  rowId: string,
+): MailboxRef[] | undefined {
+  const raw = headers?.get(MAILBOX_REFS_HEADER.toLowerCase());
+  if (raw === undefined || raw.length === 0) return undefined;
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(raw);
+  } catch {
+    logger.warn("mailbox refs header is not valid JSON; dropping", { rowId });
+    return undefined;
+  }
+  const parsed = MailboxRefArray(decoded);
+  if (parsed instanceof type.errors) {
+    logger.warn("mailbox refs header failed schema; dropping", {
+      rowId,
+      summary: parsed.summary,
+    });
+    return undefined;
+  }
+  return parsed.length > 0 ? parsed : undefined;
+}
+
 function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   const decoded = decodeMailFrame(row.raw);
   const headers = decoded?.headers;
@@ -75,6 +112,10 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   }
   if (decoded !== null && decoded.body.length > 0) {
     message.snippet = decoded.body.slice(0, SNIPPET_MAX_CHARS);
+  }
+  const refs = parseRefsHeader(headers, row.id);
+  if (refs !== undefined) {
+    message.refs = refs;
   }
   return message;
 }
