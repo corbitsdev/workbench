@@ -8,7 +8,11 @@ import {
   useUpdateSchedule,
 } from "../hooks/use-schedules";
 import { useWorkflowsCatalog } from "../hooks/use-workflows-catalog";
-import { formatUtcHourLocal } from "../lib/schedule-time";
+import {
+  formatLastFired,
+  formatNextFire,
+  utcHourOptions,
+} from "../lib/schedule-time";
 
 export interface MySchedulesProps {
   tenantId: string | null;
@@ -51,6 +55,35 @@ function EnabledToggle({
   );
 }
 
+function HourSelect({
+  hourUtc,
+  disabled,
+  label,
+  onChange,
+}: {
+  hourUtc: number;
+  disabled: boolean;
+  label: string;
+  onChange: (hourUtc: number) => void;
+}) {
+  const options = useMemo(() => utcHourOptions(), []);
+  return (
+    <select
+      aria-label={`Change fire time for ${label}`}
+      value={hourUtc}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-xs text-text focus:outline-none focus-visible:ring-2 focus-visible:ring-border-strong disabled:opacity-50"
+    >
+      {options.map((o) => (
+        <option key={o.hourUtc} value={o.hourUtc}>
+          {o.label} ({o.hourUtc}:00 UTC)
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ScheduleRow({
   schedule,
   label,
@@ -72,6 +105,12 @@ function ScheduleRow({
   const handleDelete = () => {
     deleteSchedule.mutateAsync({ id: schedule.id }).catch(() => {
       /* optimistic removal rolled back in the hook */
+    });
+  };
+
+  const handleHourChange = (hourUtc: number) => {
+    updateSchedule.mutateAsync({ id: schedule.id, hourUtc }).catch(() => {
+      /* optimistic update rolled back in the hook */
     });
   };
 
@@ -105,11 +144,20 @@ function ScheduleRow({
           {label}
         </span>
         <span className="text-xs text-text-3">
-          {schedule.enabled
-            ? `Daily at ${formatUtcHourLocal(schedule.hourUtc)}`
-            : `Paused · was daily at ${formatUtcHourLocal(schedule.hourUtc)}`}
+          Last fired: {formatLastFired(schedule.lastFiredDayUtc)} · Next:{" "}
+          {formatNextFire(
+            schedule.hourUtc,
+            schedule.lastFiredDayUtc,
+            schedule.enabled,
+          )}
         </span>
       </div>
+      <HourSelect
+        hourUtc={schedule.hourUtc}
+        disabled={updateSchedule.isPending}
+        label={label}
+        onChange={handleHourChange}
+      />
       <ConfirmButton
         variant="ghost"
         size="sm"

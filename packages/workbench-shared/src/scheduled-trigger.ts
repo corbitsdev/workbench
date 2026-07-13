@@ -20,6 +20,7 @@ export const ScheduledTriggerSchema = type({
   enabled: "boolean",
   triggerPayload: { "[string]": "unknown" },
   createdAt: "string",
+  lastFiredDayUtc: "number.integer | null",
 });
 export type ScheduledTrigger = typeof ScheduledTriggerSchema.infer;
 

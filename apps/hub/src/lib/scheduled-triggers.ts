@@ -37,6 +37,7 @@ export function toApiSchedule(row: ScheduledTriggerRow): ScheduledTrigger {
     enabled: row.enabled,
     triggerPayload: row.triggerPayload,
     createdAt: row.createdAt.toISOString(),
+    lastFiredDayUtc: row.lastFiredDayUtc,
   };
 }
 
