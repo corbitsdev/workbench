@@ -324,6 +324,106 @@ describe("slack_search", () => {
   });
 });
 
+describe("rate limiting (HTTP 429)", () => {
+  function rateLimitedThenOk(
+    okBody: unknown,
+    failures: number,
+  ): SlackFetch & { attempts: number } {
+    let attempts = 0;
+    const fetcher = (async () => {
+      attempts += 1;
+      fetcher.attempts = attempts;
+      if (attempts <= failures) {
+        return new Response("", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        });
+      }
+      return new Response(JSON.stringify(okBody), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as SlackFetch & { attempts: number };
+    fetcher.attempts = 0;
+    return fetcher;
+  }
+
+  it("retries after a 429 (Retry-After) and then succeeds", async () => {
+    const fetcher = rateLimitedThenOk({ ok: true, channels: [] }, 2);
+    const result = await run(
+      "slack_list_channels",
+      { botToken: "xoxb", fetcher },
+      {},
+    );
+    expect(result).toEqual({ channels: [], nextCursor: undefined });
+    expect(fetcher.attempts).toBe(3);
+  });
+
+  it("fails loudly once retries are exhausted", async () => {
+    const fetcher = rateLimitedThenOk({ ok: true, channels: [] }, 99);
+    const tool = toolFor("slack_list_channels", { botToken: "xoxb", fetcher });
+    await expect(
+      (
+        tool.handler as (
+          a: Record<string, unknown>,
+          s: AbortSignal,
+        ) => Promise<string>
+      )({}, new AbortController().signal),
+    ).rejects.toThrow(/rate-limited \(429\): exhausted/);
+    expect(fetcher.attempts).toBe(4);
+  });
+
+  it("aborts a backoff wait when the signal fires", async () => {
+    const fetcher = (async () =>
+      new Response("", {
+        status: 429,
+        headers: { "Retry-After": "30" },
+      })) as SlackFetch;
+    const controller = new AbortController();
+    const tool = toolFor("slack_list_channels", { botToken: "xoxb", fetcher });
+    const pending = (
+      tool.handler as (
+        a: Record<string, unknown>,
+        s: AbortSignal,
+      ) => Promise<string>
+    )({}, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toThrow(/aborted/);
+  });
+});
+
+describe("channel name resolution cache", () => {
+  it("resolves a name once and reuses the id on the next call", async () => {
+    const calls: string[] = [];
+    const routes = {
+      "conversations.list": () => ({
+        ok: true,
+        channels: [{ id: "C777", name: "cached-chan" }],
+      }),
+      "conversations.history": () => ({ ok: true, messages: [] }),
+    };
+    const fetcher = (async (input: string, _init: RequestInit) => {
+      const method = input.split("/").pop() ?? "";
+      calls.push(method);
+      const route = (routes as Record<string, () => unknown>)[method];
+      return new Response(JSON.stringify(route ? route() : { ok: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as SlackFetch;
+    const config = {
+      botToken: "xoxb-cache-test",
+      baseUrl: "https://cache.test/api",
+      fetcher,
+    };
+    await run("slack_get_channel_history", config, { channel: "cached-chan" });
+    await run("slack_get_channel_history", config, { channel: "cached-chan" });
+    // conversations.list should fire once (first resolve); second call is cached.
+    expect(calls.filter((m) => m === "conversations.list").length).toBe(1);
+    expect(calls.filter((m) => m === "conversations.history").length).toBe(2);
+  });
+});
+
 describe("SLACK_HUB_TOOLS registry entries", () => {
   it("builds a tool from a resolved credential (apiKey + baseURL)", async () => {
     // createTools builds the named tool from a resolved credential.
@@ -336,7 +436,7 @@ describe("SLACK_HUB_TOOLS registry entries", () => {
     // And the built handler honors the resolved baseURL: driving it calls
     // conversations.list against that endpoint with the default channel type.
     let calledUrl: string | undefined;
-    const capturingFetch = (async (input: string, init: RequestInit) => {
+    const capturingFetch = (async (input: string, _init: RequestInit) => {
       calledUrl = input;
       return new Response(JSON.stringify({ ok: true, channels: [] }), {
         status: 200,

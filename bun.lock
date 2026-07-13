@@ -1269,6 +1269,7 @@
       },
       "devDependencies": {
         "@intx/agent": "workspace:*",
+        "@intx/log": "workspace:*",
         "@intx/types": "workspace:*",
         "@types/bun": "latest",
         "typescript": "^5.9.0",

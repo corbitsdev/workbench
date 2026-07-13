@@ -19,6 +19,12 @@ Slack Web API tool implementation. Registered in the hub's tool registry.
 - The tool grants `tool:<name>/invoke` are synthesized at session launch from the agent's capabilities list; do not add them to the DB.
 - A new write tool must be added to `APPROVAL_GATED_TOOL_NAMES` in `@workbench/agents` or the drift guard fails.
 
+## Reliability
+
+- All calls go through `slackCall`, which honors HTTP 429 `Retry-After` with bounded retries (`RATE_LIMIT_MAX_ATTEMPTS`, per-wait ceiling), an abortable backoff (respects the tool `AbortSignal`), and fails loudly once retries are exhausted.
+- Channel name→id resolution is memoized in a bounded, TTL'd per-workspace cache so a name-based call does not re-paginate `conversations.list` every time.
+- `slack_search` logs (structured, `@intx/log` `["tools","slack"]`, no message content) when it skips a channel whose history response is malformed — failures are not silently indistinguishable from "no matches".
+
 ## Testing
 
 Follow root [AGENTS.md](../../AGENTS.md) testing standards. Tests mock `fetch` at

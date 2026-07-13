@@ -44,11 +44,14 @@ Two sides, one Slack app:
 **Install flow.** v1: standard "Add to Slack" OAuth v2 flow is _not_ built; the
 operator installs the app from the Slack app config page and pastes the **bot
 token (`xoxb-…`)** into the Owner → Capabilities page as a tenant credential
-(`providerName: "slack"`), exactly like Firecrawl/Exa keys today. The **signing
-secret** is also stored per-tenant as a second credential field
-(`secondaryField` in the catalog entry) — NOT a hub-wide `requireEnv`, because
-different tenants will connect different Slack workspaces (see §7 Q1). A guided
-OAuth install (like Gamma's) is a fast-follow ticket.
+(`providerName: "slack"`), exactly like Firecrawl/Exa keys today — this is all
+the four tools need and all that ships now. The **signing secret** and
+**`team_id`** (needed only by the T2 Events endpoint) are NOT stored via the
+generic `secondaryField` (that field is wired to the credential `baseURL`); they
+land with T1/T2 under a real `metadata.{teamId,signingSecret}` shape, stored
+per-tenant (NOT a hub-wide `requireEnv`, because different tenants connect
+different Slack workspaces — see §7 Q1). A guided OAuth install (like Gamma's) is
+a fast-follow ticket.
 
 **Storage per the credential model:**
 
@@ -226,30 +229,69 @@ userName, text, threadTs? }] }`. Errors like `not_in_channel` surface as an
   ≤15s). Honest and bounded; the tool description says exactly what it can see.
   If true workspace search is wanted, that's the user-token question (§7 Q2).
 
-**Wiring checklist (per AGENTS.md):**
+**Wiring checklist (as shipped):**
 
-1. `buildEntries()` entry in `apps/hub/bin/seed-credentials.ts` gated on
-   `SLACK_BOT_TOKEN`, + `.env.example` vars, + the appears/disappears test.
-2. `CREDENTIAL_PROVIDER_CATALOG` entry (`kind: "tool"`, `secondaryField` for
-   signing secret) — the `surfaces every seeded tool credential` test enforces
-   this.
-3. `slack` added to Myra's deploy-descriptor `credentialProviderNames`
-   (`packages/agents/...` — NEVER `credentialRequirements`).
-4. Tool package added to hub tool registry + `KNOWN_TOOLS` / `PACKAGE_TOOLS` /
-   `PACKAGE_PROVIDERS` / dynamic-tools catalog (CL-2643 landmine), Dockerfile
-   manifest COPY lines, publish via build-tool-packages/publish-tool-packages.
-5. Grants: `<factoryId>:slack_*` per the CL-2145 prefixing rule; included in the
-   Slack persona loadout and optionally the default Myra loadout.
+1. **Credential is OWNER-SET, not seeded.** Per an explicit owner directive,
+   provider credentials are entered on the Owner → Capabilities page, not via a
+   seed env var — so there is deliberately **no** `buildEntries()` entry in
+   `apps/hub/bin/seed-credentials.ts` and **no** `.env.example` var for `slack`
+   (the AGENTS.md seed step is intentionally skipped).
+2. `CREDENTIAL_PROVIDER_CATALOG` entry (`kind: "tool"`, `secretLabel: "Bot
+token"`, `defaultMetadata.baseURL`, `platforms: ["Slack"]`). **No
+   `secondaryField`:** the generic `secondaryField` is stored/read as the
+   credential `baseURL` (endpoint override), so it cannot carry a signing secret
+   without silently redirecting every Slack API call. A properly-stored signing
+   secret arrives with the Events endpoint (T2) that consumes it.
+3. `slack` flows into Myra's provider set via `PACKAGE_PROVIDERS` + the
+   dynamic-tools catalog (never `credentialRequirements` — tool-only provider).
+4. Tool package added to hub tool registry `KNOWN_TOOLS` / `PACKAGE_TOOLS` /
+   `PACKAGE_PROVIDERS` / dynamic-tools catalog (CL-2643 landmine), `TOOL_PACKAGES`
+   in `build-tool-packages.ts`, Dockerfile manifest COPY (all three images) +
+   full-source COPY (hub only).
+5. Grants: `<factoryId>:slack_*` per the CL-2145 prefixing rule; `slack_post_message`
+   is `sideEffect: "write"` → auto-added to `APPROVAL_GATED_TOOL_NAMES`
+   (`slack__post_message`).
+
+**Client abstraction (T3 prerequisite, not now).** The four tools share a small
+`slackCall(config, method, params, signal)` helper (form-encoded POST, arktype
+envelope parse, 429/Retry-After backoff, TTL'd channel-name→id cache). At four
+tools this is the right size; **do NOT refactor it into a typed Slack client
+yet** (premature). When the T3/T4 work (identity resolution + mention worker)
+adds `users.info`, `conversations.replies` context pulls, and `chat.postMessage`
+from the events path, promote `slackCall` to a typed client (per-method
+request/response schemas, shared rate-limit + cache) as a **prerequisite of
+T3** — call this out so it is planned, not discovered.
 
 ## 5. Security
 
-- **Signature verification first, on the raw body:**
-  `v0:<X-Slack-Request-Timestamp>:<raw body>` HMAC-SHA256 with the signing
-  secret, compared with `crypto.timingSafeEqual` against `X-Slack-Signature`
-  (`v0=<hex>`). Reject if timestamp drifts >5 minutes from server time (replay
-  guard). Read `c.req.text()` before JSON parse (the webhook rail already does
-  raw-body-first). Body size ceiling (32KB, same constant discipline as
-  `MAX_BODY_BYTES`).
+- **Signature verification on the raw body, with per-tenant secret selection
+  (the specified T2 ordering).** A per-tenant signing secret and "verify before
+  parsing" are in tension: you must know _which_ tenant's secret to use before
+  you can verify, and the tenant is identified by `team_id` _inside_ the body.
+  Resolve it with this exact ordering (never trust the body before step 5):
+  1. Read the raw bytes once via `c.req.text()` (before any JSON parse); apply
+     the 32KB body ceiling (`MAX_BODY_BYTES` discipline) first.
+  2. Reject immediately if `X-Slack-Request-Timestamp` drifts >5 minutes from
+     server time (replay guard) — cheap, no body trust needed.
+  3. Extract `team_id` from the raw bytes via a **minimal, bounded field scan**
+     — a single regex for the `"team_id":"T…"` token (Slack sends a flat
+     top-level field), NOT a full `JSON.parse` of untrusted input. If absent or
+     malformed → uniform reject.
+  4. Look up the tenant whose `slack` credential metadata carries that `team_id`
+     and load its signing secret. No match → uniform reject (no enumeration).
+  5. Compute `v0:<timestamp>:<raw body>` HMAC-SHA256 with that secret and
+     `crypto.timingSafeEqual` it against `X-Slack-Signature` (`v0=<hex>`) over
+     the **raw bytes** (not a re-serialized object). Only after this passes is
+     the body `JSON.parse`d and processed.
+
+  The `team_id` scan in step 3 is untrusted routing metadata used _only_ to pick
+  a key; the HMAC in step 5 is what authenticates it, so a spoofed `team_id`
+  simply selects a secret the attacker cannot forge a signature for. This
+  resolves the §7 Q1 "one shared app, one signing secret per workspace" model
+  against the "verify first" rule. (`signingSecret` + `team_id` must be persisted
+  under a real metadata shape — see §1 future-work note — not the shipped
+  single-`baseURL` field.)
+
 - **Uniform rejection:** invalid signature, stale timestamp, unknown team_id →
   same terse response; no enumeration surface (the CL-3300 posture).
 - **Replay/dedupe:** timestamp window + `event_id` dedupe + `messageKey` unique
@@ -269,6 +311,19 @@ userName, text, threadTs? }] }`. Errors like `not_in_channel` surface as an
 
 ## 6. v1 cut + ticket breakdown
 
+**Scoping decision (recorded, not a detail) — one workspace per tenant.** v1
+stores exactly **one `slack` credential (bot token) per tenant**, mapping one
+Slack workspace to one tenant. The "one shared Corbits app, multi-workspace-
+installable" model in §7 Q1 is **deferred and is a known architectural fork, not
+a config toggle**: it REQUIRES a **credential-schema change** — the credential
+must gain a first-class `workspace`/`team_id` field (and support multiple
+credentials per tenant keyed by workspace) so the events endpoint can resolve
+`team_id → (tenant, bot token, signing secret)` when several workspaces share
+one app. Until that schema change lands, `team_id`/`signingSecret` live in
+credential metadata (see §1 future-work) and each tenant is single-workspace.
+Choosing multi-workspace later is a deliberate migration, planned as its own
+project — not retrofittable silently.
+
 **In v1:** one Slack app; operator paste-token install; `app_mention` +
 `message.im`; signature-verified public endpoint; ephemeral-Myra reply
 in-thread; polite decline; DM-mirror + bot-visible-ping inbox rows with
@@ -283,13 +338,20 @@ multi-workspace-per-tenant.
 
 **Proposed tickets (ordered; each independently shippable):**
 
-1. **T1 — Slack credential + catalog wiring.** `slack` provider: seed entry,
-   `.env.example`, catalog entry with signing-secret secondaryField, tests. (S)
-2. **T2 — Slack events public endpoint.** `createSlackEventsRouter`: signature
-   verify + replay guard + url_verification + fast-ack queue + event_id dedupe +
-   rate limit + team→tenant resolution. Mounted outside the auth wall. (M)
+1. **T1 — Slack credential + catalog wiring.** `slack` provider: OWNER-SET
+   catalog entry (bot-token secret; no seed/.env). Adds the real
+   `metadata.teamId` + `metadata.signingSecret` shape (credential-schema change)
+   the events endpoint needs. Tests. (S) **— catalog entry shipped under CL-2287;
+   the metadata-shape + signing-secret storage is the remaining T1 scope.**
+2. **T2 — Slack events public endpoint.** `createSlackEventsRouter`: raw-body +
+   `team_id`-scan → per-tenant signing-secret selection → HMAC verify (the §5
+   ordering) + replay guard + url_verification + fast-ack queue + event_id
+   dedupe + rate limit + team→tenant resolution. Mounted outside the auth wall.
+   (M)
 3. **T3 — Slack identity resolution.** `member_identity provider:"slack"`
-   read/write path, `users.info` email fallback, decline message. (S)
+   read/write path, `users.info` email fallback, decline message. **Promote
+   `slackCall` → a typed Slack client (per-method schemas, shared rate-limit +
+   channel cache) as a prerequisite** (see §4). (S)
 4. **T4 — @Myra mention worker.** `slack-mention.ts` service: ephemeral spawn
    via triage seams, `resolveSlackLoadout` persona in `packages/myra`, threaded
    `chat.postMessage` reply, timeout fallback message. Depends T1–T3. (L)
