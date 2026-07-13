@@ -24,6 +24,8 @@ const MANAGED_KEYS = [
   "GOOGLE_ALLOWED_DOMAINS",
   "WORKFLOW_AUTOPUBLISH_ON_BOOT",
   "WORKFLOW_AUTOPUBLISH_MAP",
+  "TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT",
+  "TOOL_REGISTRY_NAME",
   "WEDGE_SWEEP_INTERVAL_MS",
   "WEDGE_UNROUTABLE_GRACE_MS",
   "AWAITING_SUPERVISOR_PREWARM_INTERVAL_MS",
@@ -104,6 +106,19 @@ describe("loadConfig", () => {
 
     process.env["WORKFLOW_AUTOPUBLISH_ON_BOOT"] = "false";
     expect(loadConfig().workflowAutopublishOnBoot).toBe(false);
+  });
+
+  it("defaults tool registry autopublish off and registry name to workbench-builtins", () => {
+    setRequiredEnv();
+    const config = loadConfig();
+    expect(config.toolRegistryAutopublishOnBoot).toBe(false);
+    expect(config.toolRegistryName).toBe("workbench-builtins");
+
+    process.env["TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT"] = "true";
+    expect(loadConfig().toolRegistryAutopublishOnBoot).toBe(true);
+
+    process.env["TOOL_REGISTRY_NAME"] = "custom-registry";
+    expect(loadConfig().toolRegistryName).toBe("custom-registry");
   });
 
   it("defaults workflowAutopublishMap to null when unset or empty", () => {

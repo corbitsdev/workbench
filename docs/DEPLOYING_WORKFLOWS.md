@@ -148,6 +148,17 @@ automatically. On success the CLI prints the deployed kind, deployment id, and
 deploy mode (`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for
 the CLI details.
 
+## Tool package registry on boot (CL-3093)
+
+Sidecars load workflow step tools from the tenant **package-registry** asset, not
+from hub source. The hub image embeds built tarballs under
+`apps/hub/generated/tool-packages/` (via `build:tool-packages --embed` in the hub
+`build` script). When `TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT=true`, startup syncs
+those tarballs into the root tenant registry named `workbench-builtins` (override
+with `TOOL_REGISTRY_NAME`) **before** workflow autopublish runs. Drift detection
+uses tarball integrity (ssri sha512); steady-state boots perform no PUTs. Manual
+`tools publish` / `publish-tool-packages.ts` remains valid.
+
 ## Auto-publishing on boot
 
 The hub can publish the build-serialized workflow definitions itself on startup,

@@ -94,6 +94,7 @@ import {
 } from "./lib/scheduled-triggers";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
+import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
@@ -1651,30 +1652,41 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   rootTenantId,
 };
 
-// CL-2593: auto-publish the build-serialized workflow defs to the global tenant
-// on boot, gated by WORKFLOW_AUTOPUBLISH_ON_BOOT (default off). Detached so a
-// slow publish never blocks startup; the bootstrap is fail-safe per def.
-// Catalog publish is hub-only (git definition repo + DB rows, no sidecar frame),
-// so it no longer waits for a sidecar connection — the supervisor is minted per
-// run, not at publish.
-void publishEmbeddedWorkflowDefs({
-  coreDeps: workflowDeployCoreDeps,
-  repoStore,
-  enabled: config.workflowAutopublishOnBoot,
+// CL-3093: sync embedded tool tarballs into the root package-registry before
+// workflow autopublish so sidecars resolve fresh pins on reconnect. Detached;
+// fail-safe per tarball; does not block HTTP listen.
+void publishEmbeddedToolPackages({
+  db,
+  repoStore: repoStore.repoStore,
+  assetService,
+  rootTenantId,
+  enabled: config.toolRegistryAutopublishOnBoot,
+  registryName: config.toolRegistryName,
   buildSha: config.buildSha,
-  autopublishMap: config.workflowAutopublishMap,
 })
-  // Reconcile the whole existing catalog to deny-by-default once the boot
-  // publish has settled: every already-deployed kind with no owner decision is
-  // seeded a deny so it ships disabled, and an owner re-enables per kind. Runs
-  // after the publish so kinds just (re)published are included; idempotent, so
-  // running it on every boot only ever fills zero-row kinds.
-  .then(() => backfillDenyForExistingWorkflowKinds(db))
   .catch((err) => {
-    log.error("workflow autopublish-on-boot failed", {
+    log.error("tool registry autopublish-on-boot failed", {
       error: err instanceof Error ? err.message : String(err),
     });
-  });
+  })
+  .then(() =>
+    // CL-2593: auto-publish build-serialized workflow defs after tool sync.
+    publishEmbeddedWorkflowDefs({
+      coreDeps: workflowDeployCoreDeps,
+      repoStore,
+      enabled: config.workflowAutopublishOnBoot,
+      buildSha: config.buildSha,
+      autopublishMap: config.workflowAutopublishMap,
+    })
+      // Reconcile the whole existing catalog to deny-by-default once the boot
+      // publish has settled.
+      .then(() => backfillDenyForExistingWorkflowKinds(db))
+      .catch((err) => {
+        log.error("workflow autopublish-on-boot failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }),
+  );
 
 v1.post(
   "/workflows/deploy",

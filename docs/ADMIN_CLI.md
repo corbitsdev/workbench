@@ -27,6 +27,11 @@ Hub deploy env (not admin CLI): `AUTO_JOIN_TENANT_SLUGS` — comma-separated ten
 slugs to auto-join on signup/login. Default empty (CL-2855). Set to `abklabs` on
 deploy to preserve legacy “everyone joins the org root” until invites land.
 
+Hub boot can also auto-sync embedded tool tarballs into the root
+`package-registry` asset when `TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT=true` (CL-3093);
+see [DEPLOYING_WORKFLOWS.md](./DEPLOYING_WORKFLOWS.md). Manual **Publish tool
+packages** in Local actions remains valid for ad-hoc publishes.
+
 ## Flow
 
 1. **Auth** — sign in via `signIn` using `SUPERADMIN_EMAIL` / `SUPERADMIN_PASS`,
