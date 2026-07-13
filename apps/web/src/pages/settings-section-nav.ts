@@ -12,6 +12,7 @@ export interface SettingsSectionLink {
 export const SETTINGS_SECTIONS: readonly SettingsSectionLink[] = [
   { id: "your-agent", label: "Your agent" },
   { id: "inbox-capabilities", label: "Your inbox & brief" },
+  { id: "connections", label: "Connections" },
   { id: "account", label: "Account" },
   { id: "whats-new", label: "What's new" },
 ];
