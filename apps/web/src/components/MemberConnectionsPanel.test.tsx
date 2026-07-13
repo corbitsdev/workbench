@@ -23,10 +23,7 @@ const authorizeMock = mock(async (provider: string) => ({
   redirectUrl: `https://provider.test/authorize?p=${provider}`,
 }));
 
-let searchString = "";
-mock.module("react-router", () => ({
-  useSearchParams: () => [new URLSearchParams(searchString), mock(() => {})],
-}));
+import { MemoryRouter } from "react-router";
 
 mock.module("../lib/hub-api", () => ({
   getMeConnections: () => resolveOutcome(connectionsOutcome),
@@ -39,18 +36,18 @@ Object.defineProperty(window, "location", {
   writable: true,
 });
 
-const { MemberConnectionsPanel } = await import(
-  "../components/MemberConnectionsPanel"
-);
+const { MemberConnectionsPanel } = await import("./MemberConnectionsPanel");
 
-function renderPanel() {
+function renderPanel(initialEntry = "/") {
   return render(
     <QueryClientProvider
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
     >
-      <MemberConnectionsPanel />
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <MemberConnectionsPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -58,7 +55,6 @@ function renderPanel() {
 afterEach(() => {
   cleanup();
   connectionsOutcome = { kind: "resolve", data: { connections: [] } };
-  searchString = "";
   authorizeMock.mockClear();
   assignMock.mockClear();
 });
@@ -155,18 +151,16 @@ describe("Member connections panel", () => {
   });
 
   it("shows a success banner from the connected query param", async () => {
-    searchString = "connected=linear";
     connectionsOutcome = { kind: "resolve", data: { connections: [] } };
-    renderPanel();
+    renderPanel("/?connected=linear");
     await waitFor(() =>
       expect(screen.getByText("Connected linear successfully.")),
     );
   });
 
   it("shows an error banner from the connect_error query param", async () => {
-    searchString = "connect_error=denied";
     connectionsOutcome = { kind: "resolve", data: { connections: [] } };
-    renderPanel();
+    renderPanel("/?connect_error=denied");
     await waitFor(() =>
       expect(screen.getByText("You declined the connection request.")),
     );

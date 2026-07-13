@@ -154,7 +154,7 @@ export function OwnerCapabilities() {
         </h2>
         <p className="mb-2 text-sm text-text-2">
           Which OAuth providers members can connect from Settings → Connections.
-          Hiding a provider removes it from every member's Connections page.
+          Hiding a provider removes it from Settings → Connections for every member.
         </p>
         {oauthError && (
           <p className="mb-2 text-sm text-red" role="status">
