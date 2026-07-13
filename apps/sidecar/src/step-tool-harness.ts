@@ -495,6 +495,28 @@ function reshapeWithArgMap(
   return toolArguments;
 }
 
+function toolResultErrorMessage(output: unknown): string | undefined {
+  if (typeof output !== "object" || output === null) {
+    return undefined;
+  }
+  const record = output as Record<string, unknown>;
+  if (record.isError !== true) {
+    return undefined;
+  }
+  const content = record.content;
+  if (typeof content === "string" && content.length > 0) {
+    return content;
+  }
+  if (typeof content === "object" && content !== null) {
+    const envelope = content as Record<string, unknown>;
+    if (typeof envelope.error === "string" && envelope.error.length > 0) {
+      return envelope.error;
+    }
+    return JSON.stringify(content);
+  }
+  return "deterministic tool step returned an error envelope";
+}
+
 export async function runDeterministicToolStep(args: {
   env: Omit<BaseEnv, "authorize">;
   toolName: string;
@@ -503,8 +525,9 @@ export async function runDeterministicToolStep(args: {
   argMapJson?: string;
   /**
    * When true (the step's `workbench.nonFatal` tag is set), a thrown tool error
-   * is logged and degraded to a completed `isError` envelope instead of
-   * propagating — so one best-effort source cannot fail the whole run.
+   * or a tool result with `isError: true` is logged and degraded to completed
+   * output instead of propagating — so one best-effort source cannot fail the
+   * whole run.
    */
   nonFatal?: boolean;
   signal: AbortSignal;
@@ -549,6 +572,24 @@ export async function runDeterministicToolStep(args: {
       },
       args.signal,
     );
+    const toolError = toolResultErrorMessage(result);
+    if (toolError !== undefined) {
+      if (args.nonFatal === true && !args.signal.aborted) {
+        logger.error(
+          "Deterministic step tool {tool} returned isError for {address}: {msg}",
+          { tool: args.toolName, address: ctx.stepAddress, msg: toolError },
+        );
+        return { output: result };
+      }
+      if (!args.signal.aborted) {
+        logger.error("Deterministic step tool {tool} failed for {address}", {
+          tool: args.toolName,
+          address: ctx.stepAddress,
+          error: new Error(toolError),
+        });
+      }
+      throw new Error(toolError);
+    }
     return { output: result };
   } catch (cause) {
     // A degrade must never mask cancellation: if the step's signal aborted (run

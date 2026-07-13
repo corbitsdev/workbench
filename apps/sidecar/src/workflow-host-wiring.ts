@@ -1353,22 +1353,15 @@ export function createSidecarDeployRouter(deps: {
       // WORKBENCH-LOCAL-TEMP (CL-2780)
       const grantsMs = performance.now() - grantsStart;
 
-      // OUTBOUND half of mailbox ownership (§3a): register the spawned
-      // agent's signing key on the host transport so the supervisor's
-      // outbound mail path (`MailBusBindings.sendOutbound`) signs the
-      // agent's replies as the AGENT's identity, with parity to the
-      // in-process path's `transport.register(address, crypto)`.
-      //
-      // Gated on the single-step launched-agent deploy: there the
-      // deployment mail address IS the legacy agent identity whose
-      // keypair lives in the keyStore, so the supervisor can sign
-      // outbound mail as that address. A genuine multi-step deploy
-      // derives a distinct per-step address with no keypair on the host;
-      // per-step outbound signing for multi-step is out of 4.3 scope
-      // (the unified single-agent path 4.3 targets is the single-step
-      // case). The registration happens before `spawn()` so the agent's
-      // address is live the instant the first reply routes outbound.
-      if (projection.definition.stepOrder.length === 1) {
+      // OUTBOUND half of mailbox ownership (§3a): register the deployment
+      // supervisor's signing key on the host transport so workflow-child
+      // outbound mail (`mail_send` / `outbound.message`) is signed as the
+      // deployment address. The child's MAILBOX_ADDRESS is always the
+      // deployment supervisor address (even for multi-step); per-step
+      // addresses are grant/repo isolation only. `loadOrGenerateKey` pins
+      // a stable keypair per deployment address on the sidecar. Register
+      // before `spawn()` so outbound is live as soon as the child runs.
+      {
         const { keyPair } = await deps.keyStore.loadOrGenerateKey(
           frame.agentAddress,
         );
@@ -1777,12 +1770,10 @@ export function createSidecarDeployRouter(deps: {
           logger.warn`undeploy: workflow-run push drain failed for ${agentAddress}: ${reason}`;
         }
       }
-      // Drop the agent's transport registration installed at spawn for
-      // the single-step launched-agent deploy (OUTBOUND half of
-      // mailbox ownership, §3a). `unregister` is a no-op when the
-      // address was never registered (a genuine multi-step deploy
-      // whose derived per-step addresses carry no host keypair), so it
-      // is safe to call unconditionally for any spawned deployment.
+      // Drop the deployment supervisor's transport registration installed
+      // at spawn (OUTBOUND half of mailbox ownership, §3a). `unregister`
+      // is a no-op when the address was never registered, so it is safe
+      // to call unconditionally for any spawned deployment.
       deps.transport.unregister(agentAddress);
       // Reclaim the deployment's per-step local-disk scratch now that
       // its supervisor + workflow-process child are torn down. The
