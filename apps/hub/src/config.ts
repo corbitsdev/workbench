@@ -324,6 +324,14 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // When true, sync embedded tool-package tarballs into the root tenant
+    // package-registry asset on boot (CL-3093). Default false — opt in per env.
+    toolRegistryAutopublishOnBoot: parseBooleanEnv(
+      "TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT",
+    ),
+    // Package-registry asset name for boot-time tool sync. Default workbench-builtins.
+    toolRegistryName:
+      optionalEnv("TOOL_REGISTRY_NAME")?.trim() || "workbench-builtins",
     // Kill switch for ephemeral Myra triage of external inbound user mail
     // (per-item session, prepare-only by default). Default OFF; opt in per
     // environment.
