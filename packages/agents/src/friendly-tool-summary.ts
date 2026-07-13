@@ -311,6 +311,21 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   // X / Twitter
   x_search: searching("X"),
 
+  // Slack
+  slack_list_channels: "Listing Slack channels",
+  slack_get_channel_history: "Reading a Slack channel",
+  slack_search: searching("Slack"),
+  slack_post_message: (args) => {
+    const channel = firstStringArg(args, [
+      "channel",
+      "channelId",
+      "channel_id",
+    ]);
+    return channel === null
+      ? "Posting to Slack"
+      : `Posting to Slack ${truncate(channel)}`;
+  },
+
   // Sumble — account intelligence
   sumble_resolve_organization: (args) => {
     const term = firstStringArg(args, ["domain", "slug", "name"]);
@@ -811,6 +826,7 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
     verb: "pulled social data",
     altVerb: "gathered social data",
   },
+  slack: { verb: "worked in Slack", altVerb: "checked Slack" },
   sumble: {
     verb: "researched the account",
     altVerb: "dug into account intelligence",
