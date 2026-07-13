@@ -44,6 +44,11 @@ export type HeartbeatEnrichmentLookback = "scheduled" | "manual-refresh";
 export type HeartbeatMemberIdentity = {
   userAddress: string;
   userRefId: string;
+  /** The firing user's display name, when known (e.g. absent for an agent
+   * principal, or on an identity lookup miss). Carried into the trigger
+   * payload so the brief prompt and title formatter can tailor to and name
+   * this specific person (CL-3501, CL-3502). */
+  userDisplayName?: string;
 };
 
 export function enrichHeartbeatTriggerPayload(
@@ -66,6 +71,9 @@ export function enrichHeartbeatTriggerPayload(
     ...triggerPayload,
     userAddress: memberIdentity.userAddress,
     userRefId: memberIdentity.userRefId,
+    ...(memberIdentity.userDisplayName !== undefined
+      ? { userDisplayName: memberIdentity.userDisplayName }
+      : {}),
     enabledSources,
     createdAfter,
   };

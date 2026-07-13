@@ -533,11 +533,47 @@ describe("heartbeat_merge_brief_sources (CL-3485)", () => {
     const content = result.content as {
       sources: Record<string, Record<string, unknown>>;
     };
-    expect(content.sources.granola?.notes).toEqual([{ id: "n1", title: "Acme" }]);
+    expect(content.sources.granola?.notes).toEqual([
+      { id: "n1", title: "Acme" },
+    ]);
     expect(content.sources.linear?.issues).toEqual([{ id: "LIN-1" }]);
     expect(content.sources.vercel).toEqual({
       isError: true,
       error: "403 forbidden",
     });
+  });
+});
+
+describe("heartbeat_format_brief_title (CL-3502)", () => {
+  test("returns a possessive title built from userDisplayName", async () => {
+    const handler = fullTool("heartbeat_format_brief_title");
+    const result = await handler(
+      {
+        id: "title",
+        name: "heartbeat_format_brief_title",
+        arguments: { userDisplayName: "Jordan Lee" },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as { title: string };
+    expect(content.title).toMatch(
+      /^Jordan Lee's Morning Brief - \d{2}\/\d{2}\/\d{2}$/,
+    );
+  });
+
+  test("falls back to 'Your Morning Brief' when no display name is given", async () => {
+    const handler = fullTool("heartbeat_format_brief_title");
+    const result = await handler(
+      { id: "title", name: "heartbeat_format_brief_title", arguments: {} },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as { title: string };
+    expect(content.title).toMatch(/^Your Morning Brief - \d{2}\/\d{2}\/\d{2}$/);
   });
 });

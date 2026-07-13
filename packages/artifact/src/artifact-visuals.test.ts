@@ -28,6 +28,12 @@ describe("visualForKind", () => {
     expect(visualForKind("research").label).toBe("Report");
     expect(visualForKind("report").label).toBe("Report");
   });
+
+  it("labels the heartbeat's morning-brief kind as Report, not Document (CL-3503)", () => {
+    const v = visualForKind("morning-brief");
+    expect(v.label).toBe("Report");
+    expect(v.viz).toBe("deck");
+  });
 });
 
 describe("toGalleryArtifact", () => {

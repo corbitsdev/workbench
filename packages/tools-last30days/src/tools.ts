@@ -13,7 +13,10 @@ import {
   ResearchItem,
   SkippedSource,
 } from "@workbench/last30days-core";
-import { mergeHeartbeatBriefSources } from "@workbench/shared";
+import {
+  formatHeartbeatBriefTitle,
+  mergeHeartbeatBriefSources,
+} from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
   name: "last30days_core_extract",
@@ -95,6 +98,21 @@ export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
   inputSchema: {
     type: "object",
     additionalProperties: true,
+  },
+};
+
+export const HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_title",
+  description:
+    'Internal heartbeat workflow helper. Formats the morning brief\'s display name as "<User>\'s Morning Brief - DD/MM/YY" (falls back to "Your Morning Brief - DD/MM/YY" when no display name is known), for use as both the notify mail subject and the persisted artifact title.',
+  inputSchema: {
+    type: "object",
+    properties: {
+      userDisplayName: {
+        type: "string",
+        description: "The firing user's display name, if known.",
+      },
+    },
   },
 };
 
@@ -631,6 +649,22 @@ function createValidateTool(): AgentTool {
   };
 }
 
+function createHeartbeatFormatBriefTitleTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const userDisplayName =
+        typeof args.userDisplayName === "string"
+          ? args.userDisplayName
+          : undefined;
+      const title = formatHeartbeatBriefTitle(userDisplayName, Date.now());
+      return { callId: call.id, content: { title } };
+    },
+  };
+}
+
 function createHeartbeatMergeBriefSourcesTool(): AgentTool {
   return {
     kind: "full",
@@ -654,5 +688,6 @@ export function createLast30daysTools(): AgentTool[] {
     createWorkflowBriefTool(),
     createValidateTool(),
     createHeartbeatMergeBriefSourcesTool(),
+    createHeartbeatFormatBriefTitleTool(),
   ];
 }

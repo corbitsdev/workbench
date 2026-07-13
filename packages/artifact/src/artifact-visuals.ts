@@ -132,10 +132,12 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-blue/85",
     experimentalSpan: "row-span-4",
   },
-  // Both the workflow's persisted `research` kind and a generic `report` kind
-  // share one tile treatment.
+  // The workflow's persisted `research` kind, the generic `report` kind, and
+  // the heartbeat's stable `morning-brief` kind (CL-3503) share one tile
+  // treatment.
   research: REPORT_VISUAL,
   report: REPORT_VISUAL,
+  "morning-brief": REPORT_VISUAL,
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {

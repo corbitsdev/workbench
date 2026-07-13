@@ -224,6 +224,33 @@ describe("linear_list_issues handler", () => {
     expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
   });
 
+  it("carries the Linear issue's url straight through brief-shaping (CL-3504)", async () => {
+    const nodes = [
+      {
+        id: "uuid-1",
+        identifier: "ENG-1",
+        title: "Fix the thing",
+        url: "https://linear.app/workbench/issue/ENG-1",
+      },
+    ];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    const issues = JSON.parse(String(result.content)).issues;
+    expect(issues[0].url).toBe("https://linear.app/workbench/issue/ENG-1");
+  });
+
   it("skips the network call and reports skipped when linear is not in enabledSources", async () => {
     const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
     const runner = createToolRunner(
