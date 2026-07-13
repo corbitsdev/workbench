@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 
 let artifactResult: {
   data?: {
@@ -18,6 +18,11 @@ let artifactResult: {
     kind: string;
     title: string;
     ownerPrincipalId?: string | null;
+    createdAt?: string;
+    sessionId?: string | null;
+    sessionName?: string | null;
+    sessionStatus?: string | null;
+    parentId?: string | null;
   };
   isLoading: boolean;
   isError: boolean;
@@ -60,6 +65,15 @@ mock.module("../components/ArtifactBody", () => ({
 
 import { ArtifactDetailPage } from "./ArtifactDetailPage";
 
+function LocationProbe() {
+  const location = useLocation();
+  return React.createElement(
+    "div",
+    { "data-testid": "location-path" },
+    location.pathname,
+  );
+}
+
 function renderAt(id: string): RenderResult {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -71,6 +85,7 @@ function renderAt(id: string): RenderResult {
       React.createElement(
         MemoryRouter,
         { initialEntries: [`/artifacts/${id}`] },
+        React.createElement(LocationProbe),
         React.createElement(
           Routes,
           null,
@@ -99,6 +114,11 @@ beforeEach(() => {
       kind: "one-pager",
       title: "Acme One-Pager",
       ownerPrincipalId: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      sessionId: null,
+      sessionName: null,
+      sessionStatus: null,
+      parentId: null,
     },
     isLoading: false,
     isError: false,
@@ -176,5 +196,59 @@ describe("ArtifactDetailPage", () => {
     };
     const view = renderAt("art-1");
     expect(view.queryByRole("button", { name: /archive/i })).toBeNull();
+  });
+
+  describe("CL-3512: session provenance and lineage", () => {
+    it("does not render a session or lineage link when neither is present", () => {
+      const view = renderAt("art-1");
+      expect(view.queryByRole("button", { name: /derived from/i })).toBeNull();
+    });
+
+    it("shows the session status and navigates to the session on click", () => {
+      artifactResult = {
+        data: {
+          id: "art-1",
+          kind: "one-pager",
+          title: "Acme One-Pager",
+          ownerPrincipalId: null,
+          sessionId: "sess-42",
+          sessionName: "Acme Corp call",
+          sessionStatus: "done",
+          parentId: null,
+        },
+        isLoading: false,
+        isError: false,
+      };
+      const view = renderAt("art-1");
+      view.getByText("done");
+      fireEvent.click(view.getByRole("button", { name: "Acme Corp call" }));
+      expect(view.getByTestId("location-path").textContent).toBe(
+        "/insights/trace/sess-42",
+      );
+    });
+
+    it("navigates to the parent artifact when 'Derived from' is clicked", () => {
+      artifactResult = {
+        data: {
+          id: "art-2",
+          kind: "one-pager",
+          title: "Acme One-Pager v2",
+          ownerPrincipalId: null,
+          sessionId: null,
+          sessionName: null,
+          sessionStatus: null,
+          parentId: "art-1",
+        },
+        isLoading: false,
+        isError: false,
+      };
+      const view = renderAt("art-2");
+      fireEvent.click(
+        view.getByRole("button", { name: /derived from a previous version/i }),
+      );
+      expect(view.getByTestId("location-path").textContent).toBe(
+        "/artifacts/art-1",
+      );
+    });
   });
 });

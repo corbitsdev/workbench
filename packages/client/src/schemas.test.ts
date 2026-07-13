@@ -25,6 +25,7 @@ const validArtifact = {
   status: "draft",
   version: 1,
   ownerPrincipalId: "prn-1",
+  archivedAt: null,
   createdAt: "2026-06-26T00:00:00.000Z",
   updatedAt: "2026-06-26T00:00:00.000Z",
   source: { origin: "imported" },
@@ -36,6 +37,7 @@ describe("ArtifactsPageSchema", () => {
       artifacts: [
         {
           ...validArtifact,
+          sessionId: "sess-1",
           sessionName: "Acme call",
           sessionStatus: "done",
           ownerName: "Sawyer",
@@ -59,6 +61,7 @@ describe("ArtifactsPageSchema", () => {
       artifacts: [
         {
           ...validArtifact,
+          sessionId: null,
           sessionName: null,
           sessionStatus: null,
           ownerName: null,
@@ -85,6 +88,7 @@ describe("ArtifactsPageSchema", () => {
       artifacts: [
         {
           ...validArtifact,
+          sessionId: null,
           sessionName: null,
           sessionStatus: "exploded",
           ownerName: null,

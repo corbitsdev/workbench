@@ -43,6 +43,7 @@ const fakeArtifact: ArtifactWithSession = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },
+  sessionId: null,
   sessionName: "Acme Corp",
   sessionStatus: "done",
   ownerName: null,
