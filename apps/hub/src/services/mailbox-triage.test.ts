@@ -57,7 +57,6 @@ const writeMock = mock(
 );
 mock.module("../lib/mailbox-write", () => ({
   writeMailboxMessage: writeMock,
-  MAILBOX_REFS_HEADER: "X-Workbench-Refs",
 }));
 
 const { createMailboxTriage } = await import("./mailbox-triage");

@@ -9,11 +9,11 @@ import type { MailboxEventBus } from "./mailbox-events";
 
 const logger = getLogger(["hub", "mailbox-write"]);
 
-// Custom frame header the structured `refs` list round-trips through. The
-// mailbox read path treats the raw frame as authoritative, so refs must live
-// in the frame — not a side column — to survive the read. Encoded as a single
-// line of JSON (no embedded newlines), flattened defensively like any header.
-export const MAILBOX_REFS_HEADER = "X-Workbench-Refs";
+// A single mailbox row's "Related" row is a compact set of pointers, not a
+// dumping ground. Cap what a creator can persist so a runaway producer can
+// never inflate one row's jsonb blob unboundedly; extras past the cap are
+// dropped (logged) at write time.
+export const MAX_MAILBOX_REFS = 20;
 
 export type MailFrameArgs = {
   from: string;
@@ -21,7 +21,6 @@ export type MailFrameArgs = {
   subject: string;
   body: string;
   inReplyTo?: string;
-  refs?: MailboxRef[];
 };
 
 // Header values are single-line by contract; anything that reaches a header
@@ -50,13 +49,25 @@ export function buildMailFrame(args: MailFrameArgs): Uint8Array {
   if (args.inReplyTo !== undefined) {
     headers.push(`In-Reply-To: ${headerValue(args.inReplyTo)}`);
   }
-  if (args.refs !== undefined && args.refs.length > 0) {
-    headers.push(
-      `${MAILBOX_REFS_HEADER}: ${headerValue(JSON.stringify(args.refs))}`,
-    );
-  }
   const body = args.body.replace(/\r?\n/g, "\r\n");
   return new TextEncoder().encode(`${headers.join("\r\n")}\r\n\r\n${body}\r\n`);
+}
+
+// Normalize the caller's refs into what actually gets persisted: undefined for
+// an absent or empty list (so the column stays NULL), else the first
+// MAX_MAILBOX_REFS entries, logging once when a longer list is truncated.
+function boundRefs(
+  refs: MailboxRef[] | undefined,
+  messageKey: string,
+): MailboxRef[] | undefined {
+  if (refs === undefined || refs.length === 0) return undefined;
+  if (refs.length <= MAX_MAILBOX_REFS) return refs;
+  logger.warn("mailbox refs truncated to the cap for {messageKey}", {
+    messageKey,
+    received: refs.length,
+    kept: MAX_MAILBOX_REFS,
+  });
+  return refs.slice(0, MAX_MAILBOX_REFS);
 }
 
 export type MailboxWriteArgs = {
@@ -99,10 +110,8 @@ export async function writeMailboxMessage(
   if (args.inReplyTo !== undefined) {
     frameArgs.inReplyTo = args.inReplyTo;
   }
-  if (args.refs !== undefined && args.refs.length > 0) {
-    frameArgs.refs = args.refs;
-  }
   const raw = buildMailFrame(frameArgs);
+  const refs = boundRefs(args.refs, args.messageKey);
   const rows = await db
     .insert(principalMailbox)
     .values({
@@ -114,6 +123,7 @@ export async function writeMailboxMessage(
       subject: args.subject,
       fromAddress: args.fromAddress,
       messageKey: args.messageKey,
+      ...(refs !== undefined ? { refs } : {}),
     })
     .onConflictDoNothing({
       target: [

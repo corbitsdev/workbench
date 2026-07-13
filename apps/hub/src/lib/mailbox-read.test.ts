@@ -36,7 +36,6 @@ import {
   listUserMailbox,
   markMailboxMessageRead,
 } from "./mailbox-read";
-import { buildMailFrame } from "./mailbox-write";
 
 function signedMorningBriefHeaders(): MessageHeaders {
   return {
@@ -233,21 +232,12 @@ describe("listUserMailbox", () => {
     ]);
   });
 
-  it("round-trips the structured refs embedded by buildMailFrame", async () => {
+  it("surfaces the structured refs stored on the row's refs column", async () => {
     const refs = [
       { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
       { kind: "linear" as const, ref: "https://linear.app/x/ISSUE-1" },
     ];
-    const raw = Buffer.from(
-      buildMailFrame({
-        from: "ins_dep-heartbeat@tenant.example",
-        to: "usr_alice@tenant.example",
-        subject: "A workflow needs you",
-        body: "Respond here.",
-        refs,
-      }),
-    );
-    const { db } = makeListDb([makeRow({ raw })]);
+    const { db } = makeListDb([makeRow({ refs })]);
     const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
@@ -256,8 +246,8 @@ describe("listUserMailbox", () => {
     expect(messages[0]?.refs).toEqual(refs);
   });
 
-  it("omits refs when the frame carries no refs header", async () => {
-    const { db } = makeListDb([makeRow()]);
+  it("omits refs when the row's refs column is null", async () => {
+    const { db } = makeListDb([makeRow({ refs: null })]);
     const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",
       principalId: "pri-alice",
@@ -266,17 +256,10 @@ describe("listUserMailbox", () => {
     expect(messages[0]?.refs).toBeUndefined();
   });
 
-  it("degrades to no refs when the refs header is not valid JSON", async () => {
+  it("degrades to no refs when the stored refs blob fails the schema", async () => {
+    // A row written under an older ref shape: `kind` is no longer valid.
     const { db } = makeListDb([
-      makeRow({
-        raw: Buffer.from(
-          "From: ins_dep-heartbeat@tenant.example\r\n" +
-            "Subject: s\r\n" +
-            "X-Workbench-Refs: {not json\r\n" +
-            "\r\n" +
-            "Body.\r\n",
-        ),
-      }),
+      makeRow({ refs: [{ kind: "obsolete-kind", ref: "x" }] }),
     ]);
     const { items: messages } = await listUserMailbox(db, {
       tenantId: "ten-1",

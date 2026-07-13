@@ -213,14 +213,8 @@ describe("deliverTaskMail", () => {
     const raw = new TextDecoder().decode(row.raw as Uint8Array);
     // Clickable Markdown link, not a bare "Synced to: linear" line.
     expect(raw).toContain("[linear · ISSUE-1](https://linear.app/x/ISSUE-1)");
-    const header = raw
-      .split("\r\n")
-      .find((line) => line.startsWith("X-Workbench-Refs:"));
-    expect(header).toBeString();
-    const refs = JSON.parse(
-      (header as string).slice("X-Workbench-Refs:".length),
-    );
-    expect(refs).toEqual([
+    // Refs are persisted structurally on the row's refs column, not in the frame.
+    expect(row.refs).toEqual([
       { kind: "task", ref: "task-1", label: "Open task" },
       {
         kind: "linear",

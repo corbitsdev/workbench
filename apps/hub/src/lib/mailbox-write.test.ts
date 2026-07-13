@@ -1,7 +1,12 @@
 import { describe, expect, it, mock } from "bun:test";
 import { parseHeaderSection } from "@intx/mime";
+import type { MailboxRef } from "@workbench/shared";
 import type { HubDb } from "../db";
-import { buildMailFrame, writeMailboxMessage } from "./mailbox-write";
+import {
+  buildMailFrame,
+  writeMailboxMessage,
+  MAX_MAILBOX_REFS,
+} from "./mailbox-write";
 import { createMailboxEventBus, type MailboxEvent } from "./mailbox-events";
 
 const ARGS = {
@@ -70,32 +75,12 @@ describe("buildMailFrame", () => {
     expect(headers.get("message-id")).toMatch(/^<.+@hub\.invalid>$/);
   });
 
-  it("embeds the structured refs as a single-line JSON X-Workbench-Refs header", () => {
-    const refs = [
-      { kind: "workflow_run" as const, ref: "wfr-1", label: "Open run" },
-      { kind: "linear" as const, ref: "https://linear.app/x/ISSUE-1" },
-    ];
+  it("carries no refs header — refs live on the row column, not the frame", () => {
     const raw = buildMailFrame({
       from: ARGS.fromAddress,
       to: ARGS.address,
       subject: "s",
       body: "b",
-      refs,
-    });
-    const { headers } = parseHeaderSection(raw);
-    const header = headers.get("x-workbench-refs");
-    expect(header).toBeString();
-    expect(header).not.toContain("\n");
-    expect(JSON.parse(header as string)).toEqual(refs);
-  });
-
-  it("omits the refs header when the refs list is empty", () => {
-    const raw = buildMailFrame({
-      from: ARGS.fromAddress,
-      to: ARGS.address,
-      subject: "s",
-      body: "b",
-      refs: [],
     });
     const { headers } = parseHeaderSection(raw);
     expect(headers.get("x-workbench-refs")).toBeUndefined();
@@ -133,6 +118,40 @@ describe("writeMailboxMessage", () => {
     });
     const { headers } = parseHeaderSection(row.raw as Uint8Array);
     expect(headers.get("subject")).toBe(ARGS.subject);
+  });
+
+  it("persists the structured refs on the row's refs column", async () => {
+    const { db, inserted } = makeDb({ returned: [{ id: "row-9" }] });
+    const refs: MailboxRef[] = [
+      { kind: "workflow_run", ref: "wfr-1", label: "Open run" },
+      { kind: "linear", ref: "https://linear.app/x/ISSUE-1" },
+    ];
+    await writeMailboxMessage(db, { ...ARGS, refs });
+    expect(inserted[0]?.refs).toEqual(refs);
+  });
+
+  it("leaves the refs column unset when no refs are given", async () => {
+    const { db, inserted } = makeDb({ returned: [{ id: "row-9" }] });
+    await writeMailboxMessage(db, ARGS);
+    expect(inserted[0]?.refs).toBeUndefined();
+  });
+
+  it("leaves the refs column unset for an empty refs list", async () => {
+    const { db, inserted } = makeDb({ returned: [{ id: "row-9" }] });
+    await writeMailboxMessage(db, { ...ARGS, refs: [] });
+    expect(inserted[0]?.refs).toBeUndefined();
+  });
+
+  it("truncates the refs list to the cap", async () => {
+    const { db, inserted } = makeDb({ returned: [{ id: "row-9" }] });
+    const refs: MailboxRef[] = Array.from(
+      { length: MAX_MAILBOX_REFS + 5 },
+      (_unused, i) => ({ kind: "task", ref: `t-${i}` }),
+    );
+    await writeMailboxMessage(db, { ...ARGS, refs });
+    const stored = inserted[0]?.refs as MailboxRef[];
+    expect(stored).toHaveLength(MAX_MAILBOX_REFS);
+    expect(stored[0]?.ref).toBe("t-0");
   });
 
   it("returns null when the dedupe key already exists", async () => {

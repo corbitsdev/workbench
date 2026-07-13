@@ -15,6 +15,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import {
+  type MailboxRef,
   type TaskLink,
   adminAuditActions,
   feedbackSubjectKinds,
@@ -660,6 +661,11 @@ export const principalMailbox = pgTable(
     // Dedupe key for hub-written rows (gate:<runId>:<signal>, triage:<row id>);
     // NULL for delivered external mail, unconstrained by the partial index.
     messageKey: text("message_key"),
+    // Structured entity references surfaced as the message's "Related" action
+    // row. NULL for external mail and any hub-written row whose creator emits
+    // none; re-validated through MailboxRefSchema on read, so an old row whose
+    // shape no longer validates degrades to no refs rather than a read error.
+    refs: jsonb("refs").$type<MailboxRef[]>(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     readAt: timestamp("read_at"),
   },

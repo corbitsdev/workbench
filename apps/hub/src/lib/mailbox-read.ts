@@ -8,7 +8,6 @@ import {
   type MailboxMessageDetail,
   type MailboxRef,
 } from "@workbench/shared";
-import { MAILBOX_REFS_HEADER } from "./mailbox-write";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
@@ -62,26 +61,19 @@ function toISODate(dateHeader: string | undefined, createdAt: Date): string {
 
 const MailboxRefArray = MailboxRefSchema.array();
 
-// Decode the structured refs the writer embedded as an X-Workbench-Refs frame
-// header. A malformed or unparseable value degrades to no refs (logged) rather
-// than failing the read — the frame is authoritative but a bad header must
-// never 500 the inbox.
-function parseRefsHeader(
-  headers: Map<string, string> | undefined,
+// Validate the structured refs stored on the row's `refs` jsonb column. A
+// NULL/empty value yields no refs; a value that no longer matches the current
+// MailboxRefSchema (e.g. a row written under an older ref shape) degrades to no
+// refs (logged) rather than failing the read — a bad stored blob must never
+// 500 the inbox.
+function readRowRefs(
+  stored: PrincipalMailboxRow["refs"],
   rowId: string,
 ): MailboxRef[] | undefined {
-  const raw = headers?.get(MAILBOX_REFS_HEADER.toLowerCase());
-  if (raw === undefined || raw.length === 0) return undefined;
-  let decoded: unknown;
-  try {
-    decoded = JSON.parse(raw);
-  } catch {
-    logger.warn("mailbox refs header is not valid JSON; dropping", { rowId });
-    return undefined;
-  }
-  const parsed = MailboxRefArray(decoded);
+  if (stored === null || stored === undefined) return undefined;
+  const parsed = MailboxRefArray(stored);
   if (parsed instanceof type.errors) {
-    logger.warn("mailbox refs header failed schema; dropping", {
+    logger.warn("mailbox refs column failed schema; dropping", {
       rowId,
       summary: parsed.summary,
     });
@@ -113,7 +105,7 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   if (decoded !== null && decoded.body.length > 0) {
     message.snippet = decoded.body.slice(0, SNIPPET_MAX_CHARS);
   }
-  const refs = parseRefsHeader(headers, row.id);
+  const refs = readRowRefs(row.refs, row.id);
   if (refs !== undefined) {
     message.refs = refs;
   }
