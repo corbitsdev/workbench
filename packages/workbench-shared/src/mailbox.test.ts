@@ -7,6 +7,7 @@ import {
   MailboxRefSchema,
   mailboxRefHref,
   isExternalMailboxRef,
+  defaultRefLabel,
   mailboxSenderLabel,
 } from "./mailbox";
 
@@ -69,12 +70,13 @@ describe("MailboxMessageDetail", () => {
 });
 
 describe("MailboxRefSchema", () => {
-  test("accepts each supported kind", () => {
+  test("accepts each supported kind (internal deepLink kinds plus externals)", () => {
     for (const kind of [
       "artifact",
       "workflow_run",
       "task",
       "mail",
+      "conversation",
       "linear",
       "url",
     ] as const) {
@@ -84,7 +86,7 @@ describe("MailboxRefSchema", () => {
   });
 
   test("rejects an unknown kind", () => {
-    const bad = { kind: "conversation", ref: "x" };
+    const bad = { kind: "not-a-kind", ref: "x" };
     expect(MailboxRefSchema(bad) instanceof type.errors).toBe(true);
   });
 
@@ -115,6 +117,28 @@ describe("mailboxRefHref", () => {
     expect(mailboxRefHref(linear)).toBe("https://linear.app/x/I-1");
     expect(isExternalMailboxRef(linear)).toBe(true);
     expect(isExternalMailboxRef({ kind: "task", ref: "t-1" })).toBe(false);
+  });
+});
+
+describe("defaultRefLabel", () => {
+  test("returns a human label for every kind, never the raw enum", () => {
+    const cases = {
+      artifact: "Open artifact",
+      workflow_run: "Open run",
+      task: "Open task",
+      mail: "Open message",
+      conversation: "Open chat",
+      linear: "Open in Linear",
+      url: "Open link",
+    } as const;
+    for (const [kind, label] of Object.entries(cases)) {
+      const resolved = defaultRefLabel({
+        kind: kind as keyof typeof cases,
+        ref: "x",
+      });
+      expect(resolved).toBe(label);
+      expect(resolved).not.toBe(kind);
+    }
   });
 });
 

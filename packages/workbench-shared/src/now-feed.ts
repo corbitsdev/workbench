@@ -1,5 +1,5 @@
 import { type } from "arktype";
-import type { MailboxMessage } from "./mailbox";
+import { TRIAGE_SUBJECT_PREFIX, type MailboxMessage } from "./mailbox";
 import type { Task } from "./tasks";
 
 // The "Now" feed is the inbox-as-dashboard composition: everything that needs
@@ -17,13 +17,6 @@ export const NowRunSchema = type({
 export type NowRun = typeof NowRunSchema.infer;
 
 export const openTaskStatuses = ["open", "in_progress", "waiting"] as const;
-
-// Subject prefix Myra's triage handoffs carried before CL-3507 added a
-// structured `mail` ref. Existing mailbox rows written before this change
-// deployed have no refs at all, so the ref-based grouping below must fall back
-// to this match for those rows — otherwise every pre-existing triage handoff
-// ungroups from its raw source mail the moment this ships.
-const TRIAGE_SUBJECT_PREFIX = "Myra triaged: ";
 
 export type NowGateItem = { type: "gate"; run: NowRun };
 export type NowMailItem = {
