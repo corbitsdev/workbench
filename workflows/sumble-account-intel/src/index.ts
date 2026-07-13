@@ -55,19 +55,21 @@ export const workflow = defineWorkflow({
       title: "Resolve the organization",
       tool: "sumble_resolve_organization",
       input: { from: "steps.intake.output" },
+      // One intake field carries a domain OR a slug; the tool classifies it by
+      // shape and routes it to the right Sumble org-ref field.
       argMap: {
-        domain: { from: "organizationDomain" },
-        slug: { from: "organizationDomain" },
+        identifier: { from: "organizationDomain" },
       },
       after: ["intake"],
     }),
 
-    // 3. List the org's teams (org shape, part 1).
+    // 3. List the org's teams (org shape, part 1). Downstream steps read the
+    //    RESOLVED org record (structured content), keyed on its slug.
     teams: deterministicToolStep({
       id: "sumble-account-intel-teams",
       title: "List the teams",
       tool: "sumble_list_teams",
-      input: { from: "steps.resolve.output" },
+      input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
       },
@@ -80,7 +82,7 @@ export const workflow = defineWorkflow({
       id: "sumble-account-intel-jobs",
       title: "List the open jobs",
       tool: "sumble_list_jobs",
-      input: { from: "steps.resolve.output" },
+      input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
       },
@@ -88,32 +90,32 @@ export const workflow = defineWorkflow({
       nonFatal: true,
     }),
 
-    // 5. Pull the org's technology stack.
+    // 5. Pull the org's technology stack (keyed on the resolved slug).
     techStack: deterministicToolStep({
       id: "sumble-account-intel-tech-stack",
       title: "Read the tech stack",
       tool: "sumble_get_org_tech_stack",
-      input: { from: "steps.resolve.output" },
+      input: { from: "steps.resolve.output.content" },
       argMap: {
         slug: { from: "slug" },
-        domain: { from: "url" },
       },
       after: ["jobs"],
       nonFatal: true,
     }),
 
-    // 6. Find people at the org.
+    // 6. Find people at the org. Load-bearing (the enrichment map iterates this
+    //    step's structured `people` array) — NOT non-fatal, so a failed people
+    //    lookup stops the run rather than feeding the map a non-array.
     contacts: deterministicToolStep({
       id: "sumble-account-intel-contacts",
       title: "Find the contacts",
       tool: "sumble_search_people",
-      input: { from: "steps.resolve.output" },
+      input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
         limit: { literal: 10 },
       },
       after: ["techStack"],
-      nonFatal: true,
     }),
 
     // 7. Pull buying/intent signals for the org.
@@ -121,7 +123,7 @@ export const workflow = defineWorkflow({
       id: "sumble-account-intel-signals",
       title: "Scan the buying signals",
       tool: "sumble_search_signals",
-      input: { from: "steps.resolve.output" },
+      input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
       },
@@ -130,8 +132,9 @@ export const workflow = defineWorkflow({
     }),
 
     // 8. Enrich each contact with an X search (Sumble gives LinkedIn only).
+    //    Iterates the structured `people` array the contacts step exposes.
     enrichSocial: map({
-      over: { from: "steps.contacts.output.content" },
+      over: { from: "steps.contacts.output.content.people" },
       step: enrichSocialStep,
       after: ["signals"],
     }),
@@ -164,11 +167,14 @@ export const workflow = defineWorkflow({
           { from: "steps.review.output" },
         ],
       },
+      // `body` carries the full synthesized brief (summary + contacts CSV +
+      // Slack draft). write_artifact's optional structured `content` field is
+      // omitted — the synthesize step emits a single `reply`, not a separate
+      // Report object, so mapping a `content` field would fail the reshape.
       argMap: {
         title: { from: "organizationDomain" },
         body: { from: "reply" },
         kind: { literal: "research" },
-        content: { from: "content" },
         jobLabel: { literal: "Sumble account intel" },
       },
       after: ["review"],

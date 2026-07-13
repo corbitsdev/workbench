@@ -74,7 +74,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_resolve_organization",
-            "workbench.argMap": "{\"domain\":{\"from\":\"organizationDomain\"},\"slug\":{\"from\":\"organizationDomain\"}}",
+            "workbench.argMap": "{\"identifier\":{\"from\":\"organizationDomain\"}}",
             "workbench.title": "Resolve the organization"
           }
         },
@@ -110,7 +110,7 @@
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output"
+          "from": "steps.resolve.output.content"
         },
         "after": [
           "resolve"
@@ -140,7 +140,7 @@
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output"
+          "from": "steps.resolve.output.content"
         },
         "after": [
           "teams"
@@ -163,14 +163,14 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
-            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"},\"domain\":{\"from\":\"url\"}}",
+            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Read the tech stack"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output"
+          "from": "steps.resolve.output.content"
         },
         "after": [
           "jobs"
@@ -194,13 +194,12 @@
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_people",
             "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":10}}",
-            "workbench.nonFatal": "true",
             "workbench.title": "Find the contacts"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output"
+          "from": "steps.resolve.output.content"
         },
         "after": [
           "techStack"
@@ -230,7 +229,7 @@
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.resolve.output"
+          "from": "steps.resolve.output.content"
         },
         "after": [
           "contacts"
@@ -240,7 +239,7 @@
         "kind": "map",
         "id": "enrichSocial",
         "over": {
-          "from": "steps.contacts.output.content"
+          "from": "steps.contacts.output.content.people"
         },
         "step": {
           "kind": "step",
@@ -332,7 +331,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-artifact/artifact:write_artifact",
-            "workbench.argMap": "{\"title\":{\"from\":\"organizationDomain\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"content\":{\"from\":\"content\"},\"jobLabel\":{\"literal\":\"Sumble account intel\"}}",
+            "workbench.argMap": "{\"title\":{\"from\":\"organizationDomain\"},\"body\":{\"from\":\"reply\"},\"kind\":{\"literal\":\"research\"},\"jobLabel\":{\"literal\":\"Sumble account intel\"}}",
             "workbench.title": "Save the account brief"
           }
         },

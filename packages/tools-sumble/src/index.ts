@@ -66,6 +66,7 @@ export type SumbleIntelligenceBriefResponse =
 // ---------------------------------------------------------------------------
 
 const ResolveOrgArgs = type({
+  "identifier?": "string",
   "domain?": "string",
   "slug?": "string",
   "name?": "string",
@@ -112,6 +113,40 @@ const IntelligenceBriefArgs = type({
   organizationSlug: "string > 0",
   "confirmSpend?": "boolean",
 });
+
+// A single free-text account identifier is routed to the right Sumble org-ref
+// field by shape: anything containing a dot or slash (a domain or URL) is a
+// `url`, everything else is treated as a Sumble `slug`. This is what lets the
+// workflow's intake collect one field yet still address the API correctly
+// (a slug must not be sent as a url, and vice versa).
+function classifyOrgIdentifier(identifier: string): {
+  key: "url" | "slug";
+  value: string;
+} {
+  const looksLikeDomainOrUrl =
+    identifier.includes("/") || identifier.includes(".");
+  return { key: looksLikeDomainOrUrl ? "url" : "slug", value: identifier };
+}
+
+function buildOrgRef(parsed: {
+  identifier?: string;
+  domain?: string;
+  slug?: string;
+  name?: string;
+}): Record<string, string> {
+  const ref: Record<string, string> = {};
+  if (parsed.domain !== undefined && parsed.domain.length > 0) {
+    ref.url = parsed.domain;
+  } else if (parsed.slug !== undefined && parsed.slug.length > 0) {
+    ref.slug = parsed.slug;
+  } else if (parsed.name !== undefined && parsed.name.length > 0) {
+    ref.name = parsed.name;
+  } else if (parsed.identifier !== undefined && parsed.identifier.length > 0) {
+    const classified = classifyOrgIdentifier(parsed.identifier);
+    ref[classified.key] = classified.value;
+  }
+  return ref;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -275,23 +310,22 @@ const RESOLVE_ATTRIBUTES = [
   "employee_count",
 ];
 
+// Returns STRUCTURED content (the matched org record), not a JSON string, so a
+// workflow can address `steps.resolve.output.content.slug` downstream (a string
+// envelope would force every consumer to JSON.parse, which the selector DSL
+// cannot do). Fails loudly when nothing matches or the match has no slug — the
+// whole account-intel run keys downstream lookups on the resolved slug, so an
+// unresolvable org must stop the run rather than silently produce a hollow brief.
 async function resolveOrganization(
   config: SumbleToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Record<string, unknown>> {
   const parsed = parseArgs(ResolveOrgArgs, args);
-  const orgRef: Record<string, string> = {};
-  if (parsed.domain !== undefined && parsed.domain.length > 0) {
-    orgRef.url = parsed.domain;
-  } else if (parsed.slug !== undefined && parsed.slug.length > 0) {
-    orgRef.slug = parsed.slug;
-  } else if (parsed.name !== undefined && parsed.name.length > 0) {
-    orgRef.name = parsed.name;
-  }
+  const orgRef = buildOrgRef(parsed);
   if (Object.keys(orgRef).length === 0) {
     throw new Error(
-      "sumble_resolve_organization requires one of: domain, slug, or name",
+      "sumble_resolve_organization requires one of: identifier, domain, slug, or name",
     );
   }
 
@@ -304,8 +338,18 @@ async function resolveOrganization(
     await sumbleRequest(config, "/organizations", body, signal),
     "organizations",
   );
-  const organizations = parsedResponse.organizations ?? [];
-  return jsonResult(organizations[0] ?? null);
+  const org = (parsedResponse.organizations ?? [])[0];
+  if (!isRecord(org)) {
+    throw new Error(
+      "sumble_resolve_organization: no organization matched the given identifier",
+    );
+  }
+  if (typeof org.slug !== "string" || org.slug.length === 0) {
+    throw new Error(
+      "sumble_resolve_organization: matched organization has no slug; cannot drive downstream lookups",
+    );
+  }
+  return org;
 }
 
 async function searchOrganizations(
@@ -402,11 +446,16 @@ async function listTeams(
   return jsonResult(parsedResponse.teams ?? []);
 }
 
+// Returns STRUCTURED content `{ people, count }`, not a JSON string, so the
+// workflow's contact-enrichment `map` can iterate `…output.content.people` as a
+// real array (the selector DSL does no JSON parsing — an array serialized to a
+// string would be iterated character-by-character). Arg validation still throws
+// (a usage error), but a resolved-but-empty result is a normal outcome.
 async function searchPeople(
   config: SumbleToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<Record<string, unknown>> {
   const parsed = parseArgs(SearchPeopleArgs, args);
   const personRef: Record<string, string> = {};
   if (
@@ -437,7 +486,8 @@ async function searchPeople(
     await sumbleRequest(config, "/people", body, signal),
     "people",
   );
-  return jsonResult(parsedResponse.people ?? []);
+  const people = parsedResponse.people ?? [];
+  return { people, count: people.length };
 }
 
 async function listJobs(
@@ -517,10 +567,15 @@ async function getIntelligenceBrief(
 export const SUMBLE_RESOLVE_ORGANIZATION_DEFINITION: ToolDefinition = {
   name: "sumble_resolve_organization",
   description:
-    "Resolve a company to its Sumble organization by domain, slug, or name. Returns the matched org's core attributes (name, slug, url, industry, employee_count) as a JSON object, or null when unmatched. Provide at least one of domain, slug, or name.",
+    "Resolve a company to its Sumble organization. Returns the matched org's core attributes (name, slug, url, industry, employee_count) as a JSON object; errors when nothing matches. Provide a domain, slug, or name explicitly, or a single free-text identifier (a domain/URL is treated as a domain, anything else as a slug).",
   inputSchema: {
     type: "object",
     properties: {
+      identifier: {
+        type: "string",
+        description:
+          "A single account identifier — a domain/URL or a Sumble slug. Classified by shape when domain/slug/name are not given explicitly.",
+      },
       domain: { type: "string", description: "Company domain or URL." },
       slug: { type: "string", description: "Sumble organization slug." },
       name: { type: "string", description: "Company name." },
@@ -587,7 +642,7 @@ export const SUMBLE_LIST_TEAMS_DEFINITION: ToolDefinition = {
 export const SUMBLE_SEARCH_PEOPLE_DEFINITION: ToolDefinition = {
   name: "sumble_search_people",
   description:
-    "Search people at an organization (by slug) or resolve a single person by email. Returns a JSON array of people with name, title, and email. This call may run asynchronously and is polled to completion.",
+    "Search people at an organization (by slug) or resolve a single person by email. Returns an object { people, count } where people is an array of { name, title, email }. This call may run asynchronously and is polled to completion.",
   inputSchema: {
     type: "object",
     properties: {
@@ -659,40 +714,82 @@ export const SUMBLE_GET_INTELLIGENCE_BRIEF_DEFINITION: ToolDefinition = {
           "Must be true to authorize the 50-credit spend. Omitted or false refuses the call.",
       },
     },
-    required: ["organizationSlug", "confirmSpend"],
+    required: ["organizationSlug"],
   },
 };
 
-type SumbleToolRun = (
+type StringSumbleRun = (
   config: SumbleToolsConfig,
   args: Record<string, unknown>,
   signal: AbortSignal,
 ) => Promise<string>;
 
-const TOOL_SPECS: { definition: ToolDefinition; run: SumbleToolRun }[] = [
+type StructuredSumbleRun = (
+  config: SumbleToolsConfig,
+  args: Record<string, unknown>,
+  signal: AbortSignal,
+) => Promise<Record<string, unknown>>;
+
+// `structured` tools return a `Record` as their ToolResult content (a first-class
+// ToolResult shape) so a workflow selector can path into their output; `string`
+// tools return a JSON string (the agent-facing default).
+type SumbleToolSpec =
+  | { definition: ToolDefinition; kind: "string"; run: StringSumbleRun }
+  | {
+      definition: ToolDefinition;
+      kind: "structured";
+      run: StructuredSumbleRun;
+    };
+
+const TOOL_SPECS: SumbleToolSpec[] = [
   {
     definition: SUMBLE_RESOLVE_ORGANIZATION_DEFINITION,
+    kind: "structured",
     run: resolveOrganization,
   },
   {
     definition: SUMBLE_SEARCH_ORGANIZATIONS_DEFINITION,
+    kind: "string",
     run: searchOrganizations,
   },
-  { definition: SUMBLE_GET_ORG_TECH_STACK_DEFINITION, run: getOrgTechStack },
-  { definition: SUMBLE_LIST_TEAMS_DEFINITION, run: listTeams },
-  { definition: SUMBLE_SEARCH_PEOPLE_DEFINITION, run: searchPeople },
-  { definition: SUMBLE_LIST_JOBS_DEFINITION, run: listJobs },
-  { definition: SUMBLE_SEARCH_SIGNALS_DEFINITION, run: searchSignals },
+  {
+    definition: SUMBLE_GET_ORG_TECH_STACK_DEFINITION,
+    kind: "string",
+    run: getOrgTechStack,
+  },
+  { definition: SUMBLE_LIST_TEAMS_DEFINITION, kind: "string", run: listTeams },
+  {
+    definition: SUMBLE_SEARCH_PEOPLE_DEFINITION,
+    kind: "structured",
+    run: searchPeople,
+  },
+  { definition: SUMBLE_LIST_JOBS_DEFINITION, kind: "string", run: listJobs },
+  {
+    definition: SUMBLE_SEARCH_SIGNALS_DEFINITION,
+    kind: "string",
+    run: searchSignals,
+  },
   {
     definition: SUMBLE_GET_INTELLIGENCE_BRIEF_DEFINITION,
+    kind: "string",
     run: getIntelligenceBrief,
   },
 ];
 
 function toAgentTool(
   config: SumbleToolsConfig,
-  spec: { definition: ToolDefinition; run: SumbleToolRun },
+  spec: SumbleToolSpec,
 ): AgentTool {
+  if (spec.kind === "structured") {
+    return {
+      kind: "full",
+      definition: spec.definition,
+      handler: async (call, signal) => ({
+        callId: call.id,
+        content: await spec.run(config, call.arguments, signal),
+      }),
+    };
+  }
   return {
     kind: "string",
     definition: spec.definition,

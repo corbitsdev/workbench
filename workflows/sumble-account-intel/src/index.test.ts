@@ -92,7 +92,18 @@ describe("sumble-account-intel workflow structure", () => {
     }
   });
 
-  test("the best-effort Sumble steps are marked non-fatal", () => {
+  test("resolve routes the single intake identifier through the tool's classifier", () => {
+    const argMap = stepPrimitive("resolve").agent.tags?.[STEP_ARGMAP_TAG];
+    if (argMap === undefined)
+      throw new Error("expected argMap on resolve step");
+    // A single field routed to `identifier` — NOT dual domain+slug (which sent a
+    // slug as the wrong ref field). The tool classifies domain vs slug by shape.
+    expect(JSON.parse(argMap)).toEqual({
+      identifier: { from: "organizationDomain" },
+    });
+  });
+
+  test("downstream Sumble steps read the resolved org's structured content", () => {
     for (const stepId of [
       "teams",
       "jobs",
@@ -100,19 +111,32 @@ describe("sumble-account-intel workflow structure", () => {
       "contacts",
       "signals",
     ]) {
+      expect(stepPrimitive(stepId).input).toEqual({
+        from: "steps.resolve.output.content",
+      });
+    }
+  });
+
+  test("the best-effort Sumble steps are marked non-fatal", () => {
+    for (const stepId of ["teams", "jobs", "techStack", "signals"]) {
       expect(stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG]).toBe(
         "true",
       );
     }
-    // resolve is load-bearing (the whole run depends on it) — NOT non-fatal.
-    expect(
-      stepPrimitive("resolve").agent.tags?.[STEP_NONFATAL_TAG],
-    ).toBeUndefined();
+    // resolve and contacts are load-bearing (the run and the enrichment map
+    // depend on their structured output) — NOT non-fatal.
+    for (const stepId of ["resolve", "contacts"]) {
+      expect(
+        stepPrimitive(stepId).agent.tags?.[STEP_NONFATAL_TAG],
+      ).toBeUndefined();
+    }
   });
 
-  test("enrichSocial is a map over the contacts output running a non-fatal x_search", () => {
+  test("enrichSocial is a map over the contacts people array running a non-fatal x_search", () => {
     const enrich = mapPrimitive("enrichSocial");
-    expect(enrich.over).toEqual({ from: "steps.contacts.output.content" });
+    expect(enrich.over).toEqual({
+      from: "steps.contacts.output.content.people",
+    });
     const inner = enrich.step;
     expect(inner.agent.tags?.[STEP_KIND_TAG]).toBe(DETERMINISTIC_TOOL_KIND);
     expect(inner.agent.tags?.[STEP_TOOL_TAG]).toContain("x_search");
@@ -146,7 +170,6 @@ describe("sumble-account-intel workflow structure", () => {
       title: { from: "organizationDomain" },
       body: { from: "reply" },
       kind: { literal: "research" },
-      content: { from: "content" },
       jobLabel: { literal: "Sumble account intel" },
     });
   });
@@ -171,11 +194,16 @@ describe("sumble-account-intel workflow structure", () => {
 describe("sumble-account-intel workflow execution", () => {
   test("runs the full flow intake → research → enrichSocial map → synthesize → review → packageArtifact", async () => {
     const { invoker, ran } = makeRecordingInvoker({
+      // The REAL shapes the fixed tools produce: resolve exposes the matched org
+      // record as structured content; search_people exposes { people, count }.
       "sumble-account-intel-resolve": {
-        content: JSON.stringify({ slug: "acme", url: "acme.com" }),
+        content: { slug: "acme", url: "acme.com" },
       },
       "sumble-account-intel-contacts": {
-        content: [{ name: "Ada Lovelace" }, { name: "Alan Turing" }],
+        content: {
+          people: [{ name: "Ada Lovelace" }, { name: "Alan Turing" }],
+          count: 2,
+        },
       },
       "sumble-account-intel-enrich-social": { content: "[]" },
       "sumble-account-intel-synthesize": AGENT_REPLY(
@@ -212,9 +240,9 @@ describe("sumble-account-intel workflow execution", () => {
   test("blocks at the review gate until the review signal arrives", async () => {
     const { invoker, ran } = makeRecordingInvoker({
       "sumble-account-intel-resolve": {
-        content: JSON.stringify({ slug: "acme" }),
+        content: { slug: "acme" },
       },
-      "sumble-account-intel-contacts": { content: [] },
+      "sumble-account-intel-contacts": { content: { people: [], count: 0 } },
       "sumble-account-intel-synthesize": AGENT_REPLY(
         JSON.stringify({
           title: "t",

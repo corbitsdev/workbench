@@ -160,7 +160,7 @@ describe("argument-to-body mapping", () => {
 });
 
 describe("response parsing", () => {
-  it("resolve_organization returns the first matched organization", async () => {
+  it("resolve_organization returns the matched org as STRUCTURED content", async () => {
     const stub = makeFetchStub({
       organizations: [
         { name: "Acme", slug: "acme", industry: "Software" },
@@ -171,19 +171,59 @@ describe("response parsing", () => {
       slug: "acme",
     });
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual({
+    // Structured object content (not a JSON string) so a workflow selector can
+    // read `…output.content.slug` downstream.
+    expect(result.content).toEqual({
       name: "Acme",
       slug: "acme",
       industry: "Software",
     });
   });
 
-  it("resolve_organization returns null when nothing matches", async () => {
+  it("resolve_organization fails loudly when nothing matches", async () => {
     const stub = makeFetchStub({ organizations: [] });
     const result = await runTool(stub, "sumble_resolve_organization", {
       slug: "nope",
     });
-    expect(JSON.parse(String(result.content))).toBeNull();
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("no organization matched");
+  });
+
+  it("resolve_organization fails loudly when the match has no slug", async () => {
+    const stub = makeFetchStub({ organizations: [{ name: "Acme" }] });
+    const result = await runTool(stub, "sumble_resolve_organization", {
+      domain: "acme.com",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("no slug");
+  });
+
+  it("resolve classifies a dotless identifier as a slug, a dotted one as a url", async () => {
+    const slugStub = makeFetchStub({ organizations: [{ slug: "acme" }] });
+    await runTool(slugStub, "sumble_resolve_organization", {
+      identifier: "acme",
+    });
+    expect(bodyOf(slugStub).organizations).toEqual([{ slug: "acme" }]);
+
+    const urlStub = makeFetchStub({ organizations: [{ slug: "acme" }] });
+    await runTool(urlStub, "sumble_resolve_organization", {
+      identifier: "acme.com",
+    });
+    expect(bodyOf(urlStub).organizations).toEqual([{ url: "acme.com" }]);
+  });
+
+  it("search_people returns a STRUCTURED { people, count }", async () => {
+    const stub = makeFetchStub({
+      people: [{ name: "Ada", email: "ada@acme.com" }],
+    });
+    const result = await runTool(stub, "sumble_search_people", {
+      organizationSlug: "acme",
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content).toEqual({
+      people: [{ name: "Ada", email: "ada@acme.com" }],
+      count: 1,
+    });
   });
 });
 
@@ -225,10 +265,52 @@ describe("async polling", () => {
       organizationSlug: "acme",
     });
     expect(result.isError).toBeUndefined();
-    expect(JSON.parse(String(result.content))).toEqual([
-      { name: "Ada", email: "ada@acme.com" },
-    ]);
+    expect(result.content).toEqual({
+      people: [{ name: "Ada", email: "ada@acme.com" }],
+      count: 1,
+    });
     expect(stub.mock.calls).toHaveLength(2);
+  });
+
+  it("fails loudly when a 202 never resolves (poll-attempt cap)", async () => {
+    // Always 202 with an immediate Retry-After: the poll must give up at the cap
+    // and throw rather than spin forever or return an empty/partial result.
+    const stub = makeSequencedFetchStub([
+      { body: {}, status: 202, headers: { "Retry-After": "0" } },
+    ]);
+    const result = await runTool(stub, "sumble_get_intelligence_brief", {
+      organizationSlug: "acme",
+      confirmSpend: true,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("did not complete after 10");
+    expect(stub.mock.calls).toHaveLength(10);
+  });
+
+  it("aborts a poll wait when the signal fires", async () => {
+    // A long Retry-After the caller never waits out: aborting the run signal
+    // during the wait must reject immediately, not hang for 30s.
+    const stub = makeSequencedFetchStub([
+      { body: {}, status: 202, headers: { "Retry-After": "30" } },
+    ]);
+    const controller = new AbortController();
+    const runner = createToolRunner(
+      createSumbleTools({ apiKey: "k", fetcher: stub }),
+    );
+    const pending = runner.run(
+      {
+        id: "call_1",
+        name: "sumble_get_intelligence_brief",
+        arguments: { organizationSlug: "acme", confirmSpend: true },
+      },
+      controller.signal,
+    );
+    setTimeout(() => controller.abort(), 10);
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("aborted");
+    // Only the first POST happened; the abort fired during the wait.
+    expect(stub.mock.calls).toHaveLength(1);
   });
 });
 
