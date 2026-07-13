@@ -72,6 +72,7 @@ export const workflow = defineWorkflow({
       input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
+        limit: { literal: 25 },
       },
       after: ["resolve"],
       nonFatal: true,
@@ -85,6 +86,7 @@ export const workflow = defineWorkflow({
       input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
+        limit: { literal: 25 },
       },
       after: ["teams"],
       nonFatal: true,
@@ -98,6 +100,7 @@ export const workflow = defineWorkflow({
       input: { from: "steps.resolve.output.content" },
       argMap: {
         slug: { from: "slug" },
+        limit: { literal: 25 },
       },
       after: ["jobs"],
       nonFatal: true,
@@ -126,6 +129,7 @@ export const workflow = defineWorkflow({
       input: { from: "steps.resolve.output.content" },
       argMap: {
         organizationSlug: { from: "slug" },
+        limit: { literal: 25 },
       },
       after: ["contacts"],
       nonFatal: true,

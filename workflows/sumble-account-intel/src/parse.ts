@@ -1,16 +1,21 @@
 // Shared step-output parsers for the sumble-account-intel workflow.
 //
 // The run-page panel (`ui.tsx`) and the dock block builder (`blocks.ts`) both
-// decode the SAME log-derived step outputs — a Sumble tool result envelope
-// (`{ content: string }` carrying JSON) and the synthesis step's inline-inference
-// reply (`{ reply: string }` carrying strict JSON). Extracting the parsers here
-// keeps the two surfaces in lockstep.
+// decode the SAME log-derived step outputs. The Sumble `resolve` and
+// `search_people` tools emit STRUCTURED object content (`{ content: {...} }`),
+// while the synthesis step emits an inline-inference reply (`{ reply: string }`
+// carrying strict JSON). Extracting the parsers here keeps the two surfaces in
+// lockstep.
 
 import { type } from "arktype";
 
-export const ToolResultEnvelope = type({
+// A deterministic tool step's output is the ToolResult envelope. The Sumble
+// tools this workflow decodes emit OBJECT content (not a JSON string), so
+// `content` is `unknown` and the specific parser narrows it.
+export const StructuredToolEnvelope = type({
   "callId?": "string",
-  content: "string",
+  "content?": "unknown",
+  "isError?": "boolean",
 });
 
 export const ResolvedOrganization = type({
@@ -37,30 +42,54 @@ export type Decoded<T> =
   | { status: "malformed" }
   | { status: "ok"; value: T };
 
-export function decodeToolEnvelope(
+// Narrow a structured tool envelope to its object content. `pending` until the
+// step has produced an output; `malformed` when the content is not an object
+// (e.g. a degraded `isError` string envelope).
+function structuredContent(
   raw: unknown,
 ):
   | { status: "pending" }
   | { status: "malformed" }
-  | { status: "ok"; value: unknown } {
-  const envelope = ToolResultEnvelope(raw);
+  | { status: "ok"; value: Record<string, unknown> } {
+  const envelope = StructuredToolEnvelope(raw);
   if (envelope instanceof type.errors) return { status: "pending" };
-  try {
-    return { status: "ok", value: JSON.parse(envelope.content) };
-  } catch {
+  const content = envelope.content;
+  if (content === null || content === undefined) return { status: "pending" };
+  if (typeof content !== "object" || Array.isArray(content)) {
     return { status: "malformed" };
   }
+  return { status: "ok", value: content as Record<string, unknown> };
 }
 
 export function parseResolvedOrganization(
   raw: unknown,
 ): Decoded<ResolvedOrganization | null> {
-  const decoded = decodeToolEnvelope(raw);
+  const decoded = structuredContent(raw);
   if (decoded.status !== "ok") return decoded;
-  if (decoded.value === null) return { status: "ok", value: null };
   const parsed = ResolvedOrganization(decoded.value);
   if (parsed instanceof type.errors) return { status: "malformed" };
   return { status: "ok", value: parsed };
+}
+
+// A single ranked contact row from the brief's `contactsCsv`, split into cells.
+// The synthesize step emits a simple comma-separated CSV (header row +
+// one row per contact); this renders it as a table for the human to review.
+export interface ContactsTable {
+  headers: string[];
+  rows: string[][];
+}
+
+export function parseContactsCsv(csv: string): ContactsTable | null {
+  const lines = csv
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return null;
+  const split = (line: string): string[] =>
+    line.split(",").map((cell) => cell.trim());
+  const headers = split(lines[0] ?? "");
+  const rows = lines.slice(1).map(split);
+  return { headers, rows };
 }
 
 export function stripCodeFence(text: string): string {

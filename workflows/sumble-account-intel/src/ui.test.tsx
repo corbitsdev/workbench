@@ -38,8 +38,10 @@ function makeState(
 
 const noop = () => {};
 
-function toolResult(value: unknown): { callId: string; content: string } {
-  return { callId: "c1", content: JSON.stringify(value) };
+// The Sumble resolve/people tools emit STRUCTURED object content (not a JSON
+// string), so the envelope carries the value verbatim — mirror the real shape.
+function toolResult(value: unknown): { callId: string; content: unknown } {
+  return { callId: "c1", content: value };
 }
 
 function agentReply(value: unknown): { reply: string } {
@@ -139,7 +141,7 @@ describe("Panel — research progress", () => {
         onSignal={noop}
       />,
     );
-    screen.getByText("Couldn't resolve that account.");
+    screen.getByText("We couldn't find that company.");
   });
 });
 
@@ -171,6 +173,29 @@ describe("Panel — brief review", () => {
     expect(strong.tagName).toBe("STRONG");
     screen.getByText("Acme is worth a look this quarter.");
     screen.getByRole("button", { name: "Approve & save" });
+  });
+
+  it("renders the ranked contacts from the brief CSV before approval", () => {
+    render(
+      <Panel
+        {...baseProps}
+        state={reviewState}
+        stepOutputs={{
+          synthesize: agentReply({
+            ...BRIEF,
+            contactsCsv:
+              "name,title,x_handle\nAda Lovelace,VP Eng,@ada\nAlan Turing,CTO,@alan",
+          }),
+        }}
+        onSignal={noop}
+      />,
+    );
+    // The contacts table renders names/titles/handles that appear nowhere in the
+    // markdown brief — proving the CSV is decoded and shown, not just the prose.
+    screen.getByText("Contacts (2)");
+    screen.getByText("Ada Lovelace");
+    screen.getByText("@alan");
+    screen.getByText("CTO");
   });
 
   it("fires the review signal with approved true, carrying the intake pushToAttio flag", async () => {

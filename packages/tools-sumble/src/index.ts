@@ -84,6 +84,7 @@ const TechStackArgs = type({
   "slug?": "string",
   "domain?": "string",
   "name?": "string",
+  "limit?": "number",
 });
 
 const ListTeamsArgs = type({
@@ -114,18 +115,41 @@ const IntelligenceBriefArgs = type({
   "confirmSpend?": "boolean",
 });
 
-// A single free-text account identifier is routed to the right Sumble org-ref
-// field by shape: anything containing a dot or slash (a domain or URL) is a
-// `url`, everything else is treated as a Sumble `slug`. This is what lets the
-// workflow's intake collect one field yet still address the API correctly
-// (a slug must not be sent as a url, and vice versa).
+// Normalize a domain/URL to a bare lowercased host so a formatting difference
+// (protocol, trailing slash, path, casing) never reads as "no match" at Sumble.
+function normalizeDomain(raw: string): string {
+  const noProto = raw.trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, "");
+  const host = noProto.split("/")[0] ?? noProto;
+  return host.replace(/\/+$/, "").toLowerCase();
+}
+
+// True only for an actual domain/host: a single whitespace-free token with a
+// real TLD-looking suffix. This deliberately excludes company NAMES that happen
+// to contain a dot ("J.P. Morgan") — those have whitespace and no bare-host TLD
+// shape — so a name is not mis-sent as a url.
+function isDomainLike(value: string): boolean {
+  const trimmed = value.trim();
+  if (/\s/.test(trimmed)) return false;
+  return /^(?:[a-z][a-z0-9+.-]*:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:[/:?#].*)?$/i.test(
+    trimmed,
+  );
+}
+
+// Route a single free-text account identifier to the right Sumble org-ref field
+// by shape: a protocol/host with a real TLD is a `url` (normalized); a plain
+// multi-word value is a company `name`; a bare single token is a Sumble `slug`.
 function classifyOrgIdentifier(identifier: string): {
-  key: "url" | "slug";
+  key: "url" | "slug" | "name";
   value: string;
 } {
-  const looksLikeDomainOrUrl =
-    identifier.includes("/") || identifier.includes(".");
-  return { key: looksLikeDomainOrUrl ? "url" : "slug", value: identifier };
+  const trimmed = identifier.trim();
+  if (isDomainLike(trimmed)) {
+    return { key: "url", value: normalizeDomain(trimmed) };
+  }
+  if (/\s/.test(trimmed)) {
+    return { key: "name", value: trimmed };
+  }
+  return { key: "slug", value: trimmed };
 }
 
 function buildOrgRef(parsed: {
@@ -136,7 +160,7 @@ function buildOrgRef(parsed: {
 }): Record<string, string> {
   const ref: Record<string, string> = {};
   if (parsed.domain !== undefined && parsed.domain.length > 0) {
-    ref.url = parsed.domain;
+    ref.url = normalizeDomain(parsed.domain);
   } else if (parsed.slug !== undefined && parsed.slug.length > 0) {
     ref.slug = parsed.slug;
   } else if (parsed.name !== undefined && parsed.name.length > 0) {
@@ -230,24 +254,101 @@ function waitAbortable(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-// POST to a Sumble endpoint. On 202 Accepted (async in progress) it re-POSTs the
-// same request after Retry-After, bounded by MAX_POLL_ATTEMPTS. Fails loudly on
-// timeout — never returns partial/empty.
-async function sumbleRequest(
+function sumbleUrl(config: SumbleToolsConfig, path: string): string {
+  return `${normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL)}${path}`;
+}
+
+async function throwOnHttpError(response: Response): Promise<void> {
+  if (response.ok) return;
+  const bodyText = errorMessageFromBody(await response.text().catch(() => ""));
+  const detail = response.statusText || bodyText;
+  throw new Error(`Sumble API error: ${response.status} ${detail ?? ""}`);
+}
+
+// A plain synchronous POST — used by the endpoints that return their result
+// directly (organizations, teams, jobs, signals). Fails loudly on a non-ok
+// status.
+async function sumblePost(
   config: SumbleToolsConfig,
   path: string,
   body: unknown,
   signal: AbortSignal,
 ): Promise<unknown> {
-  const url = `${normalizeBaseUrl(config.baseUrl ?? DEFAULT_BASE_URL)}${path}`;
   const fetcher = config.fetcher ?? fetch;
+  const response = await fetcher(sumbleUrl(config, path), {
+    method: "POST",
+    headers: sumbleHeaders(config.apiKey),
+    body: JSON.stringify(body),
+    signal,
+  } satisfies RequestInit);
+  await throwOnHttpError(response);
+  return response.json();
+}
+
+// Async POST poll (Sumble v8 /people): the kickoff returns a `{ status:
+// "pending", request_id }` body (or a 202). Poll by re-POSTing ONLY the
+// `request_id` — NOT the original body, which would start a fresh job and
+// re-charge. Respects Retry-After and the abort signal; fails loudly at the cap.
+async function sumblePostAsync(
+  config: SumbleToolsConfig,
+  path: string,
+  body: unknown,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const fetcher = config.fetcher ?? fetch;
+  const url = sumbleUrl(config, path);
+  let nextBody: unknown = body;
   let attempts = 0;
 
   for (;;) {
     const response = await fetcher(url, {
       method: "POST",
       headers: sumbleHeaders(config.apiKey),
-      body: JSON.stringify(body),
+      body: JSON.stringify(nextBody),
+      signal,
+    } satisfies RequestInit);
+
+    const is202 = response.status === 202;
+    if (!is202) await throwOnHttpError(response);
+    const payload: unknown = is202 ? null : await response.json();
+    const pending =
+      is202 || (isRecord(payload) && payload.status === "pending");
+    if (!pending) return payload;
+
+    attempts += 1;
+    if (attempts >= MAX_POLL_ATTEMPTS) {
+      throw new Error(
+        `Sumble ${path} did not complete after ${MAX_POLL_ATTEMPTS} polling attempts`,
+      );
+    }
+    const requestId =
+      isRecord(payload) && typeof payload.request_id === "string"
+        ? payload.request_id
+        : undefined;
+    nextBody = requestId !== undefined ? { request_id: requestId } : body;
+    await waitAbortable(
+      parseRetryAfter(response.headers.get("Retry-After")) * 1000,
+      signal,
+    );
+  }
+}
+
+// Async GET poll (Sumble v8 intelligence brief): GET the resource; on 202
+// (generation in progress) re-GET the SAME url after Retry-After. Idempotent —
+// a re-GET does not start a new brief. Fails loudly at the cap.
+async function sumbleGetAsync(
+  config: SumbleToolsConfig,
+  path: string,
+  signal: AbortSignal,
+): Promise<unknown> {
+  const fetcher = config.fetcher ?? fetch;
+  const url = sumbleUrl(config, path);
+  let attempts = 0;
+
+  for (;;) {
+    const response = await fetcher(url, {
+      method: "GET",
+      headers: sumbleHeaders(config.apiKey),
       signal,
     } satisfies RequestInit);
 
@@ -258,20 +359,14 @@ async function sumbleRequest(
           `Sumble ${path} did not complete after ${MAX_POLL_ATTEMPTS} polling attempts`,
         );
       }
-      const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
-      await waitAbortable(retryAfter * 1000, signal);
+      await waitAbortable(
+        parseRetryAfter(response.headers.get("Retry-After")) * 1000,
+        signal,
+      );
       continue;
     }
-
-    if (!response.ok) {
-      const bodyText = errorMessageFromBody(
-        await response.text().catch(() => ""),
-      );
-      const detail = response.statusText || bodyText;
-      throw new Error(`Sumble API error: ${response.status} ${detail ?? ""}`);
-    }
-
-    return await response.json();
+    await throwOnHttpError(response);
+    return response.json();
   }
 }
 
@@ -335,7 +430,7 @@ async function resolveOrganization(
   };
   const parsedResponse = parseResponse(
     SumbleOrganizationsResponse,
-    await sumbleRequest(config, "/organizations", body, signal),
+    await sumblePost(config, "/organizations", body, signal),
     "organizations",
   );
   const org = (parsedResponse.organizations ?? [])[0];
@@ -382,7 +477,7 @@ async function searchOrganizations(
 
   const parsedResponse = parseResponse(
     SumbleOrganizationsResponse,
-    await sumbleRequest(config, "/organizations", body, signal),
+    await sumblePost(config, "/organizations", body, signal),
     "organizations",
   );
   return jsonResult(parsedResponse.organizations ?? []);
@@ -408,15 +503,19 @@ async function getOrgTechStack(
     );
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     organizations: [orgRef],
     select: {
       entities: [{ type: "technology", metrics: ["job_post_count"] }],
     },
   };
+  // Bound the per-technology entity set so the metric cost per call is capped.
+  if (parsed.limit !== undefined) {
+    body.limit = parsed.limit;
+  }
   const parsedResponse = parseResponse(
     SumbleOrganizationsResponse,
-    await sumbleRequest(config, "/organizations", body, signal),
+    await sumblePost(config, "/organizations", body, signal),
     "organizations",
   );
   return jsonResult(parsedResponse.organizations ?? []);
@@ -440,7 +539,7 @@ async function listTeams(
   }
   const parsedResponse = parseResponse(
     SumbleTeamsResponse,
-    await sumbleRequest(config, "/teams", body, signal),
+    await sumblePost(config, "/teams", body, signal),
     "teams",
   );
   return jsonResult(parsedResponse.teams ?? []);
@@ -483,7 +582,7 @@ async function searchPeople(
   }
   const parsedResponse = parseResponse(
     SumblePeopleResponse,
-    await sumbleRequest(config, "/people", body, signal),
+    await sumblePostAsync(config, "/people", body, signal),
     "people",
   );
   const people = parsedResponse.people ?? [];
@@ -505,7 +604,7 @@ async function listJobs(
   }
   const parsedResponse = parseResponse(
     SumbleJobsResponse,
-    await sumbleRequest(config, "/jobs", body, signal),
+    await sumblePost(config, "/jobs", body, signal),
     "jobs",
   );
   return jsonResult(parsedResponse.jobs ?? []);
@@ -534,7 +633,7 @@ async function searchSignals(
   }
   const parsedResponse = parseResponse(
     SumbleSignalsResponse,
-    await sumbleRequest(config, "/signals", body, signal),
+    await sumblePost(config, "/signals", body, signal),
     "signals",
   );
   return jsonResult(parsedResponse.signals ?? []);
@@ -551,11 +650,14 @@ async function getIntelligenceBrief(
       `sumble_get_intelligence_brief costs ${INTELLIGENCE_BRIEF_CREDITS} credits per call; pass confirmSpend: true to proceed.`,
     );
   }
-  const body = { organization_slug: parsed.organizationSlug };
+  // Sumble v8: GET /organizations/{id}/intelligence-brief, 202 + Retry-After
+  // while generating, re-GET the same url to completion. A re-GET is idempotent
+  // (it does not start a new brief or re-charge), unlike a re-POST.
+  const path = `/organizations/${encodeURIComponent(parsed.organizationSlug)}/intelligence-brief`;
   const parsedResponse = parseResponse(
     SumbleIntelligenceBriefResponse,
-    await sumbleRequest(config, "/intelligence-briefs", body, signal),
-    "intelligence-briefs",
+    await sumbleGetAsync(config, path, signal),
+    "intelligence-brief",
   );
   return jsonResult(parsedResponse);
 }
@@ -617,6 +719,10 @@ export const SUMBLE_GET_ORG_TECH_STACK_DEFINITION: ToolDefinition = {
       slug: { type: "string", description: "Sumble organization slug." },
       domain: { type: "string", description: "Company domain or URL." },
       name: { type: "string", description: "Company name." },
+      limit: {
+        type: "number",
+        description: "Maximum technologies to return (bounds metric cost).",
+      },
     },
     required: [],
   },
@@ -700,7 +806,7 @@ export const SUMBLE_SEARCH_SIGNALS_DEFINITION: ToolDefinition = {
 export const SUMBLE_GET_INTELLIGENCE_BRIEF_DEFINITION: ToolDefinition = {
   name: "sumble_get_intelligence_brief",
   description:
-    "Generate a full Sumble intelligence brief for an organization. COST: 50 credits per completed brief — this is a paid, gated call. You MUST pass confirmSpend: true to proceed; without it the tool refuses and spends nothing. This call may run asynchronously and is polled to completion. Returns the brief as a JSON object.",
+    "Generate a full Sumble intelligence brief for an organization (GET /organizations/{slug}/intelligence-brief). COST: 50 credits per completed brief — this is a paid, gated call. You MUST pass confirmSpend: true to proceed; without it the tool refuses and spends nothing. While the brief generates the API returns 202; the tool polls the same URL to completion (a re-GET does not re-charge). Returns the brief as a JSON object.",
   inputSchema: {
     type: "object",
     properties: {

@@ -103,7 +103,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_teams",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"}}",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "List the teams"
           }
@@ -133,7 +133,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_list_jobs",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"}}",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "List the open jobs"
           }
@@ -163,7 +163,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_get_org_tech_stack",
-            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"}}",
+            "workbench.argMap": "{\"slug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Read the tech stack"
           }
@@ -222,7 +222,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-sumble/sumble:sumble_search_signals",
-            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"}}",
+            "workbench.argMap": "{\"organizationSlug\":{\"from\":\"slug\"},\"limit\":{\"literal\":25}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Scan the buying signals"
           }

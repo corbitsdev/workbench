@@ -212,6 +212,23 @@ describe("response parsing", () => {
     expect(bodyOf(urlStub).organizations).toEqual([{ url: "acme.com" }]);
   });
 
+  it("resolve routes a multi-word company NAME (with dots) to the name field", async () => {
+    // "J.P. Morgan" has a dot but is a name, not a domain — must not become a url.
+    const stub = makeFetchStub({ organizations: [{ slug: "jpmorgan" }] });
+    await runTool(stub, "sumble_resolve_organization", {
+      identifier: "J.P. Morgan",
+    });
+    expect(bodyOf(stub).organizations).toEqual([{ name: "J.P. Morgan" }]);
+  });
+
+  it("resolve normalizes a URL identifier to a bare lowercased host", async () => {
+    const stub = makeFetchStub({ organizations: [{ slug: "acme" }] });
+    await runTool(stub, "sumble_resolve_organization", {
+      identifier: "HTTPS://Acme.com/careers/",
+    });
+    expect(bodyOf(stub).organizations).toEqual([{ url: "acme.com" }]);
+  });
+
   it("search_people returns a STRUCTURED { people, count }", async () => {
     const stub = makeFetchStub({
       people: [{ name: "Ada", email: "ada@acme.com" }],
@@ -256,9 +273,14 @@ describe("error handling", () => {
 });
 
 describe("async polling", () => {
-  it("polls search_people on 202 then returns the 200 payload", async () => {
+  it("polls search_people with the request_id, not a re-POST of the body", async () => {
+    // Sumble v8 people: kickoff returns { status: pending, request_id }; poll by
+    // re-POSTing ONLY that id. Re-POSTing the full body would start a new job.
     const stub = makeSequencedFetchStub([
-      { body: {}, status: 202, headers: { "Retry-After": "0" } },
+      {
+        body: { status: "pending", request_id: "req_1" },
+        headers: { "Retry-After": "0" },
+      },
       { body: { people: [{ name: "Ada", email: "ada@acme.com" }] } },
     ]);
     const result = await runTool(stub, "sumble_search_people", {
@@ -269,6 +291,24 @@ describe("async polling", () => {
       people: [{ name: "Ada", email: "ada@acme.com" }],
       count: 1,
     });
+    expect(stub.mock.calls).toHaveLength(2);
+    // Kickoff carries the org filter; the poll carries ONLY the request_id.
+    expect(bodyOf(stub, 0)).toEqual({
+      people: [{ organization_slug: "acme" }],
+      select: { attributes: ["name", "title", "email"] },
+    });
+    expect(bodyOf(stub, 1)).toEqual({ request_id: "req_1" });
+  });
+
+  it("polls search_people on a bare 202 by re-sending the original body", async () => {
+    const stub = makeSequencedFetchStub([
+      { body: {}, status: 202, headers: { "Retry-After": "0" } },
+      { body: { people: [{ name: "Ada" }] } },
+    ]);
+    const result = await runTool(stub, "sumble_search_people", {
+      organizationSlug: "acme",
+    });
+    expect(result.content).toEqual({ people: [{ name: "Ada" }], count: 1 });
     expect(stub.mock.calls).toHaveLength(2);
   });
 
@@ -309,7 +349,7 @@ describe("async polling", () => {
     const result = await pending;
     expect(result.isError).toBe(true);
     expect(result.content).toContain("aborted");
-    // Only the first POST happened; the abort fired during the wait.
+    // Only the first GET happened; the abort fired during the Retry-After wait.
     expect(stub.mock.calls).toHaveLength(1);
   });
 });
@@ -325,7 +365,7 @@ describe("intelligence brief cost gate", () => {
     expect(stub.mock.calls).toHaveLength(0);
   });
 
-  it("calls /intelligence-briefs when confirmSpend is true", async () => {
+  it("GETs the org intelligence-brief path when confirmSpend is true", async () => {
     const stub = makeFetchStub({
       organization_slug: "acme",
       brief: { summary: "hi" },
@@ -336,8 +376,10 @@ describe("intelligence brief cost gate", () => {
     });
     expect(result.isError).toBeUndefined();
     expect(stub.mock.calls).toHaveLength(1);
-    expect(String(stub.mock.calls[0]?.[0])).toContain("/intelligence-briefs");
-    expect(bodyOf(stub)).toEqual({ organization_slug: "acme" });
+    const [url, init] = stub.mock.calls[0] ?? [];
+    expect(String(url)).toContain("/organizations/acme/intelligence-brief");
+    expect(init?.method).toBe("GET");
+    expect(init?.body).toBeUndefined();
     expect(JSON.parse(String(result.content)).brief).toEqual({ summary: "hi" });
   });
 });

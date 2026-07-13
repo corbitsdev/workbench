@@ -13,7 +13,11 @@ import {
   type WorkflowStep,
 } from "@workbench/ui";
 import { DISPLAY_STEPS } from "./display-steps";
-import { parseAccountBrief, parseResolvedOrganization } from "./parse";
+import {
+  parseAccountBrief,
+  parseContactsCsv,
+  parseResolvedOrganization,
+} from "./parse";
 
 const INTAKE_SIGNAL = "intake";
 const REVIEW_SIGNAL = "review";
@@ -97,6 +101,47 @@ function ErrorCard({
 const fieldClass =
   "w-full rounded-[8px] border border-border bg-bg px-3 py-2 text-[13px] text-text placeholder:text-text-3 focus:outline-none focus:ring-1 focus:ring-orange";
 
+// Renders the brief's `contactsCsv` (header row + one row per contact) as a
+// table so the human sees the ranked, X-enriched contacts before approving.
+// Returns null when there are no contact rows (only a header, or unparseable).
+function ContactsCard({ csv }: { csv: string }) {
+  const table = parseContactsCsv(csv);
+  if (table === null || table.rows.length === 0) return null;
+  const columnLabel = (header: string): string =>
+    header.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-[12px] font-medium text-text-2">
+        Contacts ({table.rows.length})
+      </p>
+      <div className="overflow-x-auto rounded-[8px] border border-border">
+        <table className="w-full border-collapse text-left text-[12px]">
+          <thead>
+            <tr className="bg-surface-2 text-text-2">
+              {table.headers.map((header, i) => (
+                <th key={i} className="px-2.5 py-1.5 font-medium">
+                  {columnLabel(header)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row, r) => (
+              <tr key={r} className="border-t border-border text-text">
+                {table.headers.map((_, c) => (
+                  <td key={c} className="px-2.5 py-1.5">
+                    {row[c] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Account intake ──────────────────────────────────────────────────────────
 
 function AccountIntake({
@@ -132,8 +177,9 @@ function AccountIntake({
     <Card>
       <CardTitle>Which account should we research?</CardTitle>
       <p className="mb-4 text-[12px] text-text-3">
-        Enter the company domain or Sumble slug. We pull the org shape, tech
-        stack, contacts, and buying signals, then write a reviewable brief.
+        Enter the company domain (like acme.com) or its Sumble company ID. We
+        pull the org shape, tech stack, contacts, and buying signals, then write
+        a reviewable brief.
       </p>
       <form
         className="space-y-4"
@@ -148,7 +194,7 @@ function AccountIntake({
       >
         <label className="block space-y-1.5">
           <span className="text-[12px] font-medium text-text-2">
-            Company domain or slug
+            Company domain or Sumble company ID
           </span>
           <input
             type="text"
@@ -209,8 +255,8 @@ function ResearchScreen({
   if (phaseFor(state, "resolve") === "failed") {
     return (
       <ErrorCard
-        title="Couldn't resolve that account."
-        detail="Sumble didn't match the domain or slug. Start over with a different account."
+        title="We couldn't find that company."
+        detail="Double-check the company domain (like acme.com) or the company ID and try again."
         onClose={onClose}
       />
     );
@@ -303,6 +349,7 @@ function BriefReview({
       <div className="max-h-[420px] overflow-y-auto rounded-[10px] border border-border bg-bg p-3">
         <Markdown>{brief.content}</Markdown>
       </div>
+      <ContactsCard csv={brief.contactsCsv} />
       {brief.slackDraft.trim().length > 0 ? (
         <div className="mt-3">
           <p className="mb-1 text-[12px] font-medium text-text-2">
@@ -374,13 +421,20 @@ function DoneScreen({
 
   const brief = parseAccountBrief(stepOutputs.synthesize);
   const title = brief.status === "ok" ? brief.value.title : "Account brief";
+  const contactCount =
+    brief.status === "ok"
+      ? (parseContactsCsv(brief.value.contactsCsv)?.rows.length ?? 0)
+      : 0;
 
   return (
     <Card>
       <CardTitle>Brief saved</CardTitle>
       <p className="text-[13px] text-text">{title}</p>
       <p className="mt-1 text-[12px] text-text-3">
-        The account intelligence brief is in your workbench.
+        The account intelligence brief is in your workbench
+        {contactCount > 0
+          ? `, with ${String(contactCount)} contact${contactCount === 1 ? "" : "s"}.`
+          : "."}
       </p>
       <div className="mt-4">
         <Button variant="ghost" size="sm" onClick={onClose}>

@@ -205,12 +205,6 @@ const PHRASES: Record<string, FriendlyPhrase> = {
   },
   linear_list_teams: "Listing Linear teams",
   linear_list_users: "Listing Linear users",
-  linear_create_issue: (args) => {
-    const title = firstStringArg(args, ["title", "name"]);
-    return title === null
-      ? "Creating a Linear issue"
-      : `Creating Linear issue ${truncate(title)}`;
-  },
 
   // Attio CRM — brand name in the phrase (not "CRM") so the UI reads naturally
   attio_query_records: (args) => {

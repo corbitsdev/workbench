@@ -53,7 +53,7 @@ function intakeForm(signalName: string): UIBlock {
   const organizationDomain: FormField = {
     kind: "text",
     name: "organizationDomain",
-    label: "Company domain or Sumble slug",
+    label: "Company domain or Sumble company ID",
     placeholder: "acme.com",
     required: true,
   };
