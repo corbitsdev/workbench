@@ -59,6 +59,17 @@ export const HeartbeatTriggerPayloadSchema = type({
 export type HeartbeatTriggerPayload =
   typeof HeartbeatTriggerPayloadSchema.infer;
 
+/** Payload the hub passes into a heartbeat run after fire-time enrichment. */
+export const HeartbeatRunTriggerPayloadSchema = type({
+  reason: "'scheduled-heartbeat' | 'manual-brief'",
+  userAddress: "string > 0",
+  userRefId: "string > 0",
+  createdAfter: "string",
+  enabledSources: "string[]",
+});
+export type HeartbeatRunTriggerPayload =
+  typeof HeartbeatRunTriggerPayloadSchema.infer;
+
 // Update body: toggle enablement and/or move the fire hour. At least one field
 // is required; an empty patch is a no-op the route rejects.
 export const UpdateScheduledTriggerBodySchema = type({

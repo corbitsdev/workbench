@@ -1270,6 +1270,50 @@ describe("ATTIO_HUB_TOOLS", () => {
 });
 
 describe("attio_recent_activity handler", () => {
+  it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
+    const fetcher: AttioFetch = mock(async (url: string) => {
+      if (url.includes("/records/query")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: { record_id: "rec_1" },
+                created_at: "2026-07-05T00:00:00Z",
+                values: { name: [{ value: "Acme Corp" }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    });
+
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: {
+          reason: "manual-brief",
+          userAddress: "usr_abc@workbench.local",
+          userRefId: "usr_abc",
+          enabledSources: ["attio"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(
+      JSON.parse(String(result.content)).attioActivity.newCompanies,
+    ).toHaveLength(1);
+  });
+
   it("skips the network call and reports skipped when attio is not in enabledSources", async () => {
     const fetcher = makeFetchStub({ data: [] });
     const runner = createToolRunner(

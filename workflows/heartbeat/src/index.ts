@@ -1,7 +1,11 @@
 import { defineWorkflow } from "@intx/workflow";
 import type { StepPrimitive } from "@intx/workflow";
 import { deterministicToolStep, inlineInferenceStep } from "@workbench/agents";
-import { heartbeatIntakeStepKey, WIRED_BRIEF_SOURCES } from "@workbench/shared";
+import {
+  HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
+  heartbeatIntakeStepKey,
+  WIRED_BRIEF_SOURCES,
+} from "@workbench/shared";
 export { heartbeatIntakeStepKey };
 import { buildMorningBriefSystemPrompt } from "./prompts";
 
@@ -26,10 +30,8 @@ export const kind = "heartbeat";
 // The intake steps are generated from `WIRED_BRIEF_SOURCES`
 // (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
 // tagged `briefSource.tool`) — adding a source is tagging its catalog entry,
-// never editing this file. Today only Granola is wired, so the generated
-// graph is behaviorally identical to the hand-written v0 (see
-// `index.test.ts`): one intake step calling `granola_list_notes`, nonFatal,
-// with `brief` depending on it.
+// never editing this file. The generated graph is one concurrent intake per
+// `WIRED_BRIEF_SOURCES` entry, then merge-sources → brief (see `index.test.ts`).
 //
 // v0 reasons over the note summaries each source's list returns (no
 // per-note transcript fan-out): a `map` over `steps.intake-granola.output.notes`
@@ -49,17 +51,18 @@ function heartbeatIntakeAgentId(sourceKey: string): string {
 const intakeStepEntries: [string, StepPrimitive][] = WIRED_BRIEF_SOURCES.map(
   (source) => [
     heartbeatIntakeStepKey(source.key),
-    // Pull the source's recent data. The trigger payload is passed verbatim;
-    // each source's fetch tool reads `enabledSources`/`createdAfter` from it
-    // per the shared BriefSourceFetchInputSchema contract and ignores the
-    // rest. nonFatal: a missing/rejected credential, or the source being
-    // disabled, must degrade the brief to a "not available" note (see
-    // prompts.ts) rather than fail the whole unattended run.
+    // Pull the source's recent data. Input is the full hub trigger payload
+    // (mail identity + brief knobs); argMap narrows to BriefSourceFetchInput
+    // so tools never depend on ignoring extra fields. nonFatal: a missing/
+    // rejected credential, or the source being disabled, must degrade the
+    // brief to a "not available" note (see prompts.ts) rather than fail the
+    // whole unattended run.
     deterministicToolStep({
       id: heartbeatIntakeAgentId(source.key),
       title: `Pull ${source.label}`,
       tool: source.tool,
       input: { from: "trigger.payload" },
+      argMap: HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP,
       nonFatal: true,
     }),
   ],

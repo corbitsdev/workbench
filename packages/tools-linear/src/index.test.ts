@@ -197,6 +197,33 @@ describe("linear_list_issues handler", () => {
     });
   });
 
+  it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
+    const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
+    const fetcher = makeFetchStub({ data: { issues: { nodes } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: {
+          reason: "manual-brief",
+          userAddress: "usr_abc@workbench.local",
+          userRefId: "usr_abc",
+          enabledSources: ["linear"],
+          createdAfter: "2026-07-01T00:00:00.000Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(result.content))).toEqual({ issues: nodes });
+  });
+
   it("skips the network call and reports skipped when linear is not in enabledSources", async () => {
     const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
     const runner = createToolRunner(
