@@ -6,6 +6,7 @@ import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
+import { attachFromDisplay, resolveSenderDisplayNames } from "./mail-sender-display";
 import { tryParseHeaderSection } from "./mail-headers";
 
 const logger = getLogger("mailbox-read");
@@ -75,6 +76,15 @@ function toMailboxMessage(row: PrincipalMailboxRow): MailboxMessage {
   return message;
 }
 
+function enrichFromDisplay(
+  message: MailboxMessage,
+  displays: Map<string, string>,
+): MailboxMessage {
+  const fromDisplay = attachFromDisplay(message.from, displays);
+  if (fromDisplay === undefined) return message;
+  return { ...message, fromDisplay };
+}
+
 /**
  * List the caller's durable mailbox: inbound `principal_mailbox` rows
  * written by the persistMail override, newest first, scoped by the
@@ -103,8 +113,14 @@ export async function listUserMailbox(
     limit: scope.limit + 1,
   });
   const page = takePage(rows, scope.limit);
+  const baseItems = page.items.map(toMailboxMessage);
+  const displays = await resolveSenderDisplayNames(
+    db,
+    scope.tenantId,
+    baseItems.map((item) => item.from),
+  );
   return {
-    items: page.items.map(toMailboxMessage),
+    items: baseItems.map((item) => enrichFromDisplay(item, displays)),
     ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
   };
 }
@@ -135,7 +151,14 @@ export async function getMailboxMessage(
       messageId: row.id,
     });
   }
-  return { ...toMailboxMessage(row), body: decoded?.body ?? "" };
+  const base = toMailboxMessage(row);
+  const displays = await resolveSenderDisplayNames(db, args.tenantId, [
+    base.from,
+  ]);
+  return {
+    ...enrichFromDisplay(base, displays),
+    body: decoded?.body ?? "",
+  };
 }
 
 /**

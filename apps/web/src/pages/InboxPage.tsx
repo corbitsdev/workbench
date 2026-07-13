@@ -6,6 +6,7 @@ import { cn, Markdown } from "@workbench/ui";
 import {
   buildNowFeed,
   openTaskStatuses,
+  mailboxSenderLabel,
   type MailboxMessage,
   type MailboxMessageDetail,
 } from "@workbench/shared";
@@ -342,7 +343,7 @@ function MessageRow({
             message.read ? "text-text-2" : "font-semibold text-text",
           )}
         >
-          {message.from}
+          {mailboxSenderLabel(message)}
         </span>
         <time className="shrink-0 text-[11px] text-text-3">
           {formatRelativeTime(message.date)}
@@ -438,7 +439,9 @@ function ReadingPane({
               {headerSource.subject ?? "(no subject)"}
             </h2>
             <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-2">
-              <span className="font-medium text-text">{headerSource.from}</span>
+              <span className="font-medium text-text">
+                {mailboxSenderLabel(headerSource)}
+              </span>
               <span className="text-text-3">·</span>
               <time className="text-text-3">
                 {formatRelativeTime(headerSource.date)}

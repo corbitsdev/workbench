@@ -2,10 +2,13 @@ import { type } from "arktype";
 
 // The /me/inbox contract: one durable principal_mailbox row, decoded for
 // display. `read` reflects the row's read_at marker; `date` and timestamps
-// are ISO strings on the wire.
+// are ISO strings on the wire. `from` is the RFC From header value (usually
+// the sender's mailbox address); `fromDisplay` is a tenant-resolved label
+// when the hub can map the address to an agent or user name.
 export const MailboxMessage = type({
   id: "string",
   from: "string",
+  "fromDisplay?": "string",
   to: "string[]",
   "subject?": "string",
   date: "string",
@@ -30,3 +33,9 @@ export const MailboxListResponse = type({
   "nextCursor?": "string",
 });
 export type MailboxListResponse = typeof MailboxListResponse.infer;
+
+export function mailboxSenderLabel(
+  message: Pick<MailboxMessage, "from" | "fromDisplay">,
+): string {
+  return message.fromDisplay ?? message.from;
+}
