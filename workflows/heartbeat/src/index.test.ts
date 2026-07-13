@@ -125,6 +125,12 @@ describe("heartbeat native workflow", () => {
       expect(intake.agent.tags?.[STEP_NONFATAL_TAG]).toBe("true");
       expect(intake.agent.inference.sources).toEqual([]);
       expect(intake.input).toEqual({ from: "trigger.payload" });
+      expect(intake.agent.tags?.[STEP_ARGMAP_TAG]).toBe(
+        JSON.stringify({
+          enabledSources: { from: "enabledSources" },
+          createdAfter: { from: "createdAfter" },
+        }),
+      );
       expect(intake.after).toBeUndefined();
     }
   });
@@ -179,10 +185,13 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Selector wiring
   // -------------------------------------------------------------------------
-  test("every intake step reads the trigger payload verbatim", () => {
+  test("every intake step reads trigger.payload and narrows tool args via the shared fetch argMap", () => {
     for (const source of WIRED_BRIEF_SOURCES) {
-      expect(stepPrimitive(heartbeatIntakeStepKey(source.key)).input).toEqual({
-        from: "trigger.payload",
+      const intake = stepPrimitive(heartbeatIntakeStepKey(source.key));
+      expect(intake.input).toEqual({ from: "trigger.payload" });
+      expect(argMapOf(heartbeatIntakeStepKey(source.key))).toEqual({
+        enabledSources: { from: "enabledSources" },
+        createdAfter: { from: "createdAfter" },
       });
     }
   });

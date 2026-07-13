@@ -1546,11 +1546,10 @@ const scheduler = createScheduler({
     // (if any) was baked into the schedule row when it was created — a source
     // toggle in Settings must take effect on the very next brief, not the next
     // time the schedule row itself is edited.
-    const prefs = await readMemberPreferences(
-      db,
-      fire.tenantId,
-      fire.creatorPrincipalId,
-    );
+    const [prefs, identity] = await Promise.all([
+      readMemberPreferences(db, fire.tenantId, fire.creatorPrincipalId),
+      resolveUserIdentity(fire.creatorPrincipalId),
+    ]);
     const triggerPayload = enrichHeartbeatTriggerPayload(
       fire.triggerPayload,
       fire.kind,
@@ -1559,6 +1558,8 @@ const scheduler = createScheduler({
       fire.nowMs,
       fire.lastFiredDayUtc,
       fire.hourUtc,
+      "scheduled",
+      identity,
     );
     const result = await runStarter.startRun({
       kind: fire.kind,

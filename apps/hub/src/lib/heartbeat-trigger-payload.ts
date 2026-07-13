@@ -24,6 +24,14 @@ export function computeHeartbeatCreatedAfter(
   return new Date(Math.max(lastFiredMs, maxLookbackMs)).toISOString();
 }
 
+/** On-demand manual briefs use the widest heartbeat lookback (7 days), not the
+ * incremental since-last-scheduled-fire window — the member expects a full refresh. */
+export function computeManualBriefCreatedAfter(nowMs: number): string {
+  return new Date(nowMs - CREATED_AFTER_MAX_LOOKBACK_MS).toISOString();
+}
+
+export type HeartbeatEnrichmentLookback = "scheduled" | "manual-refresh";
+
 // Enriches a heartbeat schedule's trigger payload with the member's
 // CURRENT `enabledSources` at fire time, rather than whatever was captured in
 // the schedule row when it was created/last edited. The scheduler stores one
@@ -33,6 +41,11 @@ export function computeHeartbeatCreatedAfter(
 // so `granola_list_notes` time-bounds the brief instead of always returning
 // the latest N notes regardless of age. Pure over its inputs so the fire-time
 // enrichment is unit-testable without a DB.
+export type HeartbeatMemberIdentity = {
+  userAddress: string;
+  userRefId: string;
+};
+
 export function enrichHeartbeatTriggerPayload(
   triggerPayload: Record<string, unknown>,
   fireKind: string,
@@ -41,11 +54,19 @@ export function enrichHeartbeatTriggerPayload(
   nowMs: number,
   lastFiredDayUtc: number | null,
   hourUtc: number,
+  lookback: HeartbeatEnrichmentLookback = "scheduled",
+  memberIdentity: HeartbeatMemberIdentity,
 ): Record<string, unknown> {
   if (fireKind !== heartbeatKind) return triggerPayload;
+  const createdAfter =
+    lookback === "manual-refresh"
+      ? computeManualBriefCreatedAfter(nowMs)
+      : computeHeartbeatCreatedAfter(nowMs, lastFiredDayUtc, hourUtc);
   return {
     ...triggerPayload,
+    userAddress: memberIdentity.userAddress,
+    userRefId: memberIdentity.userRefId,
     enabledSources,
-    createdAfter: computeHeartbeatCreatedAfter(nowMs, lastFiredDayUtc, hourUtc),
+    createdAfter,
   };
 }

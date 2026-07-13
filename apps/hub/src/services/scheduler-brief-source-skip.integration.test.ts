@@ -53,6 +53,11 @@ function fireAndCapturePayload(
         fire.nowMs,
         fire.lastFiredDayUtc,
         fire.hourUtc,
+        "scheduled",
+        {
+          userAddress: "usr_principal-1@workbench.example",
+          userRefId: "principal-1",
+        },
       );
       return { deploymentId: "dep-1", accepted: true };
     },

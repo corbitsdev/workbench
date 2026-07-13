@@ -1,7 +1,10 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
-import { resolveEnabledBriefSources } from "@workbench/shared";
+import {
+  HeartbeatRunTriggerPayloadSchema,
+  resolveEnabledBriefSources,
+} from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
 import { readMemberPreferences } from "../lib/member-preferences";
 import { listOwnerSchedules } from "../lib/scheduled-triggers";
@@ -23,12 +26,13 @@ export const BriefRunResponse = type({
 export type BriefRunResponse = typeof BriefRunResponse.infer;
 
 // POST /me/brief-run: lets a member fire their own heartbeat brief on
-// demand, outside its daily schedule. Mirrors the scheduler's fire-time
-// enrichment (services/scheduler.ts startWorkflowRun call site in index.ts)
-// so a manual run reads the same live brief-source preferences and the same
-// createdAfter clamp a scheduled fire would — the only difference is the
-// trigger path (`source: "manual"`), which the tenant-hour start budget in
-// workflow-run-starter.ts does NOT exempt (only "scheduler" is exempt).
+// demand, outside its daily schedule. Reads the same live brief-source
+// preferences as the scheduler (`resolveEnabledBriefSources`), but uses a
+// full 7-day `createdAfter` lookback (`manual-refresh`) instead of the
+// incremental since-last-scheduled-fire window — so an on-demand run is a
+// refresh, not "delta since this morning." Trigger path is `source: "manual"`;
+// the tenant-hour start budget in workflow-run-starter.ts does NOT exempt
+// manual (only "scheduler" is exempt).
 export function createMeBriefRunRouter(deps: {
   db: HubDb;
   runStarter: WorkflowRunStarter;
@@ -108,14 +112,17 @@ export function createMeBriefRunRouter(deps: {
         lastFiredDayUtc = heartbeat.lastFiredDayUtc;
         hourUtc = heartbeat.hourUtc;
       } else {
-        const identity = await deps.resolveUserIdentity(member.principalId);
-        basePayload = {
-          reason: "manual-brief",
-          userAddress: identity.userAddress,
-          userRefId: identity.userRefId,
-        };
+        basePayload = { reason: "manual-brief" };
         lastFiredDayUtc = null;
         hourUtc = 0;
+      }
+
+      let identity: { userAddress: string; userRefId: string };
+      try {
+        identity = await deps.resolveUserIdentity(member.principalId);
+      } catch {
+        briefRunLimiter.refund(member.principalId);
+        return c.json({ error: "The brief could not be started" }, 502);
       }
 
       const prefs = await readMemberPreferences(
@@ -125,19 +132,26 @@ export function createMeBriefRunRouter(deps: {
       );
       const nowMs = clock();
       const triggerPayload = enrichHeartbeatTriggerPayload(
-        basePayload,
+        { ...basePayload, reason: "manual-brief" },
         deps.heartbeatKind,
         deps.heartbeatKind,
         resolveEnabledBriefSources(prefs),
         nowMs,
         lastFiredDayUtc,
         hourUtc,
+        "manual-refresh",
+        identity,
       );
+      const validated = HeartbeatRunTriggerPayloadSchema(triggerPayload);
+      if (validated instanceof type.errors) {
+        briefRunLimiter.refund(member.principalId);
+        return c.json({ error: "The brief could not be started" }, 502);
+      }
 
       const result = await deps.runStarter.startRun({
         kind: deps.heartbeatKind,
         tenantId: member.tenantId,
-        input: triggerPayload,
+        input: validated,
         creatorPrincipalId: member.principalId,
         source: "manual",
       });

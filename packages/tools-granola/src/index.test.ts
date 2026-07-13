@@ -57,6 +57,45 @@ describe("createGranolaTools", () => {
     });
   });
 
+  it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
+    const fetcher = mock(async () => {
+      return new Response(
+        JSON.stringify({
+          notes: [
+            { id: "n1", title: "Call", created_at: "2026-07-10T00:00:00Z" },
+          ],
+          hasMore: false,
+        }),
+        {
+          status: 200,
+        },
+      );
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: {
+          reason: "manual-brief",
+          userAddress: "usr_abc@workbench.local",
+          userRefId: "usr_abc",
+          enabledSources: ["granola", "linear", "attio"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(result.content)).notes).toHaveLength(1);
+  });
+
   it("calls granola normally when enabledSources includes granola", async () => {
     const fetcher = mock(async () => {
       return new Response(JSON.stringify({ notes: [], hasMore: false }), {

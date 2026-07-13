@@ -133,7 +133,7 @@ describe("POST /me/brief-run", () => {
     startRunCalls = [];
     startRunResult = { ok: true, deploymentId: "dep-1" };
     preferencesByPrincipal["principal-a"] = {
-      "brief-source:granola": true,
+      "briefSource:granola": true,
     };
     const app = mountApp();
     const res = await app.fetch(req("/me/brief-run", "user-a"));
@@ -148,8 +148,55 @@ describe("POST /me/brief-run", () => {
     expect(call?.tenantId).toBe("tenant-root");
     expect(call?.creatorPrincipalId).toBe("principal-a");
     expect(call?.source).toBe("manual");
-    expect(call?.input.reason).toBe("scheduled-heartbeat");
-    expect(typeof call?.input.createdAfter).toBe("string");
+    expect(call?.input.reason).toBe("manual-brief");
+    expect(call?.input.userAddress).toBe("usr_principal-a@tenant.example");
+    expect(call?.input.enabledSources).toEqual(["granola"]);
+    expect(call?.input.createdAfter).toBe(
+      new Date(
+        Date.parse("2026-07-12T13:05:00.000Z") - 7 * 86_400_000,
+      ).toISOString(),
+    );
+  });
+
+  it("uses a full lookback even when the schedule already fired today", async () => {
+    startRunCalls = [];
+    startRunResult = { ok: true, deploymentId: "dep-1" };
+    const now = Date.parse("2026-07-12T13:05:00.000Z");
+    const today = Math.floor(now / 86_400_000);
+    scheduleRowsByPrincipal["principal-a"] = [
+      {
+        workflowKind: HEARTBEAT_KIND,
+        hourUtc: 9,
+        lastFiredDayUtc: today,
+        triggerPayload: {
+          reason: "scheduled-heartbeat",
+          userAddress: "usr_a@tenant.example",
+        },
+      },
+    ];
+    preferencesByPrincipal["principal-a"] = {
+      "briefSource:granola": true,
+      "briefSource:linear": true,
+      "briefSource:attio": true,
+      "briefSource:vercel": true,
+    };
+    const app = mountApp(() => now);
+    const res = await app.fetch(req("/me/brief-run", "user-a"));
+    expect(res.status).toBe(200);
+    const call = startRunCalls[0];
+    expect(call?.input.enabledSources).toEqual([
+      "attio",
+      "granola",
+      "linear",
+      "vercel",
+    ]);
+    expect(call?.input.createdAfter).toBe(
+      new Date(now - 7 * 86_400_000).toISOString(),
+    );
+    expect(call?.input.createdAfter).not.toBe(
+      new Date(today * 86_400_000 + 9 * 3_600_000).toISOString(),
+    );
+    expect(call?.input.userAddress).toBe("usr_principal-a@tenant.example");
   });
 
   it("404s when the caller has no membership", async () => {

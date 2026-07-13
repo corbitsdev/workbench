@@ -158,6 +158,14 @@ flow still works). When on, every embedded def under
 same core path as the deploy route. The pass is fail-safe (a per-`(kind,
 tenant)` failure is logged and skipped — a bad def never blocks startup).
 
+**CI/CD (hub Docker image):** `apps/hub/Dockerfile` copies `workflows/` and runs
+`bun run build:workflow-defs` during the image build. That regenerates the embedded
+JSON from the workflow packages in the same commit Railway built — you do not rely on
+someone remembering to commit `generated/workflow-defs` for staging/prod to pick up TS
+changes. The committed JSON in git is still the drift-test anchor for PRs
+(`apps/hub/bin/build-workflow-defs.test.ts`); keep it in sync when you change
+`workflows/**`, or CI tests fail even though the deployed image would have been correct.
+
 Idempotency is **per `(kind, tenant)`**, not per kind. The git-backed workflow
 repo is keyed by kind only, so its fingerprint is tenant-independent; the
 per-tenant signal is the deployment-index row (`workflow_run`). A pair is

@@ -284,6 +284,12 @@ export const BriefSourceFetchInputSchema = type({
 });
 export type BriefSourceFetchInput = typeof BriefSourceFetchInputSchema.infer;
 
+/** ArgMap every heartbeat intake step uses to narrow hub trigger payload → tool args. */
+export const HEARTBEAT_BRIEF_SOURCE_FETCH_ARG_MAP = {
+  enabledSources: { from: "enabledSources" },
+  createdAfter: { from: "createdAfter" },
+} as const;
+
 /**
  * The marker a brief-source fetch tool returns instead of calling out, when
  * `enabledSources` is set and omits this source's key, or (for a

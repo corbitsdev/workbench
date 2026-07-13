@@ -11,6 +11,33 @@
       }
     ],
     "steps": {
+      "intake-attio": {
+        "kind": "step",
+        "id": "intake-attio",
+        "agent": {
+          "id": "heartbeat-intake-attio",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-attio/attio:attio_recent_activity"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_recent_activity",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-attio/attio:attio_recent_activity",
+            "workbench.argMap": "{\"enabledSources\":{\"from\":\"enabledSources\"},\"createdAfter\":{\"from\":\"createdAfter\"}}",
+            "workbench.nonFatal": "true",
+            "workbench.title": "Pull Attio"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "from": "trigger.payload"
+        }
+      },
       "intake-granola": {
         "kind": "step",
         "id": "intake-granola",
@@ -28,6 +55,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-granola/granola:granola_list_notes",
+            "workbench.argMap": "{\"enabledSources\":{\"from\":\"enabledSources\"},\"createdAfter\":{\"from\":\"createdAfter\"}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Pull Granola"
           }
@@ -54,34 +82,9 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-linear/linear:linear_list_issues",
+            "workbench.argMap": "{\"enabledSources\":{\"from\":\"enabledSources\"},\"createdAfter\":{\"from\":\"createdAfter\"}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Pull Linear"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "from": "trigger.payload"
-        }
-      },
-      "intake-attio": {
-        "kind": "step",
-        "id": "intake-attio",
-        "agent": {
-          "id": "heartbeat-intake-attio",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "@workbench/tools-attio/attio:attio_recent_activity"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: @workbench/tools-attio/attio:attio_recent_activity",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "@workbench/tools-attio/attio:attio_recent_activity",
-            "workbench.nonFatal": "true",
-            "workbench.title": "Pull Attio"
           }
         },
         "drainBehavior": "cancel",
@@ -106,6 +109,7 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "@workbench/tools-vercel/vercel:vercel_list_deployments",
+            "workbench.argMap": "{\"enabledSources\":{\"from\":\"enabledSources\"},\"createdAfter\":{\"from\":\"createdAfter\"}}",
             "workbench.nonFatal": "true",
             "workbench.title": "Pull Vercel"
           }
@@ -115,12 +119,51 @@
           "from": "trigger.payload"
         }
       },
+      "merge-sources": {
+        "kind": "step",
+        "id": "merge-sources",
+        "agent": {
+          "id": "heartbeat-merge-sources",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "@workbench/tools-last30days/core:heartbeat_merge_brief_sources"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: @workbench/tools-last30days/core:heartbeat_merge_brief_sources",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "@workbench/tools-last30days/core:heartbeat_merge_brief_sources",
+            "workbench.title": "Merge brief sources"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "project": {
+            "from": "steps"
+          },
+          "fields": [
+            "intake-attio",
+            "intake-granola",
+            "intake-linear",
+            "intake-vercel"
+          ]
+        },
+        "after": [
+          "intake-attio",
+          "intake-granola",
+          "intake-linear",
+          "intake-vercel"
+        ]
+      },
       "brief": {
         "kind": "step",
         "id": "brief",
         "agent": {
           "id": "heartbeat-brief",
-          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write a concise morning brief for a go-to-market operator, synthesized from their recent activity.\n\nYou are given, as JSON, recent data pulled from this person's connected brief sources:\n- Granola\n- Linear\n- Attio\n- Vercel\n\nEach source's data appears as its own fields in the JSON (field shape varies by source — e.g. a list of items with titles, dates, and summaries). Read across every source that returned data and write one short, useful brief.\n\n## Output — one markdown document, in exactly these sections\n# Your morning brief\n\n## What happened\nA tight synthesis of recent activity from Granola, Linear, Attio, Vercel: what happened, with whom or on what, and the throughline across it. Cover each source that returned data; do not list every item mechanically — group related items. Name the specific companies, people, and topics that appear in the data. If a source returned no data or was skipped (see below), do not invent activity for it — simply do not cover it here, unless every source was empty or skipped, in which case say so plainly in one line.\n\n## What needs attention today\nThe two to five things that genuinely need this person's attention now — an open commitment, an unanswered question, a stalled deal, a decision waiting on them, a risk surfaced in the data. Each as a single scannable line. Lead with the most consequential.\n\n## Suggested next actions\nThree to six concrete, specific next actions tied to the items above — a follow-up to send, a person to loop in, a document to prepare. Each starts with a verb and names the who/what. No generic advice.\n\n## Rules\n- Ground every line in the provided data. Never invent an item, company, person, number, or commitment that is not in the data.\n- If there is no recent data across every source, say so plainly in one line under \"What happened\" and keep the other two sections empty or brief — do not fabricate activity.\n- If a source's data was skipped or unavailable (its JSON has `\"skipped\": true`, `\"isError\": true`, or no data field at all), that means that source is not available for this brief right now — whether the person turned it off, the connection is not configured, or the source is temporarily unavailable, say so plainly and neutrally about that source (e.g. \"Call notes aren't available for this brief.\"), never as an error, failure, or missing data. Only mention this when it changes what \"What happened\" can say — do not pad the brief with per-source status lines when every source did return data.\n- Concise and plain. Short sentences. No jargon, no filler (\"it's worth noting\", \"in today's fast-paced\"), no superlatives.\n- Markdown only, using the headers above. No emojis. No em dashes — use \" - \" for asides.\n- The brief is delivered as an email and saved as an artifact, so it must read as a finished document on its own. Do not address the reader, do not greet, do not sign off, do not mention that you are an AI or that this was generated.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou write a concise morning brief for a go-to-market operator, synthesized from their recent activity.\n\nYou are given, as JSON, recent data pulled from this person's connected brief sources:\n- Attio\n- Granola\n- Linear\n- Vercel\n\nEach source's data lives under the `sources` object (e.g. `sources.granola`, `sources.linear`) — field shape varies by source. Read across every source that returned data and write one short, useful brief.\n\n## Output — one markdown document, in exactly these sections\n# Your morning brief\n\n## What happened\nA tight synthesis of recent activity from Attio, Granola, Linear, Vercel: what happened, with whom or on what, and the throughline across it. Cover each source that returned data; do not list every item mechanically — group related items. Name the specific companies, people, and topics that appear in the data. If a source returned no data or was skipped (see below), do not invent activity for it — simply do not cover it here, unless every source was empty or skipped, in which case say so plainly in one line.\n\n## What needs attention today\nThe two to five things that genuinely need this person's attention now — an open commitment, an unanswered question, a stalled deal, a decision waiting on them, a risk surfaced in the data. Each as a single scannable line. Lead with the most consequential.\n\n## Suggested next actions\nThree to six concrete, specific next actions tied to the items above — a follow-up to send, a person to loop in, a document to prepare. Each starts with a verb and names the who/what. No generic advice.\n\n## Rules\n- Ground every line in the provided data. Never invent an item, company, person, number, or commitment that is not in the data.\n- If there is no recent data across every source, say so plainly in one line under \"What happened\" and keep the other two sections empty or brief — do not fabricate activity.\n- If a source's data was skipped or unavailable (its JSON has `\"skipped\": true`, `\"isError\": true`, or no data field at all), that means that source is not available for this brief right now — whether the person turned it off, the connection is not configured, or the source is temporarily unavailable, say so plainly and neutrally about that source (e.g. \"Call notes aren't available for this brief.\"), never as an error, failure, or missing data. Only mention this when it changes what \"What happened\" can say — do not pad the brief with per-source status lines when every source did return data.\n- Concise and plain. Short sentences. No jargon, no filler (\"it's worth noting\", \"in today's fast-paced\"), no superlatives.\n- Markdown only, using the headers above. No emojis. No em dashes — use \" - \" for asides.\n- The brief is delivered as an email and saved as an artifact, so it must read as a finished document on its own. Do not address the reader, do not greet, do not sign off, do not mention that you are an AI or that this was generated.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -139,24 +182,12 @@
               "from": "trigger.payload"
             },
             {
-              "from": "steps.intake-granola.output"
-            },
-            {
-              "from": "steps.intake-linear.output"
-            },
-            {
-              "from": "steps.intake-attio.output"
-            },
-            {
-              "from": "steps.intake-vercel.output"
+              "from": "steps.merge-sources.output.content"
             }
           ]
         },
         "after": [
-          "intake-granola",
-          "intake-linear",
-          "intake-attio",
-          "intake-vercel"
+          "merge-sources"
         ]
       },
       "notify": {
@@ -233,10 +264,11 @@
       }
     },
     "stepOrder": [
+      "intake-attio",
       "intake-granola",
       "intake-linear",
-      "intake-attio",
       "intake-vercel",
+      "merge-sources",
       "brief",
       "notify",
       "persist"
