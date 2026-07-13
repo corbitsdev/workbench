@@ -25,10 +25,14 @@ type Candidate = {
   deletedAt: Date | null;
 };
 
-type TestDb = HubDb & { inserted: Record<string, unknown>[] };
+type TestDb = HubDb & {
+  inserted: Record<string, unknown>[];
+  failUpdateCalls: number;
+};
 
 function makeDb(candidates: Candidate[]): TestDb {
   const inserted: Record<string, unknown>[] = [];
+  let failUpdateCalls = 0;
   return {
     query: {
       workflowRun: {
@@ -43,11 +47,17 @@ function makeDb(candidates: Candidate[]): TestDb {
     update: () => ({
       set: () => ({
         where: () => ({
-          returning: async () => [{ id: "flipped" }],
+          returning: async () => {
+            failUpdateCalls += 1;
+            return [{ id: "flipped" }];
+          },
         }),
       }),
     }),
     inserted,
+    get failUpdateCalls() {
+      return failUpdateCalls;
+    },
   } as unknown as TestDb;
 }
 
@@ -208,8 +218,9 @@ describe("createWorkflowRunStarter", () => {
 
   it("returns delivery_failed when delivery throws", async () => {
     chainRef = ["t-root"];
+    const db = makeDb([candidate({ deploymentId: "dep-1" })]);
     const starter = createWorkflowRunStarter({
-      db: makeDb([candidate({ deploymentId: "dep-1" })]),
+      db,
       sessionService: {
         sendUserMessage: async () => {
           throw new Error("sidecar unreachable");
@@ -228,6 +239,8 @@ describe("createWorkflowRunStarter", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("delivery_failed");
+    expect(db.inserted).toHaveLength(1);
+    expect(db.failUpdateCalls).toBe(1);
   });
 
   it("starts runs while under the per-tenant hourly budget", async () => {
