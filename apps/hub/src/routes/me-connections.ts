@@ -91,6 +91,16 @@ export function createMeConnectionsRouter(
           cfg.providerName,
         );
         const toggleKey = inboxCapabilityPreferenceKey(cfg.providerName);
+        const redirectUri = oauthCallbackRedirectUri(
+          redirectUriBase,
+          cfg.providerName,
+        );
+        const clientConfig = await resolveOwnerOAuthClient(
+          db,
+          member.tenantId,
+          cfg,
+          redirectUri,
+        );
         connections.push({
           provider: cfg.providerName,
           label: cfg.label,
@@ -98,6 +108,7 @@ export function createMeConnectionsRouter(
           scopes: connection?.scopes ?? [],
           toggleEnabled: stored[toggleKey] !== false,
           needsReconnect: connection?.needsReconnect ?? false,
+          configured: clientConfig !== null,
         });
       }
       return c.json({ connections });

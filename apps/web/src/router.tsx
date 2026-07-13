@@ -29,6 +29,7 @@ import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
 import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
+import { Connections } from "./pages/Connections";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
 import { SkillsNew } from "./pages/SkillsNew";
 import { SkillDetail } from "./pages/SkillDetail";
@@ -144,6 +145,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     to: "/settings",
     keywords: ["preferences", "theme", "account"],
   },
+  {
+    id: "nav:connections",
+    category: "navigation",
+    title: "Connections",
+    to: "/connections",
+    keywords: ["oauth", "connect", "linear", "attio", "integrations"],
+  },
 ];
 
 function ProtectedLayout() {
@@ -250,6 +258,7 @@ export const router = createBrowserRouter([
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/settings", element: <Settings /> },
+          { path: "/connections", element: <Connections /> },
           { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
