@@ -28,6 +28,8 @@ import {
   type AvailableBriefSource,
   AvailableInboxSourcesResponseSchema,
   type AvailableInboxSource,
+  MemberConnectionsResponse,
+  type MemberConnectionState,
   ScheduledTriggerSchema,
   ScheduledTriggerListResponseSchema,
   type ScheduledTrigger,
@@ -467,6 +469,19 @@ export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
     throw new Error(`Unexpected brief sources response: ${parsed.summary}`);
   }
   return parsed.sources;
+}
+
+/** The caller's OAuth-connectable providers with their connection status —
+ * the `credential-connected:<provider>` availability signal source for
+ * preference gating (see `AvailabilitySignalSchema`). Owner-capability-hidden
+ * providers are simply absent from the result. */
+export async function getMeConnections(): Promise<MemberConnectionState[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/connections");
+  const parsed = MemberConnectionsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected connections response: ${parsed.summary}`);
+  }
+  return parsed.connections;
 }
 
 const BriefRunResponseSchema = type({
