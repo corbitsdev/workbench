@@ -115,6 +115,7 @@ COPY packages/tools-gamma/ packages/tools-gamma/
 COPY packages/tools-linear/ packages/tools-linear/
 COPY packages/tools-notion/ packages/tools-notion/
 COPY packages/tools-vercel/ packages/tools-vercel/
+COPY packages/ab-compare-presets/ packages/ab-compare-presets/
 COPY packages/tools-ab-compare/ packages/tools-ab-compare/
 COPY packages/tools-attio/ packages/tools-attio/
 COPY packages/tools-catalog/ packages/tools-catalog/

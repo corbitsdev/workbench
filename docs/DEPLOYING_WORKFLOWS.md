@@ -166,6 +166,11 @@ changes. The committed JSON in git is still the drift-test anchor for PRs
 (`apps/hub/bin/build-workflow-defs.test.ts`); keep it in sync when you change
 `workflows/**`, or CI tests fail even though the deployed image would have been correct.
 
+When a workflow's entry module imports a `@workbench/*` package, the hub Dockerfile must
+**COPY that package's source** into the image before the `build:workflow-defs` step (not
+just its `package.json` in the install layer). Example: ab-compare workflows import
+`@workbench/ab-compare-presets` → `COPY packages/ab-compare-presets/`.
+
 Idempotency is **per `(kind, tenant)`**, not per kind. The git-backed workflow
 repo is keyed by kind only, so its fingerprint is tenant-independent; the
 per-tenant signal is the deployment-index row (`workflow_run`). A pair is
