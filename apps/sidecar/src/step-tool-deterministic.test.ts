@@ -97,6 +97,29 @@ async function makeEnv(opts?: {
   return { env, workdir };
 }
 
+async function mailSendUnregisteredSenderFixture(): Promise<{
+  env: Record<string, unknown>;
+  recipient: string;
+  mailInput: { to: string; content: string; subject: string };
+}> {
+  const transport = createInMemoryTransport();
+  const recipientKey = await generateKeyPair();
+  const recipient = "usr_member@tenant.example";
+  transport.register(recipient, createEd25519Crypto(recipientKey));
+  const senderAddress = "ins_ses_deploy@tenant.example";
+  const { env } = await makeEnv({ transport });
+  const ctx = env[STEP_TOOL_CONTEXT_KEY] as StepToolContext;
+  ctx.stepAddress = senderAddress;
+  ctx.stepAgentId = senderAddress;
+  ctx.principalId = senderAddress;
+  const mailInput = {
+    to: recipient,
+    content: "brief body",
+    subject: "Your morning brief",
+  };
+  return { env, recipient, mailInput };
+}
+
 describe("runDeterministicToolStep", () => {
   test("invokes the named tool with req.input and returns its output", async () => {
     stubHubFetch();
@@ -281,26 +304,13 @@ describe("runDeterministicToolStep", () => {
 
   test("mail_send isError envelope fails the step so notify cannot complete green on send_failed", async () => {
     stubHubFetch();
-    const transport = createInMemoryTransport();
-    const recipientKey = await generateKeyPair();
-    const recipient = "usr_member@tenant.example";
-    transport.register(recipient, createEd25519Crypto(recipientKey));
-    const senderAddress = "ins_ses_deploy@tenant.example";
-    const { env } = await makeEnv({ transport });
-    const ctx = env[STEP_TOOL_CONTEXT_KEY] as StepToolContext;
-    ctx.stepAddress = senderAddress;
-    ctx.stepAgentId = senderAddress;
-    ctx.principalId = senderAddress;
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
 
     await expect(
       runDeterministicToolStep({
         env: env as never,
         toolName: "mail_send",
-        input: {
-          to: recipient,
-          content: "brief body",
-          subject: "Your morning brief",
-        },
+        input: mailInput,
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/send_failed/);
@@ -308,25 +318,12 @@ describe("runDeterministicToolStep", () => {
 
   test("nonFatal: mail_send isError envelope degrades to completed output", async () => {
     stubHubFetch();
-    const transport = createInMemoryTransport();
-    const recipientKey = await generateKeyPair();
-    const recipient = "usr_member@tenant.example";
-    transport.register(recipient, createEd25519Crypto(recipientKey));
-    const senderAddress = "ins_ses_deploy@tenant.example";
-    const { env } = await makeEnv({ transport });
-    const ctx = env[STEP_TOOL_CONTEXT_KEY] as StepToolContext;
-    ctx.stepAddress = senderAddress;
-    ctx.stepAgentId = senderAddress;
-    ctx.principalId = senderAddress;
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
 
     const result = await runDeterministicToolStep({
       env: env as never,
       toolName: "mail_send",
-      input: {
-        to: recipient,
-        content: "brief body",
-        subject: "Your morning brief",
-      },
+      input: mailInput,
       nonFatal: true,
       signal: new AbortController().signal,
     });
