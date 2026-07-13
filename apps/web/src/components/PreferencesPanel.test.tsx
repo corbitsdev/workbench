@@ -12,7 +12,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type {
   AvailableBriefSource,
   AvailableInboxSource,
+  MemberConnectionState,
   PreferenceSetting,
+  WorkflowCatalog,
 } from "@workbench/shared";
 
 const SETTINGS: PreferenceSetting[] = [
@@ -37,6 +39,7 @@ const SETTINGS: PreferenceSetting[] = [
     description: "Notify me when a new message lands.",
     category: "Notifications",
     value: true,
+    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
   },
   {
     key: "briefHourUtc",
@@ -46,6 +49,45 @@ const SETTINGS: PreferenceSetting[] = [
     description: "When your morning brief arrives.",
     category: "Agent",
     value: 13,
+    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
+  },
+  {
+    key: "tasksAutoSendAdapter",
+    type: "boolean",
+    default: false,
+    label: "Auto-send tasks to CRM",
+    description: "Push new tasks to your connected CRM automatically.",
+    category: "Automations",
+    value: false,
+    availableWhen: { kind: "credential-connected", provider: "attio" },
+  },
+];
+
+const EMPTY_WORKFLOW_CATALOG: WorkflowCatalog = { entries: [] };
+
+const HEARTBEAT_DEPLOYED_CATALOG: WorkflowCatalog = {
+  entries: [
+    {
+      kind: "heartbeat",
+      label: "Heartbeat",
+      isFavorite: false,
+      stepCount: 1,
+      pauseCount: 0,
+      steps: [],
+    },
+  ],
+};
+
+const NO_CONNECTIONS: MemberConnectionState[] = [];
+
+const ATTIO_CONNECTED: MemberConnectionState[] = [
+  {
+    provider: "attio",
+    label: "Attio",
+    connected: true,
+    scopes: [],
+    toggleEnabled: true,
+    needsReconnect: false,
   },
 ];
 
@@ -81,18 +123,25 @@ const INBOX_SOURCES: AvailableInboxSource[] = [
   },
 ];
 
+let workflowCatalogResult: WorkflowCatalog = HEARTBEAT_DEPLOYED_CATALOG;
+let connectionsResult: MemberConnectionState[] = ATTIO_CONNECTED;
+
 const getMePreferenceSettings = mock(async () => SETTINGS);
 const patchMePreferences = mock(
   async (_patch: Record<string, unknown>) => ({}),
 );
 const getMeBriefSources = mock(async () => BRIEF_SOURCES);
 const getMeInboxSources = mock(async () => INBOX_SOURCES);
+const getWorkflowsCatalog = mock(async () => workflowCatalogResult);
+const getMeConnections = mock(async () => connectionsResult);
 
 mock.module("../lib/hub-api", () => ({
   getMePreferenceSettings,
   patchMePreferences,
   getMeBriefSources,
   getMeInboxSources,
+  getWorkflowsCatalog,
+  getMeConnections,
 }));
 
 import { PreferencesPanel } from "./PreferencesPanel";
@@ -110,6 +159,8 @@ function renderPanel() {
 
 beforeEach(() => {
   window.happyDOM.setURL("http://localhost/settings");
+  workflowCatalogResult = HEARTBEAT_DEPLOYED_CATALOG;
+  connectionsResult = ATTIO_CONNECTED;
 });
 
 afterEach(() => {
@@ -117,6 +168,8 @@ afterEach(() => {
   patchMePreferences.mockClear();
   getMeBriefSources.mockClear();
   getMeInboxSources.mockClear();
+  getWorkflowsCatalog.mockClear();
+  getMeConnections.mockClear();
   cleanup();
 });
 
@@ -277,5 +330,54 @@ describe("PreferencesPanel", () => {
         (call) => "briefSource:granola" in call[0],
       ),
     ).toBe(false);
+  });
+
+  it("hides workflow-deployed-gated settings when heartbeat is not deployed", async () => {
+    workflowCatalogResult = EMPTY_WORKFLOW_CATALOG;
+    renderPanel();
+    await screen.findByText("Agent autonomy");
+    await waitFor(() => {
+      if (getWorkflowsCatalog.mock.calls.length === 0) {
+        throw new Error("workflows catalog not fetched yet");
+      }
+    });
+    expect(screen.queryByText("New inbox mail")).toBeNull();
+    expect(screen.queryByLabelText("Morning brief time")).toBeNull();
+  });
+
+  it("shows workflow-deployed-gated settings when heartbeat is deployed", async () => {
+    workflowCatalogResult = HEARTBEAT_DEPLOYED_CATALOG;
+    renderPanel();
+    await screen.findByText("New inbox mail");
+    expect(screen.getByLabelText("Morning brief time")).toBeDefined();
+  });
+
+  it("hides credential-connected-gated settings when the provider is not connected", async () => {
+    connectionsResult = NO_CONNECTIONS;
+    renderPanel();
+    await screen.findByText("Agent autonomy");
+    await waitFor(() => {
+      if (getMeConnections.mock.calls.length === 0) {
+        throw new Error("connections not fetched yet");
+      }
+    });
+    expect(screen.queryByText("Auto-send tasks to CRM")).toBeNull();
+  });
+
+  it("shows credential-connected-gated settings when the provider is connected", async () => {
+    connectionsResult = ATTIO_CONNECTED;
+    renderPanel();
+    await screen.findByText("Auto-send tasks to CRM");
+    expect(
+      screen.getByRole("switch", { name: "Auto-send tasks to CRM" }),
+    ).toBeDefined();
+  });
+
+  it("always renders ungated settings regardless of workflow/connection state", async () => {
+    workflowCatalogResult = EMPTY_WORKFLOW_CATALOG;
+    connectionsResult = NO_CONNECTIONS;
+    renderPanel();
+    await screen.findByText("Agent autonomy");
+    expect(screen.getByLabelText("Agent autonomy")).toBeDefined();
   });
 });

@@ -37,6 +37,22 @@ export const PreferenceOptionSchema = type({
 export type PreferenceOption = typeof PreferenceOptionSchema.infer;
 
 /**
+ * Declares the backing signal a preference control depends on. The settings
+ * surface hides (never disables) a control whose signal is unmet; a preference
+ * with no `availableWhen` renders unconditionally (backward compatible). This
+ * rides the wire in `PreferenceSettingSchema` — the hub resolves and returns
+ * it verbatim so the web settings surface can gate rendering without
+ * re-deriving the registry client-side.
+ */
+export const AvailabilitySignalSchema = type({
+  kind: "'workflow-deployed'",
+  workflowKind: "string",
+})
+  .or({ kind: "'capability'", provider: "string" })
+  .or({ kind: "'credential-connected'", provider: "string" });
+export type AvailabilitySignal = typeof AvailabilitySignalSchema.infer;
+
+/**
  * `boolean` renders a toggle, `select` a dropdown over `options`, and `hourUtc`
  * an hour picker whose value is the UTC hour (0..23) stored server-side while
  * the UI displays the caller's local time.
@@ -49,6 +65,7 @@ export const PreferenceEntrySchema = type({
   description: "string",
   category: PreferenceCategorySchema,
   "options?": PreferenceOptionSchema.array(),
+  "availableWhen?": AvailabilitySignalSchema,
 });
 export type PreferenceEntry = typeof PreferenceEntrySchema.infer;
 
@@ -72,6 +89,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Morning brief time",
     description: "When your morning brief arrives.",
     category: "Automations",
+    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
   },
   {
     key: "notifyInboxMail",
@@ -80,6 +98,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "New inbox mail",
     description: "Notify me when a new message lands in my inbox.",
     category: "Notifications",
+    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
   },
   {
     key: "onboardingTourDone",
@@ -97,6 +116,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     label: "Approval requests",
     description: "Notify me when an agent needs my approval to proceed.",
     category: "Notifications",
+    availableWhen: { kind: "workflow-deployed", workflowKind: "heartbeat" },
   },
   {
     key: "taskMailEnabled",
@@ -122,6 +142,12 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
       "Let Myra's inbox triage leave a task behind for an actionable message.",
     category: "Automations",
   },
+  // Gated on the Attio connection specifically (not "any adapter"): the
+  // label/description name the CRM use case, and Attio is the CRM adapter in
+  // TASK_ADAPTER_CATALOG (packages/tasks/src/registry.ts) — Linear (the
+  // tracker adapter) has its own connection surface. A member connected only
+  // to Linear won't see this toggle; broadening to an OR-across-adapters
+  // signal is future work if that gap matters in practice.
   {
     key: "tasksAutoSendAdapter",
     type: "boolean",
@@ -130,6 +156,7 @@ const PREFERENCE_REGISTRY_BASE: readonly PreferenceEntry[] = [
     description:
       "Push new tasks to your connected CRM/tracker automatically instead of sending them on request.",
     category: "Automations",
+    availableWhen: { kind: "credential-connected", provider: "attio" },
   },
   {
     key: "tasksShowCompleted",
@@ -426,6 +453,7 @@ export const PreferenceSettingSchema = type({
   description: "string",
   category: PreferenceCategorySchema,
   "options?": PreferenceOptionSchema.array(),
+  "availableWhen?": AvailabilitySignalSchema,
   value: "boolean | string | number",
 });
 export type PreferenceSetting = typeof PreferenceSettingSchema.infer;

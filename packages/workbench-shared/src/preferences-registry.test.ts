@@ -23,6 +23,7 @@ import {
   resolveEnabledInboxSources,
   resolveAvailableInboxSources,
   AvailableInboxSourceSchema,
+  AvailabilitySignalSchema,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -37,6 +38,54 @@ describe("PREFERENCE_REGISTRY", () => {
   test("keys are unique", () => {
     const keys = PREFERENCE_REGISTRY.map((e) => e.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  test("briefHourUtc and the heartbeat-fed notify* fields gate on heartbeat deployment", () => {
+    for (const key of ["briefHourUtc", "notifyInboxMail", "notifyGateAsks"]) {
+      const entry = getPreferenceEntry(key);
+      expect(entry?.availableWhen).toEqual({
+        kind: "workflow-deployed",
+        workflowKind: "heartbeat",
+      });
+    }
+  });
+
+  test("tasksAutoSendAdapter gates on the attio connection", () => {
+    const entry = getPreferenceEntry("tasksAutoSendAdapter");
+    expect(entry?.availableWhen).toEqual({
+      kind: "credential-connected",
+      provider: "attio",
+    });
+  });
+
+  test("agentAutonomy has no availability signal (no capability projection wired yet)", () => {
+    const entry = getPreferenceEntry("agentAutonomy");
+    expect(entry?.availableWhen).toBeUndefined();
+  });
+
+  test("AvailabilitySignalSchema accepts all three signal kinds and rejects an unknown kind", () => {
+    expect(
+      AvailabilitySignalSchema({
+        kind: "workflow-deployed",
+        workflowKind: "heartbeat",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      AvailabilitySignalSchema({
+        kind: "capability",
+        provider: "attio",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      AvailabilitySignalSchema({
+        kind: "credential-connected",
+        provider: "attio",
+      }) instanceof type.errors,
+    ).toBe(false);
+    expect(
+      AvailabilitySignalSchema({ kind: "bogus", provider: "attio" }) instanceof
+        type.errors,
+    ).toBe(true);
   });
 
   test("select entries carry options; non-select entries do not", () => {
