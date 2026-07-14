@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router";
+import { Link, useParams } from "react-router";
 import { motion, useReducedMotion, type Variants } from "framer-motion";
 import {
   AlertTriangle,
   Bell,
   Check,
   ChevronRight,
-  Clipboard,
   Clock,
   Loader2,
 } from "lucide-react";
@@ -37,7 +36,7 @@ import {
   FacetCard,
   FacetDesc,
   FacetTabs,
-  GapBanner,
+
   NodeGrid,
   StatStrip,
   type FacetDef,
@@ -54,6 +53,7 @@ import {
   stepListIndexOnKeyDown,
   useScrollListboxOption,
 } from "./moment-listbox";
+import { TraceOutputView } from "./trace-output-view";
 
 // Light staggered fade for the timeline steps as they mount, matching the
 // dashboard's section entrance. Reduced-motion collapses it to an instant show
@@ -168,93 +168,9 @@ export function formatStepDuration(
   return `${minutes}m ${rest}s`;
 }
 
-function copyText(text: string): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.clipboard) {
-    return Promise.resolve(false);
-  }
-  return navigator.clipboard.writeText(text).then(
-    () => true,
-    () => false,
-  );
-}
 
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (timer.current !== null) clearTimeout(timer.current);
-    };
-  }, []);
 
-  return (
-    <button
-      type="button"
-      onClick={(event) => {
-        event.stopPropagation();
-        void copyText(text).then((ok) => {
-          if (!ok) return;
-          setCopied(true);
-          if (timer.current !== null) clearTimeout(timer.current);
-          timer.current = setTimeout(() => setCopied(false), 1500);
-        });
-      }}
-      className="flex min-h-[40px] items-center gap-1 rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
-    >
-      {copied ? (
-        <Check className="h-3 w-3 text-green" />
-      ) : (
-        <Clipboard className="h-3 w-3" />
-      )}
-      {copied ? "Copied" : "Copy"}
-    </button>
-  );
-}
-
-function PayloadView({ value }: { value: unknown }) {
-  const [raw, setRaw] = useState(false);
-  const pretty = useMemo(() => {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return String(value);
-    }
-  }, [value]);
-  const compact = useMemo(() => {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }, [value]);
-  const shown = raw ? compact : pretty;
-
-  return (
-    <div className="mt-2 flex flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            setRaw((r) => !r);
-          }}
-          aria-pressed={raw}
-          className="min-h-[40px] rounded-sm border border-border px-2 py-1 text-[11px] font-medium text-text-2 transition-[color,background-color,transform] hover:bg-row-hover hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent active:scale-[0.97]"
-        >
-          {raw ? "Pretty" : "Raw JSON"}
-        </button>
-        <CopyButton text={shown} />
-      </div>
-      <pre
-        data-testid="trace-payload"
-        className="max-h-[420px] overflow-auto rounded-[8px] border border-border bg-surface-2 p-3 font-mono text-[11px] leading-relaxed text-text-2"
-      >
-        {shown}
-      </pre>
-    </div>
-  );
-}
 
 /**
  * One run step, presented as a moment card in the artifact's language: a phase
@@ -390,7 +306,7 @@ function TraceStepMoment({
               <p className="text-[11px] font-medium uppercase tracking-[0.06em] text-text-3">
                 Output
               </p>
-              <PayloadView value={output.value} />
+              <TraceOutputView value={output.value} />
             </div>
           ) : (
             step.outputRef !== undefined && (
@@ -406,13 +322,7 @@ function TraceStepMoment({
   );
 }
 
-const FACETS: FacetDef[] = [
-  { id: "timeline", label: "Timeline", hasGap: false },
-  { id: "grants", label: "Grants", hasGap: true },
-  { id: "tools", label: "Tools", hasGap: true },
-  { id: "cost", label: "Cost", hasGap: true },
-  { id: "connections", label: "Connections", hasGap: false },
-];
+
 
 /**
  * A run's tool invocations are its deterministic (tool/API-call) steps — the
@@ -500,7 +410,7 @@ export function workflowRunContextFreshness(
  * pill, an underlined facet tab bar over a subtle stat strip, and a
  * Back / Next-step bottom nav. The Timeline facet is the moment-walk over the
  * run's real steps (their sanitized failures and decoded outputs); Cost and
- * Grants are honest "not recorded yet" facets; Connections links the run's
+ * Connections links the run's
  * definition/deployment. Nothing is fabricated.
  */
 export function WorkflowTracePage() {
@@ -571,7 +481,53 @@ export function WorkflowTracePage() {
   // that reads as "no steps"; on error the step counts are likewise unknown.
   const stepsReady = runStateQuery.isSuccess;
   const stepStat = (n: number) => (stepsReady ? n.toLocaleString() : "—");
+
+  const facets = useMemo((): FacetDef[] => {
+    const costGap =
+      tokensQuery.isSuccess &&
+      !tokensQuery.isError &&
+      tokensQuery.data?.available !== true;
+    return [
+      { id: "timeline", label: "Timeline", hasGap: false },
+      { id: "tools", label: "Tools", hasGap: false },
+      { id: "cost", label: "Cost", hasGap: costGap },
+      { id: "connections", label: "Connections", hasGap: false },
+    ];
+  }, [
+    tokensQuery.isSuccess,
+    tokensQuery.isError,
+    tokensQuery.data?.available,
+  ]);
+
+  const ownerStat: Stat | null =
+    record?.ownerDisplayName !== undefined && record.principalId !== undefined
+      ? {
+          label: "Owner",
+          value: (
+            <Link
+              to={`/insights/users/${encodeURIComponent(record.principalId)}`}
+              className="font-medium text-text underline-offset-2 hover:underline"
+            >
+              {record.ownerDisplayName}
+            </Link>
+          ),
+        }
+      : record?.principalId !== undefined
+        ? {
+            label: "Owner",
+            value: (
+              <Link
+                to={`/insights/users/${encodeURIComponent(record.principalId)}`}
+                className="font-mono text-[11px] text-text-2 underline-offset-2 hover:underline"
+              >
+                {record.principalId}
+              </Link>
+            ),
+          }
+        : null;
+
   const stats: Stat[] = [
+    ...(ownerStat ? [ownerStat] : []),
     { label: "Steps", value: stepStat(steps.length) },
     { label: "Completed", value: stepStat(completed) },
     { label: "Failed", value: stepStat(failed) },
@@ -597,7 +553,7 @@ export function WorkflowTracePage() {
     }
   }
 
-  const activeFacet = FACETS[facetIndex]!.id;
+  const activeFacet = facets[facetIndex]!.id;
 
   // Publish the traced run as the active surface (CL-2726) so the Myra popup can
   // attach it as context. Reuses the workflow-run kind — this IS a workflow run,
@@ -632,10 +588,10 @@ export function WorkflowTracePage() {
 
           <div className="mt-3.5">
             <FacetTabs
-              facets={FACETS}
+              facets={facets}
               activeId={activeFacet}
               onSelect={(fid) =>
-                setFacetIndex(FACETS.findIndex((f) => f.id === fid))
+                setFacetIndex(facets.findIndex((f) => f.id === fid))
               }
             />
             <StatStrip stats={stats} />
@@ -761,13 +717,13 @@ export function WorkflowTracePage() {
                 {!tokensQuery.isLoading &&
                   (tokensQuery.isError ||
                     tokensQuery.data?.available !== true) && (
-                    <GapBanner>
-                      {tokensQuery.isError
-                        ? "Per-run token counts couldn't be loaded for this trace."
-                        : "Per-run token counts aren't attributed to this run yet — either no inference has landed for it, or (for a run that predates per-run deployments) its usage collapsed into a later run sharing the same deployment."}{" "}
-                      The dollar layer isn&rsquo;t wired into analytics yet
-                      either, so no cost is shown rather than a fabricated one.
-                    </GapBanner>
+                    <FacetCard>
+                      <p className="text-[13px] text-text-2">
+                        {tokensQuery.isError
+                          ? "Per-run token counts couldn't be loaded for this trace."
+                          : "No per-run token totals are available for this run yet."}
+                      </p>
+                    </FacetCard>
                   )}
                 {!tokensQuery.isLoading &&
                   !tokensQuery.isError &&
@@ -849,28 +805,10 @@ export function WorkflowTracePage() {
               </div>
             )}
 
-            {!loading && !recordQuery.isError && activeFacet === "grants" && (
-              <div
-                id={traceFacetPanelId("grants")}
-                role="tabpanel"
-                aria-labelledby="trace-facet-tab-grants"
-              >
-                <FacetDesc>
-                  Permissions this run exercised, and whether each was allowed.
-                </FacetDesc>
-                <GapBanner>
-                  Which grant authorized each step isn&rsquo;t persisted yet, so
-                  a per-run permission table would be fabricated. The
-                  run&rsquo;s steps and their outcomes are the honest record
-                  above.
-                </GapBanner>
-              </div>
-            )}
-
             {!loading && !recordQuery.isError && activeFacet === "tools" && (
               <ToolsFacetView
                 tools={toolRowsFromSteps(steps)}
-                description="Every tool step this run invoked and how often. The concrete data each call touched is the gap."
+                description="Every deterministic step this run invoked and how often."
                 emptyText="No tool steps recorded for this run."
               />
             )}
@@ -897,7 +835,7 @@ export function WorkflowTracePage() {
 
           <TracerFacetNav
             backTo="/insights"
-            facets={FACETS}
+            facets={facets}
             activeIndex={facetIndex}
             onFacetIndexChange={setFacetIndex}
           />

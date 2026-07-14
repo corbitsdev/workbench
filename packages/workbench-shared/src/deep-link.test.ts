@@ -10,16 +10,24 @@ describe("deepLinkPath", () => {
     expect(deepLinkPath("workflow_run", "run-1")).toBe("/workflows/run-1");
   });
 
+  test("workflow_trace resolves to the insights trace route", () => {
+    expect(deepLinkPath("workflow_trace", "run/1")).toBe(
+      "/insights/trace/run%2F1",
+    );
+  });
+
   test("task encodes the id into the ?task query", () => {
     expect(deepLinkPath("task", "task 1")).toBe("/inbox?task=task%201");
   });
 
-  test("mail", () => {
+  test("mail encodes the id in the path segment", () => {
     expect(deepLinkPath("mail", "pm-1")).toBe("/inbox/pm-1");
+    expect(deepLinkPath("mail", "pm/1")).toBe("/inbox/pm%2F1");
   });
 
-  test("conversation", () => {
+  test("conversation encodes the id in the path segment", () => {
     expect(deepLinkPath("conversation", "cnv-1")).toBe("/chats/cnv-1");
+    expect(deepLinkPath("conversation", "cnv x")).toBe("/chats/cnv%20x");
   });
 });
 
