@@ -136,12 +136,19 @@ describe("v9 argument-to-body mapping", () => {
     const stub = makeFetchStub({ people: [] });
     await runTool(stub, "sumble_search_people", {
       email: "ceo@acme.com",
+      confirmEmailRevealSpend: true,
     });
     const body = bodyOf(stub);
     expect(body.people).toEqual([{ email: "ceo@acme.com" }]);
     expect(body.select).toEqual({
-      attributes: ["name", "title", "job_title", "email"],
+      attributes: ["name", "job_title"],
     });
+  });
+
+  it("find_technologies sends query string to POST /technologies/find", async () => {
+    const stub = makeFetchStub({ technologies: [] });
+    await runTool(stub, "sumble_find_technologies", { terms: ["python", "ml"] });
+    expect(bodyOf(stub)).toEqual({ query: "python ml" });
   });
 
   it("list_jobs sends organization_ids filter", async () => {

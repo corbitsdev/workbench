@@ -10,6 +10,8 @@ const HUB_ONLY_TOOLS_NOT_IN_MANIFEST = [
   "task_create",
   "task_list",
   "task_update",
+  "heartbeat_format_brief_title",
+  "heartbeat_format_brief_mail_refs",
 ] as const;
 
 describe("KNOWN_TOOLS drift guard (CL-3447)", () => {

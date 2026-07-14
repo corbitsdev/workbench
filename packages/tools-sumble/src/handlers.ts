@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import { sumbleGet, sumbleGetAsync, sumblePost, sumblePostAsync } from "./http";
 import {
+  PEOPLE_EMAIL_IDENTIFIER_CREDITS,
   PEOPLE_EMAIL_REVEAL_CREDITS_PER_PERSON,
   estimatePeopleEmailRevealCredits,
 } from "./credits";
@@ -30,11 +31,13 @@ function organizationLookupRef(ref: {
   domain?: string;
   name?: string;
   slug?: string;
+  identifier?: string;
 }): {
   organizationId?: number;
   organizationSlug?: string;
   domain?: string;
   name?: string;
+  identifier?: string;
 } {
   return {
     ...(ref.organizationId !== undefined
@@ -46,6 +49,7 @@ function organizationLookupRef(ref: {
     ...(ref.slug !== undefined ? { organizationSlug: ref.slug } : {}),
     ...(ref.domain !== undefined ? { domain: ref.domain } : {}),
     ...(ref.name !== undefined ? { name: ref.name } : {}),
+    ...(ref.identifier !== undefined ? { identifier: ref.identifier } : {}),
   };
 }
 
@@ -94,7 +98,7 @@ const SearchPeopleArgs = type({
 });
 
 function peopleSelectAttributes(revealEmail: boolean): string[] {
-  const attrs = ["name", "title", "job_title"];
+  const attrs = ["name", "job_title"];
   if (revealEmail) {
     attrs.push("email");
   }
@@ -320,11 +324,19 @@ export async function searchPeople(
   }
 
   const revealEmail = parsed.revealEmail === true;
-  if (revealEmail && parsed.confirmEmailRevealSpend !== true) {
+  const emailLookup =
+    parsed.email !== undefined && parsed.email.length > 0;
+  const needsEmailSpendConfirm = revealEmail || emailLookup;
+  if (needsEmailSpendConfirm && parsed.confirmEmailRevealSpend !== true) {
     const limit = parsed.limit ?? 1;
-    const est = estimatePeopleEmailRevealCredits(limit);
+    const est = revealEmail
+      ? estimatePeopleEmailRevealCredits(limit)
+      : PEOPLE_EMAIL_IDENTIFIER_CREDITS;
+    const reason = revealEmail
+      ? `email reveal costs up to ${est} credits (${PEOPLE_EMAIL_REVEAL_CREDITS_PER_PERSON} per person)`
+      : `lookup by email costs up to ${est} credits`;
     throw new Error(
-      `sumble_search_people email reveal costs up to ${est} credits (${PEOPLE_EMAIL_REVEAL_CREDITS_PER_PERSON} per person); pass confirmEmailRevealSpend: true to proceed.`,
+      `sumble_search_people ${reason}; pass confirmEmailRevealSpend: true to proceed.`,
     );
   }
 
@@ -333,7 +345,7 @@ export async function searchPeople(
   if (hasPersonRef) {
     const personRef: Record<string, unknown> = {};
     if (parsed.personId !== undefined) personRef.person_id = parsed.personId;
-    if (parsed.email !== undefined && parsed.email.length > 0) {
+    if (emailLookup) {
       personRef.email = parsed.email;
     }
     if (parsed.linkedinUrl !== undefined && parsed.linkedinUrl.length > 0) {
@@ -341,7 +353,7 @@ export async function searchPeople(
     }
     body = {
       people: [personRef],
-      select: { attributes: peopleSelectAttributes(true) },
+      select: { attributes: peopleSelectAttributes(revealEmail) },
     };
   } else {
     const orgId = await resolveOrganizationId(
@@ -403,7 +415,14 @@ export async function searchSignals(
   args: Record<string, unknown>,
   signal: AbortSignal,
 ): Promise<string> {
-  const parsed = parseArgs(SearchSignalsArgs, args);
+  const normalized: Record<string, unknown> = { ...args };
+  if (
+    normalized.technologySlugs === undefined &&
+    normalized.technologies !== undefined
+  ) {
+    normalized.technologySlugs = normalized.technologies;
+  }
+  const parsed = parseArgs(SearchSignalsArgs, normalized);
   const filter: Record<string, unknown> = {};
   if (
     parsed.organizationSlug !== undefined ||
@@ -552,13 +571,12 @@ export async function findTechnologies(
   signal: AbortSignal,
 ): Promise<string> {
   const parsed = parseArgs(StringArrayArgs, args);
+  const query = parsed.terms.join(" ").trim();
+  if (query.length === 0) {
+    throw new Error("sumble_find_technologies requires non-empty terms");
+  }
   return jsonResult(
-    await sumblePost(
-      config,
-      "/technologies/find",
-      { technologies: parsed.terms },
-      signal,
-    ),
+    await sumblePost(config, "/technologies/find", { query }, signal),
   );
 }
 

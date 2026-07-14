@@ -83,5 +83,13 @@ export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
   "notion__create_page",
   "linear__create_issue",
   "slack__post_message",
+  "sumble__add_contact_list_people",
+  "sumble__add_organization_list_organizations",
+  "sumble__create_contact_list",
+  "sumble__create_data_quality_report",
+  "sumble__create_organization_list",
+  "sumble__create_support_request",
+  "sumble__set_organization_list_deleted",
+  "sumble__set_organization_list_signals",
   ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
 ]);

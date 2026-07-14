@@ -143,7 +143,7 @@ const TOOL_CREDENTIAL_SUPPLEMENTS: Record<
     },
   },
   sumble: {
-    defaultMetadata: { baseURL: "https://api.sumble.com/v8" },
+    defaultMetadata: { baseURL: "https://api.sumble.com" },
   },
   slack: {
     defaultMetadata: { baseURL: "https://slack.com/api" },

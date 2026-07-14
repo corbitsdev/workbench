@@ -35,8 +35,10 @@ advanced queries.
 ## Cost gates
 
 - `sumble_get_intelligence_brief`: **50 credits** — requires `confirmSpend: true`.
-- `sumble_search_people` with `revealEmail: true`: up to **1 credit per person**
-  (see `estimatePeopleEmailRevealCredits`) — requires `confirmEmailRevealSpend: true`.
+- `sumble_search_people` with `revealEmail: true`: up to **10 credits per email**
+  revealed — requires `confirmEmailRevealSpend: true`.
+- `sumble_search_people` lookup by **email** identifier: up to **20 credits** —
+  same `confirmEmailRevealSpend: true` gate.
 
 ## Async polling
 

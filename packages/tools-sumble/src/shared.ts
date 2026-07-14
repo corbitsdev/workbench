@@ -193,6 +193,7 @@ export async function resolveOrganizationId(
     organizationSlug?: string;
     domain?: string;
     name?: string;
+    identifier?: string;
   },
   signal: AbortSignal,
 ): Promise<number> {
@@ -200,6 +201,7 @@ export async function resolveOrganizationId(
     return ref.organizationId;
   }
   const orgRef = buildOrgRef({
+    ...(ref.identifier !== undefined ? { identifier: ref.identifier } : {}),
     ...(ref.organizationSlug !== undefined
       ? { slug: ref.organizationSlug }
       : {}),
