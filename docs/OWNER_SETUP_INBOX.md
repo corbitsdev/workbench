@@ -159,12 +159,12 @@ each member:
 
 ## How items flow, per source
 
-| Source | Trigger                              | Cadence                          | Scope     | Member action needed                       | Dedup key                        |
-| ------ | ------------------------------------- | --------------------------------- | --------- | ------------------------------------------- | --------------------------------- |
-| Linear | Poll + optional webhook                | 60s poll; webhook near-instant    | Member    | Enable + connect/credential                 | `linear` externalId scheme        |
-| Attio  | Poll + optional webhook                | 60s poll; webhook near-instant    | Member    | Enable + connect/credential                 | `sourceRef` (`attio:task:<id>`)   |
-| Granola| Poll only                              | 60s poll                          | Workspace | Enable Granola inbox capability             | `artifact.source->>'granolaNoteId'` |
-| Slack  | Webhook only                           | Near-instant                      | Workspace | None (no opt-out yet)                       | Slack `event_id`                  |
+| Source  | Trigger                 | Cadence                        | Scope     | Member action needed            | Dedup key                           |
+| ------- | ----------------------- | ------------------------------ | --------- | ------------------------------- | ----------------------------------- |
+| Linear  | Poll + optional webhook | 60s poll; webhook near-instant | Member    | Enable + connect/credential     | `linear` externalId scheme          |
+| Attio   | Poll + optional webhook | 60s poll; webhook near-instant | Member    | Enable + connect/credential     | `sourceRef` (`attio:task:<id>`)     |
+| Granola | Poll only               | 60s poll                       | Workspace | Enable Granola inbox capability | `artifact.source->>'granolaNoteId'` |
+| Slack   | Webhook only            | Near-instant                   | Workspace | None (no opt-out yet)           | Slack `event_id`                    |
 
 ## Troubleshooting — nothing is appearing
 
@@ -179,7 +179,7 @@ Check the gates in this order; the first one that's off explains the gap.
    as disabled — check the toggle is actually flipped on, not just visible.
 4. **Credential** — does a credential resolve for this member (tenant-shared
    key, or their own OAuth connection)? A missing credential causes a silent,
-   logged skip — check hub logs for the source key if unsure.
+   logged skip — grep the hub logs for the source key to confirm.
 5. **Lookback / backfill window** — the poller only looks back 24 hours by
    default (Linear's one-time backfill option aside). An item older than the
    window, or a Linear item whose one-time backfill window already elapsed
