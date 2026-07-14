@@ -218,46 +218,6 @@
           "from": "trigger.payload"
         }
       },
-      "notify": {
-        "kind": "step",
-        "id": "notify",
-        "agent": {
-          "id": "heartbeat-notify",
-          "systemPrompt": "",
-          "toolFactories": [],
-          "capabilities": [
-            "mail_send"
-          ],
-          "inference": {
-            "sources": []
-          },
-          "description": "Deterministic tool call: mail_send",
-          "tags": {
-            "workbench.stepKind": "deterministic-tool",
-            "workbench.tool": "mail_send",
-            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"reply\"}}",
-            "workbench.title": "Send the brief"
-          }
-        },
-        "drainBehavior": "cancel",
-        "input": {
-          "merge": [
-            {
-              "from": "trigger.payload"
-            },
-            {
-              "from": "steps.brief.output"
-            },
-            {
-              "from": "steps.title.output.content"
-            }
-          ]
-        },
-        "after": [
-          "brief",
-          "title"
-        ]
-      },
       "persist": {
         "kind": "step",
         "id": "persist",
@@ -297,6 +257,47 @@
           "brief",
           "title"
         ]
+      },
+      "notify": {
+        "kind": "step",
+        "id": "notify",
+        "agent": {
+          "id": "heartbeat-notify",
+          "systemPrompt": "",
+          "toolFactories": [],
+          "capabilities": [
+            "mail_send"
+          ],
+          "inference": {
+            "sources": []
+          },
+          "description": "Deterministic tool call: mail_send",
+          "tags": {
+            "workbench.stepKind": "deterministic-tool",
+            "workbench.tool": "mail_send",
+            "workbench.argMap": "{\"to\":{\"from\":\"userAddress\"},\"subject\":{\"from\":\"title\"},\"content\":{\"from\":\"reply\"}}",
+            "workbench.title": "Send the brief"
+          }
+        },
+        "drainBehavior": "cancel",
+        "input": {
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.brief.output"
+            },
+            {
+              "from": "steps.title.output.content"
+            }
+          ]
+        },
+        "after": [
+          "brief",
+          "title",
+          "persist"
+        ]
       }
     },
     "stepOrder": [
@@ -307,8 +308,8 @@
       "merge-sources",
       "brief",
       "title",
-      "notify",
-      "persist"
+      "persist",
+      "notify"
     ]
   }
 }

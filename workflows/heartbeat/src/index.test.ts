@@ -305,7 +305,7 @@ describe("heartbeat native workflow", () => {
       subject: { from: "title" },
       content: { from: "reply" },
     });
-    expect(stepPrimitive("notify").after).toEqual(["brief", "title"]);
+    expect(stepPrimitive("notify").after).toEqual(["brief", "title", "persist"]);
   });
 
   // -------------------------------------------------------------------------
@@ -324,7 +324,7 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Full run — completes with ZERO signals (proves gate-free / unattended)
   // -------------------------------------------------------------------------
-  test("runs intake → brief → notify → persist to completion with no human input", async () => {
+  test("runs intake → brief → persist → notify to completion with no human input", async () => {
     const briefReply =
       "# Morning brief\n\n## What happened\n- Discovery call with Acme.";
     const { invoker, ran } = makeRecordingInvoker({
@@ -356,8 +356,8 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-notify": { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {
@@ -377,8 +377,12 @@ describe("heartbeat native workflow", () => {
     expect(ranIds).toContain("heartbeat-merge-sources");
     expect(ranIds).toContain("heartbeat-brief");
     expect(ranIds).toContain("heartbeat-title");
-    expect(ranIds).toContain("heartbeat-notify");
     expect(ranIds).toContain("heartbeat-persist");
+    expect(ranIds).toContain("heartbeat-notify");
+    const persistIdx = ranIds.indexOf("heartbeat-persist");
+    const notifyIdx = ranIds.indexOf("heartbeat-notify");
+    expect(persistIdx).toBeGreaterThanOrEqual(0);
+    expect(notifyIdx).toBeGreaterThan(persistIdx);
   });
 
   // -------------------------------------------------------------------------
@@ -410,8 +414,8 @@ describe("heartbeat native workflow", () => {
       "heartbeat-title": {
         content: { title: "Jordan Lee's Morning Brief - 04/07/26" },
       },
-      "heartbeat-notify": { messageId: "mail_1" },
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
+      "heartbeat-notify": { messageId: "mail_1" },
     });
 
     const run = runLocal(workflow, {

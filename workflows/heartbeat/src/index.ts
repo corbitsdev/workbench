@@ -27,8 +27,8 @@ const MORNING_BRIEF_ARTIFACT_KIND = morningBriefArtifactKind();
 //                      project every intake step → { sources: { … } }
 //   brief             inlineInferenceStep    default model
 //                      merge(payload, merge-sources content)
+//   persist           deterministicToolStep  write_artifact  body = brief reply (before notify)
 //   notify            deterministicToolStep  mail_send   to = userAddress
-//   persist           deterministicToolStep  write_artifact  body = brief reply
 //
 // The intake steps are generated from `WIRED_BRIEF_SOURCES`
 // (`@workbench/shared`'s projection of `CREDENTIAL_PROVIDER_CATALOG` entries
@@ -122,29 +122,10 @@ export const workflow = defineWorkflow({
       },
     }),
 
-    // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
-    notify: deterministicToolStep({
-      id: "heartbeat-notify",
-      title: "Send the brief",
-      tool: "mail_send",
-      input: {
-        merge: [
-          { from: "trigger.payload" },
-          { from: "steps.brief.output" },
-          { from: "steps.title.output.content" },
-        ],
-      },
-      argMap: {
-        to: { from: "userAddress" },
-        subject: { from: "title" },
-        content: { from: "reply" },
-      },
-      after: ["brief", "title"],
-    }),
-
     // Persist the brief as a morning-brief artifact in the user's workbench.
     // `kind` is the stable `morning-brief` literal (CL-3503) — never "report"
-    // — so the artifact's type never drifts across runs.
+    // — so the artifact's type never drifts across runs. Runs before notify so
+    // mail delivery can depend on the saved artifact (CL-3521).
     persist: deterministicToolStep({
       id: "heartbeat-persist",
       title: "Save the brief",
@@ -163,6 +144,26 @@ export const workflow = defineWorkflow({
         jobLabel: { literal: "Morning Brief" },
       },
       after: ["brief", "title"],
+    }),
+
+    // Deliver the brief to the firing user's `usr_` inbox (T3 resolver).
+    notify: deterministicToolStep({
+      id: "heartbeat-notify",
+      title: "Send the brief",
+      tool: "mail_send",
+      input: {
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.brief.output" },
+          { from: "steps.title.output.content" },
+        ],
+      },
+      argMap: {
+        to: { from: "userAddress" },
+        subject: { from: "title" },
+        content: { from: "reply" },
+      },
+      after: ["brief", "title", "persist"],
     }),
   },
 });
