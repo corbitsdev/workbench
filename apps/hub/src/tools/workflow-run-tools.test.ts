@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { AgentTool } from "@intx/agent";
 import type { HubDb } from "../db";
+import { isUuid } from "../lib/uuid";
 import type { RunState } from "../workflow-executor/run-store";
 
 // The routes/tools walk the tenant chain via getAncestorChain; everything else
@@ -97,6 +98,7 @@ mock.module("../workflow-executor/run-store", () => ({
       })),
   markRunStopped: async () => undefined,
   softDeleteRunRecord: async () => undefined,
+  setPendingSignal: async () => undefined,
 }));
 
 // The resume guard (CL-2681) reads the live gate from the run's log; here the
@@ -277,7 +279,7 @@ describe("workflow_start", () => {
       status: string;
       originConversationId?: string;
     };
-    expect(result.runId).toMatch(/^wfr_/);
+    expect(isUuid(result.runId)).toBe(true);
     expect(result.status).toBe("provisioning");
     expect(result.originConversationId).toBe("thread-1");
 
@@ -291,7 +293,9 @@ describe("workflow_start", () => {
     // runId (the supervisor derives the run id from it).
     expect(sent).toHaveLength(1);
     expect(sent[0]?.messageId).toBe(result.runId);
-    expect(sent[0]?.content).toBe(JSON.stringify({ topic: "q3" }));
+    expect(sent[0]?.content).toBe(
+      JSON.stringify({ topic: "q3", runId: result.runId }),
+    );
   });
 });
 

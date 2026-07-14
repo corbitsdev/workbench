@@ -14,17 +14,46 @@ export {
 export { FileInput } from "./FileInput";
 export { Markdown } from "./Markdown";
 export {
-  ComparisonView,
+  ComparisonRankingEntrySchema,
   ComparisonResultSchema,
   ComparisonVariantSchema,
-  ComparisonRankingEntrySchema,
   parseComparisonResult,
+  type ComparisonRankingEntry,
   type ComparisonResult,
   type ComparisonVariant,
-  type ComparisonRankingEntry,
+} from "./comparison-schema";
+export {
+  ComparisonView,
   type ComparisonViewProps,
 } from "./comparison";
 export { PagePanel } from "./PagePanel";
+export {
+  DashboardSection,
+  type DashboardSectionProps,
+  type DashboardSectionVariant,
+} from "./DashboardSection";
+export {
+  StatGrid,
+  StatGridItem,
+  type StatGridProps,
+  type StatGridItemProps,
+  type StatGridColumns,
+} from "./StatGrid";
+export {
+  StatSparkline,
+  StatSparklineZeroBaseline,
+  type StatSparklineProps,
+} from "./StatSparkline";
+export {
+  RichEmptyState,
+  type RichEmptyStateProps,
+  type RichEmptyStateAction,
+  type RichEmptyStateActionVariant,
+} from "./RichEmptyState";
+export {
+  AppPageChromeRow,
+  type AppPageChromeRowProps,
+} from "./AppPageChromeRow";
 export { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
 export {
   CatalogGlyph,
@@ -54,6 +83,24 @@ export {
   SidebarMenuItem,
   SidebarMenuButton,
 } from "./sidebar";
+export { AnimatedNumber, type AnimatedNumberProps } from "./AnimatedNumber";
+export {
+  SPRING_EASE,
+  EASE_CURVE,
+  springTransition,
+  easeTransition,
+  staggerItemTransition,
+  staggerContainerVariants,
+  staggerItemVariants,
+  revealUp,
+  crossfadePresence,
+  staggerSlideIn,
+  popupPanelMotion,
+  dockedPanelMotion,
+  motionPropsWhen,
+  springNumberTransition,
+  type MotionPresenceProps,
+} from "./motion";
 export { cn } from "./utils";
 export { toHumanLabel } from "@workbench/shared";
 export { inputFieldClass } from "./input-field";
@@ -71,6 +118,8 @@ export {
   type ToolSummaryStyle,
 } from "./use-tool-summary-style";
 export {
+  setPreference,
+  usePreferenceRaw,
   setPreferencePersister,
   hydrateServerPreferences,
   serverPatchForRawChange,
@@ -110,8 +159,25 @@ export {
   buildLinePath,
   buildAreaPath,
   niceMax,
+  layoutLinearStepCenters,
+  stepGraphEdgeEndpoints,
+  buildStepGraphEdgePath,
+  sequentialStepEdges,
   type ChartPoint,
+  type StepGraphLayoutAxis,
+  type StepGraphLayoutOptions,
+  type StepGraphEdgeEndpoints,
 } from "./chart-geometry";
+export {
+  StepGraph,
+  stepGraphKindGlyph,
+  stepGraphKindLabel,
+  type StepGraphProps,
+  type StepGraphStep,
+  type StepGraphEdge,
+  type StepGraphKind,
+  type StepGraphStatus,
+} from "./StepGraph";
 export {
   TimeSeriesChart,
   type TimeSeries,
@@ -130,6 +196,7 @@ export {
   type WorkflowPanelProps,
   type WorkflowCredential,
   type WorkflowSkill,
+  workflowPanelShowsShellHeader,
 } from "./workflow-panel";
 export {
   type WorkflowStep,

@@ -168,8 +168,53 @@ describe("ToolNarrative", () => {
     // Collapse threshold is 3 real tools — quiet ones do not pad the count.
     screen.getByText("Did three things");
     screen.getByText(/· 3 tools/);
-    // Quiet phrases still render above the collapsed summary.
+    // Quiet lines no longer float above the summary — they live inside the
+    // expandable chronology.
+    expect(screen.queryByTestId("quiet-tool-line")).toBeNull();
+    fireEvent.click(screen.getByText("Did three things"));
     expect(screen.getAllByTestId("quiet-tool-line")).toHaveLength(2);
+  });
+
+  it("renders quiet and real calls interleaved in original call order", () => {
+    const calls: ToolCall[] = [
+      { id: "r1", name: "attio__query_records", result: "[]", isError: false },
+      { id: "q1", name: "search_tools", result: "[]", isError: false },
+      { id: "r2", name: "exa__search", result: "[]", isError: false },
+    ];
+    const { container } = render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={(c) => `row-${c.id}`}
+        isQuietTool={(name) => name === "search_tools"}
+      />,
+    );
+    const text = container.textContent ?? "";
+    const positions = ["row-r1", "row-q1", "row-r2"].map((s) =>
+      text.indexOf(s),
+    );
+    expect(positions[0]).toBeGreaterThanOrEqual(0);
+    expect(positions[1]).toBeGreaterThan(positions[0] ?? 0);
+    expect(positions[2]).toBeGreaterThan(positions[1] ?? 0);
+  });
+
+  it("keeps quiet lines in the marker column", () => {
+    const calls: ToolCall[] = [
+      { id: "q1", name: "search_tools", result: "[]", isError: false },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Searching Workbench…"}
+        isQuietTool={() => true}
+      />,
+    );
+    const quiet = screen.getByTestId("quiet-tool-line");
+    // The quiet line sits inside a marker-column row, aligned with tool rows.
+    expect(
+      quiet
+        .closest('[data-testid="quiet-tool-row"]')
+        ?.querySelector('[data-testid="tool-marker-spacer"]') ?? null,
+    ).not.toBeNull();
   });
 
   it("shows a friendly result and never dumps raw JSON when formatResult is set", () => {
@@ -266,6 +311,29 @@ describe("ToolNarrative", () => {
         .closest("button")
         ?.querySelector('[data-testid="tool-marker-bullet"]') ?? null,
     ).toBeNull();
+  });
+
+  it("renders a host-supplied brand marker for external tools when provided", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "e1",
+        name: "linear__list_issues",
+        result: "[]",
+        isError: false,
+      },
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        formatSummary={() => "Looking through Linear issues"}
+        isExternalTool={() => true}
+        renderToolMarker={() => (
+          <span data-testid="tool-provider-logo">linear</span>
+        )}
+      />,
+    );
+    screen.getByTestId("tool-provider-logo");
+    expect(screen.queryByTestId("tool-marker-bullet")).toBeNull();
   });
 
   it("keeps a distinct error marker on failed tool calls", () => {
@@ -378,6 +446,10 @@ describe("ToolNarrative", () => {
     // Individual rows are hidden until expanded.
     expect(screen.queryByText("summary-of-c1")).toBeNull();
     fireEvent.click(screen.getByText("Did a bunch of things"));
+    // Roll-up line hides when expanded — detail replaces it, not stacks under it.
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    expect(screen.queryByText("· 3 tools")).toBeNull();
+    screen.getByTestId("tool-group-detail");
     screen.getByText("summary-of-c1");
     screen.getByText("summary-of-c3");
   });
@@ -433,5 +505,107 @@ describe("ToolNarrative", () => {
     expect(screen.queryByText("Did a bunch of things")).toBeNull();
     screen.getByText("summary-of-c1");
     screen.getByText("summary-of-c3");
+  });
+
+  it("hides the tool summary line while tool output is expanded", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    fireEvent.click(screen.getByTestId("tool-row-summary"));
+    expect(screen.queryByTestId("tool-row-summary")).toBeNull();
+    expect(screen.queryByTestId("tool-row-args")).toBeNull();
+    screen.getByTestId("tool-row-detail");
+    screen.getByText("the full result body");
+  });
+
+  it("restores the tool summary line when tool output is collapsed again", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    const toggle = screen.getByTestId("tool-row-summary").closest("button");
+    expect(toggle).not.toBeNull();
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-row-summary")).toBeNull();
+    fireEvent.click(toggle!);
+    screen.getByTestId("tool-row-summary");
+    expect(screen.queryByTestId("tool-row-detail")).toBeNull();
+  });
+
+  it("hides the compact roll-up summary while the tool group is expanded", () => {
+    const calls = [
+      settled("c1", "attio_get_record"),
+      settled("c2", "attio_get_record"),
+      settled("c3", "linear_get_issue"),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did a bunch of things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />,
+    );
+    const toggle = screen.getByTestId("tool-group-summary").closest("button");
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    screen.getByTestId("tool-group-detail");
+  });
+
+  it("restores the compact roll-up summary when the tool group is collapsed again", () => {
+    const calls = [
+      settled("c1", "attio_get_record"),
+      settled("c2", "attio_get_record"),
+      settled("c3", "linear_get_issue"),
+    ];
+    render(
+      <ToolNarrative
+        toolCalls={calls}
+        compact
+        summarizeCalls={() => "Did a bunch of things"}
+        formatSummary={(c) => `summary-of-${c.id}`}
+      />,
+    );
+    const toggle = screen.getByTestId("tool-group-summary").closest("button");
+    expect(toggle).not.toBeNull();
+    fireEvent.click(toggle!);
+    expect(screen.queryByTestId("tool-group-summary")).toBeNull();
+    fireEvent.click(toggle!);
+    screen.getByTestId("tool-group-summary");
+    screen.getByText("· 3 tools");
+    expect(screen.queryByTestId("tool-group-detail")).toBeNull();
+  });
+
+  it("exposes aria-expanded and a collapse label on an expanded tool row", () => {
+    const calls: ToolCall[] = [
+      {
+        id: "c1",
+        name: "Exa Search",
+        arguments: { query: "minimax m3" },
+        result: "the full result body",
+        isError: false,
+      },
+    ];
+    render(<ToolNarrative toolCalls={calls} />);
+    const toggle = screen.getByTestId("tool-row-summary").closest("button");
+    expect(toggle?.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle!);
+    expect(toggle?.getAttribute("aria-expanded")).toBe("true");
+    expect(toggle?.getAttribute("aria-label")).toBe(
+      "Collapse Exa search · minimax m3",
+    );
   });
 });

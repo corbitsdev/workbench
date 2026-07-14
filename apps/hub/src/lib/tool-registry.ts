@@ -17,6 +17,9 @@ import { GITHUB_HUB_TOOLS } from "@workbench/tools-github";
 import { POLYMARKET_HUB_TOOLS } from "@workbench/tools-polymarket";
 import { REDDIT_HUB_TOOLS } from "@workbench/tools-reddit";
 import { SCRAPECREATORS_HUB_TOOLS } from "@workbench/tools-scrapecreators";
+import { SLACK_HUB_TOOLS } from "@workbench/tools-slack";
+import { SUMBLE_HUB_TOOLS } from "@workbench/tools-sumble";
+import { VERCEL_HUB_TOOLS } from "@workbench/tools-vercel";
 import { X_HUB_TOOLS } from "@workbench/tools-x";
 import { YOUTUBE_HUB_TOOLS } from "@workbench/tools-youtube";
 import { ARTIFACT_HUB_TOOLS } from "./artifact-tools";
@@ -28,7 +31,10 @@ import { LIST_AGENTS_HUB_TOOLS } from "../tools/list-agents";
 import { IDENTITY_HUB_TOOLS } from "../tools/identity";
 import { SKILLS_HUB_TOOLS } from "../tools/list-skills";
 import { GAMMA_TEMPLATES_HUB_TOOLS } from "../tools/gamma-templates";
+import { AB_COMPARE_HUB_TOOLS } from "../tools/ab-compare-tools";
 import { LAST30DAYS_CORE_HUB_TOOLS } from "../tools/last30days-core-tools";
+import { TASK_HUB_TOOLS } from "../tools/task-tools";
+import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifact";
 import type {
   SessionService,
   EventCollectorRegistry,
@@ -70,8 +76,13 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...POLYMARKET_HUB_TOOLS,
   ...REDDIT_HUB_TOOLS,
   ...SCRAPECREATORS_HUB_TOOLS,
+  ...SLACK_HUB_TOOLS,
+  ...SUMBLE_HUB_TOOLS,
+  ...VERCEL_HUB_TOOLS,
+  ...VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS,
   ...X_HUB_TOOLS,
   ...YOUTUBE_HUB_TOOLS,
+  ...AB_COMPARE_HUB_TOOLS,
   ...LAST30DAYS_CORE_HUB_TOOLS,
   // Hub-backed (permanent; need hub db/services)
   ...ARTIFACT_HUB_TOOLS,
@@ -84,6 +95,7 @@ export const KNOWN_TOOLS: Record<string, ToolEntry> = {
   ...SKILLS_HUB_TOOLS,
   ...WRITE_ARTIFACT_HUB_TOOLS,
   ...WORKFLOWS_HUB_TOOLS,
+  ...TASK_HUB_TOOLS,
 };
 
 export type CredentialToolEntry = {

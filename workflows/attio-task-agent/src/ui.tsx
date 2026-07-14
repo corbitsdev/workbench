@@ -9,6 +9,7 @@ import {
   liveStatusLabel,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 import type { RunState } from "@intx/workflow";
 import { attioTaskArtifactKinds } from "@workbench/shared";
@@ -107,6 +108,7 @@ function Shell(props: {
   state: RunState | null;
   connected: boolean;
   onClose: () => void;
+  showShellHeader: boolean;
   children: ReactNode;
 }): ReactNode {
   const failed =
@@ -114,19 +116,21 @@ function Shell(props: {
   const liveLabel = failed ? null : liveStatusLabel(props.state, DISPLAY_STEPS);
   return (
     <div className="bg-bg flex h-full flex-col overflow-hidden">
-      <header className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
-        <div className="min-w-0">
-          <p className="text-text truncate text-sm font-semibold">
-            Attio Task Agent
-          </p>
-          <p className="text-text-3 mt-px text-xs">
-            {props.connected ? "Live" : "Reconnecting…"}
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={props.onClose}>
-          Close
-        </Button>
-      </header>
+      {props.showShellHeader ? (
+        <header className="border-border flex shrink-0 items-center justify-between gap-3 border-b px-5 py-3">
+          <div className="min-w-0">
+            <p className="text-text truncate text-sm font-semibold">
+              Attio Task Agent
+            </p>
+            <p className="text-text-3 mt-px text-xs">
+              {props.connected ? "Live" : "Reconnecting…"}
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={props.onClose}>
+            Close
+          </Button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(props.state)} />
       <LiveStatusSlot label={liveLabel} />
@@ -273,7 +277,12 @@ export function Panel(props: WorkflowPanelProps): ReactNode {
   }
 
   return (
-    <Shell state={state} connected={connected} onClose={props.onClose}>
+    <Shell
+      state={state}
+      connected={connected}
+      onClose={props.onClose}
+      showShellHeader={workflowPanelShowsShellHeader(props)}
+    >
       {body()}
     </Shell>
   );

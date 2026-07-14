@@ -40,6 +40,19 @@ import type {
   SessionEventSink,
   SessionManager,
 } from "../session-manager";
+import { USER_STOP_TURN_REASON } from "../session-manager";
+
+// WORKBENCH-LOCAL (CL-3339): the user-initiated turn abort rides the
+// session.abort frame shape with an extended reason that upstream's closed
+// AbortReason enum (and therefore the HubFrame union) rejects. Decoded
+// locally in handleMessage before the upstream union runs.
+const TurnAbortFrame = type({
+  type: "'session.abort'",
+  requestId: "string",
+  agentAddress: "string",
+  reason: `'${USER_STOP_TURN_REASON}'`,
+});
+type TurnAbortFrame = typeof TurnAbortFrame.infer;
 
 const logger = getLogger(["interchange", "hub-agent", "ws"]);
 
@@ -590,6 +603,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     if (bootstrapped !== undefined) {
       for (const key of bootstrapped) {
         workflowRunPackBootstrapped.delete(key);
+        // WORKBENCH-LOCAL (CL-3415): clear the quarantine/failure state
+        // alongside the bootstrap flag so a redeploy gets a clean slate
+        // rather than inheriting a stale quarantine from the prior
+        // incarnation's diverged repo state.
+        workflowRunPackQuarantined.delete(key);
+        workflowRunPackFailureCount.delete(key);
       }
       workflowRunPackBootstrappedByAddress.delete(frame.agentAddress);
     }
@@ -652,6 +671,12 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     if (bootstrapped !== undefined) {
       for (const key of bootstrapped) {
         workflowRunPackBootstrapped.delete(key);
+        // WORKBENCH-LOCAL (CL-3415): clear the quarantine/failure state
+        // alongside the bootstrap flag so a redeploy gets a clean slate
+        // rather than inheriting a stale quarantine from the prior
+        // incarnation's diverged repo state.
+        workflowRunPackQuarantined.delete(key);
+        workflowRunPackFailureCount.delete(key);
       }
       workflowRunPackBootstrappedByAddress.delete(frame.agentAddress);
     }
@@ -767,6 +792,25 @@ export function createHubLink(config: HubLinkConfig): HubLink {
   async function handleSessionAbort(frame: SessionAbortFrame): Promise<void> {
     try {
       await sessions.abortSession(frame.agentAddress, frame.reason);
+      send({ type: "session.ack", requestId: frame.requestId });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      send({
+        type: "session.error",
+        requestId: frame.requestId,
+        error: message,
+      });
+    }
+  }
+
+  // WORKBENCH-LOCAL (CL-3339): the user-initiated "stop this turn" abort.
+  // Same frame shape as session.abort but with the extended reason
+  // `user_stop_turn`, which the upstream frame union rejects — decoded by
+  // TurnAbortFrame in handleMessage before HubFrame runs. Non-terminal:
+  // abortTurn settles the open runs and puts the agent to sleep (wakeable).
+  async function handleTurnAbort(frame: TurnAbortFrame): Promise<void> {
+    try {
+      await sessions.abortTurn(frame.agentAddress);
       send({ type: "session.ack", requestId: frame.requestId });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -946,6 +990,36 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     return `${repoId.kind}:${repoId.id}:${ref}`;
   }
 
+  // WORKBENCH-LOCAL (CL-3415): bounded bootstrap-retry + quarantine.
+  //
+  // The retry-once arm above assumes every post-bootstrap-retry failure is
+  // the transient `initRepo` CAS race and that a fresh push cycle heals it.
+  // On staging, a sidecar restart drops the in-memory `lastAckedTip` cursor
+  // (workflow-run-pack-client.ts, CL-2340) while `workflowRunPackBootstrapped`
+  // also resets (pruned on undeploy/hibernate) — so the NEXT push after
+  // restart re-enters this bootstrap arm. If the hub- and sidecar-side repo
+  // states have genuinely diverged (not just a first-push race), BOTH the
+  // initial attempt and the retry reject with `reason=corrupt`, the error
+  // propagates to the sidecar's per-(repoId,ref) push loop
+  // (workflow-run-pack-client.ts `startLoop`), and the NEXT workflow-run
+  // event schedules another push that repeats the exact same two-attempt
+  // failure — forever, once per event, with no terminal state. That is the
+  // recurring `Workflow-run pack push bootstrap retry ... reason=corrupt`
+  // warning observed on staging.
+  //
+  // `workflowRunPackFailureCount` counts consecutive bootstrap-arm failures
+  // (both attempts rejected) per `(repoId, ref)` key. Once the count reaches
+  // `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`, the key moves into
+  // `workflowRunPackQuarantined`: further pushes for that key fail fast with
+  // a diagnostic error WITHOUT touching the network or the receiver, and a
+  // single ERROR is logged (not a WARN per push) carrying the pack size and
+  // both tip shas known to the sender for later triage. Quarantine clears
+  // exactly where the bootstrap flag already clears — undeploy/hibernate —
+  // so a redeploy or a legitimate repo reset gets a clean slate.
+  const WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES = 3;
+  const workflowRunPackFailureCount = new Map<string, number>();
+  const workflowRunPackQuarantined = new Set<string>();
+
   async function handleSyncRequest(frame: SyncRequestFrame): Promise<void> {
     const { agentAddress, transferId } = frame;
     try {
@@ -1037,7 +1111,18 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     async function runWithBootstrap(): Promise<void> {
       if (workflowRunPackBootstrapped.has(key)) {
         await sendOnce();
+        workflowRunPackFailureCount.delete(key);
         return;
+      }
+      // WORKBENCH-LOCAL (CL-3415): a quarantined key has already exhausted
+      // the bootstrap-retry arm `WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES`
+      // times; fail fast without shipping another pack to the receiver.
+      if (workflowRunPackQuarantined.has(key)) {
+        throw new Error(
+          `workflow-run pack push for ${opts.repoId.id}/${opts.ref} is quarantined ` +
+            `after ${String(WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES)} consecutive ` +
+            `bootstrap-retry failures (reason=corrupt); dropping without a network attempt`,
+        );
       }
       try {
         await sendOnce();
@@ -1050,8 +1135,30 @@ export function createHubLink(config: HubLinkConfig): HubLink {
         // the bootstrap genesis as the CAS baseline and lands.
         const reason = first instanceof Error ? first.message : String(first);
         logger.warn`Workflow-run pack push bootstrap retry for ${opts.repoId.id}/${opts.ref}: ${reason}`;
-        await sendOnce();
+        try {
+          await sendOnce();
+        } catch (second) {
+          // WORKBENCH-LOCAL (CL-3415): the retry ALSO rejected — this is not
+          // the transient initRepo race the retry arm exists for, it is a
+          // genuine (and, absent a repo reset, persistent) divergence
+          // between the sidecar's and hub's repo state. Left unbounded, the
+          // NEXT workflow-run event repeats this exact two-attempt failure
+          // forever (see the comment above `workflowRunPackFailureCount`).
+          const failures = (workflowRunPackFailureCount.get(key) ?? 0) + 1;
+          workflowRunPackFailureCount.set(key, failures);
+          const secondReason =
+            second instanceof Error ? second.message : String(second);
+          if (failures >= WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES) {
+            workflowRunPackQuarantined.add(key);
+            workflowRunPackFailureCount.delete(key);
+            logger.error`Workflow-run pack push for ${opts.repoId.id}/${opts.ref} quarantined after ${String(failures)} consecutive bootstrap-retry failures (agentAddress=${opts.agentAddress}, packBytes=${String(opts.pack.byteLength)}, commitSha=${opts.commitSha}, lastReason=${secondReason}); further pushes for this ref will fail fast until the deployment is undeployed or hibernated`;
+          } else {
+            logger.warn`Workflow-run pack push bootstrap retry FAILED for ${opts.repoId.id}/${opts.ref} (attempt ${String(failures)}/${String(WORKFLOW_RUN_PACK_MAX_BOOTSTRAP_FAILURES)}): ${secondReason}`;
+          }
+          throw second;
+        }
       }
+      workflowRunPackFailureCount.delete(key);
       workflowRunPackBootstrapped.add(key);
       let perAddress = workflowRunPackBootstrappedByAddress.get(
         opts.agentAddress,
@@ -1096,6 +1203,13 @@ export function createHubLink(config: HubLinkConfig): HubLink {
     }
     const validated = HubFrame(raw);
     if (validated instanceof type.errors) {
+      // WORKBENCH-LOCAL (CL-3339): the extended `user_stop_turn` abort is not
+      // in the upstream frame union — give it its own decode before rejecting.
+      const turnAbort = TurnAbortFrame(raw);
+      if (!(turnAbort instanceof type.errors)) {
+        await handleTurnAbort(turnAbort);
+        return;
+      }
       logger.warn`Invalid hub frame: ${validated.summary}`;
       return;
     }

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { motion } from "framer-motion";
-import { cn } from "@workbench/ui";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { cn, popupPanelMotion } from "@workbench/ui";
 
 export interface FloatingChatProps {
   /** Render the panel only when open. */
@@ -32,6 +32,9 @@ export function FloatingChat({
   onClose,
   className,
 }: FloatingChatProps) {
+  const reduce = useReducedMotion() === true;
+  const panelMotion = popupPanelMotion(reduce);
+
   useEffect(() => {
     if (!open || onClose === undefined) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -41,22 +44,23 @@ export function FloatingChat({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  if (!open) return null;
-
   return (
-    <motion.div
-      role="dialog"
-      aria-label="Chat"
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.18 }}
-      className={cn(
-        "fixed z-40 flex flex-col overflow-hidden bg-surface",
-        expanded === true ? EXPANDED_CLASS : POPUP_CLASS,
-        className,
-      )}
-    >
-      {children}
-    </motion.div>
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          key="floating-chat"
+          role="dialog"
+          aria-label="Chat"
+          {...panelMotion}
+          className={cn(
+            "fixed z-40 flex flex-col overflow-hidden bg-bg",
+            expanded === true ? EXPANDED_CLASS : POPUP_CLASS,
+            className,
+          )}
+        >
+          {children}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

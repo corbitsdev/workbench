@@ -1,4 +1,11 @@
 import type { ToolPackagePin } from "@intx/types/tool-packages";
+import {
+  derivePackageProviders,
+  derivePackageTools,
+  loadCommittedToolManifestFactories,
+} from "@workbench/tool-manifest";
+
+const toolManifestFactories = loadCommittedToolManifestFactories();
 
 // Canonical (namespace-prefixed) tool names for native tool packages.
 //
@@ -11,162 +18,16 @@ import type { ToolPackagePin } from "@intx/types/tool-packages";
 // mail (`mail_*`), ask-principal — are merged directly (not loaded as packages)
 // and are NOT prefixed; they pass through unchanged.
 //
-// This table mirrors each package's `interchange.tools` factory id and the tool
-// definition names it exports. Keep it in sync when a tool package adds, renames,
-// or removes a tool. Names not present here (locals, or not-yet-real tools) are
-// returned verbatim.
+// Bare tool names per factory id, derived from committed manifests — update
+// manifests and run `bun run build:tool-manifests` instead of editing here.
+// Names not present here (locals, or not-yet-real tools) are returned verbatim.
 
-const PACKAGE_TOOLS: Record<string, readonly string[]> = {
-  "@workbench/tools-agents/agents": [
-    "list_agents",
-    "list_principals",
-    "identity_get",
-    "identity_set",
-  ],
-  "@workbench/tools-ab-compare/compose": [
-    "ab_preset_quorum",
-    "ab_preset_compose",
-  ],
-  "@workbench/tools-attio/attio": [
-    "attio_list_objects",
-    "attio_query_records",
-    "attio_search_records",
-    "attio_get_record",
-    "attio_list_workspace_members",
-    "attio_list_tasks",
-    "attio_get_task",
-    "attio_update_task",
-    "attio_create_note",
-    "attio_create_record",
-  ],
-  "@workbench/tools-artifact/artifact": [
-    "artifact_create",
-    "artifact_read",
-    "artifact_read_chunk",
-    "artifact_write",
-    "artifact_list",
-    "artifact_find_by_title",
-    "artifact_link_file",
-    "artifact_link_presentation",
-    "artifact_link_gamma_presentation",
-    "write_artifact",
-    "memory_load",
-    "memory_save",
-  ],
-  "@workbench/tools-bluesky/bluesky": ["bluesky_search"],
-  "@workbench/tools-fileparser/fileparser": ["parse_file"],
-  "@workbench/tools-dispatch/dispatch": ["dispatch_agent"],
-  "@workbench/tools-exa/exa": ["exa_search", "web_search"],
-  "@workbench/tools-firecrawl/firecrawl": [
-    "firecrawl_scrape",
-    "firecrawl_search",
-    "firecrawl_map",
-    "firecrawl_crawl_start",
-    "firecrawl_crawl_status",
-    "firecrawl_crawl_active",
-    "firecrawl_crawl_cancel",
-    "firecrawl_crawl_errors",
-    "firecrawl_crawl_params_preview",
-    "firecrawl_batch_scrape_start",
-    "firecrawl_batch_scrape_status",
-    "firecrawl_batch_scrape_cancel",
-    "firecrawl_batch_scrape_errors",
-    "firecrawl_extract_start",
-    "firecrawl_extract_status",
-    "firecrawl_agent",
-    "firecrawl_parse",
-    "firecrawl_credit_usage",
-    "firecrawl_token_usage",
-    "firecrawl_historical_credit_usage",
-    "firecrawl_historical_token_usage",
-    "firecrawl_activity",
-    "firecrawl_interact",
-    "firecrawl_browser_sessions_list",
-    "firecrawl_browser_session_delete",
-    "firecrawl_monitor_create",
-    "firecrawl_monitor_get",
-    "firecrawl_monitor_list",
-    "firecrawl_monitor_update",
-    "firecrawl_monitor_delete",
-    "firecrawl_monitor_run",
-    "firecrawl_monitor_check",
-  ],
-  "@workbench/tools-gamma/gamma": [
-    "gamma_create_from_template",
-    "gamma_duplicate_presentation",
-    "gamma_list_themes",
-  ],
-  // Hub-backed (reads tenant templates from the hub DB, no Gamma credential);
-  // shipped in the same @workbench/tools-gamma tarball as its own factory.
-  "@workbench/tools-gamma/gamma-templates": ["gamma_list_templates"],
-  "@workbench/tools-github/github": ["github_activity"],
-  "@workbench/tools-granola/granola": [
-    "granola_list_notes",
-    "granola_get_note",
-    "granola_list_folders",
-  ],
-  "@workbench/tools-hackernews/hackernews": ["hackernews_search"],
-  "@workbench/tools-linear/linear": [
-    "linear_list_issues",
-    "linear_get_issue",
-    "linear_list_teams",
-    "linear_list_users",
-    "linear_create_issue",
-  ],
-  "@workbench/tools-notion/notion": [
-    "notion_search",
-    "notion_get_page",
-    "notion_get_page_content",
-    "notion_get_database",
-    "notion_query_database",
-    "notion_create_page",
-  ],
-  "@workbench/tools-vercel/vercel": [
-    "vercel_list_projects",
-    "vercel_list_deployments",
-    "vercel_deploy_static_file",
-  ],
-  "@workbench/tools-vercel/deploy-artifact": ["vercel_deploy_artifact"],
-  "@workbench/tools-last30days/core": [
-    "last30days_core_extract",
-    "last30days_core_report",
-    "last30days_ground_queries",
-    "last30days_entity_queries",
-    "last30days_collect",
-    "last30days_validate",
-    "last30days_workflow_brief",
-  ],
-  "@workbench/tools-polymarket/polymarket": ["polymarket_odds"],
-  "@workbench/tools-reddit/reddit": [
-    "reddit_search",
-    "reddit_subreddit_search",
-  ],
-  "@workbench/tools-scrapecreators/scrapecreators": [
-    "scrapecreators_tiktok",
-    "scrapecreators_instagram",
-    "scrapecreators_threads",
-    "scrapecreators_pinterest",
-  ],
-  "@workbench/tools-skills/skills": [
-    "list_skills",
-    "search_skills",
-    "load_skill",
-    "list_skill_drafts",
-    "load_skill_draft",
-    "skill_draft",
-  ],
-  "@workbench/tools-workflows/workflows": [
-    "workflow_list_kinds",
-    "workflow_start",
-    "workflow_list_runs",
-    "workflow_signal",
-  ],
-  "@workbench/tools-x/x": ["x_search"],
-  "@workbench/tools-youtube/youtube": ["youtube_search"],
-};
+/** Derived from committed per-package tool manifests (`apps/hub/generated/tool-manifests/index.json`). */
+export const PACKAGE_TOOLS_TABLE: Record<string, readonly string[]> =
+  derivePackageTools(toolManifestFactories);
 
 const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
-  Object.entries(PACKAGE_TOOLS).flatMap(([factoryId, names]) =>
+  Object.entries(PACKAGE_TOOLS_TABLE).flatMap(([factoryId, names]) =>
     names.map((name) => [name, factoryId]),
   ),
 );
@@ -176,23 +37,8 @@ const FACTORY_ID_BY_TOOL: Record<string, string> = Object.fromEntries(
 // `@scope/package` an agent pins, i.e. the factory id without its tool
 // segment). Packages absent here are keyless or hub-backed (agents, artifact,
 // dispatch, hackernews, polymarket, last30days) and need no tenant credential.
-// Keep in sync with each package's `interchange-tools.ts` provider.
-const PACKAGE_PROVIDERS: Record<string, string> = {
-  "@workbench/tools-attio": "attio",
-  "@workbench/tools-bluesky": "bluesky",
-  "@workbench/tools-exa": "exa",
-  "@workbench/tools-firecrawl": "firecrawl",
-  "@workbench/tools-gamma": "gamma",
-  "@workbench/tools-linear": "linear",
-  "@workbench/tools-notion": "notion",
-  "@workbench/tools-vercel": "vercel",
-  "@workbench/tools-github": "github",
-  "@workbench/tools-granola": "granola",
-  "@workbench/tools-reddit": "scrapecreators",
-  "@workbench/tools-scrapecreators": "scrapecreators",
-  "@workbench/tools-x": "xai",
-  "@workbench/tools-youtube": "youtube",
-};
+export const PACKAGE_PROVIDERS_TABLE: Record<string, string> =
+  derivePackageProviders(toolManifestFactories);
 
 // The distinct credential providers a set of pinned tool packages requires.
 // The hub credential gate authorizes a deployed agent (or workflow step) for
@@ -203,7 +49,7 @@ export function providersForToolPackages(
 ): string[] {
   const providers = new Set<string>();
   for (const pin of pins) {
-    const provider = PACKAGE_PROVIDERS[pin.name];
+    const provider = PACKAGE_PROVIDERS_TABLE[pin.name];
     if (provider !== undefined) providers.add(provider);
   }
   return [...providers];
@@ -219,7 +65,7 @@ export function providersForToolPackages(
  */
 export function producibleLlmToolNames(): Set<string> {
   const names = new Set<string>();
-  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS)) {
+  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS_TABLE)) {
     for (const tool of tools) names.add(toLlmToolName(`${factoryId}:${tool}`));
   }
   return names;
@@ -229,13 +75,13 @@ export function producibleLlmToolNames(): Set<string> {
  * The bare (unprefixed) tool names a single pinned package ships, across all its
  * factories. A tarball can ship several factories (`@workbench/tools-vercel/
  * vercel` and `@workbench/tools-vercel/deploy-artifact`), so a pin name matches
- * every `PACKAGE_TOOLS` factory it prefixes. This is the one source the Myra
+ * every `PACKAGE_TOOLS_TABLE` factory it prefixes. This is the one source the Myra
  * catalog + grants derive from, so a package's tools are never hand-listed
  * twice (CL-3190).
  */
 export function bareToolNamesForPin(pinName: string): string[] {
   const names: string[] = [];
-  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS)) {
+  for (const [factoryId, tools] of Object.entries(PACKAGE_TOOLS_TABLE)) {
     if (factoryId === pinName || factoryId.startsWith(`${pinName}/`)) {
       names.push(...tools);
     }
@@ -320,7 +166,7 @@ export function expandToolAliasGrants(
     (n) => factoryIdFromCanonicalOrBare(n) === EXA_FACTORY_ID,
   );
   if (!hasExa) return [...out];
-  for (const bare of PACKAGE_TOOLS[EXA_FACTORY_ID] ?? []) {
+  for (const bare of PACKAGE_TOOLS_TABLE[EXA_FACTORY_ID] ?? []) {
     out.add(`${EXA_FACTORY_ID}:${bare}`);
   }
   return [...out];

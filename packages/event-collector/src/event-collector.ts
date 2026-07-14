@@ -41,6 +41,7 @@ const TurnFinalizedSchema = type({
   errors: type({ category: "string", message: "string" }).array(),
   toolCalls: TurnToolCallSchema.array(),
   toolErrors: type({ name: "string", content: "string" }).array(),
+  reasoning: "string",
 });
 export type TurnFinalized = typeof TurnFinalizedSchema.infer;
 
@@ -83,6 +84,7 @@ export function createEventCollector(
   // from inference.done (not thinking/reasoning) are included. Reset on each
   // new turn.
   let accumulatedText = "";
+  let accumulatedReasoning = "";
   // In-progress text from inference.text.delta events during the current
   // inference step. Reset on inference.done (when accumulatedText takes over).
   let streamingText = "";
@@ -218,6 +220,7 @@ export function createEventCollector(
     finalized = false;
     pendingError = false;
     accumulatedText = "";
+    accumulatedReasoning = "";
     streamingText = "";
     turnHadError = false;
     accumulatedErrors = [];
@@ -245,6 +248,10 @@ export function createEventCollector(
           await insertPart("text", block.text, null);
           break;
         case "thinking":
+          accumulatedReasoning +=
+            accumulatedReasoning.length > 0
+              ? `\n\n${block.thinking}`
+              : block.thinking;
           await insertPart("reasoning", block.thinking, null);
           break;
         case "redacted_thinking":
@@ -370,6 +377,7 @@ export function createEventCollector(
         errors: [...accumulatedErrors],
         toolCalls: [...accumulatedToolCalls],
         toolErrors: [...accumulatedToolErrors],
+        reasoning: accumulatedReasoning,
       });
       if (turn instanceof type.errors) {
         throw new Error(`TurnFinalized: ${turn.summary}`);

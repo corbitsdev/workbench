@@ -10,7 +10,12 @@ import type {
 } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
-import { applyRunProjection, loadRunRecord, upsertRunSteps } from "./run-store";
+import {
+  applyRunProjection,
+  insertRunRecord,
+  loadRunRecord,
+  upsertRunSteps,
+} from "./run-store";
 import { projectRunStateFromLog } from "./run-state-from-log";
 import { becameTerminal } from "./run-status";
 import { WorkflowMeta } from "../lib/workflow-meta";
@@ -25,8 +30,8 @@ import { WorkflowMeta } from "../lib/workflow-meta";
 // here — it is read on demand from the log (`run-state-from-log.ts`).
 //
 // The fold is UPDATE-ONLY: rows are seeded at /start with their full tenancy +
-// ownership metadata, so a runId with no row (e.g. a run started outside the
-// records path) is a harmless no-op. Re-projection on a later pack is idempotent
+// ownership metadata. A runId with no row means the start path never seeded the
+// index (logged at ERROR). Re-projection on a later pack is idempotent
 // (the full log replays to the same run-level state), so the bridge is safe to
 // run on every pack.
 
@@ -193,6 +198,37 @@ export type ProjectRunFactsFn = (args: {
   runId: string;
   kind: string;
   tenantId: string;
+}) => void;
+
+// Fired once when a run's record transitions non-terminal → terminal (CL-3517),
+// so the caller can deliver a "your run finished" mailbox item to the run
+// creator. Decoupled from deployment reclaim and fact projection: fires for
+// every terminal run whether or not it owns a deployment, and never for
+// `awaiting` (`becameTerminal`). Best-effort — the callback owns its errors and
+// must not block pack receipt.
+export type OnRunTerminalFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string | null;
+  status: "completed" | "failed";
+  error?: string;
+  failedSteps: readonly { stepId: string; message: string }[];
+}) => void;
+
+// Fired when a run first parks on an awaitSignal gate — the running -> awaiting
+// transition — so the caller can deliver a "needs you" mailbox item to
+// the run owner. Also fires on a re-park within one pack (a SignalReceived
+// folded ahead of a fresh SignalAwaited), since the owner must be notified of the
+// NEW gate; the mailbox layer dedupes by (runId, signalName). Best-effort: the
+// callback owns its errors and must not block pack receipt.
+export type OnNewlyAwaitingFn = (args: {
+  runId: string;
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string;
 }) => void;
 
 export interface RunEventEntry {
@@ -376,6 +412,46 @@ async function drainRunEvents(
   return entries;
 }
 
+export interface OrphanRunSeedMetadata {
+  kind: string;
+  tenantId: string;
+  principalId: string;
+  deploymentId: string;
+}
+
+export async function seedMissingRunRecordsFromRepo(
+  repoStore: RepoStore,
+  db: HubDb,
+  repoId: RepoId,
+  metadata: OrphanRunSeedMetadata,
+): Promise<string[]> {
+  const entries = await drainRunEvents(repoStore, repoId);
+  if (entries.length === 0) return [];
+  const runs = foldRunEvents(entries);
+  const seeded: string[] = [];
+  for (const [runId, projected] of runs) {
+    const existing = await loadRunRecord(db, runId);
+    if (existing !== null) continue;
+    await insertRunRecord(db, {
+      runId,
+      deploymentId: metadata.deploymentId,
+      kind: metadata.kind,
+      tenantId: metadata.tenantId,
+      principalId: metadata.principalId,
+      input: {},
+      originConversationId: null,
+      status: projected.status,
+    });
+    seeded.push(runId);
+    log.info("backfill: seeded workflow_run_record for orphan run log", {
+      runId,
+      repoId: repoId.id,
+      foldedStatus: projected.status,
+    });
+  }
+  return seeded;
+}
+
 // Project one workflow-run repo into the run records it owns.
 //
 // NOT UNIT-TESTED — substrate seam. This drives @intx `subscribeKind` (an
@@ -396,6 +472,8 @@ export async function projectWorkflowRunRepo(
   repoId: RepoId,
   onTerminalRun?: ReclaimRunDeploymentFn,
   onRunFacts?: ProjectRunFactsFn,
+  onNewlyAwaiting?: OnNewlyAwaitingFn,
+  onRunTerminalMail?: OnRunTerminalFn,
 ): Promise<void> {
   const entries = await drainRunEvents(repoStore, repoId);
   if (entries.length === 0) return;
@@ -403,7 +481,17 @@ export async function projectWorkflowRunRepo(
 
   for (const [runId, projected] of runs) {
     const existing = await loadRunRecord(db, runId);
-    if (existing === null) continue;
+    if (existing === null) {
+      log.error(
+        "workflow projection skipped run with no workflow_run_record row",
+        {
+          runId,
+          repoId: repoId.id,
+          foldedStatus: projected.status,
+        },
+      );
+      continue;
+    }
 
     // Clear the durable pending-signal record once the log PROVES a signal
     // landed. Terminal → unconditional clear (no further gate exists).
@@ -460,6 +548,27 @@ export async function projectWorkflowRunRepo(
       onRunFacts({ runId, kind: existing.kind, tenantId: existing.tenantId });
     }
 
+    // Terminal-run mail (CL-3517): notify the run creator's mailbox the moment
+    // the run settles into `completed` or `failed`. Gated on the same
+    // non-terminal → terminal transition as the two callbacks above so it
+    // fires exactly once per run. Best-effort — the callback owns its errors.
+    if (
+      onRunTerminalMail !== undefined &&
+      becameTerminal(existing.status, projected.status) &&
+      (projected.status === "completed" || projected.status === "failed")
+    ) {
+      onRunTerminalMail({
+        runId,
+        kind: existing.kind,
+        tenantId: existing.tenantId,
+        principalId: existing.principalId,
+        deploymentId: existing.deploymentId ?? null,
+        status: projected.status,
+        ...(projected.error !== undefined ? { error: projected.error } : {}),
+        failedSteps: projected.failedSteps,
+      });
+    }
+
     // Tear down the run's single-use deployment the moment it reaches a terminal
     // status (per-run deployment, CL-2582). Gated on the first non-terminal →
     // terminal transition so it fires exactly once, and never for `awaiting`
@@ -474,6 +583,31 @@ export async function projectWorkflowRunRepo(
         deploymentId: existing.deploymentId,
         tenantId: existing.tenantId,
         runId,
+      });
+    }
+
+    // Gate mail: notify the owner's mailbox when a run FIRST parks on
+    // an awaitSignal gate, or re-parks on a new gate within a single pack (a
+    // SignalReceived folded ahead of a fresh SignalAwaited, which keeps the
+    // folded status `awaiting`). Guarded to the transition so a run sitting
+    // parked across packs is not re-read every pack; the mailbox layer dedupes
+    // by (runId, signalName) as the durable backstop. Requires a deployment (the
+    // gate log is addressed by it). Best-effort — the callback owns its errors.
+    const newlyAwaiting =
+      projected.status === "awaiting" &&
+      (existing.status !== "awaiting" ||
+        projected.receivedSignalIds.length > 0);
+    if (
+      onNewlyAwaiting !== undefined &&
+      newlyAwaiting &&
+      existing.deploymentId
+    ) {
+      onNewlyAwaiting({
+        runId,
+        kind: existing.kind,
+        tenantId: existing.tenantId,
+        principalId: existing.principalId,
+        deploymentId: existing.deploymentId,
       });
     }
 
@@ -567,6 +701,17 @@ export function wrapRepoStoreWithProjection(
       kind: string;
       tenantId: string;
     }) => void;
+    // Deliver a "needs you" mailbox item when a run parks on a gate.
+    // The RepoStore is injected here (as `projectRunFacts` does) so the
+    // implementation can read the run's open gates. Best-effort, fire-and-forget.
+    deliverGateMail?: (
+      args: {
+        repoStore: RepoStore;
+      } & Parameters<OnNewlyAwaitingFn>[0],
+    ) => void;
+    // Deliver a "your run finished" mailbox item on the terminal transition
+    // (CL-3517). Best-effort, fire-and-forget.
+    deliverRunMail?: OnRunTerminalFn;
   },
 ): AgentRepoStore {
   const scheduler = createCoalescingScheduler(async (id: string) => {
@@ -580,6 +725,10 @@ export function wrapRepoStoreWithProjection(
         deps.projectRunFacts === undefined
           ? undefined
           : (a) => deps.projectRunFacts?.({ repoStore: base, repoId, ...a }),
+        deps.deliverGateMail === undefined
+          ? undefined
+          : (a) => deps.deliverGateMail?.({ repoStore: base.repoStore, ...a }),
+        deps.deliverRunMail,
       );
     } catch (err) {
       log.error("workflow projection failed", {

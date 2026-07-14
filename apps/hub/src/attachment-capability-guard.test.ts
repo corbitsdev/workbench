@@ -44,11 +44,19 @@ describe("resolveInstanceAcceptedMimeTypes", () => {
   it("gives an openai-compatible vision agent images but not pdf", async () => {
     const db = fakeDb({
       instance: { agentId: "agt_1" },
-      agent: fakeAgentRow({ model: "kimi-k2.6", plugin: "openai-compatible" }),
+      agent: fakeAgentRow({ model: "gpt-5.5", plugin: "openai-compatible" }),
     });
     const accepted = await resolveInstanceAcceptedMimeTypes(db, "inst-1");
     expect(accepted).toContain("image/png");
     expect(accepted).not.toContain("application/pdf");
+  });
+
+  it("gives kimi-k2.6 an empty set — its endpoint 400s on inline images", async () => {
+    const db = fakeDb({
+      instance: { agentId: "agt_1" },
+      agent: fakeAgentRow({ model: "kimi-k2.6", plugin: "openai-compatible" }),
+    });
+    expect(await resolveInstanceAcceptedMimeTypes(db, "inst-1")).toEqual([]);
   });
 
   it("gives an anthropic agent images and pdf", async () => {
@@ -116,6 +124,12 @@ describe("createAttachmentCapabilityGuard", () => {
       agent: fakeAgentRow({ model: "kimi-k2.6", plugin: "openai-compatible" }),
     });
 
+  const visionDb = () =>
+    fakeDb({
+      instance: { agentId: "agt_1" },
+      agent: fakeAgentRow({ model: "gpt-5.5", plugin: "openai-compatible" }),
+    });
+
   it("rejects a document the agent's adapter can't consume", async () => {
     const res = await post(guardedApp(myraDb()), {
       content: "here",
@@ -126,8 +140,21 @@ describe("createAttachmentCapabilityGuard", () => {
     expect(json.error.code).toBe("disallowed_for_agent");
   });
 
-  it("forwards an allowed attachment to the downstream handler", async () => {
+  it("rejects an inline image for Myra (images divert to the parser instead)", async () => {
+    // kimi-k2.6 is not vision-capable; an inline image_url would 400 at
+    // inference. The composer routes images through /parse-file, so any inline
+    // image reaching the mail route is rejected at the edge.
     const res = await post(guardedApp(myraDb()), {
+      content: "here",
+      attachments: [{ mimeType: "image/png", data: "AAAA" }],
+    });
+    expect(res.status).toBe(422);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("disallowed_for_agent");
+  });
+
+  it("forwards an inline image to a natively vision-capable agent", async () => {
+    const res = await post(guardedApp(visionDb()), {
       content: "here",
       attachments: [{ mimeType: "image/png", data: "AAAA" }],
     });

@@ -11,7 +11,8 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Info } from "lucide-react";
 import type { UIResponse } from "@workbench/chat";
-import { runStartLabel, toHumanLabel } from "@workbench/ui";
+import { Button, runStartLabel, toHumanLabel } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { WorkflowRunBlocks } from "./WorkflowRunBlocks";
 import { WorkflowStartingIndicator } from "./WorkflowStartingIndicator";
 import { ErrorBoundary } from "./ErrorBoundary";
@@ -237,15 +238,24 @@ function WorkflowRunPaneInner({
 
   const Panel = uiModule?.Panel;
 
-  // Hoisted above the Panel/blocks branch point — it depends only on
-  // deploymentMeta, so both render paths can share one element.
-  const metaBadge = deploymentMeta ? (
-    <WorkflowMetaBadge
-      version={deploymentMeta.version}
-      sha={deploymentMeta.sha}
-      deployedAt={deploymentMeta.deployedAt}
-    />
-  ) : null;
+  const runChrome = useMemo(
+    () => (
+      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-3">
+        {deploymentMeta ? (
+          <WorkflowMetaBadge
+            version={deploymentMeta.version}
+            sha={deploymentMeta.sha}
+            deployedAt={deploymentMeta.deployedAt}
+          />
+        ) : null}
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </div>
+    ),
+    [deploymentMeta, onClose],
+  );
+  useSetPageChrome(record ? runChrome : null);
 
   const terminal = record ? isRecordTerminal(record.status) : false;
   // Index says failed but the log is still non-terminal — the run was killed
@@ -409,7 +419,6 @@ function WorkflowRunPaneInner({
               onRespond={onBlockRespond}
               onClose={onClose}
             />
-            {metaBadge}
           </div>
         ),
       };
@@ -451,10 +460,10 @@ function WorkflowRunPaneInner({
                 signalPending={signalPending}
                 onSignal={handleSignal}
                 onClose={onClose}
+                hostProvidesChrome
                 credentials={credentials}
                 skills={skills}
               />
-              {metaBadge}
             </div>
           </Suspense>
         </ErrorBoundary>

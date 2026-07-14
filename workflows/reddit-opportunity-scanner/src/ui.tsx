@@ -12,6 +12,7 @@ import {
   Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 import { DISPLAY_STEPS, type StepKey } from "./display-steps";
 import {
@@ -1038,35 +1039,38 @@ export function Panel(props: WorkflowPanelProps) {
 
   const failError = failedRunErrorMessage(state) ?? undefined;
 
+  const showShellHeader = workflowPanelShowsShellHeader(props);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-text">
-            Reddit Opportunity Scanner
-          </p>
-          <p className="mt-px font-mono text-[11px] text-text-3">
-            {connected ? "Live" : "Reconnecting"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close"
-          className="grid h-7 w-7 place-items-center rounded-lg border border-border text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="h-4 w-4"
+      {showShellHeader ? (
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-5 py-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-text">
+              Reddit Opportunity Scanner
+            </p>
+            <p className="mt-px font-mono text-[11px] text-text-3">
+              {connected ? "Live" : "Reconnecting"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="grid h-7 w-7 place-items-center rounded-lg border border-border text-text-3 transition-colors hover:bg-surface-2 hover:text-text"
           >
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="h-4 w-4"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

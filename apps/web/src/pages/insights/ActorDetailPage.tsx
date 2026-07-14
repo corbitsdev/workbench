@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useLocation, useParams } from "react-router";
+import { useSetPageChrome } from "../../lib/page-chrome";
 import { PagePanel } from "@workbench/ui";
 import { type Actor } from "@workbench/client";
 import { useActor } from "../../hooks/use-actor";
@@ -16,6 +17,7 @@ import {
 } from "./principal-facets";
 import {
   CompactHeader,
+  InsightsBackLink,
   FacetTabs,
   StatStrip,
   type FacetDef,
@@ -76,11 +78,11 @@ function buildPrincipalSummary(
 }
 
 const FACETS: FacetDef[] = [
-  { id: "timeline", label: "Timeline", hasGap: true },
+  { id: "timeline", label: "Timeline", hasGap: false },
   { id: "roster", label: "Agents & workflows", hasGap: false },
-  { id: "grants", label: "Grants", hasGap: true },
-  { id: "tools", label: "Tools", hasGap: true },
-  { id: "cost", label: "Cost", hasGap: true },
+  { id: "grants", label: "Grants", hasGap: false },
+  { id: "tools", label: "Tools", hasGap: false },
+  { id: "cost", label: "Cost", hasGap: false },
   { id: "connections", label: "Connections", hasGap: false },
 ];
 
@@ -199,11 +201,26 @@ export function ActorDetailPage() {
 
   const activeFacet = FACETS[facetIndex]!.id;
 
+  const pageChrome = useMemo(
+    () => (
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <InsightsBackLink to={backLink} />
+      </div>
+    ),
+    [backLink],
+  );
+  useSetPageChrome(actor ? pageChrome : null);
+
   return (
     <PagePanel scroll flat>
       <div className="w-full px-6 py-5 max-md:px-3">
         <main className="min-w-0 flex-1">
-          <CompactHeader root={root} status={status} backTo={backLink} />
+          <CompactHeader
+            root={root}
+            status={status}
+            backTo={backLink}
+            identityInTopBar={actor !== null}
+          />
 
           {actorQuery.isError && !actor && (
             <p className="mt-2 text-[12px] text-text-3">

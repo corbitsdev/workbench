@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { Hono } from "hono";
+import { getLogger } from "@intx/log";
 import { describeRoute, resolver } from "hono-openapi";
 import { type GrantStore } from "@intx/authz";
 import { schema as intxSchema } from "@intx/db";
@@ -9,13 +10,28 @@ import {
   CREDENTIAL_PROVIDER_CATALOG,
   DEMOS_RESOURCE,
   DEMOS_VIEW_ACTION,
+  FEATURE_GRANT_CATALOG,
+  type FeatureName,
+  findOAuthProviderConfig,
+  INBOX_SOURCE_CATALOG,
   MEMBER_ROLE_NAME,
+  OwnerInboxSourcesResponse,
+  OwnerInboxSourceToggle,
+  OwnerInboxSourceToggleResult,
+  OwnerCapabilitiesResponse,
+  OwnerCapabilityToggle,
+  OwnerCapabilityToggleResult,
   OwnerContextResponse,
   OwnerCredentialSetBody,
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   OwnerDemosResponse,
   OwnerDemosToggle,
+  OwnerFeaturesResponse,
+  OwnerFeatureToggle,
+  OwnerFeatureToggleResult,
+  OwnerMemberRoleChangeResult,
+  OwnerMembersResponse,
   OwnerWorkflowsResponse,
   OwnerWorkflowState,
   OwnerWorkflowToggle,
@@ -24,15 +40,41 @@ import {
 import type { HubDb } from "../db";
 import { workflowRun } from "../db/schema";
 import { createOwnerGrantGuard } from "../lib/admin-grant";
+import {
+  fetchSlackTeamId,
+  resolveSlackCredential,
+} from "../lib/slack-api-client";
+import { joinAllPublicChannels } from "../lib/slack-channel-autojoin";
+import { upsertSlackTeamMapping } from "../lib/slack-team-mapping";
+import { encryptSecret } from "../lib/credential-crypto";
+import {
+  listOwnerCapabilityStates,
+  setCapabilityGrant,
+} from "../lib/capability-grants";
 import { demosViewAllowed } from "../lib/demos-gate";
+import { featureGrantAllowed, setFeatureGrant } from "../lib/feature-grants";
+import {
+  isInboxSourceEnabledFromGrants,
+  setWorkspaceInboxSourceGrant,
+} from "../lib/workspace-inbox-source-gate";
 import {
   loadMemberRoleGrantsForTenantChain,
   setWorkflowRunGrant,
   workflowRunDenied,
 } from "../lib/workflow-run-gate";
 import { recordAudit } from "../services/admin-audit";
+import {
+  assignRole,
+  demoteFromOwner,
+  findOwnerRoleId,
+  LastOwnerError,
+  listTenantMembers,
+  principalExistsInTenant,
+} from "../services/admin-governance";
 
 const { role, grant, credential, provider } = intxSchema;
+
+const ErrorResponse = type({ error: "string" });
 
 // The org member role is the tenant's baseline run policy (see the CL-2885 run
 // gate): a `deny` grant on it for `workflow:<kind>`/`run` disables that kind.
@@ -62,6 +104,10 @@ export interface CreateOwnerRouterDeps {
   // Whether the `SHOW_DEMOS` env override is on. Reported as `forcedByEnv` so the
   // owner sees the demos toggle is inert while the deployment forces demos on.
   showDemos: boolean;
+  // Each feature grant's emergency env override (SCHEDULER_ENABLED,
+  // TRIAGE_ENABLED, TASKS_RECONCILER_ENABLED), keyed by `FeatureName`. Reported
+  // per feature as `forcedByEnv`, same purpose as `showDemos`.
+  featureEnvOverrides: Record<FeatureName, boolean>;
 }
 
 /**
@@ -75,7 +121,7 @@ export interface CreateOwnerRouterDeps {
 export function createOwnerRouter(
   deps: CreateOwnerRouterDeps,
 ): Hono<OwnerRouteEnv> {
-  const { db, grantStore, rootTenantId, showDemos } = deps;
+  const { db, grantStore, rootTenantId, showDemos, featureEnvOverrides } = deps;
   const router = new Hono<OwnerRouteEnv>();
 
   router.use(
@@ -105,6 +151,144 @@ export function createOwnerRouter(
         tenantId: rootTenantId,
         ownerPrincipalId: c.get("ownerPrincipalId"),
       }),
+  );
+
+  // ─── Owner role delegation (CL-3634) ───────────────────────────
+  //
+  // Grant/revoke the `owner` system role for other tenant members. Reuses the
+  // exact same native `principal_role` assignment mechanism the admin
+  // elevate/demote routes use (`assignRole`/`removeRole`) — no new grant
+  // concept. There is no cache on the owner grant resolution path
+  // (`isOwner` -> `authorize` -> `collectGrants` reads `principal_role`/
+  // `grant` directly), so a promote/demote takes effect on the very next
+  // request; nothing to invalidate.
+
+  router.get(
+    "/owner/members",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Tenant members (human principals) with their owner-role status.",
+      responses: {
+        200: {
+          description: "Owner members",
+          content: {
+            "application/json": { schema: resolver(OwnerMembersResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const members = await listTenantMembers(db, rootTenantId);
+      return c.json({ members });
+    },
+  );
+
+  router.post(
+    "/owner/members/:principalId/promote",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Grant the `owner` system role to a tenant member. Audit-logged.",
+      responses: {
+        200: {
+          description: "Member promoted",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerMemberRoleChangeResult),
+            },
+          },
+        },
+        404: {
+          description: "Unknown principal or no owner role in tenant",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const principalId = c.req.param("principalId");
+      if (!(await principalExistsInTenant(db, rootTenantId, principalId))) {
+        return c.json({ error: "Unknown principal" }, 404);
+      }
+      const roleId = await findOwnerRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Owner role not found in tenant" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+      await assignRole(db, rootTenantId, principalId, roleId);
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: "role_assigned",
+        actorPrincipalId: actor,
+        targetPrincipalId: principalId,
+        resource: "role:owner",
+        detail: { roleId, promote: true },
+      });
+      return c.json({ ok: true });
+    },
+  );
+
+  router.post(
+    "/owner/members/:principalId/demote",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Remove the `owner` system role from a tenant member. Cannot demote yourself or the last remaining owner. Audit-logged.",
+      responses: {
+        200: {
+          description: "Member demoted",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerMemberRoleChangeResult),
+            },
+          },
+        },
+        400: {
+          description: "Self-demotion or last-owner guardrail tripped",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+        404: {
+          description: "Unknown principal or no owner role in tenant",
+          content: { "application/json": { schema: resolver(ErrorResponse) } },
+        },
+      },
+    }),
+    async (c) => {
+      const principalId = c.req.param("principalId");
+      const actor = c.get("ownerPrincipalId");
+      if (principalId === actor) {
+        return c.json(
+          { error: "Cannot demote yourself from owner through this surface" },
+          400,
+        );
+      }
+      if (!(await principalExistsInTenant(db, rootTenantId, principalId))) {
+        return c.json({ error: "Unknown principal" }, 404);
+      }
+      const roleId = await findOwnerRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Owner role not found in tenant" }, 404);
+      }
+      try {
+        await demoteFromOwner(db, rootTenantId, roleId, principalId);
+      } catch (err) {
+        if (err instanceof LastOwnerError) {
+          return c.json({ error: err.message }, 400);
+        }
+        throw err;
+      }
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: "role_removed",
+        actorPrincipalId: actor,
+        targetPrincipalId: principalId,
+        resource: "role:owner",
+        detail: { roleId, demote: true },
+      });
+      return c.json({ ok: true });
+    },
   );
 
   // Deployed workflow kinds with their run-enablement state. `enabled` is false
@@ -334,6 +518,372 @@ export function createOwnerRouter(
     },
   );
 
+  // The owner-managed feature-grant catalog (scheduler/triage/tasks-reconciler
+  // — see `packages/workbench-shared/src/governance.ts`). `enabled` reflects
+  // the member-role grant only; `forcedByEnv` is true when the feature's
+  // emergency env override is on, mirroring the demos toggle above.
+  // Per-principal overrides are out of scope here (tenant-level only); every
+  // row's `principalId` is `null`.
+  router.get(
+    "/owner/features",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Owner-managed feature grants (scheduler, triage, tasks reconciler) and their enablement state.",
+      responses: {
+        200: {
+          description: "Owner features",
+          content: {
+            "application/json": { schema: resolver(OwnerFeaturesResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      const features = await Promise.all(
+        FEATURE_GRANT_CATALOG.map(async (entry) => ({
+          name: entry.name,
+          label: entry.label,
+          description: entry.description,
+          enabled: await featureGrantAllowed(grants, entry.name),
+          forcedByEnv: featureEnvOverrides[entry.name],
+          principalId: null,
+        })),
+      );
+      return c.json({ features });
+    },
+  );
+
+  // Toggle a feature grant org-wide. Enable = write a member-role `allow` for
+  // `feature:<name>`/`enable`; disable = remove it — the same deny-by-default
+  // CRUD shape as the demos toggle.
+  router.put(
+    "/owner/features/:name",
+    describeRoute({
+      tags: ["Owner"],
+      description: "Enable or disable a feature grant for the workbench.",
+      parameters: [
+        {
+          name: "name",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Updated feature state",
+          content: {
+            "application/json": { schema: resolver(OwnerFeatureToggleResult) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const name = c.req.param("name");
+      const catalogEntry = FEATURE_GRANT_CATALOG.find(
+        (entry) => entry.name === name,
+      );
+      if (!catalogEntry) {
+        return c.json({ error: `unknown feature: ${name}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerFeatureToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setFeatureGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        name: catalogEntry.name,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `feature:${catalogEntry.name}`,
+        detail: {
+          capability: "feature-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      return c.json({ name: catalogEntry.name, enabled: parsed.enabled });
+    },
+  );
+
+  // Owner-level inbox source enablement (CL-3584). Which intake sources are
+  // enabled tenant-wide. Deny-by-default: a source runs for members only once
+  // the owner enables it here (the tenant ceiling above each member's
+  // `inboxSource:*` preference). `enabled` reflects the member-role
+  // `inbox-source:<key>`/`enable` grant. Catalog copy comes from
+  // `INBOX_SOURCE_CATALOG`.
+  router.get(
+    "/owner/inbox-sources",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Owner-managed inbox source enablement (the tenant ceiling above each member's inbox-source preference) and their state.",
+      responses: {
+        200: {
+          description: "Owner inbox sources",
+          content: {
+            "application/json": { schema: resolver(OwnerInboxSourcesResponse) },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const grants = await loadMemberRoleGrantsForTenantChain(db, [
+        rootTenantId,
+      ]);
+      const sources = await Promise.all(
+        INBOX_SOURCE_CATALOG.map(async (entry) => ({
+          key: entry.key,
+          label: entry.label,
+          description: entry.description,
+          enabled: await isInboxSourceEnabledFromGrants(grants, entry.key),
+        })),
+      );
+      return c.json({ sources });
+    },
+  );
+
+  // Toggle an inbox source's tenant enablement. Enable = write a member-role
+  // `allow` for `inbox-source:<key>`/`enable`; disable = remove it. Member
+  // preferences are never touched, so disabling then re-enabling restores each
+  // member's prior `inboxSource:*` choice.
+  router.put(
+    "/owner/inbox-sources/:key",
+    describeRoute({
+      tags: ["Owner"],
+      description: "Enable or disable an inbox source for the workbench.",
+      parameters: [
+        {
+          name: "key",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Updated inbox source state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerInboxSourceToggleResult),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const key = c.req.param("key");
+      const catalogEntry = INBOX_SOURCE_CATALOG.find(
+        (entry) => entry.key === key,
+      );
+      if (!catalogEntry) {
+        return c.json({ error: `unknown inbox source: ${key}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerInboxSourceToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setWorkspaceInboxSourceGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        sourceKey: catalogEntry.key,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `inbox-source:${catalogEntry.key}`,
+        detail: {
+          capability: "inbox-source-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      // CL-3581: enabling Slack sweeps the bot into every public channel so
+      // mention events start flowing without per-channel invites. Best-effort —
+      // enablement itself never fails on a Slack API error.
+      //
+      // CL-3629: also resolves the workspace's team id (auth.test) and
+      // persists the team_id → tenant mapping the webhook route uses to
+      // target this tenant only. This assumes a single `SLACK_SIGNING_SECRET`
+      // verifies every mapped team — true for one distributed Slack app
+      // installed across workspaces, but a constraint worth calling out: a
+      // second, differently-signed Slack app would need per-tenant signing
+      // secrets (not built here; tracked as follow-up).
+      if (parsed.enabled && catalogEntry.key === "slack") {
+        const credential = await resolveSlackCredential(db, rootTenantId);
+        if (credential) {
+          try {
+            const teamId = await fetchSlackTeamId(
+              credential,
+              AbortSignal.timeout(10_000),
+            );
+            if (teamId) {
+              await upsertSlackTeamMapping(db, rootTenantId, teamId);
+            } else {
+              getLogger(["routes", "owner"]).warn(
+                "slack auth.test returned no team_id; team mapping not recorded",
+              );
+            }
+          } catch (err) {
+            getLogger(["routes", "owner"]).warn(
+              "slack auth.test failed after enablement; team mapping not recorded, webhook events for this workspace will drop until re-enabled",
+              { err },
+            );
+          }
+          joinAllPublicChannels(credential, AbortSignal.timeout(60_000)).catch(
+            (err) => {
+              getLogger(["routes", "owner"]).warn(
+                "slack auto-join sweep failed after enablement; mentions only flow in channels the bot is in",
+                { err },
+              );
+            },
+          );
+        }
+      }
+
+      return c.json({ key: catalogEntry.key, enabled: parsed.enabled });
+    },
+  );
+
+  // Owner capability gate (CL-3356 #1). Which connectable OAuth providers
+  // (Linear, Attio, …) are available to members. Allow-by-default: a provider
+  // is enabled unless the owner writes a `member`-role `deny` on
+  // `capability:<provider>`/`use`, which HIDES it from every member's
+  // Connections surface. Mirror of the workflow-run gate.
+  router.get(
+    "/owner/capabilities",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Connectable OAuth providers and whether each capability is enabled (not owner-hidden).",
+      responses: {
+        200: {
+          description: "Owner capabilities",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCapabilitiesResponse),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const capabilities = await listOwnerCapabilityStates(db, [rootTenantId]);
+      return c.json({ capabilities });
+    },
+  );
+
+  router.put(
+    "/owner/capabilities/:provider",
+    describeRoute({
+      tags: ["Owner"],
+      description:
+        "Enable (allow) or hide (deny) a connectable provider's capability org-wide.",
+      parameters: [
+        {
+          name: "provider",
+          in: "path",
+          required: true,
+          schema: { type: "string" },
+        },
+      ],
+      responses: {
+        200: {
+          description: "Updated capability state",
+          content: {
+            "application/json": {
+              schema: resolver(OwnerCapabilityToggleResult),
+            },
+          },
+        },
+      },
+    }),
+    async (c) => {
+      const providerName = c.req.param("provider");
+      if (!findOAuthProviderConfig(providerName)) {
+        return c.json({ error: `unknown provider: ${providerName}` }, 404);
+      }
+
+      let body: unknown = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        body = {};
+      }
+      const parsed = OwnerCapabilityToggle(body);
+      if (parsed instanceof type.errors) {
+        return c.json({ error: `invalid body: ${parsed.summary}` }, 400);
+      }
+
+      const roleId = await memberRoleId(db, rootTenantId);
+      if (!roleId) {
+        return c.json({ error: "Workbench member role not found" }, 404);
+      }
+      const actor = c.get("ownerPrincipalId");
+
+      await setCapabilityGrant(db, {
+        tenantId: rootTenantId,
+        roleId,
+        provider: providerName,
+        enabled: parsed.enabled,
+      });
+      void recordAudit({
+        db,
+        tenantId: rootTenantId,
+        action: parsed.enabled ? "grant_created" : "grant_revoked",
+        actorPrincipalId: actor,
+        resource: `capability:${providerName}`,
+        detail: {
+          capability: "capability-grant",
+          effect: parsed.enabled ? "allow" : "none",
+        },
+      });
+
+      return c.json({ provider: providerName, enabled: parsed.enabled });
+    },
+  );
+
   // Owner-only, masked-metadata view of the workbench's provider credentials
   // (CL-2879/CL-2883). Secrets are WRITE-ONLY: this route (and every
   // credentials route below) never reads or returns the `secret`/
@@ -495,12 +1045,19 @@ export function createOwnerRouter(
         columns: { id: true },
       });
 
+      // CL-3446: only `kind: "tool"` secrets are encrypted at rest. `kind:
+      // "inference"` rows stay plaintext-compatible — Interchange reads
+      // `credential.secret` raw at agent-launch time and cannot be modified
+      // to decrypt first.
+      const storedSecret =
+        entry.kind === "tool" ? encryptSecret(parsed.secret) : parsed.secret;
+
       const actor = c.get("ownerPrincipalId");
       let updatedAt: Date;
       if (existingCredential) {
         const [updated] = await db
           .update(credential)
-          .set({ secret: parsed.secret, updatedAt: now })
+          .set({ secret: storedSecret, updatedAt: now })
           .where(eq(credential.id, existingCredential.id))
           .returning({ updatedAt: credential.updatedAt });
         updatedAt = updated?.updatedAt ?? now;
@@ -521,7 +1078,7 @@ export function createOwnerRouter(
             providerId: providerRow.id,
             name: entry.label,
             type: "api_key",
-            secret: parsed.secret,
+            secret: storedSecret,
             metadata: entry.defaultMetadata ?? null,
             createdAt: now,
             updatedAt: now,

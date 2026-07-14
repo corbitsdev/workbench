@@ -67,6 +67,7 @@ const baseArtifact: ArtifactWithSession = {
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
   source: { origin: "workflow" },
+  sessionId: null,
   sessionName: "Acme Corp",
   sessionStatus: "done",
   ownerName: null,
@@ -100,8 +101,8 @@ describe("artifact-visuals", () => {
     expect(gallery.time).toBe("");
   });
 
-  it('falls back to "Untitled job" when the session has no name', () => {
+  it("omits `from` rather than inventing filler text when the session has no name", () => {
     const gallery = toGalleryArtifact({ ...baseArtifact, sessionName: null });
-    expect(gallery.from).toBe("Untitled job");
+    expect(gallery.from).toBeUndefined();
   });
 });

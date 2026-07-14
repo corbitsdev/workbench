@@ -94,6 +94,60 @@ describe("deterministicToolStep", () => {
     expect(parsed).toEqual(argMap);
   });
 
+  test("an argMap `from` spec may declare optional: true and round-trips through arktype", () => {
+    const argMap = {
+      artifactId: { from: "artifactId", optional: true },
+    };
+    const primitive = deterministicToolStep({
+      id: "fetch-artifact",
+      tool: "artifact_read",
+      argMap,
+    });
+    const raw = primitive.agent.tags?.[STEP_ARGMAP_TAG];
+    if (raw === undefined) throw new Error("expected an argMap tag");
+    const parsed = ArgMap(JSON.parse(raw));
+    if (parsed instanceof type.errors) {
+      throw new Error(`argMap failed to round-trip: ${parsed.summary}`);
+    }
+    expect(parsed).toEqual(argMap);
+  });
+
+  test("an argMap `fromJson` spec parses with a `field` and round-trips through arktype", () => {
+    const argMap = {
+      url: { fromJson: "content", field: "gammaUrl" },
+    };
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+      argMap,
+    });
+    const raw = primitive.agent.tags?.[STEP_ARGMAP_TAG];
+    if (raw === undefined) throw new Error("expected an argMap tag");
+    const parsed = ArgMap(JSON.parse(raw));
+    if (parsed instanceof type.errors) {
+      throw new Error(`argMap failed to round-trip: ${parsed.summary}`);
+    }
+    expect(parsed).toEqual(argMap);
+  });
+
+  test("an argMap `fromJson` spec may declare optional: true and round-trips through arktype", () => {
+    const argMap = {
+      pdfUrl: { fromJson: "content", field: "exportUrl", optional: true },
+    };
+    const primitive = deterministicToolStep({
+      id: "render",
+      tool: "gamma_create_from_template",
+      argMap,
+    });
+    const raw = primitive.agent.tags?.[STEP_ARGMAP_TAG];
+    if (raw === undefined) throw new Error("expected an argMap tag");
+    const parsed = ArgMap(JSON.parse(raw));
+    if (parsed instanceof type.errors) {
+      throw new Error(`argMap failed to round-trip: ${parsed.summary}`);
+    }
+    expect(parsed).toEqual(argMap);
+  });
+
   test("uses the supplied id and dependency edges", () => {
     const primitive = deterministicToolStep({
       id: "presentation-render",

@@ -5,12 +5,23 @@
 // See docs/CREATING_AGENTS_AND_TOOLS.md.
 
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import * as tar from "tar";
 import ssri from "ssri";
 import { type } from "arktype";
 
 import { PackageJSON } from "@intx/types/package-json";
+import {
+  deriveToolPackageSpecs,
+  loadCommittedToolManifestFactories,
+} from "@workbench/tool-manifest";
+import {
+  type EmbeddedToolPackageManifest,
+  type EmbeddedToolPackageRow,
+  embeddedToolPackagesDir,
+  serializeEmbeddedManifestJson,
+} from "../src/lib/tool-packages-embedded";
 
 export interface ToolPackageSpec {
   /** npm package name as it appears in `package.json#name`. */
@@ -26,59 +37,10 @@ export interface BuiltToolPackage {
   tarballPath: string;
 }
 
-// The Workbench tool packages distributed through the registry. Adding a
-// package means appending here, declaring `interchange.tools` in the
-// package, and pinning it on whichever agent definition wants it.
-export const TOOL_PACKAGES: ToolPackageSpec[] = [
-  {
-    name: "@workbench/tools-ab-compare",
-    packageDir: "packages/tools-ab-compare",
-  },
-  { name: "@workbench/tools-artifact", packageDir: "packages/tools-artifact" },
-  { name: "@workbench/tools-agents", packageDir: "packages/tools-agents" },
-  { name: "@workbench/tools-skills", packageDir: "packages/tools-skills" },
-  { name: "@workbench/tools-dispatch", packageDir: "packages/tools-dispatch" },
-  {
-    name: "@workbench/tools-hackernews",
-    packageDir: "packages/tools-hackernews",
-  },
-  {
-    name: "@workbench/tools-polymarket",
-    packageDir: "packages/tools-polymarket",
-  },
-  {
-    name: "@workbench/tools-last30days",
-    packageDir: "packages/tools-last30days",
-  },
-  {
-    name: "@workbench/tools-firecrawl",
-    packageDir: "packages/tools-firecrawl",
-  },
-  { name: "@workbench/tools-exa", packageDir: "packages/tools-exa" },
-  { name: "@workbench/tools-granola", packageDir: "packages/tools-granola" },
-  { name: "@workbench/tools-reddit", packageDir: "packages/tools-reddit" },
-  { name: "@workbench/tools-x", packageDir: "packages/tools-x" },
-  {
-    name: "@workbench/tools-scrapecreators",
-    packageDir: "packages/tools-scrapecreators",
-  },
-  { name: "@workbench/tools-github", packageDir: "packages/tools-github" },
-  { name: "@workbench/tools-youtube", packageDir: "packages/tools-youtube" },
-  { name: "@workbench/tools-bluesky", packageDir: "packages/tools-bluesky" },
-  { name: "@workbench/tools-gamma", packageDir: "packages/tools-gamma" },
-  { name: "@workbench/tools-linear", packageDir: "packages/tools-linear" },
-  { name: "@workbench/tools-attio", packageDir: "packages/tools-attio" },
-  { name: "@workbench/tools-notion", packageDir: "packages/tools-notion" },
-  { name: "@workbench/tools-vercel", packageDir: "packages/tools-vercel" },
-  {
-    name: "@workbench/tools-fileparser",
-    packageDir: "packages/tools-fileparser",
-  },
-  {
-    name: "@workbench/tools-workflows",
-    packageDir: "packages/tools-workflows",
-  },
-];
+/** Derived from committed tool manifests; run `bun run build:tool-manifests` after manifest edits. */
+export const TOOL_PACKAGES: ToolPackageSpec[] = deriveToolPackageSpecs(
+  loadCommittedToolManifestFactories(),
+);
 
 const REPO_ROOT = path.resolve(import.meta.dir, "..", "..", "..");
 const DEFAULT_OUT_DIR = path.join(REPO_ROOT, "dist", "tool-packages");
@@ -336,11 +298,70 @@ export async function buildToolPackages(
   return built;
 }
 
+export function builtToolPackageToManifestRow(
+  entry: BuiltToolPackage,
+): EmbeddedToolPackageRow {
+  return {
+    name: entry.name,
+    version: entry.version,
+    integrity: entry.integrity,
+    tarballFilename: path.basename(entry.tarballPath),
+  };
+}
+
+/** Build every TOOL_PACKAGES tarball and return manifest rows (no embed I/O). */
+export async function computeEmbeddedToolPackageManifest(
+  outDir?: string,
+): Promise<EmbeddedToolPackageManifest> {
+  const scratch =
+    outDir ?? (await fs.mkdtemp(path.join(tmpdir(), "workbench-tool-embed-")));
+  const ownsScratch = outDir === undefined;
+  try {
+    const built = await buildToolPackages(TOOL_PACKAGES, scratch);
+    return built.map(builtToolPackageToManifestRow);
+  } finally {
+    if (ownsScratch) {
+      await fs.rm(scratch, { recursive: true, force: true });
+    }
+  }
+}
+
+/**
+ * Pack into `apps/hub/generated/tool-packages/tarballs/` and write
+ * `manifest.json` (CL-3093 embed step).
+ */
+export async function embedToolPackages(): Promise<EmbeddedToolPackageManifest> {
+  const embedRoot = embeddedToolPackagesDir();
+  const tarballsDir = path.join(embedRoot, "tarballs");
+  await fs.mkdir(tarballsDir, { recursive: true });
+  const built = await buildToolPackages(TOOL_PACKAGES, tarballsDir);
+  const rows = built.map(builtToolPackageToManifestRow);
+  await fs.writeFile(
+    path.join(embedRoot, "manifest.json"),
+    serializeEmbeddedManifestJson(rows),
+    "utf8",
+  );
+  return rows;
+}
+
 if (import.meta.main) {
-  const built = await buildToolPackages();
-  for (const entry of built) {
+  if (process.argv.includes("--print-manifest")) {
+    const rows = await computeEmbeddedToolPackageManifest();
+    process.stdout.write(serializeEmbeddedManifestJson(rows));
+    process.exit(0);
+  }
+  const embed = process.argv.includes("--embed");
+  if (embed) {
+    const rows = await embedToolPackages();
     process.stdout.write(
-      `  ${entry.name}@${entry.version} → ${entry.tarballPath} (${entry.integrity})\n`,
+      `build-tool-packages: embedded ${rows.length} packages under ${embeddedToolPackagesDir()}\n`,
     );
+  } else {
+    const built = await buildToolPackages();
+    for (const entry of built) {
+      process.stdout.write(
+        `  ${entry.name}@${entry.version} → ${entry.tarballPath} (${entry.integrity})\n`,
+      );
+    }
   }
 }

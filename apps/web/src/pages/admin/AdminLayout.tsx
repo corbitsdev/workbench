@@ -1,6 +1,8 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router";
-import { PagePanel, Skeleton } from "@workbench/ui";
+import { AppPageChromeRow, PagePanel, Skeleton } from "@workbench/ui";
+import { useSetPageChrome } from "../../lib/page-chrome";
 import { getMe } from "../../lib/hub-api";
 import { tabButtonClass } from "./admin-ui";
 
@@ -24,6 +26,33 @@ export function AdminLayout() {
     queryFn: getMe,
     staleTime: 5 * 60_000,
   });
+
+  const isAdmin = meQuery.data?.isAdmin === true;
+  const pageChrome = useMemo(
+    () =>
+      isAdmin ? (
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <AppPageChromeRow
+            title="Admin"
+            titleSize="sm"
+            className="[&_h1]:text-lg"
+          />
+          <nav className="flex flex-wrap gap-1" aria-label="Admin sections">
+            {SUB_NAV.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                className={({ isActive }) => tabButtonClass(isActive)}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+        </div>
+      ) : null,
+    [isAdmin],
+  );
+  useSetPageChrome(pageChrome);
 
   if (meQuery.isLoading) {
     return (
@@ -62,23 +91,9 @@ export function AdminLayout() {
 
   return (
     <PagePanel scroll={false}>
-      <div className="flex flex-col border-b border-border px-6 pt-5">
-        <h1 className="text-lg font-semibold text-text">Admin</h1>
-        <p className="mt-0.5 text-sm text-text-2">
-          Manage users, agents, and their access.
-        </p>
-        <nav className="mt-4 flex gap-1" aria-label="Admin sections">
-          {SUB_NAV.map(({ to, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => tabButtonClass(isActive)}
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      <p className="border-b border-border px-6 py-3 text-sm text-text-2">
+        Manage users, agents, and their access.
+      </p>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
         <Outlet />
       </div>

@@ -1,3 +1,4 @@
+import { AnimatedNumber } from "./AnimatedNumber";
 import { Button } from "./Button";
 
 export interface PaginationProps {
@@ -23,8 +24,12 @@ export function Pagination({
   return (
     <div className="flex items-center justify-between gap-3 border-t border-border px-3 py-2 text-sm text-text-2">
       <span>
-        Page {page} of {totalPages}
-        <span className="text-text-3"> · {total} total</span>
+        Page <AnimatedNumber value={page} className="inline" /> of{" "}
+        <AnimatedNumber value={totalPages} className="inline" />
+        <span className="text-text-3">
+          {" "}
+          · <AnimatedNumber value={total} className="inline" /> total
+        </span>
       </span>
       <div className="flex gap-2">
         <Button

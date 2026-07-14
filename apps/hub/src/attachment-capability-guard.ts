@@ -18,24 +18,16 @@ const GuardedMailBody = type({
 });
 
 /**
- * The MIME set the agent bound to `instanceId` can actually consume — narrowed
- * to what its inference adapter marshals — or `null` when it can't be
- * determined (no instance, no agent, or no classifiable inference credential /
- * model). A `null` defers to the system-level validation downstream rather than
- * block a legitimate send on an infra hiccup.
+ * The MIME set an agent DEFINITION can actually consume — narrowed to what its
+ * inference adapter marshals — or `null` when it can't be determined (no
+ * classifiable inference credential / model). Shared by the composer's
+ * per-instance guard below and the mailbox triage inbound-attachment divert
+ * (`mailbox-attachment-divert.ts`), which resolves the recipient's agent
+ * definition directly rather than through an instance.
  */
-export async function resolveInstanceAcceptedMimeTypes(
-  db: DB["db"],
-  instanceId: string,
-): Promise<string[] | null> {
-  const instance = await db.query.agentInstance.findFirst({
-    where: eq(intxSchema.agentInstance.id, instanceId),
-  });
-  if (!instance) return null;
-  const agentRow = await db.query.agent.findFirst({
-    where: eq(intxSchema.agent.id, instance.agentId),
-  });
-  if (!agentRow) return null;
+export function acceptedMimeTypesForAgentRow(
+  agentRow: typeof intxSchema.agent.$inferSelect,
+): string[] | null {
   const parsed = parseAgentRow(agentRow);
   try {
     const capability = templateAttachmentCapability({
@@ -51,6 +43,27 @@ export async function resolveInstanceAcceptedMimeTypes(
     // adapter, so we can't safely narrow. Defer.
     return null;
   }
+}
+
+/**
+ * The MIME set the agent bound to `instanceId` can actually consume — see
+ * `acceptedMimeTypesForAgentRow`. A `null` defers to the system-level
+ * validation downstream rather than block a legitimate send on an infra
+ * hiccup.
+ */
+export async function resolveInstanceAcceptedMimeTypes(
+  db: DB["db"],
+  instanceId: string,
+): Promise<string[] | null> {
+  const instance = await db.query.agentInstance.findFirst({
+    where: eq(intxSchema.agentInstance.id, instanceId),
+  });
+  if (!instance) return null;
+  const agentRow = await db.query.agent.findFirst({
+    where: eq(intxSchema.agent.id, instance.agentId),
+  });
+  if (!agentRow) return null;
+  return acceptedMimeTypesForAgentRow(agentRow);
 }
 
 /**

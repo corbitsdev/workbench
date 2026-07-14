@@ -487,3 +487,134 @@ describe("last30days_entity_queries (CL-2503)", () => {
     }
   });
 });
+
+describe("heartbeat_merge_brief_sources (CL-3485)", () => {
+  test("returns every wired source under sources.* from projected intake steps", async () => {
+    const handler = fullTool("heartbeat_merge_brief_sources");
+    const steps = {
+      "intake-granola": {
+        output: {
+          callId: "c1",
+          isError: false,
+          content: JSON.stringify({
+            notes: [{ id: "n1", title: "Acme" }],
+          }),
+        },
+      },
+      "intake-linear": {
+        output: {
+          callId: "c2",
+          isError: false,
+          content: JSON.stringify({ issues: [{ id: "LIN-1" }] }),
+        },
+      },
+      "intake-attio": {
+        output: {
+          callId: "c3",
+          isError: false,
+          content: JSON.stringify({ attioActivity: { openTasks: [] } }),
+        },
+      },
+      "intake-vercel": {
+        output: {
+          callId: "c4",
+          isError: true,
+          content: "403 forbidden",
+        },
+      },
+    };
+    const result = await handler(
+      { id: "merge", name: "heartbeat_merge_brief_sources", arguments: steps },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as {
+      sources: Record<string, Record<string, unknown>>;
+    };
+    expect(content.sources.granola?.notes).toEqual([
+      { id: "n1", title: "Acme" },
+    ]);
+    expect(content.sources.linear?.issues).toEqual([{ id: "LIN-1" }]);
+    expect(content.sources.vercel).toEqual({
+      isError: true,
+      error: "403 forbidden",
+    });
+  });
+});
+
+describe("heartbeat_format_brief_mail_refs (CL-3521)", () => {
+  test("returns artifact and workflow_run refs for persist + trigger runId", async () => {
+    const handler = fullTool("heartbeat_format_brief_mail_refs");
+    const result = await handler(
+      {
+        id: "refs",
+        name: "heartbeat_format_brief_mail_refs",
+        arguments: { artifactId: "art_abc", runId: "run_heartbeat-1" },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    expect(result.content).toEqual({
+      refs: [
+        { kind: "artifact", ref: "art_abc", label: "Open brief" },
+        {
+          kind: "workflow_run",
+          ref: "run_heartbeat-1",
+          label: "Open Company Heartbeat",
+        },
+      ],
+    });
+  });
+
+  test("returns isError when runId is missing", async () => {
+    const handler = fullTool("heartbeat_format_brief_mail_refs");
+    const result = await handler(
+      {
+        id: "refs",
+        name: "heartbeat_format_brief_mail_refs",
+        arguments: { artifactId: "art_abc" },
+      },
+      SIGNAL,
+    );
+    expect(result.isError).toBe(true);
+    expect(result.content).toBe("runId is required");
+  });
+});
+
+describe("heartbeat_format_brief_title (CL-3502)", () => {
+  test("returns a possessive title built from userDisplayName", async () => {
+    const handler = fullTool("heartbeat_format_brief_title");
+    const result = await handler(
+      {
+        id: "title",
+        name: "heartbeat_format_brief_title",
+        arguments: { userDisplayName: "Jordan Lee" },
+      },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as { title: string };
+    expect(content.title).toMatch(
+      /^Jordan Lee's Morning Brief - \d{2}\/\d{2}\/\d{2}$/,
+    );
+  });
+
+  test("falls back to 'Your Morning Brief' when no display name is given", async () => {
+    const handler = fullTool("heartbeat_format_brief_title");
+    const result = await handler(
+      { id: "title", name: "heartbeat_format_brief_title", arguments: {} },
+      SIGNAL,
+    );
+    if (typeof result.content === "string") {
+      throw new Error("expected object content");
+    }
+    const content = result.content as { title: string };
+    expect(content.title).toMatch(/^Your Morning Brief - \d{2}\/\d{2}\/\d{2}$/);
+  });
+});

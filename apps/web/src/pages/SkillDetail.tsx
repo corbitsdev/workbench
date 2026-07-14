@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import Markdown from "react-markdown";
@@ -21,7 +21,8 @@ import {
   SKILL_VERSION_PAGE_SIZE,
 } from "../hooks/use-skills";
 import { getMe } from "../lib/hub-api";
-import { toHumanLabel } from "@workbench/ui";
+import { AppPageChromeRow, Button, toHumanLabel } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 
 type TreeNode =
   | { kind: "file"; path: string; name: string; content?: string }
@@ -251,27 +252,46 @@ export function SkillDetail() {
       });
   };
 
+  const skillTitle =
+    skill !== undefined
+      ? (skill.displayName ?? toHumanLabel(skill.name))
+      : undefined;
+  const skillSubtitle =
+    skill && skillTitle
+      ? skill.name.toLowerCase() === skillTitle.toLowerCase()
+        ? undefined
+        : skill.name
+      : undefined;
+
+  const pageChrome = useMemo(
+    () =>
+      skillTitle ? (
+        <AppPageChromeRow
+          title={skillTitle}
+          titleSize="sm"
+          subtitle={skillSubtitle}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/skills")}
+            className="gap-1.5"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden />
+            Skills
+          </Button>
+        </AppPageChromeRow>
+      ) : null,
+    [skillTitle, skillSubtitle, navigate],
+  );
+  useSetPageChrome(pageChrome);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <div className="flex items-center gap-3 border-b border-border bg-surface px-5 py-3 shrink-0">
-        <button
-          type="button"
-          onClick={() => navigate("/skills")}
-          className="grid h-8 w-8 place-items-center rounded-[9px] border border-border text-text-2 hover:text-text"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <div>
-          {skill && (
-            <p className="text-[15px] font-semibold text-text">
-              {skill.displayName ?? toHumanLabel(skill.name)}
-            </p>
-          )}
-          {detailQuery.isLoading && (
-            <p className="text-[13px] text-text-3">Loading...</p>
-          )}
-        </div>
-      </div>
+      {detailQuery.isLoading && !skill && (
+        <p className="px-5 py-3 text-[13px] text-text-3">Loading…</p>
+      )}
 
       {detailQuery.isError && (
         <div className="flex flex-1 items-center justify-center p-5 text-[13px] text-text-3">

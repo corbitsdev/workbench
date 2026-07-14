@@ -16,8 +16,11 @@ export { withCorbitsVocabulary } from "./corbits-vocabulary";
 export {
   APPROVAL_GATED_TOOL_NAMES,
   INTERNAL_WRITE_EXCLUSIONS,
+  NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
+  buildApprovalGatedToolNames,
 } from "./tool-side-effects";
+export { HUB_ONLY_TOOL_SIDE_EFFECTS } from "./hub-only-tool-side-effects";
 export {
   deterministicToolStep,
   inlineInferenceStep,
@@ -42,16 +45,9 @@ export {
   type DisplayFlowStep,
 } from "./flow-classify";
 
-// Personal agent
-export { buildPersonalAgentSystemPrompt } from "./personal-agent/prompt";
-export {
-  buildPersonalAgentGrantRequirements,
-  PERSONAL_AGENT_CREDENTIAL_REQUIREMENTS,
-  PERSONAL_AGENT_DEPLOY_PROMPT,
-  PERSONAL_AGENT_BASE_TOOLS,
-  PERSONAL_AGENT_NAME,
-} from "./personal-agent/definition";
-export { createPersonalAgentDirector } from "./personal-agent/director";
+// Personal agent (Myra) lives in @workbench/myra. Myra's chat prompt, tools,
+// director, and seed-marker resolver are imported from there directly, not
+// re-exported through this barrel.
 export {
   DYNAMIC_TOOLS_DIRECTOR_ID,
   MYRA_TOOL_CATALOG,
@@ -61,13 +57,6 @@ export {
   dynamicToolsDirector,
   type DynamicToolConfig,
 } from "./dynamic-tools";
-export {
-  PERSONAL_AGENT_SEED_FILES,
-  buildSeedMarker,
-  parseSeedMarker,
-  type SeedWorkspaceFile,
-  type SeedMarkerParse,
-} from "./personal-agent/seed-files";
 
 // Loop agent
 export { buildLoopAgentSystemPrompt } from "./loop/prompt";
@@ -98,6 +87,10 @@ export {
   personalAgentDirector,
   granolaDirector,
   firecrawlDirector,
+  triageBudgetDirector,
+  TRIAGE_BUDGET_DIRECTOR_ID,
+  workflowStepBudgetDirector,
+  WORKFLOW_STEP_BUDGET_DIRECTOR_ID,
 } from "./director-registry";
 
 // Walter agent

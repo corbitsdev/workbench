@@ -1,12 +1,11 @@
 import { and, eq } from "drizzle-orm";
 import { schema as intxSchema } from "@intx/db";
 import type { DB } from "@intx/db";
+import { AGENT_TEMPLATES, type PromptFormat } from "@workbench/agents";
 import {
-  AGENT_TEMPLATES,
   buildPersonalAgentSystemPrompt,
   PERSONAL_AGENT_NAME,
-  type PromptFormat,
-} from "@workbench/agents";
+} from "@workbench/myra";
 import { memberAgentInstance } from "../db/schema";
 
 /**

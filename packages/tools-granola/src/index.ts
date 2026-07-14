@@ -44,6 +44,11 @@ const ListNotesArgs = type({
   "createdBefore?": "string",
   "updatedAfter?": "string",
   "folderId?": "string",
+  // When present, this is the member's currently-enabled brief source keys
+  // (see @workbench/shared's BRIEF_SOURCE_CATALOG). Absent means "no
+  // restriction" (call as normal) — only an explicit list that omits
+  // "granola" skips the call.
+  "enabledSources?": "string[]",
 });
 
 const GetNoteArgs = type({ noteId: "string > 0" });
@@ -84,6 +89,10 @@ const GranolaListResponse = type({
   notes: GranolaNote.array(),
   hasMore: "boolean",
   "cursor?": "string",
+  // Set when the caller's `enabledSources` excluded "granola" — the call was
+  // never made. Read by consumers (e.g. the heartbeat brief) to describe this
+  // honestly as a disabled source, not a failed fetch.
+  "skipped?": "boolean",
 });
 
 const GranolaFolder = type({
@@ -130,16 +139,40 @@ function optionalPositiveInteger(
   return Math.min(value, max);
 }
 
+// Deliberately does NOT check apiKey here: the empty-key case is a per-call
+// fail-loud check in each handler below, not a construction-time concern —
+// nothing ever constructs this tool with an empty key (the hub tool registry
+// omits the provider entirely when the credential is missing).
 function validateConfig(config: ResolvedGranolaConfig): void {
-  if (config.apiKey.length === 0) {
-    throw new Error("Granola apiKey is required");
-  }
-
   try {
     new URL(config.baseUrl);
   } catch {
     throw new Error("Granola baseUrl must be a valid URL");
   }
+}
+
+// Thrown when the Granola API rejects the configured key so callers can
+// distinguish "credential is bad" from any other fetch/parse failure —
+// only this case is eligible to degrade to a skipped result for the
+// heartbeat brief; a network error, malformed response, etc. must still
+// surface loudly to every caller.
+class GranolaAuthError extends Error {}
+
+const SKIPPED_LIST_RESULT: GranolaListResponse = {
+  notes: [],
+  hasMore: false,
+  skipped: true,
+};
+
+// The heartbeat brief is the only caller that passes `enabledSources` (see
+// ListNotesArgs above) — it is a workbench-internal marker of "this is the
+// unattended brief path", not a general opt-in flag. Reusing it (rather than
+// adding a second, overlapping opt-in argument) keeps every other caller of
+// granola_list_notes — interactive chat agents, other workflows — fail-loud
+// on a missing or rejected credential, which is the safer default: only a
+// caller that already declared itself brief-shaped degrades silently.
+function isHeartbeatShaped(args: { enabledSources?: string[] }): boolean {
+  return args.enabledSources !== undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -177,7 +210,11 @@ async function fetchGranolaJSON(
   if (!response.ok) {
     const body = errorMessageFromBody(await response.text().catch(() => ""));
     const detail = response.statusText || body;
-    throw new Error(`Granola API error: ${response.status} ${detail ?? ""}`);
+    const message = `Granola API error: ${response.status} ${detail ?? ""}`;
+    if (response.status === 401 || response.status === 403) {
+      throw new GranolaAuthError(message);
+    }
+    throw new Error(message);
   }
 
   const data: unknown = await response.json();
@@ -289,6 +326,19 @@ async function listNotes(
     throw new Error(`granola_list_notes: ${args.summary}`);
   }
 
+  const heartbeatShaped = isHeartbeatShaped(args);
+
+  if (
+    args.enabledSources !== undefined &&
+    !args.enabledSources.includes("granola")
+  ) {
+    return SKIPPED_LIST_RESULT;
+  }
+
+  if (config.apiKey.length === 0) {
+    throw new Error("Granola apiKey is required");
+  }
+
   const limit = optionalPositiveInteger(
     args.limit,
     DEFAULT_LIST_LIMIT,
@@ -318,7 +368,14 @@ async function listNotes(
     url.searchParams.set("folder_id", folderId);
   }
 
-  return parseListResponse(await fetchGranolaJSON(config, url, signal));
+  try {
+    return parseListResponse(await fetchGranolaJSON(config, url, signal));
+  } catch (error) {
+    if (heartbeatShaped && error instanceof GranolaAuthError) {
+      return SKIPPED_LIST_RESULT;
+    }
+    throw error;
+  }
 }
 
 async function listFolders(
@@ -329,6 +386,10 @@ async function listFolders(
   const args = ListFoldersArgs(rawArgs);
   if (args instanceof type.errors) {
     throw new Error(`granola_list_folders: ${args.summary}`);
+  }
+
+  if (config.apiKey.length === 0) {
+    throw new Error("Granola apiKey is required");
   }
 
   const limit = optionalPositiveInteger(
@@ -357,6 +418,10 @@ async function getNote(
     // absent; surface the arktype summary for wrong-type inputs (e.g. a number).
     const missing = !("noteId" in rawArgs) || rawArgs.noteId === undefined;
     throw new Error(missing ? "noteId is required" : args.summary);
+  }
+
+  if (config.apiKey.length === 0) {
+    throw new Error("Granola apiKey is required");
   }
 
   const url = new URL(
@@ -403,6 +468,12 @@ export const GRANOLA_LIST_NOTES_DEFINITION: ToolDefinition = {
         type: "string",
         description:
           "Return only notes in this folder and its child folders. Use granola_list_folders to discover folder IDs.",
+      },
+      enabledSources: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          'Workbench-internal: the calling member\'s currently-enabled brief source keys. When set and it omits "granola", this call is skipped (returns an empty, `skipped: true` result) instead of hitting the Granola API.',
       },
     },
   },

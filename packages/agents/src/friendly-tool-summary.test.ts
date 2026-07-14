@@ -5,6 +5,7 @@ import {
   friendlyToolSummaryKnown,
   isCatalogMetaTool,
   isExternalIntegrationTool,
+  integrationToolProviderKey,
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
@@ -24,6 +25,42 @@ function call(
     ...extra,
   };
 }
+
+describe("integrationToolProviderKey", () => {
+  it("reads LLM and FQN provider segments", () => {
+    expect(integrationToolProviderKey("attio__create_record")).toBe("attio");
+    expect(integrationToolProviderKey("linear__list_issues")).toBe("linear");
+    expect(
+      integrationToolProviderKey(
+        "@workbench/tools-linear/linear:linear_list_issues",
+      ),
+    ).toBe("linear");
+  });
+
+  it("uses load_tools package for the provider slug", () => {
+    expect(
+      integrationToolProviderKey("load_tools", { package: "attio" }),
+    ).toBe("attio");
+    expect(integrationToolProviderKey("load_tools", {})).toBeNull();
+  });
+
+  it("returns null for workbench-internal providers and local runners", () => {
+    expect(integrationToolProviderKey("artifact__memory_save")).toBeNull();
+    expect(integrationToolProviderKey("read_file")).toBeNull();
+  });
+
+  it("resolves bare integration op ids when the wire name has no prefix", () => {
+    expect(integrationToolProviderKey("exa_search")).toBe("exa");
+    expect(integrationToolProviderKey("linear_get_issue")).toBe("linear");
+  });
+
+  it("resolves Notion and Slack integration tools", () => {
+    expect(integrationToolProviderKey("notion__search")).toBe("notion");
+    expect(integrationToolProviderKey("slack__post_message")).toBe("slack");
+    expect(integrationToolProviderKey("notion_create_page")).toBe("notion");
+    expect(integrationToolProviderKey("slack_search")).toBe("slack");
+  });
+});
 
 describe("toolOperationKey", () => {
   it("takes the substring after the last colon in a fully-qualified name", () => {
@@ -128,6 +165,9 @@ describe("friendlyToolSummary", () => {
     expect(friendlyToolSummary(call("attio__list_objects"))).toBe(
       "Browsing Attio objects",
     );
+    expect(friendlyToolSummary(call("attio__recent_activity"))).toBe(
+      "Checking recent Attio activity",
+    );
     expect(friendlyToolSummary(call("exa__search", { query: "hello" }))).toBe(
       "Searching the web for hello",
     );
@@ -202,9 +242,10 @@ describe("friendlyToolSummary", () => {
         "@workbench/tools-artifact/artifact:memory_save",
       ),
     ).toBe(false);
-    // Provider-less bare names are local runners / plumbing.
+    // Local runners stay internal; bare integration ops attribute by prefix.
     expect(isExternalIntegrationTool("read_file")).toBe(false);
     expect(isExternalIntegrationTool("ask_principal")).toBe(false);
+    expect(isExternalIntegrationTool("exa_search")).toBe(true);
     // Identity/roster and compose presets are workbench plumbing too.
     expect(isExternalIntegrationTool("agents__list_agents")).toBe(false);
     expect(isExternalIntegrationTool("compose__ab_preset_compose")).toBe(false);
@@ -289,18 +330,71 @@ describe("friendlyToolResult", () => {
     ).toBe("No results");
   });
 
-  it("never returns raw JSON for an object payload", () => {
-    const result = friendlyToolResult(
-      call("attio__create_record", undefined, {
-        result: JSON.stringify({
-          id: { record_id: "rec_1" },
-          values: { name: "Acme" },
+  it("returns null, never filler, for unrecognized result shapes", () => {
+    // The formatter's contract: content or null. A generic "Done" would make
+    // the chat render an expand chevron that opens onto nothing.
+    const shapes = [
+      JSON.stringify({ id: { record_id: "rec_1" }, values: { name: "Acme" } }),
+      JSON.stringify({ ok: true }),
+      JSON.stringify({ loaded: true }),
+      JSON.stringify({ id: "rec_9" }),
+      JSON.stringify({ some: { nested: "unknown" }, shape: 4 }),
+      `{"truncated": "${"x".repeat(200)}`,
+      "x".repeat(200),
+    ];
+    for (const result of shapes) {
+      expect(
+        friendlyToolResult(call("attio__create_record", undefined, { result })),
+      ).toBeNull();
+    }
+  });
+
+  it("keeps real outcomes for recognized shapes", () => {
+    expect(
+      friendlyToolResult(
+        call("attio__create_record", undefined, {
+          result: JSON.stringify({ deduped: true }),
         }),
-      }),
-    );
-    expect(result).toBe("Done");
-    expect(result).not.toContain("{");
-    expect(result).not.toContain("record_id");
+      ),
+    ).toBe("Already exists — skipped create");
+    expect(
+      friendlyToolResult(
+        call("exa__search", undefined, { result: "short plain text" }),
+      ),
+    ).toBe("short plain text");
+  });
+
+  it("capitalizes provider names in load_tools phrases and never says 'Getting that ready'", () => {
+    for (const id of ["l1", "l2", "l3", "l4", "l5"]) {
+      const withPkg = friendlyToolSummary(
+        call("load_tools", { package: "attio" }, { id }),
+      );
+      // Every package phrase embeds the display name — lowercase never leaks.
+      expect(withPkg).toContain("Attio");
+      expect(withPkg).not.toMatch(/\battio\b/);
+      const single = friendlyToolSummary(
+        call("load_tools", { names: ["attio__create_record"] }, { id }),
+      );
+      expect(single).not.toBe("Getting that ready");
+      const idle = friendlyToolSummary(call("load_tools", {}, { id }));
+      expect(idle).not.toBe("Getting that ready");
+    }
+  });
+
+  it("uses stylized casing for brands plain capitalization gets wrong", () => {
+    for (const id of ["s1", "s2", "s3"]) {
+      expect(
+        friendlyToolSummary(
+          call("load_tools", { package: "scrapecreators" }, { id }),
+        ),
+      ).toContain("ScrapeCreators");
+      expect(
+        friendlyToolSummary(call("load_tools", { package: "youtube" }, { id })),
+      ).toContain("YouTube");
+      expect(
+        friendlyToolSummary(call("load_tools", { package: "github" }, { id })),
+      ).toContain("GitHub");
+    }
   });
 
   it("summarizes a tools list from search_tools", () => {

@@ -59,6 +59,18 @@ export function createMyTools(config: {
 
 Tools never read `process.env`; credentials/baseURL come from the caller.
 
+**Tools never read their store directory at runtime either.** The sidecar's
+`loadToolPackages` memoizes `loadManifest` results per manifest hash across
+agent instance launches (`apps/sidecar/src/agent-tools.ts`); a factory
+closure that resolves paths relative to its own module location
+(`__dirname`, `import.meta.url`/`import.meta.dir`) and reads the filesystem
+at call time can outlive the per-instance store directory it was imported
+from, silently reading a different instance's files or a directory that no
+longer exists. Read any file the tool needs from paths passed in via the
+factory's `env`/args, not from the module's own location. This is enforced
+by a static scan over every `packages/tools-*/src` file in
+`packages/tools-interchange-contract/src/no-runtime-store-reads.test.ts`.
+
 ### 2. Add the `interchange.tools` entry
 
 In `package.json` add a `version` (required — the registry rejects versionless
@@ -99,20 +111,30 @@ export const myTools = defineCredentialedToolPackage({
 });
 ```
 
-### 3. Register in the build, pin on agents, seed the credential
+### 3. Export a tool manifest, pin on agents, configure credentials in Owner UI
 
-- Add the package to `TOOL_PACKAGES` in `apps/hub/bin/build-tool-packages.ts`
-  and a `COPY` line in `apps/hub/Dockerfile`.
+- Add `src/tool-manifest.ts` exporting `toolManifestFile` (`ToolManifestFile`; see any
+  `packages/tools-*/src/tool-manifest.ts`) and wire `package.json` →
+  `interchange.manifest` to that file.
+- Run `bun run build:tool-manifests` (hub) to refresh
+  `apps/hub/generated/tool-manifests/index.json`. `TOOL_PACKAGES`,
+  `PACKAGE_TOOLS`, `PACKAGE_PROVIDERS`, the Myra catalog, and the tool subset of
+  `CREDENTIAL_PROVIDER_CATALOG` are **derived** from committed manifests — do not
+  hand-edit those lists. Dockerfile `COPY` lines for tool packages are guarded by
+  `packages/tool-manifest/src/dockerfile-tool-copy.test.ts` (update Dockerfiles
+  when adding a package).
 - Pin it on each agent that uses it via `toolPackages: [{ name, version }]` on
   the agent's `AGENT_TEMPLATES` entry. `seedAgentTemplates` persists the pins to
   the agent DB row on hub boot; `launchAgentSession` reads them back via
   `parseAgentRow(row).toolPackages` at launch time.
-- Credentialed tools: seed the provider (`apps/hub/bin/seed-credentials.ts`)
-  and add its `providerName` to the agent's `credentialProviderNames`. Keyless
-  tools need no seed entry.
-- Agents need no `KNOWN_TOOLS` entry. `KNOWN_TOOLS` now only carries the
-  tool→provider mapping for the credential rail (`run-credential-tool`); it is not
-  an execution registry.
+- Credentialed tools: set `providerName` and optional `credentialCatalog` on the
+  factory manifest (and `CREDENTIAL_PROVIDER_CATALOG` overrides in
+  `packages/workbench-shared/src/credential-provider-catalog.ts` when the owner
+  form needs extra fields). Owners
+  configure secrets on the Capabilities page — not via env seeding.
+- `KNOWN_TOOLS` is a drift guard only: every bare tool name from manifests must
+  appear there for the credential rail (`run-credential-tool`); it is not an
+  execution registry.
 
 ### 3b. Register a friendly chat phrase (CL-3268)
 
@@ -433,13 +455,14 @@ A director may still allow a system sender address (e.g. `scheduler@system`) for
 
 ## Checklist: Shipping a New Tool
 
-- [ ] `packages/tools-<name>/` builds cleanly; `package.json` has `version` + `interchange.tools`
+- [ ] `packages/tools-<name>/` builds cleanly; `package.json` has `version` + `interchange.tools` + `interchange.manifest`
+- [ ] `src/tool-manifest.ts` describes tools, providers, and Myra catalog metadata
 - [ ] `src/interchange-tools.ts` exports a `defineTool` factory (keyless) or `defineCredentialedToolPackage` (credentialed)
 - [ ] No `process.env` reads; no LLM calls
-- [ ] Added to `TOOL_PACKAGES` in `bin/build-tool-packages.ts` and a `COPY` line in `apps/hub/Dockerfile`
+- [ ] `bun run build:tool-manifests` run; Dockerfile tool `COPY` lines updated if the drift test fails
 - [ ] Pinned via `toolPackages` on each using agent's descriptor **and** `AGENT_TEMPLATES` entry
-- [ ] Credentialed: provider seeded in `seed-credentials.ts` + added to the agent's `credentialProviderNames`
-- [ ] Credentialed tools only: present in `KNOWN_TOOLS` for the credential rail's tool→provider mapping (not an execution registry)
+- [ ] Credentialed: `providerName` / `credentialCatalog` in manifest + owner catalog (`packages/workbench-shared/src/credential-provider-catalog.ts` overrides if needed) + agent `credentialProviderNames`
+- [ ] Credentialed tools only: bare tool names from manifest appear in `KNOWN_TOOLS` (drift guard for the credential rail)
 - [ ] Built + published to the registry (admin CLI **Local actions → Build / Publish tool packages**); tool verified loading in the sidecar
 - [ ] Unit tests at ≥95% function coverage
 

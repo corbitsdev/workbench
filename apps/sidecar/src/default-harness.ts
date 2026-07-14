@@ -7,6 +7,7 @@ import {
   toLlmToolName,
   resolveDynamicToolConfig,
   DYNAMIC_TOOLS_DIRECTOR_ID,
+  TRIAGE_BUDGET_DIRECTOR_ID,
   APPROVAL_GATED_TOOL_NAMES,
 } from "@workbench/agents";
 import {
@@ -39,10 +40,10 @@ import {
 import { createMailTools } from "@intx/tools-mail";
 import { createPosixTools } from "@intx/tools-posix";
 import { createBlobReader } from "@intx/types/runtime";
-import type { InferenceSource } from "@intx/types/runtime";
+import type { InferenceSource, MessageRef } from "@intx/types/runtime";
 import type { HarnessBuilder, HarnessBundle } from "@workbench/hub-agent";
-import { resolveSeedMarker, stripSeedMarker } from "@workbench/agents/seed";
-import { PERSONAL_AGENT_NAME } from "@workbench/agents";
+import { resolveSeedMarker, stripSeedMarker } from "@workbench/myra/seed";
+import { PERSONAL_AGENT_NAME, isTriageSessionPrompt } from "@workbench/myra";
 import { createAskPrincipalTool } from "@workbench/approvals";
 import { seedWorkspaceFiles } from "./seed-workspace-files";
 import { healTurns } from "@workbench/context-repair";
@@ -57,6 +58,23 @@ import type { ContextStore } from "@intx/types/runtime";
 const logger = getLogger(["sidecar", "harness-builder"]);
 const DEFAULT_MAIL_OUTBOUND_PER_TURN = 8;
 const PERSONAL_AGENT_MAIL_OUTBOUND_PER_TURN = 100;
+
+/**
+ * Pure director-id selection (CL-3384): a triage session always gets the
+ * budget-capped director — regardless of whether it also resolved dynamic
+ * tool config, since `triageBudgetDirector`'s factory composes the
+ * dynamic-tools director internally when the harness env carries it. A
+ * non-triage agent with dynamic tool config gets the dynamic-tools director
+ * unchanged; everything else falls back to the registry default.
+ */
+export function selectDirectorId(params: {
+  isTriageSession: boolean;
+  hasDynamicToolConfig: boolean;
+}): string | undefined {
+  if (params.isTriageSession) return TRIAGE_BUDGET_DIRECTOR_ID;
+  if (params.hasDynamicToolConfig) return DYNAMIC_TOOLS_DIRECTOR_ID;
+  return undefined;
+}
 
 /**
  * Repair the durable context before the harness loads it so an
@@ -154,12 +172,14 @@ export function createDefaultHarnessBuilder({
       onConnectorStateChanged,
     }): Promise<HarnessBundle> {
       const signer = (payload: string) => crypto.signSSH(payload);
+      const buildStart = performance.now();
 
       const storage = await createIsogitStore(storeDir, signer, gcPolicy);
       await healContextStore(storage, agentAddress);
       const mailStore = await createMailAuditStore(storeDir, signer);
 
       const deployTree = await readDeployTree(storeDir);
+      const provisionMs = performance.now() - buildStart;
       const basePrompt = deployTree.systemPrompt ?? agentConfig.systemPrompt;
 
       // Parse the memory-seed file list off the RAW base prompt, then strip the
@@ -194,6 +214,7 @@ export function createDefaultHarnessBuilder({
       // The catalog runner itself is built later, once the loaded tool set is
       // known, so packages whose credential is missing are never advertised.
       const dynamicToolConfig = resolveDynamicToolConfig(cleanedPrompt);
+      const isTriageSession = isTriageSessionPrompt(cleanedPrompt);
       const exposureState: ToolExposureState = { exposed: new Set<string>() };
 
       const grantsRef = { current: agentConfig.grants };
@@ -246,6 +267,7 @@ export function createDefaultHarnessBuilder({
           skipped: seedResult.skipped,
         },
       );
+      const packApplyMs = performance.now() - buildStart - provisionMs;
 
       // Reverse-order disposal stack: each resource pushes its own disposer
       // right after it is allocated, so both the failure path (below) and the
@@ -278,6 +300,16 @@ export function createDefaultHarnessBuilder({
           mailTools as DefinedRunner,
           {
             maxOutboundPerTurn: resolveMailOutboundLimit(cleanedPrompt),
+            resolveReplyRecipient: async (ref) => {
+              try {
+                const headers = await agentTransport.fetchHeaders(
+                  ref as MessageRef,
+                );
+                return headers.from;
+              } catch {
+                return null;
+              }
+            },
           },
         );
 
@@ -296,6 +328,7 @@ export function createDefaultHarnessBuilder({
         // and inject them into env before instantiating each factory. A
         // factory that throws is skipped (fail-soft); only the names that
         // actually load are shadowed away from the proxy.
+        const toolLoadStart = performance.now();
         const loadedPackages = await loadToolPackages({
           rawManifestBytes: deployTree.toolPackageManifestRaw,
           assetMounts: deployTree.assetMounts,
@@ -305,6 +338,7 @@ export function createDefaultHarnessBuilder({
           cacheMaxBytes,
           registryMaxTarballBytes,
         });
+        const toolLoadMs = performance.now() - toolLoadStart;
 
         const requiredProviders = new Set<string>();
         for (const pkg of loadedPackages) {
@@ -322,6 +356,7 @@ export function createDefaultHarnessBuilder({
           agentId: agentConfig.agentId,
           providerNames: [...requiredProviders],
           agentAddress,
+          memberPrincipalId: principalId,
         });
 
         // Hub-RPC context for hub-backed native tool packages (artifact,
@@ -369,6 +404,25 @@ export function createDefaultHarnessBuilder({
             try {
               bundle = factory(env);
             } catch (err) {
+              // Tool packages load from published tarballs, so this may be a
+              // different bundle copy of ToolCredentialMissingError than the
+              // one in this process — `instanceof` can miss across bundles.
+              // `err.name` survives bundling, so match on it instead.
+              if (
+                err instanceof Error &&
+                err.name === "ToolCredentialMissingError"
+              ) {
+                logger.info(
+                  "Tool package {id} skipped for {address}: no credential configured for provider {providerName}",
+                  {
+                    id: factory.id,
+                    address: agentAddress,
+                    providerName: (err as { providerName?: string })
+                      .providerName,
+                  },
+                );
+                continue;
+              }
               logger.warn(
                 "Tool-package factory {id} failed to construct for {address}: {msg}",
                 {
@@ -451,10 +505,9 @@ export function createDefaultHarnessBuilder({
         // Human approval for irreversible tools is enforced at the runner seam:
         // the wrapper IS the executor of a gated tool, so the model cannot route
         // around it, and the approval record carries the concrete tool arguments
-        // (deploy target, note body) shown in ReviewGate. The gated set is the
-        // static `APPROVAL_GATED_TOOL_NAMES` const (every external write); a hub
-        // drift test keeps it in lockstep with the `sideEffect: "write"`
-        // classification of the tool registry, so no launch-time fetch is needed.
+        // (deploy target, note body) shown in ReviewGate. The gated set is
+        // `APPROVAL_GATED_TOOL_NAMES`, derived from committed manifest
+        // `sideEffects` (external writes minus internal exclusions).
         const gatedRunner = createApprovalGatedRunner(
           allTools as DefinedRunner,
           {
@@ -489,14 +542,19 @@ export function createDefaultHarnessBuilder({
           }),
         });
 
+        const directorId = selectDirectorId({
+          isTriageSession,
+          hasDynamicToolConfig: dynamicToolConfig !== undefined,
+        });
+
         const def = {
           id: agentConfig.agentId,
           systemPrompt,
           toolFactories: [toolsFactory] as const,
           capabilities: [],
           inference: { sources: [] as const },
-          ...(dynamicToolConfig !== undefined
-            ? { director: { id: DYNAMIC_TOOLS_DIRECTOR_ID, config: {} } }
+          ...(directorId !== undefined
+            ? { director: { id: directorId, config: {} } }
             : {}),
         };
 
@@ -511,7 +569,22 @@ export function createDefaultHarnessBuilder({
               }
             : env;
 
+        const harnessReadyStart = performance.now();
         const harness = await createHarness(def, harnessEnv);
+        const harnessReadyMs = performance.now() - harnessReadyStart;
+        const totalMs = performance.now() - buildStart;
+        logger.info(
+          "Harness build phases for {address}: provision={provisionMs}ms packApply={packApplyMs}ms toolLoad={toolLoadMs}ms harnessReady={harnessReadyMs}ms total={totalMs}ms packages={packageCount}",
+          {
+            address: agentAddress,
+            provisionMs: Math.round(provisionMs),
+            packApplyMs: Math.round(packApplyMs),
+            toolLoadMs: Math.round(toolLoadMs),
+            harnessReadyMs: Math.round(harnessReadyMs),
+            totalMs: Math.round(totalMs),
+            packageCount: loadedPackages.length,
+          },
+        );
 
         // Forward the reactor's event stream to the hub. This is the seam the
         // SessionManager builds around: it supplies `onEvent` and expects the

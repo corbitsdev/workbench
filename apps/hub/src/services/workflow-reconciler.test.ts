@@ -75,6 +75,7 @@ type RecordRow = {
   tenantId: string;
   status?: "running" | "awaiting";
   updatedAt?: Date;
+  startedAt?: Date | null;
   pendingSignal?: {
     signalId: string;
     signalName: string;
@@ -634,6 +635,7 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     deploymentId: string,
     parkedForMs: number,
     pendingSignal?: RecordRow["pendingSignal"],
+    startedAt?: Date | null,
   ): RecordRow {
     return {
       id: `run_${deploymentId}`,
@@ -642,6 +644,10 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
       tenantId: "t1",
       status: "awaiting",
       updatedAt: new Date(Date.now() - parkedForMs),
+      startedAt:
+        startedAt === undefined
+          ? new Date(Date.now() - parkedForMs)
+          : startedAt,
       pendingSignal: pendingSignal ?? null,
     };
   }
@@ -826,6 +832,63 @@ describe("reconcileAwaiting — hibernation of long-parked runs", () => {
     if (refreshed !== undefined) {
       expect(Date.now() - Date.parse(refreshed)).toBeLessThan(5_000);
     }
+  });
+
+  it("holds a pending signal for a run that has not started yet (startedAt null), never delivers, and stays pendingHandled (CL-3641)", async () => {
+    const pending = {
+      signalId: "sig-not-started",
+      signalName: "intake",
+      payload: { intake: true },
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+    };
+    const h = makeHarness({
+      records: [
+        parkedRecord("ses_run_unstarted", GRACE_MS * 10, pending, null),
+      ],
+      routable: [addressOf("ses_run_unstarted")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.sentSignals).toEqual([]);
+    expect(summary.redelivered).toBe(0);
+    // pendingHandled still blocks hibernation even though nothing was
+    // delivered — the record is retried, not torn down, on the next pass.
+    expect(h.undeploys).toEqual([]);
+    expect(summary.hibernated).toBe(0);
+  });
+
+  it("delivers the same pending signal once startedAt is set (run has provably started)", async () => {
+    const pending = {
+      signalId: "sig-now-started",
+      signalName: "intake",
+      payload: { intake: true },
+      receivedAt: new Date(Date.now() - REDELIVERY_DELAY_MS * 2).toISOString(),
+    };
+    const h = makeHarness({
+      records: [
+        parkedRecord(
+          "ses_run_started",
+          GRACE_MS * 10,
+          pending,
+          new Date(Date.now() - 1_000),
+        ),
+      ],
+      routable: [addressOf("ses_run_started")],
+    });
+
+    const summary = await h.reconciler.reconcileAwaiting();
+
+    expect(h.sentSignals).toEqual([
+      {
+        agentAddress: addressOf("ses_run_started"),
+        runId: "run_ses_run_started",
+        signalName: "intake",
+        signalId: "sig-now-started",
+        payload: { intake: true },
+      },
+    ]);
+    expect(summary.redelivered).toBe(1);
   });
 
   it("gives a freshly-accepted pending signal time to land (no immediate re-delivery) and never hibernates a pending-signal run", async () => {

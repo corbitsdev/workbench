@@ -1,12 +1,11 @@
 import { type ReactNode } from "react";
+import { AppPageChromeRow } from "./AppPageChromeRow";
 import { cn } from "./utils";
-
-type TitleSize = "sm" | "lg";
 
 interface LibraryPageHeaderProps {
   title: string;
   /** `lg` (21px, default) for catalog pages; `sm` (17px) for the chats list. */
-  titleSize?: TitleSize;
+  titleSize?: "sm" | "lg";
   /** When provided, renders a "{count} items" badge beside the title. */
   count?: number;
   /** Trailing controls: search, view toggle, action buttons. */
@@ -14,15 +13,9 @@ interface LibraryPageHeaderProps {
   className?: string;
 }
 
-const titleClassName: Record<TitleSize, string> = {
-  lg: "text-library-title tracking-[-0.02em] text-text",
-  sm: "text-library-title-sm tracking-[-0.01em] text-text",
-};
-
 /**
- * Shared header row for the library/catalog pages (Chats, Skills, Tools):
- * a title, an optional count badge, a flexible spacer, and trailing controls.
- * Owning the layout here means a header tweak is a single edit.
+ * @deprecated Prefer `AppPageChromeRow` via `useSetPageChrome`. Kept for tests and
+ * any legacy in-page header until routes are migrated.
  */
 export function LibraryPageHeader({
   title,
@@ -32,20 +25,14 @@ export function LibraryPageHeader({
   className,
 }: LibraryPageHeaderProps) {
   return (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-[14px] px-4 pb-[14px] pt-5 sm:px-7",
-        className,
-      )}
-    >
-      <h1 className={titleClassName[titleSize]}>{title}</h1>
-      {count !== undefined && (
-        <span className="rounded-input bg-surface-2 px-[9px] py-[3px] font-mono text-[12px] text-text-3">
-          {count} items
-        </span>
-      )}
-      <div className="flex-1" />
-      {children}
+    <div className={cn("px-4 pb-[14px] pt-5 sm:px-7", className)}>
+      <AppPageChromeRow
+        title={title}
+        titleSize={titleSize}
+        {...(count !== undefined ? { count } : {})}
+      >
+        {children}
+      </AppPageChromeRow>
     </div>
   );
 }

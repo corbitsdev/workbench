@@ -23,6 +23,7 @@ const WORKFLOW_RUN_RECORD_DDL = `
     status text NOT NULL DEFAULT 'running',
     input jsonb,
     origin_conversation_id text,
+    trigger_source text,
     pending_signal jsonb,
     started_at timestamp,
     ended_at timestamp,

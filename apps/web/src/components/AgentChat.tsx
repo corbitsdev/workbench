@@ -30,7 +30,11 @@ import { useCompactToolActivity, useToolSummaryStyle } from "@workbench/ui";
 import { createArtifact } from "@workbench/client";
 import { type AgentActivity } from "@intx/hub-client";
 import { clientOptions } from "../lib/client-options";
+import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
+import { renderChatToolMarker } from "./ToolCallProviderMarker";
 import {
+  abortInstanceTurn,
   getOutputFeedback,
   launchInstanceSession,
   saveOutputFeedback,
@@ -98,6 +102,12 @@ export function AgentChat({
   const identity: ChatAgentIdentity = { name: agentName };
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const { lookups, isLoading: approvalLookupsLoading } =
+    useApprovalDisplayLookups(tenantId);
+  const formatToolSummary = useMemo(
+    () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
+    [lookups, approvalLookupsLoading],
+  );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
@@ -153,6 +163,30 @@ export function AgentChat({
       );
     },
   });
+
+  // Same suppression rationale as use-myra-session: an aborted turn settles
+  // by putting the agent to sleep, which emits no further agent events, so
+  // the stale "thinking" activity is cleared locally. Cleared on the next
+  // send AND on the first genuinely-new activity event, so a new turn is
+  // never hidden and the stop button stays reachable.
+  const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const suppressedActivityRef = useRef<AgentActivity | null>(null);
+  const { mutateAsync: abortMutateAsync } = useMutation({
+    mutationFn: () => abortInstanceTurn(instanceId),
+  });
+  const abortTurn = useCallback(async (): Promise<void> => {
+    try {
+      await abortMutateAsync();
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : `Couldn't stop ${agentName}. Try again.`;
+      throw new Error(message);
+    }
+    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
+    setActivitySuppressed(true);
+  }, [abortMutateAsync, agentName]);
 
   // Feedback line for document block actions (copy / save-artifact).
   // Successes auto-dismiss; failures stay until the user dismisses them or a
@@ -500,9 +534,23 @@ export function AgentChat({
     return a as ChatActivity;
   }
 
-  const activity: ChatActivity | null = toChatActivity(session.activity);
+  // Render-phase adjustment: the first activity value that differs from the
+  // one captured at abort time is a new turn — stop hiding it.
+  if (
+    activitySuppressed &&
+    session.activity !== suppressedActivityRef.current
+  ) {
+    setActivitySuppressed(false);
+  }
+  const suppressed =
+    activitySuppressed && session.activity === suppressedActivityRef.current;
+  const activity: ChatActivity | null = suppressed
+    ? null
+    : toChatActivity(session.activity);
 
   const sendText = (text: string) => {
+    // A new turn is starting — let its real events drive the busy indicator.
+    setActivitySuppressed(false);
     void session.sendMail(text).catch((err: unknown) => {
       const message = err instanceof Error ? err.message : String(err);
       setSessionState({ phase: "error", message });
@@ -535,6 +583,7 @@ export function AgentChat({
       agent={identity}
       messages={messages}
       onSend={sendText}
+      onAbort={abortTurn}
       // Structured gate blocks (form/multiSelect/choice payload) need
       // resolveResumePayload + workflow resume — see docs/WORKFLOWS.md.
       onRespond={(response: UIResponse) => sendText(response.value)}
@@ -566,13 +615,14 @@ export function AgentChat({
         ratingsMap.get(`${subjectId}:${subjectKind}`) ?? null
       }
       resolveAttachmentUrl={resolveAttachmentUrl}
-      formatToolSummary={friendlyToolSummary}
+      formatToolSummary={formatToolSummary}
       formatToolResult={friendlyToolResult}
       formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
       isExternalTool={isExternalIntegrationTool}
+      renderToolMarker={renderChatToolMarker}
     />
   );
 }

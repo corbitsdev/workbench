@@ -4,6 +4,7 @@
 
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
+import { previewExcerpt } from "./artifact-preview-family";
 import { parseGalleryArtifact } from "./types";
 import type { ArtifactVisual, GalleryArtifact } from "./types";
 
@@ -132,10 +133,12 @@ const KIND_VISUALS: Record<string, ArtifactVisual> = {
     experimentalFill: "bg-blue/85",
     experimentalSpan: "row-span-4",
   },
-  // Both the workflow's persisted `research` kind and a generic `report` kind
-  // share one tile treatment.
+  // The workflow's persisted `research` kind, the generic `report` kind, and
+  // the heartbeat's stable `morning-brief` kind (CL-3503) share one tile
+  // treatment.
   research: REPORT_VISUAL,
   report: REPORT_VISUAL,
+  "morning-brief": REPORT_VISUAL,
 };
 
 const FALLBACK_VISUAL: ArtifactVisual = {
@@ -188,11 +191,12 @@ function formatRelativeTime(iso: string): string {
   return "";
 }
 
-// A session-less workflow artifact has no agent session to name it, so the
-// gallery showed "Untitled job". The producing workflow may instead supply a
-// generic `source.jobLabel` string; surface that. No workflow-specific knowledge
-// lives here — the label is the domain's to choose.
-function artifactJobLabel(artifact: ArtifactWithSession): string {
+// A session-less workflow artifact has no agent session to name it. The
+// producing workflow may instead supply a generic `source.jobLabel` string;
+// surface that. No workflow-specific knowledge lives here — the label is the
+// domain's to choose. When neither is present, return undefined rather than
+// inventing filler text — the source kind is already shown via another badge.
+function artifactJobLabel(artifact: ArtifactWithSession): string | undefined {
   if (artifact.sessionName) return artifact.sessionName;
   const source = artifact.source;
   if (source !== null && source !== undefined && typeof source === "object") {
@@ -201,7 +205,7 @@ function artifactJobLabel(artifact: ArtifactWithSession): string {
       return label;
     }
   }
-  return "Untitled job";
+  return undefined;
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -263,13 +267,20 @@ export function toGalleryArtifact(
 ): GalleryArtifact {
   const visual = visualForKind(artifact.kind);
   const provenance = artifactProvenance(artifact.source);
+  const excerpt = previewExcerpt(artifact.content, {
+    fallbackTitle: artifact.title,
+  });
+  const from = artifactJobLabel(artifact);
   return parseGalleryArtifact({
     ...visual,
     id: artifact.id,
     title: artifact.title,
-    from: artifactJobLabel(artifact),
+    kind: artifact.kind,
+    ...(from !== undefined ? { from } : {}),
     time: formatRelativeTime(artifact.updatedAt),
     provenance: provenance.label,
     provenanceTone: provenance.tone,
+    status: artifact.status,
+    previewExcerpt: excerpt.length > 0 ? excerpt : undefined,
   });
 }

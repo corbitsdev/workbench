@@ -21,4 +21,5 @@ function createLogger(prefix: string): Logger {
   };
 }
 
+export { createLogger };
 export const logger = createLogger("gtm");

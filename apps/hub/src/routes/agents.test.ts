@@ -662,6 +662,56 @@ describe("POST /instances/:instanceId/sessions", () => {
     }
   });
 
+  it("forwards pageContext from the launch POST body into the cold launch system prompt (CL-3527)", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() =>
+      Promise.resolve({ ...INSTANCE, status: "deployed" }),
+    );
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+    db.query.tenant.findFirst = mock(() => Promise.resolve(TENANT));
+    db.query.agent.findFirst = mock(() => Promise.resolve(AGENT_ROW));
+
+    sourcesImpl = () =>
+      Promise.resolve([{ id: "src-1", apiKey: TEST_API_KEY }]);
+
+    let capturedConfig: { config?: { systemPrompt?: string } } | undefined;
+    const sessionService = {
+      ...mockSessionService,
+      launchSession: mock((cfg: { config?: { systemPrompt?: string } }) => {
+        capturedConfig = cfg;
+        return Promise.resolve();
+      }),
+    };
+
+    const app = buildApp(db, sessionService);
+    const res = await app.fetch(
+      makeRequest("http://localhost/instances/ins-1/sessions", {
+        method: "POST",
+        body: { pageContext: " Inbox home " },
+      }),
+    );
+    expect(res.status).toBe(200);
+    const prompt = capturedConfig?.config?.systemPrompt ?? "";
+    expect(prompt).toContain("You are Loop.");
+    expect(prompt).toContain("Inbox home");
+    expect(prompt).toContain("Page_context");
+  });
+
+  it("returns 400 when the launch POST body is not a valid pageContext payload (CL-3527)", async () => {
+    const db = makeMockDb();
+    db.query.agentInstance.findFirst = mock(() => Promise.resolve(INSTANCE));
+    db.query.principal.findFirst = mock(() => Promise.resolve(PRINCIPAL));
+
+    const app = buildApp(db);
+    const res = await app.fetch(
+      makeRequest("http://localhost/instances/ins-1/sessions", {
+        method: "POST",
+        body: { pageContext: 42 },
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("returns 200 with launched:true when launchSession fails because the agent already exists on the sidecar", async () => {
     const db = makeMockDb();
     // First read is the route's ownership check; second is the already-exists

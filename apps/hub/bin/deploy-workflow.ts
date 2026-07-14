@@ -39,7 +39,7 @@ export type DeployWorkflowOptions = {
   // Optional target tenant slug. Omitted → the hub deploys to the global
   // tenant (unchanged). A slug scopes the deploy to that workbench sub-tenant,
   // which the hub validates is the global tenant or a descendant of it.
-  tenantSlug?: string;
+  tenantSlug?: string | undefined;
 };
 
 // Build the request URL + headers for the chosen auth mode. Session auth posts
@@ -199,6 +199,8 @@ export interface LoadedWorkflow {
   label?: string;
   description?: string;
   displayFlow?: unknown;
+  intakeFields?: unknown;
+  allowsScheduledPostIntakeDrive?: boolean;
 }
 
 function readStringExport(mod: object, key: string): string | undefined {
@@ -222,6 +224,13 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
   // flow. It is plain serializable data; the build validates its shape through
   // EmbeddedWorkflowDefSchema before committing it.
   const displayFlow = (mod as { DISPLAY_STEPS?: unknown }).DISPLAY_STEPS;
+  // The optional INTAKE_FIELDS export (CL-3509) is the workflow's first-intake
+  // form descriptor — plain serializable data validated through
+  // EmbeddedWorkflowDefSchema before committing, like DISPLAY_STEPS.
+  const intakeFields = (mod as { INTAKE_FIELDS?: unknown }).INTAKE_FIELDS;
+  const allowsScheduledPostIntakeDrive = (
+    mod as { ALLOWS_SCHEDULED_POST_INTAKE_DRIVE?: unknown }
+  ).ALLOWS_SCHEDULED_POST_INTAKE_DRIVE;
   const label = readStringExport(mod, "label");
   const description = readStringExport(mod, "description");
   // Conditional spreads (not `key: value | undefined`) so the return satisfies
@@ -232,6 +241,10 @@ export async function loadWorkflow(kind: string): Promise<LoadedWorkflow> {
     ...(label !== undefined ? { label } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(displayFlow !== undefined ? { displayFlow } : {}),
+    ...(intakeFields !== undefined ? { intakeFields } : {}),
+    ...(allowsScheduledPostIntakeDrive === true
+      ? { allowsScheduledPostIntakeDrive: true }
+      : {}),
   };
 }
 

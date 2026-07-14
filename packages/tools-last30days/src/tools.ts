@@ -13,6 +13,11 @@ import {
   ResearchItem,
   SkippedSource,
 } from "@workbench/last30days-core";
+import {
+  formatHeartbeatBriefTitle,
+  mergeHeartbeatBriefSources,
+  morningBriefMailRefs,
+} from "@workbench/shared";
 
 export const LAST30DAYS_CORE_EXTRACT_DEFINITION: ToolDefinition = {
   name: "last30days_core_extract",
@@ -84,6 +89,56 @@ export const LAST30DAYS_COLLECT_DEFINITION: ToolDefinition = {
   inputSchema: {
     type: "object",
     additionalProperties: true,
+  },
+};
+
+export const HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION: ToolDefinition = {
+  name: "heartbeat_merge_brief_sources",
+  description:
+    "Internal heartbeat workflow helper. Parse each intake step's tool envelope and return { sources: { granola, linear, attio, vercel } } so the brief step sees every source without merge collisions on callId/content/isError.",
+  inputSchema: {
+    type: "object",
+    additionalProperties: true,
+  },
+};
+
+export const HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_mail_refs",
+  description:
+    "Internal heartbeat workflow helper. Build mailbox refs for the morning-brief notify mail after persist.",
+  inputSchema: {
+    type: "object",
+    properties: {
+      artifactId: {
+        type: "string",
+        description: "Persisted morning-brief artifact id from write_artifact.",
+      },
+      runId: {
+        type: "string",
+        description:
+          "Workflow run id from the hub trigger payload (same as mail messageId).",
+      },
+      workflowLabel: {
+        type: "string",
+        description: "Display label for the workflow_run ref (defaults to Company Heartbeat).",
+      },
+    },
+    required: ["artifactId", "runId"],
+  },
+};
+
+export const HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION: ToolDefinition = {
+  name: "heartbeat_format_brief_title",
+  description:
+    'Internal heartbeat workflow helper. Formats the morning brief\'s display name as "<User>\'s Morning Brief - DD/MM/YY" (falls back to "Your Morning Brief - DD/MM/YY" when no display name is known), for use as both the notify mail subject and the persisted artifact title.',
+  inputSchema: {
+    type: "object",
+    properties: {
+      userDisplayName: {
+        type: "string",
+        description: "The firing user's display name, if known.",
+      },
+    },
   },
 };
 
@@ -620,6 +675,71 @@ function createValidateTool(): AgentTool {
   };
 }
 
+function createHeartbeatFormatBriefMailRefsTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const artifactId = args.artifactId;
+      const runId = args.runId;
+      const workflowLabel =
+        typeof args.workflowLabel === "string"
+          ? args.workflowLabel
+          : undefined;
+      if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "artifactId is required",
+        };
+      }
+      if (typeof runId !== "string" || runId.trim().length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "runId is required",
+        };
+      }
+      try {
+        const refs = morningBriefMailRefs(artifactId, runId, workflowLabel);
+        return { callId: call.id, content: { refs } };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return { callId: call.id, isError: true, content: message };
+      }
+    },
+  };
+}
+
+function createHeartbeatFormatBriefTitleTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_FORMAT_BRIEF_TITLE_DEFINITION,
+    handler: async (call) => {
+      const args = coerceArgsObject(call.arguments);
+      const userDisplayName =
+        typeof args.userDisplayName === "string"
+          ? args.userDisplayName
+          : undefined;
+      const title = formatHeartbeatBriefTitle(userDisplayName, Date.now());
+      return { callId: call.id, content: { title } };
+    },
+  };
+}
+
+function createHeartbeatMergeBriefSourcesTool(): AgentTool {
+  return {
+    kind: "full",
+    definition: HEARTBEAT_MERGE_BRIEF_SOURCES_DEFINITION,
+    handler: async (call) => {
+      const steps = coerceArgsObject(call.arguments);
+      const content = mergeHeartbeatBriefSources(steps);
+      return { callId: call.id, content };
+    },
+  };
+}
+
 /** The stateless last30days core tools (no credential, no host context). */
 export function createLast30daysTools(): AgentTool[] {
   return [
@@ -630,5 +750,8 @@ export function createLast30daysTools(): AgentTool[] {
     createCollectTool(),
     createWorkflowBriefTool(),
     createValidateTool(),
+    createHeartbeatMergeBriefSourcesTool(),
+    createHeartbeatFormatBriefTitleTool(),
+    createHeartbeatFormatBriefMailRefsTool(),
   ];
 }

@@ -1,3 +1,4 @@
+import { integrationToolProviderKey } from "@workbench/agents/browser";
 import { toHumanLabel } from "@workbench/ui";
 
 // Canonical display labels for tool providers, keyed by the lowercase provider
@@ -14,6 +15,8 @@ export const TOOL_PROVIDER_LABELS: Record<string, string> = {
   attio: "Attio",
   linear: "Linear",
   bluesky: "Bluesky",
+  notion: "Notion",
+  slack: "Slack",
 };
 
 /**
@@ -44,6 +47,8 @@ export const PROVIDER_LOGO_FILES: Record<string, string> = {
   bluesky: "bluesky.svg",
   youtube: "youtube.svg",
   xai: "xai_light.svg",
+  notion: "notion-light.svg",
+  slack: "slack.svg",
 };
 
 /**
@@ -52,6 +57,26 @@ export const PROVIDER_LOGO_FILES: Record<string, string> = {
  */
 export function providerLogoFile(providerKey: string): string | null {
   return PROVIDER_LOGO_FILES[providerKey.toLowerCase()] ?? null;
+}
+
+export function providerKeyForToolLogo(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string | null {
+  return integrationToolProviderKey(toolName, args);
+}
+
+/**
+ * Resolve the brands-library filename for a tool invocation, or null when we
+ * cannot attribute the call to a known provider mark.
+ */
+export function toolProviderLogoFilename(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const providerKey = providerKeyForToolLogo(toolName, args);
+  if (providerKey === null) return null;
+  return providerLogoFile(providerKey);
 }
 
 /**

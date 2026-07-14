@@ -86,6 +86,7 @@ import {
   type EnsureDeploymentRoutableFn,
 } from "./workflow-runs";
 import type { HubDb } from "../db";
+import { createWorkflowRunStarter } from "../services/workflow-run-starter";
 
 type WorkflowRunRow = {
   deploymentId: string;
@@ -169,6 +170,14 @@ function buildApp(db: HubDb, userId = "user-1") {
       cryptoProvider: noopCrypto,
       deploymentDomain: "deploy.example.com",
       ensureDeploymentRoutable: () => Promise.resolve({ reestablished: false }),
+      runStarter: createWorkflowRunStarter({
+        db,
+        sessionService: noopSessionService,
+        ensureDeploymentRoutable: () =>
+          Promise.resolve({ reestablished: false }),
+        deploymentDomain: "deploy.example.com",
+        cryptoProvider: noopCrypto,
+      }),
     }),
   );
   return parent;
@@ -379,6 +388,14 @@ describe("GET /workflow-runs (workbench-aware visibility)", () => {
         deploymentDomain: "deploy.example.com",
         ensureDeploymentRoutable: () =>
           Promise.resolve({ reestablished: false }),
+        runStarter: createWorkflowRunStarter({
+          db,
+          sessionService: noopSessionService,
+          ensureDeploymentRoutable: () =>
+            Promise.resolve({ reestablished: false }),
+          deploymentDomain: "deploy.example.com",
+          cryptoProvider: noopCrypto,
+        }),
       }),
     );
     return parent;
@@ -501,6 +518,7 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     db: HubDb,
     capture: { msg?: { tenantId: string } },
     ensure?: EnsureDeploymentRoutableFn,
+    now?: () => number,
   ) {
     const sessionService = {
       sendUserMessage: (args: { tenantId: string }) => {
@@ -524,12 +542,21 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
         deploymentDomain: "deploy.example.com",
         ensureDeploymentRoutable:
           ensure ?? (() => Promise.resolve({ reestablished: false })),
+        runStarter: createWorkflowRunStarter({
+          db,
+          sessionService,
+          ensureDeploymentRoutable:
+            ensure ?? (() => Promise.resolve({ reestablished: false })),
+          deploymentDomain: "deploy.example.com",
+          cryptoProvider: noopCrypto,
+          ...(now ? { now } : {}),
+        }),
       }),
     );
     return parent;
   }
 
-  it("re-establishes the supervisor before delivering, and does not deliver if that fails (CL-2225)", async () => {
+  it("re-establishes the supervisor before delivering, and does not deliver if that fails", async () => {
     userContextImpl = () =>
       Promise.resolve({
         context: { tenantId: "tenant-1", principalId: "p-1" },
@@ -632,6 +659,46 @@ describe("POST /workflow-runs/:kind/start (shadowing + visibility)", () => {
     );
     expect(res.status).toBe(202);
     expect(capture.msg?.tenantId).toBe("tenant-global");
+  });
+
+  it("maps a rate_limited run-start result to 429", async () => {
+    userContextImpl = () =>
+      Promise.resolve({
+        context: { tenantId: "tenant-1", principalId: "p-1" },
+        forbidden: false,
+      });
+    ancestorChain = ["tenant-1"];
+    const candidates: WorkflowRunRow[] = [
+      {
+        deploymentId: "dep-wb",
+        kind: "deck",
+        status: "idle",
+        createdAt: "2026-06-01T00:00:00.000Z",
+        tenantId: "tenant-1",
+      },
+    ];
+    const capture: { msg?: { tenantId: string } } = {};
+    const app = startApp(
+      makeListDb([], candidates),
+      capture,
+      undefined,
+      () => 1_000,
+    );
+    const fire = () =>
+      app.request(
+        new Request("http://local/workflow-runs/deck/start?tenantId=tenant-1", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }),
+      );
+
+    for (let i = 0; i < 60; i++) {
+      const ok = await fire();
+      expect(ok.status).toBe(202);
+    }
+    const blocked = await fire();
+    expect(blocked.status).toBe(429);
   });
 
   it("403s for a tenant the caller is not a principal of", async () => {

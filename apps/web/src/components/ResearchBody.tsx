@@ -284,9 +284,15 @@ interface ResearchBodyProps {
   // The prose report markdown persisted alongside the structured brief. When
   // present it is the primary deliverable; the brief becomes supporting data.
   body?: string;
+  layout?: "inline" | "detail";
 }
 
-export default function ResearchBody({ brief, body }: ResearchBodyProps) {
+export default function ResearchBody({
+  brief,
+  body,
+  layout = "inline",
+}: ResearchBodyProps) {
+  const proseClass = layout === "detail" ? "max-w-none w-full" : "max-w-[68ch]";
   const report = body?.trim() ?? "";
 
   // No prose report persisted (older artifacts): fall back to the structured view.
@@ -321,7 +327,7 @@ export default function ResearchBody({ brief, body }: ResearchBodyProps) {
         <ReportActions markdown={report} brief={brief} />
       </div>
 
-      <Markdown className="max-w-[68ch]">{report}</Markdown>
+      <Markdown className={proseClass}>{report}</Markdown>
 
       <details className="group border-t border-border pt-4">
         <summary className="flex items-center gap-2 cursor-pointer list-none text-sm font-semibold text-text-2 hover:text-text [&::-webkit-details-marker]:hidden">

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   TOOL_CREDENTIAL_ENV_PREFIX,
   ToolCredential,
+  ToolCredentialMissingError,
   ToolCredentialsRequest,
   getToolCredential,
   providerFromEnvKey,
@@ -33,8 +34,32 @@ describe("getToolCredential", () => {
     });
   });
 
-  test("throws when the credential was not injected", () => {
-    expect(() => getToolCredential({}, "exa")).toThrow(/exa/);
+  test("throws ToolCredentialMissingError when the env key is entirely absent", () => {
+    expect(() => getToolCredential({}, "exa")).toThrow(
+      ToolCredentialMissingError,
+    );
+    try {
+      getToolCredential({}, "exa");
+      throw new Error("expected getToolCredential to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ToolCredentialMissingError);
+      expect((err as ToolCredentialMissingError).name).toBe(
+        "ToolCredentialMissingError",
+      );
+      expect((err as ToolCredentialMissingError).providerName).toBe("exa");
+    }
+  });
+
+  test("throws a generic Error when the key is present but malformed", () => {
+    const env = { [toolCredentialEnvKey("exa")]: { apiKey: "k" } };
+    try {
+      getToolCredential(env, "exa");
+      throw new Error("expected getToolCredential to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(ToolCredentialMissingError);
+      expect((err as Error).name).toBe("Error");
+    }
   });
 });
 

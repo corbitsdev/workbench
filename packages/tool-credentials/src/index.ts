@@ -33,6 +33,10 @@ export const ToolCredentialsRequest = type({
   tenantId: "string",
   agentId: "string",
   providerNames: "string[]",
+  /** When set, hub resolves member creds from this run's creator principal. */
+  "workflowRunId?": "string",
+  /** Live-agent path: session owner's user principal (validated server-side). */
+  "memberPrincipalId?": "string",
 });
 export type ToolCredentialsRequest = typeof ToolCredentialsRequest.infer;
 
@@ -85,9 +89,37 @@ export const ToolManifestResponse = type({
 export type ToolManifestResponse = typeof ToolManifestResponse.infer;
 
 /**
- * Read a resolved tool credential from the agent env. Throws if the host
- * did not inject it — a credentialed factory that declared the matching
- * `requires` entry should always find it, so a miss is a wiring fault
+ * Thrown by `getToolCredential` when the env key is entirely absent — the
+ * expected shape for a tenant that has simply not configured an optional
+ * provider. Callers (the sidecar tool harnesses) use this to skip the
+ * package quietly instead of warning on every launch.
+ *
+ * Tool-package factories load from published tarballs at runtime, so a
+ * catch site cannot rely on `instanceof ToolCredentialMissingError` (the
+ * class may come from a different bundle copy of this package). Detect via
+ * `err.name === "ToolCredentialMissingError"` instead — `name` survives
+ * bundling/serialization even when the class identity does not.
+ */
+export class ToolCredentialMissingError extends Error {
+  readonly providerName: string;
+
+  constructor(providerName: string) {
+    super(
+      `tool credential for provider "${providerName}" was not injected into env`,
+    );
+    this.name = "ToolCredentialMissingError";
+    this.providerName = providerName;
+  }
+}
+
+/**
+ * Read a resolved tool credential from the agent env.
+ *
+ * If the env key is entirely absent, throws `ToolCredentialMissingError` —
+ * the expected case when a tenant hasn't configured an optional provider.
+ * If the key is present but malformed, throws a generic `Error`: a
+ * credentialed factory that declared the matching `requires` entry should
+ * always find a well-formed value, so a malformed one is a wiring fault
  * worth surfacing loudly rather than degrading to an unauthenticated call.
  */
 export function getToolCredential(
@@ -95,6 +127,9 @@ export function getToolCredential(
   providerName: string,
 ): ToolCredential {
   const value = env[toolCredentialEnvKey(providerName)];
+  if (value === undefined) {
+    throw new ToolCredentialMissingError(providerName);
+  }
   const parsed = ToolCredential(value);
   if (parsed instanceof type.errors) {
     throw new Error(

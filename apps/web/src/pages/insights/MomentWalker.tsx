@@ -13,7 +13,7 @@ import {
 } from "./trace-links";
 import { usePrincipalActivity, useMomentDetail } from "./ActorTimeline";
 import { isPermissionDeniedError } from "./activity-error";
-import { HonestGapChip } from "./tracer-shell";
+import { TraceOutputView } from "./trace-output-view";
 import {
   clampListIndex,
   listboxShouldHandleKeyDown,
@@ -30,12 +30,6 @@ const DETAIL_ENRICHED_KINDS = new Set([
   "workflow_run",
 ]);
 
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  return JSON.stringify(value, null, 2);
-}
-
 function formatDuration(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)}ms`;
   const seconds = ms / 1000;
@@ -43,15 +37,6 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor(seconds / 60);
   const rest = Math.round(seconds % 60);
   return `${minutes}m ${rest}s`;
-}
-
-/** A recorded value in a mono code block; used for tool I/O and turn parts. */
-function ValueBlock({ children }: { children: React.ReactNode }) {
-  return (
-    <pre className="overflow-x-auto rounded-[7px] border border-border bg-surface-2 px-2.5 py-2 font-mono text-[11.5px] text-text-2">
-      {children}
-    </pre>
-  );
 }
 
 /** A quiet, single-line honest absence — no loud gold chip. */
@@ -88,28 +73,6 @@ function dotClass(entry: TimelineEntry): string {
     return "bg-accent";
   }
   return "bg-blue";
-}
-
-function MomentAttributionGaps() {
-  return (
-    <>
-      <DecompRow label="Grant">
-        <HonestGapChip testId="moment-grant-gap">
-          Grant exercised on this moment is not recorded yet
-        </HonestGapChip>
-      </DecompRow>
-      <DecompRow label="Tokens">
-        <HonestGapChip testId="moment-tokens-gap">
-          Per-moment token attribution is not recorded yet
-        </HonestGapChip>
-      </DecompRow>
-      <DecompRow label="Cost">
-        <HonestGapChip testId="moment-cost-gap">
-          Per-moment cost is not recorded yet
-        </HonestGapChip>
-      </DecompRow>
-    </>
-  );
 }
 
 function DecompRow({
@@ -205,7 +168,10 @@ export function MomentDecomposition({
               <Absent>Loading…</Absent>
             ) : moment?.toolCall?.input !== undefined &&
               moment.toolCall.input !== null ? (
-              <ValueBlock>{formatValue(moment.toolCall.input)}</ValueBlock>
+              <TraceOutputView
+                value={moment.toolCall.input}
+                testId="moment-tool-input"
+              />
             ) : (
               <Absent data-testid="moment-input-empty">
                 No input recorded for this call
@@ -217,7 +183,10 @@ export function MomentDecomposition({
               <Absent>Loading…</Absent>
             ) : moment?.toolCall?.output !== undefined &&
               moment.toolCall.output !== null ? (
-              <ValueBlock>{formatValue(moment.toolCall.output)}</ValueBlock>
+              <TraceOutputView
+                value={moment.toolCall.output}
+                testId="moment-tool-output"
+              />
             ) : (
               <Absent data-testid="moment-output-empty">
                 No output recorded for this call
@@ -225,11 +194,8 @@ export function MomentDecomposition({
             )}
           </DecompRow>
           <DecompRow label="Records touched">
-            <HonestGapChip testId="moment-records-gap">
-              Which records this call touched is not recorded yet
-            </HonestGapChip>
+            <Absent data-testid="moment-records-gap">—</Absent>
           </DecompRow>
-          <MomentAttributionGaps />
         </>
       )}
 
@@ -292,7 +258,6 @@ export function MomentDecomposition({
                 </span>
               </DecompRow>
             )}
-          <MomentAttributionGaps />
         </>
       )}
 

@@ -122,6 +122,15 @@ describe("AppSidebar", () => {
     ).toBe("/settings");
   });
 
+  it("lists Inbox first in the primary nav", () => {
+    renderSidebar();
+    const nav = screen.getByRole("navigation", { name: /main navigation/i });
+    const labels = Array.from(nav.querySelectorAll("a")).map(
+      (a) => a.textContent,
+    );
+    expect(labels[0]).toBe("Inbox");
+  });
+
   it("renders the New Chat action and the thread list", () => {
     renderSidebar();
     const newChat = screen.getByRole("button", { name: /new chat/i });

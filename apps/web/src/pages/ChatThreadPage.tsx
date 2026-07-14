@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef } from "react";
-import { Navigate, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { ThreadInsert } from "@workbench/chat";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
+import { useMembers } from "../hooks/use-members";
 import { useConversationGates } from "../hooks/use-conversation-gates";
 import { useResumeConversationGate } from "../hooks/use-workflow";
 import { useWorkflowRunEvents } from "../hooks/use-workflow-run-events";
@@ -22,7 +23,7 @@ import {
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid h-full place-items-center px-6 text-center text-sm text-text-2">
+    <div className="grid h-full place-items-center px-6 text-center text-library-body-sm text-text-2">
       {children}
     </div>
   );
@@ -35,8 +36,21 @@ export function ChatThreadPage() {
   const { data, isLoading, isError, refetch } = useMyraThreads();
   const threads = data?.threads;
   const createThread = useCreateMyraThread();
+  const { data: members } = useMembers(activeTenantId);
+  const mentionCandidates = (members ?? []).map((m) => ({
+    id: m.refId,
+    name: m.name,
+  }));
 
-  const active = resolveActiveThread(threads ?? [], threadId);
+  const threadList = threads ?? [];
+  const unknownExplicitThreadId =
+    threadId !== undefined &&
+    threadId.length > 0 &&
+    threadList.length > 0 &&
+    !threadList.some((t) => t.id === threadId);
+  const active = unknownExplicitThreadId
+    ? null
+    : resolveActiveThread(threadList, threadId);
 
   // Remember the resolved thread for the FAB and root redirect. Writes an
   // external store only (no re-render), so an effect is the right tool here.
@@ -178,8 +192,21 @@ export function ChatThreadPage() {
     );
   }
 
-  // Canonicalize the URL to the resolved thread (handles an unknown/stale id or
-  // the bare /chats path). Same instance, so no session churn on the rerender.
+  if (unknownExplicitThreadId) {
+    return (
+      <CenteredNotice>
+        <div className="flex flex-col items-center gap-2">
+          <span>This chat couldn't be found.</span>
+          <Link to="/chats" className="text-orange underline">
+            Back to all chats
+          </Link>
+        </div>
+      </CenteredNotice>
+    );
+  }
+
+  // Canonicalize the URL to the resolved thread (bare /chats or last-active
+  // fallback). Same instance, so no session churn on the rerender.
   if (active && active.id !== threadId) {
     return <Navigate to={`/chats/${active.id}`} replace />;
   }
@@ -191,7 +218,6 @@ export function ChatThreadPage() {
           <MyraChatSurface
             session={session}
             tenantId={activeTenantId}
-            threadLabel={active?.label}
             onUserSend={maybeTitleFromFirstMessage}
             signalRouting={signalRouting}
             resumeInFlight={resumeGate.isPending}
@@ -201,6 +227,7 @@ export function ChatThreadPage() {
                 .then(() => undefined)
             }
             inserts={inserts}
+            mentionCandidates={mentionCandidates}
           />
         </div>
         {/* conversationId == Myra thread id; producers (workflow_start tool,

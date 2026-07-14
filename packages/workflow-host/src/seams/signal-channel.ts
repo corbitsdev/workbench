@@ -294,6 +294,20 @@ export function createWorkflowHostSignalChannel(
               out[filepath] = new TextDecoder().decode(contents);
             }
             if (duplicate) return out;
+            // WORKBENCH-LOCAL (CL-3641): `maxSeq` starts at -1, so an
+            // empty `runs/<runId>/events/` dir (a signal racing a cold
+            // start before the child has committed RunStarted at seq 1
+            // -- see repo-store.ts) would compute `nextSeq = 0` and
+            // write a seq-0 SignalReceived. The state machine rejects
+            // seq < 1, so that head event permanently poisons the run
+            // log -- every fold fails forever. Refuse instead: the
+            // hub's durable pending-signal rail re-delivers later, so a
+            // failed delivery here self-heals once RunStarted lands.
+            if (maxSeq === -1) {
+              throw new Error(
+                `signal deliver refused: run log has no events yet (run not started) runId=${opts.runId} signalName=${name}`,
+              );
+            }
             const nextSeq = maxSeq + 1;
             // The workflow-run kind handler's `EventEnvelope`
             // validator requires `seq: number` on every event blob;

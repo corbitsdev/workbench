@@ -68,13 +68,15 @@ describe("Members router", () => {
     const res = await app.request("/members?tenantId=tn-1");
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      members: { id: string; name: string }[];
+      members: { id: string; name: string; refId: string }[];
     };
     expect(body.members).toHaveLength(2);
     const alice = body.members.find((m) => m.id === "prn-1");
     const bob = body.members.find((m) => m.id === "prn-2");
     expect(alice?.name).toBe("Alice");
+    expect(alice?.refId).toBe("usr-1");
     expect(bob?.name).toBe("Bob");
+    expect(bob?.refId).toBe("usr-2");
   });
 
   it("omits user principals with no matching user row", async () => {

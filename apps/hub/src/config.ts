@@ -1,5 +1,6 @@
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
+import { HEARTBEAT_WORKFLOW_KIND } from "@workbench/shared";
 
 const log = getLogger(["api", "config"]);
 
@@ -151,6 +152,16 @@ function parsePositiveIntEnv(
   if (!Number.isInteger(parsed) || parsed <= 0) {
     const unit = unitHint === undefined ? "" : ` (${unitHint})`;
     throw new Error(`${name} must be a positive integer${unit}; got "${raw}"`);
+  }
+  return parsed;
+}
+
+function parseHourUtcEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw === "") return defaultValue;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 23) {
+    throw new Error(`${name} must be an integer hour 0-23; got "${raw}"`);
   }
   return parsed;
 }
@@ -313,6 +324,18 @@ export function loadConfig() {
     // definitions to the global tenant on boot (CL-2593). Default false — an
     // opt-in kill switch; off restores the manual `deploy-workflow` flow.
     workflowAutopublishOnBoot: parseBooleanEnv("WORKFLOW_AUTOPUBLISH_ON_BOOT"),
+    // When true, sync embedded tool-package tarballs into the root tenant
+    // package-registry asset on boot (CL-3093). Default false — opt in per env.
+    toolRegistryAutopublishOnBoot: parseBooleanEnv(
+      "TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT",
+    ),
+    // Package-registry asset name for boot-time tool sync. Default workbench-builtins.
+    toolRegistryName:
+      optionalEnv("TOOL_REGISTRY_NAME")?.trim() || "workbench-builtins",
+    // Kill switch for ephemeral Myra triage of external inbound user mail
+    // (per-item session, prepare-only by default). Default OFF; opt in per
+    // environment.
+    triageEnabled: parseBooleanEnv("TRIAGE_ENABLED"),
     // Global override for the Demos sidebar section (hidden by default). When
     // true the demo links are served to every client regardless of the org-wide
     // owner toggle; absent/false leaves demos to the owner grant.
@@ -397,6 +420,56 @@ export function loadConfig() {
         "milliseconds",
       ),
     },
+    // Automation scheduler. Opt-in kill switch, default OFF (mirrors
+    // workflowAutopublishOnBoot). When enabled, the hub fires durable
+    // scheduled_trigger rows on a daily UTC-hour cadence and seeds one
+    // heartbeat schedule per Myra member at `heartbeatHourUtc` on boot.
+    scheduler: {
+      enabled: parseBooleanEnv("SCHEDULER_ENABLED"),
+      heartbeatHourUtc: parseHourUtcEnv("HEARTBEAT_HOUR_UTC", 13),
+      heartbeatKind: HEARTBEAT_WORKFLOW_KIND,
+    },
+    // Native-task pending-ref reconciler. Opt-in kill switch, default
+    // OFF. When enabled, the hub periodically retries task_external_ref rows a
+    // push left `pending` (adapter threw, credential missing) with a bounded
+    // per-ref budget; failures stay server-side and never surface to the user.
+    tasksReconciler: {
+      enabled: parseBooleanEnv("TASKS_RECONCILER_ENABLED"),
+    },
+    // Live per-source inbox intake (CL-3511/CL-3577). The tick runs on a 60s
+    // cadence by default; override with INBOX_INTAKE_TICK_MS (positive integer
+    // milliseconds) for slower/faster polling.
+    inboxIntake: {
+      tickIntervalMs: parsePositiveIntEnv(
+        "INBOX_INTAKE_TICK_MS",
+        60_000,
+        "milliseconds",
+      ),
+      // CL-3585: optional Linear webhook receiver. When set, the hub mounts a
+      // public POST endpoint at /webhooks/linear that verifies the
+      // `linear-signature` HMAC against this secret and lands Issue/Comment
+      // data-change events on the assignee's inbox — an additive low-latency
+      // path alongside the 60s poller. Unset ⇒ the route is not mounted.
+      linearWebhookSecret: optionalEnv("LINEAR_WEBHOOK_SECRET"),
+      // CL-3586: same additive pattern for Attio — verifies `Attio-Signature`
+      // and reuses the poller's task upsert. Unset ⇒ route not mounted.
+      attioWebhookSecret: optionalEnv("ATTIO_WEBHOOK_SECRET"),
+      // CL-3581: Slack Events API receiver. Verifies the `X-Slack-Signature`
+      // v0 HMAC against this app signing secret. Unset ⇒ route not mounted.
+      slackSigningSecret: optionalEnv("SLACK_SIGNING_SECRET"),
+    },
+    // Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace
+    // the env-only kill switches above as the day-to-day toggle; the env vars
+    // stay as an emergency global override (see feature-grants.ts). Each
+    // runtime decision point re-checks the tenant's grant on a tick/enqueue, so
+    // a short in-process TTL collapses that to one grant-store query per
+    // window rather than one per tick. Override with
+    // FEATURE_GRANT_CACHE_TTL_MS (positive integer milliseconds).
+    featureGrantCacheTtlMs: parsePositiveIntEnv(
+      "FEATURE_GRANT_CACHE_TTL_MS",
+      30_000,
+      "milliseconds",
+    ),
   };
 
   log.info("Configuration loaded", {
@@ -416,6 +489,39 @@ export function loadConfig() {
 
   _config = config;
   return config;
+}
+
+// ─── OAuth-for-inbox: credential-encryption key (CL-3356 #2) ───────
+//
+// The OAuth *app* client_id/client_secret are NOT env vars — they are owner-set
+// tenant credentials entered on the Capabilities page and resolved via
+// `resolveCredentialRequirement` (see `oauth-flow.ts`). The only env here is the
+// envelope-encryption key for the per-user tokens, resolved LAZILY (at token
+// write) so a deployment that has not enabled OAuth-for-inbox still boots.
+
+/** Dedicated secret for signing the OAuth `state` HMAC. Kept separate from
+ * `BETTER_AUTH_SECRET` (least-privilege / blast-radius isolation): the state
+ * signer must not share a key with session auth. Resolved lazily (at
+ * authorize/callback) so a deployment that has not enabled OAuth-for-inbox
+ * still boots; fails loudly the moment the flow is exercised without it. */
+export function requireOAuthStateSecret(): string {
+  return requireEnv("OAUTH_STATE_SECRET");
+}
+
+/** The 32-byte key used to envelope-encrypt OAuth tokens at write. Base64 or
+ * hex; must decode to exactly 32 bytes for AES-256-GCM. Resolved lazily so a
+ * deployment that has not enabled OAuth-for-inbox still boots. */
+export function requireCredentialEncryptionKey(): Buffer {
+  const raw = requireEnv("CREDENTIAL_ENCRYPTION_KEY");
+  const hexCandidate = /^[0-9a-fA-F]{64}$/.test(raw)
+    ? Buffer.from(raw, "hex")
+    : Buffer.from(raw, "base64");
+  if (hexCandidate.length !== 32) {
+    throw new Error(
+      "CREDENTIAL_ENCRYPTION_KEY must decode to exactly 32 bytes (64 hex chars or base64 of 32 bytes) for AES-256-GCM",
+    );
+  }
+  return hexCandidate;
 }
 
 export function getConfig(): Config {

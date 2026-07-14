@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { embeddedWorkflowDefsDir } from "../src/lib/workflow-defs-embedded";
 import {
   serializeEmbeddedJson,
@@ -32,4 +33,18 @@ describe("committed workflow defs are in sync with source", () => {
       expect(actual).toBe(expected);
     });
   }
+});
+
+function hubDockerfilePath(): string {
+  const binDir = dirname(fileURLToPath(import.meta.url));
+  return join(dirname(binDir), "Dockerfile");
+}
+
+describe("hub Docker image can run build:workflow-defs", () => {
+  it("copies ab-compare-presets source (imported by ab-compare workflow kinds)", async () => {
+    const dockerfile = await readFile(hubDockerfilePath(), "utf8");
+    expect(dockerfile).toContain(
+      "COPY packages/ab-compare-presets/ packages/ab-compare-presets/",
+    );
+  });
 });

@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { cn, ComparisonView, Markdown } from "@workbench/ui";
+import { CardBlock, ListBlock, PreviewBlock, isSafeLinkHref } from "./display-blocks";
 import {
   MAX_UI_BLOCK_NEST_DEPTH,
   type FormField,
@@ -109,6 +110,12 @@ export function UIBlockView({
           blind={block.blind ?? false}
         />
       );
+    case "card":
+      return <CardBlock block={block} />;
+    case "list":
+      return <ListBlock block={block} />;
+    case "preview":
+      return <PreviewBlock block={block} />;
     case "canvas":
       return (
         <div className="space-y-3" data-testid="ui-canvas">
@@ -331,22 +338,6 @@ function TableBlock({ block }: { block: Extract<UIBlock, { kind: "table" }> }) {
       </div>
     </Surface>
   );
-}
-
-function isSafeLinkHref(url: string): boolean {
-  const trimmed = url.trim();
-  if (/^javascript:/iu.test(trimmed)) return false;
-  if (trimmed.startsWith("/") || trimmed.startsWith("#")) return true;
-  try {
-    const parsed = new URL(trimmed);
-    return (
-      parsed.protocol === "http:" ||
-      parsed.protocol === "https:" ||
-      parsed.protocol === "mailto:"
-    );
-  } catch {
-    return false;
-  }
 }
 
 function LinkBlock({ block }: { block: Extract<UIBlock, { kind: "link" }> }) {
@@ -1397,22 +1388,55 @@ function ChoiceBlock({
         />
       )}
       {error !== null && <SubmitError message={error} />}
-      <div className="flex flex-wrap gap-2">
-        {block.options.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            disabled={noteRequiredMissing || pendingId !== null}
-            onClick={() => {
-              void choose(option);
-            }}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
-          >
-            {pendingId === option.id && <Spinner />}
-            {pendingId === option.id ? "Submitting…" : option.label}
-          </button>
-        ))}
-      </div>
+      {block.options.some(
+        (option) =>
+          option.description !== undefined &&
+          option.description.trim().length > 0,
+      ) ? (
+        <div
+          className="grid gap-2 sm:grid-cols-2"
+          data-testid="choice-card-grid"
+        >
+          {block.options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={noteRequiredMissing || pendingId !== null}
+              onClick={() => {
+                void choose(option);
+              }}
+              className="rounded-lg border border-border bg-bg px-3 py-2.5 text-left transition-transform hover:border-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="inline-flex items-center gap-2 text-sm font-medium text-text">
+                {pendingId === option.id && <Spinner />}
+                {pendingId === option.id ? "Submitting…" : option.label}
+              </span>
+              {option.description !== undefined && (
+                <span className="mt-0.5 block text-xs text-text-3">
+                  {option.description}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {block.options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={noteRequiredMissing || pendingId !== null}
+              onClick={() => {
+                void choose(option);
+              }}
+              className="inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5 text-sm text-text transition-transform hover:border-orange hover:text-orange active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-text"
+            >
+              {pendingId === option.id && <Spinner />}
+              {pendingId === option.id ? "Submitting…" : option.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

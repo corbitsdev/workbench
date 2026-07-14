@@ -6,7 +6,7 @@ import {
 } from "./definition";
 import { AGENT_TEMPLATES } from "../templates";
 import { canonicalizeToolNames } from "../tool-names";
-import { PERSONAL_AGENT_BASE_TOOLS } from "../personal-agent/definition";
+import { PERSONAL_AGENT_BASE_TOOLS } from "@workbench/myra";
 
 describe("File Parser agent definition (CL-2628)", () => {
   it("is bound to the Anthropic adapter (doc-capable) on claude-sonnet-5", () => {

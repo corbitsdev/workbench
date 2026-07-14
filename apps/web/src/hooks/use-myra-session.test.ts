@@ -4,12 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return React.createElement(QueryClientProvider, { client }, children);
+  return React.createElement(
+    MemoryRouter,
+    { initialEntries: ["/inbox"] },
+    React.createElement(QueryClientProvider, { client }, children),
+  );
 }
 
 class FakeApiError extends Error {
@@ -32,6 +37,10 @@ let nextSessionEvents: StubEvent[] = [];
 const sentMails: string[] = [];
 // Force the next sendMail(s) to reject, to exercise send-failure paths.
 let sendMailShouldFail: "recoverable" | "permanent" | null = null;
+// Live activity the session mock reports; tests mutate it and fire
+// capturedOnChange to simulate a new agent event arriving.
+let sessionActivity: unknown = null;
+let capturedOnChange: (() => void) | null = null;
 const launchInstanceSession = mock(
   (_id: string): Promise<{ launched: boolean; launchError?: string }> =>
     Promise.resolve({ launched: true }),
@@ -46,16 +55,22 @@ const ensureMeSynced = mock(() =>
 
 mock.module("@intx/hub-client", () => ({
   ApiError: FakeApiError,
-  createInstanceSession: (opts: { tenantId?: string }) => {
+  createInstanceSession: (opts: {
+    tenantId?: string;
+    onChange?: () => void;
+  }) => {
     const idx = destroyed.length;
     destroyed.push(0);
     sessionTenantIds.push(opts?.tenantId);
+    capturedOnChange = opts?.onChange ?? null;
     const events = nextSessionEvents;
     const stop = mock();
     sessionStops.push(stop);
     return {
       events,
-      activity: null,
+      get activity() {
+        return sessionActivity;
+      },
       hydrated: true,
       start: () => stop,
       destroy: () => {
@@ -78,17 +93,29 @@ mock.module("@intx/hub-client", () => ({
 mock.module("../lib/hub-api", () => ({
   launchInstanceSession,
   ensureMeSynced,
+  abortInstanceTurn: () => Promise.resolve(),
   getOutputFeedback: () => Promise.resolve([]),
   saveOutputFeedback: () => Promise.resolve(),
   upsertRating: (prev: unknown) => prev ?? [],
 }));
 
 let capturedOnStreamError: ((err: Error) => void) | null = null;
+// Attachment sends hit `transport.fetch` (parse route + mail route). Tests that
+// exercise that path set this; every other test leaves it null and the fake
+// transport's fetch is a no-op (matching the previous empty-object stub).
+let transportFetch:
+  | ((method: string, path: string, body?: unknown) => Promise<unknown>)
+  | null = null;
 
 mock.module("../lib/instance-transport", () => ({
   createHubTransport: (opts?: { onStreamError?: (err: Error) => void }) => {
     capturedOnStreamError = opts?.onStreamError ?? null;
-    return {};
+    return {
+      fetch: (method: string, path: string, body?: unknown) =>
+        transportFetch
+          ? transportFetch(method, path, body)
+          : Promise.resolve(undefined),
+    };
   },
   fetchBlobObjectUrl: (_tenantId: string, _blobId: string) =>
     Promise.resolve("blob:test"),
@@ -119,14 +146,14 @@ mock.module("@workbench/agents/browser", () => ({
 const {
   useMyraSession,
   deliverMessage,
-  deliverMessageWithAttachments,
+  deliverMailMessage,
   attachmentErrorMessage,
   composeWithDocumentContext,
   parseDocumentAttachment,
   DocumentParseError,
 } = await import("./use-myra-session");
 
-type DeliverTransport = Parameters<typeof deliverMessageWithAttachments>[0];
+type DeliverTransport = Parameters<typeof deliverMailMessage>[0];
 
 beforeEach(() => {
   launchInstanceSession.mockClear();
@@ -140,6 +167,9 @@ beforeEach(() => {
   nextSessionEvents = [];
   sentMails.length = 0;
   sendMailShouldFail = null;
+  transportFetch = null;
+  sessionActivity = null;
+  capturedOnChange = null;
   capturedOnStreamError = null;
   trackerStops.toolNames.mockClear();
   trackerStops.liveText.mockClear();
@@ -164,7 +194,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
   });
 
   it("relaunches and retries once on a 502, then succeeds", async () => {
@@ -179,7 +209,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
   });
 
   it("surfaces a second consecutive 502 instead of relaunching again", async () => {
@@ -208,7 +238,7 @@ describe("deliverMessage", () => {
     } as any;
     await deliverMessage(session, "inst-1", "hello");
     expect(session.sendMail).toHaveBeenCalledTimes(2);
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
   });
 
   it("does not relaunch a true gateway 502 carrying an unrelated structured code", async () => {
@@ -270,7 +300,10 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
   it("launches exactly once for a concrete instance and never uses the paInstanceId fallback", async () => {
     renderHook(() => useMyraSession("inst-1", "tnt-acme", true), { wrapper });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    expect(launchInstanceSession).toHaveBeenCalledWith(
+      "inst-1",
+      expect.objectContaining({ pageContext: expect.any(String) }),
+    );
     await new Promise((r) => setTimeout(r, 20));
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
   });
@@ -308,7 +341,10 @@ describe("useMyraSession launch gating (CL-2309 smoothness)", () => {
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(1));
     rerender({ id: "inst-2" });
     await waitFor(() => expect(launchInstanceSession).toHaveBeenCalledTimes(2));
-    expect(launchInstanceSession).toHaveBeenLastCalledWith("inst-2");
+    expect(launchInstanceSession).toHaveBeenLastCalledWith(
+      "inst-2",
+      expect.objectContaining({ pageContext: expect.any(String) }),
+    );
     expect(destroyed[0]).toBe(1);
   });
 
@@ -614,10 +650,8 @@ describe("attachmentErrorMessage", () => {
   });
 });
 
-describe("deliverMessageWithAttachments", () => {
-  const attachments = [{ mimeType: "image/png", data: "AAAA", name: "a.png" }];
-
-  it("POSTs content and attachments to the instance mail route", async () => {
+describe("deliverMailMessage", () => {
+  it("POSTs content with an empty inline attachments field to the mail route", async () => {
     const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
       Promise.resolve(undefined),
     );
@@ -625,21 +659,16 @@ describe("deliverMessageWithAttachments", () => {
       fetch: fetchMock,
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
-    await deliverMessageWithAttachments(
-      transport,
-      "tnt-acme",
-      "inst-1",
-      "hi",
-      attachments,
-    );
+    await deliverMailMessage(transport, "tnt-acme", "inst-1", "hi");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("POST");
     expect(fetchMock.mock.calls[0]?.[1]).toBe(
       "/api/tenants/tnt-acme/agents/instances/inst-1/mail",
     );
+    // Nothing rides inline — the parsed attachment text is already in `content`.
     expect(fetchMock.mock.calls[0]?.[2]).toEqual({
       content: "hi",
-      attachments,
+      attachments: [],
     });
   });
 
@@ -654,14 +683,8 @@ describe("deliverMessageWithAttachments", () => {
       fetch: fetchMock,
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
-    await deliverMessageWithAttachments(
-      transport,
-      "tnt-acme",
-      "inst-1",
-      "hi",
-      attachments,
-    );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    await deliverMailMessage(transport, "tnt-acme", "inst-1", "hi");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -676,14 +699,8 @@ describe("deliverMessageWithAttachments", () => {
       fetch: fetchMock,
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
-    await deliverMessageWithAttachments(
-      transport,
-      "tnt-acme",
-      "inst-1",
-      "hi",
-      attachments,
-    );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    await deliverMailMessage(transport, "tnt-acme", "inst-1", "hi");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -696,13 +713,7 @@ describe("deliverMessageWithAttachments", () => {
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
     await expect(
-      deliverMessageWithAttachments(
-        transport,
-        "tnt-acme",
-        "inst-1",
-        "hi",
-        attachments,
-      ),
+      deliverMailMessage(transport, "tnt-acme", "inst-1", "hi"),
     ).rejects.toBeInstanceOf(FakeApiError);
     expect(launchInstanceSession).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -721,14 +732,8 @@ describe("deliverMessageWithAttachments", () => {
       fetch: fetchMock,
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
-    await deliverMessageWithAttachments(
-      transport,
-      "tnt-acme",
-      "inst-1",
-      "hi",
-      attachments,
-    );
-    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1");
+    await deliverMailMessage(transport, "tnt-acme", "inst-1", "hi");
+    expect(launchInstanceSession).toHaveBeenCalledWith("inst-1", undefined);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -741,13 +746,7 @@ describe("deliverMessageWithAttachments", () => {
       subscribe: () => () => {},
     } as unknown as DeliverTransport;
     await expect(
-      deliverMessageWithAttachments(
-        transport,
-        "tnt-acme",
-        "inst-1",
-        "hi",
-        attachments,
-      ),
+      deliverMailMessage(transport, "tnt-acme", "inst-1", "hi"),
     ).rejects.toBeInstanceOf(FakeApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(launchInstanceSession).not.toHaveBeenCalled();
@@ -779,6 +778,36 @@ describe("document diversion (CL-2628)", () => {
       "/api/v1/instances/inst-1/parse-file",
     );
     expect(doc.parsedText).toBe("the parsed text");
+  });
+
+  it("POSTs an image to the parse route too (never inline to Myra's text-only model)", async () => {
+    const fetchMock = mock((_m: string, _p: string, _b: unknown) =>
+      Promise.resolve({
+        artifactId: "art_img",
+        filename: "screenshot.png",
+        parsedText: "text extracted from the screenshot",
+      }),
+    );
+    const transport = {
+      fetch: fetchMock,
+      subscribe: () => () => {},
+    } as unknown as DeliverTransport;
+
+    const img = await parseDocumentAttachment(transport, "inst-1", {
+      filename: "screenshot.png",
+      mimeType: "image/png",
+      data: "BASE64",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[1]).toBe(
+      "/api/v1/instances/inst-1/parse-file",
+    );
+    expect(img.parsedText).toBe("text extracted from the screenshot");
+    // Folded into a context block exactly like a document — this is what send()
+    // delivers as the message body, with no inline image attachment.
+    expect(composeWithDocumentContext("what is this?", [img])).toBe(
+      "<context>\n[Attached document: screenshot.png]\ntext extracted from the screenshot\n</context>\n\nwhat is this?",
+    );
   });
 
   it("rejects a malformed parse response instead of trusting it", async () => {
@@ -845,5 +874,95 @@ describe("document diversion (CL-2628)", () => {
         new DocumentParseError("That document couldn't be read."),
       ),
     ).toBe("That document couldn't be read.");
+  });
+});
+
+describe("useMyraSession send() image diversion (image-upload 400 fix)", () => {
+  it("routes an image through /parse-file and delivers empty inline attachments", async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    transportFetch = (method, path, body) => {
+      calls.push({ method, path, body });
+      if (path.endsWith("/parse-file")) {
+        return Promise.resolve({
+          artifactId: "art_img",
+          filename: "screenshot.png",
+          parsedText: "text extracted from the screenshot",
+        });
+      }
+      return Promise.resolve({ id: "mail-1" });
+    };
+
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.live).toBe(true));
+
+    const file = new File([new Uint8Array([1, 2, 3])], "screenshot.png", {
+      type: "image/png",
+    });
+    const image = {
+      id: "att-1",
+      file,
+      name: "screenshot.png",
+      mimeType: "image/png",
+      size: file.size,
+    };
+
+    await act(async () => {
+      await result.current.send("what is this?", [image]);
+    });
+
+    const parseCall = calls.find((c) => c.path.endsWith("/parse-file"));
+    const mailCall = calls.find((c) => c.path.endsWith("/mail"));
+
+    // The image was diverted to the parser, never sent inline.
+    expect(parseCall).toBeDefined();
+    expect(parseCall!.method).toBe("POST");
+    expect((parseCall!.body as { mimeType: string }).mimeType).toBe(
+      "image/png",
+    );
+
+    // The mail body carries the parsed text folded into <context>, with an
+    // empty inline attachments field — the exact regression this locks.
+    expect(mailCall).toBeDefined();
+    const mailBody = mailCall!.body as { content: string; attachments: [] };
+    expect(mailBody.attachments).toEqual([]);
+    expect(mailBody.content).toContain("<context>");
+    expect(mailBody.content).toContain("text extracted from the screenshot");
+    expect(mailBody.content).toContain("what is this?");
+  });
+});
+
+describe("useMyraSession abortTurn activity suppression (stop-turn UX)", () => {
+  it("suppresses stale activity after an abort and clears it on the first new activity event", async () => {
+    sessionActivity = { type: "inferring" };
+    const { result } = renderHook(
+      () => useMyraSession("inst-1", "tnt-acme", true),
+      { wrapper },
+    );
+    await waitFor(() => {
+      expect(result.current.state.phase).toBe("ready");
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
+
+    // Stop the turn: the sidecar sleeps the agent and emits nothing more, so
+    // the stale activity must be hidden locally.
+    await act(async () => {
+      await result.current.abortTurn();
+    });
+    expect(result.current.activity).toBeNull();
+
+    // A genuinely-new activity event (e.g. a parked-mail replay wake starting
+    // a new turn) must surface — the stop button has to stay reachable.
+    act(() => {
+      sessionActivity = { type: "inferring" };
+      capturedOnChange?.();
+    });
+    await waitFor(() => {
+      expect(result.current.activity).toEqual({ type: "thinking" });
+    });
   });
 });

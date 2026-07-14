@@ -76,17 +76,39 @@ const SEARCH_TOOLS_WITH_TERM = (term: string) =>
   ] as const;
 
 const LOAD_TOOLS_IDLE = [
-  "Getting that ready",
+  "Preparing tools",
   "Bringing tools online",
   "Preparing what I need",
 ] as const;
 
-const LOAD_TOOLS_PKG = (pkg: string) =>
-  [
-    `Loading ${pkg} for you`,
-    `Bringing ${pkg} online`,
-    `Getting ${pkg} ready`,
+// Stylized brand names that plain first-letter capitalization gets wrong.
+const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  scrapecreators: "ScrapeCreators",
+  x: "X",
+  youtube: "YouTube",
+  github: "GitHub",
+  hackernews: "Hacker News",
+};
+
+// Package shorts are lowercase wire ids ("attio"); display them as proper
+// nouns in running text.
+function displayProviderName(pkg: string): string {
+  const stylized = PROVIDER_DISPLAY_NAMES[pkg.toLowerCase()];
+  if (stylized !== undefined) return stylized;
+  return pkg
+    .split("-")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+const LOAD_TOOLS_PKG = (pkg: string) => {
+  const name = displayProviderName(pkg);
+  return [
+    `Loading ${name} for you`,
+    `Bringing ${name} online`,
+    `Getting ${name} ready`,
   ] as const;
+};
 
 /** Pull a human name out of Attio-style `values` (plain string or nested write form). */
 function attioRecordName(values: unknown): string | null {
@@ -139,11 +161,15 @@ const PHRASES: Record<string, FriendlyPhrase> = {
     }
     if (Array.isArray(names) && names.length > 0) {
       if (names.length === 1) {
-        return pickPhrase(seed, [
-          "Getting that ready",
-          "Bringing a tool online",
-          "Preparing a tool",
-        ]);
+        // Name the provider when the single tool name carries one
+        // ("attio__create_record" → "Getting Attio ready").
+        const first = names[0];
+        const provider =
+          typeof first === "string" ? /^([a-z0-9-]+)__/.exec(first)?.[1] : null;
+        if (provider !== undefined && provider !== null) {
+          return pickPhrase(seed, LOAD_TOOLS_PKG(provider));
+        }
+        return pickPhrase(seed, ["Preparing a tool", "Bringing a tool online"]);
       }
       return pickPhrase(seed, [
         `Getting ${names.length} tools ready`,
@@ -171,8 +197,166 @@ const PHRASES: Record<string, FriendlyPhrase> = {
       ? "Opening a Linear issue"
       : `Opening Linear issue ${id}`;
   },
+  linear_create_issue: (args) => {
+    const title = firstStringArg(args, ["title"]);
+    return title === null
+      ? "Creating a Linear issue"
+      : `Creating Linear issue "${truncate(title)}"`;
+  },
+  linear_update_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Updating a Linear issue"
+      : `Updating Linear issue ${id}`;
+  },
+  linear_archive_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Archiving a Linear issue"
+      : `Archiving Linear issue ${id}`;
+  },
+  linear_delete_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Deleting a Linear issue"
+      : `Deleting Linear issue ${id}`;
+  },
+  linear_link_issues: "Linking Linear issues",
+  linear_list_comments: (args) => {
+    const id = firstStringArg(args, ["issueId", "id", "identifier"]);
+    return id === null
+      ? "Listing Linear comments"
+      : `Listing comments on Linear issue ${id}`;
+  },
+  linear_save_comment: (args) => {
+    const id = firstStringArg(args, ["issueId", "id"]);
+    return id === null
+      ? "Saving a Linear comment"
+      : `Saving a comment on Linear issue ${id}`;
+  },
+  linear_get_attachment: (args) => {
+    const id = firstStringArg(args, ["id"]);
+    return id === null
+      ? "Opening a Linear attachment"
+      : `Opening Linear attachment ${id}`;
+  },
+  linear_prepare_attachment_upload: (args) => {
+    const issue = firstStringArg(args, ["issue", "issueId"]);
+    return issue === null
+      ? "Preparing a Linear file upload"
+      : `Preparing a file upload for Linear issue ${issue}`;
+  },
+  linear_create_attachment_from_upload: (args) => {
+    const issue = firstStringArg(args, ["issue", "issueId"]);
+    return issue === null
+      ? "Attaching a file in Linear"
+      : `Attaching a file to Linear issue ${issue}`;
+  },
+  linear_list_documents: "Browsing Linear documents",
+  linear_get_document: (args) => {
+    const id = firstStringArg(args, ["id", "slug"]);
+    return id === null
+      ? "Opening a Linear document"
+      : `Opening Linear document ${truncate(id)}`;
+  },
+  linear_save_document: (args) => {
+    const title = firstStringArg(args, ["title"]);
+    return title === null
+      ? "Saving a Linear document"
+      : `Saving Linear document "${truncate(title)}"`;
+  },
+  linear_list_projects: "Listing Linear projects",
+  linear_get_project: (args) => {
+    const query = firstStringArg(args, ["query", "id", "slug"]);
+    return query === null
+      ? "Opening a Linear project"
+      : `Opening Linear project ${truncate(query)}`;
+  },
+  linear_save_project: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear project"
+      : `Saving Linear project "${truncate(name)}"`;
+  },
+  linear_list_milestones: (args) => {
+    const project = firstStringArg(args, ["project"]);
+    return project === null
+      ? "Listing Linear milestones"
+      : `Listing milestones for Linear project ${truncate(project)}`;
+  },
+  linear_save_milestone: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear milestone"
+      : `Saving Linear milestone "${truncate(name)}"`;
+  },
+  linear_list_initiatives: "Listing Linear initiatives",
+  linear_save_initiative: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear initiative"
+      : `Saving Linear initiative "${truncate(name)}"`;
+  },
+  linear_list_cycles: (args) => {
+    const team = firstStringArg(args, ["teamId", "team"]);
+    return team === null
+      ? "Listing Linear cycles"
+      : `Listing cycles for Linear team ${truncate(team)}`;
+  },
+  linear_list_releases: "Listing Linear releases",
+  linear_save_release: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear release"
+      : `Saving Linear release "${truncate(name)}"`;
+  },
   linear_list_teams: "Listing Linear teams",
+  linear_get_team: (args) => {
+    const query = firstStringArg(args, ["query", "id", "key"]);
+    return query === null
+      ? "Opening a Linear team"
+      : `Opening Linear team ${truncate(query)}`;
+  },
   linear_list_users: "Listing Linear users",
+  linear_get_user: (args) => {
+    const query = firstStringArg(args, ["query", "id", "email"]);
+    return query === null
+      ? "Looking up a Linear user"
+      : `Looking up Linear user ${truncate(query)}`;
+  },
+  linear_list_issue_labels: "Listing Linear issue labels",
+  linear_create_issue_label: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Creating a Linear issue label"
+      : `Creating Linear label "${truncate(name)}"`;
+  },
+  linear_list_project_labels: "Listing Linear project labels",
+  linear_list_initiative_labels: "Listing Linear initiative labels",
+  linear_list_issue_statuses: (args) => {
+    const team = firstStringArg(args, ["team"]);
+    return team === null
+      ? "Listing Linear workflow states"
+      : `Listing workflow states for ${truncate(team)}`;
+  },
+  linear_get_issue_status: "Resolving a Linear workflow state",
+  linear_search: searching("Linear", ["query", "term"]),
+  linear_list_views: "Listing Linear views",
+  linear_list_dashboards: "Listing Linear dashboards",
+  linear_list_webhooks: "Listing Linear webhooks",
+  linear_list_integrations: "Listing Linear integrations",
+  linear_save_webhook: (args) => {
+    const label = firstStringArg(args, ["label", "url"]);
+    return label === null
+      ? "Saving a Linear webhook"
+      : `Saving Linear webhook ${truncate(label)}`;
+  },
+  linear_delete_webhook: (args) => {
+    const id = firstStringArg(args, ["id"]);
+    return id === null
+      ? "Deleting a Linear webhook"
+      : `Deleting Linear webhook ${id}`;
+  },
 
   // Attio CRM — brand name in the phrase (not "CRM") so the UI reads naturally
   attio_query_records: (args) => {
@@ -214,6 +398,7 @@ const PHRASES: Record<string, FriendlyPhrase> = {
     if (object !== null) return `Creating an Attio ${object} record`;
     return "Creating an Attio record";
   },
+  attio_recent_activity: "Checking recent Attio activity",
 
   // Firecrawl — web scraping / crawling
   firecrawl_scrape: (args) => {
@@ -278,6 +463,65 @@ const PHRASES: Record<string, FriendlyPhrase> = {
 
   // X / Twitter
   x_search: searching("X"),
+
+  // Slack
+  slack_list_channels: "Listing Slack channels",
+  slack_get_channel_history: "Reading a Slack channel",
+  slack_search: searching("Slack"),
+  slack_post_message: (args) => {
+    const channel = firstStringArg(args, [
+      "channel",
+      "channelId",
+      "channel_id",
+    ]);
+    return channel === null
+      ? "Posting to Slack"
+      : `Posting to Slack ${truncate(channel)}`;
+  },
+
+  mail_send: (args) => {
+    const to = firstStringArg(args, ["to"]);
+    return to === null ? "Send mail" : `Send mail to ${truncate(to, 56)}`;
+  },
+
+  // Sumble — account intelligence
+  sumble_resolve_organization: (args) => {
+    const term = firstStringArg(args, ["domain", "slug", "name"]);
+    return term === null
+      ? "Resolving an organization"
+      : `Resolving ${truncate(term)}`;
+  },
+  sumble_search_organizations: searching("Sumble organizations"),
+  sumble_get_org_tech_stack: "Reading an org's tech stack",
+  sumble_list_teams: "Listing org teams",
+  sumble_search_people: "Finding people at an org",
+  sumble_list_jobs: "Listing open jobs",
+  sumble_search_signals: "Checking account signals",
+  sumble_get_intelligence_brief: "Building an account brief",
+  sumble_get_organization_signals: "Reading organization signals",
+  sumble_search_priority_signals: "Searching priority signals",
+  sumble_lookup_job_titles: "Looking up job titles",
+  sumble_lookup_projects: "Looking up projects",
+  sumble_lookup_technologies: "Looking up technologies",
+  sumble_find_technologies: "Finding technologies",
+  sumble_lookup_technology_categories: "Looking up technology categories",
+  sumble_post_organizations: "Querying Sumble organizations",
+  sumble_post_teams: "Querying Sumble teams",
+  sumble_post_people: "Querying Sumble people",
+  sumble_post_jobs: "Querying Sumble jobs",
+  sumble_post_signals: "Querying Sumble signals",
+  sumble_list_contact_lists: "Listing contact lists",
+  sumble_get_contact_list: "Reading a contact list",
+  sumble_create_contact_list: "Creating a contact list",
+  sumble_add_contact_list_people: "Adding people to a contact list",
+  sumble_list_organization_lists: "Listing organization lists",
+  sumble_get_organization_list: "Reading an organization list",
+  sumble_create_organization_list: "Creating an organization list",
+  sumble_add_organization_list_organizations: "Adding orgs to a list",
+  sumble_set_organization_list_deleted: "Updating organization list status",
+  sumble_set_organization_list_signals: "Updating list signal settings",
+  sumble_create_support_request: "Opening a Sumble support request",
+  sumble_create_data_quality_report: "Reporting Sumble data quality",
 
   // YouTube
   youtube_search: searching("YouTube"),
@@ -466,25 +710,74 @@ const INTERNAL_TOOL_PROVIDERS: ReadonlySet<string> = new Set([
   "workflows",
 ]);
 
+/** Bare op ids (`exa_search`, …) when the wire name has no `provider__` prefix. */
+const BARE_INTEGRATION_TOOL_PREFIXES: ReadonlySet<string> = new Set([
+  "attio",
+  "bluesky",
+  "exa",
+  "firecrawl",
+  "gamma",
+  "github",
+  "granola",
+  "linear",
+  "notion",
+  "reddit",
+  "slack",
+  "sumble",
+  "vercel",
+  "xai",
+  "youtube",
+]);
+
 /**
  * External integration tools act on outside services (Attio, Linear, Exa, …).
  * Classification keys on the provider segment of the wire name — the prefix of
  * the LLM-safe `provider__operation` form or the `@scope/pkg/provider:operation`
- * raw factory form. Provider-less bare names are local runners / plumbing and
- * count as internal, as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat
- * uses this to give external tool lines a bullet marker and render internal
- * ones plain.
+ * raw factory form — and on known bare integration op ids (`exa_search`, …).
+ * Other provider-less names are local runners / plumbing and count as internal,
+ * as do the {@link INTERNAL_TOOL_PROVIDERS} packages. Chat uses this to give
+ * external tool lines a bullet marker and render internal ones plain.
  */
 export function isExternalIntegrationTool(name: string): boolean {
-  const llmProvider = /^([a-z0-9-]+)__/.exec(name)?.[1];
+  return integrationToolProviderKey(name) !== null;
+}
+
+/**
+ * Provider slug for brand-logo lookup on a tool call, or null when the call is
+ * workbench-internal or provider-less. Honors `load_tools` package args and both
+ * LLM (`attio__…`), FQN (`…/exa:exa_search`), and bare integration op ids.
+ */
+export function integrationToolProviderKey(
+  name: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const opKey = toolOperationKey(name);
+  if (opKey === "load_tools") {
+    const pkg = args?.package;
+    if (typeof pkg === "string" && pkg.trim() !== "") {
+      return pkg.trim().toLowerCase();
+    }
+    return null;
+  }
+
+  const llmProvider =
+    /^([a-z0-9-]+)__/.exec(name)?.[1] ??
+    /^([a-z0-9-]+)__/.exec(opKey)?.[1];
   if (llmProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(llmProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(llmProvider) ? null : llmProvider;
   }
   const rawProvider = /\/([a-z0-9-]+):/.exec(name)?.[1];
   if (rawProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(rawProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(rawProvider) ? null : rawProvider;
   }
-  return false;
+  const barePrefix = opKey.split("_")[0]?.toLowerCase();
+  if (
+    barePrefix !== undefined &&
+    BARE_INTEGRATION_TOOL_PREFIXES.has(barePrefix)
+  ) {
+    return barePrefix;
+  }
+  return null;
 }
 
 /**
@@ -533,11 +826,13 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
   try {
     parsed = JSON.parse(text);
   } catch {
-    // Plain text result — show a short snippet, not a wall of text.
+    // Plain text result — show a short snippet, not a wall of text. Longer or
+    // JSON-ish text carries nothing worth an expand: return null (the
+    // contract: content or null, never filler).
     if (text.length <= 120 && !text.startsWith("{") && !text.startsWith("[")) {
       return text;
     }
-    return "Done";
+    return null;
   }
 
   if (Array.isArray(parsed)) {
@@ -576,12 +871,6 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
       return obj.count === 0 ? "No results" : `Found ${obj.count} results`;
     }
     if (obj.deduped === true) return "Already exists — skipped create";
-    if (obj.loaded === true || obj.ok === true) return "Done";
-    if (typeof obj.id === "string" || typeof obj.record_id === "string") {
-      return "Done";
-    }
-    // Nested Attio record envelope
-    if (obj.id !== null && typeof obj.id === "object") return "Done";
   }
 
   if (typeof parsed === "string") return truncate(parsed, 120);
@@ -589,7 +878,9 @@ export function friendlyToolResult(call: ToolSummaryCall): string | null {
     return String(parsed);
   }
 
-  return "Done";
+  // Unrecognized shape: nothing useful to say. Null keeps the row
+  // non-expandable — a chevron must never open onto a bare status word.
+  return null;
 }
 
 // A tool's "family" is the package short name for LLM form (`attio__…` →
@@ -765,6 +1056,11 @@ const FAMILY_DEFS: Record<string, FamilyDef> = {
   scrapecreators: {
     verb: "pulled social data",
     altVerb: "gathered social data",
+  },
+  slack: { verb: "worked in Slack", altVerb: "checked Slack" },
+  sumble: {
+    verb: "researched the account",
+    altVerb: "dug into account intelligence",
   },
   gamma: { verb: "worked on a presentation", altVerb: "built a presentation" },
   dispatch: {

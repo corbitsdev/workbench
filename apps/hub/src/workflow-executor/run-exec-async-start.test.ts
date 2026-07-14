@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import type { CryptoProvider } from "@intx/types/runtime";
 import type { SessionService } from "@intx/hub-sessions";
 import type { HubDb } from "../db";
+import { isUuid } from "../lib/uuid";
 import type { RunState } from "./run-store";
 
 // CL-2755: the async-start contract of `startWorkflowRun`. The run row is seeded
@@ -11,6 +12,7 @@ import type { RunState } from "./run-store";
 // without a DB; the provision + session deps are injected fakes.
 
 const rows = new Map<string, RunState>();
+const insertedInputs = new Map<string, unknown>();
 mock.module("./run-store", () => ({
   insertRunRecord: async (
     _db: unknown,
@@ -36,6 +38,7 @@ mock.module("./run-store", () => ({
         : {}),
     };
     rows.set(state.runId, structuredClone(state));
+    insertedInputs.set(state.runId, structuredClone(args.input));
     return state;
   },
   setRunStatus: async (
@@ -67,6 +70,7 @@ mock.module("./run-store", () => ({
     const found = rows.get(runId);
     return found ? structuredClone(found) : null;
   },
+  setPendingSignal: async () => {},
 }));
 
 const { startWorkflowRun } = await import("./run-exec");
@@ -132,6 +136,7 @@ const provisionOk = async () => ({ deploymentId: "ses_run_1" });
 
 function reset(): void {
   rows.clear();
+  insertedInputs.clear();
   sent.length = 0;
   reclaimCalls.length = 0;
 }
@@ -207,6 +212,24 @@ describe("startWorkflowRun async-start contract (CL-2755)", () => {
     expect(sent[0]?.agentAddress).toBe("ins_ses_run_1@wf.localhost");
     // The deployment was attached to the run before the trigger.
     expect(rows.get(result.state.runId)?.deploymentId).toBe("ses_run_1");
+  });
+
+  test("CL-3521: durable input and trigger mail include hub-minted runId (workflow-run-starter parity)", async () => {
+    reset();
+    const result = await startWorkflowRun(baseDeps(provisionOk), startOpts);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    await result.backgroundTask;
+
+    const runId = result.state.runId;
+    expect(isUuid(runId)).toBe(true);
+    expect(insertedInputs.get(runId)).toEqual({ topic: "Acme", runId });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.messageId).toBe(runId);
+    expect(JSON.parse(sent[0]?.content ?? "{}")).toEqual({
+      topic: "Acme",
+      runId,
+    });
   });
 
   test("a provision failure flips the run to failed and fires NO trigger", async () => {

@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { TimelineEntry } from "@workbench/client";
 import {
   GRANT_EFFECT_LABEL,
+  entityLink,
   entityLinkForEntry,
   formatElapsedBetween,
   grantEffect,
@@ -22,6 +23,17 @@ function entry(
     ...partial,
   } as TimelineEntry;
 }
+
+describe("entityLink", () => {
+  it("links principals to the insights users route", () => {
+    expect(entityLink({ type: "principal", id: "prn_u1" })).toBe(
+      "/insights/users/prn_u1",
+    );
+    expect(entityLink({ type: "principal", id: "prn/with" })).toBe(
+      "/insights/users/prn%2Fwith",
+    );
+  });
+});
 
 describe("entityLinkForEntry", () => {
   it("links a workflow_run moment to its run trace, id-encoded", () => {

@@ -64,6 +64,19 @@ describe("ChatPanel", () => {
     expect(screen.getByText("Draft an email")).toBeDefined();
   });
 
+  it("uses bg-page on the panel shell so full-page chat matches the app canvas", () => {
+    const { container } = render(
+      <ChatPanel agent={agent} messages={messages} onSend={() => {}} />,
+    );
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.className).toContain("bg-page");
+    const thread = container.querySelector('[role="log"]') as HTMLElement;
+    expect(thread.className).toContain("bg-page");
+    const composer = container.querySelector('textarea[aria-label="Message"]')
+      ?.parentElement?.parentElement as HTMLElement;
+    expect(composer.className).toContain("bg-page");
+  });
+
   it("fires onSend with the typed text and clears the input", async () => {
     const user = userEvent.setup();
     const onSend = mock((_text: string) => {});
@@ -251,10 +264,37 @@ describe("ChatPanel single merged header", () => {
     expect(screen.queryByText("Personal agent")).toBeNull();
   });
 
-  it("still shows the default agent identity when no headerLeft is provided", () => {
-    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+  it("shows the default agent identity when chrome controls are present without headerLeft", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        onClose={() => {}}
+      />,
+    );
     expect(screen.getByText("Ada")).toBeDefined();
     expect(screen.getByText("Personal agent")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Close chat" })).toBeDefined();
+  });
+
+  it("omits the header when there is no left content and no chrome controls", () => {
+    render(<ChatPanel agent={agent} messages={messages} onSend={() => {}} />);
+    expect(screen.queryByText("Ada")).toBeNull();
+    expect(screen.queryByText("Personal agent")).toBeNull();
+    expect(screen.queryByRole("banner")).toBeNull();
+  });
+
+  it("omits the header when headerLeft is null and no chrome controls are set", () => {
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        headerLeft={null}
+      />,
+    );
+    expect(screen.queryByRole("banner")).toBeNull();
   });
 });
 
@@ -341,7 +381,8 @@ describe("ChatPanel busy state", () => {
 });
 
 describe("ChatPanel composer interaction", () => {
-  it("does not fire onSend when busy", async () => {
+  it("keeps the composer editable and queues instead of firing onSend when busy (CL-2988)", async () => {
+    const user = userEvent.setup();
     const onSend = mock((_text: string) => {});
     render(
       <ChatPanel
@@ -352,8 +393,10 @@ describe("ChatPanel composer interaction", () => {
       />,
     );
     const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
-    expect(input.disabled).toBe(true);
+    expect(input.disabled).toBe(false);
+    await user.type(input, "hang tight{Enter}");
     expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText("Queued")).toBeDefined();
   });
 });
 
@@ -369,5 +412,24 @@ describe("ChatLauncher", () => {
   it("renders an unread badge when count is positive", () => {
     render(<ChatLauncher onClick={() => {}} unreadCount={3} />);
     expect(screen.getByText("3")).toBeDefined();
+  });
+});
+
+describe("ChatPanel abort forwarding", () => {
+  it("forwards onAbort to the composer so a busy panel shows the stop control", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() => {});
+    render(
+      <ChatPanel
+        agent={agent}
+        messages={messages}
+        onSend={() => {}}
+        typing
+        onAbort={onAbort}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onAbort).toHaveBeenCalledTimes(1);
   });
 });

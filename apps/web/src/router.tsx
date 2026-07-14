@@ -6,10 +6,11 @@ import {
   useLocation,
   useParams,
 } from "react-router";
-import { Menu } from "lucide-react";
 import type { PaletteResultItem } from "@workbench/shared";
 import { useAuth } from "./components/AuthProvider";
 import { AppSidebar } from "./components/layout/AppSidebar";
+import { AppTopBar } from "./components/AppTopBar";
+import { PageChromeProvider } from "./lib/page-chrome";
 import { CommandPaletteProvider } from "./components/command-palette-context";
 import { PersonalAgentChat } from "./components/PersonalAgentChat";
 import { ChatLauncherProvider } from "./lib/chat-launcher-context";
@@ -17,6 +18,8 @@ import { ActiveWorkbenchProvider } from "./lib/active-workbench-context";
 import { RequireWorkbenchAccess } from "./components/RequireWorkbenchAccess";
 import { ActiveContextProvider } from "./lib/active-context-store";
 import { ConnectionStatusProvider } from "./lib/connection-status-context";
+import { OnboardingTourProvider } from "./components/tour/OnboardingTour";
+import { WhatsNewPopup } from "./components/whats-new/WhatsNewPopup";
 import { WorkbenchLoadingScreen } from "./components/WorkbenchBootScreen";
 import { LoginPage } from "./pages/LoginPage";
 import { ChatThreadPage } from "./pages/ChatThreadPage";
@@ -24,6 +27,7 @@ import { ChatsListPage } from "./pages/ChatsListPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactDetailPage } from "./pages/ArtifactDetailPage";
 import { WorkflowsPage } from "./pages/WorkflowsPage";
+import { InboxPage } from "./pages/InboxPage";
 import Settings from "./pages/Settings";
 import { SkillsLibrary } from "./pages/SkillsLibrary";
 import { SkillsNew } from "./pages/SkillsNew";
@@ -47,6 +51,7 @@ import { OwnerCatalog } from "./pages/admin/OwnerCatalog";
 import { OwnerGammaTemplates } from "./pages/admin/OwnerGammaTemplates";
 import { OwnerCapabilities } from "./pages/admin/OwnerCapabilities";
 import { OwnerWorkflows } from "./pages/admin/OwnerWorkflows";
+import { OwnerMembers } from "./pages/admin/OwnerMembers";
 import { OwnerDemos } from "./pages/admin/OwnerDemos";
 
 // Preserves the tool name when redirecting the legacy /tools/:name path to its
@@ -66,6 +71,13 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     title: "Chats",
     to: "/chats",
     keywords: ["conversations", "myra", "messages"],
+  },
+  {
+    id: "nav:inbox",
+    category: "navigation",
+    title: "Inbox",
+    to: "/inbox",
+    keywords: ["mail", "mailbox", "messages", "email", "notifications"],
   },
   {
     id: "nav:artifacts",
@@ -131,9 +143,20 @@ export const NAV_COMMANDS: PaletteResultItem[] = [
     category: "navigation",
     title: "Settings",
     to: "/settings",
-    keywords: ["preferences", "theme", "account"],
+    keywords: ["preferences", "theme", "account", "connections", "oauth"],
   },
 ];
+
+/** CL-3464: legacy top-level `/connections` → OAuth landing path. */
+function RedirectLegacyConnections() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={{ pathname: "/settings/connections", search: location.search }}
+      replace
+    />
+  );
+}
 
 function ProtectedLayout() {
   const { session } = useAuth();
@@ -158,41 +181,37 @@ function AppShell() {
         <ChatLauncherProvider>
           <CommandPaletteProvider>
             <ActiveContextProvider>
-              <ConnectionStatusProvider>
-                <div className="flex h-dvh flex-row overflow-hidden bg-page">
-                  <AppSidebar
-                    mobileOpen={drawerOpen}
-                    onNavigate={() => setDrawerOpen(false)}
-                  />
-                  {drawerOpen && (
-                    <button
-                      type="button"
-                      aria-label="Close menu"
-                      onClick={() => setDrawerOpen(false)}
-                      className="fixed inset-0 z-40 bg-black/40 md:hidden"
-                    />
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                    <header className="flex items-center gap-2 border-b border-border px-3 py-2 md:hidden">
-                      <button
-                        type="button"
-                        onClick={() => setDrawerOpen(true)}
-                        aria-label="Open menu"
-                        className="grid h-9 w-9 place-items-center rounded-[10px] text-text-2 transition-colors hover:bg-page hover:text-text"
-                      >
-                        <Menu size={20} />
-                      </button>
-                      <span className="text-sm font-semibold text-text">
-                        Workbench
-                      </span>
-                    </header>
-                    <main className="flex-1 overflow-hidden">
-                      <Outlet />
-                    </main>
-                    <PersonalAgentChat />
-                  </div>
-                </div>
-              </ConnectionStatusProvider>
+              <PageChromeProvider>
+                <ConnectionStatusProvider>
+                  <OnboardingTourProvider>
+                    <div className="flex h-dvh flex-row overflow-hidden bg-page">
+                      <AppSidebar
+                        mobileOpen={drawerOpen}
+                        onNavigate={() => setDrawerOpen(false)}
+                      />
+                      {drawerOpen && (
+                        <button
+                          type="button"
+                          aria-label="Close menu"
+                          onClick={() => setDrawerOpen(false)}
+                          className="fixed inset-0 z-40 bg-black/40 md:hidden"
+                        />
+                      )}
+                      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                        <AppTopBar onOpenMenu={() => setDrawerOpen(true)} />
+                        <main
+                          data-tour="myra-chat"
+                          className="flex-1 overflow-hidden"
+                        >
+                          <Outlet />
+                        </main>
+                        <PersonalAgentChat />
+                      </div>
+                      <WhatsNewPopup />
+                    </div>
+                  </OnboardingTourProvider>
+                </ConnectionStatusProvider>
+              </PageChromeProvider>
             </ActiveContextProvider>
           </CommandPaletteProvider>
         </ChatLauncherProvider>
@@ -212,13 +231,15 @@ export const router = createBrowserRouter([
       {
         element: <AppShell />,
         children: [
-          // Chat-first: the index redirects into the last-active conversation;
-          // /chats is the searchable list; /chats/:threadId is a conversation.
-          { index: true, element: <ChatThreadPage /> },
+          // Inbox-first: login lands on the living dashboard (the inbox with
+          // its Now feed). Chat stays reachable at /chats and /chats/:threadId.
+          { index: true, element: <InboxPage /> },
           { path: "/chats", element: <ChatsListPage /> },
           { path: "/chats/:threadId", element: <ChatThreadPage /> },
           { path: "/onboarding", element: <Navigate to="/" replace /> },
           { path: "/dashboard", element: <Navigate to="/" replace /> },
+          { path: "/inbox", element: <InboxPage /> },
+          { path: "/inbox/:messageId", element: <InboxPage /> },
           { path: "/artifacts", element: <ArtifactsPage /> },
           { path: "/artifacts/:artifactId", element: <ArtifactDetailPage /> },
           {
@@ -228,6 +249,8 @@ export const router = createBrowserRouter([
           { path: "/workflows", element: <WorkflowsPage /> },
           { path: "/workflows/:workflowId", element: <WorkflowsPage /> },
           { path: "/settings", element: <Settings /> },
+          { path: "/settings/connections", element: <Settings /> },
+          { path: "/connections", element: <RedirectLegacyConnections /> },
           { path: "/settings/tools/:id", element: <SettingsToolDetail /> },
           { path: "/skills", element: <SkillsLibrary /> },
           { path: "/skills/new", element: <SkillsNew /> },
@@ -279,6 +302,7 @@ export const router = createBrowserRouter([
               { path: "capabilities/gamma", element: <OwnerGammaTemplates /> },
               { path: "workflows", element: <OwnerWorkflows /> },
               { path: "demos", element: <OwnerDemos /> },
+              { path: "members", element: <OwnerMembers /> },
               // Legacy owner routes → their new homes.
               {
                 path: "templates",

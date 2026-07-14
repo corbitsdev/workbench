@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   APPROVAL_GATED_TOOL_NAMES,
+  NATIVE_APPROVAL_GATED_TOOL_NAMES,
   approvalGatedWriteNames,
 } from "@workbench/agents";
 import { writeToolNamesFromEntries } from "@workbench/tool-credentials/factory";
@@ -9,14 +10,9 @@ import { VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS } from "../tools/vercel-deploy-artifac
 import { KNOWN_TOOLS } from "./tool-registry";
 
 /**
- * F1 drift guard. `APPROVAL_GATED_TOOL_NAMES` is a static const in
- * `@workbench/agents` (the sidecar imports it directly — no launch-time fetch).
- * The hub is the only place that can hold every tool entry map, so this test
- * DERIVES the gated set from each tool's `sideEffect: "write"` classification
- * and asserts it equals the const. Adding a write tool without gating it — or
- * mis-listing one in the const — fails here in CI. `KNOWN_TOOLS` already unions
- * every credentialed + hub-backed entry except the two vercel writes aggregated
- * into neither map, unioned in explicitly.
+ * Drift guard: `APPROVAL_GATED_TOOL_NAMES` is derived in `@workbench/agents`
+ * from committed manifest `sideEffects` (plus hub-only tools and native mail).
+ * This test recomputes the same set from `KNOWN_TOOLS` and asserts equality.
  */
 function deriveGatedSet(): Set<string> {
   const writeBareNames = new Set([
@@ -24,11 +20,14 @@ function deriveGatedSet(): Set<string> {
     ...writeToolNamesFromEntries(VERCEL_HUB_TOOLS),
     ...writeToolNamesFromEntries(VERCEL_DEPLOY_ARTIFACT_HUB_TOOLS),
   ]);
-  return approvalGatedWriteNames([...writeBareNames]);
+  return new Set([
+    ...approvalGatedWriteNames([...writeBareNames]),
+    ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
+  ]);
 }
 
 describe("APPROVAL_GATED_TOOL_NAMES drift guard", () => {
-  test("the static const equals the set derived from every tool's sideEffect: write", () => {
+  test("manifest-derived gated set matches KNOWN_TOOLS sideEffect writes", () => {
     expect(new Set(APPROVAL_GATED_TOOL_NAMES)).toEqual(deriveGatedSet());
   });
 
@@ -74,7 +73,17 @@ describe("APPROVAL_GATED_TOOL_NAMES drift guard", () => {
   test("every gated name is LLM-safe (no bare colon-form or raw name)", () => {
     for (const name of APPROVAL_GATED_TOOL_NAMES) {
       expect(name.includes(":")).toBe(false);
-      expect(name.includes("__")).toBe(true);
+      // Native local-runner tools (mail_send) pass through toLlmToolName
+      // unchanged — they carry no `<factoryId>:` prefix to begin with — so
+      // only the tool-package-derived names carry the `__` join.
+      if (!NATIVE_APPROVAL_GATED_TOOL_NAMES.has(name)) {
+        expect(name.includes("__")).toBe(true);
+      }
     }
+  });
+
+  test("gates mail_send as a hand-listed native write", () => {
+    expect(APPROVAL_GATED_TOOL_NAMES.has("mail_send")).toBe(true);
+    expect(NATIVE_APPROVAL_GATED_TOOL_NAMES.has("mail_send")).toBe(true);
   });
 });

@@ -10,6 +10,33 @@ import { cn } from "./utils";
 // coherent typographic system rather than the renderer's bare defaults — no
 // hardcoded colors or radii (see packages/ui/src/styles.css for the tokens).
 
+// Defense in depth for EVERY markdown body (chat, briefs, and hub-authored mail
+// alike): only http/https/mailto and app-relative targets get a clickable href.
+// A `javascript:` / `data:` / `vbscript:` link — which an untrusted error string
+// or agent output could smuggle into a rendered body — resolves to a
+// non-allowlisted scheme and is rendered as inert text instead.
+const SAFE_SCHEMES = new Set(["http:", "https:", "mailto:"]);
+
+function isSafeHref(href: string): boolean {
+  // App-relative paths, fragments, and query-only links carry no scheme and are
+  // always safe (they resolve against the app origin).
+  if (
+    href.startsWith("/") ||
+    href.startsWith("#") ||
+    href.startsWith("?") ||
+    href.startsWith(".")
+  ) {
+    return true;
+  }
+  try {
+    // Resolve against a base so scheme-relative and relative hrefs parse; a
+    // relative href inherits the (safe) https base scheme.
+    return SAFE_SCHEMES.has(new URL(href, "https://app.invalid/").protocol);
+  } catch {
+    return false;
+  }
+}
+
 const components: Components = {
   h1: ({ children }) => (
     <h1 className="mb-3 mt-8 text-balance text-2xl font-semibold leading-tight text-text">
@@ -52,16 +79,31 @@ const components: Components = {
   del: ({ children }) => (
     <del className="text-text-3 line-through">{children}</del>
   ),
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="font-medium text-accent underline decoration-accent/30 underline-offset-2 transition-[text-decoration-color] hover-hover:decoration-accent"
-    >
-      {children}
-    </a>
-  ),
+  // A chat mention token (`@[Name](#usr_<id>)`) is a valid markdown link whose
+  // href is a fragment carrying a `usr_` user id rather than a URL. Render it
+  // as a distinct mention pill instead of a clickable anchor.
+  a: ({ href, children }) => {
+    if (typeof href === "string" && href.startsWith("#usr_")) {
+      return (
+        <span className="rounded-sm bg-accent/15 px-1 py-0.5 font-medium text-accent">
+          @{children}
+        </span>
+      );
+    }
+    if (typeof href !== "string" || !isSafeHref(href)) {
+      return <span>{children}</span>;
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-accent underline decoration-accent/30 underline-offset-2 transition-[text-decoration-color] hover-hover:decoration-accent"
+      >
+        {children}
+      </a>
+    );
+  },
   blockquote: ({ children }) => (
     <blockquote className="my-4 rounded-sm border-l-2 border-accent/40 bg-surface-2/50 py-2 pl-4 pr-3 italic text-text-2 [&>p]:my-1">
       {children}

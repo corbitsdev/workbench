@@ -2,6 +2,7 @@ import type { InferenceSource } from "@intx/types/runtime";
 import { LLM_DEFAULT_MODEL } from "@workbench/agents";
 
 import { getConfig } from "../config";
+import { createTtlMemo } from "../lib/ttl-memo";
 
 // Model-source catalog cache (CL-2760). `resolveWorkflowDeploySource` resolves
 // the tenant's inference sources — including a per-extra-model DB round-trip loop
@@ -22,15 +23,11 @@ import { getConfig } from "../config";
 // In-process only, mirroring `tenant-activity-cache.ts` and the models.dev
 // pricing TTL — the hub has no redis.
 
-type CacheEntry = { sources: InferenceSource[]; storedAt: number };
-
-const cache = new Map<string, CacheEntry>();
-let inflight = new Map<string, Promise<InferenceSource[]>>();
+const memo = createTtlMemo<InferenceSource[]>();
 
 /** Test-only: clears the workflow model-source cache. */
 export function resetWorkflowModelSourceCache(): void {
-  cache.clear();
-  inflight = new Map();
+  memo.reset();
 }
 
 function cacheKey(
@@ -59,28 +56,10 @@ export async function getCachedCatalogSources(args: {
   ttlMs?: number;
   now?: () => number;
 }): Promise<InferenceSource[]> {
-  const ttlMs = args.ttlMs ?? getConfig().workflowDeploy.modelSourceCacheTtlMs;
-  const clock = args.now ?? Date.now;
-  const key = cacheKey(args.tenantId, args.extraModels, args.keyExtra);
-
-  const cached = cache.get(key);
-  if (cached !== undefined && clock() - cached.storedAt < ttlMs) {
-    return cached.sources;
-  }
-
-  const existing = inflight.get(key);
-  if (existing !== undefined) return existing;
-
-  const promise = args
-    .resolve()
-    .then((sources) => {
-      cache.set(key, { sources, storedAt: clock() });
-      return sources;
-    })
-    .finally(() => {
-      inflight.delete(key);
-    });
-
-  inflight.set(key, promise);
-  return promise;
+  return memo.get({
+    key: cacheKey(args.tenantId, args.extraModels, args.keyExtra),
+    ttlMs: args.ttlMs ?? getConfig().workflowDeploy.modelSourceCacheTtlMs,
+    now: args.now,
+    resolve: args.resolve,
+  });
 }

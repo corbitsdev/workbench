@@ -1,4 +1,5 @@
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
+import { staggerSlideIn } from "./motion";
 import { type WorkflowProgressStatus } from "./workflow-step-types";
 
 const DEFAULT_ANALYSIS_TASKS = [
@@ -17,6 +18,7 @@ export default function ProgressChecklist({
   tasks,
   status = "idle",
 }: ProgressChecklistProps) {
+  const reduce = useReducedMotion() === true;
   const displayTasks = tasks ?? DEFAULT_ANALYSIS_TASKS;
 
   if (displayTasks.length === 0) {
@@ -33,9 +35,7 @@ export default function ProgressChecklist({
         {displayTasks.map((task, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.1 }}
+            {...staggerSlideIn(reduce, i)}
             className="flex items-center gap-3 text-sm"
           >
             <div className="w-5 h-5 rounded-full border-2 border-border-strong flex items-center justify-center text-text-3 text-xs">
@@ -59,23 +59,25 @@ export default function ProgressChecklist({
         {displayTasks.map((task, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.1 }}
+            {...staggerSlideIn(reduce, i)}
             className="flex items-center gap-3 text-sm"
           >
             <div className="w-5 h-5 rounded-full border-2 border-blue flex items-center justify-center">
-              <motion.div
-                className="w-2 h-2 rounded-full bg-blue"
-                animate={{ scale: [1, 0.5, 1] }}
-                transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
-              />
+              {reduce ? (
+                <div className="w-2 h-2 rounded-full bg-blue" />
+              ) : (
+                <motion.div
+                  className="w-2 h-2 rounded-full bg-blue"
+                  animate={{ scale: [1, 0.5, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.2, delay: i * 0.2 }}
+                />
+              )}
             </div>
             <span className="text-text">{task}</span>
           </motion.div>
         ))}
         <div className="mt-3 p-3 bg-blue-soft border border-blue text-blue-deep rounded-lg">
-          <p className="text-sm animate-pulse">
+          <p className={reduce ? "text-sm" : "text-sm animate-pulse"}>
             Analyzing transcript... This may take a moment.
           </p>
         </div>
@@ -89,9 +91,7 @@ export default function ProgressChecklist({
         {displayTasks.map((task, i) => (
           <motion.div
             key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: i * 0.1 }}
+            {...staggerSlideIn(reduce, i)}
             className="flex items-center gap-3 text-sm"
           >
             <div className="w-5 h-5 rounded-full bg-orange flex items-center justify-center text-white text-xs">
@@ -114,9 +114,7 @@ export default function ProgressChecklist({
       {displayTasks.map((task, i) => (
         <motion.div
           key={i}
-          initial={{ opacity: 0, x: -10 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ delay: i * 0.1 }}
+          {...staggerSlideIn(reduce, i)}
           className="flex items-center gap-3 text-sm"
         >
           <div className="w-5 h-5 rounded-full bg-green flex items-center justify-center text-white text-xs">

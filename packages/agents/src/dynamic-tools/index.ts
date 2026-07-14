@@ -5,7 +5,7 @@ import {
   type DynamicToolsEnv,
   type ToolCatalog,
 } from "@workbench/tools-catalog";
-import { PERSONAL_AGENT_NAME } from "../personal-agent/definition";
+import { PERSONAL_AGENT_NAME } from "@workbench/myra";
 import { MYRA_TOOL_CATALOG } from "./catalog";
 import { createDynamicToolsDirector } from "./director";
 
@@ -47,19 +47,23 @@ export function resolveDynamicToolConfig(
   return undefined;
 }
 
-function readDynamicEnv(env: unknown): DynamicToolsEnv {
+function isDynamicToolsEnvShape(value: unknown): value is DynamicToolsEnv {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "catalog" in value &&
+    "exposure" in value
+  );
+}
+
+export function readDynamicEnv(env: unknown): DynamicToolsEnv {
   const value = (env as Record<string, unknown>)[DYNAMIC_TOOLS_ENV_KEY];
-  if (
-    value === null ||
-    typeof value !== "object" ||
-    !("catalog" in value) ||
-    !("exposure" in value)
-  ) {
+  if (!isDynamicToolsEnvShape(value)) {
     throw new Error(
       `dynamic-tools director: env["${DYNAMIC_TOOLS_ENV_KEY}"] is missing or malformed`,
     );
   }
-  return value as DynamicToolsEnv;
+  return value;
 }
 
 const EmptyConfig = type({});

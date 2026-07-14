@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+
 import { Badge, Skeleton } from "@workbench/ui";
 import type { TimelineEntry } from "@workbench/client";
 import { usePrincipalRoster } from "../../hooks/use-principal-roster";
@@ -79,14 +79,8 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
     <div data-testid="facet-grants">
       <FacetDesc>
         Permissions this principal holds, in plain language — the raw resource
-        id stays as a secondary reference. Whether each was actually exercised
-        is the gap.
+        id stays as a secondary reference.
       </FacetDesc>
-      <GapBanner>
-        Interchange computes which grant authorized each action but does not
-        persist it yet, so a &ldquo;used&rdquo; count cannot be shown here
-        without fabricating it.
-      </GapBanner>
       {grants.length === 0 ? (
         <FacetCard>
           <p className="text-[13px] text-text-2">
@@ -136,15 +130,7 @@ export function GrantsFacet({ entries }: { entries: TimelineEntry[] }) {
                         <span className="text-text-3">—</span>
                       )}
                     </Td>
-                    <Td>
-                      <span
-                        data-testid="grant-used-gap"
-                        className="inline-flex items-center gap-1 rounded-[5px] border border-dashed border-cream-deep bg-cream/40 px-1.5 py-0.5 font-mono text-[10px] text-gold"
-                      >
-                        <Info className="h-2.5 w-2.5" />
-                        not recorded
-                      </span>
-                    </Td>
+                    <Td className="text-text-3">—</Td>
                   </tr>
                 ))}
               </tbody>
@@ -222,7 +208,7 @@ export function ToolsFacet({
   return (
     <ToolsFacetView
       tools={tools}
-      description="Every tool this agent has invoked and how often, across its full recorded history. The concrete data each call touched is the gap."
+      description="Every tool this agent has invoked and how often, across its full recorded history."
       emptyText="No tool calls recorded for this principal."
     />
   );
@@ -247,10 +233,6 @@ export function ToolsFacetView({
   return (
     <div data-testid="facet-tools">
       <FacetDesc>{description}</FacetDesc>
-      <GapBanner>
-        We record that a tool ran — not its inputs, its output, or <b>which</b>{" "}
-        records it touched.
-      </GapBanner>
       {tools.length === 0 ? (
         <FacetCard>
           <p className="text-[13px] text-text-2">{emptyText}</p>
@@ -292,12 +274,7 @@ export function ToolsFacetView({
                         />
                       </span>
                     </Td>
-                    <Td>
-                      <span className="inline-flex items-center gap-1 rounded-[5px] border border-dashed border-cream-deep bg-cream/40 px-1.5 py-0.5 font-mono text-[10px] text-gold">
-                        <Info className="h-2.5 w-2.5" />
-                        which records?
-                      </span>
-                    </Td>
+                    <Td className="text-text-3">—</Td>
                   </tr>
                 ))}
               </tbody>

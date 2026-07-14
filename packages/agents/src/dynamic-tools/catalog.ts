@@ -1,5 +1,9 @@
 import type { ToolCatalog, ToolCatalogEntry } from "@workbench/tools-catalog";
 import {
+  deriveMyraCatalogPackages,
+  loadCommittedToolManifestFactories,
+} from "@workbench/tool-manifest";
+import {
   bareToolNamesForPin,
   canonicalizeToolNames,
   toLlmToolName,
@@ -26,6 +30,18 @@ export const MYRA_PLATFORM_BARE_TOOL_NAMES: string[] = [
   "load_skill",
   "list_skill_drafts",
   "load_skill_draft",
+  // Native sidecar-local tool (not from a pinned package — mail_* runners
+  // are always mounted by the harness, see tool-names.ts), so it is granted
+  // here rather than added as a catalog package. Lets Myra send a note to a
+  // teammate's inbox; gated behind human approval (APPROVAL_GATED_TOOL_NAMES)
+  // and excluded from the mailbox-triage persona (isMailboxReadOnlyTool).
+  "mail_send",
+  // Hub-backed native task tool (apps/hub/src/tools/task-tools.ts), not a
+  // pinned package. Unlike every other write here, this one IS admitted into
+  // the mailbox-triage persona (see `READ_ONLY_EXTRA_TOOLS` in
+  // packages/myra/src/personas/mailbox.ts) — leaving a durable, unsent task
+  // behind is triage's own prepare-only output, not an irreversible action.
+  "task_create",
 ];
 
 /**
@@ -48,155 +64,8 @@ type CatalogPackage = {
   tags: string[];
 };
 
-const MYRA_CATALOG_PACKAGES: CatalogPackage[] = [
-  {
-    pin: "@workbench/tools-artifact",
-    package: "artifacts",
-    summary:
-      "Advanced artifact tools — chunked reads, lookup by title, linking.",
-    tags: ["artifact", "deliverable", "chunk", "link", "presentation"],
-  },
-  {
-    pin: "@workbench/tools-workflows",
-    package: "workflows",
-    summary: "Workflow run controls — list runs and signal awaiting gates.",
-    tags: ["workflow", "runs", "signal", "gate", "control"],
-  },
-  {
-    pin: "@workbench/tools-skills",
-    package: "skills",
-    summary:
-      "Skills library — list every skill, read and improve your pending drafts, and draft new ones.",
-    tags: ["skills", "guidance", "playbooks", "how-to", "capabilities"],
-  },
-  {
-    pin: "@workbench/tools-agents",
-    package: "identity",
-    summary: "Directory and identity — agents, principals, per-tool identity.",
-    tags: ["identity", "directory", "agents", "principals", "accounts", "who"],
-  },
-  {
-    pin: "@workbench/tools-exa",
-    package: "exa",
-    summary: "Exa — semantic web search and general web search.",
-    tags: ["exa", "web", "search", "research"],
-  },
-  {
-    pin: "@workbench/tools-attio",
-    package: "attio",
-    summary: "Attio CRM — companies, people, deals, tasks, and notes.",
-    tags: ["crm", "attio", "companies", "people", "deals", "contacts", "tasks"],
-  },
-  {
-    pin: "@workbench/tools-linear",
-    package: "linear",
-    summary: "Linear — issues, teams, and users for product/engineering work.",
-    tags: ["linear", "issues", "tickets", "engineering", "product", "tasks"],
-  },
-  {
-    pin: "@workbench/tools-granola",
-    package: "granola",
-    summary: "Granola — meeting notes, transcripts, and folders.",
-    tags: ["granola", "meetings", "notes", "transcripts", "calls"],
-  },
-  {
-    pin: "@workbench/tools-vercel",
-    package: "vercel",
-    summary: "Vercel — projects, deployments, and static/artifact deploys.",
-    tags: ["vercel", "deploy", "deployment", "hosting", "projects"],
-  },
-  {
-    pin: "@workbench/tools-fileparser",
-    package: "fileparser",
-    summary: "Document parsing — read PDFs, documents, and images as text.",
-    tags: ["file", "parse", "pdf", "document", "ocr", "attachment"],
-  },
-  {
-    pin: "@workbench/tools-notion",
-    package: "notion",
-    summary: "Notion — search, read, and create workspace pages and databases.",
-    tags: [
-      "notion",
-      "pages",
-      "databases",
-      "docs",
-      "notes",
-      "wiki",
-      "knowledge",
-    ],
-  },
-  {
-    pin: "@workbench/tools-firecrawl",
-    package: "firecrawl",
-    summary:
-      "Firecrawl — scrape, search, map, crawl, extract, and monitor the web.",
-    tags: [
-      "firecrawl",
-      "web",
-      "scrape",
-      "crawl",
-      "search",
-      "research",
-      "extract",
-    ],
-  },
-  {
-    pin: "@workbench/tools-github",
-    package: "github",
-    summary: "GitHub — public repository activity and release signals.",
-    tags: ["github", "code", "repos", "releases", "engineering"],
-  },
-  {
-    pin: "@workbench/tools-youtube",
-    package: "youtube",
-    summary: "YouTube — search videos and channels.",
-    tags: ["youtube", "video", "social", "content"],
-  },
-  {
-    pin: "@workbench/tools-scrapecreators",
-    package: "scrapecreators",
-    summary:
-      "ScrapeCreators — TikTok, Instagram, Threads, and Pinterest search.",
-    tags: [
-      "social",
-      "tiktok",
-      "instagram",
-      "threads",
-      "pinterest",
-      "scrapecreators",
-    ],
-  },
-  {
-    pin: "@workbench/tools-reddit",
-    package: "reddit",
-    summary: "Reddit — search posts and subreddits.",
-    tags: ["reddit", "social", "community", "discussions"],
-  },
-  {
-    pin: "@workbench/tools-bluesky",
-    package: "bluesky",
-    summary: "Bluesky — search public posts.",
-    tags: ["bluesky", "social", "posts"],
-  },
-  {
-    pin: "@workbench/tools-x",
-    package: "x",
-    summary: "X (Twitter) — search posts and accounts.",
-    tags: ["x", "twitter", "social", "posts"],
-  },
-  {
-    pin: "@workbench/tools-hackernews",
-    package: "hackernews",
-    summary: "Hacker News — search stories and discussions.",
-    tags: ["hackernews", "hn", "news", "tech", "community"],
-  },
-  {
-    pin: "@workbench/tools-polymarket",
-    package: "polymarket",
-    summary: "Polymarket — prediction market odds.",
-    tags: ["polymarket", "markets", "odds", "predictions"],
-  },
-];
+export const MYRA_CATALOG_PACKAGES: CatalogPackage[] =
+  deriveMyraCatalogPackages(loadCommittedToolManifestFactories());
 
 const PLATFORM = new Set(MYRA_PLATFORM_BARE_TOOL_NAMES);
 

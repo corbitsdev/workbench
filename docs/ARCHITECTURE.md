@@ -172,8 +172,20 @@ The workbench product app contains no **org** management UI — no credential se
 
 - **workbench-shared**: Types crossing the web/API boundary
 - **agents** (`@workbench/agents`): Agent definitions, system prompts, custom directors, `InstanceEvent` → `ChatMessage` adapter
-- **chat** (`@workbench/chat`): Transport-agnostic chat UI components
+- **chat** (`@workbench/chat`): Transport-agnostic chat UI components (composer, bubbles, reasoning/tool disclosures, compaction). Spacing tokens align with the repo-root [`DESIGN.md`](../DESIGN.md) motion and gap scale via `messageRhythm.ts`.
 - **tools-\*** (`@workbench/tools-*`): Self-contained tool packages. Each exports tool definitions, AgentTool handlers, and a `*_HUB_TOOLS` registry entry. The hub spreads these entries into its registry — no tool logic lives in the hub or sidecar themselves.
+
+### Myra chat presentation and persistence
+
+**Message list assembly.** `composeChatMessages` in `@workbench/agents` (`packages/agents/src/chat-messages.ts`) is the single authority for turning hub `InstanceEvent` history plus the live streaming buffer into `ChatMessage[]`. It dedupes assistant turns vs mails on server timestamps, hoists late assistant mail to the turn slot, and injects the synthetic streaming bubble (`STREAMING_BUBBLE_ID`) while a reply is in flight. `use-myra-session` / `AgentChat` call it on every session update so ordering stays stable across soft reloads without re-sorting the whole thread on client clock skew.
+
+**Reasoning expand prefs.** `@workbench/chat` stores per-message reasoning disclosure in `localStorage` (`reasoning-expanded-prefs.ts`, key `cw-myra-reasoning-expanded`). Defaults are collapsed. The web hook `useMyraReasoningExpanded` migrates prefs when the streaming bubble id is replaced by the settled mail id and when `composeChatMessages` remaps turn/mail ids after reload (`migrateReasoningExpandedSlotKeys` / `reconcileReasoningExpandedAliases` exported from `@workbench/chat`).
+
+**Turn activity block.** `@workbench/chat` `AgentTurn` wraps each turn's reasoning and tool calls in one collapsible `ActivityBlock` (CL-3637) above the response. `reasoning-summary.ts` derives the collapsed one-line label (`rollingReasoningLabel`) — the latest meaningful reasoning step, with `isLowSignalReasoning` / `dedupeReasoningSteps` filtering tool-discovery narration (CL-3638). The same component renders for streaming and reloaded turns.
+
+**Tool narrative and logos.** Friendly tool lines come from `@workbench/agents` `friendly-tool-summary.ts` (catalog phrases + mail_send humanization). `@workbench/chat` `ToolNarrative` renders a single tool-row treatment across pending/running/succeeded/failed with tooltip + click-to-expand and inline provider-error surfacing (CL-3639); `apps/web` injects `ToolCallProviderMarker` + Brand API logos via `tool-providers.ts` for supported integrations.
+
+**Approval display lookups.** Pending approvals are listed from the hub approvals router (`apps/web/src/lib/approvals-api.ts`). Rendering uses `buildApprovalDisplayLookups` (`approval-display.ts`): members map principal ids/ref ids to display names; agent instances map `ins_*` mailbox locals and instance ids to agent names. `useApprovalDisplayLookups` loads members + instances for the active tenant and feeds humanized captions in approval and send-mail review UI.
 
 ### Hub-Proxied Tool Execution
 

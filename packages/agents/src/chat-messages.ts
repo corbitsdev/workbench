@@ -87,6 +87,8 @@ export function composeChatMessages(
   // the surviving mail's feedback subject to that turnId keeps the rating from
   // being orphaned when the bubble id flips to the mailId.
   const feedbackTurnIdByMailId = new Map<string, string>();
+  /** Reasoning (and trace) from a dropped turn, keyed by hoisted mail id. */
+  const traceByHoistedMailId = new Map<string, { reasoning?: string }>();
   const deduped: InstanceEvent[] = [];
   for (const e of events) {
     // A text-only turn echoed by an assistant mail is redundant: emit that
@@ -105,6 +107,10 @@ export function composeChatMessages(
       if (mail !== undefined && mail.kind === "mail") {
         hoistedMailIds.add(mail.id);
         feedbackTurnIdByMailId.set(mail.id, e.turnId);
+        const turnReasoning = e.reasoning?.trim();
+        if (turnReasoning !== undefined && turnReasoning !== "") {
+          traceByHoistedMailId.set(mail.id, { reasoning: turnReasoning });
+        }
         deduped.push(mail);
       }
       continue;
@@ -131,10 +137,15 @@ export function composeChatMessages(
     if (!seen.has(msg.id)) {
       seen.add(msg.id);
       const feedbackTurnId = feedbackTurnIdByMailId.get(msg.id);
-      messages.push(
+      const trace = traceByHoistedMailId.get(msg.id);
+      const withFeedback =
         feedbackTurnId !== undefined
           ? { ...msg, feedbackId: feedbackTurnId }
-          : msg,
+          : msg;
+      messages.push(
+        trace?.reasoning !== undefined && trace.reasoning.trim() !== ""
+          ? { ...withFeedback, reasoning: trace.reasoning }
+          : withFeedback,
       );
     }
   }

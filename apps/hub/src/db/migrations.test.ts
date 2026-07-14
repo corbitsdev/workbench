@@ -357,3 +357,338 @@ describe("0040 adds principal-activity timeline indexes on workbench tables only
     }
   });
 });
+
+describe("0046 creates principal_mailbox", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0046_principal_mailbox.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS "principal_mailbox"/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "principal_id",
+      "address",
+      "direction",
+      "raw",
+      "subject",
+      "from_address",
+      "created_at",
+      "read_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`, "i"));
+    }
+  });
+
+  it("indexes the per-principal list read path", () => {
+    expect(sql).toMatch(
+      /CREATE INDEX IF NOT EXISTS "principal_mailbox_principal_created_idx"\s+ON "principal_mailbox" \("tenant_id", "principal_id", "created_at"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the mailbox is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0050 adds message_key to principal_mailbox", () => {
+  const sql = readFileSync(
+    join(
+      import.meta.dir,
+      "../../migrations/0050_principal_mailbox_message_key.sql",
+    ),
+    "utf-8",
+  );
+
+  it("adds a nullable message_key column", () => {
+    expect(sql).toMatch(/ALTER TABLE "principal_mailbox"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "message_key" text/i);
+    expect(sql).not.toMatch(/"message_key" text NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+
+  it("dedupes keyed rows per (tenant, principal, message_key)", () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "principal_mailbox_message_key_uniq"\s+ON "principal_mailbox" \("tenant_id", "principal_id", "message_key"\)\s+WHERE "message_key" IS NOT NULL/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the mailbox is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0047 creates scheduled_trigger", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0047_scheduled_trigger.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?scheduled_trigger"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_member_principal_id",
+      "workflow_kind",
+      "hour_utc",
+      "trigger_payload",
+      "enabled",
+      "last_fired_day_utc",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("adds the (tenant, owner, kind) unique constraint so the seeder is idempotent", () => {
+    expect(sql).toMatch(
+      /CONSTRAINT "scheduled_trigger_owner_kind_uniq" UNIQUE \("tenant_id", "owner_member_principal_id", "workflow_kind"\)/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — the schedule store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0048 creates workflow_trigger", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0048_workflow_trigger.sql"),
+    "utf-8",
+  );
+
+  it("creates the table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?workflow_trigger"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_member_principal_id",
+      "workflow_kind",
+      "secret_hash",
+      "enabled",
+      "created_at",
+      "last_fired_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("never stores the plaintext secret, only its hash", () => {
+    expect(sql).not.toMatch(/"secret"\s/i);
+    expect(sql).toMatch(/"secret_hash" text NOT NULL/i);
+  });
+
+  it("keeps last_fired_at nullable", () => {
+    expect(sql).toMatch(/"last_fired_at" timestamp\s*\n?\)/i);
+  });
+
+  it("touches NO interchange-owned table — the trigger store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0049 creates task and task_external_ref", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0049_task.sql"),
+    "utf-8",
+  );
+
+  it("creates the task table with the expected columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?task"?/i);
+    for (const col of [
+      "id",
+      "tenant_id",
+      "owner_principal_id",
+      "created_by_principal_id",
+      "title",
+      "body",
+      "status",
+      "source",
+      "source_ref",
+      "due",
+      "links",
+      "created_at",
+      "updated_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("creates the task_external_ref table with attribution and sync columns", () => {
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?"?task_external_ref"?/i);
+    for (const col of [
+      "task_id",
+      "adapter_id",
+      "external_id",
+      "external_url",
+      "sync_state",
+      "actor_principal_id",
+      "last_synced_at",
+    ]) {
+      expect(sql).toMatch(new RegExp(`"${col}"`));
+    }
+  });
+
+  it("adds the (task_id, adapter_id) unique constraint — the create idempotency backstop", () => {
+    expect(sql).toMatch(/UNIQUE \("task_id", "adapter_id"\)/i);
+  });
+
+  it("indexes the inbox query on (tenant_id, owner_principal_id, status)", () => {
+    expect(sql).toMatch(
+      /"task_tenant_owner_status_idx"[\s\S]*"tenant_id", "owner_principal_id", "status"/i,
+    );
+  });
+
+  it("cascades external refs to their parent task", () => {
+    expect(sql).toMatch(/REFERENCES "task"\s*\("id"\)\s*ON DELETE CASCADE/i);
+  });
+
+  it("touches NO interchange-owned table — the task store is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0055 adds source_ref to artifact (CL-3577 review fix B)", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0055_artifact_source_ref.sql"),
+    "utf-8",
+  );
+
+  it("adds a nullable source_ref column", () => {
+    expect(sql).toMatch(/ALTER TABLE "artifact"/i);
+    expect(sql).toMatch(/ADD COLUMN IF NOT EXISTS "source_ref" text/i);
+    expect(sql).not.toMatch(/"source_ref" text NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+
+  it("dedupes keyed rows per (tenant, source_ref)", () => {
+    expect(sql).toMatch(
+      /CREATE UNIQUE INDEX IF NOT EXISTS "artifact_tenant_source_ref_uniq"\s+ON "artifact" \("tenant_id", "source_ref"\)\s+WHERE "source_ref" IS NOT NULL/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — artifact is workbench-owned", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});
+
+describe("0051 adds assignee_principal_id to task", () => {
+  const sql = readFileSync(
+    join(import.meta.dir, "../../migrations/0051_task_assignee.sql"),
+    "utf-8",
+  );
+
+  it("adds a nullable assignee_principal_id column", () => {
+    expect(sql).toMatch(/ALTER TABLE "task"/i);
+    expect(sql).toMatch(
+      /ADD COLUMN IF NOT EXISTS "assignee_principal_id" text/i,
+    );
+    expect(sql).not.toMatch(/"assignee_principal_id" text NOT NULL/i);
+    expect(sql).not.toMatch(/DEFAULT/i);
+  });
+
+  it("indexes the (tenant, assignee, status) read path", () => {
+    expect(sql).toMatch(
+      /"task_tenant_assignee_status_idx"[\s\S]*"tenant_id", "assignee_principal_id", "status"/i,
+    );
+  });
+
+  it("touches NO interchange-owned table — assignment is a workbench-owned column", () => {
+    for (const table of [
+      "agent_session",
+      "session_mail",
+      "inference_turn",
+      "grant",
+      "credential",
+      "principal",
+      "tenant",
+      "agent_instance",
+    ]) {
+      expect(sql).not.toMatch(
+        new RegExp(`(ON|TABLE( IF NOT EXISTS)?) "${table}"`, "i"),
+      );
+    }
+  });
+});

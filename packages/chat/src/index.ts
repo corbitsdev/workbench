@@ -57,9 +57,40 @@ export {
   type SignalRouting,
 } from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
-export { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
+export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
+export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";
+export {
+  splitReasoningSteps,
+  toSingleLine,
+  isLowSignalReasoning,
+  dedupeReasoningSteps,
+  rollingReasoningLabel,
+} from "./reasoning-summary";
+export {
+  readReasoningExpanded,
+  readReasoningExpandedForDisplay,
+  writeReasoningExpanded,
+  clearReasoningExpanded,
+  reasoningExpandedMessageKey,
+  reconcileReasoningExpandedAliases,
+  migrateReasoningExpandedSlotKeys,
+  type ReasoningExpandedMap,
+} from "./reasoning-expanded-prefs";
+export {
+  MYRA_AGED_HISTORY_MS,
+  isMyraHistoryAged,
+} from "./aged-history";
+export {
+  ToolNarrative,
+  type ToolNarrativeProps,
+  type ToolMarkerRenderContext,
+} from "./ToolNarrative";
 export { QuickReplyChips, type QuickReplyChipsProps } from "./QuickReplyChips";
-export { ChatInput, type ChatInputProps } from "./ChatInput";
+export {
+  ChatInput,
+  type ChatInputProps,
+  type MentionCandidate,
+} from "./ChatInput";
 export {
   validateFiles,
   formatBytes,

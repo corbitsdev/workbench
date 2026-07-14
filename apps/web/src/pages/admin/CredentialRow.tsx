@@ -3,7 +3,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, inputFieldClass } from "@workbench/ui";
 import { clearOwnerCredential, setOwnerCredential } from "../../lib/hub-api";
 import type { OwnerCredentialState } from "@workbench/shared";
-import { CREDENTIAL_PROVIDER_CATALOG } from "@workbench/shared";
+import {
+  CREDENTIAL_PROVIDER_CATALOG,
+  findOAuthProviderByAppCredential,
+} from "@workbench/shared";
+import { OAuthAppSetupPanel } from "./OAuthAppSetupPanel";
 
 /**
  * One provider credential row shared by Catalog (inference providers) and
@@ -28,6 +32,7 @@ export function CredentialRow({
     (e) => e.providerName === credential.providerName,
   );
   const secondaryField = catalogEntry?.secondaryField;
+  const oauthConfig = findOAuthProviderByAppCredential(credential.providerName);
   const secretLabel = catalogEntry?.secretLabel ?? "API key";
   const platforms = catalogEntry?.platforms;
   const [baseURL, setBaseURL] = useState(credential.baseURL ?? "");
@@ -125,6 +130,8 @@ export function CredentialRow({
         </div>
       </div>
 
+      {editing && oauthConfig && <OAuthAppSetupPanel config={oauthConfig} />}
+
       {editing && (
         <form
           className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3"
@@ -156,6 +163,11 @@ export function CredentialRow({
               placeholder="Paste the new key"
               className={inputFieldClass}
             />
+            {oauthConfig && (
+              <p className="text-[11px] text-text-3">
+                {oauthConfig.setup.fieldHints.clientSecret}
+              </p>
+            )}
           </div>
 
           {secondaryField && (
@@ -175,6 +187,11 @@ export function CredentialRow({
                 placeholder={secondaryField.placeholder}
                 className={inputFieldClass}
               />
+              {oauthConfig && (
+                <p className="text-[11px] text-text-3">
+                  {oauthConfig.setup.fieldHints.clientId}
+                </p>
+              )}
             </div>
           )}
 

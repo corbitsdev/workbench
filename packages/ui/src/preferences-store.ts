@@ -19,6 +19,8 @@ export const PREFERENCE_KEYS = {
   compactToolActivity: "cw-compact-tools",
   toolSummaryStyle: "cw-tool-summary-style",
   experimentalArtifactCards: "cw-experimental-artifact-cards",
+  /** Local-only: Myra composer voice dictation (no server patch mapping). */
+  myraVoiceInput: "cw-myra-voice",
 } as const;
 
 /**

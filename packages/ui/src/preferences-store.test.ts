@@ -118,6 +118,12 @@ describe("serverPatchForRawChange", () => {
     expect(serverPatchForRawChange("cw-unknown", "x")).toBeNull();
   });
 
+  it("returns null for local-only Myra voice preference", () => {
+    expect(
+      serverPatchForRawChange(PREFERENCE_KEYS.myraVoiceInput, "false"),
+    ).toBeNull();
+  });
+
   it("maps a per-scope view-mode key to its server key", () => {
     expect(
       serverPatchForRawChange(viewModeStorageKey("tools"), "rows"),

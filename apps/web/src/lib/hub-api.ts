@@ -9,20 +9,50 @@ import {
   OwnerWorkflowsResponse,
   type OwnerWorkflows,
   OwnerWorkflowState,
+  OwnerMembersResponse,
+  type OwnerMembersResponse as OwnerMembersState,
+  OwnerMemberRoleChangeResult,
   OwnerCredentialsResponse,
   OwnerCredentialStateSchema,
   type OwnerCredentialState,
   OwnerDemosResponse,
   type OwnerDemosResponse as OwnerDemosState,
+  OwnerFeaturesResponse,
+  type OwnerFeaturesResponse as OwnerFeaturesState,
+  OwnerFeatureToggleResult,
+  type OwnerFeatureToggleResult as OwnerFeatureToggleResultType,
+  OwnerInboxSourcesResponse,
+  type OwnerInboxSourcesResponse as OwnerInboxSourcesState,
+  OwnerInboxSourceToggleResult,
+  type OwnerInboxSourceToggleResult as OwnerInboxSourceToggleResultType,
   type DemoLink,
   DemoLinkSchema,
   WorkflowCatalogSchema,
   type WorkflowCatalog,
+  PreferenceSettingsResponseSchema,
+  type PreferenceSetting,
+  AvailableBriefSourcesResponseSchema,
+  type AvailableBriefSource,
+  AvailableInboxSourcesResponseSchema,
+  type AvailableInboxSource,
+  ScheduledTriggerSchema,
+  ScheduledTriggerListResponseSchema,
+  type ScheduledTrigger,
+  type CreateScheduledTriggerBody,
+  type UpdateScheduledTriggerBody,
+  OwnerCapabilitiesResponse,
+  type OwnerCapabilities as OwnerCapabilitiesState,
+  OwnerCapabilityToggleResult,
+  type OwnerCapabilityToggleResult as OwnerCapabilityToggleResultType,
+  MemberConnectionsResponse,
+  type MemberConnections,
+  ConnectionAuthorizeResponse,
+  type ConnectionAuthorize,
 } from "@workbench/shared";
 
 // Fetch helper for hub-api routes mounted at /api/ (not /api/v1/).
 // These are interchange endpoints — principals, agent instances, sessions.
-// Credential and tenant management moved to Interchange admin-ui (CL-1535).
+// Credential and tenant management moved to Interchange admin-ui.
 
 const apiBase: string = import.meta.env.VITE_API_BASE_URL ?? "";
 
@@ -186,12 +216,162 @@ export async function setOwnerDemosEnabled(
   return parsed;
 }
 
+/** Owner-managed feature grants (scheduler/triage/tasks-reconciler) and their
+ * enablement state (owner-guarded). */
+export async function getOwnerFeatures(): Promise<OwnerFeaturesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/features");
+  const parsed = OwnerFeaturesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/features response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Enable or disable a feature grant org-wide (owner-guarded). */
+export async function setOwnerFeatureEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<OwnerFeatureToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/features/${encodeURIComponent(name)}`,
+    { enabled },
+  );
+  const parsed = OwnerFeatureToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner feature response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Owner-managed inbox source enablement (the tenant ceiling above each
+ * member's inbox-source preference) and each source's state (owner-guarded). */
+export async function getOwnerInboxSources(): Promise<OwnerInboxSourcesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/inbox-sources");
+  const parsed = OwnerInboxSourcesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/inbox-sources response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Enable or disable an inbox source org-wide (owner-guarded). */
+export async function setOwnerInboxSourceEnabled(
+  key: string,
+  enabled: boolean,
+): Promise<OwnerInboxSourceToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/inbox-sources/${encodeURIComponent(key)}`,
+    { enabled },
+  );
+  const parsed = OwnerInboxSourceToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner inbox source response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Connectable OAuth providers and whether each is enabled (owner-guarded). */
+export async function getOwnerCapabilities(): Promise<OwnerCapabilitiesState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/capabilities");
+  const parsed = OwnerCapabilitiesResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed /owner/capabilities response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
+/** Enable (allow) or hide (deny) a connectable provider org-wide (owner-guarded). */
+export async function setOwnerCapabilityEnabled(
+  provider: string,
+  enabled: boolean,
+): Promise<OwnerCapabilityToggleResultType> {
+  const raw = await hubFetch<unknown>(
+    "PUT",
+    `v1/owner/capabilities/${encodeURIComponent(provider)}`,
+    { enabled },
+  );
+  const parsed = OwnerCapabilityToggleResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner capability response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** The caller's connectable providers + connection state (Settings → Connections). */
+export async function getMeConnections(): Promise<MemberConnections> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/connections");
+  const parsed = MemberConnectionsResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /me/connections response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Begin the OAuth connect flow for a provider; returns the authorize URL to redirect to. */
+export async function authorizeMeConnection(
+  provider: string,
+): Promise<ConnectionAuthorize> {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/me/connections/${encodeURIComponent(provider)}/authorize`,
+  );
+  const parsed = ConnectionAuthorizeResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Malformed connection authorize response: ${parsed.summary}`,
+    );
+  }
+  return parsed;
+}
+
 /** Deployed workflow kinds + their run-enablement state (owner-guarded). */
 export async function getOwnerWorkflows(): Promise<OwnerWorkflows> {
   const raw = await hubFetch<unknown>("GET", "v1/owner/workflows");
   const parsed = OwnerWorkflowsResponse(raw);
   if (parsed instanceof type.errors) {
     throw new Error(`Malformed /owner/workflows response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Tenant members with their owner-role status (owner-guarded, CL-3634). */
+export async function getOwnerMembers(): Promise<OwnerMembersState> {
+  const raw = await hubFetch<unknown>("GET", "v1/owner/members");
+  const parsed = OwnerMembersResponse(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed /owner/members response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Grant the `owner` role to a tenant member (owner-guarded, CL-3634). */
+export async function promoteOwnerMember(principalId: string) {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/members/${encodeURIComponent(principalId)}/promote`,
+  );
+  const parsed = OwnerMemberRoleChangeResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner promote response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Remove the `owner` role from a tenant member (owner-guarded, CL-3634). */
+export async function demoteOwnerMember(principalId: string) {
+  const raw = await hubFetch<unknown>(
+    "POST",
+    `v1/owner/members/${encodeURIComponent(principalId)}/demote`,
+  );
+  const parsed = OwnerMemberRoleChangeResult(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Malformed owner demote response: ${parsed.summary}`);
   }
   return parsed;
 }
@@ -290,11 +470,125 @@ export async function getWorkflowsCatalog(
   return parsed;
 }
 
+/** The caller's own automation schedules, parsed at the boundary. Reads the
+ * first page of the keyset-paginated list; nextCursor is ignored for now. */
+export async function listMeSchedules(): Promise<ScheduledTrigger[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/schedules");
+  const parsed = ScheduledTriggerListResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedules response: ${parsed.summary}`);
+  }
+  return parsed.items;
+}
+
+function parseSchedule(raw: unknown): ScheduledTrigger {
+  const parsed = ScheduledTriggerSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected schedule response: ${parsed.summary}`);
+  }
+  return parsed;
+}
+
+/** Create a schedule that fires the given workflow at a UTC hour. */
+export async function createMeSchedule(
+  body: CreateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>("POST", "v1/me/schedules", body),
+  );
+}
+
+/** Update the caller's schedule (enablement and/or fire hour). */
+export async function updateMeSchedule(
+  id: string,
+  body: UpdateScheduledTriggerBody,
+): Promise<ScheduledTrigger> {
+  return parseSchedule(
+    await hubFetch<unknown>(
+      "PATCH",
+      `v1/me/schedules/${encodeURIComponent(id)}`,
+      body,
+    ),
+  );
+}
+
+/** Delete the caller's schedule. */
+export async function deleteMeSchedule(id: string): Promise<void> {
+  await hubFetch<void>("DELETE", `v1/me/schedules/${encodeURIComponent(id)}`);
+}
+
+/** The registry-driven settings with the caller's resolved values, parsed at
+ * the boundary through the shared schema. */
+export async function getMePreferenceSettings(): Promise<PreferenceSetting[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences/settings");
+  const parsed = PreferenceSettingsResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(
+      `Unexpected preference settings response: ${parsed.summary}`,
+    );
+  }
+  return parsed.settings;
+}
+
+/** The morning-brief sources the caller can toggle: every catalog source with
+ * a credential configured for their tenant, resolved against their stored
+ * enablement. A source without a configured credential is simply absent. */
+export async function getMeBriefSources(): Promise<AvailableBriefSource[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/brief-sources");
+  const parsed = AvailableBriefSourcesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected brief sources response: ${parsed.summary}`);
+  }
+  return parsed.sources;
+}
+
+const BriefRunResponseSchema = type({
+  status: "'started'",
+  deploymentId: "string",
+});
+
+/** Triggers the caller's own morning brief right now, outside its daily
+ * schedule. Rate-limited server-side to one manual run per member per 10
+ * minutes (429 on a repeat). */
+export async function postMeBriefRun(): Promise<{ deploymentId: string }> {
+  const raw = await hubFetch<unknown>("POST", "v1/me/brief-run");
+  const parsed = BriefRunResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected brief-run response: ${parsed.summary}`);
+  }
+  return { deploymentId: parsed.deploymentId };
+}
+
+/** The inbox sources the caller can toggle: every catalog source with a
+ * credential configured for their tenant, resolved against their stored
+ * enablement — independent of the caller's brief-source toggles. A source
+ * without a configured credential is simply absent. */
+export async function getMeInboxSources(): Promise<AvailableInboxSource[]> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/inbox-sources");
+  const parsed = AvailableInboxSourcesResponseSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected inbox sources response: ${parsed.summary}`);
+  }
+  return parsed.sources;
+}
+
 /** Merge a partial patch into the caller's persisted UI preferences. */
 export async function patchMePreferences(
   patch: Record<string, unknown>,
 ): Promise<MemberPreferences> {
   return hubFetch<MemberPreferences>("PATCH", "v1/me/preferences", patch);
+}
+
+/** The caller's raw persisted preferences, parsed at the boundary. Used for
+ * keys (like `changelogSeenVersion`) that ride the open jsonb map rather than
+ * the registry-driven settings list. */
+export async function getMePreferences(): Promise<MemberPreferences> {
+  const raw = await hubFetch<unknown>("GET", "v1/me/preferences");
+  const parsed = MemberPreferencesSchema(raw);
+  if (parsed instanceof type.errors) {
+    throw new Error(`Unexpected preferences response: ${parsed.summary}`);
+  }
+  return parsed;
 }
 
 /** Persist the caller's display name; returns the saved value as `userName`. */
@@ -518,13 +812,22 @@ export const LaunchInstanceSessionResponseSchema =
 export type LaunchInstanceSessionResponse =
   typeof LaunchInstanceSessionResponseSchema.infer;
 
+export type LaunchInstanceSessionOptions = {
+  pageContext?: string;
+};
+
 export async function launchInstanceSession(
   instanceId: string,
+  options?: LaunchInstanceSessionOptions,
 ): Promise<LaunchInstanceSessionResponse> {
+  const body: { pageContext?: string } = {};
+  if (options?.pageContext !== undefined) {
+    body.pageContext = options.pageContext;
+  }
   const raw = await hubFetch<unknown>(
     "POST",
     `v1/instances/${instanceId}/sessions`,
-    {},
+    body,
   );
   const parsed = LaunchInstanceSessionResponseSchema(raw);
   if (parsed instanceof type.errors) {
@@ -533,6 +836,27 @@ export async function launchInstanceSession(
     );
   }
   return parsed;
+}
+
+/**
+ * Stops the instance's in-flight chat turn without ending the conversation.
+ * 409 (no turn running) is treated as success — the desired end state
+ * ("nothing running") already holds, e.g. the turn finished as the user
+ * clicked stop.
+ */
+export async function abortInstanceTurn(instanceId: string): Promise<void> {
+  try {
+    await hubFetch<void>("POST", `v1/instances/${instanceId}/abort-turn`);
+  } catch (err) {
+    if (err instanceof Error && hasStatus(err) && err.status === 409) {
+      return;
+    }
+    throw err;
+  }
+}
+
+function hasStatus(err: Error): err is Error & { status: number } {
+  return typeof (err as { status?: unknown }).status === "number";
 }
 
 export async function stopAgentInstance(
@@ -700,7 +1024,7 @@ const ActivityCountRowSchema = type({
 });
 
 /**
- * One bucket of the Insights daily-metrics series (CL-2836) — the source for
+ * One bucket of the Insights daily-metrics series — the source for
  * the CSV export. `bucketStart` is the row's date label (`YYYY-MM-DD`).
  */
 export const MetricsPointSchema = type({
@@ -713,7 +1037,7 @@ export const MetricsPointSchema = type({
 export type MetricsPoint = typeof MetricsPointSchema.infer;
 
 /**
- * Priced usage (CL-2723) — mirrors `@workbench/pricing`'s `PricedUsage`.
+ * Priced usage — mirrors `@workbench/pricing`'s `PricedUsage`.
  * `null` means the hub had no price catalog warm when it computed this row
  * (never a fabricated `$0`); a non-null value with `hasUnpriced: true` means
  * some of the underlying models had no models.dev rate.
@@ -749,7 +1073,7 @@ export const UsageByPersonRowSchema = type({
 
 export type UsageByPersonRow = typeof UsageByPersonRowSchema.infer;
 
-/** Per-model usage with every token class separated, for cost-by-model (CL-2714). */
+/** Per-model usage with every token class separated, for cost-by-model. */
 export const UsageByModelRowSchema = type({
   model: "string",
   turnCount: "number",
@@ -915,7 +1239,7 @@ export function parseActivityOverview(raw: unknown): ActivityOverview {
 }
 
 /**
- * Fetches the hub-cached models.dev pricing catalog (CL-2714). The browser
+ * Fetches the hub-cached models.dev pricing catalog. The browser
  * never hits models.dev directly (CSP); the hub proxies + caches it. Parsed at
  * the boundary through the shared `PriceCatalogSchema`.
  */
@@ -1036,7 +1360,7 @@ export async function getActivityOverview(
   return parseActivityOverview(raw);
 }
 
-/** Server-side Insights CSV (CL-2838): metrics series + person/model/workflow breakdowns. */
+/** Server-side Insights CSV: metrics series + person/model/workflow breakdowns. */
 export async function downloadActivityExportCsv(
   tenantId: string,
   opts?: {

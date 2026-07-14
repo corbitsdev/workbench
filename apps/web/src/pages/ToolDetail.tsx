@@ -5,7 +5,8 @@ import { ArrowLeft } from "lucide-react";
 import { useToolDetail } from "../hooks/use-tools";
 import { getMe } from "../lib/hub-api";
 import { ApiError } from "../lib/api";
-import { toHumanLabel } from "@workbench/ui";
+import { AppPageChromeRow, Button, toHumanLabel } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { ProviderLogo } from "../components/ProviderLogo";
 
 type ParamRow = {
@@ -71,22 +72,36 @@ export function ToolDetail() {
   const notFound =
     toolQuery.error instanceof ApiError && toolQuery.error.status === 404;
   const isGamma = toolQuery.data?.providerName === "gamma";
+  const toolName = toolQuery.data?.name;
+
+  const pageChrome = useMemo(
+    () =>
+      toolName ? (
+        <AppPageChromeRow
+          title={toHumanLabel(toolName)}
+          titleSize="sm"
+          subtitle={toolName}
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate("/tools")}
+            className="gap-1.5"
+          >
+            <ArrowLeft size={14} aria-hidden />
+            Tools
+          </Button>
+        </AppPageChromeRow>
+      ) : null,
+    [toolName, navigate],
+  );
+  useSetPageChrome(pageChrome);
 
   return (
     <div className="flex h-full overflow-hidden bg-bg">
       <section className="flex min-h-full flex-1 flex-col overflow-y-auto border border-border bg-bg shadow-[var(--shadow,0_2px_6px_rgba(0,0,0,0.3))]">
-        <div className="px-4 pt-5 sm:px-7">
-          <button
-            type="button"
-            onClick={() => navigate("/tools")}
-            className="flex items-center gap-1.5 text-[12.5px] text-text-3 transition-colors hover:text-text"
-          >
-            <ArrowLeft size={14} />
-            Tools
-          </button>
-        </div>
-
-        <div className="flex-1 px-4 pb-10 pt-4 sm:px-7">
+        <div className="flex-1 px-4 pb-10 pt-5 sm:px-7">
           {toolQuery.isLoading && (
             <div className="py-10 text-[13px] text-text-3">Loading tool…</div>
           )}
@@ -114,13 +129,7 @@ export function ToolDetail() {
                   </span>
                 )}
               </div>
-              <h1 className="mt-2.5 text-[22px] font-bold tracking-[-0.01em] text-text">
-                {toHumanLabel(toolQuery.data.name)}
-              </h1>
-              <p className="mt-1 font-mono text-[12px] text-text-3">
-                {toolQuery.data.name}
-              </p>
-              <p className="mt-2 text-pretty text-[13.5px] leading-relaxed text-text-2">
+              <p className="mt-2.5 text-pretty text-[13.5px] leading-relaxed text-text-2">
                 {toolQuery.data.description || "No description provided."}
               </p>
 

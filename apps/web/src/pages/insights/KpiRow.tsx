@@ -1,7 +1,8 @@
-import { SectionLabel } from "./section-label";
+import { DashboardSection, StatGrid, StatGridItem } from "@workbench/ui";
 import { computeDelta } from "./metrics";
-import { formatDollars, formatNumber, Stat } from "./stats";
+import { formatDollars, formatNumber } from "./stats";
 import type { ActivityOverview } from "../../lib/hub-api";
+import { DeltaBadge } from "./viz";
 
 export function KpiRow({
   data,
@@ -22,11 +23,14 @@ export function KpiRow({
   const prev = data.inference.previousSummary;
   const activity = summary.turnCount + summary.toolCallCount;
   const prevActivity = prev ? prev.turnCount + prev.toolCallCount : null;
+  const dailyActivity = data.dailySeries.map(
+    (d) => d.turnCount + d.toolCallCount,
+  );
+
   return (
-    <div className="flex flex-col gap-4 rounded-[16px] border border-border bg-gradient-to-b from-surface-2 to-surface p-4 max-md:p-3">
-      <SectionLabel>This range</SectionLabel>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <Stat
+    <DashboardSection title="This range" variant="highlighted">
+      <StatGrid columns={5}>
+        <StatGridItem
           label="Cost"
           value={costTotal !== null ? formatDollars(costTotal) : "—"}
           sub={
@@ -36,32 +40,34 @@ export function KpiRow({
           }
           emphasis
         />
-        <Stat
+        <StatGridItem
           label="Total activity"
           value={formatNumber(activity)}
           sub="turns + tool calls"
-          delta={computeDelta(activity, prevActivity)}
+          delta={<DeltaBadge delta={computeDelta(activity, prevActivity)} />}
+          sparklineValues={dailyActivity.length >= 3 ? dailyActivity : undefined}
+          sparklineLabel="Activity trend"
           emphasis
         />
-        <Stat
+        <StatGridItem
           label="Active actors"
           value={formatNumber(activePeople)}
           sub="people with usage"
           emphasis
         />
-        <Stat
+        <StatGridItem
           label="Workflow runs"
           value={formatNumber(data.workflowRuns.executionsStartedInRange)}
           sub={`${formatNumber(data.workflowRuns.activeExecutions)} active`}
           emphasis
         />
-        <Stat
+        <StatGridItem
           label="Artifacts"
           value={formatNumber(data.artifacts.createdInRange)}
           sub={`${formatNumber(data.artifacts.total)} all-time`}
           emphasis
         />
-      </div>
-    </div>
+      </StatGrid>
+    </DashboardSection>
   );
 }

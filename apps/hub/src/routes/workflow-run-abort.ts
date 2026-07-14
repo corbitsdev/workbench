@@ -116,7 +116,7 @@ export const abortRunRouteDescription = describeRoute({
       name: "runId",
       in: "path",
       required: true,
-      description: "Run id (wfr_…) to abort.",
+      description: "Workflow run id (UUID or legacy wfr_ prefix) to abort.",
       schema: { type: "string" },
     },
   ],

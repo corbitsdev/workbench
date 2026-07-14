@@ -11,6 +11,14 @@ import {
 } from "../lib/approvals-api";
 import type { Approval } from "../lib/approvals-api";
 import { logger } from "../lib/logger";
+import {
+  humanizeApprovalValue,
+  isMailSendApproval,
+  mailSendContext,
+  mailSendToolSummaryHeadline,
+} from "../lib/approval-display";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
+import { MailSendApprovalDetails } from "./MailSendApprovalDetails";
 
 export type ReviewGateProps = {
   /** Interchange tenant ID used to scope approval requests. */
@@ -51,10 +59,37 @@ function approvalToToolCall(approval: Approval): ToolCall {
  * returns null for unrecognized tool ids — for those the backend's `action` is
  * the more specific, honest description.
  */
-function headlineFor(approval: Approval): string {
+function headlineFor(
+  approval: Approval,
+  lookups: Parameters<typeof mailSendToolSummaryHeadline>[1],
+  lookupsLoading: boolean,
+): string {
+  if (isMailSendApproval(approval.resource)) {
+    const ctx = mailSendContext(approval.context);
+    return mailSendToolSummaryHeadline(ctx?.to, lookups, lookupsLoading);
+  }
   return (
     friendlyToolSummaryKnown(approvalToToolCall(approval)) ?? approval.action
   );
+}
+
+/**
+ * Secondary label under the headline. Recognized tools use the catalog phrase
+ * with no argument interpolation (same idle frame as chat `formatToolName`).
+ * Unknown tools omit the line so we never show a soft "Working on …" caption
+ * under a backend action headline. Mail send omits the line too.
+ */
+function resourceCaption(approval: Approval): string | null {
+  if (isMailSendApproval(approval.resource)) return null;
+  if (approval.resource.startsWith("tool:")) {
+    const call = approvalToToolCall(approval);
+    return friendlyToolSummaryKnown({
+      id: call.id,
+      name: call.name,
+      arguments: {},
+    });
+  }
+  return approval.resource;
 }
 
 function humanizeKey(key: string): string {
@@ -197,6 +232,8 @@ export function ReviewGate({
   sessionScope = "tenant",
 }: ReviewGateProps) {
   const queryClient = useQueryClient();
+  const { lookups, isLoading: lookupsLoading } =
+    useApprovalDisplayLookups(tenantId);
   const prefersReducedMotion = useReducedMotion();
   const enabled = tenantId !== "";
   const sessionFilterReady =
@@ -312,10 +349,23 @@ export function ReviewGate({
           const isApproving = requestState === "approving";
           const isRejecting = requestState === "rejecting";
           const isInFlight = isApproving || isRejecting;
-          const headline = headlineFor(approval);
-          const showActionDetail = headline !== approval.action;
+          const headline = headlineFor(approval, lookups, lookupsLoading);
+          const showActionDetail =
+            headline !== approval.action &&
+            !isMailSendApproval(approval.resource);
+          const mailSend = isMailSendApproval(approval.resource)
+            ? mailSendContext(approval.context)
+            : null;
           const contextEntries =
-            approval.context !== null ? Object.entries(approval.context) : [];
+            approval.context !== null && mailSend === null
+              ? Object.entries(approval.context)
+              : [];
+          const resourceLine = (() => {
+            const caption = resourceCaption(approval);
+            if (caption === null) return null;
+            if (caption === headline) return null;
+            return caption;
+          })();
 
           const restOpacity = isPending ? 1 : 0.5;
 
@@ -364,13 +414,27 @@ export function ReviewGate({
                     {approval.action}
                   </p>
                 )}
-                <p className="mt-0.5 font-mono text-[11px] text-text-3">
-                  {approval.resource}
-                </p>
+                {resourceLine !== null ? (
+                  <p className="mt-0.5 text-[11px] text-text-3">
+                    {resourceLine}
+                  </p>
+                ) : null}
+                {mailSend !== null ? (
+                  <MailSendApprovalDetails
+                    context={mailSend}
+                    lookups={lookups}
+                    lookupsLoading={lookupsLoading}
+                  />
+                ) : null}
                 {contextEntries.length > 0 && (
                   <dl className="mt-2 flex flex-col gap-1.5 rounded-sm bg-bg px-3 py-2">
                     {contextEntries.map(([key, value]) => {
-                      const block = isBlockContextValue(value);
+                      const displayValue = humanizeApprovalValue(
+                        value,
+                        lookups,
+                        key,
+                      );
+                      const block = isBlockContextValue(displayValue);
                       return (
                         <div
                           key={key}
@@ -384,7 +448,7 @@ export function ReviewGate({
                             {humanizeKey(key)}
                           </dt>
                           <dd className="min-w-0 break-words text-text-2">
-                            <ContextValue value={value} />
+                            <ContextValue value={displayValue} />
                           </dd>
                         </div>
                       );

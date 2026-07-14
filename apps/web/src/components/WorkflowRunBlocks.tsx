@@ -161,30 +161,21 @@ export function WorkflowRunBlocks({
 
   return (
     <div className="flex h-full flex-col overflow-hidden border border-border bg-bg">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <p className="truncate text-[14px] font-medium text-text">
-            Workflow run
-          </p>
-          <p className="truncate text-[12px] text-text-3">{headerSubtitle}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <span
-            className={`text-[12px] font-medium ${awaitingGate ? "text-orange" : "text-text-2"}`}
-          >
-            {phaseLabel}
-          </span>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            Close
-          </Button>
-        </div>
-      </header>
-
       <div
         role="status"
         aria-live="polite"
         className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4"
       >
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="min-w-0 truncate text-[12px] text-text-3">
+            {headerSubtitle}
+          </p>
+          <span
+            className={`shrink-0 text-[12px] font-medium ${awaitingGate ? "text-orange" : "text-text-2"}`}
+          >
+            {phaseLabel}
+          </span>
+        </div>
         <AnimatePresence initial={false}>
           {blocks.map((block, index) => (
             <motion.div

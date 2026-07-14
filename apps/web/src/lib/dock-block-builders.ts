@@ -9,6 +9,7 @@ import { buildGammaBlocks } from "@workbench/workflow-gamma-presentation-creator
 import { buildLast30daysBlocks } from "@workbench/workflow-last30days-research/blocks";
 import { buildPainPointCollateralBlocks } from "@workbench/workflow-pain-point-collateral/blocks";
 import { buildRedditOpportunityScannerBlocks } from "@workbench/workflow-reddit-opportunity-scanner/blocks";
+import { buildSumbleAccountIntelBlocks } from "@workbench/workflow-sumble-account-intel/blocks";
 
 // Per-kind dock block builders (CL-2683). A migrated workflow supplies its own
 // builder — deriving richer, kind-specific UIBlocks (results tables, typed
@@ -32,6 +33,7 @@ const builders: Record<string, DockBlockBuilder> = {
   "last30days-research": buildLast30daysBlocks,
   "pain-point-collateral": buildPainPointCollateralBlocks,
   "reddit-opportunity-scanner": buildRedditOpportunityScannerBlocks,
+  "sumble-account-intel": buildSumbleAccountIntelBlocks,
 };
 
 export function buildDockBlocks(

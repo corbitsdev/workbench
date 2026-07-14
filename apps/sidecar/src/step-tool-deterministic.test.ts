@@ -13,6 +13,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
+import { createEd25519Crypto, generateKeyPair } from "@intx/crypto";
+import { createInMemoryTransport } from "@intx/mail-memory";
 import { createIsogitStore } from "@workbench/storage-isogit";
 
 import {
@@ -55,7 +57,9 @@ function stubHubFetch(): void {
   }) as unknown as typeof fetch;
 }
 
-async function makeEnv(): Promise<{
+async function makeEnv(opts?: {
+  transport?: ReturnType<typeof createInMemoryTransport>;
+}): Promise<{
   env: Record<string, unknown>;
   workdir: string;
 }> {
@@ -78,18 +82,42 @@ async function makeEnv(): Promise<{
     cacheMaxBytes: 1024 * 1024,
     registryMaxTarballBytes: 1024 * 1024,
   };
-  return {
-    env: {
-      sources: [],
-      defaultSource: "",
-      storage,
-      workdir,
-      audit: storage,
-      directors: {},
-      [STEP_TOOL_CONTEXT_KEY]: ctx,
-    },
+  const env: Record<string, unknown> = {
+    sources: [],
+    defaultSource: "",
+    storage,
     workdir,
+    audit: storage,
+    directors: {},
+    [STEP_TOOL_CONTEXT_KEY]: ctx,
   };
+  if (opts?.transport !== undefined) {
+    env.transport = opts.transport;
+  }
+  return { env, workdir };
+}
+
+async function mailSendUnregisteredSenderFixture(): Promise<{
+  env: Record<string, unknown>;
+  recipient: string;
+  mailInput: { to: string; content: string; subject: string };
+}> {
+  const transport = createInMemoryTransport();
+  const recipientKey = await generateKeyPair();
+  const recipient = "usr_member@tenant.example";
+  transport.register(recipient, createEd25519Crypto(recipientKey));
+  const senderAddress = "ins_ses_deploy@tenant.example";
+  const { env } = await makeEnv({ transport });
+  const ctx = env[STEP_TOOL_CONTEXT_KEY] as StepToolContext;
+  ctx.stepAddress = senderAddress;
+  ctx.stepAgentId = senderAddress;
+  ctx.principalId = senderAddress;
+  const mailInput = {
+    to: recipient,
+    content: "brief body",
+    subject: "Your morning brief",
+  };
+  return { env, recipient, mailInput };
 }
 
 describe("runDeterministicToolStep", () => {
@@ -135,16 +163,16 @@ describe("runDeterministicToolStep", () => {
     stubHubFetch();
     const { env } = await makeEnv();
     // A step with no `input` selector resolves to null; a no-arg tool call
-    // must run with {} rather than throwing. write_file will fail its own
-    // arg validation, but the point is the harness does NOT reject null at
-    // the argument-shape guard — it reaches the runner.
-    const result = await runDeterministicToolStep({
-      env: env as never,
-      toolName: "write_file",
-      input: null,
-      signal: new AbortController().signal,
-    });
-    expect(result.output).toBeDefined();
+    // must run with {} rather than throwing at the harness shape guard.
+    // write_file then returns isError for missing path, which fails the step.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: null,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/required argument "path"/);
   });
 
   test("fails loud when the declared tool is not in the loaded runner", async () => {
@@ -241,6 +269,85 @@ describe("runDeterministicToolStep", () => {
     );
   });
 
+  test("mail_send delivers through the substrate-injected transport", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // The workflow substrate injects an in-process transport on the step env
+    // (env.transport) whenever the deployment has a mailbox. The deterministic
+    // path must expose the mail runner off that transport — the real
+    // @intx/tools-mail handlers and the outbound guard run; only the network
+    // send is faked here.
+    const sent: unknown[] = [];
+    env.transport = {
+      send: async (outbound: unknown) => {
+        sent.push(outbound);
+        return { messageId: "m1" };
+      },
+    };
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: { to: "usr_x@tenant.example", content: "hi" },
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr.isError).not.toBe(true);
+    expect(tr.content).toEqual({ messageId: "m1" });
+    expect(sent).toEqual([
+      {
+        to: "usr_x@tenant.example",
+        content: "hi",
+        type: "conversation.message",
+      },
+    ]);
+  });
+
+  test("mail_send isError envelope fails the step so notify cannot complete green on send_failed", async () => {
+    stubHubFetch();
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
+
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: mailInput,
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/send_failed/);
+  });
+
+  test("nonFatal: mail_send isError envelope degrades to completed output", async () => {
+    stubHubFetch();
+    const { env, mailInput } = await mailSendUnregisteredSenderFixture();
+
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "mail_send",
+      input: mailInput,
+      nonFatal: true,
+      signal: new AbortController().signal,
+    });
+    const output = result.output as Record<string, unknown>;
+    expect(output.isError).toBe(true);
+    const content = output.content as Record<string, unknown>;
+    expect(content.error).toMatch(/send_failed/);
+  });
+
+  test("mail_send stays unavailable when no transport is injected", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    // Pure-inference / mailbox-less deployments inject no transport; the mail
+    // runner must not appear, so the declared tool fails loud as unpinned.
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "mail_send",
+        input: { to: "usr_x@tenant.example", content: "hi" },
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/is not registered\/available for this deployment/);
+  });
+
   test("fails loud when an argMap `from` field is absent on the evaluated input", async () => {
     stubHubFetch();
     const { env } = await makeEnv();
@@ -256,5 +363,197 @@ describe("runDeterministicToolStep", () => {
         signal: new AbortController().signal,
       }),
     ).rejects.toThrow(/input field "reply"/);
+  });
+
+  test("a non-optional argMap field that is an empty string on the input passes through verbatim", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("an optional argMap field absent from the input skips the tool call without throwing", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional argMap field that is an empty string on the input also skips", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional argMap field present with a real value is used, not skipped", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "real content" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a fromJson argMap field reads a field out of a JSON-string envelope field", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({
+          gammaUrl: "https://x",
+          exportUrl: "",
+        }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "gammaUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a non-optional fromJson field missing on the parsed envelope throws", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    await expect(
+      runDeterministicToolStep({
+        env: env as never,
+        toolName: "write_file",
+        input: {
+          path: "out.txt",
+          content: JSON.stringify({ exportUrl: "" }),
+        },
+        argMapJson: JSON.stringify({
+          content: { fromJson: "content", field: "gammaUrl" },
+          path: { from: "path" },
+        }),
+        signal: new AbortController().signal,
+      }),
+    ).rejects.toThrow(/JSON field "gammaUrl" of input field "content"/);
+  });
+
+  test("an optional fromJson field absent from the parsed envelope skips without throwing", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("an optional fromJson field that is an empty string in the parsed envelope also skips", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl", optional: true },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    expect(result.output).toEqual({ skipped: true });
+  });
+
+  test("a non-optional fromJson field present as an empty string passes through verbatim", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: JSON.stringify({ gammaUrl: "https://x", exportUrl: "" }),
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "exportUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
+  test("a fromJson envelope field that is already an object (not a JSON string) still resolves the field", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: {
+        path: "out.txt",
+        content: { gammaUrl: "https://x", exportUrl: "" },
+      },
+      argMapJson: JSON.stringify({
+        content: { fromJson: "content", field: "gammaUrl" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
   });
 });

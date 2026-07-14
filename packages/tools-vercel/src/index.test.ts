@@ -63,6 +63,60 @@ describe("Vercel tools", () => {
     );
   });
 
+  test("skips the network call and reports skipped when vercel is not in enabledSources", async () => {
+    const fetcher: VercelFetch = async () => {
+      throw new Error("should not be called");
+    };
+
+    const result = await stringTool("vercel_list_deployments", fetcher).handler(
+      { enabledSources: ["linear"] },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(result)).toEqual({ skipped: true });
+  });
+
+  test("returns a compact, uniquely-keyed deployments object and forwards createdAfter as since", async () => {
+    const calls: string[] = [];
+    const fetcher: VercelFetch = async (url) => {
+      calls.push(url);
+      return response({
+        deployments: [
+          {
+            uid: "dpl_1",
+            name: "demo",
+            url: "demo.vercel.app",
+            state: "READY",
+            createdAt: 1_770_000_000_000,
+          },
+        ],
+      });
+    };
+
+    const result = await stringTool("vercel_list_deployments", fetcher).handler(
+      {
+        enabledSources: ["vercel"],
+        createdAfter: "2026-07-04T00:00:00Z",
+      },
+      new AbortController().signal,
+    );
+
+    expect(JSON.parse(result)).toEqual({
+      deployments: [
+        {
+          name: "demo",
+          state: "READY",
+          url: "demo.vercel.app",
+          createdAt: 1_770_000_000_000,
+        },
+      ],
+    });
+    const url = new URL(calls[0] ?? "");
+    expect(url.searchParams.get("since")).toBe(
+      String(Date.parse("2026-07-04T00:00:00Z")),
+    );
+  });
+
   test("deploys a static file as a preview deployment", async () => {
     const calls: { url: string; body: unknown }[] = [];
     const fetcher: VercelFetch = async (url, init) => {

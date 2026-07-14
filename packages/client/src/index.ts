@@ -162,6 +162,7 @@ export type ListArtifactsParams = typeof ListArtifactsParamsSchema.infer;
  * assertion below fails the build if this schema drifts from the shared type.
  */
 export const ArtifactWithSessionSchema = Artifact.and({
+  sessionId: "string | null",
   sessionName: "string | null",
   sessionStatus: SessionStatusSchema.or("null"),
   ownerName: "string | null",

@@ -18,6 +18,9 @@ export type {
 } from "./harness-builder";
 export {
   createSessionManager,
+  NoActiveTurnError,
+  NO_ACTIVE_TURN,
+  USER_STOP_TURN_REASON,
   type SessionManager,
   type SessionManagerConfig,
   type SessionEventSink,
@@ -49,3 +52,13 @@ export {
 export { applyAssetPack, type ApplyAssetPackArgs } from "./apply-asset-pack";
 export { readDeployTree, type DeployTree } from "./deploy-tree";
 export { agentDir, sanitizeAddress } from "./agent-paths";
+export {
+  deriveUserMailAddress,
+  UserMailAddressArgs,
+  USER_ADDRESS_PREFIX,
+} from "./mail-address";
+export {
+  splitMailAddress,
+  splitMailAddressList,
+  type SplitMailAddress,
+} from "./mail-address";

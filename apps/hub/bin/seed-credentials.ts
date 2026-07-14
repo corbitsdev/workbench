@@ -10,6 +10,7 @@
  */
 
 import { resolveTargetTenant } from "./_lib";
+import { encryptSecret } from "../src/lib/credential-crypto";
 
 function env(name: string, fallback?: string): string | undefined {
   return process.env[name] ?? fallback;
@@ -76,6 +77,12 @@ type CredentialEntry = {
   credentialName: string;
   secret: string;
   metadata?: Record<string, unknown>;
+  /** Mirrors `CREDENTIAL_PROVIDER_CATALOG[].kind` (CL-3446): `tool` secrets
+   * are encrypted before being sent through interchange's generic
+   * `/api/tenants/:tenantId/credentials` route, which writes plaintext with
+   * no encryption hook of its own. `inference` secrets stay plaintext —
+   * Interchange reads them raw at agent-launch time. */
+  kind: "inference" | "tool";
 };
 
 export function buildEntries(): CredentialEntry[] {
@@ -92,6 +99,7 @@ export function buildEntries(): CredentialEntry[] {
         "Myra LLM",
       ) as string,
       secret: openaiCompatibleKey,
+      kind: "inference",
       metadata: {
         model: env("OPENAI_COMPATIBLE_MODEL", "gpt-4o"),
         baseURL: env("OPENAI_COMPATIBLE_BASE_URL", "https://api.openai.com/v1"),
@@ -123,6 +131,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "openai-compatible",
       credentialName: name,
       secret: key,
+      kind: "inference",
       metadata: {
         model: env(`OPENAI_COMPATIBLE_MODEL_${i}`, "gpt-4o"),
         baseURL: env(
@@ -152,6 +161,7 @@ export function buildEntries(): CredentialEntry[] {
           "Corbits Default Bifrost",
         ),
         secret: bifrostKey,
+        kind: "inference",
         metadata: {
           model: env("BIFROST_MODEL", "gpt-4o"),
           baseURL: bifrostBaseURL,
@@ -172,6 +182,7 @@ export function buildEntries(): CredentialEntry[] {
           "Corbits Default Bifrost Anthropic",
         ),
         secret: bifrostKey,
+        kind: "inference",
         metadata: {
           model: env("BIFROST_ANTHROPIC_MODEL", "claude-haiku-4-5"),
           baseURL: bifrostAnthropicBaseURL,
@@ -189,6 +200,7 @@ export function buildEntries(): CredentialEntry[] {
           "Corbits Default Bifrost GenAI",
         ),
         secret: bifrostKey,
+        kind: "inference",
         metadata: {
           model: env("BIFROST_GENAI_MODEL", "gemini-2.5-flash"),
           baseURL: bifrostGenaiBaseURL,
@@ -207,6 +219,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "openai-compatible",
       credentialName: "Myra Title LLM",
       secret: myraTitleKey,
+      kind: "inference",
       metadata: {
         model: env("MYRA_TITLE_LLM_MODEL", "gpt-4o-mini"),
         baseURL: env("MYRA_TITLE_LLM_BASE_URL", "https://api.openai.com/v1"),
@@ -221,6 +234,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "openai",
       credentialName: "OpenAI",
       secret: openaiKey,
+      kind: "inference",
     });
   }
 
@@ -231,6 +245,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "anthropic",
       credentialName: "anthropic-api",
       secret: anthropicKey,
+      kind: "inference",
       metadata: { baseURL: "https://api.anthropic.com" },
     });
   }
@@ -242,6 +257,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "google-genai",
       credentialName: env("GOOGLE_AI_CREDENTIAL_NAME", "google-ai") as string,
       secret: geminiKey,
+      kind: "inference",
       metadata: {
         baseURL: "https://generativelanguage.googleapis.com",
         model: env("GOOGLE_AI_MODEL", "gemini-3.1-flash-lite"),
@@ -256,7 +272,20 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "granola",
       credentialName: "Granola",
       secret: granolaKey,
+      kind: "tool",
       metadata: { baseURL: "https://public-api.granola.ai/v1" },
+    });
+  }
+
+  const slackBotToken = env("SLACK_BOT_TOKEN");
+  if (slackBotToken) {
+    entries.push({
+      providerName: "slack",
+      providerPlugin: "slack",
+      credentialName: "Slack bot token",
+      secret: slackBotToken,
+      kind: "tool",
+      metadata: { baseURL: "https://slack.com/api" },
     });
   }
 
@@ -267,6 +296,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "exa",
       credentialName: "Exa",
       secret: exaKey,
+      kind: "tool",
     });
   }
 
@@ -277,6 +307,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "firecrawl",
       credentialName: "Firecrawl",
       secret: firecrawlKey,
+      kind: "tool",
       metadata: { baseURL: "https://api.firecrawl.dev/v2" },
     });
   }
@@ -288,6 +319,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "xai",
       credentialName: "xAI",
       secret: xaiKey,
+      kind: "inference",
     });
   }
 
@@ -298,6 +330,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "scrapecreators",
       credentialName: "ScrapeCreators",
       secret: scrapecreatorsKey,
+      kind: "tool",
     });
   }
 
@@ -308,6 +341,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "gamma",
       credentialName: "Gamma",
       secret: gammaKey,
+      kind: "tool",
     });
   }
 
@@ -318,6 +352,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "github",
       credentialName: "GitHub PAT",
       secret: githubKey,
+      kind: "tool",
     });
   }
 
@@ -328,6 +363,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "linear",
       credentialName: "Linear",
       secret: linearKey,
+      kind: "tool",
       metadata: { baseURL: "https://api.linear.app/graphql" },
     });
   }
@@ -339,6 +375,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "attio",
       credentialName: "Attio",
       secret: attioKey,
+      kind: "tool",
       metadata: { baseURL: "https://api.attio.com" },
     });
   }
@@ -350,6 +387,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "notion",
       credentialName: "Notion",
       secret: notionKey,
+      kind: "tool",
       metadata: { baseURL: "https://api.notion.com" },
     });
   }
@@ -361,6 +399,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "vercel",
       credentialName: "Vercel",
       secret: vercelKey,
+      kind: "tool",
       metadata: { baseURL: "https://api.vercel.com" },
     });
   }
@@ -372,6 +411,7 @@ export function buildEntries(): CredentialEntry[] {
       providerPlugin: "youtube",
       credentialName: "YouTube Data API",
       secret: youtubeKey,
+      kind: "tool",
     });
   }
 
@@ -390,6 +430,7 @@ export function buildEntries(): CredentialEntry[] {
         providerPlugin: "bluesky",
         credentialName: "Bluesky",
         secret: blueskyAppPassword,
+        kind: "tool",
         metadata: { baseURL: blueskyHandle },
       });
     }
@@ -556,12 +597,21 @@ if (import.meta.main) {
       (c) => c.name === entry.credentialName,
     );
 
+    // CL-3446: interchange's generic /api/tenants/:tenantId/credentials route
+    // writes `secret` PLAINTEXT with no encryption hook of its own — it is
+    // the write path this script uses (unlike seed-startup.ts's direct-DB
+    // path, which encrypts before insert). Encrypt `kind: "tool"` secrets
+    // here, at the one place this script sends them, so nothing sent through
+    // the generic route bypasses at-rest encryption.
+    const storedSecret =
+      entry.kind === "tool" ? encryptSecret(entry.secret) : entry.secret;
+
     if (existing) {
       const patch = await api(
         "PATCH",
         `/api/tenants/${tenantId}/credentials/${existing.id}`,
         {
-          secret: entry.secret,
+          secret: storedSecret,
           ...(entry.metadata ? { metadata: entry.metadata } : {}),
         },
         cookies,
@@ -581,7 +631,7 @@ if (import.meta.main) {
           providerId,
           name: entry.credentialName,
           type: "api_key",
-          secret: entry.secret,
+          secret: storedSecret,
           ...(entry.metadata ? { metadata: entry.metadata } : {}),
         },
         cookies,

@@ -77,16 +77,11 @@ beforeEach(async () => {
 
 describe("CL-2705 workflow usage attribution", () => {
   test("legacy shared deployment with TWO run records by DIFFERENT principals: ALL usage attributes to the most-recent runner (CL-2711 documented behavior)", async () => {
-    await instance("ins_dep-shared", "ins_dep-shared@wb.local");
+    await instance("ins_depShared", "ins_depShared@wb.local");
     // Two serial runs on ONE deployment (pre-CL-2582 model), different humans.
-    await record(
-      "run-early",
-      "dep-shared",
-      "prn-alice",
-      "2026-06-01T00:00:00Z",
-    );
-    await record("run-late", "dep-shared", "prn-bob", "2026-06-30T00:00:00Z");
-    await rollup("ins_dep-shared", 1000, 1000);
+    await record("run-early", "depShared", "prn-alice", "2026-06-01T00:00:00Z");
+    await record("run-late", "depShared", "prn-bob", "2026-06-30T00:00:00Z");
+    await rollup("ins_depShared", 1000, 1000);
 
     const rows = await getUsageByPerson({
       db,

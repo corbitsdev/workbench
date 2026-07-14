@@ -340,4 +340,56 @@ describe("composeChatMessages", () => {
     expect(agentMessages[0]?.id).toBe("t1");
     expect(agentMessages[0]?.toolCalls?.[0]?.name).toBe("exa_search");
   });
+
+  it("rehydrates reasoning and tools on a tool turn after reload", () => {
+    const toolTurn: InstanceEvent = {
+      kind: "turn",
+      turnId: "t1",
+      content: "Done searching",
+      timestamp: "2024-01-01T00:00:30.000Z",
+      reasoning: "Need to scan CRM notes.",
+      toolCalls: [
+        {
+          name: "grep",
+          arguments: { pattern: "Acme" },
+          result: "found",
+          isError: false,
+        },
+      ],
+    };
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "search"),
+        toolTurn,
+        assistantMail("a1", "Done searching"),
+      ],
+      streaming: "",
+    });
+    const agent = messages.find((m) => m.role === "agent");
+    expect(agent?.reasoning).toBe("Need to scan CRM notes.");
+    expect(agent?.toolCalls?.[0]?.name).toBe("grep");
+    expect(agent?.content).toBe("Done searching");
+  });
+
+  it("carries reasoning onto the polished mail when the text-only turn is collapsed", () => {
+    const textTurn: InstanceEvent = {
+      kind: "turn",
+      turnId: "t1",
+      content: "Polished reply",
+      timestamp: "2024-01-01T00:00:30.000Z",
+      reasoning: "Summarized from three sources.",
+    };
+    const { messages } = composeChatMessages({
+      events: [
+        userMail("u1", "go"),
+        textTurn,
+        assistantMail("a1", "Polished reply"),
+      ],
+      streaming: "",
+    });
+    const agent = messages.find((m) => m.role === "agent");
+    expect(agent?.id).toBe("a1");
+    expect(agent?.reasoning).toBe("Summarized from three sources.");
+    expect(agent?.content).toBe("Polished reply");
+  });
 });

@@ -32,9 +32,22 @@ export {
 } from "./artifact-workflow-eligibility";
 export { ArtifactViz } from "./ArtifactViz";
 export { ArtifactCard } from "./ArtifactCard";
+export { ArtifactCardPreview } from "./ArtifactCardPreview";
+export { ArtifactDetailShell } from "./ArtifactDetailShell";
+export {
+  ARTIFACT_PREVIEW_FAMILIES,
+  artifactPreviewFamily,
+  labelForArtifactStatus,
+  previewExcerpt,
+  type ArtifactPreviewFamily,
+} from "./artifact-preview-family";
+export { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
+export { iconForPreviewFamily } from "./artifact-family-icon";
 export {
   ArtifactGallery,
+  ArtifactGalleryToolbar,
   type ArtifactGalleryProps,
+  type ArtifactGalleryToolbarProps,
   type AdvancedArtifactFilter,
 } from "./ArtifactGallery";
 export {
@@ -42,6 +55,11 @@ export {
   type ArtifactModalProps,
   type ArtifactModalAction,
 } from "./ArtifactModal";
+export {
+  ArtifactMeta,
+  formatArtifactDate,
+  type ArtifactMetaProps,
+} from "./ArtifactMeta";
 export {
   isLinkedInPostArtifactKind,
   usesSocialPostPreview,

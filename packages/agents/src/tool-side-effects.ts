@@ -1,3 +1,8 @@
+import {
+  loadCommittedToolManifestFactories,
+  writeBareToolNamesFromFactories,
+} from "@workbench/tool-manifest";
+import { HUB_ONLY_TOOL_SIDE_EFFECTS } from "./hub-only-tool-side-effects";
 import { canonicalizeToolNames, toLlmToolName } from "./tool-names";
 
 /**
@@ -24,6 +29,8 @@ export const INTERNAL_WRITE_EXCLUSIONS: ReadonlySet<string> = new Set([
   "artifact_link_gamma_presentation",
   "workflow_start",
   "workflow_signal",
+  "task_create",
+  "task_update",
 ]);
 
 /**
@@ -31,8 +38,8 @@ export const INTERNAL_WRITE_EXCLUSIONS: ReadonlySet<string> = new Set([
  * `sideEffect: "write"` bare name minus {@link INTERNAL_WRITE_EXCLUSIONS},
  * mapped through the CL-2306 `canonicalizeToolNames` → `toLlmToolName`
  * transform the harness applies before it matches a tool call. The model never
- * calls the bare name, so the gated set must be keyed on the safe name — the
- * hub stamps these grants `effect: "ask"` and the sidecar resolves the ask.
+ * calls the bare name, so the gated set must be keyed on the safe name. The
+ * sidecar's approval-gated runner matches these names before invoking the tool.
  */
 export function approvalGatedWriteNames(
   allWriteBareNames: readonly string[],
@@ -44,25 +51,44 @@ export function approvalGatedWriteNames(
 }
 
 /**
- * The materialized LLM-safe names the sidecar's approval-gated runner wrapper
- * matches a tool call against — every external / hard-to-undo write tool.
- *
- * This is a STATIC const (no launch-time hub fetch): the sidecar loads tool
- * tarballs that surface only `ToolDefinition` (no `sideEffect`), so it cannot
- * derive the set itself. Correctness is enforced by a hub drift test
- * (`approval-gated-tools.test.ts`) that recomputes the set from every tool's
- * `sideEffect: "write"` classification via {@link approvalGatedWriteNames} and
- * asserts it equals this const — so adding a write tool without gating it (or
- * mis-listing one here) fails CI. Keep in lockstep with that derivation.
+ * Native (non-tool-package) writes that gate the same as an external write,
+ * hand-listed because they carry no `sideEffect` classification in the hub's
+ * `KNOWN_TOOLS` registry — they are local sidecar runners (mail, posix), not
+ * credentialed/hub-backed tool entries, so `approvalGatedWriteNames` cannot
+ * derive them from the tool registry. `mail_send` lands in a teammate's
+ * mailbox — a member-visible, hard-to-undo action once Myra's chat persona
+ * can call it — so it gates like any other external write rather than
+ * running unattended.
  */
-export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
-  "attio__update_task",
-  "attio__create_note",
-  "attio__create_record",
-  "gamma__create_from_template",
-  "gamma__duplicate_presentation",
-  "vercel__deploy_static_file",
-  "deploy-artifact__vercel_deploy_artifact",
-  "notion__create_page",
-  "linear__create_issue",
+export const NATIVE_APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "mail_send",
 ]);
+
+function hubOnlyWriteBareNames(): string[] {
+  return Object.entries(HUB_ONLY_TOOL_SIDE_EFFECTS)
+    .filter(([, effect]) => effect === "write")
+    .map(([name]) => name);
+}
+
+/**
+ * Build the LLM-safe names the sidecar's approval-gated runner matches — every
+ * external / hard-to-undo write. Derived from committed manifest `sideEffects`
+ * plus hub-only tools (tarballs carry no `sideEffect` metadata).
+ */
+export function buildApprovalGatedToolNames(): ReadonlySet<string> {
+  const writeBare = [
+    ...writeBareToolNamesFromFactories(loadCommittedToolManifestFactories()),
+    ...hubOnlyWriteBareNames(),
+  ];
+  return new Set([
+    ...approvalGatedWriteNames(writeBare),
+    ...NATIVE_APPROVAL_GATED_TOOL_NAMES,
+  ]);
+}
+
+/**
+ * Materialized gated set for the sidecar harness. Recomputed from manifests at
+ * module load; the hub drift test asserts this matches `KNOWN_TOOLS` sideEffects.
+ */
+export const APPROVAL_GATED_TOOL_NAMES: ReadonlySet<string> =
+  buildApprovalGatedToolNames();

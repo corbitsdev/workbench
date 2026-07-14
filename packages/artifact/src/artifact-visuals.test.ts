@@ -28,6 +28,12 @@ describe("visualForKind", () => {
     expect(visualForKind("research").label).toBe("Report");
     expect(visualForKind("report").label).toBe("Report");
   });
+
+  it("labels the heartbeat's morning-brief kind as Report, not Document (CL-3503)", () => {
+    const v = visualForKind("morning-brief");
+    expect(v.label).toBe("Report");
+    expect(v.viz).toBe("deck");
+  });
 });
 
 describe("toGalleryArtifact", () => {
@@ -44,6 +50,7 @@ describe("toGalleryArtifact", () => {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     source: { origin: "workflow" },
+    sessionId: null,
     sessionName: "Acme Corp",
     sessionStatus: "done",
     ownerName: null,
@@ -53,15 +60,16 @@ describe("toGalleryArtifact", () => {
     expect(toGalleryArtifact(base).from).toBe("Acme Corp");
   });
 
-  it("falls back to a placeholder when session name is null", () => {
-    expect(toGalleryArtifact({ ...base, sessionName: null }).from).toBe(
-      "Untitled job",
-    );
+  it("omits `from` rather than inventing filler text when session name is null", () => {
+    expect(
+      toGalleryArtifact({ ...base, sessionName: null }).from,
+    ).toBeUndefined();
   });
 
   it("labels a session-less artifact with the workflow-supplied jobLabel, not 'Untitled job' (CL-2411)", () => {
     const research = {
       ...base,
+      sessionId: null,
       sessionName: null,
       kind: "research",
       source: {
@@ -73,13 +81,30 @@ describe("toGalleryArtifact", () => {
     expect(toGalleryArtifact(research).from).toBe("Last 30 days research");
   });
 
-  it("falls back to 'Untitled job' when a session-less artifact has no jobLabel (CL-2411)", () => {
+  it("omits `from` when a session-less artifact has no jobLabel (CL-2411, CL-3632)", () => {
     const noLabel = {
       ...base,
+      sessionId: null,
       sessionName: null,
       source: { origin: "workflow", citations: [] },
     } as ArtifactWithSession;
-    expect(toGalleryArtifact(noLabel).from).toBe("Untitled job");
+    expect(toGalleryArtifact(noLabel).from).toBeUndefined();
+  });
+
+  it("resolves a JSON artifact body to its summary field for the preview excerpt", () => {
+    expect(
+      toGalleryArtifact({
+        ...base,
+        content: '{"summary": "Deal closed at 40% discount"}',
+      }).previewExcerpt,
+    ).toBe("Deal closed at 40% discount");
+  });
+
+  it("falls back to the artifact title for JSON content with no summary field", () => {
+    expect(
+      toGalleryArtifact({ ...base, title: "Q3 Export", content: '{"id": 1}' })
+        .previewExcerpt,
+    ).toBe("Q3 Export");
   });
 
   it("returns empty time string for an unparseable timestamp (NaN guard)", () => {

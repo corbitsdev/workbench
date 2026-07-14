@@ -37,6 +37,9 @@ mock.module("../hooks/use-myra-session", () => ({
     instanceId: "inst",
   }),
 }));
+mock.module("../hooks/use-members", () => ({
+  useMembers: () => ({ data: [] }),
+}));
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => ({
     data:

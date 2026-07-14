@@ -5,6 +5,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 declare global {
   interface Window {
@@ -25,8 +26,9 @@ mock.module("../lib/hub-api", () => ({
     }),
 }));
 
+const navigate = mock(() => {});
 mock.module("react-router", () => ({
-  useNavigate: () => mock(() => {}),
+  useNavigate: () => navigate,
   useParams: () => ({ id: "skill-1" }),
 }));
 
@@ -108,6 +110,14 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
 });
 
+function ChromeSlotProbe() {
+  return React.createElement(
+    "div",
+    { "data-testid": "chrome-slot" },
+    usePageChromeSlot(),
+  );
+}
+
 function renderPage() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -116,7 +126,12 @@ function renderPage() {
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(SkillDetail),
+      React.createElement(
+        PageChromeProvider,
+        null,
+        React.createElement(ChromeSlotProbe),
+        React.createElement(SkillDetail),
+      ),
     ),
   );
 }
@@ -135,7 +150,7 @@ describe("SkillDetail", () => {
   it("toggles between rendered markdown and raw source", async () => {
     const user = userEvent.setup();
     renderPage();
-    await waitFor(() => expect(document.body.textContent).toContain("ASAP"));
+    await waitFor(() => expect(document.body.textContent).toContain("SKILL.md"));
 
     const toggle = [...document.querySelectorAll("button")].find(
       (b) => b.textContent?.trim() === "Source",
@@ -174,20 +189,21 @@ describe("SkillDetail", () => {
 
   it("renders the title once and drops the raw-slug subtitle (CL-2428)", async () => {
     renderPage();
-    const titleNodes = await waitFor(() => {
-      const matches = Array.from(document.querySelectorAll("p")).filter(
-        (p) => p.textContent?.trim() === "ASAP",
+    const chromeSlot = document.querySelector(
+      '[data-testid="chrome-slot"]',
+    ) as HTMLElement;
+    await waitFor(() => {
+      const titles = Array.from(chromeSlot.querySelectorAll("h1")).filter(
+        (h) => h.textContent?.trim() === "ASAP",
       );
-      expect(matches.length).toBeGreaterThan(0);
-      return matches;
+      expect(titles).toHaveLength(1);
     });
-    // Exactly one title element renders the display name.
-    expect(titleNodes).toHaveLength(1);
-    // The duplicate header line that rendered the raw lowercase slug is gone.
-    const slugSubtitle = Array.from(document.querySelectorAll("p")).find(
-      (p) => p.textContent?.trim() === "asap",
-    );
-    expect(slugSubtitle).toBeUndefined();
+    expect(chromeSlot.querySelector("p")).toBeNull();
+    expect(
+      Array.from(document.querySelectorAll("p")).find(
+        (p) => p.textContent?.trim() === "asap",
+      ),
+    ).toBeUndefined();
   });
 
   it("hides the file tree pane for a single-file skill (CL-2426)", async () => {

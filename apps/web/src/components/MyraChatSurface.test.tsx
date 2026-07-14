@@ -28,7 +28,7 @@ mock.module("@workbench/chat", () => ({
     inputDisabled?: boolean;
     inputAccessory?: React.ReactNode;
     composerFullWidth?: boolean;
-    agent: { tagline?: string };
+    agent: { name?: string; tagline?: string };
   }) =>
     React.createElement(
       "div",
@@ -37,6 +37,11 @@ mock.module("@workbench/chat", () => ({
         "div",
         { "data-testid": "composer-full-width" },
         String(props.composerFullWidth === true),
+      ),
+      React.createElement(
+        "div",
+        { "data-testid": "agent-name" },
+        props.agent.name ?? "",
       ),
       React.createElement(
         "div",
@@ -108,6 +113,7 @@ mock.module("@workbench/agents/browser", () => ({
   friendlyToolSummaryKnown: () => null,
   friendlyToolResult: () => null,
   isCatalogMetaTool: () => false,
+  isExternalIntegrationTool: () => false,
   summarizeToolCalls: () => "",
   attachmentPolicyForAgent: () => undefined,
 }));
@@ -201,7 +207,8 @@ describe("MyraChatSurface", () => {
       React.createElement(MyraChatSurface, { session, threadLabel: "Pricing" }),
     );
     expect(screen.getByTestId("count").textContent).toBe("2");
-    expect(screen.getByTestId("tagline").textContent).toBe("Pricing");
+    expect(screen.getByTestId("agent-name").textContent).toBe("Pricing");
+    expect(screen.getByTestId("tagline").textContent).toBe("Personal agent");
     fireEvent.click(screen.getByRole("button", { name: "send" }));
     expect(sendSpy.mock.calls[0]?.[0]).toBe("hello");
   });

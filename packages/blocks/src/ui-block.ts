@@ -16,7 +16,10 @@
  */
 
 import { type } from "arktype";
-import { ComparisonResultSchema, type ComparisonResult } from "@workbench/ui";
+import {
+  ComparisonResultSchema,
+  type ComparisonResult,
+} from "@workbench/ui/comparison-schema";
 
 export const DocumentActionsSchema = type({
   "copy?": "boolean",
@@ -296,6 +299,37 @@ export type UIBlock =
       result: ComparisonResult;
       blind?: boolean;
     }
+  | {
+      // A compact summary card for one entity or decision (CL-3547).
+      kind: "card";
+      title: string;
+      subtitle?: string;
+      body?: string;
+      badge?: string;
+      footer?: string;
+      href?: string;
+    }
+  | {
+      // A scannable bullet or numbered list (CL-3547).
+      kind: "list";
+      title?: string;
+      ordered?: boolean;
+      items: {
+        id?: string;
+        title: string;
+        description?: string;
+        meta?: string;
+        badge?: string;
+      }[];
+    }
+  | {
+      // A rich link preview with optional thumbnail (CL-3547).
+      kind: "preview";
+      url: string;
+      title?: string;
+      description?: string;
+      imageUrl?: string;
+    }
   | { kind: "canvas"; title?: string; blocks: UIBlock[] };
 
 export type ExtractedUIBlock = {
@@ -318,6 +352,9 @@ const KNOWN_KINDS = new Set<UIBlock["kind"]>([
   "multiSelect",
   "reviewList",
   "comparison",
+  "card",
+  "list",
+  "preview",
   "canvas",
 ]);
 
@@ -501,6 +538,22 @@ function isUIBlockAtDepth(value: unknown, depth: number): value is UIBlock {
         !(ComparisonResultSchema(block.result) instanceof type.errors) &&
         (block.blind === undefined || typeof block.blind === "boolean")
       );
+    case "card":
+      return typeof block.title === "string" && block.title.length > 0;
+    case "list":
+      return (
+        Array.isArray(block.items) &&
+        block.items.length > 0 &&
+        (block.items as unknown[]).every(
+          (item) =>
+            typeof item === "object" &&
+            item !== null &&
+            typeof (item as Record<string, unknown>).title === "string" &&
+            ((item as Record<string, unknown>).title as string).length > 0,
+        )
+      );
+    case "preview":
+      return typeof block.url === "string" && block.url.length > 0;
     case "canvas":
       return (
         Array.isArray(block.blocks) &&

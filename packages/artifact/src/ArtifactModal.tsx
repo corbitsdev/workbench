@@ -14,6 +14,11 @@ import { Button, ConfirmButton } from "@workbench/ui";
 import type { ArtifactWithSession } from "@workbench/shared";
 import { isLinkedInPostArtifactKind } from "./artifact-kinds";
 import { resolveArtifactClipboardText } from "./linkedin-clipboard";
+import { ArtifactMeta } from "./ArtifactMeta";
+import { ArtifactDetailShell } from "./ArtifactDetailShell";
+import { visualForKind } from "./artifact-visuals";
+import { labelForArtifactStatus } from "./artifact-preview-family";
+import { shouldShowArtifactStatusBadge } from "./artifact-status-badge";
 
 export interface ArtifactModalAction {
   label: string;
@@ -50,18 +55,14 @@ export interface ArtifactModalProps {
    * action is offered for any artifact.
    */
   canUseInWorkflow?: (artifact: ArtifactWithSession) => boolean;
+  /** Navigates to the originating session/run when the session name is clicked. */
+  onOpenSession?: (sessionId: string) => void;
+  /** Navigates to the parent artifact when "Derived from" is clicked. */
+  onOpenParent?: (parentId: string) => void;
 }
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 export function ArtifactModal({
   open,
@@ -74,6 +75,8 @@ export function ArtifactModal({
   onUseInWorkflow,
   onArchive,
   canUseInWorkflow,
+  onOpenSession,
+  onOpenParent,
 }: ArtifactModalProps) {
   const showUseInWorkflow = Boolean(
     onUseInWorkflow &&
@@ -150,154 +153,150 @@ export function ArtifactModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             transition={{ duration: 0.18 }}
-            className="flex max-h-[85vh] w-[50vw] min-w-[min(50vw,42rem)] max-w-[90vw] flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
+            className="flex h-[min(90vh,900px)] w-[min(96vw,72rem)] flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)] focus:outline-none"
           >
-            <div className="flex items-start gap-3 border-b border-border px-6 py-4">
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[16px] font-bold text-text">
-                  {artifact.title}
-                </div>
-                <div className="mt-0.5 font-mono text-[11px] text-text-3">
-                  {artifact.sessionName ?? "Untitled job"} · v{artifact.version}
-                </div>
-                {(kindLabel ?? artifact.createdAt) && (
-                  <div className="mt-1 text-[11px] text-text-3">
-                    {kindLabel && <span>{kindLabel}</span>}
-                    {kindLabel && artifact.createdAt && <span> · </span>}
-                    {artifact.createdAt && (
-                      <span>{formatDate(artifact.createdAt)}</span>
-                    )}
+            <ArtifactDetailShell
+              compactRail
+              accentClass={visualForKind(artifact.kind).fill}
+              header={
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[16px] font-bold text-text">
+                      {artifact.title}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[11px] text-text-3">
+                      v{artifact.version}
+                      {shouldShowArtifactStatusBadge(artifact.status)
+                        ? ` · ${labelForArtifactStatus(artifact.status)}`
+                        : null}
+                    </div>
                   </div>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="h-4 w-4"
-                >
-                  <path d="M6 6l12 12M18 6L6 18" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="relative flex-1 overflow-y-auto px-6 py-5 text-[14px] leading-relaxed text-text-2">
-              {showLinkedInFormatGate && (
-                <label className="absolute right-4 top-12 flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
-                  <input
-                    type="checkbox"
-                    checked={formatForLinkedIn}
-                    onChange={(e) => setFormatForLinkedIn(e.target.checked)}
-                    className="accent-charcoal"
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    aria-label="Close"
+                    className="grid h-8 w-8 flex-none place-items-center rounded-[9px] border border-border text-text-2 transition-colors hover:bg-[var(--row-hover)] hover:text-text"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="h-4 w-4"
+                    >
+                      <path d="M6 6l12 12M18 6L6 18" />
+                    </svg>
+                  </button>
+                </div>
+              }
+              rail={
+                <div className="flex flex-col gap-3 text-[13px] text-text-2">
+                  <ArtifactMeta
+                    kindLabel={kindLabel}
+                    createdAt={artifact.createdAt}
+                    sessionId={artifact.sessionId}
+                    sessionName={artifact.sessionName}
+                    sessionStatus={artifact.sessionStatus}
+                    parentId={artifact.parentId}
+                    onOpenSession={onOpenSession}
+                    onOpenParent={onOpenParent}
                   />
-                  Format for LinkedIn paste
-                </label>
-              )}
-              <button
-                type="button"
-                aria-label={
-                  copyFailed
-                    ? "Copy failed"
-                    : copied
-                      ? "Copied"
-                      : "Copy content"
-                }
-                onClick={() => {
-                  const text = resolveArtifactClipboardText(
-                    artifact.content,
-                    artifact.kind,
-                    formatForLinkedIn,
-                  );
-                  setCopied(false);
-                  setCopyFailed(false);
-                  void navigator.clipboard
-                    .writeText(text)
-                    .then(() => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    })
-                    .catch(() => {
-                      setCopyFailed(true);
-                      setTimeout(() => setCopyFailed(false), 1500);
-                    });
-                }}
-                className="absolute right-4 top-4 flex items-center gap-1.5 rounded-[7px] border border-border bg-surface px-2 py-1 text-[11px] text-text-3 transition-colors hover:text-text active:scale-[0.97]"
-              >
-                {copyFailed ? (
-                  "Copy failed"
-                ) : copied ? (
-                  "Copied"
-                ) : (
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    className="h-3.5 w-3.5"
+                  {showLinkedInFormatGate && (
+                    <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-text-3">
+                      <input
+                        type="checkbox"
+                        checked={formatForLinkedIn}
+                        onChange={(e) => setFormatForLinkedIn(e.target.checked)}
+                        className="accent-charcoal"
+                      />
+                      Format for LinkedIn paste
+                    </label>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={
+                      copyFailed
+                        ? "Copy failed"
+                        : copied
+                          ? "Copied"
+                          : "Copy content"
+                    }
+                    onClick={() => {
+                      const text = resolveArtifactClipboardText(
+                        artifact.content,
+                        artifact.kind,
+                        formatForLinkedIn,
+                      );
+                      setCopied(false);
+                      setCopyFailed(false);
+                      void navigator.clipboard
+                        .writeText(text)
+                        .then(() => {
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 1500);
+                        })
+                        .catch(() => {
+                          setCopyFailed(true);
+                          setTimeout(() => setCopyFailed(false), 1500);
+                        });
+                    }}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-[7px] border border-border bg-surface px-2 py-1.5 text-[11px] text-text-3 transition-colors hover:text-text"
                   >
-                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-                  </svg>
+                    {copyFailed
+                      ? "Copy failed"
+                      : copied
+                        ? "Copied"
+                        : "Copy content"}
+                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {onArchive && (
+                      <ConfirmButton
+                        variant="ghost"
+                        size="sm"
+                        confirmLabel="Confirm archive"
+                        onConfirm={() => onArchive(artifact)}
+                      >
+                        Archive
+                      </ConfirmButton>
+                    )}
+                    {onOpenInMyra && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => onOpenInMyra(artifact)}
+                      >
+                        Open in Myra
+                      </Button>
+                    )}
+                    {showUseInWorkflow && onUseInWorkflow && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => onUseInWorkflow(artifact)}
+                      >
+                        Use in Workflow
+                      </Button>
+                    )}
+                    {actions.map((action) => (
+                      <Button
+                        key={action.label}
+                        variant={action.variant ?? "secondary"}
+                        size="sm"
+                        onClick={() => action.onClick(artifact)}
+                      >
+                        {action.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              }
+            >
+              <div className="relative text-[14px] leading-relaxed text-text-2">
+                {children ?? (
+                  <p className="whitespace-pre-wrap">{artifact.content}</p>
                 )}
-              </button>
-              {children ?? (
-                <p className="whitespace-pre-wrap">{artifact.content}</p>
-              )}
-            </div>
-
-            {(actions.length > 0 ||
-              onOpenInMyra ||
-              showUseInWorkflow ||
-              onArchive) && (
-              <div className="flex items-center gap-2 border-t border-border px-6 py-4">
-                {onArchive && (
-                  <ConfirmButton
-                    variant="ghost"
-                    size="sm"
-                    confirmLabel="Confirm archive"
-                    onConfirm={() => onArchive(artifact)}
-                  >
-                    Archive
-                  </ConfirmButton>
-                )}
-                <div className="flex-1" />
-                {onOpenInMyra && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onOpenInMyra(artifact)}
-                  >
-                    Open in Myra
-                  </Button>
-                )}
-                {showUseInWorkflow && artifact && onUseInWorkflow && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => onUseInWorkflow(artifact)}
-                  >
-                    Use in Workflow
-                  </Button>
-                )}
-                {actions.map((action) => (
-                  <Button
-                    key={action.label}
-                    variant={action.variant ?? "secondary"}
-                    size="sm"
-                    onClick={() => action.onClick(artifact)}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
               </div>
-            )}
+            </ArtifactDetailShell>
           </motion.div>
         </motion.div>
       )}

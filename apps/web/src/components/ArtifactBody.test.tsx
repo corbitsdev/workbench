@@ -430,6 +430,18 @@ describe("ArtifactBody rendering", () => {
     expect(prose.className).not.toContain("mx-auto");
   });
 
+  it("expands prose to full width on the artifact detail layout", () => {
+    const { container } = render(
+      React.createElement(ArtifactBody, {
+        artifact: { kind: "blog", content: "# Title\n\nBody copy." },
+        layout: "detail",
+      }),
+    );
+    const prose = container.querySelector("div.wb-markdown");
+    if (prose === null) throw new Error("expected a prose wrapper");
+    expect(prose.className).toContain("max-w-none");
+  });
+
   it("renders a GFM table inside the prose surface in a horizontal-scroll container", () => {
     const { container } = render(
       React.createElement(ArtifactBody, {
@@ -461,5 +473,169 @@ describe("ArtifactBody rendering", () => {
       }),
     );
     expect(screen.queryByRole("link", { name: /download csv/i })).toBeNull();
+  });
+
+  describe("CL-3512: identity, fallbacks, and Button primitives", () => {
+    it("shows the real owner's name and initials in the LinkedIn preview, never fabricated chrome", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "Real post copy",
+            kind: "linkedin-post",
+            ownerName: "Jane Doe",
+          },
+        }),
+      );
+      screen.getByText("Jane Doe");
+      screen.getByText("JD");
+      expect(screen.queryByText("YOU")).toBeNull();
+      expect(screen.queryByText("Your Name")).toBeNull();
+      expect(screen.queryByText(/Your Title/)).toBeNull();
+    });
+
+    it("shows neutral chrome with no fabricated name when the owner is unknown", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "Real post copy",
+            kind: "linkedin-post",
+            ownerName: null,
+          },
+        }),
+      );
+      expect(screen.queryByText("YOU")).toBeNull();
+      expect(screen.queryByText("Your Name")).toBeNull();
+      expect(screen.queryByText(/Your Title/)).toBeNull();
+    });
+
+    it("degrades a csv-export without an id to a designed fallback, not a raw <pre> dump", () => {
+      const { container } = render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "name,city\nAlice,Denver\n",
+            kind: "csv-export",
+          },
+        }),
+      );
+      expect(container.querySelector("pre")).toBeNull();
+      screen.getByText(/can't be identified/i);
+    });
+
+    it("degrades a presentation with an invalid URL to a designed fallback with an icon", () => {
+      const { container } = render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "not-a-url",
+            kind: "presentation",
+          },
+        }),
+      );
+      screen.getByText(/presentation link is invalid/i);
+      expect(container.querySelector("svg")).not.toBeNull();
+    });
+
+    it("degrades an unparseable, empty research artifact to a designed fallback, not a blank render", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "",
+            kind: "research",
+            source: {},
+          },
+        }),
+      );
+      screen.getByText(/no readable content/i);
+    });
+
+    it("renders the csv-export download link as the shared Button primitive, not a raw styled anchor", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            id: "art-9",
+            content: "name,city\nAlice,Denver\n",
+            kind: "csv-export",
+          },
+        }),
+      );
+      const link = screen.getByRole("link", { name: /download csv/i });
+      expect(link.className).not.toContain("bg-accent");
+    });
+
+    it("shows an explicit empty state instead of a blank box for a contentless document artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "one-pager" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows a processing state instead of an empty state when the source session is still generating", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            content: "",
+            kind: "one-pager",
+            sessionStatus: "generating",
+          },
+        }),
+      );
+      screen.getByText(/still being generated/i);
+      expect(screen.queryByText(/no content yet/i)).toBeNull();
+    });
+
+    it("shows an explicit empty state for a contentless email artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "   ", kind: "email" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless LinkedIn/social artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "linkedin-post" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless ab-comparison artifact", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "ab-comparison" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+    });
+
+    it("shows an explicit empty state for a contentless gamma_presentation artifact instead of an invalid-deck message", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: { content: "", kind: "gamma_presentation" },
+        }),
+      );
+      screen.getByText(/no content yet/i);
+      expect(screen.queryByText(/invalid or unavailable/i)).toBeNull();
+    });
+
+    it("renders the non-CSV file download link as the shared Button primitive", () => {
+      render(
+        React.createElement(ArtifactBody, {
+          artifact: {
+            id: "art-pdf",
+            content: "",
+            kind: "file",
+            source: {
+              upload: { filename: "report.pdf", mimeType: "application/pdf" },
+            },
+          },
+        }),
+      );
+      const link = screen.getByRole("link", { name: /download report/i });
+      expect(link.className).not.toContain("bg-accent");
+    });
   });
 });

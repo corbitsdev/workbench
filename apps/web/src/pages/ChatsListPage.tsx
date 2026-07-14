@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import {
+  AppPageChromeRow,
   Button,
-  LibraryPageHeader,
   LibrarySearchInput,
   PagePanel,
   cn,
 } from "@workbench/ui";
+import { useSetPageChrome } from "../lib/page-chrome";
 import { Plus } from "lucide-react";
 import { formatRelativeTime } from "../lib/relative-time";
 import {
@@ -116,7 +117,8 @@ function CenteredState({
 export function ChatsListPage() {
   const { data, isLoading, isError, refetch } = useMyraThreads();
   const threads = data?.threads;
-  const createThread = useCreateMyraThread();
+  const { mutate: createThreadMutate, isPending: createThreadPending } =
+    useCreateMyraThread();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [newChatError, setNewChatError] = useState<string | null>(null);
@@ -126,9 +128,9 @@ export function ChatsListPage() {
     navigate(`/chats/${thread.id}`);
   };
 
-  const newChat = () => {
+  const newChat = useCallback(() => {
     setNewChatError(null);
-    createThread.mutate(undefined, {
+    createThreadMutate(undefined, {
       onSuccess: (thread) => {
         writeLastActiveThreadId(thread.id);
         navigate(`/chats/${thread.id}`);
@@ -137,7 +139,7 @@ export function ChatsListPage() {
         setNewChatError("Could not start a new chat. Try again.");
       },
     });
-  };
+  }, [createThreadMutate, navigate]);
 
   const now = Date.now();
   const lastActiveId = readLastActiveThreadId();
@@ -148,9 +150,9 @@ export function ChatsListPage() {
   );
   const groups = buildGroups(filtered, now);
 
-  return (
-    <PagePanel>
-      <LibraryPageHeader title="Chats" titleSize="sm">
+  const pageChrome = useMemo(
+    () => (
+      <AppPageChromeRow title="Chats" titleSize="sm">
         {hasThreads && (
           <>
             {newChatError && (
@@ -165,11 +167,17 @@ export function ChatsListPage() {
               onChange={setQuery}
               variant="ghost"
             />
-            <NewChatButton onClick={newChat} pending={createThread.isPending} />
+            <NewChatButton onClick={newChat} pending={createThreadPending} />
           </>
         )}
-      </LibraryPageHeader>
+      </AppPageChromeRow>
+    ),
+    [hasThreads, newChatError, query, newChat, createThreadPending],
+  );
+  useSetPageChrome(pageChrome);
 
+  return (
+    <PagePanel>
       <div className="flex-1 pb-10">
         {isLoading && (
           <div>
@@ -209,10 +217,7 @@ export function ChatsListPage() {
             subline="Start a new chat when you're ready."
           >
             <div className="flex flex-col items-center gap-2 pt-1">
-              <NewChatButton
-                onClick={newChat}
-                pending={createThread.isPending}
-              />
+              <NewChatButton onClick={newChat} pending={createThreadPending} />
               {newChatError && (
                 <span className="text-[12px] text-orange-deep">
                   {newChatError}

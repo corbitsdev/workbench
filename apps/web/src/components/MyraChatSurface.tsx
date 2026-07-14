@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Minimize2 } from "lucide-react";
@@ -10,6 +16,7 @@ import {
   type UIResponse,
   type PendingAttachment,
   type SignalRouting,
+  type MentionCandidate,
 } from "@workbench/chat";
 import {
   friendlyToolSummary,
@@ -31,8 +38,13 @@ import type { MyraSession } from "../hooks/use-myra-session";
 import { useActiveContext } from "../lib/active-context-store";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
+import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
+import { useApprovalDisplayLookups } from "../hooks/use-approval-display-lookups";
+import { createChatToolSummaryFormatter } from "../lib/chat-tool-summary";
+import { useMyraVoiceInput } from "../hooks/use-myra-voice-input";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
+import { renderChatToolMarker } from "./ToolCallProviderMarker";
 
 /**
  * Near-full-screen overlay wrapping the whole chat panel while expanded so the
@@ -79,13 +91,13 @@ export function ExpandedChatOverlay({
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.98 }}
           transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-surface shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
+          className="fixed inset-4 z-50 flex flex-col overflow-hidden rounded-panel border border-border bg-page shadow-[0_10px_40px_rgba(0,0,0,0.4)]"
         >
-          <div className="flex shrink-0 items-center justify-end border-b border-border px-2 py-1.5">
+          <div className="flex shrink-0 items-center justify-end border-b border-border px-4 py-2 sm:px-7">
             <button
               type="button"
               onClick={onExit}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer transition-[transform,background-color,color] duration-150 ease-out active:scale-[0.97]"
+              className="flex items-center gap-1 rounded-[8px] px-2.5 py-1 text-xs font-medium text-text-3 transition-colors hover:bg-page hover:text-text cursor-pointer active:scale-[0.97]"
             >
               <Minimize2 className="h-3.5 w-3.5" />
               Minimize
@@ -101,9 +113,11 @@ export function ExpandedChatOverlay({
 
 const MYRA: ChatAgentIdentity = { name: "Myra", tagline: "Personal agent" };
 
-// Myra runs on Kimi via the openai-compatible adapter, which reads images but
-// not documents; the gate resolves that to images-only. Undefined (attachments
-// hidden) if the capability ever resolves to none.
+// Myra runs on Kimi via the openai-compatible adapter, whose endpoint reads
+// neither images nor documents inline. The gate accepts both anyway — via the
+// File Parser divert path — and the composer routes every attachment through
+// /parse-file so Myra receives extracted text (see use-myra-session send).
+// Undefined (attachments hidden) only if the capability ever resolves to none.
 const MYRA_ATTACHMENT_POLICY = attachmentPolicyForAgent(MYRA.name);
 
 // Myra's file tools are private working memory (MEMORY.md, SCRATCHPAD.md).
@@ -125,7 +139,10 @@ type MyraChatSurfaceProps = {
    * so a side-effect tool call parked on approval can be resolved from the chat.
    */
   tenantId?: string | null;
-  /** Optional thread label shown as the agent tagline (multi-thread chat). */
+  /**
+   * Thread title when no `headerLeft` is supplied (legacy surfaces). Becomes
+   * `agent.name` with Myra's tagline; prefer `headerLeft` + ThreadSwitcher.
+   */
   threadLabel?: string;
   /**
    * Content for the left of the panel's single header bar (e.g. the thread
@@ -171,6 +188,8 @@ type MyraChatSurfaceProps = {
    * one resume fires per gate (CL-2681).
    */
   resumeInFlight?: boolean;
+  /** Workspace members eligible for `@` mention autocomplete in the composer. */
+  mentionCandidates?: MentionCandidate[];
 };
 
 export function MyraChatSurface({
@@ -188,12 +207,24 @@ export function MyraChatSurface({
   signalRouting,
   onResumeSignal,
   resumeInFlight,
+  mentionCandidates,
 }: MyraChatSurfaceProps) {
-  const agent: ChatAgentIdentity = threadLabel
-    ? { ...MYRA, tagline: threadLabel }
-    : MYRA;
+  const agent: ChatAgentIdentity =
+    threadLabel !== undefined &&
+    threadLabel !== "" &&
+    headerLeft === undefined
+      ? { name: threadLabel, tagline: MYRA.tagline }
+      : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
+  const { enabled: myraVoiceInput } = useMyraVoiceInput();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
+  const { lookups, isLoading: approvalLookupsLoading } =
+    useApprovalDisplayLookups(tenantId ?? "");
+  const formatToolSummary = useMemo(
+    () => createChatToolSummaryFormatter(lookups, approvalLookupsLoading),
+    [lookups, approvalLookupsLoading],
+  );
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
@@ -232,6 +263,10 @@ export function MyraChatSurface({
     // is then Expanded goes near-fullscreen, so it wants the centered prompt too.
     composerFullWidth: dockState === "docked" && expanded !== true,
     ...(headerLeft !== undefined ? { headerLeft } : {}),
+    ...(mentionCandidates !== undefined && mentionCandidates.length > 0
+      ? { mentionCandidates }
+      : {}),
+    voiceInput: myraVoiceInput,
   };
 
   const { state } = session;
@@ -511,6 +546,7 @@ export function MyraChatSurface({
       messages={session.messages}
       {...(inserts !== undefined ? { inserts } : {})}
       onSend={handleSend}
+      onAbort={session.abortTurn}
       onRespond={handleRespond}
       inputAccessory={inputAccessory}
       {...(MYRA_ATTACHMENT_POLICY !== undefined
@@ -523,13 +559,16 @@ export function MyraChatSurface({
         ? { resolveAttachmentUrl: session.resolveAttachmentUrl }
         : {})}
       hideToolCall={hideMyraSelfManagement}
-      formatToolSummary={friendlyToolSummary}
+      formatToolSummary={formatToolSummary}
       formatToolResult={friendlyToolResult}
       formatToolName={(name) => friendlyToolSummary({ id: "", name })}
       compactToolActivity={compactToolActivity}
       summarizeToolCalls={summarize}
       isQuietTool={isCatalogMetaTool}
       isExternalTool={isExternalIntegrationTool}
+      renderToolMarker={renderChatToolMarker}
+      isReasoningExpanded={reasoningExpandedPrefs.isReasoningExpanded}
+      setReasoningExpanded={reasoningExpandedPrefs.setReasoningExpanded}
     />
   );
 }

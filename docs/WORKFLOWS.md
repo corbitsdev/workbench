@@ -75,6 +75,17 @@ Companion docs:
    grants (`:343`). No per-step session launch, no per-step WebSocket, no
    per-step deploy pack.
 
+The step input comes from the run's **trigger payload**, which the child
+resolves from the inbound trigger mail (`resolveTriggerPayload`,
+`run-child.ts`). Ordinary inbound mail keeps its plain conversation text, but
+hub-originated run starts (scheduler, manual, and webhook all funnel through
+`createWorkflowRunStarter`, which sends `from: hub@<deploymentDomain>` with the
+validated input `JSON.stringify`'d as the body) decode to a real object, so a
+first step whose input is `{ from: "trigger.payload" }` receives structured
+arguments rather than a JSON string. The sender check is caller-discipline over
+`sendUserMessage`, not a verified sender — see
+[`DEPLOYING_WORKFLOWS.md`](DEPLOYING_WORKFLOWS.md) for the boundary contract.
+
 ### Contrast: Interchange's reference model launches a session per step
 
 Interchange's orchestrator, run unmodified, **launches a live agent session for
@@ -177,6 +188,47 @@ A raw-event SSE stream (`GET /api/v1/workflow-runs/:deploymentId/stream`,
 `apps/hub/src/routes/workflow-runs.ts`) and the signal route
 (`POST /api/v1/workflow-runs/:deploymentId/signal`) remain for run observation
 and human-in-the-loop approval.
+
+### Scheduled runs, intake, and post-intake gate drive (CL-3509 / CL-3528)
+
+**Scheduler-sourced** runs (`triggerSource = 'scheduler'`, started by
+`createWorkflowRunStarter` from `apps/hub/src/services/scheduler.ts`) follow the
+same execution model as manual starts, with two hub automations on human gates:
+
+1. **Intake (CL-3509).** When the schedule stores intake fields, the hub
+   auto-delivers the `intake` `awaitSignal` gate so the owner does not have to
+   open the dock. Kinds with only an `intake` gate (or no gates) can complete
+   unattended once intake is valid.
+2. **Post-intake gates (CL-3528).** Kinds with *additional* human gates after
+   `intake` are **opt-in** for unattended schedule attachment. The hub spins a
+   short-lived **Myra** ephemeral session (`createScheduledWorkflowGateAgent` in
+   `apps/hub/src/services/scheduled-workflow-gate-agent.ts`) that calls
+   `workflow_list_runs` + `workflow_signal` to resolve each open post-intake
+   gate. Scheduler runs **do not** get owner "workflow needs you" gate mail
+   while parked (`deliverPendingGateMail` in `gate-mail.ts` returns early for
+   any `triggerSource = 'scheduler'` run).
+
+**Opt-in surface for authors.** A workflow package may export
+`ALLOWS_SCHEDULED_POST_INTAKE_DRIVE = true`; `apps/hub/bin/build-workflow-defs.ts`
+reads that export (via the same `loadWorkflow` helper as deploy) and serializes it
+onto the embedded catalog as `allowsScheduledPostIntakeDrive`. Hub attach checks
+load that catalog through `loadWorkflowGateInfos()`. Test kinds can also appear on
+`SCHEDULED_POST_INTAKE_DRIVE_KIND_ALLOWLIST` in
+`apps/hub/src/lib/workflow-gate-info.ts`. Schedule attach APIs reject multi-gate
+kinds via `isKindStructurallyAttachable` (which calls
+`kindAllowsScheduledPostIntakeDrive` for post-intake shapes).
+
+**Backstops.** If a scheduler run reaches post-intake gates but the kind is not
+opted in, `maybeEnqueue` **fails the run** with terminal mail (defense in depth
+beyond attach-time rejection). The gate agent keeps an in-memory queue (default cap
+32); when a new drive cannot be enqueued, the run is **`failed`** with terminal mail
+(`Scheduled gate drive failed: agent queue full`). Enqueue and drive retries touch
+`workflow_run_record.updated_at` so the stalled-run reconciler does not
+false-positive while work is queued. A periodic reconciler
+(`stalled-scheduled-run-reconciler.ts`) fails scheduler runs left `awaiting` with
+`updated_at` older than **one hour** (`DEFAULT_STALLED_SCHEDULED_RUN_TIMEOUT_MS`,
+a code constant unless tests pass `timeoutMs`) if intake or Myra drive never
+clears the gate.
 
 ### Workflows surface as UIBlocks in chat
 

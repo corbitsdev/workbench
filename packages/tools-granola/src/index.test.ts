@@ -30,6 +30,96 @@ describe("createGranolaTools", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it("skips the network call and reports skipped when granola is not in enabledSources", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["email"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.parse(String(result.content))).toEqual({
+      notes: [],
+      hasMore: false,
+      skipped: true,
+    });
+  });
+
+  it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
+    const fetcher = mock(async () => {
+      return new Response(
+        JSON.stringify({
+          notes: [
+            { id: "n1", title: "Call", created_at: "2026-07-10T00:00:00Z" },
+          ],
+          hasMore: false,
+        }),
+        {
+          status: 200,
+        },
+      );
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: {
+          reason: "manual-brief",
+          userAddress: "usr_abc@workbench.local",
+          userRefId: "usr_abc",
+          enabledSources: ["granola", "linear", "attio"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(result.content)).notes).toHaveLength(1);
+  });
+
+  it("calls granola normally when enabledSources includes granola", async () => {
+    const fetcher = mock(async () => {
+      return new Response(JSON.stringify({ notes: [], hasMore: false }), {
+        status: 200,
+      });
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["granola"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("returns the Granola agent tools", () => {
     const tools = createGranolaTools({
       apiKey: "tenant-api-key",
@@ -372,20 +462,177 @@ describe("createGranolaTools", () => {
     });
   });
 
-  it("requires non-empty Granola config", () => {
-    expect(() =>
-      createGranolaTools({
-        apiKey: "",
-        baseUrl: "https://public-api.granola.ai/v1",
-      }),
-    ).toThrow("Granola apiKey is required");
-
+  it("requires a valid Granola base URL at construction", () => {
     expect(() =>
       createGranolaTools({
         apiKey: "tenant-api-key",
         baseUrl: "not a url",
       }),
     ).toThrow("Granola baseUrl must be a valid URL");
+  });
+
+  it("does not throw at construction when apiKey is empty (deferred to call time)", () => {
+    expect(() =>
+      createGranolaTools({
+        apiKey: "",
+        baseUrl: "https://public-api.granola.ai/v1",
+      }),
+    ).not.toThrow();
+  });
+
+  it("throws for a non-heartbeat caller when the key is missing", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "", fetcher }),
+    );
+
+    const result = await runner.run(
+      { id: "call_missing_key", name: "granola_list_notes", arguments: {} },
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      callId: "call_missing_key",
+      content: "Granola apiKey is required",
+      isError: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("throws for a heartbeat caller too when the key is missing (nothing constructs the tool with an empty key)", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_missing_key_heartbeat",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["granola"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      callId: "call_missing_key_heartbeat",
+      content: "Granola apiKey is required",
+      isError: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("degrades to skipped when the heartbeat caller's key is rejected with 401", async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+        }),
+    );
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "invalid-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_invalid_key_heartbeat",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["granola"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({
+      notes: [],
+      hasMore: false,
+      skipped: true,
+    });
+  });
+
+  it("does not degrade a non-auth failure for a heartbeat caller", async () => {
+    const fetcher = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    );
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "tenant-api-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_server_error_heartbeat",
+        name: "granola_list_notes",
+        arguments: { enabledSources: ["granola"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      callId: "call_server_error_heartbeat",
+      content: "Granola API error: 500 boom",
+      isError: true,
+    });
+  });
+
+  it("still throws for granola_get_note when the key is missing, even with enabledSources present", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_get_note_missing_key",
+        name: "granola_get_note",
+        arguments: { noteId: "note_1" },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      callId: "call_get_note_missing_key",
+      content: "Granola apiKey is required",
+      isError: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("still throws for granola_list_folders when the key is missing", async () => {
+    const fetcher = mock(async () => {
+      throw new Error("should not be called");
+    });
+
+    const runner = createToolRunner(
+      createGranolaTools({ apiKey: "", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_list_folders_missing_key",
+        name: "granola_list_folders",
+        arguments: {},
+      },
+      new AbortController().signal,
+    );
+
+    expect(result).toEqual({
+      callId: "call_list_folders_missing_key",
+      content: "Granola apiKey is required",
+      isError: true,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   function runGranola(

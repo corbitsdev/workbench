@@ -1,9 +1,16 @@
 /// <reference types="bun" />
 import "../test-setup";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import React from "react";
 import { MemoryRouter } from "react-router";
+import { PageChromeProvider, usePageChromeSlot } from "../lib/page-chrome";
 
 type ThreadItem = {
   id: string;
@@ -36,12 +43,25 @@ mock.module("../hooks/use-myra-threads", () => ({
 
 const { ChatsListPage } = require("./ChatsListPage");
 
+function ChromeSlotProbe() {
+  return React.createElement(
+    "div",
+    { "data-testid": "chrome-slot" },
+    usePageChromeSlot(),
+  );
+}
+
 function renderPage() {
   render(
     React.createElement(
       MemoryRouter,
       { initialEntries: ["/chats"] },
-      React.createElement(ChatsListPage),
+      React.createElement(
+        PageChromeProvider,
+        null,
+        React.createElement(ChromeSlotProbe),
+        React.createElement(ChatsListPage),
+      ),
     ),
   );
 }
@@ -78,6 +98,15 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("ChatsListPage", () => {
+  it("publishes the page title in top bar chrome only once", () => {
+    renderPage();
+    const chrome = screen.getByTestId("chrome-slot");
+    expect(
+      within(chrome).getByRole("heading", { name: /chats/i }),
+    ).toBeDefined();
+    expect(screen.getAllByRole("heading", { name: /chats/i }).length).toBe(1);
+  });
+
   it("lists each chat as a clickable row", () => {
     renderPage();
     expect(

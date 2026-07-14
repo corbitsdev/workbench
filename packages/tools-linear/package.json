@@ -15,7 +15,9 @@
     "test:coverage": "bun test --coverage --coverage-reporter=lcov --coverage-reporter=text src"
   },
   "dependencies": {
-    "@workbench/tool-credentials": "workspace:*"
+    "@workbench/tool-credentials": "workspace:*",
+    "@workbench/tool-manifest": "workspace:*",
+    "arktype": "catalog:"
   },
   "devDependencies": {
     "@intx/agent": "workspace:*",
@@ -24,6 +26,7 @@
     "typescript": "^5.9.0"
   },
   "interchange": {
-    "tools": "./dist/interchange-tools.js"
+    "tools": "./dist/interchange-tools.js",
+    "manifest": "./src/tool-manifest.ts"
   }
 }

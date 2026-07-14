@@ -6,6 +6,10 @@ import {
   EmbeddedWorkflowDefSchema,
   embeddedWorkflowDefsDir,
 } from "./workflow-defs-embedded";
+import type {
+  EmbeddedIntakeField,
+  WorkflowGateInfo,
+} from "./workflow-gate-info";
 
 /**
  * The authoritative set of REAL workflow kinds the workbench can run: the
@@ -78,4 +82,63 @@ export async function loadWorkflowDisplayFlows(
     }
   }
   return flows;
+}
+
+async function readEmbeddedDefs(
+  defsDir: string,
+): Promise<(typeof EmbeddedWorkflowDefSchema.infer)[]> {
+  const defs: (typeof EmbeddedWorkflowDefSchema.infer)[] = [];
+  let files: string[];
+  try {
+    files = (await readdir(defsDir)).filter((f) => f.endsWith(".json"));
+  } catch {
+    return defs;
+  }
+  for (const file of files) {
+    try {
+      const raw = JSON.parse(await readFile(join(defsDir, file), "utf8"));
+      const parsed = EmbeddedWorkflowDefSchema(raw);
+      if (!(parsed instanceof type.errors)) defs.push(parsed);
+    } catch {
+      // Skip an unreadable/malformed committed def; each kind has its own file.
+    }
+  }
+  return defs;
+}
+
+// The gate shape (requiresIntake + humanGateCount) per kind, read from the
+// committed embedded catalog (CL-3508). The scheduling layer uses these to decide
+// which kinds are attachable to a brief. A kind with no committed def, or a
+// malformed file, is simply absent — the caller treats an absent kind as
+// not-attachable.
+export async function loadWorkflowGateInfos(
+  defsDir: string = embeddedWorkflowDefsDir(),
+): Promise<Map<string, WorkflowGateInfo>> {
+  const infos = new Map<string, WorkflowGateInfo>();
+  for (const def of await readEmbeddedDefs(defsDir)) {
+    if (def.requiresIntake === undefined || def.humanGateCount === undefined) {
+      continue;
+    }
+    infos.set(def.kind, {
+      requiresIntake: def.requiresIntake,
+      humanGateCount: def.humanGateCount,
+      ...(def.allowsScheduledPostIntakeDrive !== undefined
+        ? { allowsScheduledPostIntakeDrive: def.allowsScheduledPostIntakeDrive }
+        : {}),
+    });
+  }
+  return infos;
+}
+
+// The first-intake form fields per kind, read from the committed embedded catalog
+// (CL-3509), so the attach UI can collect a workflow's intake payload without
+// importing workflow code. A kind that declares none is absent from the map.
+export async function loadWorkflowIntakeFields(
+  defsDir: string = embeddedWorkflowDefsDir(),
+): Promise<Map<string, EmbeddedIntakeField[]>> {
+  const fields = new Map<string, EmbeddedIntakeField[]>();
+  for (const def of await readEmbeddedDefs(defsDir)) {
+    if (def.intakeFields !== undefined) fields.set(def.kind, def.intakeFields);
+  }
+  return fields;
 }

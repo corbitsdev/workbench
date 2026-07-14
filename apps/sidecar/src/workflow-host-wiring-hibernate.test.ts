@@ -410,6 +410,10 @@ describe("createSidecarDeployRouter hibernate", () => {
       reason: "hibernate test",
     });
 
+    expect(() => transport.getTransportFor(frame.agentAddress)).toThrow(
+      /not registered/,
+    );
+
     // Residency is gone: the child was killed and its exit awaited, the
     // drain barrier ran, and the deployment mapping was released.
     expect(first.killed).toBe(true);
@@ -452,6 +456,8 @@ describe("createSidecarDeployRouter hibernate", () => {
     if (second === undefined) throw new Error("unreachable");
     await completeSpawnHandshake(second);
     await redeployPromise;
+
+    expect(() => transport.getTransportFor(frame.agentAddress)).not.toThrow();
 
     // ...and the gate signal now routes into the fresh child over the
     // control channel (the child-side resume of the parked run from the

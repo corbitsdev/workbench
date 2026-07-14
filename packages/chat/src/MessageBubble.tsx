@@ -7,17 +7,24 @@ import {
 } from "react";
 import { File as FileIcon } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
+import { splitMentionSegments } from "@workbench/shared";
 import { type ChatMessage, type ChatImage, type ChatAttachment } from "./types";
 import { formatBytes } from "./attachments";
-import { ReasoningDisclosure } from "./ReasoningDisclosure";
 import {
   extractUIBlockFromText,
   UIBlockView,
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
-import { MessageFeedback } from "./MessageFeedback";
-import type { FeedbackSubjectKind } from "./feedback-types";
+import {
+  CHAT_ASSISTANT_BODY,
+  CHAT_META_ERROR_TEXT,
+  CHAT_META_TEXT,
+  CHAT_RESPONSE_STACK,
+  CHAT_SYSTEM_BUBBLE_SURFACE,
+  CHAT_TURN_STACK,
+  CHAT_USER_BUBBLE_SURFACE,
+} from "./messageRhythm";
 
 class UIBlockErrorBoundary extends Component<
   { children: ReactNode },
@@ -43,6 +50,32 @@ class UIBlockErrorBoundary extends Component<
   }
 }
 
+/**
+ * Render a user-authored message as plain text, except for `@[Name](#usr_id)`
+ * mention tokens, which render as pills — matching how a sent mention shows
+ * up for its recipients. User content otherwise never goes through Markdown.
+ */
+function UserMessageBody({ content }: { content: string }) {
+  const segments = splitMentionSegments(content);
+  if (segments.length === 1 && segments[0]?.type === "text") return content;
+  return (
+    <>
+      {segments.map((segment, index) =>
+        segment.type === "mention" ? (
+          <span
+            key={index}
+            className="rounded-sm bg-white/20 px-1 py-0.5 font-medium"
+          >
+            @{segment.name}
+          </span>
+        ) : (
+          <span key={index}>{segment.value}</span>
+        ),
+      )}
+    </>
+  );
+}
+
 export interface MessageBubbleProps {
   message: ChatMessage;
   /** Forwarded to interactive UI blocks embedded in the agent's reply. */
@@ -52,20 +85,6 @@ export interface MessageBubbleProps {
     action: "copy" | "download" | "save-artifact",
     block: UIBlock,
   ) => void;
-  /**
-   * When provided, a thumbs up/down row is shown below settled agent messages.
-   * The host supplies the save function so the chat package stays transport-free.
-   */
-  onRate?: (
-    subjectId: string,
-    subjectKind: FeedbackSubjectKind,
-    rating: 1 | -1,
-  ) => Promise<void>;
-  /** Returns the server-fetched rating for a subject, if one is available. */
-  getRating?: (
-    subjectId: string,
-    subjectKind: FeedbackSubjectKind,
-  ) => 1 | -1 | null | undefined;
   /**
    * Resolves an attachment's stored blob to a displayable/downloadable object
    * URL. The chat package stays transport-free: the host supplies this and owns
@@ -84,7 +103,8 @@ export interface MessageBubbleProps {
  * agent reply embeds a fenced ```ui block (the agent reformatting tool output
  * into generative UI), that block is lifted out and rendered through the
  * UIBlockView registry, with the surrounding prose still rendered as Markdown.
- * User messages are kept as plain text.
+ * User messages are kept as plain text, except for mention tokens rendered
+ * as pills (see UserMessageBody) — no other markdown is interpreted.
  */
 
 function InlineImage({ image }: { image: ChatImage }) {
@@ -93,7 +113,7 @@ function InlineImage({ image }: { image: ChatImage }) {
 
   if (failed) {
     return (
-      <div className="flex items-center justify-center rounded-lg bg-zinc-700 px-4 py-3 text-xs text-zinc-400 mt-2 max-w-[600px]">
+      <div className="mt-2 flex max-w-[600px] items-center justify-center rounded-input bg-surface-2 px-4 py-3 text-xs text-text-3">
         Image unavailable
       </div>
     );
@@ -151,7 +171,7 @@ function FileChip({
         <span className="text-text-3">{formatBytes(attachment.size)}</span>
       </button>
       {failed && (
-        <span role="alert" className="text-xs text-red">
+        <span role="alert" className={CHAT_META_ERROR_TEXT}>
           Couldn't download — try again
         </span>
       )}
@@ -258,8 +278,6 @@ export function MessageBubble({
   message,
   onRespond,
   onAction,
-  onRate,
-  getRating,
   resolveAttachmentUrl,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -276,14 +294,16 @@ export function MessageBubble({
   // empty rather than rendering a blank bubble.
   const hasBody = message.content.trim() !== "";
 
-  // Nothing to show: no body, not streaming, no reasoning, no images, no
-  // renderable attachments.
+  // Nothing to show: no body, no images, no renderable attachments — and
+  // either settled, or streaming with reasoning carrying the live state (the
+  // AgentTurn trace renders reasoning; an empty wrapper here would only add
+  // dead space under it). A reasoning-less stream keeps the bubble as the
+  // typing placeholder.
   if (
     !hasBody &&
-    message.status !== "sending" &&
-    !hasReasoning &&
     !hasImages &&
-    !hasAttachments
+    !hasAttachments &&
+    (message.status !== "sending" || hasReasoning)
   )
     return null;
 
@@ -293,10 +313,10 @@ export function MessageBubble({
     !isUser && !isStreaming ? extractUIBlockFromText(message.content) : null;
 
   function renderBody() {
-    if (isUser) return message.content;
+    if (isUser) return <UserMessageBody content={message.content} />;
     if (extracted !== null) {
       return (
-        <div className="flex flex-col gap-2">
+        <div className={CHAT_RESPONSE_STACK}>
           {extracted.text !== "" && <Markdown>{extracted.text}</Markdown>}
           <UIBlockErrorBoundary>
             <UIBlockView
@@ -318,31 +338,22 @@ export function MessageBubble({
   return (
     <div
       data-role={message.role}
-      className={cn(
-        "flex w-full flex-col gap-2",
-        isUser ? "items-end" : "items-start",
-      )}
+      className={cn(CHAT_TURN_STACK, isUser ? "items-end" : "items-start")}
     >
       {message.senderLabel !== undefined && message.senderLabel !== "" && (
-        <span className="text-xs text-text-3">From: {message.senderLabel}</span>
-      )}
-      {hasReasoning && (
-        <ReasoningDisclosure
-          reasoning={message.reasoning ?? ""}
-          streaming={isStreaming && message.content === ""}
-        />
+        <span className={CHAT_META_TEXT}>From: {message.senderLabel}</span>
       )}
       {(hasBody || (message.status === "sending" && !hasReasoning)) && (
         <div
           className={cn(
-            "text-sm break-words",
-            message.role === "agent"
-              ? "w-full text-text"
-              : "max-w-[80%] rounded-lg px-3 py-2",
-            isUser && "bg-orange text-white whitespace-pre-wrap",
+            "text-library-body-sm break-words",
+            message.role === "agent" && CHAT_ASSISTANT_BODY,
+            isUser && CHAT_USER_BUBBLE_SURFACE,
+            isUser && "max-w-[80%] rounded-input px-3 py-2",
+            isUser && "bg-orange text-white whitespace-pre-wrap text-[13px]",
             isUser && "transition-opacity duration-200",
             isUser && message.status === "sending" && "opacity-70",
-            isSystem && "bg-surface-2 text-text-3 italic",
+            isSystem && CHAT_SYSTEM_BUBBLE_SURFACE,
           )}
         >
           {renderBody()}
@@ -358,26 +369,11 @@ export function MessageBubble({
           resolveAttachmentUrl={resolveAttachmentUrl!}
         />
       )}
-      {message.role === "agent" &&
-        message.status !== "sending" &&
-        onRate !== undefined && (
-          <MessageFeedback
-            subjectId={message.feedbackId ?? message.id}
-            subjectKind="turn_part"
-            savedRating={
-              getRating !== undefined
-                ? (getRating(message.feedbackId ?? message.id, "turn_part") ??
-                  null)
-                : null
-            }
-            onRate={onRate}
-          />
-        )}
       {isUser && message.status === "sending" && (
-        <span className="text-xs text-text-3">Sending…</span>
+        <span className={CHAT_META_TEXT}>Sending…</span>
       )}
       {message.status === "failed" && (
-        <span role="alert" className="text-xs text-red">
+        <span role="alert" className={CHAT_META_ERROR_TEXT}>
           Failed to send
         </span>
       )}

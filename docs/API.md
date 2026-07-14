@@ -145,6 +145,123 @@ responds `{ thread }`; delete responds `{ deleted: true }`.
 
 ---
 
+## Personal (`/me/*`) API conventions
+
+Every `/me/*` route resolves the caller's identity server-side from the
+session — a request never supplies its own principal id. List routes share a
+keyset pagination shape: request `{ limit, cursor }`, response includes
+`nextCursor` when more results remain. The list-field name is **not**
+uniform across routes — `/me/inbox` returns `{ messages, nextCursor? }` while
+`/me/schedules`, `/me/tasks`, and `/me/webhook-triggers` all return
+`{ items, nextCursor? }`. Treat this as a known inconsistency, not a
+convention to copy — new `/me/*` list routes should use `items`.
+
+### Inbox
+
+```
+GET   /me/inbox              # { limit, cursor } → { messages, nextCursor? }
+GET   /me/inbox/:id          # message detail
+POST  /me/inbox/:id/read     # marks a message read
+GET   /me/inbox/events       # SSE — content-free { type: "mailbox", id } delivery
+                             # signals; client refetches through the routes above
+```
+
+Backed by the workbench-owned `principal_mailbox` table — every principal
+(human or agent instance) has one. Delivery is authorized to senders in the
+same tenant domain as the recipient.
+
+### Inbox sources — webhooks
+
+See `OWNER_SETUP_INBOX.md` for the full setup sequence and gating order.
+Member-facing:
+
+```
+GET    /me/inbox-sources          # catalog entries the member can see —
+                                  # tenant credential AND owner-enabled;
+                                  # owner-disabled or credential-less sources
+                                  # are absent, never returned "disabled"
+PATCH  /me/preferences            # inboxSource:<key> and, for Linear,
+                                  # inboxSource:linear:scope /
+                                  # inboxSource:linear:backfill
+```
+
+Owner-facing:
+
+```
+GET  /owner/inbox-sources         # catalog + per-source enabled state
+                                  # (member-role allow grant on
+                                  # inbox-source:<key>/enable)
+PUT  /owner/inbox-sources/:key    # { enabled } → write/revoke the grant;
+                                  # audit-logged; disabling never touches
+                                  # member preferences, re-enabling restores
+                                  # each member's prior choice
+```
+
+Public webhook receivers (each mounted only when its secret env var is set —
+absent secret means the route does not exist, not that it 404s):
+
+```
+POST /webhooks/linear   # LINEAR_WEBHOOK_SECRET — HMAC-SHA256 over the raw
+                        # body (`linear-signature`), 60s replay window;
+                        # Issue/Comment create/update events
+POST /webhooks/attio    # ATTIO_WEBHOOK_SECRET — HMAC over the raw body
+                        # (`Attio-Signature` / legacy `X-Attio-Signature`),
+                        # 24h Idempotency-Key dedupe; task.created/updated
+POST /webhooks/slack    # SLACK_SIGNING_SECRET — Slack v0 HMAC
+                        # (`x-slack-signature` + `x-slack-request-timestamp`),
+                        # 5-minute replay window; handles the
+                        # `url_verification` handshake, mention events, and
+                        # channel_created auto-join
+```
+
+Each webhook shares its dedup/idempotency key scheme with the corresponding
+poller (Linear: `externalId`; Attio: `sourceRef`) so a poll and a webhook
+delivery of the same event collapse into one mailbox row rather than two.
+
+### Schedules and webhook triggers
+
+```
+GET/POST/PATCH/DELETE  /me/schedules              # durable scheduled_trigger rows
+GET/POST/DELETE        /me/webhook-triggers        # workflow_trigger rows
+POST                   /triggers/webhook/:triggerId  # public — secret-authenticated, IP-rate-limited
+```
+
+The scheduler, triage, and task-reconciler engines are owner-managed feature
+grants (see Owner routes below); the legacy environment kill switches remain
+only as emergency overrides — see `IMPLEMENTATION.md`.
+
+The `ScheduledTrigger` shape returned by `/me/schedules` includes
+`lastFiredDayUtc` (the UTC day-number the schedule last fired, `null` if
+never) alongside `hourUtc` and `enabled` — the client derives "last fired"
+and "next fire" display from it rather than the hub computing and returning
+those directly. Settings → Schedules (`apps/web/src/components/MySchedules.tsx`,
+wired into `apps/web/src/pages/Settings.tsx`) is the member-facing surface for
+listing, pausing/resuming, retiming, and deleting these rows.
+
+### Tasks
+
+```
+GET/POST/PATCH  /me/tasks            # { limit, cursor } → { items, nextCursor? }
+GET             /me/tasks/:id        # single task, owner-scoped, 404 if not caller's
+POST            /me/tasks/:id/push   # { adapterId } → send the task to an external
+                                     # system (Attio, Linear); ownership-checked
+```
+
+Backed by the workbench-owned `task` table, with optional external-system
+linkage in `task_external_ref`.
+
+### Owner: features
+
+```
+GET  /owner/features         # feature-grant state per feature (+ forcedByEnv)
+PUT  /owner/features/:name   # { enabled } → write/revoke the tenant feature grant
+```
+
+Owner-guarded; toggles write `admin_audit` records. Features are
+deny-by-default; an env-forced feature reports `forcedByEnv: true`.
+
+---
+
 ## Recent Calls API
 
 ```

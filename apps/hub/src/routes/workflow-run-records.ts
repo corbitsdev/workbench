@@ -50,6 +50,7 @@ import {
   getWorkflowRunTokenTotals,
 } from "../services/activity-overview";
 import { WorkflowMeta } from "../lib/workflow-meta";
+import { resolvePrincipalNames } from "../services/admin-governance";
 
 const log = getLogger(["api", "workflow-run-records"]);
 
@@ -108,6 +109,8 @@ const RunStateResponse = type({
   // catalog so the run pane's version badge survives an owner disabling the
   // kind. Omitted for deployments that predate version capture.
   "meta?": WorkflowMeta,
+  "principalId?": "string",
+  "ownerDisplayName?": "string",
 });
 
 const ErrorResponse = type({ error: "string" });
@@ -218,6 +221,29 @@ function stateResponse(
       ? { originConversationId: state.originConversationId }
       : {}),
     ...(meta ? { meta } : {}),
+  };
+}
+
+async function stateResponseWithOwnership(
+  db: HubDb,
+  tenantId: string,
+  state: {
+    runId: string;
+    kind: string;
+    status: "provisioning" | "running" | "awaiting" | "completed" | "failed";
+    deploymentId?: string;
+    originConversationId?: string;
+    principalId: string;
+  },
+  meta?: WorkflowMeta | null,
+) {
+  const base = stateResponse(state, meta);
+  const names = await resolvePrincipalNames(db, tenantId, [state.principalId]);
+  const ownerDisplayName = names.get(state.principalId);
+  return {
+    ...base,
+    principalId: state.principalId,
+    ...(ownerDisplayName ? { ownerDisplayName } : {}),
   };
 }
 
@@ -630,7 +656,12 @@ export function createWorkflowRunRecordsRouter(deps: {
       if (gate) return c.json({ error: gate.error }, gate.status);
 
       return c.json(
-        stateResponse(state, await resolveStateMeta(deps.db, state)),
+        await stateResponseWithOwnership(
+          deps.db,
+          context.tenantId,
+          state,
+          await resolveStateMeta(deps.db, state),
+        ),
       );
     },
   );

@@ -1,3 +1,4 @@
+import "./test-setup";
 import { afterEach, describe, expect, it } from "bun:test";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
@@ -22,20 +23,20 @@ describe("LibraryPageHeader", () => {
 
   it("uses tokenized title sizing rather than verbatim arbitrary values", () => {
     const { rerender } = render(<LibraryPageHeader title="Skills" />);
-    const lg = screen.getByRole("heading", { level: 1 });
+    const lg = screen.getByRole("heading", { level: 1, name: "Skills" });
     expect(lg.className).toContain("text-library-title");
     expect(lg.className).not.toContain("text-[21px]");
 
     rerender(<LibraryPageHeader title="Chats" titleSize="sm" />);
-    const sm = screen.getByRole("heading", { level: 1 });
+    const sm = screen.getByRole("heading", { level: 1, name: "Chats" });
     expect(sm.className).toContain("text-library-title-sm");
     expect(sm.className).not.toContain("text-[17px]");
   });
 
   it("wraps so trailing controls reflow below the title on narrow viewports", () => {
     render(<LibraryPageHeader title="Skills" />);
-    const header = screen.getByRole("heading", { level: 1 }).parentElement;
-    expect(header?.className).toContain("flex-wrap");
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.closest(".flex-wrap")).toBeTruthy();
   });
 
   it("renders action children on the trailing edge", () => {

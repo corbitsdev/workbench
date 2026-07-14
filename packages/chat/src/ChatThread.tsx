@@ -2,11 +2,13 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { type ChatMessage, type ChatActivity, type ToolCall } from "./types";
 import { MessageBubble } from "./MessageBubble";
-import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
+import { ActivityPulse, type ToolNarrativeProps } from "./ToolNarrative";
+import { AgentTurn } from "./AgentTurn";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
+import { CHAT_META_TEXT, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
 
 function byTimestamp(a: string, b: string): number {
   if (a < b) return -1;
@@ -98,6 +100,8 @@ export interface ChatThreadProps {
   isQuietTool?: ToolNarrativeProps["isQuietTool"];
   /** External integration tools get a bullet marker; internal tools render plain. */
   isExternalTool?: ToolNarrativeProps["isExternalTool"];
+  /** Optional provider brand mark for external tool rows. */
+  renderToolMarker?: ToolNarrativeProps["renderToolMarker"];
   /**
    * Predicate to hide individual tool calls from the narrative (the call still
    * runs; it is just not rendered). Used to abstract an agent's private
@@ -117,13 +121,15 @@ export interface ChatThreadProps {
     subjectKind: FeedbackSubjectKind,
     rating: 1 | -1,
   ) => Promise<void>;
-  /** Returns the server-fetched rating for a subject. Passed to MessageBubble → MessageFeedback. */
+  /** Returns the server-fetched rating for a subject. Passed to AgentTurn → MessageFeedback. */
   getRating?: (
     subjectId: string,
     subjectKind: FeedbackSubjectKind,
   ) => 1 | -1 | null | undefined;
   /** Resolves a message attachment's blob to a displayable/downloadable URL. */
   resolveAttachmentUrl?: (blobId: string) => Promise<string>;
+  isReasoningExpanded?: (messageKey: string) => boolean;
+  setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
   className?: string;
 }
 
@@ -143,12 +149,15 @@ export function ChatThread({
   summarizeToolCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   hideToolCall,
   onRespond,
   onAction,
   onRate,
   getRating,
   resolveAttachmentUrl,
+  isReasoningExpanded,
+  setReasoningExpanded,
   className,
 }: ChatThreadProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -185,53 +194,52 @@ export function ChatThread({
     const displayMessage =
       urls.length > 0 ? { ...message, content: cleanedText } : message;
 
-    return (
-      <div key={message.id} className="flex flex-col gap-1.5">
+    if (message.role !== "agent") {
+      return (
         <MessageBubble
+          key={message.id}
           message={displayMessage}
           {...(onRespond !== undefined ? { onRespond } : {})}
           {...(onAction !== undefined ? { onAction } : {})}
-          {...(onRate !== undefined ? { onRate } : {})}
-          {...(getRating !== undefined ? { getRating } : {})}
           {...(resolveAttachmentUrl !== undefined
             ? { resolveAttachmentUrl }
             : {})}
         />
-        {urls.map((url) => (
+      );
+    }
+
+    const visibleToolCalls =
+      hideToolCall === undefined
+        ? message.toolCalls
+        : message.toolCalls?.filter((c) => !hideToolCall(c));
+
+    return (
+      <AgentTurn
+        key={message.id}
+        message={displayMessage}
+        {...(visibleToolCalls !== undefined ? { visibleToolCalls } : {})}
+        trailing={urls.map((url) => (
           <UrlImageCard key={url} url={url} />
         ))}
-        {message.role === "agent" &&
-          (() => {
-            const visibleToolCalls =
-              hideToolCall === undefined
-                ? message.toolCalls
-                : message.toolCalls?.filter((c) => !hideToolCall(c));
-            if (visibleToolCalls === undefined || visibleToolCalls.length === 0)
-              return null;
-            return (
-              <ToolNarrative
-                toolCalls={visibleToolCalls}
-                {...(formatToolSummary !== undefined
-                  ? { formatSummary: formatToolSummary }
-                  : {})}
-                {...(formatToolResult !== undefined
-                  ? { formatResult: formatToolResult }
-                  : {})}
-                {...(compactToolActivity !== undefined
-                  ? { compact: compactToolActivity }
-                  : {})}
-                {...(summarizeToolCalls !== undefined
-                  ? { summarizeCalls: summarizeToolCalls }
-                  : {})}
-                {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-                {...(isExternalTool !== undefined ? { isExternalTool } : {})}
-                {...(onRespond !== undefined ? { onRespond } : {})}
-                {...(onAction !== undefined ? { onAction } : {})}
-                className="pl-1"
-              />
-            );
-          })()}
-      </div>
+        {...(formatToolSummary !== undefined ? { formatToolSummary } : {})}
+        {...(formatToolResult !== undefined ? { formatToolResult } : {})}
+        {...(compactToolActivity !== undefined ? { compactToolActivity } : {})}
+        {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
+        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+        {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+        {...(onRespond !== undefined ? { onRespond } : {})}
+        {...(onAction !== undefined ? { onAction } : {})}
+        {...(onRate !== undefined ? { onRate } : {})}
+        {...(getRating !== undefined ? { getRating } : {})}
+        {...(resolveAttachmentUrl !== undefined
+          ? { resolveAttachmentUrl }
+          : {})}
+        {...(isReasoningExpanded !== undefined ? { isReasoningExpanded } : {})}
+        {...(setReasoningExpanded !== undefined
+          ? { setReasoningExpanded }
+          : {})}
+      />
     );
   }
 
@@ -264,7 +272,11 @@ export function ChatThread({
       role="log"
       aria-label="Chat messages"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4",
+        // Inter-turn spacing only — visibly larger than any intra-turn gap
+        // (AgentTurn owns those), so whitespace signals turn boundaries.
+        "flex min-h-0 flex-1 flex-col overflow-y-auto bg-page",
+        CHAT_THREAD_TURN_GAP,
+        "px-4 py-4 sm:px-7",
         className,
       )}
     >
@@ -273,7 +285,7 @@ export function ChatThread({
         !hasActivity &&
         (emptyState ?? (
           <div className="flex flex-1 items-center justify-center">
-            <p className="text-sm text-text-3">
+            <p className="text-library-body-sm text-text-3">
               Send a message to get started.
             </p>
           </div>
@@ -289,8 +301,13 @@ export function ChatThread({
           aria-live="polite"
           data-testid="busy-indicator"
         >
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs text-text-3">
-            <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-orange motion-reduce:animate-none" />
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-input border border-border bg-bg px-3 py-1.5",
+              CHAT_META_TEXT,
+            )}
+          >
+            <ActivityPulse />
             {busyLabel}
           </span>
         </div>

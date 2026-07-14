@@ -1,9 +1,18 @@
 /// <reference types="bun" />
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ChatInput } from "./ChatInput";
+import { VOICE_AUTO_SEND_DELAY_SEC } from "./composer-voice-dictation";
+import { installFakeTimers, type FakeTimers } from "./test-support/fake-timers";
 import type { AttachmentPolicy } from "./attachments";
 
 // happy-dom may not implement object URLs; the image-preview branch needs them.
@@ -26,6 +35,21 @@ function fileInputOf(container: HTMLElement): HTMLInputElement {
   const input = container.querySelector('input[type="file"]');
   if (input === null) throw new Error("no file input rendered");
   return input as HTMLInputElement;
+}
+
+function pasteFilesOn(textarea: HTMLTextAreaElement, files: File[]) {
+  fireEvent.paste(textarea, {
+    clipboardData: {
+      files,
+      items: files.map((file) => ({
+        kind: "file",
+        type: file.type,
+        getAsFile: () => file,
+      })),
+      types: ["Files"],
+      getData: () => "",
+    },
+  });
 }
 
 afterEach(() => {
@@ -87,8 +111,7 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it("shows a busy spinner, relabels the button, and blocks submission when busy", async () => {
-    const user = userEvent.setup();
+  it("shows a busy spinner and relabels the button when busy (no onAbort)", async () => {
     const onSend = mock((_text: string) => {});
     render(<ChatInput onSend={onSend} busy />);
 
@@ -98,11 +121,22 @@ describe("ChatInput", () => {
     expect(button.disabled).toBe(true);
     // Busy state reads as active work — a spinner, not greyed-out dots.
     expect(screen.getByTestId("composer-busy-spinner")).toBeDefined();
+  });
+
+  it("keeps the textarea editable while busy (CL-2988)", () => {
+    render(<ChatInput onSend={() => {}} busy />);
     expect(
       (screen.getByLabelText("Message") as HTMLTextAreaElement).disabled,
-    ).toBe(true);
-    await user.keyboard("{Enter}");
-    expect(onSend).not.toHaveBeenCalled();
+    ).toBe(false);
+  });
+
+  it("keeps the attach control enabled while busy (CL-2988)", () => {
+    render(
+      <ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} busy />,
+    );
+    expect(
+      (screen.getByLabelText("Add files") as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 
   it("renders the send control as an icon button, not a text label", () => {
@@ -117,9 +151,11 @@ describe("ChatInput", () => {
     expect(screen.getByPlaceholderText("Ask anything")).toBeDefined();
   });
 
-  it("falls back to the default placeholder", () => {
+  it("falls back to an agent-neutral placeholder", () => {
+    // The fallback must never name a specific agent — hosts pass the bound
+    // agent's name via `placeholder`.
     render(<ChatInput onSend={() => {}} />);
-    expect(screen.getByPlaceholderText("Message Ada…")).toBeDefined();
+    expect(screen.getByPlaceholderText("Message…")).toBeDefined();
   });
 
   it("hides the attach control when no attachment policy is given", () => {
@@ -254,6 +290,33 @@ describe("ChatInput", () => {
     expect(screen.getByRole("alert").textContent).toContain("clip.mp4");
     expect(screen.getByText("ok.png")).toBeDefined();
   });
+
+  it("adds a chip when an allowed image is pasted from the clipboard (Ctrl+V)", () => {
+    render(<ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    pasteFilesOn(textarea, [makeFile("screenshot.png", "image/png")]);
+    expect(screen.getByText("screenshot.png")).toBeDefined();
+    expect(textarea.value).toBe("");
+  });
+
+  it("leaves plain-text paste unchanged when the clipboard has no files", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    await user.click(textarea);
+    await user.paste("hello from clipboard");
+    expect(textarea.value).toBe("hello from clipboard");
+    expect(screen.queryByLabelText(/Remove/)).toBeNull();
+  });
+
+  it("removes a pasted attachment via its remove button", () => {
+    render(<ChatInput onSend={() => {}} attachmentPolicy={IMG_PDF_POLICY} />);
+    const textarea = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    pasteFilesOn(textarea, [makeFile("paste.png", "image/png")]);
+    fireEvent.click(screen.getByLabelText("Remove paste.png"));
+    expect(screen.queryByText("paste.png")).toBeNull();
+  });
 });
 
 describe("ChatInput composer width", () => {
@@ -325,5 +388,335 @@ describe("auto-grow", () => {
     expect(h).toBeGreaterThan(100); // still grew some
     // The element's internal scrollHeight (mock) exceeds the rendered height => scroll will appear.
     expect(input.scrollHeight).toBeGreaterThan(h);
+  });
+});
+
+describe("ChatInput abort (stop button)", () => {
+  it("shows an enabled Stop control instead of the disabled spinner while busy with onAbort", () => {
+    render(<ChatInput onSend={() => {}} onAbort={() => {}} busy />);
+
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
+    expect(stop.disabled).toBe(false);
+    // The stop control replaces the spinner — it reads as an action, not a wait.
+    expect(screen.queryByTestId("composer-busy-spinner")).toBeNull();
+  });
+
+  it("keeps the plain send control when idle even with onAbort provided", () => {
+    render(<ChatInput onSend={() => {}} onAbort={() => {}} />);
+    expect(screen.getByRole("button", { name: "Send" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("keeps the busy spinner when no onAbort is provided", () => {
+    render(<ChatInput onSend={() => {}} busy />);
+    expect(screen.getByTestId("composer-busy-spinner")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("fires onAbort when the stop button is clicked", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() => {});
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onAbort).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the stop button while an abort is in flight and re-enables after it settles", async () => {
+    const user = userEvent.setup();
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const onAbort = mock(() => gate);
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    const stop = screen.getByRole("button", {
+      name: "Stop",
+    }) as HTMLButtonElement;
+    await user.click(stop);
+    expect(stop.disabled).toBe(true);
+    // A second click while pending must not double-fire.
+    fireEvent.click(stop);
+    expect(onAbort).toHaveBeenCalledTimes(1);
+
+    release();
+    await gate;
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(false);
+    });
+  });
+
+  it("surfaces a rejected abort as a composer error and re-enables the stop button", async () => {
+    const user = userEvent.setup();
+    const onAbort = mock(() =>
+      Promise.reject(new Error("Couldn't stop. Try again.")),
+    );
+    render(<ChatInput onSend={() => {}} onAbort={onAbort} busy />);
+
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't stop. Try again.");
+    expect(
+      (screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+  });
+
+  describe("mention autocomplete", () => {
+    const MEMBERS = [
+      { id: "1", name: "Jane Doe" },
+      { id: "2", name: "Bob Smith" },
+    ];
+
+    it("opens a filtered dropdown after typing @ and a query", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      await user.type(screen.getByLabelText("Message"), "hey @jan");
+      expect(screen.getByRole("listbox")).toBeTruthy();
+      expect(screen.getByRole("option", { name: "Jane Doe" })).toBeTruthy();
+      expect(screen.queryByRole("option", { name: "Bob Smith" })).toBeNull();
+    });
+
+    it("inserts the wire-format token on Enter and closes the dropdown", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "hey @jan{Enter}");
+      expect(input.value).toBe("hey @[Jane Doe](#usr_1) ");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("navigates candidates with arrow keys before inserting", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "@");
+      await user.keyboard("{ArrowDown}{Enter}");
+      expect(input.value).toBe("@[Bob Smith](#usr_2) ");
+    });
+
+    it("closes the dropdown on Escape without inserting a token", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} mentionCandidates={MEMBERS} />);
+      const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+      await user.type(input, "hey @jan{Escape}");
+      expect(screen.queryByRole("listbox")).toBeNull();
+      expect(input.value).toBe("hey @jan");
+    });
+
+    it("does not open a dropdown when no mention candidates are given", async () => {
+      const user = userEvent.setup();
+      render(<ChatInput onSend={() => {}} />);
+      await user.type(screen.getByLabelText("Message"), "hey @jan");
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+  });
+});
+
+describe("ChatInput voice dictation", () => {
+  let timers: FakeTimers;
+
+  let lastRecognition: {
+    onresult: ((event: unknown) => void) | null;
+    onspeechend: (() => void) | null;
+    start: () => void;
+  } | null = null;
+
+  class WindowSpeechRecognition {
+    continuous = false;
+    interimResults = false;
+    lang = "en-US";
+    onresult: ((event: unknown) => void) | null = null;
+    onspeechend: (() => void) | null = null;
+    onerror: ((event: { error: string }) => void) | null = null;
+    onend: (() => void) | null = null;
+    start() {
+      lastRecognition = this;
+    }
+    stop() {}
+    abort() {}
+  }
+
+  beforeEach(() => {
+    timers = installFakeTimers();
+    lastRecognition = null;
+    (
+      window as Window & { SpeechRecognition?: typeof WindowSpeechRecognition }
+    ).SpeechRecognition = WindowSpeechRecognition;
+  });
+
+  afterEach(() => {
+    timers.restore();
+  });
+
+  it("shows the mic control only when voiceInput is enabled", () => {
+    render(<ChatInput onSend={() => {}} />);
+    expect(
+      screen.queryByRole("button", { name: "Start voice input" }),
+    ).toBeNull();
+
+    render(<ChatInput onSend={() => {}} voiceInput />);
+    expect(
+      screen.getByRole("button", { name: "Start voice input" }),
+    ).toBeDefined();
+  });
+
+  it("writes transcripts into the message field and auto-sends after silence", () => {
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} voiceInput />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start voice input" }));
+    expect(screen.getByTestId("composer-voice-status").textContent).toContain(
+      "Listening",
+    );
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    act(() => {
+      lastRecognition?.onresult?.({
+        resultIndex: 0,
+        results: {
+          length: 1,
+          0: { isFinal: true, 0: { transcript: "hello myra" } },
+        },
+      });
+    });
+    expect(input.value).toBe("hello myra");
+
+    act(() => {
+      lastRecognition?.onspeechend?.();
+    });
+    expect(screen.getByTestId("composer-voice-status").textContent).toContain(
+      "Sending in 3",
+    );
+
+    act(() => {
+      timers.advance(VOICE_AUTO_SEND_DELAY_SEC * 1000);
+    });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0]?.[0]).toBe("hello myra");
+    expect(input.value).toBe("");
+    expect(
+      screen
+        .getByRole("button", { name: "Stop voice input" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+});
+
+describe("ChatInput draft-and-queue while busy (CL-2988)", () => {
+  it("queues a submitted draft instead of sending it while busy, and clears the composer", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} busy />);
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    await user.type(input, "hold on{Enter}");
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(input.value).toBe("");
+    expect(screen.getByText("hold on")).toBeDefined();
+    expect(screen.getByText("Queued")).toBeDefined();
+  });
+
+  it("auto-sends the queued message once busy goes back to false", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    const { rerender } = render(<ChatInput onSend={onSend} busy />);
+
+    await user.type(screen.getByLabelText("Message"), "follow up{Enter}");
+    expect(onSend).not.toHaveBeenCalled();
+
+    rerender(<ChatInput onSend={onSend} busy={false} />);
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend.mock.calls[0]?.[0]).toBe("follow up");
+    expect(screen.queryByText("Queued")).toBeNull();
+  });
+
+  it("does not double-submit a second Enter for the same in-flight promise send", async () => {
+    const user = userEvent.setup();
+    let resolveSend = () => {};
+    const gate = new Promise<void>((r) => {
+      resolveSend = r;
+    });
+    const onSend = mock(() => gate);
+    render(<ChatInput onSend={onSend} />);
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    await user.type(input, "one{Enter}");
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    // A second Enter while the first send's promise is still pending must
+    // not fire a second dispatch.
+    await user.type(input, "two{Enter}");
+    expect(onSend).toHaveBeenCalledTimes(1);
+
+    resolveSend();
+    await gate;
+  });
+
+  it("lets the user cancel a queued message before it sends", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} busy />);
+
+    await user.type(screen.getByLabelText("Message"), "oops{Enter}");
+    expect(screen.getByText("oops")).toBeDefined();
+
+    await user.click(
+      screen.getByRole("button", { name: "Cancel queued message" }),
+    );
+    expect(screen.queryByText("oops")).toBeNull();
+  });
+
+  it("lets the user edit a queued message back into the draft before it sends", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    render(<ChatInput onSend={onSend} busy />);
+
+    await user.type(screen.getByLabelText("Message"), "typo hree{Enter}");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const input = screen.getByLabelText("Message") as HTMLTextAreaElement;
+    expect(input.value).toBe("typo hree");
+    expect(screen.queryByText("Queued")).toBeNull();
+  });
+
+  it("keeps a queued message held (not auto-sent) if the composer becomes hard-disabled when the turn ends", async () => {
+    const user = userEvent.setup();
+    const onSend = mock((_text: string) => {});
+    const { rerender } = render(<ChatInput onSend={onSend} busy />);
+
+    await user.type(screen.getByLabelText("Message"), "careful{Enter}");
+    expect(onSend).not.toHaveBeenCalled();
+
+    // The turn ends but the session itself became unusable at the same time
+    // (e.g. the connection dropped) — do not auto-dispatch into it.
+    rerender(<ChatInput onSend={onSend} busy={false} disabled />);
+
+    expect(onSend).not.toHaveBeenCalled();
+    expect(screen.getByText("careful")).toBeDefined();
+  });
+
+  it("restores a failed auto-sent queued message rather than losing it", async () => {
+    const onSend = mock((text: string) =>
+      text === "will fail" ? Promise.reject(new Error("nope")) : undefined,
+    );
+    const user = userEvent.setup();
+    const { rerender } = render(<ChatInput onSend={onSend} busy />);
+
+    await user.type(screen.getByLabelText("Message"), "will fail{Enter}");
+    rerender(<ChatInput onSend={onSend} busy={false} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("nope");
+    });
+    expect(screen.getByText("will fail")).toBeDefined();
   });
 });

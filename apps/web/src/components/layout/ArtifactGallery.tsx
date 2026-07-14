@@ -3,7 +3,8 @@
 // @workbench/client and passes the array + flags into the package component.
 // Presentation, layout, and tile mapping all live in @workbench/artifact.
 
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { InfiniteData } from "@tanstack/react-query";
 import { useExperimentalArtifactCards, useViewMode } from "@workbench/ui";
@@ -19,6 +20,7 @@ import { getMe } from "../../lib/hub-api";
 import { useActiveWorkbench } from "../../lib/active-workbench-context";
 import {
   ArtifactGallery as ArtifactGalleryView,
+  ArtifactGalleryToolbar,
   ArtifactModal,
 } from "@workbench/artifact";
 import type {
@@ -33,6 +35,7 @@ import { resolveKindLabel } from "../../lib/resolve-kind-label";
 import { canUseArtifactInWorkflow } from "@workbench/artifact";
 import { useChatLauncher } from "../../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../../lib/artifact-chat-message";
+import { useSetPageChrome } from "../../lib/page-chrome";
 
 export { buildArtifactMessage };
 
@@ -59,6 +62,7 @@ export function ArtifactGallery({
   onOpenArtifact,
 }: ArtifactGalleryProps) {
   const { openWithMessage } = useChatLauncher();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { activeWorkbench } = useActiveWorkbench();
   const meQuery = useQuery({
@@ -161,13 +165,13 @@ export function ArtifactGallery({
       });
   }
 
-  const handleQueryChange = (value: string) => {
+  const handleQueryChange = useCallback((value: string) => {
     setInputQuery(value);
     if (debounceTimer.current !== null) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       setDebouncedQuery(value);
     }, SEARCH_DEBOUNCE_MS);
-  };
+  }, []);
 
   const handleOpen = (gallery: GalleryArtifact) => {
     const full = (artifacts ?? []).find((a) => a.id === gallery.id) ?? null;
@@ -191,6 +195,22 @@ export function ArtifactGallery({
     setSelected(null);
   }
 
+  // `/insights/trace/:runId` resolves a `workflow_run_record` id (see
+  // WorkflowTracePage). `ArtifactWithSession.sessionId` is emitted as null by
+  // the hub today (session enrichment is not wired up — see artifacts.ts), so
+  // this destination is unverified: re-check it resolves a real run once the
+  // hub starts populating sessionId, rather than assuming the old pre-M6
+  // "session" concept lines up with a workflow_run_record id.
+  function handleOpenSession(sessionId: string) {
+    setSelected(null);
+    navigate(`/insights/trace/${sessionId}`);
+  }
+
+  function handleOpenParent(parentId: string) {
+    setSelected(null);
+    navigate(`/artifacts/${parentId}`);
+  }
+
   // The mutation invalidates the artifact list, so the new row refetches into
   // the gallery. Clear any active search/filters so it is guaranteed visible
   // rather than hidden behind a stale facet.
@@ -202,6 +222,55 @@ export function ArtifactGallery({
     setKindFilter(undefined);
     setAdvancedFilter({});
   }
+
+  const toolbar = useMemo(
+    () => (
+      <ArtifactGalleryToolbar
+        artifacts={artifacts ?? []}
+        query={inputQuery}
+        onQueryChange={handleQueryChange}
+        onNew={() => setAddOpen(true)}
+        onOpenLibrary={onOpenLibrary}
+        sort={sort}
+        onSortChange={setSort}
+        ownerPrincipalId={ownerFilter}
+        onOwnerFilterChange={setOwnerFilter}
+        owners={members}
+        creatorKind={creatorKindFilter}
+        onCreatorKindFilterChange={setCreatorKindFilter}
+        kind={kindFilter}
+        onKindFilterChange={setKindFilter}
+        createdAfter={advancedFilter.createdAfter}
+        createdBefore={advancedFilter.createdBefore}
+        onAdvancedFilterChange={setAdvancedFilter}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        hasMore={hasNextPage === true}
+      />
+    ),
+    [
+      artifacts,
+      inputQuery,
+      handleQueryChange,
+      setAddOpen,
+      onOpenLibrary,
+      sort,
+      setSort,
+      ownerFilter,
+      setOwnerFilter,
+      members,
+      creatorKindFilter,
+      setCreatorKindFilter,
+      kindFilter,
+      setKindFilter,
+      advancedFilter,
+      setAdvancedFilter,
+      viewMode,
+      setViewMode,
+      hasNextPage,
+    ],
+  );
+  useSetPageChrome(toolbar);
 
   return (
     <>
@@ -228,24 +297,8 @@ export function ArtifactGallery({
         isLoading={isLoading}
         isError={isError}
         query={inputQuery}
-        onQueryChange={handleQueryChange}
         onOpen={handleOpen}
-        onNew={() => setAddOpen(true)}
-        onOpenLibrary={onOpenLibrary}
-        sort={sort}
-        onSortChange={setSort}
-        ownerPrincipalId={ownerFilter}
-        onOwnerFilterChange={setOwnerFilter}
-        owners={members}
-        creatorKind={creatorKindFilter}
-        onCreatorKindFilterChange={setCreatorKindFilter}
-        kind={kindFilter}
-        onKindFilterChange={setKindFilter}
-        createdAfter={advancedFilter.createdAfter}
-        createdBefore={advancedFilter.createdBefore}
-        onAdvancedFilterChange={setAdvancedFilter}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
         experimentalArtifactCards={experimentalArtifactCards}
         hasMore={hasNextPage === true}
         onLoadMore={() => {
@@ -267,6 +320,8 @@ export function ArtifactGallery({
         onUseInWorkflow={onUseInWorkflow ? handleUseInWorkflow : undefined}
         onArchive={selected && canArchive(selected) ? handleArchive : undefined}
         canUseInWorkflow={(a) => canUseArtifactInWorkflow(a.kind)}
+        onOpenSession={handleOpenSession}
+        onOpenParent={handleOpenParent}
       >
         {selected && <ArtifactBody artifact={selected} />}
       </ArtifactModal>

@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* && \
     git clone --filter=blob:none --no-checkout \
       https://github.com/faremeter/interchange.git interchange && \
-    git -C interchange checkout 13fb9ace3d76f453098e7ea89af030b5d897bd4a
+    git -C interchange checkout 2792f05edf862325abbf8fc449f504db96d94b3b
 
 # Manifests for EVERY workspace member. bun.lock is workspace-global, so
 # `bun install --frozen-lockfile` compares the on-disk member set against the
@@ -33,12 +33,14 @@ COPY packages/event-collector/package.json packages/event-collector/
 COPY packages/hub-agent/package.json packages/hub-agent/
 COPY packages/storage-isogit/package.json packages/storage-isogit/
 COPY packages/last30days-core/package.json packages/last30days-core/
+COPY packages/myra/package.json packages/myra/
 COPY packages/openapi-arktype/package.json packages/openapi-arktype/
 COPY packages/prompts/package.json packages/prompts/
 COPY packages/sentry/package.json packages/sentry/
 COPY packages/settings/package.json packages/settings/
 COPY packages/timeline/package.json packages/timeline/
 COPY packages/tool-credentials/package.json packages/tool-credentials/
+COPY packages/tool-manifest/package.json packages/tool-manifest/
 COPY packages/tools-agents/package.json packages/tools-agents/
 COPY packages/tools-artifact/package.json packages/tools-artifact/
 COPY packages/tools-bluesky/package.json packages/tools-bluesky/
@@ -62,6 +64,8 @@ COPY packages/tools-polymarket/package.json packages/tools-polymarket/
 COPY packages/tools-reddit/package.json packages/tools-reddit/
 COPY packages/tools-scrapecreators/package.json packages/tools-scrapecreators/
 COPY packages/tools-skills/package.json packages/tools-skills/
+COPY packages/tools-slack/package.json packages/tools-slack/
+COPY packages/tools-sumble/package.json packages/tools-sumble/
 COPY packages/tools-workflows/package.json packages/tools-workflows/
 COPY packages/tools-x/package.json packages/tools-x/
 COPY packages/tools-youtube/package.json packages/tools-youtube/
@@ -69,6 +73,7 @@ COPY packages/test-utils/package.json packages/test-utils/
 COPY packages/tools-interchange-contract/package.json packages/tools-interchange-contract/
 COPY packages/transcript/package.json packages/transcript/
 COPY packages/ui/package.json packages/ui/
+COPY packages/tasks/package.json packages/tasks/
 COPY packages/workbench-shared/package.json packages/workbench-shared/
 COPY packages/workflow-host/package.json packages/workflow-host/
 COPY workflows/ab-compare-quality/package.json workflows/ab-compare-quality/
@@ -76,10 +81,12 @@ COPY workflows/ab-compare-speed/package.json workflows/ab-compare-speed/
 COPY workflows/ab-compare-standard/package.json workflows/ab-compare-standard/
 COPY workflows/attio-task-agent/package.json workflows/attio-task-agent/
 COPY workflows/gamma-presentation-creator/package.json workflows/gamma-presentation-creator/
+COPY workflows/heartbeat/package.json workflows/heartbeat/
 COPY workflows/last30days-research/package.json workflows/last30days-research/
 COPY workflows/pain-point-collateral/package.json workflows/pain-point-collateral/
 COPY workflows/reddit-opportunity-scanner/package.json workflows/reddit-opportunity-scanner/
 COPY workflows/smoke-test/package.json workflows/smoke-test/
+COPY workflows/sumble-account-intel/package.json workflows/sumble-account-intel/
 RUN bun install --frozen-lockfile
 
 # Full source for the sidecar's runtime closure ONLY. Tool packages reach the
@@ -88,6 +95,7 @@ RUN bun install --frozen-lockfile
 COPY interchange/ interchange/
 COPY apps/sidecar/ apps/sidecar/
 COPY packages/agents/ packages/agents/
+COPY packages/myra/ packages/myra/
 COPY packages/tools-catalog/ packages/tools-catalog/
 COPY packages/approvals/ packages/approvals/
 COPY packages/catalog/ packages/catalog/
@@ -98,6 +106,8 @@ COPY packages/workflow-host/ packages/workflow-host/
 COPY packages/prompts/ packages/prompts/
 COPY packages/sentry/ packages/sentry/
 COPY packages/tool-credentials/ packages/tool-credentials/
+COPY packages/tool-manifest/ packages/tool-manifest/
+COPY apps/hub/generated/tool-manifests/ apps/hub/generated/tool-manifests/
 COPY packages/workbench-shared/ packages/workbench-shared/
 
 CMD ["bun", "run", "apps/sidecar/src/index.ts"]

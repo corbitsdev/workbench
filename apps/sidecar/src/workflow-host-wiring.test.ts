@@ -1216,7 +1216,13 @@ describe("createSidecarDeployRouter multi-step branch", () => {
         ? { multistepMailRouter: opts.multistepMailRouter }
         : {}),
     });
-    return { router, tempBase, keyPair, substrateEnv: mergedSubstrateEnv };
+    return {
+      router,
+      tempBase,
+      keyPair,
+      substrateEnv: mergedSubstrateEnv,
+      transport,
+    };
   }
 
   test("validates the projection, constructs SpawnOpts from the frame, drives spawn, and surfaces the supervisor's principal pubkey", async () => {
@@ -1440,6 +1446,76 @@ describe("createSidecarDeployRouter multi-step branch", () => {
     expect(claimed).toBe(true);
 
     // Teardown.
+    void supervisorToChild;
+  });
+
+  test("registers the deployment supervisor address on the host transport for multi-step outbound mail", async () => {
+    const childIpcKeyPair = await generateKeyPair();
+    const supervisorToChild = createMemoryNdjsonStream();
+    const childToSupervisor = createMemoryNdjsonStream();
+    const eventChildToSupervisor = createMemoryFrameStream();
+    let resolveExit: ((code: number) => void) | undefined;
+    const exited = new Promise<number>((resolve) => {
+      resolveExit = resolve;
+    });
+    let observedEnv: Record<string, string> | undefined;
+    const spawner: SubprocessSpawner = ({ env }) => {
+      observedEnv = env;
+      return {
+        pid: 9201,
+        controlWriter: supervisorToChild.writer,
+        controlReader: childToSupervisor.reader,
+        eventReader: eventChildToSupervisor.reader,
+        kill: () => {
+          childToSupervisor.close();
+          eventChildToSupervisor.close();
+          resolveExit?.(0);
+        },
+        exited,
+      };
+    };
+
+    const { router, transport } = await buildMultistepFixture({ spawner });
+    const definition = {
+      id: "wf-outbound-mail",
+      triggers: [{ type: "manual" }],
+      stepOrder: ["step-1", "step-2"],
+      steps: { "step-1": { kind: "step" }, "step-2": { kind: "step" } },
+    };
+    const frame = makeMultistepFrame({
+      definition,
+      sources: defaultMultistepSources(),
+    });
+
+    const deployPromise = router.deploy(frame);
+    while (observedEnv === undefined) {
+      await new Promise((r) => setTimeout(r, 1));
+    }
+    const channelId = observedEnv.IPC_CHANNEL_ID;
+    if (channelId === undefined) {
+      throw new Error("IPC_CHANNEL_ID not set in spawn-time env");
+    }
+    const childSender = createControlChannelSender({
+      privateKeySeed: childIpcKeyPair.privateKey,
+      channelId,
+      writer: {
+        write(line: string) {
+          childToSupervisor.inject(line);
+          return Promise.resolve();
+        },
+      },
+    });
+    await childSender.send({
+      type: "ready",
+      data: {
+        childPid: 9201,
+        childPublicKey: Buffer.from(childIpcKeyPair.publicKey).toString("hex"),
+      },
+    });
+    await deployPromise;
+
+    expect(() => transport.getTransportFor(frame.agentAddress)).not.toThrow();
+
     void supervisorToChild;
   });
 

@@ -1,6 +1,26 @@
-import { describe, expect, it, mock } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from "bun:test";
+import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
 import type { GrantStore } from "@intx/authz";
+import { isEncryptedEnvelope, decryptSecret } from "../lib/credential-crypto";
+
+// CL-3446: PUT /owner/credentials/:providerName encrypts kind:"tool" secrets
+// at rest, which requires a real CREDENTIAL_ENCRYPTION_KEY in the test env.
+const CREDENTIAL_ENCRYPTION_TEST_KEY = randomBytes(32).toString("base64");
+beforeAll(() => {
+  process.env["CREDENTIAL_ENCRYPTION_KEY"] = CREDENTIAL_ENCRYPTION_TEST_KEY;
+});
+afterAll(() => {
+  delete process.env["CREDENTIAL_ENCRYPTION_KEY"];
+});
 
 // The guard resolves userId -> principalId via ensureMember; vary it per test.
 let callerPrincipalId = "prn_member";
@@ -11,7 +31,63 @@ mock.module("../lib/tenant-provisioning", () => ({
   }),
 }));
 
+// ─── CL-3634: owner role delegation mocks ──────────────────────────
+const assignRole = mock(
+  async (
+    _db: unknown,
+    _tenantId: string,
+    _principalId: string,
+    _roleId: string,
+  ) => {},
+);
+let ownerDemoteResult: "ok" | "last-owner" = "ok";
+class LastOwnerError extends Error {
+  constructor() {
+    super("Cannot demote the last remaining owner");
+    this.name = "LastOwnerError";
+  }
+}
+const demoteFromOwner = mock(async () => {
+  if (ownerDemoteResult === "last-owner") throw new LastOwnerError();
+});
+let ownerRoleId: string | null = "rol_owner";
+const findOwnerRoleId = mock(async () => ownerRoleId);
+let membersPrincipalExists = true;
+const principalExistsInTenant = mock(async () => membersPrincipalExists);
+let tenantMembers: {
+  id: string;
+  refId: string;
+  displayName: string;
+  isOwner: boolean;
+}[] = [];
+const listTenantMembers = mock(async () => tenantMembers);
+mock.module("../services/admin-governance", () => ({
+  assignRole,
+  demoteFromOwner,
+  findOwnerRoleId,
+  LastOwnerError,
+  listTenantMembers,
+  principalExistsInTenant,
+  resolvePrincipalNames: mock(async () => new Map<string, string>()),
+}));
+
 const { createOwnerRouter } = await import("./owner");
+
+// A minimal db that only backs `recordAudit`'s fire-and-forget
+// `db.insert(adminAudit).values(...)` — every other owner-members operation
+// goes through the mocked admin-governance functions above, not the db.
+function membersDb() {
+  const auditWrites: Record<string, unknown>[] = [];
+  const db = {
+    insert: () => ({
+      values: (vals: Record<string, unknown>) => {
+        auditWrites.push(vals);
+        return Promise.resolve();
+      },
+    }),
+  };
+  return { db, auditWrites };
+}
 
 // Real @intx/authz evaluation over a fake grant store: the owner principal holds
 // the `*`/`*` allow grant (what the `owner` system role carries); the admin
@@ -61,6 +137,7 @@ function buildApp(db: unknown = {}) {
       grantStore: grantStoreFor(),
       rootTenantId: "ten_root",
       showDemos: ownerRouterShowDemos,
+      featureEnvOverrides: ownerRouterFeatureEnvOverrides,
     }),
   );
   return app;
@@ -69,6 +146,13 @@ function buildApp(db: unknown = {}) {
 // Toggled per-test to exercise the SHOW_DEMOS env override surfaced as
 // `forcedByEnv`. Reset to false by default.
 let ownerRouterShowDemos = false;
+
+// Toggled per-test to exercise a feature's emergency env override surfaced as
+// `forcedByEnv`. Reset to all-false by default.
+let ownerRouterFeatureEnvOverrides: Record<
+  "scheduler" | "triage" | "tasks-reconciler",
+  boolean
+> = { scheduler: false, triage: false, "tasks-reconciler": false };
 
 describe("owner grant gate", () => {
   it("allows an owner (holds */* wildcard grant)", async () => {
@@ -290,9 +374,9 @@ describe("owner credentials routes", () => {
     expect(JSON.stringify(body)).not.toContain("secret");
   });
 
-  it("PUT on a tool-kind provider (granola) never echoes the secret", async () => {
+  it("PUT on a tool-kind provider (granola) never echoes the secret and encrypts it at rest", async () => {
     callerPrincipalId = "prn_owner";
-    const { db } = credentialsDb({});
+    const { db, insertedCredentials } = credentialsDb({});
     const res = await buildApp(db).request("/owner/credentials/granola", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -302,6 +386,44 @@ describe("owner credentials routes", () => {
     const body = (await res.json()) as { configured: boolean; kind: string };
     expect(body.kind).toBe("tool");
     expect(JSON.stringify(body)).not.toContain("grn-secret-token");
+
+    const stored = (insertedCredentials[0] as { secret: string }).secret;
+    expect(stored).not.toBe("grn-secret-token");
+    expect(isEncryptedEnvelope(stored)).toBe(true);
+    expect(decryptSecret(stored)).toBe("grn-secret-token");
+  });
+
+  it("PUT on an inference-kind provider (anthropic) stores the secret plaintext-compatible", async () => {
+    // kind:"inference" rows must stay plaintext: Interchange reads
+    // `credential.secret` raw at agent-launch time and cannot decrypt first.
+    callerPrincipalId = "prn_owner";
+    const { db, insertedCredentials } = credentialsDb({});
+    await buildApp(db).request("/owner/credentials/anthropic", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "sk-inference-secret" }),
+    });
+    const stored = (insertedCredentials[0] as { secret: string }).secret;
+    expect(stored).toBe("sk-inference-secret");
+    expect(isEncryptedEnvelope(stored)).toBe(false);
+  });
+
+  it("PUT UPDATE path (existing credential) also encrypts a tool-kind secret", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, updatedCredentials } = credentialsDb({
+      providers: [{ id: "provider_1", name: "granola" }],
+      credentials: [
+        { id: "credential_1", providerId: "provider_1", updatedAt: new Date() },
+      ],
+    });
+    await buildApp(db).request("/owner/credentials/granola", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "grn-rotated-token" }),
+    });
+    const stored = (updatedCredentials[0] as { secret: string }).secret;
+    expect(isEncryptedEnvelope(stored)).toBe(true);
+    expect(decryptSecret(stored)).toBe("grn-rotated-token");
   });
 });
 
@@ -483,7 +605,9 @@ describe("owner demos routes", () => {
     const { db } = demosDb({ allowGrant: false });
     const res = await buildApp(db).request("/owner/demos");
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: false,
     });
@@ -494,7 +618,9 @@ describe("owner demos routes", () => {
     ownerRouterShowDemos = false;
     const { db } = demosDb({ allowGrant: true });
     const res = await buildApp(db).request("/owner/demos");
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: true,
       forcedByEnv: false,
     });
@@ -505,7 +631,9 @@ describe("owner demos routes", () => {
     ownerRouterShowDemos = true;
     const { db } = demosDb({ allowGrant: false });
     const res = await buildApp(db).request("/owner/demos");
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: true,
     });
@@ -522,7 +650,9 @@ describe("owner demos routes", () => {
       body: JSON.stringify({ enabled: true }),
     });
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: true,
       forcedByEnv: false,
     });
@@ -544,7 +674,9 @@ describe("owner demos routes", () => {
       body: JSON.stringify({ enabled: false }),
     });
     expect(res.status).toBe(200);
-    expect((await res.json()) as { enabled: boolean; forcedByEnv: boolean }).toEqual({
+    expect(
+      (await res.json()) as { enabled: boolean; forcedByEnv: boolean },
+    ).toEqual({
       enabled: false,
       forcedByEnv: false,
     });
@@ -560,5 +692,388 @@ describe("owner demos routes", () => {
       body: JSON.stringify({ enabled: "yes" }),
     });
     expect(res.status).toBe(400);
+  });
+});
+
+// Owner-managed feature grants (scheduler/triage/tasks-reconciler) replace the
+// env-only kill switches: same deny-by-default grant CRUD shape as demos, one
+// row per feature name.
+describe("owner features routes", () => {
+  function featuresDb(opts: { grantedFeatures?: string[] } = {}) {
+    const memberRole = { id: "rol_member" };
+    const granted = new Set(opts.grantedFeatures ?? []);
+    const grantRows = [...granted].map((name) => ({
+      id: `grt_${name}`,
+      resource: `feature:${name}`,
+      action: "enable",
+      effect: "allow" as const,
+      origin: "system",
+      conditions: null,
+      expiresAt: null,
+      roleId: "rol_member",
+      principalId: null,
+    }));
+    const insertedGrants: Record<string, unknown>[] = [];
+    let deleteCalls = 0;
+
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: async () => [] }) }),
+      }),
+      query: {
+        grant: {
+          findFirst: async () => grantRows[0],
+        },
+      },
+      delete: () => ({
+        where: () => {
+          deleteCalls += 1;
+          return Promise.resolve();
+        },
+      }),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          insertedGrants.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+
+    const db = {
+      query: {
+        role: {
+          findMany: async () => [memberRole],
+          findFirst: async () => memberRole,
+        },
+        grant: {
+          findMany: async () => grantRows,
+        },
+      },
+      transaction: async (fn: (t: typeof tx) => Promise<void>) => fn(tx),
+      insert: () => ({ values: () => Promise.resolve() }),
+    };
+    return { db, insertedGrants, deleteCalls: () => deleteCalls };
+  }
+
+  beforeEach(() => {
+    ownerRouterFeatureEnvOverrides = {
+      scheduler: false,
+      triage: false,
+      "tasks-reconciler": false,
+    };
+  });
+
+  it("denies a plain member with 403", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    expect(res.status).toBe(403);
+  });
+
+  it("GET lists the full catalog, disabled by default", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      features: { name: string; enabled: boolean; forcedByEnv: boolean }[];
+    };
+    expect(body.features.map((f) => f.name).sort()).toEqual([
+      "scheduler",
+      "tasks-reconciler",
+      "triage",
+    ]);
+    expect(body.features.every((f) => !f.enabled)).toBe(true);
+    expect(body.features.every((f) => !f.forcedByEnv)).toBe(true);
+  });
+
+  it("GET reports a feature enabled when its member-role grant exists", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb({ grantedFeatures: ["scheduler"] });
+    const res = await buildApp(db).request("/owner/features");
+    const body = (await res.json()) as {
+      features: { name: string; enabled: boolean }[];
+    };
+    const scheduler = body.features.find((f) => f.name === "scheduler");
+    const triage = body.features.find((f) => f.name === "triage");
+    expect(scheduler?.enabled).toBe(true);
+    expect(triage?.enabled).toBe(false);
+  });
+
+  it("GET reports forcedByEnv for a feature whose env override is on", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerRouterFeatureEnvOverrides = {
+      scheduler: false,
+      triage: true,
+      "tasks-reconciler": false,
+    };
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features");
+    const body = (await res.json()) as {
+      features: { name: string; forcedByEnv: boolean }[];
+    };
+    const triage = body.features.find((f) => f.name === "triage");
+    expect(triage?.forcedByEnv).toBe(true);
+  });
+
+  it("PUT enable writes an allow grant for the named feature", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, insertedGrants } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/scheduler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { name: string; enabled: boolean }).toEqual({
+      name: "scheduler",
+      enabled: true,
+    });
+    expect(insertedGrants).toHaveLength(1);
+    expect(insertedGrants[0]).toMatchObject({
+      resource: "feature:scheduler",
+      action: "enable",
+      effect: "allow",
+    });
+  });
+
+  it("PUT disable removes the allow grant for the named feature", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, deleteCalls } = featuresDb({
+      grantedFeatures: ["tasks-reconciler"],
+    });
+    const res = await buildApp(db).request("/owner/features/tasks-reconciler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { name: string; enabled: boolean }).toEqual({
+      name: "tasks-reconciler",
+      enabled: false,
+    });
+    expect(deleteCalls()).toBe(1);
+  });
+
+  it("PUT rejects an unknown feature name with 404", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/not-a-feature", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("PUT rejects a non-boolean body with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = featuresDb();
+    const res = await buildApp(db).request("/owner/features/scheduler", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: "yes" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("owner capability toggle audit (CL-3356)", () => {
+  // Grant writes go through db.transaction -> tx.insert; the fire-and-forget
+  // recordAudit writes through the OUTER db.insert. Capturing both lets us
+  // assert the logged action matches the grant effect actually written.
+  function capabilitiesDb() {
+    const memberRole = { id: "rol_member" };
+    const grantWrites: Record<string, unknown>[] = [];
+    const auditWrites: Record<string, unknown>[] = [];
+    const tx = {
+      select: () => ({
+        from: () => ({ where: () => ({ for: async () => [] }) }),
+      }),
+      delete: () => ({ where: () => Promise.resolve() }),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          grantWrites.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+    const db = {
+      query: { role: { findFirst: async () => memberRole } },
+      transaction: async (fn: (t: typeof tx) => Promise<void>) => fn(tx),
+      insert: () => ({
+        values: (vals: Record<string, unknown>) => {
+          auditWrites.push(vals);
+          return Promise.resolve();
+        },
+      }),
+    };
+    return { db, grantWrites, auditWrites };
+  }
+
+  it("enabling logs grant_created/allow and writes an allow grant", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, grantWrites, auditWrites } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/linear", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(grantWrites[0]).toMatchObject({
+      resource: "capability:linear",
+      action: "use",
+      effect: "allow",
+    });
+    expect(auditWrites[0]).toMatchObject({
+      action: "grant_created",
+      resource: "capability:linear",
+    });
+    expect(
+      (auditWrites[0]?.detail as { effect?: string } | undefined)?.effect,
+    ).toBe("allow");
+  });
+
+  it("disabling logs grant_revoked and writes a deny grant", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, grantWrites, auditWrites } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/attio", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+    expect(res.status).toBe(200);
+    expect(grantWrites[0]).toMatchObject({
+      resource: "capability:attio",
+      action: "use",
+      effect: "deny",
+    });
+    expect(auditWrites[0]).toMatchObject({
+      action: "grant_revoked",
+      resource: "capability:attio",
+    });
+  });
+
+  it("rejects an unknown provider with 404", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = capabilitiesDb();
+    const res = await buildApp(db).request("/owner/capabilities/notreal", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: true }),
+    });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── CL-3634: owner role delegation ─────────────────────────────────
+describe("owner member role delegation", () => {
+  beforeEach(() => {
+    ownerRoleId = "rol_owner";
+    ownerDemoteResult = "ok";
+    membersPrincipalExists = true;
+    tenantMembers = [
+      {
+        id: "prn_owner",
+        refId: "u_owner",
+        displayName: "Owner",
+        isOwner: true,
+      },
+      { id: "prn_x", refId: "u_x", displayName: "Member X", isOwner: false },
+    ];
+    assignRole.mockClear();
+    demoteFromOwner.mockClear();
+  });
+
+  it("denies a non-owner with 403 on list/promote/demote", async () => {
+    callerPrincipalId = "prn_member";
+    const { db } = membersDb();
+    const list = await buildApp(db).request("/owner/members");
+    expect(list.status).toBe(403);
+    const promote = await buildApp(db).request("/owner/members/prn_x/promote", {
+      method: "POST",
+    });
+    expect(promote.status).toBe(403);
+    const demote = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(demote.status).toBe(403);
+    expect(assignRole).not.toHaveBeenCalled();
+    expect(demoteFromOwner).not.toHaveBeenCalled();
+  });
+
+  it("lists members with owner-role status for an owner caller", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      members: { id: string; isOwner: boolean }[];
+    };
+    expect(body.members).toHaveLength(2);
+    expect(body.members.find((m) => m.id === "prn_owner")?.isOwner).toBe(true);
+  });
+
+  it("promotes a member to owner and audits role_assigned", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/promote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(assignRole).toHaveBeenCalledTimes(1);
+    expect(assignRole.mock.calls[0]?.[3]).toBe("rol_owner");
+    expect(auditWrites[0]).toMatchObject({
+      action: "role_assigned",
+      resource: "role:owner",
+      targetPrincipalId: "prn_x",
+    });
+  });
+
+  it("demotes an owner and audits role_removed", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(200);
+    expect(demoteFromOwner).toHaveBeenCalledTimes(1);
+    expect(auditWrites[0]).toMatchObject({
+      action: "role_removed",
+      resource: "role:owner",
+      targetPrincipalId: "prn_x",
+    });
+  });
+
+  it("refuses self-demotion with 400 and writes no role change", async () => {
+    callerPrincipalId = "prn_owner";
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_owner/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(demoteFromOwner).not.toHaveBeenCalled();
+  });
+
+  it("refuses demoting the last remaining owner with 400", async () => {
+    callerPrincipalId = "prn_owner";
+    ownerDemoteResult = "last-owner";
+    const { db, auditWrites } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_x/demote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(400);
+    expect(auditWrites).toHaveLength(0);
+  });
+
+  it("404s promoting an unknown principal and writes no role", async () => {
+    callerPrincipalId = "prn_owner";
+    membersPrincipalExists = false;
+    const { db } = membersDb();
+    const res = await buildApp(db).request("/owner/members/prn_ghost/promote", {
+      method: "POST",
+    });
+    expect(res.status).toBe(404);
+    expect(assignRole).not.toHaveBeenCalled();
   });
 });

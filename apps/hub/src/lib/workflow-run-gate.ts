@@ -1,6 +1,6 @@
 import { evaluateGrants } from "@intx/authz";
 import type { GrantRule } from "@intx/types/authz";
-import { schema as intxSchema } from "@intx/db";
+import { getAncestorChain, schema as intxSchema } from "@intx/db";
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { type } from "arktype";
 import { generateId } from "@intx/hub-common";
@@ -311,6 +311,19 @@ export async function listRunnableWorkflowKinds(
 ): Promise<RunnableWorkflowKind[]> {
   const runnable = await listRunnableWorkflowDeployments(db, chain);
   return distinctRunnableKindsFromDeployments(runnable);
+}
+
+// Whether `kind` is runnable for the tenant: resolves the tenant's ancestor
+// chain and checks the kind against the runnable catalog. The single gate the
+// /me automation routes apply before accepting a workflow kind from a client.
+export async function isRunnableKind(
+  db: HubDb,
+  tenantId: string,
+  kind: string,
+): Promise<boolean> {
+  const chain = await getAncestorChain(db, tenantId);
+  const kinds = await listRunnableWorkflowKinds(db, chain);
+  return kinds.some((k) => k.kind === kind);
 }
 
 export function distinctRunnableKindsFromDeployments(

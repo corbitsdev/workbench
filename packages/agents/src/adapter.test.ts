@@ -131,6 +131,30 @@ describe("convertInstanceEvents", () => {
     expect(msg.createdAt).toBe("2024-01-01T00:02:00.000Z");
   });
 
+  it("maps persisted reasoning and tool calls on turn events", () => {
+    const events: InstanceEvent[] = [
+      {
+        kind: "turn",
+        turnId: "turn-reload",
+        content: "Here is the answer.",
+        timestamp: "2024-01-01T00:02:00.000Z",
+        reasoning: "Checked the CRM first.",
+        toolCalls: [
+          {
+            name: "grep",
+            arguments: { pattern: "foo" },
+            result: "match",
+            isError: false,
+          },
+        ],
+      },
+    ];
+
+    const msg = convertInstanceEvents(events)[0];
+    expect(msg?.reasoning).toBe("Checked the CRM first.");
+    expect(msg?.toolCalls?.[0]?.name).toBe("grep");
+  });
+
   it("marks mail events with isError as failed", () => {
     const events: InstanceEvent[] = [
       {

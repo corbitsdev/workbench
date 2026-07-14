@@ -63,6 +63,32 @@ never relying on the sidecar to self-restore:
 - The run-start and signal handlers (`apps/hub/src/routes/workflow-runs.ts`) call
   it before delivering, so a trigger/signal never dead-ends on an unreachable
   supervisor.
+
+### Mail trigger boundary (structured run-start input)
+
+Callable run-start (`createWorkflowRunStarter` in `apps/hub/src/services/workflow-run-starter.ts`)
+delivers the validated trigger `input` object as the conversation body of a signed mail message
+(`content: JSON.stringify(input)`, `from: hub@<deploymentDomain>`). The workflow child's
+`resolveTriggerPayload` (`packages/workflow-host/src/child/run-child.ts`) is the sole decode
+point:
+
+- **Hub sender** (`from` local-part is `hub`): parse the conversation body as JSON and require a
+  top-level object. That value becomes `trigger.payload` for selectors such as
+  `{ from: "trigger.payload" }`, so deterministic tool steps receive real objects (not a JSON
+  string).
+- **All other senders** (user mail, specialists, etc.): keep the extracted conversation text as
+  the payload. A user message whose body happens to look like JSON is not auto-decoded.
+
+Invalid JSON or a non-object root from a hub sender fails the trigger; the run does not start with
+a silent placeholder.
+
+The hub-sender check (`from` local-part is `hub` and the domain matches the deployment domain) is a
+naming convention enforced by caller discipline — every `sessionService.sendUserMessage` call site
+builds `from` from server config, never from request or user input — **not** a cryptographically
+verified sender. The detached signature covers the message body, not the envelope `from` header. Do
+not add a `sendUserMessage` caller that lets `from` be request-supplied; that would let ordinary mail
+reach the structured-JSON decode path.
+
 - The reconciler (`apps/hub/src/services/workflow-reconciler.ts`) calls it for
   every active deployment on hub startup and on each sidecar `agent.reconnected`,
   single-flight-guarded.
@@ -122,6 +148,27 @@ automatically. On success the CLI prints the deployed kind, deployment id, and
 deploy mode (`multi-step` or `trivial`). See [ADMIN_CLI.md](./ADMIN_CLI.md) for
 the CLI details.
 
+## Tool package registry on boot (CL-3093)
+
+Sidecars load workflow step tools from the tenant **package-registry** asset, not
+from hub source. The hub image embeds built tarballs under
+`apps/hub/generated/tool-packages/` (via `build:tool-packages --embed` in the hub
+`build` script). When `TOOL_REGISTRY_AUTOPUBLISH_ON_BOOT=true`, startup syncs
+those tarballs into the root tenant registry named `workbench-builtins` (override
+with `TOOL_REGISTRY_NAME`) **before** workflow autopublish runs. Drift detection
+uses tarball integrity (ssri sha512); steady-state boots perform no PUTs. Manual
+`tools publish` / `publish-tool-packages.ts` remains valid.
+
+**CI/CD (hub Docker image):** `apps/hub/Dockerfile` copies `packages/tools-*` (and
+`packages/tool-manifest/`) and runs `bun run build:tool-manifests` then
+`build:tool-packages` during the image build. That regenerates embedded tarballs from
+the tool packages in the same commit Railway built — you do not rely on someone
+remembering to commit `generated/tool-packages` for staging/prod to pick up TS
+changes. The committed embed in git is still the drift-test anchor for PRs
+(`apps/hub/bin/build-tool-packages-embed.test.ts`); keep it in sync when you change
+`packages/tools-*` or manifest metadata, or CI tests fail even though the deployed
+image would have been correct.
+
 ## Auto-publishing on boot
 
 The hub can publish the build-serialized workflow definitions itself on startup,
@@ -131,6 +178,19 @@ flow still works). When on, every embedded def under
 `apps/hub/generated/workflow-defs/<kind>.json` is published through the exact
 same core path as the deploy route. The pass is fail-safe (a per-`(kind,
 tenant)` failure is logged and skipped — a bad def never blocks startup).
+
+**CI/CD (hub Docker image):** `apps/hub/Dockerfile` copies `workflows/` and runs
+`bun run build:workflow-defs` during the image build. That regenerates the embedded
+JSON from the workflow packages in the same commit Railway built — you do not rely on
+someone remembering to commit `generated/workflow-defs` for staging/prod to pick up TS
+changes. The committed JSON in git is still the drift-test anchor for PRs
+(`apps/hub/bin/build-workflow-defs.test.ts`); keep it in sync when you change
+`workflows/**`, or CI tests fail even though the deployed image would have been correct.
+
+When a workflow's entry module imports a `@workbench/*` package, the hub Dockerfile must
+**COPY that package's source** into the image before the `build:workflow-defs` step (not
+just its `package.json` in the install layer). Example: ab-compare workflows import
+`@workbench/ab-compare-presets` → `COPY packages/ab-compare-presets/`.
 
 Idempotency is **per `(kind, tenant)`**, not per kind. The git-backed workflow
 repo is keyed by kind only, so its fingerprint is tenant-independent; the

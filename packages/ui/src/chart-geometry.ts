@@ -71,3 +71,90 @@ export function niceMax(value: number): number {
   else niceFraction = 10;
   return niceFraction * magnitude;
 }
+
+/** Layout axis for a linear step graph (catalog preview vs run/trace density). */
+export type StepGraphLayoutAxis = "horizontal" | "vertical";
+
+export interface StepGraphLayoutOptions {
+  count: number;
+  /** Inner span along the flow axis before padding. */
+  span: number;
+  /** Fixed coordinate on the cross axis (center of the connector lane). */
+  crossCenter: number;
+  /** Half-width or half-height of a node along the flow axis — edges stop here. */
+  nodeInset: number;
+  axis?: StepGraphLayoutAxis;
+}
+
+/**
+ * Evenly spaces step node centers along a single lane so run order reads
+ * unambiguously left-to-right (or top-to-bottom when vertical).
+ */
+export function layoutLinearStepCenters(
+  options: StepGraphLayoutOptions,
+): ChartPoint[] {
+  const { count, span, crossCenter, nodeInset, axis = "horizontal" } = options;
+  if (count <= 0) return [];
+  const inner = Math.max(0, span - nodeInset * 2);
+  const step =
+    count > 1 ? inner / (count - 1) : 0;
+  const along = (index: number) => round(nodeInset + index * step);
+  return Array.from({ length: count }, (_, index) =>
+    axis === "horizontal"
+      ? { x: along(index), y: round(crossCenter) }
+      : { x: round(crossCenter), y: along(index) },
+  );
+}
+
+export interface StepGraphEdgeEndpoints {
+  from: ChartPoint;
+  to: ChartPoint;
+}
+
+/**
+ * Anchor points on the node boundary for a connector between two centers.
+ */
+export function stepGraphEdgeEndpoints(
+  fromCenter: ChartPoint,
+  toCenter: ChartPoint,
+  nodeInset: number,
+  axis: StepGraphLayoutAxis = "horizontal",
+): StepGraphEdgeEndpoints {
+  if (axis === "horizontal") {
+    return {
+      from: { x: round(fromCenter.x + nodeInset), y: fromCenter.y },
+      to: { x: round(toCenter.x - nodeInset), y: toCenter.y },
+    };
+  }
+  return {
+    from: { x: fromCenter.x, y: round(fromCenter.y + nodeInset) },
+    to: { x: toCenter.x, y: round(toCenter.y - nodeInset) },
+  };
+}
+
+/** SVG path for one directed edge between two node centers. */
+export function buildStepGraphEdgePath(
+  fromCenter: ChartPoint,
+  toCenter: ChartPoint,
+  nodeInset: number,
+  axis: StepGraphLayoutAxis = "horizontal",
+): string {
+  const { from, to } = stepGraphEdgeEndpoints(
+    fromCenter,
+    toCenter,
+    nodeInset,
+    axis,
+  );
+  return buildLinePath([from, to]);
+}
+
+/** `{ from, to }` pairs linking each step to its successor in run order. */
+export function sequentialStepEdges(
+  stepIds: readonly string[],
+): { from: string; to: string }[] {
+  const edges: { from: string; to: string }[] = [];
+  for (let i = 0; i < stepIds.length - 1; i++) {
+    edges.push({ from: stepIds[i]!, to: stepIds[i + 1]! });
+  }
+  return edges;
+}

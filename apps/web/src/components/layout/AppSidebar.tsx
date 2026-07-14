@@ -1,5 +1,6 @@
 import {
   Home,
+  Mail,
   Settings,
   BookOpen,
   BarChart2,
@@ -29,6 +30,7 @@ import { WorkbenchSelector } from "./WorkbenchSelector";
 import { branding } from "../../lib/app-env";
 
 const NAV_ITEMS = [
+  { to: "/inbox", label: "Inbox", icon: Mail, end: false },
   { to: "/chats", label: "Chats", icon: Home, end: false },
   { to: "/artifacts", label: "Artifacts", icon: Files, end: false },
   { to: "/workflows", label: "Workflows", icon: Workflow, end: false },
@@ -175,6 +177,7 @@ export function AppSidebar({
             to={to}
             end={end}
             onClick={onNavigate}
+            data-tour={to === "/inbox" ? "nav-inbox" : undefined}
             className={({ isActive }) => navItemClass(isActive)}
           >
             <Icon size={17} />

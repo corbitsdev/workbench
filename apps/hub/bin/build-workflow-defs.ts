@@ -14,6 +14,7 @@ import {
   EmbeddedWorkflowDefSchema,
   embeddedWorkflowDefsDir,
 } from "../src/lib/workflow-defs-embedded";
+import { deriveWorkflowGateInfo } from "../src/lib/workflow-gate-info";
 
 function repoRoot(): string {
   const binDir = dirname(fileURLToPath(import.meta.url));
@@ -35,14 +36,27 @@ export function workflowKinds(): string[] {
 export async function serializeWorkflowDef(
   kind: string,
 ): Promise<typeof EmbeddedWorkflowDefSchema.infer> {
-  const { definition, label, description, displayFlow } =
-    await loadWorkflow(kind);
+  const {
+    definition,
+    label,
+    description,
+    displayFlow,
+    intakeFields,
+    allowsScheduledPostIntakeDrive,
+  } = await loadWorkflow(kind);
+  const { requiresIntake, humanGateCount } = deriveWorkflowGateInfo(definition);
   const embedded = {
     kind,
     version: readWorkflowMeta(kind).version,
     ...(label !== undefined ? { label } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(displayFlow !== undefined ? { displayFlow } : {}),
+    requiresIntake,
+    humanGateCount,
+    ...(intakeFields !== undefined ? { intakeFields } : {}),
+    ...(allowsScheduledPostIntakeDrive === true
+      ? { allowsScheduledPostIntakeDrive: true }
+      : {}),
     definition,
   };
   // Validate the serialized shape the hub will parse on boot — a malformed

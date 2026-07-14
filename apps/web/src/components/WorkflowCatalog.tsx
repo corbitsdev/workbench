@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { Workflow } from "lucide-react";
+import { RichEmptyState } from "@workbench/ui";
 import type { WorkflowCatalogEntry } from "@workbench/shared";
 import { useStartWorkflow } from "../hooks/use-workflow";
 import {
@@ -6,6 +8,7 @@ import {
   useWorkflowsCatalog,
 } from "../hooks/use-workflows-catalog";
 import { WorkflowFlowPreview } from "./WorkflowFlowPreview";
+import { SchedulePopover } from "./SchedulePopover";
 
 export interface WorkflowCatalogProps {
   tenantId: string | null;
@@ -186,6 +189,7 @@ function PreviewPanel({
         >
           {starting ? "Starting…" : "Start run"}
         </button>
+        <SchedulePopover kind={entry.kind} label={entry.label} />
       </div>
     </div>
   );
@@ -262,10 +266,11 @@ export function WorkflowCatalog({
         </p>
       )}
       {!isPending && !isError && entries.length === 0 && (
-        <p className="py-4 text-[13px] text-text-3">
-          No workflows are available to run in this workbench. Your admin may
-          need to deploy workflows or enable them for members.
-        </p>
+        <RichEmptyState
+          icon={<Workflow className="h-6 w-6" strokeWidth={1.75} />}
+          title="No workflows available"
+          description="No workflows are available to run in this workbench. Your admin may need to deploy workflows or enable them for members."
+        />
       )}
 
       {!isPending && !isError && entries.length > 0 && selected && (

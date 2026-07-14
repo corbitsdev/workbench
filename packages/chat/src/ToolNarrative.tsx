@@ -2,18 +2,30 @@ import { useState, type ReactNode } from "react";
 import { cn, toHumanLabel } from "@workbench/ui";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ToolCall } from "./types";
+import { toSingleLine } from "./reasoning-summary";
 import {
   parseToolResult,
   UIBlockView,
   type UIBlock,
   type UIResponse,
 } from "@workbench/blocks";
+import {
+  CHAT_MARKER_SLOT,
+  CHAT_TRACE_DETAIL_OFFSET,
+  CHAT_TRACE_DETAIL_TOP,
+  CHAT_TRACE_INLINE_GAP,
+  CHAT_TRACE_LABEL,
+  CHAT_TRACE_MARKER_ALIGN,
+  CHAT_TRACE_OUTCOME_BODY,
+  CHAT_TRACE_QUIET_BODY,
+  CHAT_TRACE_ROW,
+} from "./messageRhythm";
 
 function ErrorIcon() {
   return (
     <span
       data-testid="tool-marker-error"
-      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500"
+      className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red"
     >
       <svg
         className="h-2.5 w-2.5 text-white"
@@ -56,7 +68,33 @@ function SettledMarker({
   return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
-function ActiveIcon() {
+export interface ToolMarkerRenderContext {
+  call: ToolCall;
+  pending: boolean;
+  isError: boolean;
+  external: boolean;
+}
+
+function ToolMarker({
+  renderToolMarker,
+  call,
+  pending,
+  isError,
+  external,
+}: ToolMarkerRenderContext & {
+  renderToolMarker?: (ctx: ToolMarkerRenderContext) => ReactNode | null;
+}) {
+  if (isError) return <ErrorIcon />;
+  const ctx: ToolMarkerRenderContext = { call, pending, isError, external };
+  if (renderToolMarker !== undefined && external) {
+    const branded = renderToolMarker(ctx);
+    if (branded !== null && branded !== undefined) return branded;
+  }
+  if (pending) return <ActivityPulse />;
+  return <SettledMarker isError={false} external={external} />;
+}
+
+export function ActivityPulse() {
   const reduceMotion = useReducedMotion();
   return (
     <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
@@ -79,7 +117,7 @@ function ActiveIcon() {
 // and more informative than a roll-up sentence.
 const COLLAPSE_THRESHOLD = 3;
 
-// Brand ease-out (DESIGN.md), shared with ReasoningDisclosure: snappy settle for
+// Brand ease-out (repo-root DESIGN.md), shared with ReasoningDisclosure: snappy settle for
 // small disclosures.
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 
@@ -132,6 +170,11 @@ export interface ToolNarrativeProps {
    * When omitted, every non-quiet tool is treated as external.
    */
   isExternalTool?: (name: string) => boolean;
+  /**
+   * Optional host hook to replace the default pulse / bullet marker with a
+   * provider brand mark. Return null to fall back to the built-in marker.
+   */
+  renderToolMarker?: (ctx: ToolMarkerRenderContext) => ReactNode | null;
   /** Forwarded to interactive UI blocks rendered from a structured tool result. */
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
@@ -194,12 +237,20 @@ function ChevronIcon({ open }: { open: boolean }) {
 
 function QuietToolLine({ summary }: { summary: string }) {
   return (
-    <p
-      className="text-xs italic leading-snug text-text-3/80"
-      data-testid="quiet-tool-line"
-    >
-      {summary}
-    </p>
+    <div className={CHAT_TRACE_ROW} data-testid="quiet-tool-row">
+      {/* Empty marker slot keeps quiet lines column-aligned with tool rows. */}
+      <span
+        className={CHAT_MARKER_SLOT}
+        aria-hidden="true"
+        data-testid="tool-marker-spacer"
+      />
+      <p
+        className={cn(CHAT_TRACE_MARKER_ALIGN, CHAT_TRACE_QUIET_BODY)}
+        data-testid="quiet-tool-line"
+      >
+        {summary}
+      </p>
+    </div>
   );
 }
 
@@ -210,6 +261,7 @@ function ToolRow({
   external,
   suppressArgsSummary,
   formatResult,
+  renderToolMarker,
   onRespond,
   onAction,
 }: {
@@ -223,6 +275,7 @@ function ToolRow({
   // when formatResult is not also suppressing raw dumps.
   suppressArgsSummary: boolean;
   formatResult?: ((call: ToolCall) => string | null) | undefined;
+  renderToolMarker?: ToolNarrativeProps["renderToolMarker"];
   onRespond?: ((response: UIResponse) => void) | undefined;
   onAction?:
     | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
@@ -271,40 +324,85 @@ function ToolRow({
         type="button"
         disabled={!expandable}
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={expandable ? open : undefined}
+        aria-label={
+          expandable && open
+            ? `Collapse ${summary}${argsSummary !== null ? ` · ${argsSummary}` : ""}`
+            : undefined
+        }
         className={cn(
-          "flex items-start gap-2.5 text-left",
+          CHAT_TRACE_ROW,
+          "text-left",
           expandable && cn("cursor-pointer", TOUCH_TARGET),
         )}
       >
-        <span className="mt-0.5">
-          {pending ? (
-            <ActiveIcon />
-          ) : (
-            <SettledMarker
-              isError={call.isError === true}
-              external={external}
-            />
-          )}
+        <span className={CHAT_TRACE_MARKER_ALIGN}>
+          <ToolMarker
+            call={call}
+            pending={pending}
+            isError={call.isError === true}
+            external={external}
+            {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+          />
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            pending
-              ? "text-text-2"
-              : call.isError
-                ? "text-red-600"
-                : "text-text-3",
+            "flex min-w-0 items-center",
+            CHAT_TRACE_INLINE_GAP,
+            CHAT_TRACE_LABEL,
+            pending ? "text-text-2" : call.isError ? "text-red" : undefined,
           )}
         >
-          <span className="shrink-0">{summary}</span>
-          {argsSummary !== null && (
-            <span className="truncate text-text-3/70">· {argsSummary}</span>
+          {!(open && expandable) && (
+            <>
+              <span
+                className="min-w-0 truncate"
+                title={summary}
+                data-testid="tool-row-summary"
+              >
+                {summary}
+              </span>
+              {argsSummary !== null && (
+                <span
+                  className="truncate text-text-3/70"
+                  title={argsSummary}
+                  data-testid="tool-row-args"
+                >
+                  · {argsSummary}
+                </span>
+              )}
+            </>
           )}
           {expandable && <ChevronIcon open={open} />}
         </span>
       </button>
+      {/* Failures surface the provider's own message inline, grouped with the
+          row — never a bare, detached red line. The full text is available on
+          expand; this preview is truncated with a native tooltip. */}
+      {call.isError === true &&
+        call.result !== undefined &&
+        call.result.trim() !== "" &&
+        !(open && expandable) && (
+          <p
+            className={cn(
+              CHAT_TRACE_DETAIL_OFFSET,
+              "mt-1 truncate text-xs text-red",
+            )}
+            title={call.result}
+            data-testid="tool-row-error"
+          >
+            {toSingleLine(call.result)}
+          </p>
+        )}
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
-        <div className="mt-1.5 ml-[26px] space-y-2 text-xs">
+        <div
+          className={cn(
+            CHAT_TRACE_DETAIL_TOP,
+            CHAT_TRACE_DETAIL_OFFSET,
+            "space-y-2 text-xs",
+          )}
+          data-testid="tool-row-detail"
+        >
           {humanized ? (
             <>
               {structuredBlock !== null && (
@@ -319,8 +417,8 @@ function ToolRow({
               {structuredBlock === null && hasFriendly && (
                 <p
                   className={cn(
-                    "leading-relaxed",
-                    call.isError === true ? "text-red-600" : "text-text-2",
+                    CHAT_TRACE_OUTCOME_BODY,
+                    call.isError === true && "text-red",
                   )}
                 >
                   {friendlyOutcome}
@@ -331,7 +429,7 @@ function ToolRow({
                 call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -346,7 +444,7 @@ function ToolRow({
               {call.isError === true &&
                 call.result !== undefined &&
                 call.result !== "" && (
-                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red-500/10 px-2 py-1.5 font-mono text-red-600">
+                  <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded bg-red/10 px-2 py-1.5 font-mono text-red">
                     {call.result}
                   </pre>
                 )}
@@ -408,6 +506,7 @@ function ToolRows({
   formatResult,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   onRespond,
   onAction,
 }: Pick<
@@ -417,6 +516,7 @@ function ToolRows({
   | "formatResult"
   | "isQuietTool"
   | "isExternalTool"
+  | "renderToolMarker"
   | "onRespond"
   | "onAction"
 >) {
@@ -432,6 +532,7 @@ function ToolRows({
           external={isExternalTool === undefined || isExternalTool(call.name)}
           suppressArgsSummary={formatSummary !== undefined}
           {...(formatResult !== undefined ? { formatResult } : {})}
+          {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
           {...(onRespond !== undefined ? { onRespond } : {})}
           {...(onAction !== undefined ? { onAction } : {})}
         />
@@ -461,27 +562,38 @@ function CollapsedToolSummary({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={cn(
-          "flex items-start gap-2.5 text-left cursor-pointer",
-          TOUCH_TARGET,
-        )}
+        aria-label={open ? `Collapse ${summary} · ${count} tools` : undefined}
+        className={cn(CHAT_TRACE_ROW, "cursor-pointer text-left", TOUCH_TARGET)}
       >
-        <span className="mt-0.5">
+        <span className={CHAT_TRACE_MARKER_ALIGN}>
           <SettledMarker isError={hasError} external={external} />
         </span>
         <span
           className={cn(
-            "flex min-w-0 items-center gap-1.5 text-sm leading-snug",
-            hasError ? "text-red-600" : "text-text-3",
+            "flex min-w-0 items-center",
+            CHAT_TRACE_INLINE_GAP,
+            CHAT_TRACE_LABEL,
+            hasError ? "text-red" : undefined,
           )}
         >
-          <span className="min-w-0 truncate">{summary}</span>
-          <span className="shrink-0 text-text-3/70">· {count} tools</span>
+          {!open && (
+            <>
+              <span
+                className="min-w-0 truncate"
+                data-testid="tool-group-summary"
+              >
+                {summary}
+              </span>
+              <span className="shrink-0 text-text-3/70">· {count} tools</span>
+            </>
+          )}
           <ChevronIcon open={open} />
         </span>
       </button>
       <ExpandReveal open={open} reduceMotion={reduceMotion === true}>
-        <div className={cn("mt-1.5", ROW_GAP)}>{children}</div>
+        <div className={cn("mt-1.5", ROW_GAP)} data-testid="tool-group-detail">
+          {children}
+        </div>
       </ExpandReveal>
     </div>
   );
@@ -495,20 +607,19 @@ export function ToolNarrative({
   summarizeCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   onRespond,
   onAction,
   className,
 }: ToolNarrativeProps) {
   if (toolCalls.length === 0) return null;
 
+  // Real (non-quiet) calls drive the collapse threshold and the roll-up
+  // summary; rendering stays chronological over the full list.
   const realCalls =
     isQuietTool === undefined
       ? toolCalls
       : toolCalls.filter((c) => !isQuietTool(c.name));
-  const quietCalls =
-    isQuietTool === undefined
-      ? []
-      : toolCalls.filter((c) => isQuietTool(c.name));
 
   const anyPending = toolCalls.some(
     (c) => c.result === undefined && c.isError !== true,
@@ -520,31 +631,23 @@ export function ToolNarrative({
     !anyPending &&
     realCalls.length >= COLLAPSE_THRESHOLD;
 
-  const quietRows =
-    quietCalls.length === 0 ? null : (
-      <ToolRows
-        toolCalls={quietCalls}
-        {...(formatSummary !== undefined ? { formatSummary } : {})}
-        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-      />
-    );
-
-  const realRows =
-    realCalls.length === 0 ? null : (
-      <ToolRows
-        toolCalls={realCalls}
-        {...(formatSummary !== undefined ? { formatSummary } : {})}
-        {...(formatResult !== undefined ? { formatResult } : {})}
-        {...(isQuietTool !== undefined ? { isQuietTool } : {})}
-        {...(isExternalTool !== undefined ? { isExternalTool } : {})}
-        {...(onRespond !== undefined ? { onRespond } : {})}
-        {...(onAction !== undefined ? { onAction } : {})}
-      />
-    );
+  // One chronological pass over every call — quiet lines render inline where
+  // they happened, so the narrative reads in the agent's actual order.
+  const allRows = (
+    <ToolRows
+      toolCalls={toolCalls}
+      {...(formatSummary !== undefined ? { formatSummary } : {})}
+      {...(formatResult !== undefined ? { formatResult } : {})}
+      {...(isQuietTool !== undefined ? { isQuietTool } : {})}
+      {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+      {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+      {...(onRespond !== undefined ? { onRespond } : {})}
+      {...(onAction !== undefined ? { onAction } : {})}
+    />
+  );
 
   return (
     <div className={cn(ROW_GAP, className)} data-testid="tool-narrative">
-      {quietRows}
       {shouldCollapse ? (
         <CollapsedToolSummary
           summary={summarizeCalls(realCalls)}
@@ -554,10 +657,10 @@ export function ToolNarrative({
             (c) => isExternalTool === undefined || isExternalTool(c.name),
           )}
         >
-          {realRows}
+          {allRows}
         </CollapsedToolSummary>
       ) : (
-        realRows
+        allRows
       )}
     </div>
   );

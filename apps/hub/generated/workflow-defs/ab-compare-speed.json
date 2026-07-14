@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "label": "A/B Compare - Speed",
   "description": "Run one shared prompt blind across four low-latency models (DeepSeek V4 Flash, Gemini 3.5 Flash, Claude Haiku, GPT-5.4 Nano), then pick the winner.",
+  "requiresIntake": false,
+  "humanGateCount": 2,
   "definition": {
     "id": "ab-compare-speed",
     "triggers": [
@@ -22,7 +24,7 @@
         "id": "exec0",
         "agent": {
           "id": "exec0",
-          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -59,7 +61,7 @@
         "id": "exec1",
         "agent": {
           "id": "exec1",
-          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -96,7 +98,7 @@
         "id": "exec2",
         "agent": {
           "id": "exec2",
-          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {
@@ -133,7 +135,7 @@
         "id": "exec3",
         "agent": {
           "id": "exec3",
-          "systemPrompt": "You are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
+          "systemPrompt": "Treat Corbits, Corbits.dev, Interchange, and Faremeter as canonical Corbits names; spell them exactly. When source material contains a clear speech-to-text or spelling variant, use the canonical spelling in your output. Do not replace an ambiguous term unless surrounding context identifies it.\n\nYou are one entrant in a blind head-to-head model comparison.\n\nYou receive the user's task as your input. Produce the best possible answer to it.\n\nRules:\n- Treat the input as the shared task to perform; answer it directly and fully.\n- Do not explain that you are part of a comparison or being evaluated.\n- Do not mention or guess any provider identity, model identity, or variant label.\n- Return only the requested output, not commentary about the task or yourself.",
           "toolFactories": [],
           "capabilities": [],
           "inference": {

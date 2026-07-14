@@ -44,23 +44,31 @@ export function MessageFeedback({
     }
   }
 
+  // Quiet by default: revealed on hover/focus of the turn (the `group` on
+  // AgentTurn); always visible where hover doesn't exist. A saved rating
+  // stays visible so the pressed thumb never disappears.
+  const revealed = displayRating !== null || failed;
+
   return (
     <div
-      className="flex items-center gap-1 mt-1"
+      className={cn(
+        // gap must exceed the buttons' combined horizontal hit-area extension
+        // (2 × after:-inset-x-1 = 8px) so the overlays never overlap — a click
+        // near one thumb must not register on the other.
+        "flex items-center gap-2.5 transition-opacity duration-150",
+        revealed
+          ? "opacity-100"
+          : "opacity-0 focus-within:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-100",
+      )}
       aria-label="Rate this response"
     >
-      {failed && (
-        <span className="text-xs text-orange-soft">Failed to save</span>
-      )}
+      {failed && <span className="text-xs text-red">Failed to save</span>}
       <button
         onClick={() => handleClick(1)}
         disabled={pending}
         aria-label="Thumbs up"
         aria-pressed={displayRating === 1}
-        className={cn(
-          "rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed",
-          displayRating === 1 && "text-orange",
-        )}
+        className={cn(FEEDBACK_BUTTON, displayRating === 1 && "text-orange")}
       >
         <ThumbUpIcon />
       </button>
@@ -69,16 +77,19 @@ export function MessageFeedback({
         disabled={pending}
         aria-label="Thumbs down"
         aria-pressed={displayRating === -1}
-        className={cn(
-          "rounded p-1 text-text-3 transition-colors hover:text-text disabled:cursor-not-allowed",
-          displayRating === -1 && "text-orange",
-        )}
+        className={cn(FEEDBACK_BUTTON, displayRating === -1 && "text-orange")}
       >
         <ThumbDownIcon />
       </button>
     </div>
   );
 }
+
+// Visual size stays small; the ::after overlay lifts the hit target to 44px
+// vertically (tool-row TOUCH_TARGET pattern). Horizontal extension is held to
+// 4px per side so adjacent thumbs' overlays cannot cross the row's 10px gap.
+const FEEDBACK_BUTTON =
+  "relative rounded p-1 text-text-3 transition-[color,transform] hover:text-text active:scale-[0.97] disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange cursor-pointer after:absolute after:-inset-x-1 after:-inset-y-2.5 after:content-['']";
 
 function ThumbUpIcon() {
   return (

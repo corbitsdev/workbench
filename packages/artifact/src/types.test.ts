@@ -109,9 +109,11 @@ describe("GalleryArtifactSchema", () => {
     span: "row-span-3",
     id: "a-1",
     title: "My Email",
+    kind: "email",
     from: "Acme Corp",
     time: "2 days ago",
     provenance: "Workflow",
+    status: "draft" as const,
   };
 
   it("accepts a fully valid GalleryArtifact", () => {
@@ -146,9 +148,11 @@ describe("parseGalleryArtifact", () => {
       span: "row-span-2",
       id: "a-2",
       title: "A Tweet",
+      kind: "twitter-post",
       from: "Startup",
       time: "just now",
       provenance: "Agent",
+      status: "approved",
     });
     expect(artifact.id).toBe("a-2");
   });

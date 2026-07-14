@@ -10,22 +10,23 @@ import {
   inputFieldClass,
   LiveStatusSlot,
   liveStatusLabel,
-  Markdown,
   type WorkflowPanelProps,
   type WorkflowStep,
+  workflowPanelShowsShellHeader,
 } from "@workbench/ui";
 import type { RunState, StepState } from "@intx/workflow";
-// From ./constants and ./display-steps, NOT ./index: importing the server-only
-// workflow definition here would pull @intx/agent into the browser `/ui` chunk
-// and break panel load. ./display-steps is browser-safe and is the single
-// source of truth shared with the server catalog preview.
-import { MAX_ROUNDS } from "./constants";
+// From ./display-steps, NOT ./index: importing the server-only workflow
+// definition here would pull @intx/agent into the browser `/ui` chunk and
+// break panel load. ./display-steps is browser-safe and is the single source
+// of truth shared with the server catalog preview.
 import { DISPLAY_STEPS } from "./display-steps";
-import { readGenerateReply } from "./generate-output";
+import {
+  AUDIENCE_OPTIONS,
+  TONE_OPTIONS,
+  GOAL_OPTIONS,
+} from "./intake-defaults";
 
 type StepPhase = StepState["phase"];
-
-const ROUNDS = Array.from({ length: MAX_ROUNDS }, (_, i) => i + 1);
 
 function phaseFor(
   state: RunState | null,
@@ -48,6 +49,7 @@ const TemplateItem = type({
   gammaId: "string",
   name: "string",
   "description?": "string",
+  "systemPrompt?": "string",
 });
 const TemplateArray = TemplateItem.array();
 
@@ -79,7 +81,7 @@ function readString(value: unknown): string | undefined {
     : undefined;
 }
 
-type Option = { id: string; title: string };
+type Option = { id: string; title: string; systemPrompt?: string };
 
 // `failed` distinguishes "the source tool errored / returned a shape we can't
 // read" from a genuinely empty list, so the UI can say "couldn't load" instead
@@ -113,7 +115,11 @@ function useTemplateOptions(): TemplateOptions {
       if (parsed instanceof type.errors) {
         throw new Error(parsed.summary);
       }
-      return parsed.map((t) => ({ id: t.gammaId, title: t.name }));
+      return parsed.map((t) => ({
+        id: t.gammaId,
+        title: t.name,
+        ...(t.systemPrompt ? { systemPrompt: t.systemPrompt } : {}),
+      }));
     },
     staleTime: 5 * 60_000,
   });
@@ -163,46 +169,12 @@ function isSafePresentationURL(value: string | undefined): value is string {
 
 function readRenderURL(
   stepOutputs: Record<string, unknown>,
-  round: number,
 ): string | undefined {
-  const inner = peelEnvelope(stepOutputs[`render-${round}`]);
+  const inner = peelEnvelope(stepOutputs["render"]);
   if (inner === undefined) return undefined;
   const parsed = GammaResult(inner);
   if (parsed instanceof type.errors) return undefined;
   return readString(parsed.gammaUrl) ?? readString(parsed.url);
-}
-
-// ── Routing helpers ───────────────────────────────────────────────────────────
-
-function awaitingPreviewRound(state: RunState | null): number | undefined {
-  return ROUNDS.find(
-    (r) => phaseFor(state, `preview-${r}`) === "awaiting-signal",
-  );
-}
-
-// A gate prunes the not-selected branch by committing a `{ skipped: true }`
-// sentinel and a real `StepCompleted` for every step in its closure (the
-// runtime has no `skipped` phase — pruned steps land in `completed`). So a
-// persist step in a pruned round reads as `completed` too; we must ignore it,
-// or an early approval/refine would resolve to the wrong round (showing the
-// Done screen mid-refine, or reading a never-rendered deck URL).
-function isSkippedOutput(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Record<string, unknown>).skipped === true
-  );
-}
-
-function persistedRound(
-  state: RunState | null,
-  stepOutputs: Record<string, unknown>,
-): number | undefined {
-  return ROUNDS.find(
-    (r) =>
-      phaseFor(state, `persist-${r}`) === "completed" &&
-      !isSkippedOutput(stepOutputs[`persist-${r}`]),
-  );
 }
 
 // ── Shared layout ─────────────────────────────────────────────────────────────
@@ -248,10 +220,75 @@ type IntakePayload = {
   audience: string;
   tone: string;
   goal: string;
+  templateSystemPrompt?: string;
   artifactId?: string;
   noteId?: string;
   text?: string;
 };
+
+const OTHER_OPTION = "__other__";
+
+// A "pick a preset, or type your own" control: a <select> with a leading
+// empty option (no preference), the preset list, and a trailing "Other…"
+// entry that reveals a free-text input. The submitted value is either the
+// chosen preset or the custom text — both optional.
+function PresetSelect({
+  label,
+  ariaLabel,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  options: readonly string[];
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const isCustom = value !== "" && !options.includes(value);
+  const [customMode, setCustomMode] = useState(isCustom);
+  const showCustom = customMode || (value !== "" && !options.includes(value));
+  const selectValue = showCustom ? OTHER_OPTION : value;
+
+  return (
+    <label className="block space-y-1">
+      <span className="text-[12px] text-text-3">{label}</span>
+      <select
+        aria-label={ariaLabel}
+        value={selectValue}
+        onChange={(e) => {
+          const next = e.target.value;
+          if (next === OTHER_OPTION) {
+            setCustomMode(true);
+            onChange("");
+            return;
+          }
+          setCustomMode(false);
+          onChange(next);
+        }}
+        className={inputFieldClass}
+      >
+        <option value="">No preference</option>
+        {options.map((o) => (
+          <option key={o} value={o}>
+            {o}
+          </option>
+        ))}
+        <option value={OTHER_OPTION}>Other…</option>
+      </select>
+      {showCustom && (
+        <input
+          aria-label={`${ariaLabel} (custom)`}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Type your own"
+          className={inputFieldClass}
+          autoFocus
+        />
+      )}
+    </label>
+  );
+}
 
 // Sources are preloaded by the list steps and paginated client-side here — the
 // workflow DAG is acyclic/fire-once, so there is no "fetch the next page"
@@ -497,6 +534,10 @@ function IntakeScreen({
     return "Pasted text";
   })();
 
+  const selectedTemplateSystemPrompt = templates.options.find(
+    (t) => t.id === gammaId,
+  )?.systemPrompt;
+
   function submit() {
     if (!canSubmit) return;
     const base = {
@@ -505,6 +546,9 @@ function IntakeScreen({
       audience: audience.trim(),
       tone: tone.trim(),
       goal: goal.trim(),
+      ...(selectedTemplateSystemPrompt
+        ? { templateSystemPrompt: selectedTemplateSystemPrompt }
+        : {}),
     };
     if (tab === "artifact") onSubmit({ ...base, artifactId });
     else if (tab === "granola") onSubmit({ ...base, noteId });
@@ -573,33 +617,27 @@ function IntakeScreen({
                 </span>
               )}
             </label>
-            <label className="block space-y-1">
-              <span className="text-[12px] text-text-3">Audience</span>
-              <input
-                aria-label="Audience"
-                value={audience}
-                onChange={(e) => setAudience(e.target.value)}
-                className={inputFieldClass}
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-[12px] text-text-3">Tone</span>
-              <input
-                aria-label="Tone"
-                value={tone}
-                onChange={(e) => setTone(e.target.value)}
-                className={inputFieldClass}
-              />
-            </label>
-            <label className="block space-y-1">
-              <span className="text-[12px] text-text-3">Goal</span>
-              <input
-                aria-label="Goal"
-                value={goal}
-                onChange={(e) => setGoal(e.target.value)}
-                className={inputFieldClass}
-              />
-            </label>
+            <PresetSelect
+              label="Audience (optional)"
+              ariaLabel="Audience"
+              options={AUDIENCE_OPTIONS}
+              value={audience}
+              onChange={setAudience}
+            />
+            <PresetSelect
+              label="Tone (optional)"
+              ariaLabel="Tone"
+              options={TONE_OPTIONS}
+              value={tone}
+              onChange={setTone}
+            />
+            <PresetSelect
+              label="Goal (optional)"
+              ariaLabel="Goal"
+              options={GOAL_OPTIONS}
+              value={goal}
+              onChange={setGoal}
+            />
 
             <div className="flex justify-end">
               <Button
@@ -771,124 +809,14 @@ function IntakeScreen({
   );
 }
 
-// ── Per-round preview ───────────────────────────────────────────────────────────
-
-function PreviewScreen({
-  round,
-  connected,
-  signalPending,
-  stepOutputs,
-  onSignal,
-}: {
-  round: number;
-  connected: boolean;
-  signalPending: boolean;
-  stepOutputs: Record<string, unknown>;
-  onSignal: (name: string, payload: Record<string, unknown>) => void;
-}) {
-  const url = readRenderURL(stepOutputs, round);
-  const safeUrl = isSafePresentationURL(url) ? url : undefined;
-  const draft = readGenerateReply(stepOutputs, round);
-  const canRefine = round < MAX_ROUNDS;
-  const [feedback, setFeedback] = useState("");
-  const disabled = !connected || signalPending;
-
-  // Gamma blocks in-app iframe embeds, so review is draft text plus an external
-  // link. The preview gate stays answerable even when the link is missing.
-  return (
-    <div className="space-y-4">
-      <Card>
-        <CardTitle>
-          <span className="tabular-nums">
-            Draft {round} of up to {MAX_ROUNDS}
-          </span>
-        </CardTitle>
-        <div className="space-y-3">
-          {draft !== undefined ? (
-            <Markdown className="max-w-[68ch] text-sm">{draft}</Markdown>
-          ) : (
-            <p className="text-sm text-text-2">
-              Draft text isn&apos;t available here yet — open the deck in Gamma
-              when the link appears, or refine to regenerate.
-            </p>
-          )}
-          {safeUrl === undefined ? (
-            <p className="text-sm text-text-3">
-              Gamma link isn&apos;t available for this draft.
-              {canRefine
-                ? " Refine to regenerate, or approve if the draft text looks right."
-                : " You can still approve to save this draft."}
-            </p>
-          ) : (
-            <a
-              href={safeUrl}
-              target="_blank"
-              rel="noreferrer"
-              className={linkButtonClass}
-            >
-              Open in Gamma
-            </a>
-          )}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="primary"
-              size="sm"
-              disabled={disabled}
-              onClick={() => onSignal(`preview-${round}`, { approved: true })}
-            >
-              Looks good — approve
-            </Button>
-          </div>
-          {canRefine ? (
-            <div className="space-y-2">
-              <textarea
-                aria-label="Refine feedback"
-                value={feedback}
-                onChange={(e) => setFeedback(e.target.value)}
-                rows={3}
-                placeholder="What should change? The next draft will revise from this."
-                className={inputFieldClass}
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={disabled || feedback.trim().length === 0}
-                onClick={() =>
-                  onSignal(`preview-${round}`, {
-                    approved: false,
-                    feedback: feedback.trim(),
-                  })
-                }
-              >
-                Refine with these notes
-              </Button>
-            </div>
-          ) : (
-            <p className="text-xs text-text-3">
-              This is the final draft — approve to save it.
-            </p>
-          )}
-          {!connected && (
-            <p className="text-xs text-text-3">
-              Reconnecting — input unavailable.
-            </p>
-          )}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 function DoneScreen({
-  round,
   stepOutputs,
   onClose,
 }: {
-  round: number;
   stepOutputs: Record<string, unknown>;
   onClose: () => void;
 }) {
-  const url = readRenderURL(stepOutputs, round);
+  const url = readRenderURL(stepOutputs);
   const safeUrl = isSafePresentationURL(url) ? url : undefined;
   return (
     <div className="space-y-4">
@@ -925,8 +853,7 @@ export function Panel(props: WorkflowPanelProps) {
   const failed = state?.phase === "failed";
   const liveLabel = liveStatusLabel(state, DISPLAY_STEPS);
 
-  const done = persistedRound(state, stepOutputs);
-  const previewRound = awaitingPreviewRound(state);
+  const done = phaseFor(state, "persist") === "completed";
   const intakeAwaiting = phaseFor(state, "intake") === "awaiting-signal";
   const group = activeDisplayStep(state, DISPLAY_STEPS)?.key;
 
@@ -945,21 +872,8 @@ export function Panel(props: WorkflowPanelProps) {
         </div>
       );
     }
-    if (done !== undefined) {
-      return (
-        <DoneScreen round={done} stepOutputs={stepOutputs} onClose={onClose} />
-      );
-    }
-    if (previewRound !== undefined) {
-      return (
-        <PreviewScreen
-          round={previewRound}
-          connected={connected}
-          signalPending={signalPending}
-          stepOutputs={stepOutputs}
-          onSignal={onSignal}
-        />
-      );
+    if (done) {
+      return <DoneScreen stepOutputs={stepOutputs} onClose={onClose} />;
     }
     if (intakeAwaiting) {
       return (
@@ -975,29 +889,36 @@ export function Panel(props: WorkflowPanelProps) {
     if (group === "draft") {
       return <LoadingState label="Building the deck in Gamma…" />;
     }
+    if (group === "done") {
+      return <LoadingState label="Saving to workbench…" />;
+    }
     return <LoadingState label="Loading sources…" />;
   }
 
+  const showShellHeader = workflowPanelShowsShellHeader(props);
+
   return (
     <div className="flex h-full flex-col overflow-hidden bg-bg">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
-        <div>
-          <h2 className="text-base font-medium text-text">
-            Gamma Presentation
-          </h2>
-          <p className="text-xs text-text-3">
-            Turn an artifact, call, or pasted text into a deck
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          aria-label="Close panel"
-        >
-          Close
-        </Button>
-      </header>
+      {showShellHeader ? (
+        <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
+          <div>
+            <h2 className="text-base font-medium text-text">
+              Gamma Presentation
+            </h2>
+            <p className="text-xs text-text-3">
+              Turn an artifact, call, or pasted text into a deck
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClose}
+            aria-label="Close panel"
+          >
+            Close
+          </Button>
+        </header>
+      ) : null}
 
       <HorizontalStepper steps={buildStepperSteps(state)} />
       <LiveStatusSlot label={liveLabel} />

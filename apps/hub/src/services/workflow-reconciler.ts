@@ -444,6 +444,7 @@ export function createWorkflowReconciler(deps: {
         kind: workflowRunRecord.kind,
         tenantId: workflowRunRecord.tenantId,
         pendingSignal: workflowRunRecord.pendingSignal,
+        startedAt: workflowRunRecord.startedAt,
       })
       .from(workflowRunRecord)
       .where(
@@ -469,6 +470,22 @@ export function createWorkflowReconciler(deps: {
       // is (or claims to be) in flight. Acting on it does: parse through the
       // same schema `rowToState` uses so the two readers agree.
       pendingHandled.add(rec.deploymentId);
+      // A scheduler-started run persists its pending "intake" signal at fire
+      // time, before the workflow child has consumed the trigger mail and
+      // written RunStarted (CL-3509). Delivering into that window lands
+      // SignalReceived at seq 0 in an empty log — the state machine requires
+      // seq >= 1, so the run is permanently poisoned. `startedAt` is folded
+      // from the FIRST RunStarted event ("first RunStarted wins" in
+      // run-store's projection fold), so it is the cheapest authoritative
+      // proof the run has actually begun. Stay pendingHandled so hibernation
+      // still leaves this run alone and the next tick re-checks.
+      if (rec.startedAt === null) {
+        log.info("pending signal held: run has not started yet", {
+          runId: rec.id,
+          deploymentId: rec.deploymentId,
+        });
+        continue;
+      }
       const pending = PendingRunSignalSchema(rawPending);
       if (pending instanceof type.errors) {
         log.error(

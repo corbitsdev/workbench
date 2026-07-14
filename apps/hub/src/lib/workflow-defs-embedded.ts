@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type } from "arktype";
 import { workflowDefinitionEnvelopeSchema } from "@intx/hub-sessions";
+import { EmbeddedIntakeFieldSchema } from "./workflow-gate-info";
 
 // A workflow definition serialized at build time (CL-2593) and committed under
 // `apps/hub/generated/workflow-defs/<kind>.json`, so the hub can publish it on
@@ -27,6 +28,20 @@ export const EmbeddedWorkflowDefSchema = type({
   "label?": "string",
   "description?": "string",
   "displayFlow?": EmbeddedDisplayFlowStepSchema.array(),
+  // Gate shape derived from the definition at build time (CL-3508): whether the
+  // workflow has an `intake` awaitSignal gate, and its total human-gate count.
+  // The scheduling layer uses these to decide which kinds are attachable to a
+  // brief without parking forever on a human gate.
+  "requiresIntake?": "boolean",
+  "humanGateCount?": "number.integer >= 0",
+  // When true, scheduler-sourced runs may use Myra to auto-drive post-intake human
+  // gates (CL-3528). Absent/false keeps multi-gate workflows off schedules unless
+  // the kind is on the hub allowlist.
+  "allowsScheduledPostIntakeDrive?": "boolean",
+  // The workflow's first-intake form fields, serialized from its `INTAKE_FIELDS`
+  // export (CL-3509), so the attach UI can collect the intake payload without
+  // importing workflow code. Absent for workflows that declare none.
+  "intakeFields?": EmbeddedIntakeFieldSchema.array(),
   definition: workflowDefinitionEnvelopeSchema,
 });
 export type EmbeddedWorkflowDef = typeof EmbeddedWorkflowDefSchema.infer;

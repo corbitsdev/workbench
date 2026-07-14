@@ -67,6 +67,8 @@ import {
   backfillMissingWorkflowFacts,
   projectWorkflowRunFacts,
 } from "./workflow-executor/workflow-run-facts";
+import { deliverRunTerminalMail } from "./workflow-executor/run-terminal-mail";
+import { deliverPendingGateMail } from "./workflow-executor/gate-mail";
 import { createWorkflowAnalyticsRouter } from "./routes/workflow-analytics";
 import {
   createWorkflowDeployService,
@@ -77,8 +79,31 @@ import {
   registerAwaitingSupervisorPrewarm,
 } from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
+import { registerStalledScheduledRunReconciler } from "./services/stalled-scheduled-run-reconciler";
+import { createWorkflowRunStarter } from "./services/workflow-run-starter";
+import { createScheduler } from "./services/scheduler";
+import { createInboxIntake } from "./services/inbox-intake";
+import { createTaskReconcilerService } from "./services/task-reconciler";
+import { createTaskPushService, TASK_ADAPTERS } from "@workbench/tasks";
+import { resolveAdapterCredential } from "./lib/task-credential";
+import { createDrizzleTaskPushStore } from "./lib/task-push-store";
+import { getIdentityAccounts } from "./lib/member-identity";
+import { seedHeartbeatSchedules } from "./services/scheduled-trigger-seeder";
+import { enrichHeartbeatTriggerPayload } from "./lib/heartbeat-trigger-payload";
+import {
+  ensureOwnerSchedule,
+  listEnabledSchedules,
+  markScheduleFired,
+  recordScheduleRunStarted,
+} from "./lib/scheduled-triggers";
+import {
+  extractStoredIntake,
+  queueScheduledIntakeSignal,
+} from "./lib/scheduled-intake";
+import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
+import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
 import { backfillDenyForExistingWorkflowKinds } from "./lib/workflow-run-gate";
 import { createWorkbenchDirectorRegistry } from "@workbench/agents";
 import { createUploadsRouter } from "./routes/uploads";
@@ -87,6 +112,8 @@ import { createToolsRouter } from "./routes/tools";
 import { createAdminRouter } from "./routes/admin";
 import { createOwnerRouter } from "./routes/owner";
 import { isDemosEnabledByGrant, resolveDemoLinks } from "./lib/demos-gate";
+import { isFeatureEnabledForTenantCached } from "./lib/feature-grants";
+import { isWorkspaceInboxSourceEnabledForTenant } from "./lib/workspace-inbox-source-gate";
 import { isAdmin, isOwner } from "./lib/admin-grant";
 import { createAgentProvisioningRouter } from "./routes/agents";
 import {
@@ -101,7 +128,21 @@ import {
 } from "./services/sync-personal-agent";
 import { createMembersRouter } from "./routes/members";
 import { createMyraThreadsRouter } from "./routes/myra-threads";
-import { recordMyraThreadActivity } from "./services/myra-threads";
+import {
+  recordMyraThreadActivity,
+  resolveMyraDefinition,
+} from "./services/myra-threads";
+import { createGranolaCallFanout } from "./services/granola-call-fanout";
+import { createGranolaCallPipeline } from "./services/granola-call-pipeline";
+import { createGranolaCallJobQueue } from "./services/granola-call-job-queue";
+import { createGranolaCallJobRunner } from "./services/granola-call-job-runner";
+import { createGranolaWorkspaceInboxSource } from "./services/inbox-sources/granola-workspace";
+import { INBOX_SOURCE_REGISTRY } from "./services/inbox-source-registry";
+import {
+  createMailboxTriage,
+  sweepStaleTriageInstances,
+  type MailboxTriage,
+} from "./services/mailbox-triage";
 import { createArtifactsRouter } from "./routes/artifacts";
 import { createFileParseRouter } from "./routes/file-parse";
 import { createSearchRouter } from "./routes/search";
@@ -123,9 +164,27 @@ import {
 import { createApprovalsEventBus } from "./lib/approvals-events";
 import { createFeedbackRouter } from "./routes/feedback";
 import type { MemberPreferences } from "@workbench/shared";
+import { resolveEnabledBriefSources } from "@workbench/shared";
 import { createMePreferencesRouter } from "./routes/me-preferences";
+import { createMeConnectionsRouter } from "./routes/me-connections";
+import { createOAuthCallbackRouter } from "./routes/oauth-callback";
+import { createInMemoryPendingStore } from "./lib/oauth-flow";
+import { createMeBriefRunRouter } from "./routes/me-brief-run";
+import { createMeSchedulesRouter } from "./routes/me-schedules";
+import { createMeWebhookTriggersRouter } from "./routes/me-webhook-triggers";
+import { createWebhookTriggerFireRouter } from "./routes/webhook-trigger-fire";
+import { createLinearWebhookRouter } from "./routes/webhooks-linear";
+import { createAttioWebhookRouter } from "./routes/webhooks-attio";
+import { createSlackWebhookRouter } from "./routes/webhooks-slack";
+import { deriveUserMailAddress } from "@workbench/hub-agent";
 import { createMeProfileRouter } from "./routes/me-profile";
 import { readMemberPreferences } from "./lib/member-preferences";
+import { createPrincipalMailboxPersist } from "./lib/principal-mailbox";
+import { deliverMentionMail } from "./lib/mention-mail";
+import { deliverWelcomeMail } from "./lib/deliver-welcome-mail";
+import { createMailboxEventBus } from "./lib/mailbox-events";
+import { createInboxRouter } from "./routes/inbox";
+import { createMeTasksRouter } from "./routes/me-tasks";
 import { createHubToolsRouter } from "./routes/hub-tools";
 import { createToolCredentialsRouter } from "./routes/tool-credentials";
 import { createToolManifestRouter } from "./routes/tool-manifest";
@@ -297,6 +356,7 @@ const registry = await loadSigningKeyRegistry(hub.signingKeys);
 log.info("Loaded signing key registry: active version {version}", {
   version: registry.active.version,
 });
+const cryptoProvider = createEd25519Crypto(registry.active);
 
 // ─── Agent repo store ──────────────────────────────────────────────
 
@@ -344,6 +404,49 @@ const repoStore = wrapRepoStoreWithProjection(
         });
       });
     },
+    // Deliver a "a workflow needs you" mailbox item to the run owner
+    // when a run parks on an awaitSignal gate. Fire-and-forget; the deliverer
+    // owns its errors and must never block pack receipt.
+    deliverGateMail: (args) => {
+      void deliverPendingGateMail(
+        {
+          db,
+          repoStore: args.repoStore,
+          deploymentDomain: config.rootTenant.domain,
+          mailboxEventBus,
+        },
+        {
+          runId: args.runId,
+          kind: args.kind,
+          tenantId: args.tenantId,
+          principalId: args.principalId,
+          deploymentId: args.deploymentId,
+        },
+      ).catch((err: unknown) => {
+        log.error("workflow gate mail delivery failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
+    // Deliver a "your run finished" mailbox item to the run creator when a
+    // run reaches a terminal status. Fire-and-forget; the deliverer owns its
+    // errors and must never block pack receipt.
+    deliverRunMail: (args) => {
+      void deliverRunTerminalMail(
+        {
+          db,
+          deploymentDomain: config.rootTenant.domain,
+          mailboxEventBus,
+        },
+        args,
+      ).catch((err: unknown) => {
+        log.error("workflow run terminal mail delivery failed", {
+          runId: args.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    },
   },
 );
 // ─── Skill asset substrate ─────────────────────────────────────────
@@ -362,8 +465,30 @@ function isWorkflowRunBootstrapRace(message: string): boolean {
   );
 }
 
+// Workbench-owned mailbox live-delivery bus (CL-3336). One in-process instance
+// shared by every principal_mailbox write path (external mail via persistMail,
+// workflow gate mail, and triage handoffs) and the /me/inbox/events SSE route,
+// so a connected client is notified the instant any of those write a row —
+// never mail content, only {type:"mailbox", id}.
+const mailboxEventBus = createMailboxEventBus();
+
+// Late-bound: constructed below once sessionService exists. The persist hook
+// and the turn-finalized fan-out both fire only after boot completes, so the
+// brief window where this is undefined can never drop a real event.
+// eslint-disable-next-line prefer-const -- assigned once, after sessionService below; can't be const at declaration
+let mailboxTriage: MailboxTriage | undefined;
+
 const lookups: SidecarLookups = {
   ...baseLookups,
+  persistMail: createPrincipalMailboxPersist(db, baseLookups.persistMail, {
+    onUserMailboxRow(event) {
+      mailboxTriage?.enqueue(event);
+      mailboxEventBus.publish(event.memberPrincipalId, {
+        type: "mailbox",
+        id: event.rowId,
+      });
+    },
+  }),
   async receiveWorkflowRunPack(repoId, pack, ref, commitSha) {
     if (repoId.kind !== "workflow-run") {
       throw new Error(
@@ -446,10 +571,12 @@ const eventCollectors = createEventCollectorRegistry({
         errors: turn.errors,
         toolCalls: turn.toolCalls,
         toolErrors: turn.toolErrors,
+        reasoning: turn.reasoning,
       },
     });
 
     fatalErrorRecovery(agentAddress, turn);
+    mailboxTriage?.handleTurnFinalized(agentAddress, turn);
   },
 });
 
@@ -492,6 +619,34 @@ const sessionService = createSessionService({
     defaultRegistry: WORKSPACE_BUILTINS_REGISTRY,
   },
 });
+
+// Ephemeral Myra triage of external inbound user mail (kill switch:
+// TRIAGE_ENABLED). Fed by the persistMail hook above; turn results arrive via
+// the event-collector onTurnFinalized fan-out above.
+mailboxTriage = createMailboxTriage({
+  db,
+  sessionService,
+  grantStore,
+  eventCollectors,
+  cryptoProvider,
+  mailboxEventBus,
+});
+
+// Retires any `myra-triage` instances a prior process left behind because
+// their `endSession` call failed mid-teardown (see `runOne`'s finally block
+// in mailbox-triage.ts). Bounded, logged once, fire-and-forget — a failure
+// here just leaves the backlog for the next boot to retry.
+// Delayed past the sidecar's typical post-boot reconnect window so the
+// undeploy calls have a live sidecar to land on; a still-disconnected
+// sidecar just defers rows to the next boot.
+const TRIAGE_SWEEP_BOOT_DELAY_MS = 5 * 60_000;
+setTimeout(() => {
+  void sweepStaleTriageInstances(db, sessionService).catch((err) => {
+    log.error("Triage boot sweep failed", {
+      error: err instanceof Error ? err : new Error(String(err)),
+    });
+  });
+}, TRIAGE_SWEEP_BOOT_DELAY_MS).unref();
 
 // The disconnect reconciler above only ENDS a stale session; nothing re-registers
 // the address, because the router has no `sidecar.connect` counterpart to the
@@ -761,6 +916,60 @@ app.use(
   },
 );
 
+// Chat mentions (`@[Name](#usr_<id>)` tokens in the outbound message) are
+// delivered as mail to each mentioned member's principal mailbox — see
+// deliverMentionMail. This runs on the same mail-send route as the
+// activity-recording middleware above, ahead of the hub app mount, since
+// interchange's own /:instanceId/mail route (mounted below) owns the actual
+// send and is out of scope to modify. Best-effort and fire-and-forget: a
+// failure here is logged by deliverMentionMail and never blocks or slows the
+// chat send.
+const ChatMentionBody = type({ content: "string" });
+const conversationBaseUrl = corsOrigins[0] ?? config.auth.baseUrl;
+app.use(
+  "/api/tenants/:tenantId/agents/instances/:instanceId/mail",
+  async (c, next) => {
+    const tenantId = c.req.param("tenantId");
+    // POST-only (this path also serves GET list-mail polling), and bounded
+    // before the clone-and-parse so an oversized payload is never read here —
+    // the real send route enforces its own body limit downstream.
+    const contentLength = Number(c.req.header("content-length") ?? "0");
+    const withinSizeLimit =
+      Number.isFinite(contentLength) && contentLength <= 1_000_000;
+    if (tenantId && c.req.method === "POST" && withinSizeLimit) {
+      void (async () => {
+        const session = await auth.api.getSession({
+          headers: c.req.raw.headers,
+        });
+        if (!session) return;
+        let body: unknown;
+        try {
+          body = await c.req.raw.clone().json();
+        } catch {
+          return;
+        }
+        const parsed = ChatMentionBody(body);
+        if (parsed instanceof type.errors) return;
+        await deliverMentionMail({
+          db,
+          tenantId,
+          senderUserId: session.user.id,
+          senderName: session.user.name ?? session.user.email ?? "A teammate",
+          content: parsed.content,
+          conversationUrl: `${conversationBaseUrl}/inbox`,
+          mailboxEventBus,
+        });
+      })().catch((err) => {
+        log.error("mention mail dispatch failed", {
+          tenantId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    }
+    await next();
+  },
+);
+
 // Mount hub app
 app.route("/", hubApp);
 
@@ -952,6 +1161,21 @@ v1.post("/me", async (c) => {
   );
   const { workingTenantId, memberPrincipalId, paInstanceId } = syncOutcome;
 
+  // Called on every /me bootstrap, not gated on `provisionedMyra`:
+  // `deliverWelcomeMail` itself is the idempotency boundary (guards on the
+  // `onboarding.welcomeSentAt` preference), so a transient failure on the
+  // member's actual first login still gets a retry on their next one instead
+  // of being silently missed forever.
+  if (workingTenantId && memberPrincipalId && paInstanceId) {
+    await deliverWelcomeMail({
+      db,
+      tenantId: workingTenantId,
+      memberPrincipalId,
+      myraInstanceId: paInstanceId,
+      mailboxEventBus,
+    });
+  }
+
   let credentialResolved = false;
   if (paInstanceId && workingTenantId) {
     const paInstance = await db.query.agentInstance.findFirst({
@@ -1041,6 +1265,25 @@ v1.post("/me", async (c) => {
   });
 });
 
+// Shared across the `/me/tasks/:id/push` route and the background reconciler
+// so concurrent pushes for the same (task, adapter, operation) — whether both
+// from the route, both from the reconciler, or one of each — coalesce onto
+// one in-process in-flight map instead of two independent guards that never
+// see each other's work.
+const taskPushService = createTaskPushService({
+  store: createDrizzleTaskPushStore(db),
+  adapters: TASK_ADAPTERS,
+  resolveCredential: resolveAdapterCredential(db),
+  resolveAssignee: async (ownerPrincipalId, adapterId, tenantId) => {
+    const provider = TASK_ADAPTERS[adapterId]?.providerName;
+    if (provider === undefined) return null;
+    const accounts = await getIdentityAccounts(db, tenantId, ownerPrincipalId, [
+      provider,
+    ]);
+    return accounts[0]?.value ?? null;
+  },
+});
+
 v1.route(
   "/",
   createAgentProvisioningRouter(
@@ -1058,7 +1301,70 @@ v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
-v1.route("/", createMePreferencesRouter(db));
+v1.route("/", createMePreferencesRouter(db, grantStore));
+// Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
+// the public callback router below so an authorize on one request and its
+// callback on another find the same server-side verifier. `state` is signed
+// with the better-auth secret (always present) so the cookie-less callback can
+// trust the member principal it carries.
+const oauthPendingStore = createInMemoryPendingStore();
+// Where the browser lands after the flow (web app Connections page).
+const oauthRedirectBase = `${(config.cors.origins[0] ?? config.auth.baseUrl).replace(/\/$/, "")}/settings/connections`;
+// The hub's own public origin — the OAuth redirect_uri is derived from it and
+// must match what the owner registers with the provider.
+const oauthRedirectUriBase = new URL(config.auth.baseUrl).origin;
+// The OAuth `state` HMAC is signed with OAUTH_STATE_SECRET (a DEDICATED secret,
+// deliberately NOT BETTER_AUTH_SECRET — do not collapse them), resolved lazily
+// per request inside the routers so a deployment that has not enabled
+// OAuth-for-inbox still starts.
+v1.route(
+  "/",
+  createMeConnectionsRouter({
+    db,
+    grantStore,
+    pendingStore: oauthPendingStore,
+    redirectUriBase: oauthRedirectUriBase,
+  }),
+);
+v1.route("/", createInboxRouter(db, mailboxEventBus));
+v1.route("/", createMeTasksRouter(db, taskPushService, mailboxEventBus));
+
+// Resolves a member principal to the user mail identity trigger payloads
+// carry (`usr_<refId>@<domain>` via deriveUserMailAddress, the one canonical
+// principal-mailbox address format). Shared by the schedules route
+// (server-side identity, never client-supplied) and the boot-time heartbeat
+// seeder.
+const resolveUserIdentity = async (
+  memberPrincipalId: string,
+): Promise<{
+  userAddress: string;
+  userRefId: string;
+  userDisplayName?: string;
+}> => {
+  const member = await db.query.principal.findFirst({
+    where: eq(intxSchema.principal.id, memberPrincipalId),
+  });
+  if (!member) {
+    throw new Error(`principal not found: ${memberPrincipalId}`);
+  }
+  const authUser =
+    member.kind === "user"
+      ? await db.query.user.findFirst({
+          where: eq(intxSchema.user.id, member.refId),
+        })
+      : undefined;
+  return {
+    userAddress: deriveUserMailAddress({
+      userRefId: member.refId,
+      domain: config.rootTenant.domain,
+    }),
+    userRefId: member.refId,
+    ...(authUser?.name !== undefined ? { userDisplayName: authUser.name } : {}),
+  };
+};
+
+v1.route("/", createMeSchedulesRouter(db, resolveUserIdentity));
+v1.route("/", createMeWebhookTriggersRouter(db));
 v1.route("/", createMeProfileRouter(auth));
 v1.route("/", createUploadsRouter(db));
 v1.route("/", createSkillsRouter(db, assetService, repoStore.repoStore));
@@ -1074,6 +1380,11 @@ v1.route(
     grantStore,
     rootTenantId,
     showDemos: config.showDemos,
+    featureEnvOverrides: {
+      scheduler: config.scheduler.enabled,
+      triage: config.triageEnabled,
+      "tasks-reconciler": config.tasksReconciler.enabled,
+    },
   }),
 );
 // Built before the runs router so the run-start/signal handlers and the
@@ -1106,6 +1417,100 @@ const provisionRunDeployment: ProvisionRunDeploymentFn = (args) =>
     hubPublicKey: hubPublicKeyHex,
   });
 
+// Callable run-start: shared by the HTTP start handler and the
+// scheduler, so a scheduled run fires through the same resolution +
+// routability + mail-trigger delivery as an HTTP-initiated one.
+const runStarter = createWorkflowRunStarter({
+  db,
+  sessionService,
+  ensureDeploymentRoutable,
+  deploymentDomain: config.rootTenant.domain,
+  cryptoProvider,
+});
+
+// Public webhook firing surface: no session, authenticated only by
+// the per-trigger secret. Mounted directly on the parent app, outside the v1
+// session-auth wall.
+app.route("/", createWebhookTriggerFireRouter({ db, runStarter }));
+
+// Public Linear webhook receiver (CL-3585): additive low-latency intake
+// alongside the poller. Mounted only when a signing secret is configured; the
+// request is authenticated by the `linear-signature` HMAC, not a session.
+if (config.inboxIntake.linearWebhookSecret) {
+  app.route(
+    "/",
+    createLinearWebhookRouter({
+      db,
+      secret: config.inboxIntake.linearWebhookSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
+    }),
+  );
+}
+
+// Public Attio webhook receiver (CL-3586): same additive pattern as Linear —
+// mounted only when a signing secret is configured, authenticated by the
+// `Attio-Signature` HMAC. Task events reuse the poller's upsert.
+if (config.inboxIntake.attioWebhookSecret) {
+  app.route(
+    "/",
+    createAttioWebhookRouter({
+      db,
+      secret: config.inboxIntake.attioWebhookSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+    }),
+  );
+}
+
+// Public Slack Events API receiver (CL-3581): mentions of mapped members land
+// in their inbox. Mounted only when the app signing secret is configured;
+// authenticated by the `X-Slack-Signature` v0 HMAC.
+if (config.inboxIntake.slackSigningSecret) {
+  app.route(
+    "/",
+    createSlackWebhookRouter({
+      db,
+      signingSecret: config.inboxIntake.slackSigningSecret,
+      listMembers: () => listInboxMembers(),
+      isSourceEnabledForTenant: (tenantId, sourceKey) =>
+        isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+      mailboxEventBus,
+      mailboxTriage,
+    }),
+  );
+}
+
+// Public OAuth callback (CL-3356). Outside the v1 session-auth wall — a provider
+// redirect is a top-level browser navigation authenticated by the signed state,
+// not a session cookie. Shares the pending PKCE store with the authorize route.
+app.route(
+  "/",
+  createOAuthCallbackRouter({
+    db,
+    grantStore,
+    pendingStore: oauthPendingStore,
+    redirectBase: oauthRedirectBase,
+    redirectUriBase: oauthRedirectUriBase,
+  }),
+);
+
+// Member-initiated brief-on-demand: lets a member fire their own heartbeat
+// brief outside its daily schedule.
+v1.route(
+  "/",
+  createMeBriefRunRouter({
+    db,
+    runStarter,
+    heartbeatKind: config.scheduler.heartbeatKind,
+    resolveUserIdentity,
+  }),
+);
+
 v1.route(
   "/",
   createWorkflowRunsRouter({
@@ -1113,9 +1518,10 @@ v1.route(
     repoStore: repoStore.repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
+    runStarter,
   }),
 );
 
@@ -1135,7 +1541,7 @@ v1.route(
     repoStore,
     sidecarRouter,
     sessionService,
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     ensureDeploymentRoutable,
     provisionRunDeployment,
@@ -1193,6 +1599,15 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
+// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
+// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
+// so one still `awaiting` long after its last log advance is wedged and is failed
+// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
+  {
+    db,
+  },
+);
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
@@ -1213,6 +1628,229 @@ void workflowReconciler
       error: err instanceof Error ? err : new Error(String(err)),
     });
   });
+
+// Automation scheduler: fire durable scheduled_trigger rows on a
+// daily UTC-hour cadence by calling the run-start service directly (no HTTP
+// self-call). Single-replica assumption — like the disconnect reconciler, N
+// replicas would fire N runs/schedule/day; a DB-backed fire-lock is the
+// multi-replica follow-up.
+const listMyraTargets = async () => {
+  const rows = await db.query.memberAgentInstance.findMany({
+    where: and(
+      eq(schema.memberAgentInstance.tenantId, rootTenantId),
+      eq(schema.memberAgentInstance.templateKey, "myra"),
+    ),
+  });
+  return rows.map((row) => ({ memberPrincipalId: row.memberPrincipalId }));
+};
+
+// Gate shapes per kind (CL-3509), loaded once from the committed embedded
+// catalog — static for the process lifetime. The scheduler auto-delivers a
+// stored intake only for kinds whose entry gate is `intake`.
+const schedulerGateInfos = await loadWorkflowGateInfos();
+
+const scheduler = createScheduler({
+  isTenantEnabled: (tenantId) =>
+    isFeatureEnabledForTenantCached(
+      db,
+      tenantId,
+      "scheduler",
+      config.scheduler.enabled,
+    ),
+  listSchedules: () => listEnabledSchedules(db, rootTenantId),
+  markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
+  recordRunStarted: (args) => recordScheduleRunStarted(db, args),
+  startWorkflowRun: async (fire) => {
+    // Re-read the member's brief-source preferences at the moment the
+    // schedule actually fires, rather than trusting whatever `enabledSources`
+    // (if any) was baked into the schedule row when it was created — a source
+    // toggle in Settings must take effect on the very next brief, not the next
+    // time the schedule row itself is edited.
+    const [prefs, identity] = await Promise.all([
+      readMemberPreferences(db, fire.tenantId, fire.creatorPrincipalId),
+      resolveUserIdentity(fire.creatorPrincipalId),
+    ]);
+    const triggerPayload = enrichHeartbeatTriggerPayload(
+      fire.triggerPayload,
+      fire.kind,
+      config.scheduler.heartbeatKind,
+      resolveEnabledBriefSources(prefs),
+      fire.nowMs,
+      fire.lastFiredDayUtc,
+      fire.hourUtc,
+      "scheduled",
+      identity,
+    );
+    const result = await runStarter.startRun({
+      kind: fire.kind,
+      tenantId: fire.tenantId,
+      input: triggerPayload,
+      creatorPrincipalId: fire.creatorPrincipalId,
+      source: "scheduler",
+    });
+    if (!result.ok) {
+      throw new Error(`run-start ${result.reason}: ${result.message}`);
+    }
+    // Auto-deliver the stored intake so the scheduled run passes its first gate
+    // without a human (CL-3509). Only for kinds whose entry gate is `intake`; the
+    // intake is the stored trigger payload minus server-owned identity keys.
+    if (schedulerGateInfos.get(fire.kind)?.requiresIntake === true) {
+      const intake = extractStoredIntake(fire.triggerPayload);
+      await queueScheduledIntakeSignal(db, {
+        runId: result.runId,
+        kind: fire.kind,
+        intake,
+      }).catch((err) => {
+        log.error("scheduler: intake auto-delivery failed", {
+          scheduleKind: fire.kind,
+          runId: result.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
+    }
+    return {
+      deploymentId: result.deploymentId,
+      accepted: true,
+      runId: result.runId,
+    };
+  },
+});
+scheduler.start();
+
+// Live per-item inbox intake (CL-3511): poll each Myra member's enabled inbox
+// sources and land new external items as mailbox rows, flowing through the
+// same triage pipeline as inbound mail. Gated on the `scheduler` feature grant
+// (same env override OR owner grant) — the other durable-poll automation.
+// Single-replica assumption, like the scheduler above.
+const listInboxMembers = async () => {
+  const rows = await db
+    .select({
+      memberPrincipalId: schema.memberAgentInstance.memberPrincipalId,
+      refId: intxSchema.principal.refId,
+      email: intxSchema.user.email,
+    })
+    .from(schema.memberAgentInstance)
+    .innerJoin(
+      intxSchema.principal,
+      eq(intxSchema.principal.id, schema.memberAgentInstance.memberPrincipalId),
+    )
+    .innerJoin(
+      intxSchema.user,
+      eq(intxSchema.user.id, intxSchema.principal.refId),
+    )
+    .where(
+      and(
+        eq(schema.memberAgentInstance.tenantId, rootTenantId),
+        eq(schema.memberAgentInstance.templateKey, "myra"),
+      ),
+    );
+  return rows.map((row) => ({
+    tenantId: rootTenantId,
+    memberPrincipalId: row.memberPrincipalId,
+    inboxAddress: deriveUserMailAddress({
+      userRefId: row.refId,
+      domain: config.rootTenant.domain,
+    }),
+    tenantDomain: config.rootTenant.domain,
+    email: row.email ?? null,
+  }));
+};
+
+const granolaFanout = createGranolaCallFanout({
+  db,
+  grantStore,
+  rootTenantId,
+  rootTenantDomain: config.rootTenant.domain,
+  mailboxEventBus,
+});
+const granolaPipeline = createGranolaCallPipeline({
+  db,
+  rootTenantDomain: config.rootTenant.domain,
+  resolveInferenceSource: async (tenantId) => {
+    const def = await resolveMyraDefinition(db, tenantId);
+    if (!def) return null;
+    const res = await resolveInstanceSourcesFromDefinition(
+      db,
+      tenantId,
+      def,
+      null,
+    );
+    return res.ok ? (res.sources[0] ?? null) : null;
+  },
+  fanout: granolaFanout,
+});
+const granolaCallJobQueue = createGranolaCallJobQueue(db);
+const granolaCallJobRunner = createGranolaCallJobRunner({
+  db,
+  queue: granolaCallJobQueue,
+  pipeline: granolaPipeline,
+});
+granolaCallJobRunner.start();
+
+const inboxIntake = createInboxIntake({
+  db,
+  grantStore,
+  registry: [
+    ...INBOX_SOURCE_REGISTRY,
+    createGranolaWorkspaceInboxSource({ queue: granolaCallJobQueue }),
+  ],
+  listMembers: listInboxMembers,
+  mailboxEventBus,
+  mailboxTriage,
+  tickIntervalMs: config.inboxIntake.tickIntervalMs,
+  isTenantEnabled: (tenantId) =>
+    isFeatureEnabledForTenantCached(
+      db,
+      tenantId,
+      "scheduler",
+      config.scheduler.enabled,
+    ),
+  isWorkspaceSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+  isMemberSourceEnabled: (tenantId, sourceKey) =>
+    isWorkspaceInboxSourceEnabledForTenant(db, tenantId, sourceKey),
+});
+inboxIntake.start();
+
+// Native-task pending-ref reconciler. Gated by the `tasks-reconciler` feature
+// grant on the root tenant (env override OR owner grant, default OFF); the
+// reconciler is not tenant-partitioned (`reconcileOnce` scans all pending
+// refs), so the grant check is scoped to the deployment's root tenant.
+const taskReconciler = createTaskReconcilerService({
+  isEnabled: () =>
+    isFeatureEnabledForTenantCached(
+      db,
+      rootTenantId,
+      "tasks-reconciler",
+      config.tasksReconciler.enabled,
+    ),
+  db,
+  pushService: taskPushService,
+});
+taskReconciler.start();
+
+// Idempotent boot seed so the morning brief works out of the box: one heartbeat
+// schedule per Myra member. Gated by the same enable flag; detached so a slow
+// seed never blocks startup.
+void seedHeartbeatSchedules({
+  enabled: config.scheduler.enabled,
+  kind: config.scheduler.heartbeatKind,
+  hourUtc: config.scheduler.heartbeatHourUtc,
+  listMyraTargets,
+  resolveUserIdentity,
+  ensureSchedule: (args) =>
+    ensureOwnerSchedule(db, {
+      tenantId: rootTenantId,
+      ownerPrincipalId: args.ownerPrincipalId,
+      kind: args.kind,
+      hourUtc: args.hourUtc,
+      payload: args.payload,
+    }),
+}).catch((err) => {
+  log.error("heartbeat schedule seed failed", {
+    error: err instanceof Error ? err : new Error(String(err)),
+  });
+});
 
 // CL-2670: backfill analytics facts for any terminal run missing a fact — a run
 // whose live projection threw (WRN, now ERROR) or that reached terminal while the
@@ -1249,30 +1887,41 @@ const workflowDeployCoreDeps: WorkflowDeployCoreDeps = {
   rootTenantId,
 };
 
-// CL-2593: auto-publish the build-serialized workflow defs to the global tenant
-// on boot, gated by WORKFLOW_AUTOPUBLISH_ON_BOOT (default off). Detached so a
-// slow publish never blocks startup; the bootstrap is fail-safe per def.
-// Catalog publish is hub-only (git definition repo + DB rows, no sidecar frame),
-// so it no longer waits for a sidecar connection — the supervisor is minted per
-// run, not at publish.
-void publishEmbeddedWorkflowDefs({
-  coreDeps: workflowDeployCoreDeps,
-  repoStore,
-  enabled: config.workflowAutopublishOnBoot,
+// CL-3093: sync embedded tool tarballs into the root package-registry before
+// workflow autopublish so sidecars resolve fresh pins on reconnect. Detached;
+// fail-safe per tarball; does not block HTTP listen.
+void publishEmbeddedToolPackages({
+  db,
+  repoStore: repoStore.repoStore,
+  assetService,
+  rootTenantId,
+  enabled: config.toolRegistryAutopublishOnBoot,
+  registryName: config.toolRegistryName,
   buildSha: config.buildSha,
-  autopublishMap: config.workflowAutopublishMap,
 })
-  // Reconcile the whole existing catalog to deny-by-default once the boot
-  // publish has settled: every already-deployed kind with no owner decision is
-  // seeded a deny so it ships disabled, and an owner re-enables per kind. Runs
-  // after the publish so kinds just (re)published are included; idempotent, so
-  // running it on every boot only ever fills zero-row kinds.
-  .then(() => backfillDenyForExistingWorkflowKinds(db))
   .catch((err) => {
-    log.error("workflow autopublish-on-boot failed", {
+    log.error("tool registry autopublish-on-boot failed", {
       error: err instanceof Error ? err.message : String(err),
     });
-  });
+  })
+  .then(() =>
+    // CL-2593: auto-publish build-serialized workflow defs after tool sync.
+    publishEmbeddedWorkflowDefs({
+      coreDeps: workflowDeployCoreDeps,
+      repoStore,
+      enabled: config.workflowAutopublishOnBoot,
+      buildSha: config.buildSha,
+      autopublishMap: config.workflowAutopublishMap,
+    })
+      // Reconcile the whole existing catalog to deny-by-default once the boot
+      // publish has settled.
+      .then(() => backfillDenyForExistingWorkflowKinds(db))
+      .catch((err) => {
+        log.error("workflow autopublish-on-boot failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }),
+  );
 
 v1.post(
   "/workflows/deploy",
@@ -1358,7 +2007,7 @@ app.route(
     buildToolDefinitions,
     // Workflow-run tools (CL-2678) share the /workflow-exec routes' pre-bound
     // start/resume wiring.
-    cryptoProvider: createEd25519Crypto(registry.active),
+    cryptoProvider,
     deploymentDomain: config.rootTenant.domain,
     provisionRunDeployment,
     ensureDeploymentRoutable,
@@ -1418,8 +2067,11 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
   process.on(signal, async () => {
     try {
       log.info("Received {signal}, draining", { signal });
+      scheduler.stop();
+      taskReconciler.stop();
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
+      stopStalledScheduledRunReconciler();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

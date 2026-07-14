@@ -23,7 +23,12 @@ import {
 } from "../lib/workflow-run-gate";
 import { readWorkflowDefinition } from "../services/workflow-deploy";
 import { readMemberPreferences } from "../lib/member-preferences";
-import { loadWorkflowDisplayFlows } from "../lib/workflow-catalog";
+import {
+  loadWorkflowDisplayFlows,
+  loadWorkflowGateInfos,
+  loadWorkflowIntakeFields,
+} from "../lib/workflow-catalog";
+import { isKindStructurallyAttachable } from "../lib/workflow-gate-info";
 import { getRootTenantId, lookupMember } from "../lib/tenant-provisioning";
 
 const log = getLogger("workflows-catalog");
@@ -137,6 +142,12 @@ export function createWorkflowsCatalogRouter(deps: {
       // groups and labels steps identically. Absent kinds fall back to the
       // per-step stepOrder projection.
       const displayFlows = await loadWorkflowDisplayFlows();
+      // Gate shape + intake form per kind (CL-3508/CL-3509): whether the kind is
+      // attachable to a brief schedule, and the intake fields the attach UI
+      // collects for a requiresIntake kind. Both read from the committed embedded
+      // catalog alongside the display flows.
+      const gateInfos = await loadWorkflowGateInfos();
+      const intakeFieldsByKind = await loadWorkflowIntakeFields();
 
       const entries: WorkflowCatalogEntry[] = [];
       for (const entry of kinds) {
@@ -145,6 +156,14 @@ export function createWorkflowsCatalogRouter(deps: {
           entry.kind,
           displayFlows.get(entry.kind),
         );
+        const gateInfo = gateInfos.get(entry.kind);
+        const attachable =
+          gateInfo !== undefined &&
+          isKindStructurallyAttachable(gateInfo, entry.kind);
+        const intakeFields =
+          gateInfo?.requiresIntake === true
+            ? intakeFieldsByKind.get(entry.kind)
+            : undefined;
         entries.push({
           kind: entry.kind,
           label: entry.label ?? humanizeKind(entry.kind),
@@ -155,6 +174,10 @@ export function createWorkflowsCatalogRouter(deps: {
           stepCount: steps.length,
           pauseCount: countHumanGates(steps),
           steps,
+          attachable,
+          ...(intakeFields !== undefined && intakeFields.length > 0
+            ? { intakeFields }
+            : {}),
         });
       }
 

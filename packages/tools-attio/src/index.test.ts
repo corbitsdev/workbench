@@ -30,6 +30,7 @@ describe("createAttioTools", () => {
       "attio_list_tasks",
       "attio_list_workspace_members",
       "attio_query_records",
+      "attio_recent_activity",
       "attio_search_records",
       "attio_update_task",
     ]);
@@ -1190,6 +1191,46 @@ describe("error handling", () => {
     expect(result.content).toContain("Attio API error: 502 Bad Gateway");
   });
 
+  it("surfaces the Attio response body message even when the HTTP status text is non-empty", async () => {
+    // Real fetch() implementations (undici/Bun's own client, browsers) populate
+    // `statusText` from the actual HTTP reason phrase (e.g. "Bad Request" for a
+    // 400), unlike the bare `new Response(...)` used in other tests here which
+    // defaults statusText to "". A create-record call rejected by Attio for a
+    // real reason (e.g. an invalid select option) must surface that reason, not
+    // the generic reason phrase.
+    const fetcher: AttioFetch = mock(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            message: 'Invalid value for attribute "stage": no such option',
+          }),
+          {
+            status: 400,
+            statusText: "Bad Request",
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "call_1",
+        name: "attio_create_record",
+        arguments: { object: "deals", values: { stage: "Abridge Test Stage" } },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain(
+      'Invalid value for attribute "stage": no such option',
+    );
+  });
+
   it("surfaces a non-JSON error body verbatim", async () => {
     const fetcher: AttioFetch = mock(() =>
       Promise.resolve(
@@ -1265,5 +1306,197 @@ describe("ATTIO_HUB_TOOLS", () => {
     );
     expect(fetcher.mock.calls[0]?.[0]).toBe("https://eu.attio.test/v2/objects");
     expect(tools).toHaveLength(1);
+  });
+});
+
+describe("attio_recent_activity handler", () => {
+  it("accepts a hub-enriched heartbeat trigger payload (extra mail fields)", async () => {
+    const fetcher: AttioFetch = mock(async (url: string) => {
+      if (url.includes("/records/query")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: { record_id: "rec_1" },
+                created_at: "2026-07-05T00:00:00Z",
+                web_url: "https://app.attio.com/textql/company/rec_1",
+                values: { name: [{ value: "Acme Corp" }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    });
+
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: {
+          reason: "manual-brief",
+          userAddress: "usr_abc@workbench.local",
+          userRefId: "usr_abc",
+          enabledSources: ["attio"],
+          createdAfter: "2026-07-04T00:00:00Z",
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(
+      JSON.parse(String(result.content)).attioActivity.newCompanies,
+    ).toHaveLength(1);
+  });
+
+  it("skips the network call and reports skipped when attio is not in enabledSources", async () => {
+    const fetcher = makeFetchStub({ data: [] });
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.parse(String(result.content))).toEqual({ skipped: true });
+  });
+
+  it("forwards createdAfter as a companies filter and returns a uniquely-keyed compact snapshot", async () => {
+    const calls: { url: string; body: unknown }[] = [];
+    const fetcher: AttioFetch = mock(async (url: string, init: RequestInit) => {
+      calls.push({
+        url,
+        body: init.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      if (url.includes("/records/query")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: { record_id: "rec_1" },
+                created_at: "2026-07-05T00:00:00Z",
+                web_url: "https://app.attio.com/textql/company/rec_1",
+                values: { name: [{ value: "Acme Corp" }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: { task_id: "task_1" },
+              content_plaintext: "Follow up with Acme",
+              deadline_at: "2026-07-10T00:00:00Z",
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: {
+          createdAfter: "2026-07-04T00:00:00Z",
+          enabledSources: ["attio"],
+        },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({
+      attioActivity: {
+        newCompanies: [
+          {
+            id: "rec_1",
+            name: "Acme Corp",
+            createdAt: "2026-07-05T00:00:00Z",
+            url: "https://app.attio.com/textql/company/rec_1",
+          },
+        ],
+        openTasks: [
+          {
+            id: "task_1",
+            content: "Follow up with Acme",
+            deadlineAt: "2026-07-10T00:00:00Z",
+          },
+        ],
+      },
+    });
+
+    const companiesCall = calls.find((c) => c.url.includes("/records/query"));
+    expect(companiesCall?.body).toMatchObject({
+      filter: { created_at: { $gte: "2026-07-04T00:00:00Z" } },
+    });
+    const tasksCall = calls.find((c) => c.url.includes("/v2/tasks"));
+    expect(tasksCall?.url).toContain("is_completed=false");
+  });
+
+  it("omits url rather than fabricating one when a company record has no web_url", async () => {
+    const fetcher: AttioFetch = mock(async (url: string) => {
+      if (url.includes("/records/query")) {
+        return new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: { record_id: "rec_2" },
+                created_at: "2026-07-05T00:00:00Z",
+                values: { name: [{ value: "No Link Inc" }] },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ data: [] }), { status: 200 });
+    });
+
+    const runner = createToolRunner(
+      createAttioTools({ apiKey: "test-key", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "attio_recent_activity",
+        arguments: { enabledSources: ["attio"] },
+      },
+      new AbortController().signal,
+    );
+
+    const newCompanies = JSON.parse(String(result.content)).attioActivity
+      .newCompanies;
+    expect(newCompanies).toEqual([
+      {
+        id: "rec_2",
+        name: "No Link Inc",
+        createdAt: "2026-07-05T00:00:00Z",
+        url: null,
+      },
+    ]);
   });
 });

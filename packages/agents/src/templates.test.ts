@@ -23,9 +23,22 @@ describe("AGENT_TEMPLATES", () => {
       "lincoln",
       "loop",
       "myra",
+      "myra-triage",
       "oat",
       "walter",
     ]);
+  });
+
+  it("registers the Myra Triage variant on the flash model, not deployed to the catalog", () => {
+    const triage = AGENT_TEMPLATES.find((t) => t.key === "myra-triage");
+    const myra = AGENT_TEMPLATES.find((t) => t.key === "myra");
+    expect(triage).toBeDefined();
+    expect(triage?.name).toBe("Myra Triage");
+    expect(triage?.modelConfig).toEqual({ defaultModel: "deepseek-v4-flash" });
+    expect(triage?.deployable).toBe(false);
+    // Grants stay the full Myra base toolset — only the mailbox persona's
+    // advertised loadout narrows at launch (packages/myra/src/personas/mailbox.ts).
+    expect(triage?.capabilities.tools).toEqual(myra?.capabilities.tools);
   });
 
   it("registers Freddie as deployable Opus-backed Fable prompt agent", () => {
@@ -65,9 +78,17 @@ describe("AGENT_TEMPLATES", () => {
     }
   });
 
-  it("no template has any mail tools", () => {
+  // CL-3407: Myra (chat and triage, which seed the same capabilities.tools —
+  // see the equality assertion above) carries mail_send so she can send a
+  // note to a teammate's mailbox. Every other template, and every other mail
+  // tool on Myra herself, stays out.
+  it("no template has any mail tool except Myra's mail_send", () => {
     for (const template of AGENT_TEMPLATES) {
-      expect(template.capabilities.tools).not.toContain("mail_send");
+      const expectsMailSend =
+        template.key === "myra" || template.key === "myra-triage";
+      expect(template.capabilities.tools.includes("mail_send")).toBe(
+        expectsMailSend,
+      );
       expect(template.capabilities.tools).not.toContain("mail_reply");
       expect(template.capabilities.tools).not.toContain("mail_search");
       expect(template.capabilities.tools).not.toContain("mail_read");

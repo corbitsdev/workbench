@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type } from "arktype";
+import { pageContextForPathname } from "../page-context";
 import { invalidateMyraThreads } from "./myra-threads-cache";
 import {
   ApiError,
@@ -27,9 +29,11 @@ import type {
   PendingAttachment,
 } from "@workbench/chat";
 import {
+  abortInstanceTurn,
   ensureMeSynced,
   getOutputFeedback,
   launchInstanceSession,
+  type LaunchInstanceSessionOptions,
   saveOutputFeedback,
   upsertRating,
 } from "../lib/hub-api";
@@ -92,24 +96,18 @@ export async function deliverMessage(
   session: InstanceSession,
   instanceId: string | null,
   content: string,
+  launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<void> {
   try {
     await session.sendMail(content);
   } catch (err) {
     if (isRecoverableDeliveryError(err) && instanceId !== null) {
-      await launchInstanceSession(instanceId);
+      await launchInstanceSession(instanceId, launchOptions);
       await session.sendMail(content);
       return;
     }
     throw err;
   }
-}
-
-// Wire shape the mail route accepts alongside `content` (SendMessage schema).
-export interface OutboundAttachment {
-  mimeType: string;
-  data: string;
-  name?: string;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -129,18 +127,6 @@ function fileToBase64(file: File): Promise<string> {
       reject(reader.error ?? new Error("Could not read file"));
     reader.readAsDataURL(file);
   });
-}
-
-async function encodeAttachments(
-  attachments: readonly PendingAttachment[],
-): Promise<OutboundAttachment[]> {
-  return Promise.all(
-    attachments.map(async (a) => ({
-      mimeType: a.mimeType,
-      data: await fileToBase64(a.file),
-      name: a.name,
-    })),
-  );
 }
 
 // A document parse failed at the /parse-file route (timeout, oversize, bad
@@ -181,25 +167,28 @@ export function attachmentErrorMessage(err: unknown): string {
   }
 }
 
-// Attachments cannot ride the string-only `sendMail`; POST them to the same
-// mail route the session uses, with the one-shot relaunch recovery.
-// Returns the created mail's id so the caller can key optimistic UI (e.g. a
-// document chip) to the transcript bubble that renders from that mail event.
-export async function deliverMessageWithAttachments(
+// POST a message to the mail route the session uses, with the one-shot relaunch
+// recovery. Unlike the string-only `sendMail`, this returns the created mail's
+// id so the caller can key optimistic UI (e.g. a file chip) to the transcript
+// bubble that renders from that mail event. Nothing rides inline — every
+// attachment is diverted through the File Parser and folded into `content` — so
+// the wire `attachments` is always empty (the SendMessage schema expects the
+// field present).
+export async function deliverMailMessage(
   transport: Transport,
   tenantId: string,
   instanceId: string,
   content: string,
-  attachments: OutboundAttachment[],
+  launchOptions?: LaunchInstanceSessionOptions,
 ): Promise<string | null> {
   const path = `/api/tenants/${tenantId}/agents/instances/${instanceId}/mail`;
-  const body = { content, attachments };
+  const body = { content, attachments: [] };
   try {
     const res = await transport.fetch<{ id?: string }>("POST", path, body);
     return res?.id ?? null;
   } catch (err) {
     if (isRecoverableDeliveryError(err)) {
-      await launchInstanceSession(instanceId);
+      await launchInstanceSession(instanceId, launchOptions);
       const res = await transport.fetch<{ id?: string }>("POST", path, body);
       return res?.id ?? null;
     }
@@ -272,10 +261,6 @@ export function composeWithDocumentContext(
   return `<context>\n${blocks}\n</context>${trimmed !== "" ? `\n\n${trimmed}` : ""}`;
 }
 
-function isImageAttachment(a: PendingAttachment): boolean {
-  return a.mimeType.startsWith("image/");
-}
-
 // The per-session stream trackers, built together and torn down together.
 // Tool names feed committed turns whose tool "call" part failed to persist
 // (CL-1398); live text/reasoning/images track the current turn from the raw
@@ -328,6 +313,12 @@ export type MyraSession = {
     text: string,
     attachments?: PendingAttachment[],
   ) => void | Promise<void>;
+  /**
+   * Stops the in-flight turn server-side. Resolves once the sidecar has
+   * settled the turn (the conversation stays usable); rejects with a
+   * user-facing message on failure.
+   */
+  abortTurn: () => Promise<void>;
   reconnect: () => void;
   instanceId: string | null;
   onRate?: (
@@ -357,6 +348,16 @@ export function useMyraSession(
   tenantId: string | null,
   enabled = true,
 ): MyraSession {
+  const location = useLocation();
+  const instanceLaunchOptions = useMemo(
+    (): LaunchInstanceSessionOptions => ({
+      pageContext: pageContextForPathname(location.pathname),
+    }),
+    [location.pathname],
+  );
+  const launchOptionsRef = useRef(instanceLaunchOptions);
+  launchOptionsRef.current = instanceLaunchOptions;
+
   const [state, setState] = useState<MyraSessionPhase>({ phase: "loading" });
   // Reset phase to `loading` during render when the identity (instanceId or
   // tenantId) changes, so `identityKey` (derived below) and `state.phase`
@@ -373,6 +374,16 @@ export function useMyraSession(
   const [hasBeenLive, setHasBeenLive] = useState(false);
   // Interchange session id from launch — scopes ReviewGate to this chat (CL-3286).
   const [sessionId, setSessionId] = useState<string | null>(null);
+  // The sidecar settles an aborted turn by putting the agent to sleep, which
+  // emits no further agent events — the live activity signal would otherwise
+  // linger as "thinking" forever. Suppress it locally after a successful
+  // abort. The suppression clears on the next send AND on the first
+  // genuinely-new activity event (compared by identity against the value
+  // captured at abort time), so a new turn started elsewhere — e.g. a
+  // parked-mail replay wake — is never hidden and the stop button stays
+  // reachable.
+  const [activitySuppressed, setActivitySuppressed] = useState(false);
+  const suppressedActivityRef = useRef<AgentActivity | null>(null);
   // Text sends made while not `live`, replayed in order once the session
   // reconnects; and the last history snapshot, kept on screen across the brief
   // teardown that precedes a reconnect.
@@ -387,6 +398,7 @@ export function useMyraSession(
     setLive(false);
     setHasBeenLive(false);
     setSessionId(null);
+    setActivitySuppressed(false);
     // Drop the previous thread's queued sends and history snapshot so a new
     // thread never renders the old one's messages (CL-3280).
     pendingQueueRef.current = [];
@@ -536,7 +548,12 @@ export function useMyraSession(
           inFlightSendIdsRef.current.add(item.id);
           let outcome: "delivered" | "recoverable" | "permanent";
           try {
-            await deliverMessage(session, targetInstanceId, item.content);
+            await deliverMessage(
+              session,
+              targetInstanceId,
+              item.content,
+              launchOptionsRef.current,
+            );
             outcome = "delivered";
           } catch (err) {
             if (cancelled) {
@@ -588,7 +605,10 @@ export function useMyraSession(
     // on screen and schedules a reconnect instead of erroring (CL-3280).
     async function establishLive() {
       try {
-        const launch = await launchInstanceSession(targetInstanceId);
+        const launch = await launchInstanceSession(
+          targetInstanceId,
+          launchOptionsRef.current,
+        );
         if (cancelled) return;
         if (launch.launched) {
           if (
@@ -765,6 +785,27 @@ export function useMyraSession(
     },
   });
 
+  const { mutateAsync: abortMutateAsync } = useMutation({
+    mutationFn: (iid: string) => abortInstanceTurn(iid),
+  });
+  const abortTurn = useCallback(async (): Promise<void> => {
+    const iid = resolvedInstanceIdRef.current;
+    if (iid === null) {
+      throw new Error("Not connected yet. Try again in a moment.");
+    }
+    try {
+      await abortMutateAsync(iid);
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim().length > 0
+          ? err.message
+          : "Couldn't stop Myra. Try again.";
+      throw new Error(message);
+    }
+    suppressedActivityRef.current = sessionRef.current?.activity ?? null;
+    setActivitySuppressed(true);
+  }, [abortMutateAsync]);
+
   const reconnect = useCallback(() => setAttempt((n) => n + 1), []);
 
   // Feed this session's phase to the app-level reconnecting overlay so a
@@ -850,9 +891,17 @@ export function useMyraSession(
     connectionNotice = hasBeenLive ? "reconnecting" : "connecting";
   }
 
-  const activity = activeSession
-    ? toChatActivity(activeSession.activity)
-    : null;
+  // Render-phase adjustment (same pattern as prevIdentity above): the first
+  // activity value that differs from the one captured at abort time is a new
+  // turn — stop hiding it.
+  const rawActivity = activeSession ? activeSession.activity : null;
+  if (activitySuppressed && rawActivity !== suppressedActivityRef.current) {
+    setActivitySuppressed(false);
+  }
+  const suppressed =
+    activitySuppressed && rawActivity === suppressedActivityRef.current;
+  const activity =
+    activeSession && !suppressed ? toChatActivity(rawActivity) : null;
 
   const sendWithAttachments = async (
     text: string,
@@ -863,21 +912,24 @@ export function useMyraSession(
     if (transport === null || iid === null || tenantId === null) {
       throw new Error("Not connected yet. Try again in a moment.");
     }
-    const images = attachments.filter(isImageAttachment);
-    const documents = attachments.filter((a) => !isImageAttachment(a));
-
+    // Every attachment — images and documents alike — is diverted through the
+    // File Parser. Myra's model (kimi) cannot read either inline: her
+    // openai-compatible endpoint 400s on image_url parts and throws on document
+    // blocks. The parser stores each as an artifact and returns extracted text,
+    // which is folded into a leading <context> block so Myra receives it as
+    // text regardless of her own model's modality (CL image-upload 400 fix).
     let content = text;
     let chips: ChatAttachment[] = [];
     let chipUrls: { blobId: string; url: string }[] = [];
-    if (documents.length > 0) {
+    if (attachments.length > 0) {
       let parsedDocs: ParsedDocument[];
       try {
         parsedDocs = await Promise.all(
-          documents.map(async (d) => {
-            const data = await fileToBase64(d.file);
+          attachments.map(async (a) => {
+            const data = await fileToBase64(a.file);
             return parseDocumentAttachment(transport, iid, {
-              filename: d.name,
-              mimeType: d.mimeType,
+              filename: a.name,
+              mimeType: a.mimeType,
               data,
             });
           }),
@@ -889,15 +941,15 @@ export function useMyraSession(
       chips = parsedDocs.map((doc, i) => ({
         blobId: doc.artifactId,
         name: doc.filename,
-        type: documents[i]!.mimeType,
-        size: documents[i]!.file.size,
+        type: attachments[i]!.mimeType,
+        size: attachments[i]!.file.size,
       }));
       // Register each object URL in the revocable ref at creation, not after the
       // send resolves — otherwise an unmount during the send leaves the URL held
       // only in this closure and it is never revoked (the teardown revokes the
       // ref's contents). The non-success paths below delete + revoke.
       chipUrls = parsedDocs.map((doc, i) => {
-        const url = URL.createObjectURL(documents[i]!.file);
+        const url = URL.createObjectURL(attachments[i]!.file);
         docChipUrlsRef.current.set(doc.artifactId, url);
         return { blobId: doc.artifactId, url };
       });
@@ -910,14 +962,14 @@ export function useMyraSession(
       }
     };
 
-    const encoded = await encodeAttachments(images);
     try {
-      const mailId = await deliverMessageWithAttachments(
+      // Nothing rides inline anymore — the parsed text is in `content`.
+      const mailId = await deliverMailMessage(
         transport,
         tenantId,
         iid,
         content,
-        encoded,
+        launchOptionsRef.current,
       );
       if (chips.length > 0 && mailId !== null) {
         setDocChips((prev) => new Map(prev).set(mailId, chips));
@@ -937,6 +989,9 @@ export function useMyraSession(
     text: string,
     attachments?: PendingAttachment[],
   ): void | Promise<void> => {
+    // A new turn is starting — let its real activity events drive the busy
+    // indicator again after an earlier abort suppressed a stale one.
+    setActivitySuppressed(false);
     const hasAttachments = attachments !== undefined && attachments.length > 0;
     if (hasAttachments) {
       // Attachments are not queued in v1 — they need the parse/mail transport,
@@ -961,7 +1016,12 @@ export function useMyraSession(
       scheduleReconnect();
       return;
     }
-    void deliverMessage(session, resolvedInstanceIdRef.current, text)
+    void deliverMessage(
+      session,
+      resolvedInstanceIdRef.current,
+      text,
+      launchOptionsRef.current,
+    )
       .then(() => {
         // The hub bumped this thread's lastActivityAt; refresh the list so it
         // reorders to the top rather than waiting for the query to go stale.
@@ -1033,6 +1093,7 @@ export function useMyraSession(
     connectionNotice,
     sessionId,
     send,
+    abortTurn,
     reconnect,
     instanceId: resolvedInstanceId,
     resolveAttachmentUrl,

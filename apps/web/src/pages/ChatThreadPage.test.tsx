@@ -46,6 +46,9 @@ let sessionResult: any = {
   activity: null,
 };
 
+mock.module("../hooks/use-members", () => ({
+  useMembers: () => ({ data: [] }),
+}));
 mock.module("../hooks/use-myra-threads", () => ({
   useMyraThreads: () => threadsResult,
   useCreateMyraThread: () => ({ mutate: createMutate, isPending: false }),
@@ -54,10 +57,7 @@ mock.module("../hooks/use-myra-threads", () => ({
     return autoTitle;
   },
   writeLastActiveThreadId: () => {},
-  resolveActiveThread: (
-    threads: ThreadsResult["data"],
-    explicit?: string | null,
-  ) => {
+  resolveActiveThread: (threads: ThreadItem[], explicit?: string | null) => {
     if (!threads || threads.length === 0) return null;
     if (explicit) {
       const m = threads.find((t) => t.id === explicit);
@@ -73,17 +73,15 @@ mock.module("../hooks/use-myra-session", () => ({
 
 mock.module("../components/MyraChatSurface", () => ({
   MyraChatSurface: (props: {
-    threadLabel?: string;
+    headerLeft?: React.ReactNode;
     onUserSend?: (t: string) => void;
   }) =>
     React.createElement(
       "div",
       { "data-testid": "surface" },
-      React.createElement(
-        "span",
-        { "data-testid": "label" },
-        props.threadLabel ?? "",
-      ),
+      props.headerLeft !== undefined
+        ? React.createElement("div", { "data-testid": "header-left" })
+        : null,
       React.createElement(
         "button",
         { onClick: () => props.onUserSend?.("hello") },
@@ -187,9 +185,12 @@ describe("ChatThreadPage", () => {
     screen.getByText(/loading your chats/i);
   });
 
-  it("renders the chat surface and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
+  it("renders the chat surface without an in-panel thread switcher and passes the Myra thread id as the dock's conversationId (conversationId == Myra thread id contract)", () => {
     renderAt("/chats/t1");
-    expect(screen.getByTestId("label").textContent).toBe("First");
+    expect(screen.getByTestId("surface")).toBeDefined();
+    // Full-page chat relies on the app top bar for the thread title; the
+    // in-panel ThreadSwitcher (headerLeft) is not mounted.
+    expect(screen.queryByTestId("header-left")).toBeNull();
     // conversationId == Myra thread id; producers (workflow_start tool,
     // chat-initiated starts) stamp the same id as originConversationId — never
     // the instance id.
@@ -198,10 +199,15 @@ describe("ChatThreadPage", () => {
     ).toBe("t1");
   });
 
-  it("canonicalizes an unknown thread id to the resolved thread", () => {
+  it("shows a not-found state for an unknown thread id", () => {
     renderAt("/chats/unknown");
-    // resolveActiveThread falls back to t1; the page redirects then renders it.
-    expect(screen.getByTestId("label").textContent).toBe("First");
+    screen.getByText(/this chat couldn't be found/i);
+    expect(
+      screen
+        .getByRole("link", { name: /back to all chats/i })
+        .getAttribute("href"),
+    ).toBe("/chats");
+    expect(screen.queryByTestId("surface")).toBeNull();
   });
 
   it("offers a create action when there are no threads", () => {

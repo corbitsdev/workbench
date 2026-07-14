@@ -8,10 +8,34 @@ export * from "./ab-compare";
 export * from "./gamma-presentation";
 export * from "./governance";
 export * from "./last30days";
+export * from "./mailbox";
+export * from "./mentions";
+export * from "./now-feed";
 export * from "./reddit-opportunity-scanner";
+export * from "./scheduled-trigger";
+export * from "./schedule-next-fire";
+export * from "./webhook-trigger";
+export * from "./tasks";
+export * from "./task-links";
 export * from "./pain-point-collateral";
+export * from "./sumble-account-intel";
 export * from "./web-site";
+export * from "./preferences-registry";
+export * from "./heartbeat-brief-merge";
+export * from "./heartbeat-brief-title";
+export * from "./heartbeat-brief-mail-refs";
+export * from "./mailbox-refs-header";
+export * from "./changelog";
+export * from "./deep-link";
+export * from "./welcome-mail";
 export { toHumanLabel } from "./tool-labels";
+export { unwrapArgsEnvelope } from "./tool-args";
+export {
+  createToolLoopGuard,
+  TOOL_LOOP_HINT_THRESHOLD,
+  TOOL_LOOP_BLOCK_THRESHOLD,
+  type ToolLoopGuard,
+} from "./tool-loop-guard";
 
 export type Severity = "low" | "medium" | "high" | "critical";
 
@@ -129,6 +153,7 @@ export type ArtifactWithVersions = Artifact & { versions: ArtifactVersion[] };
  * without a second round-trip.
  */
 export type ArtifactWithSession = Artifact & {
+  sessionId: string | null;
   sessionName: string | null;
   sessionStatus: SessionStatus | null;
   ownerName: string | null;
@@ -273,13 +298,16 @@ export type Theme = typeof ThemeSchema.infer;
 // shape shared by the hub route (emit + OpenAPI) and the web hook (parse) so
 // the two can never drift. `canManage` is computed per-caller from the grant
 // store; `description` is the human-facing label (the workflow owns generation
-// instructions, not the template).
+// instructions, not the template). `systemPrompt` is optional template-specific
+// authoring guidance the generate step folds in alongside the base prompt
+// empty string when the template author left it blank.
 export const GammaTemplateSchema = type({
   id: "string",
   version: "number",
   name: "string",
   gammaId: "string",
   description: "string",
+  systemPrompt: "string",
   authorId: "string",
   canManage: "boolean",
   createdAt: "string",
@@ -288,16 +316,33 @@ export type GammaTemplate = typeof GammaTemplateSchema.infer;
 
 // Request body for create/update. `description` is required and non-empty
 // (the server trims and rejects blanks); it is the one field the workflow does
-// not need but humans do.
+// not need but humans do. `systemPrompt` is optional and may be blank.
 export const GammaTemplateBodySchema = type({
   name: "string",
   gammaId: "string",
   description: "string",
+  "systemPrompt?": "string",
 });
 export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
 
+// How far a member's Myra may go autonomously. `prepare_only` is the
+// default posture: classify, plan, draft, read-only grounding — no writes.
+// `execute_with_gates` lets Myra attempt tool writes, each still flowing
+// through the existing approval rail; it never bypasses gates.
+export const AgentAutonomySchema = type(
+  "'prepare_only' | 'execute_with_gates'",
+);
+export type AgentAutonomy = typeof AgentAutonomySchema.infer;
+
+// Resolves the effective autonomy for a member. The absent-value decision
+// lives here, at the shared boundary, so every consumer agrees on the default.
+export function resolveAgentAutonomy(prefs: MemberPreferences): AgentAutonomy {
+  return prefs.agentAutonomy ?? "prepare_only";
+}
+
 export const MemberPreferences = type({
   "theme?": ThemeSchema,
+  "agentAutonomy?": AgentAutonomySchema,
   "compactToolActivity?": "boolean",
   "toolSummaryStyle?": ToolSummaryStyleSchema,
   "experimentalArtifactCards?": "boolean",
@@ -378,6 +423,18 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // One runnable workflow in the catalog, carrying everything the Workflows page
 // needs to render its row and its step-flow preview without a further call:
 // the member's favorite state, the classified step DAG, and the pause count.
+// A workflow's first-intake form field, as surfaced to the attach UI so it can
+// collect the intake payload a scheduled run is pre-filled with (CL-3509). A
+// minimal subset of the block `FormField` surface (text / textarea only).
+export const WorkflowIntakeFieldSchema = type({
+  name: "string > 0",
+  label: "string > 0",
+  kind: "'text' | 'textarea'",
+  "required?": "boolean",
+  "placeholder?": "string",
+});
+export type WorkflowIntakeField = typeof WorkflowIntakeFieldSchema.infer;
+
 export const WorkflowCatalogEntrySchema = type({
   kind: "string",
   label: "string",
@@ -387,6 +444,13 @@ export const WorkflowCatalogEntrySchema = type({
   pauseCount: "number",
   steps: WorkflowFlowStepSchema.array(),
   "lastRunAt?": "string",
+  // Whether this kind can be attached to a brief schedule (CL-3508): true when it
+  // runs to completion unattended — no human gates, or its only gate is `intake`
+  // (pre-filled and auto-delivered). A kind with other human gates is false.
+  attachable: "boolean",
+  // The intake fields the attach UI collects for a requiresIntake kind (CL-3509);
+  // absent for kinds that need no intake.
+  "intakeFields?": WorkflowIntakeFieldSchema.array(),
 });
 export type WorkflowCatalogEntry = typeof WorkflowCatalogEntrySchema.infer;
 
