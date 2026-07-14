@@ -5,6 +5,7 @@ import {
   friendlyToolSummaryKnown,
   isCatalogMetaTool,
   isExternalIntegrationTool,
+  integrationToolProviderKey,
   summarizeToolCalls,
   toolOperationKey,
 } from "./friendly-tool-summary";
@@ -24,6 +25,31 @@ function call(
     ...extra,
   };
 }
+
+describe("integrationToolProviderKey", () => {
+  it("reads LLM and FQN provider segments", () => {
+    expect(integrationToolProviderKey("attio__create_record")).toBe("attio");
+    expect(integrationToolProviderKey("linear__list_issues")).toBe("linear");
+    expect(
+      integrationToolProviderKey(
+        "@workbench/tools-linear/linear:linear_list_issues",
+      ),
+    ).toBe("linear");
+  });
+
+  it("uses load_tools package for the provider slug", () => {
+    expect(
+      integrationToolProviderKey("load_tools", { package: "attio" }),
+    ).toBe("attio");
+    expect(integrationToolProviderKey("load_tools", {})).toBeNull();
+  });
+
+  it("returns null for workbench-internal providers and local runners", () => {
+    expect(integrationToolProviderKey("artifact__memory_save")).toBeNull();
+    expect(integrationToolProviderKey("read_file")).toBeNull();
+    expect(integrationToolProviderKey("exa_search")).toBeNull();
+  });
+});
 
 describe("toolOperationKey", () => {
   it("takes the substring after the last colon in a fully-qualified name", () => {

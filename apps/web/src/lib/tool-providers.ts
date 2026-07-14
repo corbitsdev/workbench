@@ -1,3 +1,7 @@
+import {
+  integrationToolProviderKey,
+  toolOperationKey,
+} from "@workbench/agents/browser";
 import { toHumanLabel } from "@workbench/ui";
 
 // Canonical display labels for tool providers, keyed by the lowercase provider
@@ -52,6 +56,51 @@ export const PROVIDER_LOGO_FILES: Record<string, string> = {
  */
 export function providerLogoFile(providerKey: string): string | null {
   return PROVIDER_LOGO_FILES[providerKey.toLowerCase()] ?? null;
+}
+
+/** Bare op ids (`exa_search`, …) when the wire name has no `provider__` prefix. */
+const BARE_TOOL_PROVIDER_PREFIXES: ReadonlySet<string> = new Set([
+  "attio",
+  "bluesky",
+  "exa",
+  "firecrawl",
+  "gamma",
+  "github",
+  "granola",
+  "linear",
+  "notion",
+  "reddit",
+  "slack",
+  "sumble",
+  "vercel",
+  "xai",
+  "youtube",
+]);
+
+export function providerKeyForToolLogo(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const fromWire = integrationToolProviderKey(toolName, args);
+  if (fromWire !== null) return fromWire;
+  const prefix = toolOperationKey(toolName).split("_")[0]?.toLowerCase();
+  if (prefix !== undefined && BARE_TOOL_PROVIDER_PREFIXES.has(prefix)) {
+    return prefix;
+  }
+  return null;
+}
+
+/**
+ * Resolve the brands-library filename for a tool invocation, or null when we
+ * cannot attribute the call to a known provider mark.
+ */
+export function toolProviderLogoFilename(
+  toolName: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const providerKey = providerKeyForToolLogo(toolName, args);
+  if (providerKey === null) return null;
+  return providerLogoFile(providerKey);
 }
 
 /**

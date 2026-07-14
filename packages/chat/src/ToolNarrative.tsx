@@ -56,6 +56,32 @@ function SettledMarker({
   return <span className="h-4 w-4 shrink-0" aria-hidden="true" />;
 }
 
+export interface ToolMarkerRenderContext {
+  call: ToolCall;
+  pending: boolean;
+  isError: boolean;
+  external: boolean;
+}
+
+function ToolMarker({
+  renderToolMarker,
+  call,
+  pending,
+  isError,
+  external,
+}: ToolMarkerRenderContext & {
+  renderToolMarker?: (ctx: ToolMarkerRenderContext) => ReactNode | null;
+}) {
+  if (isError) return <ErrorIcon />;
+  const ctx: ToolMarkerRenderContext = { call, pending, isError, external };
+  if (renderToolMarker !== undefined && external) {
+    const branded = renderToolMarker(ctx);
+    if (branded !== null && branded !== undefined) return branded;
+  }
+  if (pending) return <ActivityPulse />;
+  return <SettledMarker isError={false} external={external} />;
+}
+
 export function ActivityPulse() {
   const reduceMotion = useReducedMotion();
   return (
@@ -132,6 +158,11 @@ export interface ToolNarrativeProps {
    * When omitted, every non-quiet tool is treated as external.
    */
   isExternalTool?: (name: string) => boolean;
+  /**
+   * Optional host hook to replace the default pulse / bullet marker with a
+   * provider brand mark. Return null to fall back to the built-in marker.
+   */
+  renderToolMarker?: (ctx: ToolMarkerRenderContext) => ReactNode | null;
   /** Forwarded to interactive UI blocks rendered from a structured tool result. */
   onRespond?: (response: UIResponse) => void;
   /** Forwarded to document UI blocks for copy / download / save-artifact. */
@@ -218,6 +249,7 @@ function ToolRow({
   external,
   suppressArgsSummary,
   formatResult,
+  renderToolMarker,
   onRespond,
   onAction,
 }: {
@@ -231,6 +263,7 @@ function ToolRow({
   // when formatResult is not also suppressing raw dumps.
   suppressArgsSummary: boolean;
   formatResult?: ((call: ToolCall) => string | null) | undefined;
+  renderToolMarker?: ToolNarrativeProps["renderToolMarker"];
   onRespond?: ((response: UIResponse) => void) | undefined;
   onAction?:
     | ((action: "copy" | "download" | "save-artifact", block: UIBlock) => void)
@@ -285,14 +318,13 @@ function ToolRow({
         )}
       >
         <span className="mt-0.5">
-          {pending ? (
-            <ActivityPulse />
-          ) : (
-            <SettledMarker
-              isError={call.isError === true}
-              external={external}
-            />
-          )}
+          <ToolMarker
+            call={call}
+            pending={pending}
+            isError={call.isError === true}
+            external={external}
+            {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
+          />
         </span>
         <span
           className={cn(
@@ -412,6 +444,7 @@ function ToolRows({
   formatResult,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   onRespond,
   onAction,
 }: Pick<
@@ -421,6 +454,7 @@ function ToolRows({
   | "formatResult"
   | "isQuietTool"
   | "isExternalTool"
+  | "renderToolMarker"
   | "onRespond"
   | "onAction"
 >) {
@@ -436,6 +470,7 @@ function ToolRows({
           external={isExternalTool === undefined || isExternalTool(call.name)}
           suppressArgsSummary={formatSummary !== undefined}
           {...(formatResult !== undefined ? { formatResult } : {})}
+          {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
           {...(onRespond !== undefined ? { onRespond } : {})}
           {...(onAction !== undefined ? { onAction } : {})}
         />
@@ -499,6 +534,7 @@ export function ToolNarrative({
   summarizeCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   onRespond,
   onAction,
   className,
@@ -531,6 +567,7 @@ export function ToolNarrative({
       {...(formatResult !== undefined ? { formatResult } : {})}
       {...(isQuietTool !== undefined ? { isQuietTool } : {})}
       {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+      {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
       {...(onRespond !== undefined ? { onRespond } : {})}
       {...(onAction !== undefined ? { onAction } : {})}
     />

@@ -538,15 +538,38 @@ const INTERNAL_TOOL_PROVIDERS: ReadonlySet<string> = new Set([
  * ones plain.
  */
 export function isExternalIntegrationTool(name: string): boolean {
-  const llmProvider = /^([a-z0-9-]+)__/.exec(name)?.[1];
+  return integrationToolProviderKey(name) !== null;
+}
+
+/**
+ * Provider slug for brand-logo lookup on a tool call, or null when the call is
+ * workbench-internal or provider-less. Honors `load_tools` package args and both
+ * LLM (`attio__…`) and FQN (`…/exa:exa_search`) wire forms.
+ */
+export function integrationToolProviderKey(
+  name: string,
+  args?: Record<string, unknown>,
+): string | null {
+  const opKey = toolOperationKey(name);
+  if (opKey === "load_tools") {
+    const pkg = args?.package;
+    if (typeof pkg === "string" && pkg.trim() !== "") {
+      return pkg.trim().toLowerCase();
+    }
+    return null;
+  }
+
+  const llmProvider =
+    /^([a-z0-9-]+)__/.exec(name)?.[1] ??
+    /^([a-z0-9-]+)__/.exec(opKey)?.[1];
   if (llmProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(llmProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(llmProvider) ? null : llmProvider;
   }
   const rawProvider = /\/([a-z0-9-]+):/.exec(name)?.[1];
   if (rawProvider !== undefined) {
-    return !INTERNAL_TOOL_PROVIDERS.has(rawProvider);
+    return INTERNAL_TOOL_PROVIDERS.has(rawProvider) ? null : rawProvider;
   }
-  return false;
+  return null;
 }
 
 /**

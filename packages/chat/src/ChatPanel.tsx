@@ -82,6 +82,8 @@ export interface ChatPanelProps {
   isQuietTool?: ChatThreadProps["isQuietTool"];
   /** External integration tools get a bullet marker; internal tools render plain. */
   isExternalTool?: ChatThreadProps["isExternalTool"];
+  /** Optional provider brand mark for external tool rows. */
+  renderToolMarker?: ChatThreadProps["renderToolMarker"];
   className?: string;
   notice?: React.ReactNode;
   /**
@@ -139,6 +141,7 @@ export function ChatPanel({
   summarizeToolCalls,
   isQuietTool,
   isExternalTool,
+  renderToolMarker,
   className,
   notice,
   headerLeft,
@@ -238,6 +241,7 @@ export function ChatPanel({
         {...(summarizeToolCalls !== undefined ? { summarizeToolCalls } : {})}
         {...(isQuietTool !== undefined ? { isQuietTool } : {})}
         {...(isExternalTool !== undefined ? { isExternalTool } : {})}
+        {...(renderToolMarker !== undefined ? { renderToolMarker } : {})}
       />
 
       {quickReplies !== undefined &&
