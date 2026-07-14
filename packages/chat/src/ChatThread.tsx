@@ -8,7 +8,7 @@ import type { UIBlock, UIResponse } from "@workbench/blocks";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import { extractImageURLs } from "./url-image";
 import { UrlImageCard } from "./UrlImageCard";
-import { CHAT_THREAD_TURN_GAP } from "./messageRhythm";
+import { CHAT_META_TEXT, CHAT_THREAD_TURN_GAP } from "./messageRhythm";
 
 function byTimestamp(a: string, b: string): number {
   if (a < b) return -1;
@@ -236,7 +236,9 @@ export function ChatThread({
           ? { resolveAttachmentUrl }
           : {})}
         {...(isReasoningExpanded !== undefined ? { isReasoningExpanded } : {})}
-        {...(setReasoningExpanded !== undefined ? { setReasoningExpanded } : {})}
+        {...(setReasoningExpanded !== undefined
+          ? { setReasoningExpanded }
+          : {})}
       />
     );
   }
@@ -299,7 +301,12 @@ export function ChatThread({
           aria-live="polite"
           data-testid="busy-indicator"
         >
-          <span className="inline-flex items-center gap-1.5 rounded-input border border-border bg-bg px-3 py-1.5 text-xs text-text-3">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-input border border-border bg-bg px-3 py-1.5",
+              CHAT_META_TEXT,
+            )}
+          >
             <ActivityPulse />
             {busyLabel}
           </span>
