@@ -65,6 +65,7 @@ function makeRouter(overrides?: {
     slackUserId: string,
   ) => Promise<string | null>;
   resolveCredential?: (tenantId: string) => Promise<SlackCredential | null>;
+  resolveTenantForTeam?: (teamId: string) => Promise<string | null>;
 }) {
   const listMembers = async () => overrides?.members ?? [member];
   const memberResolver = createEmailMemberResolver({
@@ -82,6 +83,9 @@ function makeRouter(overrides?: {
       overrides?.isSourceEnabledForTenant ?? (async () => true),
     resolveCredential:
       overrides?.resolveCredential ?? (async () => FAKE_CREDENTIAL),
+    resolveTenantForTeam:
+      overrides?.resolveTenantForTeam ??
+      (async (teamId) => (teamId === "T0TEAM" ? TENANT : null)),
     memberResolver,
     dedupe: createSlackEventDedupe(),
   });
@@ -282,6 +286,140 @@ describe("mention routing + delivery", () => {
   });
 });
 
+describe("team_id → tenant routing (CL-3629)", () => {
+  test("an event from a mapped team routes to that team's tenant", async () => {
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-team-mapped",
+        text: `hey <@${SLACK_USER_ID}>`,
+      }),
+    );
+    const res = await makeRouter({
+      resolveTenantForTeam: async (teamId) =>
+        teamId === "T0TEAM" ? TENANT : null,
+    }).request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    expect((await mailboxRows()).rows.length).toBe(1);
+  });
+
+  test("an event from an unmapped team is dropped (200, no row)", async () => {
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-team-unmapped",
+        text: `hey <@${SLACK_USER_ID}>`,
+      }),
+    );
+    const res = await makeRouter({
+      resolveTenantForTeam: async () => null,
+    }).request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    expect((await mailboxRows()).rows.length).toBe(0);
+  });
+
+  test("two tenants with distinct team ids route independently", async () => {
+    const TENANT_B = "ten-slack-b";
+    const MEMBER_B = "prn-slack-b";
+    const memberB: InboxIntakeMember = {
+      tenantId: TENANT_B,
+      memberPrincipalId: MEMBER_B,
+      inboxAddress: `usr_slack_b@${DOMAIN}`,
+      tenantDomain: DOMAIN,
+      email: "person-b@corp.test",
+    };
+    await mergeMemberPreferences(db, TENANT_B, MEMBER_B, {
+      [inboxSourcePreferenceKey("slack")]: true,
+    });
+
+    const listMembers = async () => [member, memberB];
+    const memberResolver = createEmailMemberResolver({
+      listMembers,
+      lookupEmail: async (tenantId, slackUserId) => {
+        if (tenantId === TENANT && slackUserId === SLACK_USER_ID) return EMAIL;
+        if (tenantId === TENANT_B && slackUserId === "UBSLACK")
+          return "person-b@corp.test";
+        return null;
+      },
+    });
+    const router = createSlackWebhookRouter({
+      db,
+      signingSecret: SECRET,
+      listMembers,
+      isSourceEnabledForTenant: async () => true,
+      resolveCredential: async () => FAKE_CREDENTIAL,
+      resolveTenantForTeam: async (teamId) => {
+        if (teamId === "T0TEAM") return TENANT;
+        if (teamId === "T1TEAM") return TENANT_B;
+        return null;
+      },
+      memberResolver,
+      dedupe: createSlackEventDedupe(),
+    });
+
+    const bodyA = JSON.stringify({
+      type: "event_callback",
+      team_id: "T0TEAM",
+      event_id: "ev-multi-a",
+      event: {
+        type: "message",
+        channel: "C0GENERAL",
+        user: "U9OTHER",
+        text: `hey <@${SLACK_USER_ID}>`,
+        ts: "1700000001.000100",
+      },
+    });
+    const bodyB = JSON.stringify({
+      type: "event_callback",
+      team_id: "T1TEAM",
+      event_id: "ev-multi-b",
+      event: {
+        type: "message",
+        channel: "C1GENERAL",
+        user: "U9OTHER",
+        text: "hey <@UBSLACK>",
+        ts: "1700000002.000100",
+      },
+    });
+
+    const resA = await router.request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(bodyA),
+      body: bodyA,
+    });
+    const resB = await router.request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(bodyB),
+      body: bodyB,
+    });
+    expect(resA.status).toBe(200);
+    expect(resB.status).toBe(200);
+
+    const rowsA = await client.query<{ message_key: string }>(
+      `select message_key from principal_mailbox where principal_id = $1`,
+      [MEMBER],
+    );
+    const rowsB = await client.query<{ message_key: string }>(
+      `select message_key from principal_mailbox where principal_id = $1`,
+      [MEMBER_B],
+    );
+    expect(rowsA.rows.length).toBe(1);
+    expect(rowsB.rows.length).toBe(1);
+    expect(rowsA.rows[0]?.message_key).toBe(
+      "inbox:slack:T0TEAM:C0GENERAL:1700000001.000100",
+    );
+    expect(rowsB.rows[0]?.message_key).toBe(
+      "inbox:slack:T1TEAM:C1GENERAL:1700000002.000100",
+    );
+  });
+});
+
 describe("member-level inboxSource:slack gate (CL-3581)", () => {
   test("a member with the preference disabled has the mention dropped", async () => {
     await mergeMemberPreferences(db, TENANT, MEMBER, {
@@ -379,6 +517,8 @@ describe("channel_created auto-join", () => {
       listMembers,
       isSourceEnabledForTenant: async () => true,
       resolveCredential: async () => FAKE_CREDENTIAL,
+      resolveTenantForTeam: async (teamId) =>
+        teamId === "T0TEAM" ? TENANT : null,
       dedupe: createSlackEventDedupe(),
     });
     const body = JSON.stringify({

@@ -124,6 +124,27 @@ export async function fetchSlackUserEmail(
   return parsed.user?.profile?.email ?? null;
 }
 
+const SlackAuthTestResponse = type({
+  ok: "boolean",
+  "team_id?": "string",
+});
+
+/** Resolve the Slack workspace (team) id for a bot token via `auth.test`
+ * (CL-3629). Returns null when the response carries no `team_id` — callers
+ * treat that as "cannot record the mapping yet", never a hard failure. */
+export async function fetchSlackTeamId(
+  credential: SlackCredential,
+  signal: AbortSignal,
+): Promise<string | null> {
+  const data = await slackApiCall(credential, "auth.test", {}, signal);
+  const parsed = SlackAuthTestResponse(data);
+  if (parsed instanceof type.errors) {
+    log.warn("slack auth.test returned an unexpected shape");
+    return null;
+  }
+  return parsed.team_id ?? null;
+}
+
 const SlackChannel = type({
   id: "string",
   "name?": "string",

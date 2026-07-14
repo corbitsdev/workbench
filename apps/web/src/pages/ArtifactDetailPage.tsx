@@ -1,17 +1,29 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Archive, MessageSquare } from "lucide-react";
+import { Archive, Download, ExternalLink, MessageSquare } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ConfirmButton } from "@workbench/ui";
+import { type } from "arktype";
+import {
+  Badge,
+  type BadgeTone,
+  buttonVariants,
+  Button,
+  ConfirmButton,
+} from "@workbench/ui";
 import {
   ArtifactDetailShell,
   ArtifactMeta,
+  formatArtifactDate,
   visualForKind,
 } from "@workbench/artifact";
-import type { ArtifactStatus } from "@workbench/shared";
+import {
+  GammaPresentationContentSchema,
+  type ArtifactStatus,
+} from "@workbench/shared";
 import { useArchiveArtifact, useArtifact } from "@workbench/client/react";
 
 import { getMe } from "../lib/hub-api";
+import { buildApiUrl } from "../lib/api";
 import { clientOptions } from "../lib/client-options";
 import ArtifactBody from "../components/ArtifactBody";
 import { ErrorBoundary } from "../components/ErrorBoundary";
@@ -31,6 +43,65 @@ function artifactStatusLabel(status: ArtifactStatus): string {
     default:
       return "Draft";
   }
+}
+
+const STATUS_TONE: Record<ArtifactStatus, BadgeTone> = {
+  draft: "neutral",
+  approved: "positive",
+  rejected: "danger",
+};
+
+// Kinds whose content is a downloadable file served by the download route
+// (uploaded binaries and CSV exports). gamma_presentation is handled
+// separately below since it is only downloadable when a PDF was attached.
+const DOWNLOADABLE_ARTIFACT_KINDS = new Set(["image", "file", "csv-export"]);
+
+function hasUploadSource(source: unknown): boolean {
+  if (typeof source !== "object" || source === null) return false;
+  const upload = (source as Record<string, unknown>).upload;
+  return typeof upload === "object" && upload !== null;
+}
+
+// The Gamma deck URL lives in the artifact's JSON content, not on the row —
+// parse it via the shared schema (same one GammaPresentationBody uses) purely
+// to decide whether an "Open in Gamma" action belongs in the page header.
+// Never build or touch the download/embed URL logic itself.
+function resolveGammaUrl(kind: string, content: string): string | null {
+  if (kind !== "gamma_presentation") return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(content);
+  } catch {
+    return null;
+  }
+  const deck = GammaPresentationContentSchema(raw);
+  if (deck instanceof type.errors) return null;
+  try {
+    return new URL(deck.url).protocol === "https:" ? deck.url : null;
+  } catch {
+    return null;
+  }
+}
+
+function ArtifactSummaryHeader({
+  kindLabel,
+  status,
+  version,
+  createdAt,
+}: {
+  kindLabel: string | undefined;
+  status: ArtifactStatus;
+  version: number;
+  createdAt: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      {kindLabel && <span className="font-medium text-text">{kindLabel}</span>}
+      <Badge tone={STATUS_TONE[status]}>{artifactStatusLabel(status)}</Badge>
+      <span className="text-text-3">v{version}</span>
+      <span className="text-text-3">{formatArtifactDate(createdAt)}</span>
+    </div>
+  );
 }
 
 function CenteredNotice({ children }: { children: React.ReactNode }) {
@@ -89,8 +160,34 @@ export function ArtifactDetailPage() {
       meQuery.data?.isOwner === true ||
       (artifact.ownerPrincipalId !== null &&
         artifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
+    const canDownload =
+      DOWNLOADABLE_ARTIFACT_KINDS.has(artifact.kind) ||
+      (artifact.kind === "gamma_presentation" &&
+        hasUploadSource(artifact.source));
+    const gammaUrl = resolveGammaUrl(artifact.kind, artifact.content);
     return (
       <>
+        {canDownload && (
+          <a
+            href={buildApiUrl(`/artifacts/${artifact.id}/download`)}
+            download
+            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+          >
+            <Download size={14} aria-hidden />
+            Download
+          </a>
+        )}
+        {gammaUrl !== null && (
+          <a
+            href={gammaUrl}
+            target="_blank"
+            rel="noreferrer"
+            className={`${buttonVariants({ variant: "ghost", size: "sm" })} gap-1.5`}
+          >
+            <ExternalLink size={14} aria-hidden />
+            Open in Gamma
+          </a>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -176,22 +273,40 @@ export function ArtifactDetailPage() {
   const kindLabel = resolveKindLabel(artifact.kind);
   const accent = visualForKind(artifact.kind).fill;
 
+  // The metadata rail only ever holds real provenance (source session,
+  // related conversation/workflow, or a parent artifact); kind/version/status/
+  // date already live in the header above. When an artifact has none of that
+  // provenance, the rail is omitted entirely rather than rendering an empty
+  // column.
+  const hasProvenance =
+    artifact.sessionId !== null ||
+    artifact.sessionName !== null ||
+    artifact.sessionStatus !== null ||
+    artifact.parentId !== null;
+
   return (
     <ArtifactDetailShell
       accentClass={accent}
-      rail={
-        <ArtifactMeta
+      header={
+        <ArtifactSummaryHeader
           kindLabel={kindLabel}
+          status={artifact.status}
           version={artifact.version}
-          statusLabel={artifactStatusLabel(artifact.status)}
           createdAt={artifact.createdAt}
-          sessionId={artifact.sessionId}
-          sessionName={artifact.sessionName}
-          sessionStatus={artifact.sessionStatus}
-          parentId={artifact.parentId}
-          onOpenSession={handleOpenSession}
-          onOpenParent={handleOpenParent}
         />
+      }
+      rail={
+        hasProvenance ? (
+          <ArtifactMeta
+            createdAt={null}
+            sessionId={artifact.sessionId}
+            sessionName={artifact.sessionName}
+            sessionStatus={artifact.sessionStatus}
+            parentId={artifact.parentId}
+            onOpenSession={handleOpenSession}
+            onOpenParent={handleOpenParent}
+          />
+        ) : null
       }
     >
       <ErrorBoundary>

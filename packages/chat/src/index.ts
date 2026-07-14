@@ -58,6 +58,14 @@ export {
 } from "@workbench/blocks";
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
+export { ActivityBlock, type ActivityBlockProps } from "./ActivityBlock";
+export {
+  splitReasoningSteps,
+  toSingleLine,
+  isLowSignalReasoning,
+  dedupeReasoningSteps,
+  rollingReasoningLabel,
+} from "./reasoning-summary";
 export {
   readReasoningExpanded,
   readReasoningExpandedForDisplay,

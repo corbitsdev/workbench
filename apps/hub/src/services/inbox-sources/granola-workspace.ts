@@ -6,11 +6,7 @@ import type {
   InboxSourceTickResult,
   WorkspaceInboxSourceContext,
 } from "../inbox-source-registry";
-import {
-  GranolaCallSchema,
-  type GranolaCall,
-  type GranolaCallPipeline,
-} from "../granola-call-pipeline";
+import type { GranolaCallJobQueue } from "../granola-call-job-queue";
 
 /**
  * The registry key for the Granola workspace poller. It doubles as the tenant
@@ -45,16 +41,6 @@ const NoteListResponse = type({
  * single tick from running unbounded against a very large backlog. */
 const MAX_PAGES_PER_TICK = 4;
 
-const TranscriptItem = type({ "text?": "string" });
-const FullNote = type({
-  id: "string",
-  "title?": "string | null",
-  "created_at?": "string",
-  "summary?": "string",
-  "participants?": "string[]",
-  "transcript?": TranscriptItem.array(),
-});
-
 type StringTool = Extract<AgentTool, { kind: "string" }>;
 
 function findTool(tools: AgentTool[], name: string): StringTool {
@@ -77,34 +63,6 @@ async function callTool(
   return JSON.parse(result);
 }
 
-function transcriptText(
-  transcript: { text?: string }[] | undefined,
-): string | undefined {
-  if (!transcript || transcript.length === 0) return undefined;
-  const text = transcript
-    .map((t) => t.text ?? "")
-    .filter((t) => t !== "")
-    .join("\n");
-  return text === "" ? undefined : text;
-}
-
-function toGranolaCall(note: typeof FullNote.infer): GranolaCall {
-  const call: GranolaCall = { id: note.id };
-  if (note.title !== undefined) call.title = note.title;
-  if (note.summary !== undefined) call.summary = note.summary;
-  if (note.participants !== undefined) call.participants = note.participants;
-  if (note.created_at !== undefined) call.createdAt = note.created_at;
-  const text = transcriptText(note.transcript);
-  if (text !== undefined) call.transcript = text;
-  const parsed = GranolaCallSchema(call);
-  if (parsed instanceof type.errors) {
-    throw new Error(
-      `granola workspace source: constructed call failed validation: ${parsed.summary}`,
-    );
-  }
-  return parsed;
-}
-
 /** The newest `created_at` among `notes`, or `undefined` when none carry one
  * — the forward-progress marker for a full/truncated page. */
 function maxCreatedAt(
@@ -122,14 +80,13 @@ function maxCreatedAt(
 
 async function handleWorkspaceTick(
   ctx: WorkspaceInboxSourceContext,
-  pipeline: GranolaCallPipeline,
+  queue: GranolaCallJobQueue,
 ): Promise<InboxSourceTickResult | undefined> {
   const tools = createGranolaTools({
     apiKey: ctx.credential.apiKey,
     ...(ctx.credential.baseURL ? { baseUrl: ctx.credential.baseURL } : {}),
   });
   const listTool = findTool(tools, "granola_list_notes");
-  const getTool = findTool(tools, "granola_get_note");
 
   // Bound the fetch by the later of the tick lookback and any host cursor.
   const since =
@@ -163,31 +120,13 @@ async function handleWorkspaceTick(
 
     for (const summaryNote of list.notes) {
       if (ctx.signal.aborted) return;
-      // Fetch the full note (transcript) before handing to the pipeline. The
-      // pipeline is idempotent per call (an already-processed note short-circuits
-      // on its persisted artifact), so re-listing the same note is cheap and safe.
-      const fullRaw = await callTool(
-        getTool,
-        { noteId: summaryNote.id },
-        ctx.signal,
-      );
-      const fullNote = FullNote(fullRaw);
-      if (fullNote instanceof type.errors) {
-        ctx.log.error("granola workspace source: bad note response; skipping", {
-          noteId: summaryNote.id,
-          error: new Error(fullNote.summary),
-        });
-        continue;
-      }
-      const call = toGranolaCall(fullNote);
-      const result = await pipeline.processCall({
-        tenantId: ctx.tenantId,
-        note: call,
-        signal: ctx.signal,
-      });
-      ctx.log.info("granola workspace source: processed {noteId} -> {status}", {
-        noteId: call.id,
-        status: result.status,
+      // Enqueue only — no transcript fetch, no LLM turn on the tick. The
+      // job-queue's (tenant, note) unique constraint is the enqueue-dedupe
+      // backstop; the job runner (off-tick) does the transcript fetch +
+      // reasoning turn + artifact persistence (CL-3627).
+      await queue.enqueue(ctx.tenantId, summaryNote.id);
+      ctx.log.info("granola workspace source: enqueued {noteId}", {
+        noteId: summaryNote.id,
       });
       processedNotes.push(summaryNote);
     }
@@ -211,20 +150,22 @@ async function handleWorkspaceTick(
     // instead of pinning at `since` — guarantees forward progress through a
     // sustained backlog (>= perSourceLimit new notes every tick) rather than
     // re-issuing the identical query forever. Absent any created_at, fall
-    // back to the unchanged floor and rely on the pipeline's per-note
-    // artifact dedupe to absorb the re-fetched overlap.
+    // back to the unchanged floor and rely on the job queue's per-note
+    // dedupe to absorb the re-fetched overlap.
     return { nextCursor: maxCreatedAt(processedNotes) ?? since };
   }
   return undefined;
 }
 
 /**
- * The Granola workspace inbox source (CL-3578). Workspace-scoped: runs once per
- * tenant per intake tick, gated by the owner-level `inbox-source:granola`
- * enablement (default OFF) and a tenant-owned Granola credential. Lists notes
- * created since the tick cutoff, dedupes on the external note id (persistently
- * — the pipeline's per-call artifact IS the dedupe record, so it survives
- * restarts), and hands each genuinely-new call to the call pipeline.
+ * The Granola workspace inbox source (CL-3578, off-tick pipeline CL-3627).
+ * Workspace-scoped: runs once per tenant per intake tick, gated by the
+ * owner-level `inbox-source:granola` enablement (default OFF) and a
+ * tenant-owned Granola credential. Lists notes created since the tick cutoff
+ * and enqueues each genuinely-new call onto the job queue — no transcript
+ * fetch, no LLM turn on the tick. A separate off-tick runner
+ * (`granola-call-job-runner.ts`) drains the queue and hands each call to the
+ * call pipeline.
  *
  * WEBHOOKS: Granola's public API (public-api.granola.ai/v1) exposes no
  * webhook/push subscription — notes are only retrievable by polling
@@ -232,14 +173,14 @@ async function handleWorkspaceTick(
  * infrastructure is built (or possible) today.
  */
 export function createGranolaWorkspaceInboxSource(deps: {
-  pipeline: GranolaCallPipeline;
+  queue: GranolaCallJobQueue;
 }): InboxSourceRegistryEntry {
   return {
     key: GRANOLA_WORKSPACE_SOURCE_KEY,
     scope: "workspace",
     handle: async (ctx) => {
       if (ctx.scope !== "workspace") return;
-      return handleWorkspaceTick(ctx, deps.pipeline);
+      return handleWorkspaceTick(ctx, deps.queue);
     },
   };
 }

@@ -48,6 +48,18 @@ export interface MentionCandidate {
 // whitespace in the query keeps this from matching across word boundaries.
 const MENTION_TRIGGER = /@([^\s@]*)$/;
 
+/**
+ * A draft submitted while a turn is in flight (CL-2988). Held here — not
+ * dispatched — until the turn completes, then auto-sent in FIFO order. The
+ * composer never blocks typing or attaching while a turn runs; only the
+ * queued item's own send is deferred.
+ */
+interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments?: PendingAttachment[];
+}
+
 function filesFromClipboard(data: DataTransfer | null): File[] {
   if (data === null) return [];
   const fromList = Array.from(data.files);
@@ -92,8 +104,14 @@ export interface ChatInputProps {
    */
   onAbort?: () => void | Promise<void>;
   placeholder?: string;
+  /** Session-level hard block (e.g. loading/provisioning/fatal) — disables typing and attaching entirely. */
   disabled?: boolean;
-  /** When true the agent is processing; submission is blocked and a visual indicator is shown. */
+  /**
+   * When true the agent is processing a turn. The composer stays fully
+   * editable (CL-2988): a submit while busy queues the draft instead of
+   * dispatching it, and the queued message auto-sends once `busy` goes back
+   * to false. A visual indicator (spinner / stop control) is still shown.
+   */
   busy?: boolean;
   className?: string;
   /**
@@ -145,6 +163,8 @@ export function ChatInput({
   const [dragActive, setDragActive] = useState(false);
   const [sending, setSending] = useState(false);
   const [aborting, setAborting] = useState(false);
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  const wasBusyRef = useRef(busy === true);
   const [mentionState, setMentionState] = useState<{
     start: number;
     query: string;
@@ -207,7 +227,14 @@ export function ChatInput({
     [mentionCandidates],
   );
 
-  const isBlocked = disabled === true || busy === true || sending;
+  // Only a genuinely unusable session (loading, provisioning, fatal, etc.)
+  // blocks the textarea and attachment affordances. A turn in flight (`busy`)
+  // no longer locks the composer (CL-2988) — the user keeps drafting and,
+  // on submit, the draft is queued instead of dispatched (see `submit`).
+  const hardBlocked = disabled === true;
+  // Guards the actual dispatch: a session-level disable, or a prior
+  // non-queued send whose promise has not yet settled.
+  const isBlocked = hardBlocked || sending;
   const showBusy = busy === true || sending;
   // While the agent works, the send control becomes a stop control (only the
   // host-signalled `busy` counts — a local optimistic `sending` has nothing
@@ -259,33 +286,104 @@ export function ChatInput({
     setMentionState(null);
   };
 
+  // Dispatches one message through the host's onSend, handling the
+  // promise/void contract the same way whether it came straight from the
+  // draft or was popped off the queue (CL-2988).
+  const dispatch = useCallback(
+    (text: string, attachments: PendingAttachment[] | undefined) => {
+      const result = onSend(text, attachments);
+      if (result instanceof Promise) {
+        setSending(true);
+        setErrors([]);
+        result.then(
+          () => {
+            setSending(false);
+            clearComposer();
+          },
+          (err: unknown) => {
+            setSending(false);
+            setErrors([
+              err instanceof Error ? err.message : "Could not send. Try again.",
+            ]);
+          },
+        );
+        return;
+      }
+      clearComposer();
+    },
+    [onSend],
+  );
+
   const submit = useCallback(() => {
     const text = draftRef.current.trim();
-    if (disabled === true || busy === true || sending) return;
+    if (disabled === true) return;
     if (text.length === 0 && pending.length === 0) return;
     const attachments = pending.length > 0 ? pending : undefined;
-    const result = onSend(text, attachments);
-    // When the host returns a promise (attachment send), keep the pending files
-    // until it resolves so a failed send preserves the composer and shows why.
-    if (result instanceof Promise) {
-      setSending(true);
-      setErrors([]);
-      result.then(
-        () => {
-          setSending(false);
-          clearComposer();
-        },
-        (err: unknown) => {
-          setSending(false);
-          setErrors([
-            err instanceof Error ? err.message : "Could not send. Try again.",
-          ]);
-        },
-      );
+    // A turn is in flight: the composer stays editable, but the draft is
+    // held and auto-sent once the turn completes (CL-2988) rather than
+    // dispatched now — only double-submission of the same draft is guarded,
+    // not typing/attaching while busy.
+    if (busy === true) {
+      const queued: QueuedMessage =
+        attachments !== undefined
+          ? { id: crypto.randomUUID(), text, attachments }
+          : { id: crypto.randomUUID(), text };
+      setQueue((prev) => [...prev, queued]);
+      clearComposer();
       return;
     }
-    clearComposer();
-  }, [busy, disabled, onSend, pending, sending]);
+    if (sending) return;
+    dispatch(text, attachments);
+  }, [busy, dispatch, disabled, pending, sending]);
+
+  // Auto-send the oldest queued message the moment the turn that was running
+  // when it was queued completes (busy: true -> false). A queue built up
+  // during one long turn drains one message per subsequent turn, which
+  // matches the "at least one queued message" requirement; multiple queued
+  // messages are amortized without ever double-dispatching. Held (not
+  // auto-sent) if the composer is now hard-disabled — e.g. the session
+  // itself went unusable — so the user must confirm from a working composer
+  // rather than dispatching into a session that cannot accept it.
+  useEffect(() => {
+    const wasBusy = wasBusyRef.current;
+    wasBusyRef.current = busy === true;
+    if (!wasBusy || busy === true) return;
+    if (disabled === true) return;
+    setQueue((prev) => {
+      if (prev.length === 0) return prev;
+      const [next, ...rest] = prev;
+      if (next === undefined) return prev;
+      const result = onSend(next.text, next.attachments);
+      if (result instanceof Promise) {
+        result.catch((err: unknown) => {
+          setErrors((prevErrors) => [
+            ...prevErrors,
+            err instanceof Error
+              ? err.message
+              : "Could not send the queued message. Try again.",
+          ]);
+          // Never drop the text: put the failed queued message back so the
+          // user can retry or edit it from the queue chip.
+          setQueue((prevQueue) => [next, ...prevQueue]);
+        });
+      }
+      return rest;
+    });
+  }, [busy, disabled, onSend]);
+
+  const editQueued = useCallback((id: string) => {
+    setQueue((prev) => {
+      const target = prev.find((item) => item.id === id);
+      if (target === undefined) return prev;
+      setDraft(target.text);
+      setPending(target.attachments ?? []);
+      return prev.filter((item) => item.id !== id);
+    });
+  }, []);
+
+  const cancelQueued = useCallback((id: string) => {
+    setQueue((prev) => prev.filter((item) => item.id !== id));
+  }, []);
 
   const voice = useComposerVoiceDictation({
     enabled: voiceInput === true,
@@ -371,7 +469,7 @@ export function ChatInput({
   };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (!attachmentsEnabled || isBlocked) return;
+    if (!attachmentsEnabled || hardBlocked) return;
     // Only light up for an actual file drag — dragging selected text or a link
     // must not promise a drop the composer will then silently ignore.
     if (!Array.from(event.dataTransfer.types).includes("Files")) return;
@@ -388,7 +486,7 @@ export function ChatInput({
   };
 
   const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    if (!attachmentsEnabled || isBlocked) {
+    if (!attachmentsEnabled || hardBlocked) {
       requestAnimationFrame(adjustHeight);
       return;
     }
@@ -413,6 +511,19 @@ export function ChatInput({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {queue.length > 0 && (
+        <div className={cn("mb-2 space-y-1.5", rowWidth)}>
+          {queue.map((item) => (
+            <QueuedMessageChip
+              key={item.id}
+              item={item}
+              onEdit={() => editQueued(item.id)}
+              onCancel={() => cancelQueued(item.id)}
+            />
+          ))}
+        </div>
+      )}
+
       {pending.length > 0 && (
         <div
           className={cn(
@@ -542,7 +653,7 @@ export function ChatInput({
               <MenuTrigger
                 type="button"
                 aria-label="Add files"
-                disabled={isBlocked}
+                disabled={hardBlocked}
                 className={cn(
                   CIRCLE_BUTTON,
                   "border border-border text-text-2 transition-colors hover:bg-surface-2 hover:text-text disabled:opacity-50",
@@ -569,7 +680,7 @@ export function ChatInput({
           aria-label="Message"
           rows={1}
           value={draft}
-          disabled={isBlocked}
+          disabled={hardBlocked}
           placeholder={placeholder ?? "Message…"}
           onChange={(event) => {
             setDraft(event.target.value);
@@ -630,6 +741,50 @@ export function ChatInput({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function QueuedMessageChip({
+  item,
+  onEdit,
+  onCancel,
+}: {
+  item: QueuedMessage;
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const preview = item.text.length > 0 ? item.text : "Attachment only";
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-text">
+      <span className="shrink-0 rounded-full bg-orange/15 px-2 py-0.5 text-orange">
+        Queued
+      </span>
+      <span className="min-w-0 flex-1 truncate" title={item.text}>
+        {preview}
+        {item.attachments !== undefined && item.attachments.length > 0 && (
+          <span className="text-text-3">
+            {" "}
+            · {item.attachments.length} attachment
+            {item.attachments.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </span>
+      <button
+        type="button"
+        onClick={onEdit}
+        className="shrink-0 rounded-md px-2 py-0.5 text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+      >
+        Edit
+      </button>
+      <button
+        type="button"
+        aria-label="Cancel queued message"
+        onClick={onCancel}
+        className="shrink-0 rounded-md px-2 py-0.5 text-text-2 hover:bg-surface-2 hover:text-text cursor-pointer"
+      >
+        Cancel
+      </button>
     </div>
   );
 }
