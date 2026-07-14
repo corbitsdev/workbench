@@ -91,22 +91,25 @@ export function ArtifactDetailPage() {
         artifact.ownerPrincipalId === (activeWorkbench?.id ?? null));
     return (
       <>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() =>
             openWithMessage(
               buildArtifactMessage(artifact, activeTenantId ?? undefined),
             )
           }
-          className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 text-xs font-medium text-text-2 transition-colors hover:bg-page hover:text-text"
+          className="gap-1.5"
         >
           <MessageSquare size={14} aria-hidden />
           Chat about this
-        </button>
+        </Button>
         {canArchive && (
           <>
             {archiveMutation.isError && (
-              <span className="text-xs text-red">Couldn&apos;t archive</span>
+              <span className="text-xs text-red">
+                Couldn&apos;t archive — try again
+              </span>
             )}
             <ConfirmButton
               variant="ghost"
@@ -119,7 +122,7 @@ export function ArtifactDetailPage() {
                   { onSuccess: () => navigate("/artifacts") },
                 )
               }
-              className="inline-flex items-center gap-1.5"
+              className="gap-1.5"
             >
               <Archive size={14} />
               {archiveMutation.isPending ? "Archiving…" : "Archive"}
@@ -128,13 +131,20 @@ export function ArtifactDetailPage() {
         )}
       </>
     );
+    // Depend on stable/primitive fields only. The full `archiveMutation` and
+    // `meQuery.data` objects get fresh identities each render; using them here
+    // regenerated the chrome node every render, and useSetPageChrome's effect
+    // re-published it in a loop ("Maximum update depth exceeded").
   }, [
     artifact,
     activeTenantId,
     openWithMessage,
-    meQuery.data,
-    activeWorkbench,
-    archiveMutation,
+    meQuery.data?.isAdmin,
+    meQuery.data?.isOwner,
+    activeWorkbench?.id,
+    archiveMutation.mutate,
+    archiveMutation.isPending,
+    archiveMutation.isError,
     navigate,
   ]);
 
