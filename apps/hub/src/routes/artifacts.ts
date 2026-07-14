@@ -34,6 +34,7 @@ import { getRequestedUserContext } from "../lib/user-context";
 import { isAdmin } from "../lib/admin-grant";
 import { resolveOwnerMemberPrincipalId } from "../lib/artifact-tools";
 import { canActOnSkillDraft } from "../services/skill-library";
+import { attachArtifactSessionEnrichment } from "../lib/artifact-session-enrichment";
 import { artifactOrigins, type ArtifactSource } from "@workbench/shared";
 
 const artifactOriginSet: ReadonlySet<string> = new Set(artifactOrigins);
@@ -284,9 +285,8 @@ async function attachOwnerNames(
  *
  * Artifacts are tenant-scoped: every artifact (agent-written or workflow-written)
  * carries `tenantId`, so listing by the caller's resolved tenant returns the full
- * workbench set. `sessionName`/`sessionStatus` are left null — the pre-M6 workflow
- * display enrichment depended on the deleted workflow registry and is not part of
- * restoring the gallery.
+ * workbench set. List/detail responses enrich `sessionId`, `sessionName`, and
+ * `sessionStatus` from artifact provenance via `workflow_run_record` and deploy meta.
  */
 export function createArtifactsRouter(
   db: HubDb,
@@ -378,6 +378,7 @@ export function createArtifactsRouter(
       ownerName: null as string | null,
     };
     await attachOwnerNames(db, userContext.tenantId, [row]);
+    await attachArtifactSessionEnrichment(db, userContext.tenantId, [row]);
     return c.json({ artifact: row });
   }
 
@@ -642,6 +643,7 @@ export function createArtifactsRouter(
     }));
 
     await attachOwnerNames(db, userContext.tenantId, rows);
+    await attachArtifactSessionEnrichment(db, userContext.tenantId, rows);
 
     return c.json({ artifacts: rows, nextCursor });
   });
@@ -689,6 +691,7 @@ export function createArtifactsRouter(
       ownerName: null as string | null,
     };
     await attachOwnerNames(db, userContext.tenantId, [row]);
+    await attachArtifactSessionEnrichment(db, userContext.tenantId, [row]);
 
     return c.json({ artifact: row });
   });
