@@ -6,9 +6,13 @@ import type { ToolCall } from "./types";
 import { ToolNarrative, type ToolNarrativeProps } from "./ToolNarrative";
 import { rollingReasoningLabel } from "./reasoning-summary";
 import {
+  CHAT_ACTIVITY_STACK,
   CHAT_MARKER_SLOT,
+  CHAT_RESPONSE_STACK,
   CHAT_TRACE_DETAIL_PANEL,
+  CHAT_TRACE_INLINE_GAP,
   CHAT_TRACE_LABEL,
+  CHAT_TRACE_MARKER_ALIGN,
   CHAT_TRACE_MUTED_BODY,
   CHAT_TRACE_ROW,
 } from "./messageRhythm";
@@ -118,7 +122,7 @@ export function ActivityBlock({
   });
 
   return (
-    <div className="flex w-full flex-col gap-2" data-testid="activity-block">
+    <div className={CHAT_ACTIVITY_STACK} data-testid="activity-block">
       <button
         type="button"
         onClick={() => {
@@ -139,7 +143,8 @@ export function ActivityBlock({
       >
         <span
           className={cn(
-            "mt-0.5 flex items-center justify-center",
+            CHAT_TRACE_MARKER_ALIGN,
+            "flex items-center justify-center",
             CHAT_MARKER_SLOT,
           )}
         >
@@ -150,7 +155,12 @@ export function ActivityBlock({
             />
           ) : null}
         </span>
-        <span className="flex min-w-0 items-center gap-1.5 leading-snug">
+        <span
+          className={cn(
+            "flex min-w-0 items-center leading-snug",
+            CHAT_TRACE_INLINE_GAP,
+          )}
+        >
           <span
             className={cn("min-w-0 truncate", hasError && "text-red")}
             data-testid="activity-summary"
@@ -158,7 +168,10 @@ export function ActivityBlock({
             {summary}
           </span>
           {realCount > 0 && (
-            <span className="shrink-0 text-text-3/70" data-testid="activity-count">
+            <span
+              className="shrink-0 text-text-3/70"
+              data-testid="activity-count"
+            >
               · {realCount} {realCount === 1 ? "tool" : "tools"}
             </span>
           )}
@@ -172,9 +185,12 @@ export function ActivityBlock({
         </span>
       </button>
       <Reveal open={open} reduceMotion={reduceMotion === true}>
-        <div className="flex flex-col gap-3.5" data-testid="activity-detail">
+        <div className={CHAT_RESPONSE_STACK} data-testid="activity-detail">
           {hasReasoning && (
-            <div className={CHAT_TRACE_DETAIL_PANEL} data-testid="activity-reasoning">
+            <div
+              className={CHAT_TRACE_DETAIL_PANEL}
+              data-testid="activity-reasoning"
+            >
               <Markdown
                 mode={streaming ? "streaming" : "static"}
                 className={CHAT_TRACE_MUTED_BODY}

@@ -5,7 +5,7 @@ import { MessageBubble } from "./MessageBubble";
 import { ActivityBlock } from "./ActivityBlock";
 import { type ToolNarrativeProps } from "./ToolNarrative";
 import { MessageFeedback } from "./MessageFeedback";
-import { CHAT_TURN_STACK } from "./messageRhythm";
+import { CHAT_META_TEXT, CHAT_TURN_STACK } from "./messageRhythm";
 import type { FeedbackSubjectKind } from "./feedback-types";
 import type { UIBlock, UIResponse } from "@workbench/blocks";
 
@@ -86,7 +86,7 @@ export function AgentTurn({
       data-testid="agent-turn"
     >
       {senderLabel !== undefined && senderLabel !== "" && (
-        <span className="text-xs text-text-3">From: {senderLabel}</span>
+        <span className={CHAT_META_TEXT}>From: {senderLabel}</span>
       )}
       {(hasReasoning || hasTools) && (
         <ActivityBlock
