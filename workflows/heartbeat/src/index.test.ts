@@ -74,6 +74,7 @@ const TRIGGER_PAYLOAD = {
   userRefId: "usr_abc123",
   userDisplayName: "Jordan Lee",
   createdAfter: "2026-07-04T00:00:00Z",
+  runId: "run-heartbeat-1",
 };
 
 describe("heartbeat native workflow", () => {
@@ -300,9 +301,11 @@ describe("heartbeat native workflow", () => {
   // -------------------------------------------------------------------------
   // Mail addressing argMap
   // -------------------------------------------------------------------------
-  test("mail-refs argMap builds artifact refs from the persisted brief id", () => {
+  test("mail-refs argMap builds artifact and workflow_run refs from persist + trigger runId", () => {
     expect(argMapOf("mail-refs")).toEqual({
       artifactId: { from: "artifactId" },
+      runId: { from: "runId" },
+      workflowLabel: { literal: "Company Heartbeat" },
     });
     expect(stepPrimitive("mail-refs").after).toEqual(["persist"]);
   });
@@ -373,7 +376,14 @@ describe("heartbeat native workflow", () => {
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
       "heartbeat-mail-refs": {
         content: {
-          refs: [{ kind: "artifact", ref: "art_1", label: "Open brief" }],
+          refs: [
+            { kind: "artifact", ref: "art_1", label: "Open brief" },
+            {
+              kind: "workflow_run",
+              ref: "run-heartbeat-1",
+              label: "Open Company Heartbeat",
+            },
+          ],
         },
       },
       "heartbeat-notify": { messageId: "mail_1" },
@@ -439,7 +449,14 @@ describe("heartbeat native workflow", () => {
       "heartbeat-persist": { artifactId: "art_1", version: 1 },
       "heartbeat-mail-refs": {
         content: {
-          refs: [{ kind: "artifact", ref: "art_1", label: "Open brief" }],
+          refs: [
+            { kind: "artifact", ref: "art_1", label: "Open brief" },
+            {
+              kind: "workflow_run",
+              ref: "run-heartbeat-1",
+              label: "Open Company Heartbeat",
+            },
+          ],
         },
       },
       "heartbeat-notify": { messageId: "mail_1" },
@@ -464,6 +481,11 @@ describe("heartbeat native workflow", () => {
     expect(mailArgs.content).toBe(briefReply);
     expect(mailArgs.refs).toEqual([
       { kind: "artifact", ref: "art_1", label: "Open brief" },
+      {
+        kind: "workflow_run",
+        ref: "run-heartbeat-1",
+        label: "Open Company Heartbeat",
+      },
     ]);
 
     const persistInput = ran.find((r) => r.id === "heartbeat-persist")

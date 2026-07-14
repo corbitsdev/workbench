@@ -152,9 +152,16 @@ export const workflow = defineWorkflow({
       id: "heartbeat-mail-refs",
       title: "Link saved brief in mail",
       tool: "heartbeat_format_brief_mail_refs",
-      input: { from: "steps.persist.output" },
+      input: {
+        merge: [
+          { from: "trigger.payload" },
+          { from: "steps.persist.output" },
+        ],
+      },
       argMap: {
         artifactId: { from: "artifactId" },
+        runId: { from: "runId" },
+        workflowLabel: { literal: label },
       },
       after: ["persist"],
     }),

@@ -275,13 +275,20 @@
           "tags": {
             "workbench.stepKind": "deterministic-tool",
             "workbench.tool": "heartbeat_format_brief_mail_refs",
-            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"}}",
+            "workbench.argMap": "{\"artifactId\":{\"from\":\"artifactId\"},\"runId\":{\"from\":\"runId\"},\"workflowLabel\":{\"literal\":\"Company Heartbeat\"}}",
             "workbench.title": "Link saved brief in mail"
           }
         },
         "drainBehavior": "cancel",
         "input": {
-          "from": "steps.persist.output"
+          "merge": [
+            {
+              "from": "trigger.payload"
+            },
+            {
+              "from": "steps.persist.output"
+            }
+          ]
         },
         "after": [
           "persist"

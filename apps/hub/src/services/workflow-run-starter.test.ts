@@ -110,7 +110,8 @@ describe("createWorkflowRunStarter", () => {
 
     expect(result.ok).toBe(true);
     expect(result).toMatchObject({ ok: true, deploymentId: "dep-child" });
-    if (result.ok) expect(typeof result.runId).toBe("string");
+    if (!result.ok) throw new Error("expected ok result");
+    expect(typeof result.runId).toBe("string");
     expect(sent).toHaveLength(1);
     expect(sent[0]?.agentAddress).toBe(
       deriveDeploymentAddress({
@@ -118,7 +119,9 @@ describe("createWorkflowRunStarter", () => {
         deploymentDomain: DOMAIN,
       }),
     );
-    expect(sent[0]?.content).toBe(JSON.stringify(input));
+    expect(sent[0]?.content).toBe(
+      JSON.stringify({ ...input, runId: result.runId }),
+    );
     expect(sent[0]?.tenantId).toBe("t-child");
     expect(sent[0]?.from).toBe(`hub@${DOMAIN}`);
     expect(db.inserted).toHaveLength(1);

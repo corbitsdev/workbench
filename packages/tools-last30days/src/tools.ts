@@ -111,10 +111,19 @@ export const HEARTBEAT_FORMAT_BRIEF_MAIL_REFS_DEFINITION: ToolDefinition = {
     properties: {
       artifactId: {
         type: "string",
-        description: "Persisted morning-brief artifact id from heartbeat_persist_mail.",
+        description: "Persisted morning-brief artifact id from write_artifact.",
+      },
+      runId: {
+        type: "string",
+        description:
+          "Workflow run id from the hub trigger payload (same as mail messageId).",
+      },
+      workflowLabel: {
+        type: "string",
+        description: "Display label for the workflow_run ref (defaults to Company Heartbeat).",
       },
     },
-    required: ["artifactId"],
+    required: ["artifactId", "runId"],
   },
 };
 
@@ -673,6 +682,11 @@ function createHeartbeatFormatBriefMailRefsTool(): AgentTool {
     handler: async (call) => {
       const args = coerceArgsObject(call.arguments);
       const artifactId = args.artifactId;
+      const runId = args.runId;
+      const workflowLabel =
+        typeof args.workflowLabel === "string"
+          ? args.workflowLabel
+          : undefined;
       if (typeof artifactId !== "string" || artifactId.trim().length === 0) {
         return {
           callId: call.id,
@@ -680,8 +694,15 @@ function createHeartbeatFormatBriefMailRefsTool(): AgentTool {
           content: "artifactId is required",
         };
       }
+      if (typeof runId !== "string" || runId.trim().length === 0) {
+        return {
+          callId: call.id,
+          isError: true,
+          content: "runId is required",
+        };
+      }
       try {
-        const refs = morningBriefMailRefs(artifactId);
+        const refs = morningBriefMailRefs(artifactId, runId, workflowLabel);
         return { callId: call.id, content: { refs } };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
