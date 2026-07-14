@@ -23,6 +23,10 @@ export {
 } from "./ui-block";
 export { UIBlockView, type UIBlockViewProps } from "./UIBlockView";
 export {
+  UI_BLOCK_KIND_INVENTORY,
+  type UIBlockKindInventoryEntry,
+} from "./myra-ui-catalog";
+export {
   pendingGateForRun,
   routeConversationSignal,
   type GateStepInput,
