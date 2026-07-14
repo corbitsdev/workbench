@@ -18,13 +18,22 @@ mock.module("../hooks/use-tasks", () => ({
 }));
 
 import { AppTopBar } from "./AppTopBar";
-import { PageChromeProvider, useSetPageChrome } from "../lib/page-chrome";
+import {
+  PageChromeProvider,
+  useSetPageChrome,
+  useSetPageChromeLeading,
+} from "../lib/page-chrome";
 import { ActiveContextProvider } from "../lib/active-context-store";
 
 afterEach(cleanup);
 
 function PageChromeSetter({ node }: { node: React.ReactNode }) {
   useSetPageChrome(node);
+  return null;
+}
+
+function PageLeadingSetter({ node }: { node: React.ReactNode }) {
+  useSetPageChromeLeading(node);
   return null;
 }
 
@@ -60,6 +69,38 @@ describe("AppTopBar", () => {
   it("renders the notifications bell when no page chrome is set", () => {
     renderTopBar(null);
     screen.getByLabelText("Notifications");
+  });
+
+  it("renders leading chrome in place of the context strip when set", () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/",
+          element: React.createElement(
+            ActiveContextProvider,
+            null,
+            React.createElement(
+              PageChromeProvider,
+              null,
+              React.createElement(PageLeadingSetter, {
+                node: React.createElement(
+                  "a",
+                  { href: "/artifacts" },
+                  "Back to Artifacts",
+                ),
+              }),
+              React.createElement(AppTopBar, { onOpenMenu: () => {} }),
+            ),
+          ),
+        },
+      ],
+      { initialEntries: ["/"] },
+    );
+    const view = render(React.createElement(RouterProvider, { router }));
+    const header = view.container.querySelector("header") as HTMLElement;
+    expect(
+      within(header).getAllByRole("link", { name: "Back to Artifacts" }).length,
+    ).toBeGreaterThan(0);
   });
 
   it("renders page-chrome content alongside the notifications bell in the same bar", () => {

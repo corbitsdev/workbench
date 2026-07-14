@@ -14,6 +14,7 @@ import React from "react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import {
   PageChromeProvider,
+  usePageChromeLeadingSlot,
   usePageChromeSlot,
 } from "../lib/page-chrome";
 
@@ -90,6 +91,15 @@ function ChromeSlot() {
   return React.createElement("div", { "data-testid": "page-chrome" }, chrome);
 }
 
+function LeadingSlot() {
+  const leading = usePageChromeLeadingSlot();
+  return React.createElement(
+    "div",
+    { "data-testid": "page-chrome-leading" },
+    leading,
+  );
+}
+
 function renderAt(id: string): RenderResult {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -98,31 +108,32 @@ function renderAt(id: string): RenderResult {
     React.createElement(
       PageChromeProvider,
       null,
-      React.createElement(ChromeSlot),
       React.createElement(
-      QueryClientProvider,
-      { client },
-      React.createElement(
-        MemoryRouter,
-        { initialEntries: [`/artifacts/${id}`] },
-        React.createElement(LocationProbe),
+        QueryClientProvider,
+        { client },
         React.createElement(
-          Routes,
-          null,
-          React.createElement(Route, {
-            path: "/artifacts/:artifactId",
-            element: React.createElement(ArtifactDetailPage),
-          }),
-          React.createElement(Route, {
-            path: "/artifacts",
-            element: React.createElement(
-              "div",
-              { "data-testid": "gallery-redirect" },
-              "gallery",
-            ),
-          }),
+          MemoryRouter,
+          { initialEntries: [`/artifacts/${id}`] },
+          React.createElement(LocationProbe),
+          React.createElement(ChromeSlot),
+          React.createElement(LeadingSlot),
+          React.createElement(
+            Routes,
+            null,
+            React.createElement(Route, {
+              path: "/artifacts/:artifactId",
+              element: React.createElement(ArtifactDetailPage),
+            }),
+            React.createElement(Route, {
+              path: "/artifacts",
+              element: React.createElement(
+                "div",
+                { "data-testid": "gallery-redirect" },
+                "gallery",
+              ),
+            }),
+          ),
         ),
-      ),
       ),
     ),
   );
@@ -157,10 +168,18 @@ describe("ArtifactDetailPage", () => {
     const view = renderAt("art-1");
     expect(view.getByTestId("body").textContent).toBe("Acme One-Pager");
     expect(view.getByTestId("artifact-detail-shell")).toBeDefined();
-    // The app top bar already names the artifact; the detail shell must not
-    // repeat it as a secondary <h1>/back-button header band.
+    // Wayfinding lives in the top bar (Back to Artifacts); the detail shell must
+    // not repeat the title as a secondary <h1> header band.
     expect(view.queryByRole("heading", { name: "Acme One-Pager" })).toBeNull();
-    expect(view.queryByRole("button", { name: /back to artifacts/i })).toBeNull();
+    const leading = view.getByTestId("page-chrome-leading");
+    expect(
+      within(leading).getByRole("link", { name: "Back to Artifacts" }),
+    ).toBeDefined();
+    expect(
+      within(leading)
+        .getByRole("link", { name: "Back to Artifacts" })
+        .getAttribute("href"),
+    ).toBe("/artifacts");
   });
 
   it("shows the kind, status, version, and date in the page header", () => {
@@ -225,13 +244,17 @@ describe("ArtifactDetailPage", () => {
     const view = renderAt("art-file");
     const chrome = view.getByTestId("page-chrome");
     const link = await within(chrome).findByRole("link", { name: /download/i });
-    expect(link.getAttribute("href")).toMatch(/\/artifacts\/art-file\/download$/);
+    expect(link.getAttribute("href")).toMatch(
+      /\/artifacts\/art-file\/download$/,
+    );
   });
 
   it("does not surface a Download action for a non-downloadable kind", () => {
     const view = renderAt("art-1");
     const chrome = view.getByTestId("page-chrome");
-    expect(within(chrome).queryByRole("link", { name: /download/i })).toBeNull();
+    expect(
+      within(chrome).queryByRole("link", { name: /download/i }),
+    ).toBeNull();
   });
 
   it("surfaces an Open in Gamma action for a gamma_presentation artifact with a valid deck", async () => {

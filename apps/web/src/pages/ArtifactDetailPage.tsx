@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { Archive, Download, ExternalLink, MessageSquare } from "lucide-react";
+import {
+  Archive,
+  ArrowLeft,
+  Download,
+  ExternalLink,
+  MessageSquare,
+} from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { type } from "arktype";
 import {
@@ -33,7 +39,7 @@ import { useActiveWorkbench } from "../lib/active-workbench-context";
 import { useChatLauncher } from "../lib/chat-launcher-context";
 import { buildArtifactMessage } from "../lib/artifact-chat-message";
 import { usePublishActiveContext } from "../lib/active-context-store";
-import { useSetPageChrome } from "../lib/page-chrome";
+import { useSetPageChrome, useSetPageChromeLeading } from "../lib/page-chrome";
 
 function artifactStatusLabel(status: ArtifactStatus): string {
   switch (status) {
@@ -248,7 +254,21 @@ export function ArtifactDetailPage() {
     navigate,
   ]);
 
+  const leadingChrome = useMemo(() => {
+    if (artifact === undefined) return null;
+    return (
+      <Link
+        to="/artifacts"
+        className="inline-flex items-center gap-1.5 text-sm text-text-2 transition-colors hover:text-text"
+      >
+        <ArrowLeft size={14} aria-hidden />
+        Back to Artifacts
+      </Link>
+    );
+  }, [artifact]);
+
   useSetPageChrome(pageChrome);
+  useSetPageChromeLeading(leadingChrome);
 
   if (isLoading) return <CenteredNotice>Loading artifact…</CenteredNotice>;
 
@@ -258,7 +278,7 @@ export function ArtifactDetailPage() {
         <div className="flex flex-col items-center gap-2">
           <span>This artifact couldn't be found.</span>
           <Link to="/artifacts" className="text-orange underline">
-            Back to artifacts
+            Back to Artifacts
           </Link>
         </div>
       </CenteredNotice>

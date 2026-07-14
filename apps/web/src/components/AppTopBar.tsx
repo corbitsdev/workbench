@@ -1,7 +1,16 @@
 import { Menu } from "lucide-react";
 import { AppContextStrip } from "./AppContextStrip";
 import { NotificationsBell } from "./layout/NotificationsBell";
-import { usePageChromeSlot } from "../lib/page-chrome";
+import {
+  usePageChromeLeadingSlot,
+  usePageChromeSlot,
+} from "../lib/page-chrome";
+
+function TopBarLeading() {
+  const leading = usePageChromeLeadingSlot();
+  if (leading) return <>{leading}</>;
+  return <AppContextStrip />;
+}
 
 export function AppTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pageChrome = usePageChromeSlot();
@@ -20,10 +29,10 @@ export function AppTopBar({ onOpenMenu }: { onOpenMenu: () => void }) {
         Workbench
       </span>
       <div className="hidden min-w-0 shrink-0 items-center gap-3 md:flex">
-        <AppContextStrip />
+        <TopBarLeading />
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:hidden">
-        <AppContextStrip />
+        <TopBarLeading />
       </div>
       {pageChrome ? (
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
