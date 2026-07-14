@@ -64,6 +64,15 @@ describe("ChatPanel", () => {
     expect(screen.getByText("Draft an email")).toBeDefined();
   });
 
+  it("uses bg-page on the panel shell so full-page chat matches the app canvas", () => {
+    const { container } = render(
+      <ChatPanel agent={agent} messages={messages} onSend={() => {}} />,
+    );
+    const shell = container.firstElementChild as HTMLElement;
+    expect(shell.className).toContain("bg-page");
+    expect(shell.className).not.toContain("bg-bg");
+  });
+
   it("fires onSend with the typed text and clears the input", async () => {
     const user = userEvent.setup();
     const onSend = mock((_text: string) => {});

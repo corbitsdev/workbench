@@ -165,7 +165,7 @@ export function ChatPanel({
   return (
     <div
       className={cn(
-        "flex h-full flex-col overflow-hidden bg-bg border-t transition-colors",
+        "flex h-full flex-col overflow-hidden bg-page border-t transition-colors",
         busy ? "border-orange" : "border-transparent",
         className,
       )}
@@ -265,7 +265,7 @@ export function ChatPanel({
         )}
 
       {inputAccessory !== undefined && inputAccessory !== null && (
-        <div className="bg-bg px-4 pb-1 sm:px-7">{inputAccessory}</div>
+        <div className="bg-page px-4 pb-1 sm:px-7">{inputAccessory}</div>
       )}
 
       <ChatInput
