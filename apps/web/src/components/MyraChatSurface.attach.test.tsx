@@ -8,6 +8,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { ActiveContext } from "@workbench/shared";
 import { MyraChatSurface } from "./MyraChatSurface";
 import type { MyraSession } from "../hooks/use-myra-session";
@@ -196,13 +197,16 @@ describe("MyraChatSurface clipboard paste (CL-3541)", () => {
 
     expect(send).toHaveBeenCalledTimes(1);
     expect(send.mock.calls[0]![0]).toBe("see this");
-    const attachments = send.mock.calls[0]![1] as { name: string }[] | undefined;
+    const attachments = send.mock.calls[0]![1] as
+      | { name: string }[]
+      | undefined;
     expect(attachments).toHaveLength(1);
     expect(attachments?.[0]?.name).toBe("clipboard.png");
     expect(screen.queryByText("clipboard.png")).toBeNull();
   });
 
-  it("still pastes plain text when the clipboard has no files", () => {
+  it("still pastes plain text when the clipboard has no files", async () => {
+    const user = userEvent.setup();
     const send = mock((_text: string) => {});
     render(
       <ActiveContextProvider>
@@ -213,12 +217,8 @@ describe("MyraChatSurface clipboard paste (CL-3541)", () => {
     const input = screen.getByPlaceholderText(
       "Message Myra…",
     ) as HTMLTextAreaElement;
-    fireEvent.paste(input, {
-      clipboardData: {
-        getData: (type: string) => (type === "text/plain" ? "plain note" : ""),
-        types: ["text/plain"],
-      },
-    });
+    await user.click(input);
+    await user.paste("plain note");
     expect(input.value).toBe("plain note");
     expect(screen.queryByLabelText(/Remove/)).toBeNull();
   });
