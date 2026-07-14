@@ -198,10 +198,13 @@ describe("ChatThreadPage", () => {
     ).toBe("t1");
   });
 
-  it("canonicalizes an unknown thread id to the resolved thread", () => {
+  it("shows a not-found state for an unknown thread id", () => {
     renderAt("/chats/unknown");
-    // resolveActiveThread falls back to t1; the page redirects then renders it.
-    expect(screen.getByTestId("label").textContent).toBe("First");
+    screen.getByText(/this chat couldn't be found/i);
+    expect(
+      screen.getByRole("link", { name: /back to all chats/i }).getAttribute("href"),
+    ).toBe("/chats");
+    expect(screen.queryByTestId("surface")).toBeNull();
   });
 
   it("offers a create action when there are no threads", () => {

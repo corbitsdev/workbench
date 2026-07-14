@@ -152,6 +152,43 @@ describe("task_create", () => {
     expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 
+  it("rejects invalid task links at the tool boundary", async () => {
+    ownerResult = "principal-owner";
+    triageDefaultStatus = undefined;
+    storeCalls.length = 0;
+    await expect(
+      tool("task_create").handler(
+        {
+          title: "Bad link task",
+          links: [{ kind: "url", ref: "javascript:alert(1)" }],
+        },
+        signal,
+      ),
+    ).rejects.toThrow(/task_create:.*http\(s\)/i);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("accepts valid task links per kind", async () => {
+    ownerResult = "principal-owner";
+    triageDefaultStatus = undefined;
+    storeCalls.length = 0;
+    await tool("task_create").handler(
+      {
+        title: "Linked task",
+        links: [
+          { kind: "conversation", ref: "thread-1" },
+          { kind: "url", ref: "https://example.com/x" },
+        ],
+      },
+      signal,
+    );
+    const call = storeCalls.find((c) => c.fn === "create");
+    expect(call?.args.links).toEqual([
+      { kind: "conversation", ref: "thread-1" },
+      { kind: "url", ref: "https://example.com/x" },
+    ]);
+  });
+
   it("does not dedupe chat (non-triage) task_create by sourceRef", async () => {
     ownerResult = "principal-owner";
     triageDefaultStatus = undefined;

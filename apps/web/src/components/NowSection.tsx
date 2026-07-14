@@ -6,14 +6,18 @@ import { cn } from "@workbench/ui";
 import {
   deepLinkPath,
   mailboxSenderLabel,
+  resolveTaskLinkHref,
   type NowItem,
   type NowMailItem,
   type NowTaskItem,
   type TaskLink,
 } from "@workbench/shared";
 import { formatRelativeTime } from "../lib/relative-time";
+import { createLogger } from "../lib/logger";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskSendToAdapter } from "./TaskSendToAdapter";
+
+const nowSectionLog = createLogger("NowSection");
 
 interface NowSectionProps {
   items: NowItem[];
@@ -198,7 +202,15 @@ function TaskRow({
   }, [selected]);
 
   const resolvedLinks = item.task.links
-    .map((link) => ({ link, href: taskLinkHref(link) }))
+    .map((link) => {
+      const href = resolveTaskLinkHref(link);
+      if (href === null) {
+        nowSectionLog.warn("dropped stored task link at render", {
+          kind: link.kind,
+        });
+      }
+      return { link, href };
+    })
     .filter(
       (entry): entry is { link: TaskLink; href: string } => entry.href !== null,
     );
@@ -249,41 +261,12 @@ function TaskRow({
 // resolvable link is never a dead end; extra links beyond the first are
 // surfaced as `TaskExtraLink` chips rather than silently dropped.
 //
-// `url`-kind refs are free-form strings an agent can set via the task tool
-// (see apps/hub/src/tools/task-tools.ts) — never trust them as-is. Only
-// http(s) URLs resolve to a clickable href; anything else (e.g. a
-// `javascript:` scheme) resolves to `null` and the row falls through to the
-// next link, or renders non-interactive if it was the only one.
-function taskLinkHref(link: TaskLink): string | null {
-  switch (link.kind) {
-    case "workflow_run":
-      return deepLinkPath("workflow_run", link.ref);
-    case "mail":
-      return deepLinkPath("mail", link.ref);
-    case "artifact":
-      return deepLinkPath("artifact", link.ref);
-    case "conversation":
-      return deepLinkPath("conversation", link.ref);
-    case "url":
-      return isSafeExternalUrl(link.ref) ? link.ref : null;
-  }
-}
-
-function isSafeExternalUrl(ref: string): boolean {
-  try {
-    const url = new URL(ref);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 function isExternalHref(href: string): boolean {
   return /^https?:\/\//.test(href);
 }
 
 function TaskExtraLink({ link }: { link: TaskLink }) {
-  const href = taskLinkHref(link);
+  const href = resolveTaskLinkHref(link);
   if (href === null) return null;
   const label = link.label ?? taskLinkFallbackLabel(link.kind);
   const className =

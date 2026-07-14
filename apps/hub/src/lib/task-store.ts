@@ -6,6 +6,7 @@ import type {
   TaskLink,
   TaskStatus,
 } from "@workbench/shared";
+import { validateTaskLinks } from "@workbench/shared";
 import {
   task,
   taskExternalRef,
@@ -34,6 +35,14 @@ export type TaskPage = {
 // member's task — the same isolation guarantee as the schedules store.
 
 const DEFAULT_TASK_LIMIT = 100;
+
+/** Thrown when `createOwnerTask` receives links that fail shared validation. */
+export class InvalidTaskLinksError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidTaskLinksError";
+  }
+}
 
 export type CreateTaskInput = {
   tenantId: string;
@@ -316,13 +325,18 @@ export async function createOwnerTask(
   db: HubDb,
   input: CreateTaskInput,
 ): Promise<Task> {
+  const links = input.links ?? [];
+  const linkError = validateTaskLinks(links);
+  if (linkError !== null) {
+    throw new InvalidTaskLinksError(linkError);
+  }
   const values: typeof task.$inferInsert = {
     tenantId: input.tenantId,
     ownerPrincipalId: input.ownerPrincipalId,
     createdByPrincipalId: input.createdByPrincipalId,
     title: input.title,
     source: input.source,
-    links: input.links ?? [],
+    links,
   };
   if (input.body !== undefined) values.body = input.body;
   if (input.sourceRef !== undefined) values.sourceRef = input.sourceRef;
