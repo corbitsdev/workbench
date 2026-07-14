@@ -79,6 +79,7 @@ import {
   registerAwaitingSupervisorPrewarm,
 } from "./services/workflow-reconciler";
 import { createRunLivenessSweep } from "./services/run-liveness-sweep";
+import { registerStalledScheduledRunReconciler } from "./services/stalled-scheduled-run-reconciler";
 import { createWorkflowRunStarter } from "./services/workflow-run-starter";
 import { createScheduler } from "./services/scheduler";
 import { createInboxIntake } from "./services/inbox-intake";
@@ -94,6 +95,11 @@ import {
   listEnabledSchedules,
   markScheduleFired,
 } from "./lib/scheduled-triggers";
+import {
+  extractStoredIntake,
+  queueScheduledIntakeSignal,
+} from "./lib/scheduled-intake";
+import { loadWorkflowGateInfos } from "./lib/workflow-catalog";
 import { createIdleSessionReaper } from "./services/idle-session-reaper";
 import { publishEmbeddedWorkflowDefs } from "./services/workflow-defs-bootstrap";
 import { publishEmbeddedToolPackages } from "./services/tool-packages-bootstrap";
@@ -1526,6 +1532,15 @@ const stopAwaitingSupervisorPrewarm = registerAwaitingSupervisorPrewarm({
   reconciler: workflowReconciler,
   intervalMs: config.awaitingSupervisorPrewarmIntervalMs,
 });
+// CL-3509: fail scheduler-fired runs parked at a gate past the timeout. A
+// scheduled run has no human to answer a gate — its `intake` is auto-delivered —
+// so one still `awaiting` long after its last log advance is wedged and is failed
+// legibly instead of lingering in the Now feed. Interactive runs are untouched.
+const stopStalledScheduledRunReconciler = registerStalledScheduledRunReconciler(
+  {
+    db,
+  },
+);
 // CL-2248: fail orphaned in-flight runs FIRST, on the pre-reconcile routable
 // snapshot — before reconcileAll re-registers supervisors and makes every run
 // look routable. Then re-establish supervisors so NEW runs work.
@@ -1561,6 +1576,11 @@ const listMyraTargets = async () => {
   });
   return rows.map((row) => ({ memberPrincipalId: row.memberPrincipalId }));
 };
+
+// Gate shapes per kind (CL-3509), loaded once from the committed embedded
+// catalog — static for the process lifetime. The scheduler auto-delivers a
+// stored intake only for kinds whose entry gate is `intake`.
+const schedulerGateInfos = await loadWorkflowGateInfos();
 
 const scheduler = createScheduler({
   isTenantEnabled: (tenantId) =>
@@ -1602,6 +1622,23 @@ const scheduler = createScheduler({
     });
     if (!result.ok) {
       throw new Error(`run-start ${result.reason}: ${result.message}`);
+    }
+    // Auto-deliver the stored intake so the scheduled run passes its first gate
+    // without a human (CL-3509). Only for kinds whose entry gate is `intake`; the
+    // intake is the stored trigger payload minus server-owned identity keys.
+    if (schedulerGateInfos.get(fire.kind)?.requiresIntake === true) {
+      const intake = extractStoredIntake(fire.triggerPayload);
+      await queueScheduledIntakeSignal(db, {
+        runId: result.runId,
+        kind: fire.kind,
+        intake,
+      }).catch((err) => {
+        log.error("scheduler: intake auto-delivery failed", {
+          scheduleKind: fire.kind,
+          runId: result.runId,
+          error: err instanceof Error ? err : new Error(String(err)),
+        });
+      });
     }
     return { deploymentId: result.deploymentId, accepted: true };
   },
@@ -1916,6 +1953,7 @@ for (const signal of ["SIGTERM", "SIGINT"]) {
       taskReconciler.stop();
       stopWedgeSweepReconciler();
       stopAwaitingSupervisorPrewarm();
+      stopStalledScheduledRunReconciler();
       log.info("Closing sidecar connections", {
         count: sidecarConnections.size(),
       });

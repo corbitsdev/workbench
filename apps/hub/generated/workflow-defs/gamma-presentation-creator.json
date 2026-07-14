@@ -48,6 +48,8 @@
       "activityLabel": "Saving to workbench"
     }
   ],
+  "requiresIntake": true,
+  "humanGateCount": 4,
   "definition": {
     "id": "gamma-presentation-creator",
     "triggers": [

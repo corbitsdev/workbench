@@ -28,6 +28,7 @@ const catalog = {
       stepCount: 4,
       pauseCount: 0,
       steps: [],
+      attachable: true,
     },
     {
       kind: "last30days-research",
@@ -36,6 +37,20 @@ const catalog = {
       stepCount: 3,
       pauseCount: 0,
       steps: [],
+      attachable: true,
+      intakeFields: [
+        { kind: "text", name: "topic", label: "Topic", required: true },
+        { kind: "textarea", name: "focus", label: "Focus (optional)" },
+      ],
+    },
+    {
+      kind: "gamma-presentation-creator",
+      label: "Gamma Deck",
+      isFavorite: false,
+      stepCount: 5,
+      pauseCount: 3,
+      steps: [],
+      attachable: false,
     },
   ],
 };
@@ -121,10 +136,17 @@ describe("BriefWorkflowAttachments", () => {
     expect(screen.getByText("Last 30 Days")).toBeDefined();
   });
 
-  it("attaches a workflow at the member's brief hour via POST", async () => {
-    let created: unknown = null;
+  it("hides a non-attachable workflow from the picker", async () => {
+    globalThis.fetch = makeFetch([]) as unknown as typeof fetch;
+    renderAttachments();
+    await screen.findByText("Last 30 Days");
+    expect(screen.queryByText("Gamma Deck")).toBeNull();
+  });
+
+  it("collects intake and sends it as the payload when attaching", async () => {
+    let created: Record<string, unknown> | null = null;
     globalThis.fetch = makeFetch([], (body) => {
-      created = body;
+      created = body as Record<string, unknown>;
     }) as unknown as typeof fetch;
     const user = userEvent.setup();
     renderAttachments();
@@ -134,10 +156,24 @@ describe("BriefWorkflowAttachments", () => {
       screen.getByLabelText("Choose a workflow to attach"),
       "last30days-research",
     );
+
+    // Required topic empty → attach is blocked.
+    expect(
+      (screen.getByRole("button", { name: "Attach" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    const topic = screen.getByRole("textbox", { name: "Topic" });
+    await user.type(topic, "AI agents for GTM");
     await user.click(screen.getByRole("button", { name: "Attach" }));
 
-    await waitFor(() => expect(created).not.toBeNull());
-    expect(created).toEqual({ kind: "last30days-research", hourUtc: 13 });
+    await waitFor(() =>
+      expect(created).toEqual({
+        kind: "last30days-research",
+        hourUtc: 13,
+        payload: { topic: "AI agents for GTM" },
+      }),
+    );
   });
 
   it("lists an already-attached workflow and omits it from the picker", async () => {

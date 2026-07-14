@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "label": "Company Heartbeat",
   "description": "On a schedule, pull recent brief-source data (Granola calls today), synthesize a morning brief, mail it to the user, and save it as an artifact.",
+  "requiresIntake": false,
+  "humanGateCount": 0,
   "definition": {
     "id": "heartbeat",
     "triggers": [

@@ -202,6 +202,11 @@ export const workflowRunRecord = pgTable("workflow_run_record", {
   // The conversation the run was started from (CL-2677); null for
   // direct-started runs with no chat context.
   originConversationId: text("origin_conversation_id"),
+  // Which trigger path started the run (CL-3509): "scheduler" for a run fired by
+  // an attached-workflow schedule, null for interactive/manual/webhook starts.
+  // The stalled-run reconciler only fails scheduler-sourced runs parked past its
+  // timeout — an interactive run legitimately waits on a human indefinitely.
+  triggerSource: text("trigger_source"),
   // Run-level wall-clock timing, written by the projection bridge from the
   // log's RunStarted / terminal events (CL-2669). Not the per-step timing —
   // that stays in the log.

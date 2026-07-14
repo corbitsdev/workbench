@@ -74,6 +74,7 @@ const HEARTBEAT_DEPLOYED_CATALOG: WorkflowCatalog = {
       stepCount: 1,
       pauseCount: 0,
       steps: [],
+      attachable: false,
     },
   ],
 };

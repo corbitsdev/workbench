@@ -416,6 +416,18 @@ export type WorkflowFlowStep = typeof WorkflowFlowStepSchema.infer;
 // One runnable workflow in the catalog, carrying everything the Workflows page
 // needs to render its row and its step-flow preview without a further call:
 // the member's favorite state, the classified step DAG, and the pause count.
+// A workflow's first-intake form field, as surfaced to the attach UI so it can
+// collect the intake payload a scheduled run is pre-filled with (CL-3509). A
+// minimal subset of the block `FormField` surface (text / textarea only).
+export const WorkflowIntakeFieldSchema = type({
+  name: "string > 0",
+  label: "string > 0",
+  kind: "'text' | 'textarea'",
+  "required?": "boolean",
+  "placeholder?": "string",
+});
+export type WorkflowIntakeField = typeof WorkflowIntakeFieldSchema.infer;
+
 export const WorkflowCatalogEntrySchema = type({
   kind: "string",
   label: "string",
@@ -425,6 +437,13 @@ export const WorkflowCatalogEntrySchema = type({
   pauseCount: "number",
   steps: WorkflowFlowStepSchema.array(),
   "lastRunAt?": "string",
+  // Whether this kind can be attached to a brief schedule (CL-3508): true when it
+  // runs to completion unattended — no human gates, or its only gate is `intake`
+  // (pre-filled and auto-delivered). A kind with other human gates is false.
+  attachable: "boolean",
+  // The intake fields the attach UI collects for a requiresIntake kind (CL-3509);
+  // absent for kinds that need no intake.
+  "intakeFields?": WorkflowIntakeFieldSchema.array(),
 });
 export type WorkflowCatalogEntry = typeof WorkflowCatalogEntrySchema.infer;
 

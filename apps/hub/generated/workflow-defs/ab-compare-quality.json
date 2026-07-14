@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "label": "A/B Compare - Quality",
   "description": "Run one shared prompt blind across four frontier models (Opus, GPT-5.5, GLM-5.2, Grok-4.5), then pick the winner.",
+  "requiresIntake": false,
+  "humanGateCount": 2,
   "definition": {
     "id": "ab-compare-quality",
     "triggers": [

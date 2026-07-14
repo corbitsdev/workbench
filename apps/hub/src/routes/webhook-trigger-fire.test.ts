@@ -51,7 +51,7 @@ function makeStarter(): {
   const starter: WorkflowRunStarter = {
     startRun: async (args) => {
       calls.push(args);
-      return { ok: true, deploymentId: "dep-1" };
+      return { ok: true, deploymentId: "dep-1", runId: "run-1" };
     },
   };
   return { starter, calls };

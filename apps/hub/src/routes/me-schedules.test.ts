@@ -22,10 +22,34 @@ mock.module("@intx/db", () => ({
   getAncestorChain: async () => ["tenant-root"],
 }));
 
-let runnableKinds = [{ kind: "heartbeat" }, { kind: "deck" }];
+let runnableKinds = [
+  { kind: "heartbeat" },
+  { kind: "deck" },
+  { kind: "last30days-research" },
+  { kind: "multi-gate" },
+];
 mock.module("../lib/workflow-run-gate", () => ({
   isRunnableKind: async (_db: unknown, _tenantId: string, kind: string) =>
     runnableKinds.some((k) => k.kind === kind),
+}));
+
+// Attach gate (CL-3508/CL-3509): the route reads gate shapes from the embedded
+// catalog. "deck"/"heartbeat" are unattended; "last30days-research" is
+// intake-gated (its ONLY gate is intake); "multi-gate" has a second human gate,
+// so it is not attachable. A kind absent from this map is treated as
+// not-attachable. The real intake payload validation (resume-payload-registry)
+// is NOT mocked — last30days requires a non-empty topic.
+const gateInfos = new Map<
+  string,
+  { requiresIntake: boolean; humanGateCount: number }
+>([
+  ["heartbeat", { requiresIntake: false, humanGateCount: 0 }],
+  ["deck", { requiresIntake: false, humanGateCount: 0 }],
+  ["last30days-research", { requiresIntake: true, humanGateCount: 1 }],
+  ["multi-gate", { requiresIntake: true, humanGateCount: 2 }],
+]);
+mock.module("../lib/workflow-catalog", () => ({
+  loadWorkflowGateInfos: async () => gateInfos,
 }));
 
 // Store spy. Each call is captured so a test asserts the owner principal the
@@ -206,6 +230,89 @@ describe("GET /me/schedules", () => {
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ items: [] });
+  });
+});
+
+describe("POST /me/schedules attach gate (CL-3508/CL-3509)", () => {
+  it("rejects a kind whose only intake is missing", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "last30days-research",
+          hourUtc: 9,
+          payload: {},
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("invalid intake"),
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("stores the intake payload for an intake-gated kind", async () => {
+    storeCalls.length = 0;
+    createThrows = null;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "last30days-research",
+          hourUtc: 9,
+          payload: { topic: "AI agents for GTM" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const create = storeCalls.find((c) => c.fn === "create");
+    expect(create?.args).toMatchObject({
+      kind: "last30days-research",
+      payload: {
+        topic: "AI agents for GTM",
+        userAddress: "usr_user-a@workbench.example",
+        userRefId: "user-a",
+      },
+    });
+  });
+
+  it("rejects a kind with a human gate beyond intake", async () => {
+    storeCalls.length = 0;
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({
+          kind: "multi-gate",
+          hourUtc: 9,
+          payload: { topic: "x" },
+        }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("cannot be scheduled"),
+    });
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
+  });
+
+  it("rejects a runnable kind that has no embedded gate info", async () => {
+    storeCalls.length = 0;
+    runnableKinds = [...runnableKinds, { kind: "ghost" }];
+    const res = await mountApp().fetch(
+      req("/me/schedules", {
+        method: "POST",
+        user: "user-a",
+        body: JSON.stringify({ kind: "ghost", hourUtc: 9 }),
+      }),
+    );
+    runnableKinds = runnableKinds.filter((k) => k.kind !== "ghost");
+    expect(res.status).toBe(400);
+    expect(storeCalls.some((c) => c.fn === "create")).toBe(false);
   });
 });
 

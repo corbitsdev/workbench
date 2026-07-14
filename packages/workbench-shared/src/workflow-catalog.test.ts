@@ -18,6 +18,7 @@ function entry(
     stepCount: 0,
     pauseCount: 0,
     steps: [],
+    attachable: false,
   };
 }
 
@@ -72,6 +73,7 @@ describe("WorkflowCatalogEntrySchema", () => {
       isFavorite: true,
       stepCount: 2,
       pauseCount: 1,
+      attachable: true,
       steps: [
         { id: "s1", title: "Fetch", kind: "auto" },
         { id: "s2", title: "Approve", kind: "human" },

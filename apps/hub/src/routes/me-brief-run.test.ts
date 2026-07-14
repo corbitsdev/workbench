@@ -76,7 +76,7 @@ type StartRunCall = {
 };
 let startRunCalls: StartRunCall[] = [];
 let startRunResult:
-  | { ok: true; deploymentId: string }
+  | { ok: true; deploymentId: string; runId: string }
   | {
       ok: false;
       reason: "not_found" | "delivery_failed" | "rate_limited";
@@ -84,6 +84,7 @@ let startRunResult:
     } = {
   ok: true,
   deploymentId: "dep-1",
+  runId: "run-1",
 };
 
 const runStarter: WorkflowRunStarter = {
@@ -131,7 +132,7 @@ function req(path: string, user = "user-a"): Request {
 describe("POST /me/brief-run", () => {
   it("starts a run for the caller's heartbeat kind, source manual, enriched payload", async () => {
     startRunCalls = [];
-    startRunResult = { ok: true, deploymentId: "dep-1" };
+    startRunResult = { ok: true, deploymentId: "dep-1", runId: "run-1" };
     preferencesByPrincipal["principal-a"] = {
       "briefSource:granola": true,
     };
@@ -160,7 +161,7 @@ describe("POST /me/brief-run", () => {
 
   it("uses a full lookback even when the schedule already fired today", async () => {
     startRunCalls = [];
-    startRunResult = { ok: true, deploymentId: "dep-1" };
+    startRunResult = { ok: true, deploymentId: "dep-1", runId: "run-1" };
     const now = Date.parse("2026-07-12T13:05:00.000Z");
     const today = Math.floor(now / 86_400_000);
     scheduleRowsByPrincipal["principal-a"] = [
@@ -207,7 +208,7 @@ describe("POST /me/brief-run", () => {
 
   it("rejects a second manual run from the same member within the window", async () => {
     startRunCalls = [];
-    startRunResult = { ok: true, deploymentId: "dep-1" };
+    startRunResult = { ok: true, deploymentId: "dep-1", runId: "run-1" };
     const app = mountApp();
     const first = await app.fetch(req("/me/brief-run", "user-a"));
     expect(first.status).toBe(200);
@@ -221,7 +222,7 @@ describe("POST /me/brief-run", () => {
 
   it("does not rate-limit a different member", async () => {
     startRunCalls = [];
-    startRunResult = { ok: true, deploymentId: "dep-2" };
+    startRunResult = { ok: true, deploymentId: "dep-2", runId: "run-2" };
     const app = mountApp();
     const a = await app.fetch(req("/me/brief-run", "user-a"));
     expect(a.status).toBe(200);
@@ -247,7 +248,7 @@ describe("POST /me/brief-run", () => {
 
   it("starts a run with a fallback payload when no schedule row exists", async () => {
     startRunCalls = [];
-    startRunResult = { ok: true, deploymentId: "dep-2" };
+    startRunResult = { ok: true, deploymentId: "dep-2", runId: "run-2" };
     scheduleRowsByPrincipal["principal-a"] = [];
     const app = mountApp();
     const res = await app.fetch(req("/me/brief-run", "user-a"));
@@ -276,7 +277,7 @@ describe("POST /me/brief-run", () => {
     const app = mountApp();
     const first = await app.fetch(req("/me/brief-run", "user-a"));
     expect(first.status).toBe(502);
-    startRunResult = { ok: true, deploymentId: "dep-3" };
+    startRunResult = { ok: true, deploymentId: "dep-3", runId: "run-3" };
     const second = await app.fetch(req("/me/brief-run", "user-a"));
     expect(second.status).toBe(200);
   });

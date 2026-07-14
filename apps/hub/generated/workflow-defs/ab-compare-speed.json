@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "label": "A/B Compare - Speed",
   "description": "Run one shared prompt blind across four low-latency models (DeepSeek V4 Flash, Gemini 3.5 Flash, Claude Haiku, GPT-5.4 Nano), then pick the winner.",
+  "requiresIntake": false,
+  "humanGateCount": 2,
   "definition": {
     "id": "ab-compare-speed",
     "triggers": [

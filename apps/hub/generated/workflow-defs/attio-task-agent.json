@@ -54,6 +54,8 @@
       "activityLabel": "Writing back to Attio"
     }
   ],
+  "requiresIntake": false,
+  "humanGateCount": 5,
   "definition": {
     "id": "attio-task-agent",
     "triggers": [

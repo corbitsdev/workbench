@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "label": "Smoke Test",
   "description": "Single agent step, no tools — proves the workflow runtime dispatches a run.",
+  "requiresIntake": false,
+  "humanGateCount": 0,
   "definition": {
     "id": "smoke-test",
     "triggers": [
