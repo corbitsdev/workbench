@@ -24,6 +24,8 @@ import {
   resolveAvailableInboxSources,
   AvailableInboxSourceSchema,
   AvailabilitySignalSchema,
+  LINEAR_SCOPE_PREFERENCE_KEY,
+  LINEAR_BACKFILL_PREFERENCE_KEY,
 } from "./preferences-registry";
 import { CREDENTIAL_PROVIDER_CATALOG } from "./governance";
 
@@ -161,21 +163,55 @@ describe("PREFERENCE_REGISTRY", () => {
     }
   });
 
-  test("registers a boolean toggle for every brief source, defaulting on", () => {
+  test("registers a boolean toggle for every brief source, defaulting off", () => {
     for (const source of BRIEF_SOURCE_CATALOG) {
       const entry = getPreferenceEntry(briefSourcePreferenceKey(source.key));
       expect(entry?.type).toBe("boolean");
       expect(entry?.category).toBe("Automations");
-      expect(entry?.default).toBe(source.defaultEnabled);
+      expect(entry?.default).toBe(false);
+      expect(source.defaultEnabled).toBe(false);
     }
   });
 
-  test("registers a boolean toggle for every inbox source, defaulting enabled", () => {
+  test("registers a boolean toggle for every inbox source, defaulting off", () => {
     for (const source of INBOX_SOURCE_CATALOG) {
       const entry = getPreferenceEntry(inboxSourcePreferenceKey(source.key));
       expect(entry?.type).toBe("boolean");
       expect(entry?.category).toBe("Inbox");
-      expect(entry?.default).toBe(true);
+      expect(entry?.default).toBe(false);
+      expect(source.defaultEnabled).toBe(false);
+    }
+  });
+
+  test("registers the Linear scope option defaulting to assigned (CL-3577)", () => {
+    const entry = getPreferenceEntry(LINEAR_SCOPE_PREFERENCE_KEY);
+    expect(entry?.type).toBe("select");
+    expect(entry?.category).toBe("Inbox");
+    expect(entry?.default).toBe("assigned");
+    expect(entry?.options?.map((o) => o.value).sort()).toEqual([
+      "all",
+      "assigned",
+    ]);
+  });
+
+  test("registers the Linear backfill option defaulting to none (CL-3577)", () => {
+    const entry = getPreferenceEntry(LINEAR_BACKFILL_PREFERENCE_KEY);
+    expect(entry?.type).toBe("select");
+    expect(entry?.category).toBe("Inbox");
+    expect(entry?.default).toBe("none");
+    expect(entry?.options?.map((o) => o.value).sort()).toEqual([
+      "30d",
+      "7d",
+      "none",
+    ]);
+  });
+
+  test("no brief or inbox source defaults enabled (CL-3577)", () => {
+    for (const source of BRIEF_SOURCE_CATALOG) {
+      expect(source.defaultEnabled).toBe(false);
+    }
+    for (const source of INBOX_SOURCE_CATALOG) {
+      expect(source.defaultEnabled).toBe(false);
     }
   });
 });
@@ -242,13 +278,13 @@ describe("resolveAvailableBriefSources", () => {
   });
 
   test("resolves enabled from stored preferences, defaulting per catalog entry", () => {
-    const enabledByDefault = resolveAvailableBriefSources(["granola"], {});
-    expect(enabledByDefault[0]?.enabled).toBe(true);
+    const disabledByDefault = resolveAvailableBriefSources(["granola"], {});
+    expect(disabledByDefault[0]?.enabled).toBe(false);
 
-    const disabled = resolveAvailableBriefSources(["granola"], {
-      [briefSourcePreferenceKey("granola")]: false,
+    const enabled = resolveAvailableBriefSources(["granola"], {
+      [briefSourcePreferenceKey("granola")]: true,
     });
-    expect(disabled[0]?.enabled).toBe(false);
+    expect(enabled[0]?.enabled).toBe(true);
   });
 
   test("ignores a configured provider name absent from the brief-source catalog", () => {
@@ -258,34 +294,62 @@ describe("resolveAvailableBriefSources", () => {
 });
 
 describe("INBOX_SOURCE_CATALOG", () => {
-  test("mirrors BRIEF_SOURCE_CATALOG's keys, defaulting every source to enabled", () => {
-    expect(INBOX_SOURCE_CATALOG.map((s) => s.key).sort()).toEqual(
-      BRIEF_SOURCE_CATALOG.map((s) => s.key).sort(),
-    );
-    for (const source of INBOX_SOURCE_CATALOG) {
-      expect(source.defaultEnabled).toBe(true);
+  test("includes every BRIEF_SOURCE_CATALOG key plus inbox-only sources, defaulting every source off", () => {
+    const inboxKeys = INBOX_SOURCE_CATALOG.map((s) => s.key);
+    for (const key of BRIEF_SOURCE_CATALOG.map((s) => s.key)) {
+      expect(inboxKeys).toContain(key);
     }
+    for (const source of INBOX_SOURCE_CATALOG) {
+      expect(source.defaultEnabled).toBe(false);
+    }
+  });
+
+  test("includes slack, an inbox-only source with no brief-source equivalent (CL-3581)", () => {
+    expect(BRIEF_SOURCE_CATALOG.map((s) => s.key)).not.toContain("slack");
+    const slack = INBOX_SOURCE_CATALOG.find((s) => s.key === "slack");
+    expect(slack?.description).toBe(
+      "Slack mentions of you land in your inbox.",
+    );
   });
 });
 
 describe("resolveEnabledInboxSources", () => {
-  test("defaults to every catalog source enabled when nothing is stored", () => {
-    expect(resolveEnabledInboxSources({}).sort()).toEqual(
-      INBOX_SOURCE_CATALOG.map((s) => s.key).sort(),
-    );
+  test("defaults to no sources enabled when nothing is stored (CL-3577)", () => {
+    expect(resolveEnabledInboxSources({})).toEqual([]);
   });
 
-  test("excludes a source explicitly disabled in stored preferences", () => {
+  test("includes a source explicitly enabled in stored preferences", () => {
     const enabled = resolveEnabledInboxSources({
-      [inboxSourcePreferenceKey("granola")]: false,
+      [inboxSourcePreferenceKey("granola")]: true,
     });
-    expect(enabled).not.toContain("granola");
+    expect(enabled).toContain("granola");
   });
 
-  test("toggling the inbox source off does not affect the brief source's enablement", () => {
-    const stored = { [inboxSourcePreferenceKey("granola")]: false };
-    expect(resolveEnabledInboxSources(stored)).not.toContain("granola");
-    expect(resolveEnabledBriefSources(stored)).toContain("granola");
+  test("toggling the inbox source on does not affect the brief source's enablement", () => {
+    const stored = {
+      [inboxSourcePreferenceKey("granola")]: true,
+      [briefSourcePreferenceKey("granola")]: false,
+    };
+    expect(resolveEnabledInboxSources(stored)).toContain("granola");
+    expect(resolveEnabledBriefSources(stored)).not.toContain("granola");
+  });
+});
+
+describe("INBOX_SOURCE_CATALOG inbox-specific copy (CL-3577)", () => {
+  test("linear, attio, and granola carry inbox-specific descriptions distinct from their brief copy", () => {
+    for (const key of ["linear", "attio", "granola"]) {
+      const inbox = INBOX_SOURCE_CATALOG.find((s) => s.key === key);
+      const brief = BRIEF_SOURCE_CATALOG.find((s) => s.key === key);
+      expect(inbox?.description).toBeDefined();
+      expect(inbox?.description).not.toBe(brief?.description);
+    }
+  });
+
+  test("linear's inbox description matches the CL-3577 spec copy", () => {
+    const linear = INBOX_SOURCE_CATALOG.find((s) => s.key === "linear");
+    expect(linear?.description).toBe(
+      "New Linear activity assigned to you lands in your inbox.",
+    );
   });
 });
 
@@ -294,21 +358,21 @@ describe("resolveAvailableInboxSources", () => {
     expect(resolveAvailableInboxSources([], {})).toEqual([]);
   });
 
-  test("includes a catalog source whose credential is configured, enabled by default", () => {
+  test("includes a catalog source whose credential is configured, disabled by default (CL-3577)", () => {
     const sources = resolveAvailableInboxSources(["granola"], {});
     expect(sources.map((s) => s.key)).toEqual(["granola"]);
-    expect(sources[0]?.enabled).toBe(true);
+    expect(sources[0]?.enabled).toBe(false);
     for (const source of sources) {
       const parsed = AvailableInboxSourceSchema(source);
       expect(parsed instanceof type.errors).toBe(false);
     }
   });
 
-  test("resolves a stored disablement", () => {
-    const disabled = resolveAvailableInboxSources(["granola"], {
-      [inboxSourcePreferenceKey("granola")]: false,
+  test("resolves a stored enablement", () => {
+    const enabled = resolveAvailableInboxSources(["granola"], {
+      [inboxSourcePreferenceKey("granola")]: true,
     });
-    expect(disabled[0]?.enabled).toBe(false);
+    expect(enabled[0]?.enabled).toBe(true);
   });
 
   test("ignores a configured provider name absent from the inbox-source catalog", () => {
@@ -357,6 +421,21 @@ describe("validatePreferencePatch", () => {
 
   test("rejects an unknown key", () => {
     expect(validatePreferencePatch({ bogusSetting: true })).not.toBeNull();
+  });
+
+  test("accepts valid Linear scope/backfill values and rejects invalid ones", () => {
+    expect(
+      validatePreferencePatch({ [LINEAR_SCOPE_PREFERENCE_KEY]: "all" }),
+    ).toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_BACKFILL_PREFERENCE_KEY]: "7d" }),
+    ).toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_SCOPE_PREFERENCE_KEY]: "bogus" }),
+    ).not.toBeNull();
+    expect(
+      validatePreferencePatch({ [LINEAR_BACKFILL_PREFERENCE_KEY]: "60d" }),
+    ).not.toBeNull();
   });
 
   test("accepts legacy non-registry keys owned by other subsystems", () => {
