@@ -1,6 +1,6 @@
 import { PagePanel } from "@workbench/ui";
 import { motion, useReducedMotion } from "framer-motion";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useSetPageChrome } from "../lib/page-chrome";
 
 import { useInsightsOverview } from "../hooks/use-insights-overview";
@@ -44,6 +44,11 @@ export function InsightsDashboard() {
   const reduceMotion = useReducedMotion();
   const insights = useInsightsOverview();
   const [tab, setTab] = useInsightsTab();
+  const tabBodyScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    tabBodyScrollRef.current?.scrollTo({ top: 0 });
+  }, [tab]);
 
   const pageChrome = useMemo(
     () => (
@@ -79,7 +84,13 @@ export function InsightsDashboard() {
         <div className="px-5 pt-3 max-md:px-3">
           <InsightsTabNav active={tab} onChange={setTab} />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 max-md:px-3">
+        <div
+          ref={tabBodyScrollRef}
+          role="tabpanel"
+          id={`insights-panel-${tab}`}
+          aria-labelledby={`insights-tab-${tab}`}
+          className="min-h-0 flex-1 overflow-y-auto px-5 py-5 max-md:px-3"
+        >
           {insights.showSummaryLoading && <InsightsSkeleton />}
 
           {!insights.workbenchLoading && !insights.activeTenantId && (

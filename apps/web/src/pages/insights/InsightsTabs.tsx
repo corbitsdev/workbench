@@ -59,9 +59,12 @@ export function InsightsTabNav({
         return (
           <button
             key={tab.id}
+            id={`insights-tab-${tab.id}`}
             type="button"
             role="tab"
             aria-selected={selected}
+            aria-controls={`insights-panel-${tab.id}`}
+            tabIndex={selected ? 0 : -1}
             data-testid={`insights-tab-${tab.id}`}
             onClick={() => onChange(tab.id)}
             className={`min-h-[36px] rounded-t-[8px] border-b-2 px-3 py-2 text-[12.5px] font-medium outline-none transition-[color,border-color] focus-visible:ring-1 focus-visible:ring-accent ${

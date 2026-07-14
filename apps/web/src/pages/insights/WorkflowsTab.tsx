@@ -46,9 +46,9 @@ export function WorkflowsTab({
           </Link>
         </div>
         <p className="text-[11px] text-text-3">
-          The full run list is paginated with kind and status filters and
-          search. Actor filtering is not yet available there — the run list
-          endpoint does not carry a starter identity today.
+          Run history lists every run in the workbench with kind, status, and
+          search filters. When more than one person has started runs, you can
+          filter by who started each run.
         </p>
       </div>
     </div>

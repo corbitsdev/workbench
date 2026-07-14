@@ -215,7 +215,7 @@ export function WorkflowRunHistory() {
   const pageChrome = useMemo(
     () => (
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-        <InsightsBackLink to="/insights" />
+        <InsightsBackLink to="/insights?tab=workflows" />
         <AppPageChromeRow
           title="Run history"
           titleSize="sm"
