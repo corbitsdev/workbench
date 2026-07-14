@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router";
 import type { ThreadInsert } from "@workbench/chat";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { MyraChatSurface } from "../components/MyraChatSurface";
+import { ThreadSwitcher } from "../components/ThreadSwitcher";
 import { WorkflowDock } from "../components/WorkflowDock";
 import { WorkflowEventBubble } from "../components/WorkflowEventBubble";
 import { useMyraSession } from "../hooks/use-myra-session";
@@ -211,6 +212,27 @@ export function ChatThreadPage() {
     return <Navigate to={`/chats/${active.id}`} replace />;
   }
 
+  const selectThread = (id: string) => {
+    writeLastActiveThreadId(id);
+    navigate(`/chats/${id}`);
+  };
+
+  const newThread = () => {
+    createThread.mutate(undefined, {
+      onSuccess: (thread) => selectThread(thread.id),
+    });
+  };
+
+  const threadHeader = (
+    <ThreadSwitcher
+      threads={threadList}
+      activeThreadId={active?.id ?? null}
+      onSelect={selectThread}
+      onNew={newThread}
+      creating={createThread.isPending}
+    />
+  );
+
   return (
     <ErrorBoundary>
       <div className="flex h-full">
@@ -218,7 +240,7 @@ export function ChatThreadPage() {
           <MyraChatSurface
             session={session}
             tenantId={activeTenantId}
-            threadLabel={active?.label}
+            headerLeft={threadHeader}
             onUserSend={maybeTitleFromFirstMessage}
             signalRouting={signalRouting}
             resumeInFlight={resumeGate.isPending}

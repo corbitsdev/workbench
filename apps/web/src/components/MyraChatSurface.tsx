@@ -203,9 +203,10 @@ export function MyraChatSurface({
   resumeInFlight,
   mentionCandidates,
 }: MyraChatSurfaceProps) {
-  const agent: ChatAgentIdentity = threadLabel
-    ? { ...MYRA, tagline: threadLabel }
-    : MYRA;
+  const agent: ChatAgentIdentity =
+    threadLabel !== undefined && headerLeft === undefined
+      ? { name: threadLabel, tagline: MYRA.tagline }
+      : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
   const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
