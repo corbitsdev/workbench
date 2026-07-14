@@ -132,11 +132,12 @@ Slack mention intake ships in the same release as this guide. Setup:
    member's inbox, resolving the Slack user to a member by email. On
    `channel_created`, the bot auto-joins the new public channel so mentions
    there are caught without manual re-invites.
-7. **Known limitation at this release:** Slack intake is currently gated only
-   by the owner tenant toggle — there is no separate per-member Slack
-   preference yet (Linear and Attio have one; Slack does not). If the owner
-   turns Slack on, every member with a resolvable email starts receiving
-   mention mail; there is no way for an individual member to opt out yet.
+7. **Members must opt in.** Slack has a per-member preference like Linear and
+   Attio, default off — after the owner turns Slack on, each member enables
+   the Slack source in their own settings before their mentions are mirrored.
+   Tell members this during rollout, or mentions will silently go nowhere.
+   Slack needs no per-member credential — the tenant bot token covers lookup
+   and delivery; the member toggle is the only member-side step.
 
 ## 8. What members do afterward
 
@@ -155,7 +156,8 @@ each member:
 - For **Granola**, has no toggle to flip — receiving mail depends on being a
   call participant/mentioned party plus having the Granola inbox capability
   enabled (see step 6.4).
-- For **Slack**, has nothing to configure yet — see the limitation in step 7.
+- For **Slack**, turns the Slack source on in their own settings (no OAuth
+  connection needed — the tenant bot token does the work).
 
 ## How items flow, per source
 
@@ -164,11 +166,13 @@ each member:
 | Linear  | Poll + optional webhook | 60s poll; webhook near-instant | Member    | Enable + connect/credential     | `linear` externalId scheme          |
 | Attio   | Poll + optional webhook | 60s poll; webhook near-instant | Member    | Enable + connect/credential     | `sourceRef` (`attio:task:<id>`)     |
 | Granola | Poll only               | 60s poll                       | Workspace | Enable Granola inbox capability | `artifact.source->>'granolaNoteId'` |
-| Slack   | Webhook only            | Near-instant                   | Workspace | None (no opt-out yet)           | Slack `event_id`                    |
+| Slack   | Webhook only            | Near-instant                   | Workspace | Enable in own settings          | Slack `event_id`                    |
 
 ## Troubleshooting — nothing is appearing
 
-Check the gates in this order; the first one that's off explains the gap.
+All of these gates must be on at once — the list below is a convenient
+diagnostic order, not the code's evaluation order (the tick checks the member
+preference and owner toggle in the opposite order; the final AND is the same).
 
 1. **Feature grant** — is `scheduler` enabled for the tenant (env override or
    Owner → Capabilities → Features)? Nothing polls without it.
