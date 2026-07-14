@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import { createToolRunner } from "@intx/agent";
+import { estimatePeopleEmailRevealCredits } from "./credits";
 import {
   API_VERSION,
   createSumbleTools,
@@ -132,6 +133,13 @@ describe("v9 argument-to-body mapping", () => {
     });
   });
 
+  it("list_teams accepts organizationId without slug", async () => {
+    const stub = makeFetchStub({ teams: [] });
+    await runTool(stub, "sumble_list_teams", { organizationId: 42 });
+    expect(stub.mock.calls).toHaveLength(1);
+    expect(bodyOf(stub).filter).toEqual({ organization_ids: [42] });
+  });
+
   it("search_people maps email into list-mode person ref", async () => {
     const stub = makeFetchStub({ people: [] });
     await runTool(stub, "sumble_search_people", {
@@ -149,6 +157,16 @@ describe("v9 argument-to-body mapping", () => {
     const stub = makeFetchStub({ people: [] });
     const result = await runTool(stub, "sumble_post_people", {
       body: { select: { attributes: ["email"] } },
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("confirmEmailRevealSpend");
+    expect(stub.mock.calls).toHaveLength(0);
+  });
+
+  it("post_people blocks phone in select without confirmEmailRevealSpend", async () => {
+    const stub = makeFetchStub({ people: [] });
+    const result = await runTool(stub, "sumble_post_people", {
+      body: { select: { attributes: ["phone"] } },
     });
     expect(result.isError).toBe(true);
     expect(result.content).toContain("confirmEmailRevealSpend");
@@ -317,6 +335,33 @@ describe("async polling", () => {
     });
     expect(result.isError).toBe(true);
     expect(result.content).toContain("did not complete after 10");
+  });
+});
+
+describe("people credit gates", () => {
+  it("estimatePeopleEmailRevealCredits multiplies by 10", () => {
+    expect(estimatePeopleEmailRevealCredits(3)).toBe(30);
+  });
+
+  it("search_people blocks revealEmail without confirmEmailRevealSpend", async () => {
+    const stub = makeFetchStub({ people: [] });
+    const result = await runTool(stub, "sumble_search_people", {
+      organizationSlug: "acme",
+      revealEmail: true,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("confirmEmailRevealSpend");
+    expect(stub.mock.calls).toHaveLength(0);
+  });
+
+  it("search_people blocks email lookup without confirmEmailRevealSpend", async () => {
+    const stub = makeFetchStub({ people: [] });
+    const result = await runTool(stub, "sumble_search_people", {
+      email: "ceo@acme.com",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content).toContain("confirmEmailRevealSpend");
+    expect(stub.mock.calls).toHaveLength(0);
   });
 });
 

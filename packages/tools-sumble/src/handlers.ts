@@ -78,9 +78,24 @@ const TechStackArgs = type({
   limit: "1<=number<=200?",
 });
 
+function assertOrganizationIdOrSlug(parsed: {
+  organizationId?: number;
+  organizationSlug?: string;
+}, toolLabel: string): void {
+  const hasId = parsed.organizationId !== undefined;
+  const hasSlug =
+    parsed.organizationSlug !== undefined &&
+    parsed.organizationSlug.length > 0;
+  if (!hasId && !hasSlug) {
+    throw new Error(
+      `${toolLabel} requires organizationId or organizationSlug`,
+    );
+  }
+}
+
 const ListTeamsArgs = type({
   organizationId: "number?",
-  organizationSlug: "string",
+  organizationSlug: "string?",
   limit: "1<=number<=200?",
   offset: "number?",
 });
@@ -108,7 +123,7 @@ function peopleSelectAttributes(revealEmail: boolean): string[] {
 
 const ListJobsArgs = type({
   organizationId: "number?",
-  organizationSlug: "string",
+  organizationSlug: "string?",
   limit: "1<=number<=200?",
   offset: "number?",
 });
@@ -288,6 +303,7 @@ export async function listTeams(
   signal: AbortSignal,
 ): Promise<string> {
   const parsed = parseArgs(ListTeamsArgs, args);
+  assertOrganizationIdOrSlug(parsed, "sumble_list_teams");
   const orgId = await resolveOrganizationId(
     config,
     organizationLookupRef(parsed),
@@ -395,6 +411,7 @@ export async function listJobs(
   signal: AbortSignal,
 ): Promise<string> {
   const parsed = parseArgs(ListJobsArgs, args);
+  assertOrganizationIdOrSlug(parsed, "sumble_list_jobs");
   const orgId = await resolveOrganizationId(
     config,
     organizationLookupRef(parsed),

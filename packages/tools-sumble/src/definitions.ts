@@ -62,7 +62,6 @@ export const SUMBLE_LIST_TEAMS_DEFINITION = objectTool(
     limit: { type: "number" },
     offset: { type: "number" },
   },
-  ["organizationSlug"],
 );
 
 export const SUMBLE_SEARCH_PEOPLE_DEFINITION = objectTool(
@@ -91,7 +90,6 @@ export const SUMBLE_LIST_JOBS_DEFINITION = objectTool(
     limit: { type: "number" },
     offset: { type: "number" },
   },
-  ["organizationSlug"],
 );
 
 export const SUMBLE_SEARCH_SIGNALS_DEFINITION = objectTool(
