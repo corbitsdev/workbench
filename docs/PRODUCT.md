@@ -31,6 +31,37 @@ registry-driven onboarding tour (its shown/dismissed state is a persisted user
 preference, not local-only UI state) introduces new users to the inbox model
 on first login.
 
+### Inbox sources — external intake
+
+Beyond mail from other principals, the inbox can be fed by **inbox sources**:
+external systems whose activity is pulled or pushed into a user's mailbox.
+Today's sources are **Linear** (assigned issues, comments, notifications),
+**Attio** (task sync), and **Granola** (call summaries) — Slack (mentions) is
+shipping in the same release. Every source is **off by default at every
+level** — nothing reaches a member's inbox until it is turned on tenant-wide
+by the feature grant, enabled by the owner, and enabled by the member (or, for
+Granola, simply matched as a call participant). See
+[`OWNER_SETUP_INBOX.md`](OWNER_SETUP_INBOX.md) for the full setup sequence and
+[`API.md`](API.md#inbox-sources--webhooks) for the routes.
+
+- **Linear and Attio** are per-member: each member connects (or shares a
+  tenant credential) and opts in from their own settings. Both poll on a 60s
+  cadence; each also has an optional webhook (Linear issue/comment events,
+  Attio task events) that delivers the same item near-instantly and is
+  deduplicated against the poller so nothing doubles up. Linear members can
+  additionally choose what counts as "activity" (assigned-only vs. all) and a
+  one-time backfill window (none, 7 days, or 30 days) applied the first time
+  they turn Linear on.
+- **Granola** is workspace-level: the owner enables it once for the tenant. A
+  60s poller picks up new calls, classifies each as internal or external,
+  extracts pain points, decisions, and action items, and mails a
+  per-recipient summary to every Myra member who attended the call or was
+  mentioned in it — each recipient sees only their own tasks and action
+  items, not the whole team's.
+- An owner-disabled source disappears from member settings entirely (not
+  shown as disabled) — it does not just stop running. Re-enabling it restores
+  each member's prior on/off choice rather than resetting everyone to off.
+
 ## Automations
 
 Two ways work can start without a user opening the app:
