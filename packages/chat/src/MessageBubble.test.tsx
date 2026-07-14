@@ -83,9 +83,9 @@ describe("MessageBubble", () => {
     const { container } = render(<MessageBubble message={message} />);
     const body = container.querySelector(".bg-orange") as HTMLElement;
     expect(body).not.toBeNull();
-    expect(body.className).toContain("max-w-[85%]");
-    expect(body.className).toContain("px-3.5");
-    expect(body.className).toContain("rounded-lg");
+    expect(body.className).toContain("max-w-[80%]");
+    expect(body.className).toContain("px-3");
+    expect(body.className).toContain("rounded-input");
   });
 
   it("renders the agent message full-width with no surface fill, border, or radius", () => {
