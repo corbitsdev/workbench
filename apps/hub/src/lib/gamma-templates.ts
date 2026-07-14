@@ -14,6 +14,7 @@ const log = getLogger("hub:gamma-templates");
 export const GammaTemplateConfigSchema = type({
   gammaId: "string",
   description: "string",
+  "systemPrompt?": "string",
 });
 export type GammaTemplateConfig = typeof GammaTemplateConfigSchema.infer;
 
@@ -25,6 +26,7 @@ export const GammaTemplateRowSchema = type({
   name: "string",
   gammaId: "string",
   description: "string",
+  systemPrompt: "string",
   authorId: "string",
   createdAt: "string",
 });
@@ -50,6 +52,8 @@ export function configToRow(
   }
 
   const description = resolveDescription(config);
+  const systemPrompt =
+    typeof config["systemPrompt"] === "string" ? config["systemPrompt"] : "";
 
   const row = GammaTemplateRowSchema({
     id: templateId,
@@ -57,6 +61,7 @@ export function configToRow(
     name,
     gammaId,
     description,
+    systemPrompt,
     authorId,
     createdAt: createdAt.toISOString(),
   });

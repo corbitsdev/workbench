@@ -298,13 +298,16 @@ export type Theme = typeof ThemeSchema.infer;
 // shape shared by the hub route (emit + OpenAPI) and the web hook (parse) so
 // the two can never drift. `canManage` is computed per-caller from the grant
 // store; `description` is the human-facing label (the workflow owns generation
-// instructions, not the template).
+// instructions, not the template). `systemPrompt` is optional template-specific
+// authoring guidance the generate step folds in alongside the base prompt
+// (CL-3614) — empty string when the template author left it blank.
 export const GammaTemplateSchema = type({
   id: "string",
   version: "number",
   name: "string",
   gammaId: "string",
   description: "string",
+  systemPrompt: "string",
   authorId: "string",
   canManage: "boolean",
   createdAt: "string",
@@ -313,11 +316,12 @@ export type GammaTemplate = typeof GammaTemplateSchema.infer;
 
 // Request body for create/update. `description` is required and non-empty
 // (the server trims and rejects blanks); it is the one field the workflow does
-// not need but humans do.
+// not need but humans do. `systemPrompt` is optional and may be blank.
 export const GammaTemplateBodySchema = type({
   name: "string",
   gammaId: "string",
   description: "string",
+  "systemPrompt?": "string",
 });
 export type GammaTemplateBody = typeof GammaTemplateBodySchema.infer;
 
