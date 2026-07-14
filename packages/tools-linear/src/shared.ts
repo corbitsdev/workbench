@@ -140,3 +140,15 @@ export function extractMutationIssue(
   }
   return mutation.issue;
 }
+
+/** Require a GraphQL mutation payload with success: true; return the mutation record. */
+export function requireMutationSuccess(
+  data: Record<string, unknown>,
+  mutationKey: string,
+): Record<string, unknown> {
+  const mutation = data[mutationKey];
+  if (!isRecord(mutation) || mutation.success !== true) {
+    throw new Error(`Linear ${mutationKey} failed`);
+  }
+  return mutation;
+}

@@ -11,6 +11,7 @@ import {
   MAX_LIST_LIMIT,
   isRecord,
   parseArgs,
+  requireMutationSuccess,
   type LinearToolsConfig,
 } from "./shared";
 
@@ -83,7 +84,7 @@ export async function saveComment(
       { id: args.id, input: { body: args.body } },
       signal,
     );
-    return data.commentUpdate ?? { success: false };
+    return requireMutationSuccess(data, "commentUpdate");
   }
   const data = await fetchLinearGraphQL(
     config,
@@ -91,7 +92,7 @@ export async function saveComment(
     { input: { issueId: args.issueId, body: args.body } },
     signal,
   );
-  return data.commentCreate ?? { success: false };
+  return requireMutationSuccess(data, "commentCreate");
 }
 
 export const LINEAR_LIST_COMMENTS_DEFINITION: ToolDefinition = {
