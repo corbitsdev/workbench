@@ -12,6 +12,16 @@ export const HEARTBEAT_WORKFLOW_KIND = "heartbeat";
 // target UTC hour has arrived and has not already fired today. These schemas are
 // the API boundary between the hub routes and the web client.
 
+/** One scheduler fire surfaced in the owner's schedule history (CL-3526). */
+export const ScheduledTriggerFireSchema = type({
+  runId: "string",
+  /** ISO-8601 instant the scheduler recorded this fire. */
+  firedAt: "string",
+  /** Live workflow_run_record status when known; `unknown` when the run row is gone. */
+  status: "string",
+});
+export type ScheduledTriggerFire = typeof ScheduledTriggerFireSchema.infer;
+
 // A schedule as returned to its owner.
 export const ScheduledTriggerSchema = type({
   id: "string",
@@ -21,6 +31,10 @@ export const ScheduledTriggerSchema = type({
   triggerPayload: { "[string]": "unknown" },
   createdAt: "string",
   lastFiredDayUtc: "number.integer | null",
+  /** Most recent run id started by the scheduler; null before the first successful start. */
+  lastRunId: "string | null",
+  /** Newest-first recent fires (bounded server-side). */
+  recentFires: ScheduledTriggerFireSchema.array(),
   /** ISO-8601 instant of the next fire when enabled; null when paused. */
   nextFireAt: "string | null",
 });

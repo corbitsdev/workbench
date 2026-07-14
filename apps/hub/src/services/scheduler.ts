@@ -30,7 +30,7 @@ export type StartWorkflowRunFn = (a: {
   nowMs: number;
   lastFiredDayUtc: number | null;
   hourUtc: number;
-}) => Promise<{ deploymentId: string; accepted: boolean }>;
+}) => Promise<{ deploymentId: string; accepted: boolean; runId: string }>;
 
 // Pure decision: fire when we are in the target UTC hour and this schedule has
 // not already fired today. No clock read — the caller passes `nowMs` so the
@@ -56,6 +56,12 @@ export interface SchedulerDeps {
   // Persist that a schedule fired on `dayUtc`. Called BEFORE the run-start
   // await so a slow start (or a process restart) cannot double-fire.
   markFired: (id: string, dayUtc: number) => Promise<void>;
+  /** Persist schedule → run linkage after a successful start (CL-3526). */
+  recordRunStarted?: (args: {
+    scheduleId: string;
+    tenantId: string;
+    runId: string;
+  }) => Promise<void>;
   startWorkflowRun: StartWorkflowRunFn;
   now?: () => number;
   tickIntervalMs?: number;
@@ -95,7 +101,7 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
       return;
     }
     try {
-      await deps.startWorkflowRun({
+      const started = await deps.startWorkflowRun({
         kind: row.workflowKind,
         tenantId: row.tenantId,
         creatorPrincipalId: row.ownerMemberPrincipalId,
@@ -104,6 +110,21 @@ export function createScheduler(deps: SchedulerDeps): Scheduler {
         lastFiredDayUtc: row.lastFiredDayUtc,
         hourUtc: row.hourUtc,
       });
+      if (deps.recordRunStarted) {
+        try {
+          await deps.recordRunStarted({
+            scheduleId: row.id,
+            tenantId: row.tenantId,
+            runId: started.runId,
+          });
+        } catch (err) {
+          log.error("scheduler: record-run-started failed", {
+            scheduleId: row.id,
+            runId: started.runId,
+            error: err instanceof Error ? err : new Error(String(err)),
+          });
+        }
+      }
     } catch (err) {
       log.error("scheduler: run-start failed", {
         scheduleId: row.id,

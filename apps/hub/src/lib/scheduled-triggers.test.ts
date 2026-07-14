@@ -23,6 +23,7 @@ function dbRow(
     triggerPayload: { reason: "scheduled-heartbeat" },
     enabled: true,
     lastFiredDayUtc: null,
+    lastRunId: null,
     createdAt: new Date("2026-01-02T00:00:00.000Z"),
     updatedAt: new Date("2026-01-02T00:00:00.000Z"),
     ...overrides,
@@ -40,6 +41,8 @@ describe("toApiSchedule", () => {
       triggerPayload: { reason: "scheduled-heartbeat" },
       createdAt: "2026-01-02T00:00:00.000Z",
       lastFiredDayUtc: null,
+      lastRunId: null,
+      recentFires: [],
       nextFireAt: null,
     });
   });

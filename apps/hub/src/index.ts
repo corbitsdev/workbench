@@ -94,6 +94,7 @@ import {
   ensureOwnerSchedule,
   listEnabledSchedules,
   markScheduleFired,
+  recordScheduleRunStarted,
 } from "./lib/scheduled-triggers";
 import {
   extractStoredIntake,
@@ -1592,6 +1593,7 @@ const scheduler = createScheduler({
     ),
   listSchedules: () => listEnabledSchedules(db, rootTenantId),
   markFired: (id, dayUtc) => markScheduleFired(db, id, dayUtc),
+  recordRunStarted: (args) => recordScheduleRunStarted(db, args),
   startWorkflowRun: async (fire) => {
     // Re-read the member's brief-source preferences at the moment the
     // schedule actually fires, rather than trusting whatever `enabledSources`
@@ -1640,7 +1642,11 @@ const scheduler = createScheduler({
         });
       });
     }
-    return { deploymentId: result.deploymentId, accepted: true };
+    return {
+      deploymentId: result.deploymentId,
+      accepted: true,
+      runId: result.runId,
+    };
   },
 });
 scheduler.start();

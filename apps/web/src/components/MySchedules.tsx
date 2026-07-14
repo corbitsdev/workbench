@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { Link } from "react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ScheduledTrigger } from "@workbench/shared";
 import { ConfirmButton } from "@workbench/ui";
@@ -13,6 +14,7 @@ import {
   formatNextFire,
   utcHourOptions,
 } from "../lib/schedule-time";
+import { scheduleRunDeepLink } from "../lib/schedule-run-link";
 
 export interface MySchedulesProps {
   tenantId: string | null;
@@ -86,6 +88,15 @@ function HourSelect({
   );
 }
 
+function runStatusFor(
+  schedule: ScheduledTrigger,
+  runId: string,
+): string {
+  return (
+    schedule.recentFires.find((f) => f.runId === runId)?.status ?? "running"
+  );
+}
+
 function ScheduleRow({
   schedule,
   label,
@@ -146,9 +157,42 @@ function ScheduleRow({
           {label}
         </span>
         <span className="text-xs text-text-3">
-          Last fired: {formatLastFired(schedule.lastFiredDayUtc)} · Next:{" "}
-          {formatNextFire(schedule.nextFireAt, schedule.enabled)}
+          Last fired:{" "}
+          {schedule.lastRunId ? (
+            <Link
+              to={scheduleRunDeepLink(
+                runStatusFor(schedule, schedule.lastRunId),
+                schedule.lastRunId,
+              )}
+              className="font-medium text-text-2 underline-offset-2 hover:underline"
+            >
+              {formatLastFired(schedule.lastFiredDayUtc)}
+            </Link>
+          ) : (
+            formatLastFired(schedule.lastFiredDayUtc)
+          )}{" "}
+          · Next: {formatNextFire(schedule.nextFireAt, schedule.enabled)}
         </span>
+        {schedule.recentFires.length > 0 && (
+          <ul className="mt-1 flex flex-col gap-0.5 text-[11px] text-text-3">
+            {schedule.recentFires.map((fire) => (
+              <li key={`${fire.runId}-${fire.firedAt}`}>
+                <Link
+                  to={scheduleRunDeepLink(fire.status, fire.runId)}
+                  className="text-text-2 underline-offset-2 hover:underline"
+                >
+                  {new Date(fire.firedAt).toLocaleString(undefined, {
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </Link>
+                <span className="text-text-3"> · {fire.status}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
       <HourSelect
         hourUtc={schedule.hourUtc}

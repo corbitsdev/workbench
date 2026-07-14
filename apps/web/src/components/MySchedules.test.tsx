@@ -6,6 +6,9 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
+import { deepLinkPath } from "@workbench/shared";
+import { MemoryRouter } from "react-router";
+import { formatLastFired } from "../lib/schedule-time";
 import { MySchedules } from "./MySchedules";
 
 const originalFetch = globalThis.fetch;
@@ -27,6 +30,8 @@ const schedule = {
   triggerPayload: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   lastFiredDayUtc: null,
+  lastRunId: null,
+  recentFires: [],
   nextFireAt: "2026-01-02T13:00:00.000Z",
 };
 
@@ -39,6 +44,7 @@ const catalog = {
       stepCount: 3,
       pauseCount: 0,
       steps: [],
+      attachable: true,
     },
   ],
 };
@@ -84,7 +90,11 @@ function renderList() {
     React.createElement(
       QueryClientProvider,
       { client },
-      React.createElement(MySchedules, { tenantId: "tenant-1" }),
+      React.createElement(
+        MemoryRouter,
+        null,
+        React.createElement(MySchedules, { tenantId: "tenant-1" }),
+      ),
     ),
   );
 }
@@ -126,6 +136,31 @@ describe("MySchedules", () => {
     await waitFor(() => expect(patch).not.toBeNull());
     expect(patch!.url).toContain("/me/schedules/sch_1");
     expect(patch!.body).toEqual({ enabled: false });
+  });
+
+  it("links last fired and recent fires to the trace deep link", async () => {
+    globalThis.fetch = makeFetch([
+      {
+        ...schedule,
+        lastFiredDayUtc: 20_000,
+        lastRunId: "run-abc",
+        recentFires: [
+          {
+            runId: "run-abc",
+            firedAt: "2026-01-02T13:00:00.000Z",
+            status: "completed",
+          },
+        ],
+      },
+    ]) as unknown as typeof fetch;
+    renderList();
+    const lastFiredLabel = formatLastFired(20_000);
+    const lastFired = await screen.findByRole("link", {
+      name: lastFiredLabel,
+    });
+    expect(lastFired.getAttribute("href")).toBe(
+      deepLinkPath("workflow_trace", "run-abc"),
+    );
   });
 
   it("shows last-fired and next-fire status from hub nextFireAt", async () => {

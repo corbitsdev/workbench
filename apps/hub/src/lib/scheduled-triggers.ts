@@ -1,11 +1,25 @@
-import { and, desc, eq } from "drizzle-orm";
-import { nextFireAt, type ScheduledTrigger } from "@workbench/shared";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import {
+  nextFireAt,
+  type ScheduledTrigger,
+  type ScheduledTriggerFire,
+} from "@workbench/shared";
 import type { HubDb } from "../db";
-import { scheduledTrigger, type ScheduledTriggerRow } from "../db/schema";
+import {
+  scheduledTrigger,
+  scheduledTriggerFire,
+  workflowRunRecord,
+  type ScheduledTriggerRow,
+} from "../db/schema";
 import type { ScheduledTriggerRow as SchedulerRow } from "../services/scheduler";
 import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
 
 const DEFAULT_SCHEDULE_LIMIT = 50;
+
+/** Recent fires returned on GET /me/schedules per schedule. */
+export const SCHEDULE_FIRE_HISTORY_LIMIT = 5;
+/** Rows retained per schedule after each new fire (trim on write). */
+const SCHEDULE_FIRE_RETENTION = 30;
 
 export type ScheduledTriggerPage = {
   items: ScheduledTriggerRow[];
@@ -32,6 +46,7 @@ function toSchedulerRow(row: ScheduledTriggerRow): SchedulerRow {
 export function toApiSchedule(
   row: ScheduledTriggerRow,
   now: Date = new Date(),
+  recentFires: ScheduledTriggerFire[] = [],
 ): ScheduledTrigger {
   return {
     id: row.id,
@@ -41,10 +56,112 @@ export function toApiSchedule(
     triggerPayload: row.triggerPayload,
     createdAt: row.createdAt.toISOString(),
     lastFiredDayUtc: row.lastFiredDayUtc,
+    lastRunId: row.lastRunId ?? null,
+    recentFires,
     nextFireAt: row.enabled
       ? nextFireAt(row.hourUtc, row.lastFiredDayUtc, now).toISOString()
       : null,
   };
+}
+
+export async function loadRecentFiresByScheduleId(
+  db: HubDb,
+  tenantId: string,
+  scheduleIds: string[],
+): Promise<Map<string, ScheduledTriggerFire[]>> {
+  const out = new Map<string, ScheduledTriggerFire[]>();
+  for (const id of scheduleIds) out.set(id, []);
+  if (scheduleIds.length === 0) return out;
+
+  const fires = await db
+    .select({
+      scheduleId: scheduledTriggerFire.scheduledTriggerId,
+      runId: scheduledTriggerFire.runId,
+      firedAt: scheduledTriggerFire.firedAt,
+      status: workflowRunRecord.status,
+    })
+    .from(scheduledTriggerFire)
+    .leftJoin(
+      workflowRunRecord,
+      and(
+        eq(workflowRunRecord.id, scheduledTriggerFire.runId),
+        eq(workflowRunRecord.tenantId, scheduledTriggerFire.tenantId),
+      ),
+    )
+    .where(
+      and(
+        eq(scheduledTriggerFire.tenantId, tenantId),
+        inArray(scheduledTriggerFire.scheduledTriggerId, scheduleIds),
+      ),
+    )
+    .orderBy(desc(scheduledTriggerFire.firedAt));
+
+  for (const row of fires) {
+    const list = out.get(row.scheduleId);
+    if (!list || list.length >= SCHEDULE_FIRE_HISTORY_LIMIT) continue;
+    list.push({
+      runId: row.runId,
+      firedAt: row.firedAt.toISOString(),
+      status: row.status ?? "unknown",
+    });
+  }
+  return out;
+}
+
+export async function toApiSchedulesForOwner(
+  db: HubDb,
+  tenantId: string,
+  rows: ScheduledTriggerRow[],
+  now: Date = new Date(),
+): Promise<ScheduledTrigger[]> {
+  const fires = await loadRecentFiresByScheduleId(
+    db,
+    tenantId,
+    rows.map((r) => r.id),
+  );
+  return rows.map((row) =>
+    toApiSchedule(row, now, fires.get(row.id) ?? []),
+  );
+}
+
+/** Called by the scheduler after `startWorkflowRun` succeeds (CL-3526). */
+export async function recordScheduleRunStarted(
+  db: HubDb,
+  args: { scheduleId: string; tenantId: string; runId: string },
+): Promise<void> {
+  await db
+    .update(scheduledTrigger)
+    .set({ lastRunId: args.runId })
+    .where(
+      and(
+        eq(scheduledTrigger.id, args.scheduleId),
+        eq(scheduledTrigger.tenantId, args.tenantId),
+      ),
+    );
+  await db.insert(scheduledTriggerFire).values({
+    scheduledTriggerId: args.scheduleId,
+    tenantId: args.tenantId,
+    runId: args.runId,
+  });
+  await trimScheduleFireHistory(db, args.scheduleId);
+}
+
+async function trimScheduleFireHistory(
+  db: HubDb,
+  scheduleId: string,
+): Promise<void> {
+  const rows = await db
+    .select({ id: scheduledTriggerFire.id })
+    .from(scheduledTriggerFire)
+    .where(eq(scheduledTriggerFire.scheduledTriggerId, scheduleId))
+    .orderBy(desc(scheduledTriggerFire.firedAt));
+  if (rows.length <= SCHEDULE_FIRE_RETENTION) return;
+  const dropIds = rows
+    .slice(SCHEDULE_FIRE_RETENTION)
+    .map((r) => r.id);
+  await db
+    .delete(scheduledTriggerFire)
+    .where(inArray(scheduledTriggerFire.id, dropIds));
 }
 
 // Scheduler read path: every enabled schedule in the tenant. `shouldFire`
