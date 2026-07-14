@@ -45,6 +45,7 @@ describe("AgentTurn", () => {
         formatToolSummary={() => "Searching Attio"}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Expand reasoning" }));
     const text = container.textContent ?? "";
     const reasoningAt = text.indexOf("Reasoning");
     const toolAt = text.indexOf("Searching Attio");
@@ -52,53 +53,47 @@ describe("AgentTurn", () => {
     expect(reasoningAt).toBeGreaterThanOrEqual(0);
     expect(toolAt).toBeGreaterThan(reasoningAt);
     expect(answerAt).toBeGreaterThan(toolAt);
+    expect(text.indexOf("I weighed the options")).toBeGreaterThanOrEqual(0);
   });
 
-  it("auto-opens reasoning while it streams and collapses when the answer starts", () => {
-    const streaming = agentMessage({
-      content: "",
-      reasoning: "Working through it",
-      status: "sending",
-    });
-    const { rerender } = render(<AgentTurn message={streaming} />);
-    // Open without a click while reasoning is the only live content.
-    expect(screen.getByText("Working through it")).toBeDefined();
-    expect(
-      screen
-        .getByRole("button", { name: /Reasoning/i })
-        .getAttribute("aria-expanded"),
-    ).toBe("true");
-
-    rerender(
+  it("keeps reasoning collapsed by default while streaming", () => {
+    render(
       <AgentTurn
         message={agentMessage({
-          content: "Answer streaming",
+          content: "",
           reasoning: "Working through it",
           status: "sending",
         })}
       />,
     );
-    // Answer text arrived: the disclosure collapses back to its label.
+    expect(screen.queryByText("Working through it")).toBeNull();
     expect(
-      screen
-        .getByRole("button", { name: /Reasoning/i })
-        .getAttribute("aria-expanded"),
+      screen.getByRole("button", { name: "Expand reasoning" }).getAttribute(
+        "aria-expanded",
+      ),
     ).toBe("false");
   });
 
-  it("a manual toggle sticks over the auto behavior", () => {
+  it("remembers expand via setReasoningExpanded", () => {
+    const prefs = new Map<string, boolean>();
     const message = agentMessage({
       content: "",
       reasoning: "Working through it",
       status: "sending",
     });
-    render(<AgentTurn message={message} />);
-    fireEvent.click(screen.getByRole("button", { name: /Reasoning/i }));
-    expect(
-      screen
-        .getByRole("button", { name: /Reasoning/i })
-        .getAttribute("aria-expanded"),
-    ).toBe("false");
+    render(
+      <AgentTurn
+        message={message}
+        isReasoningExpanded={(key) => prefs.get(key) === true}
+        setReasoningExpanded={(key, expanded) => {
+          if (expanded) prefs.set(key, true);
+          else prefs.delete(key);
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Expand reasoning" }));
+    expect(prefs.get("m1")).toBe(true);
+    expect(screen.getByText("Working through it")).toBeDefined();
   });
 
   it("renders feedback once, after the tool narrative, keyed on feedbackId", async () => {

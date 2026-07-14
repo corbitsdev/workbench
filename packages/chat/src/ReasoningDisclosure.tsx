@@ -1,12 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { cn, Markdown } from "@workbench/ui";
 
 // Height/opacity reveal matching ToolNarrative's ExpandReveal: reduced-motion
-// users get an instant toggle with no AnimatePresence — this matters here
-// because the disclosure auto-collapses (uninvoked motion) when the answer
-// starts.
+// users get an instant toggle with no AnimatePresence. Collapsed-by-default
+// means streaming and settled turns start closed unless the host persisted an
+// expand choice for this messageKey.
 function ReasoningReveal({
   open,
   reduceMotion,
@@ -40,6 +40,11 @@ export interface ReasoningDisclosureProps {
   reasoning: string;
   /** True while reasoning is still streaming (no answer yet). */
   streaming: boolean;
+  /** Stable key for per-message expand prefs (`feedbackId ?? message.id`). */
+  messageKey: string;
+  /** When provided, disclosure state is remembered per {@link messageKey}. */
+  isReasoningExpanded?: (messageKey: string) => boolean;
+  setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
 }
 
 // Brand ease-out (DESIGN.md): snappy settle for small disclosures.
@@ -49,10 +54,9 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
  * Collapsible "Reasoning" disclosure — the first row of the agent turn's
  * process trace, sharing the tool rows' marker column and type scale.
  *
- * Auto-opens while reasoning is the only live content (streaming, no answer
- * yet) and collapses back to its label the moment the answer starts, so the
- * user watches the thinking live but reads the settled turn answer-first. A
- * manual toggle always wins over the auto behavior.
+ * Collapsed by default. The chevron toggle expands/collapses the trace; when the
+ * host supplies {@link isReasoningExpanded} / {@link setReasoningExpanded}, the
+ * choice is remembered per {@link messageKey} (including across reload).
  *
  * The label is "Reasoning" (not "Thinking"/"Thoughts") — the brand word list
  * prohibits anthropomorphizing agents; the pulsing marker, not the word,
@@ -61,16 +65,28 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 export function ReasoningDisclosure({
   reasoning,
   streaming,
+  messageKey,
+  isReasoningExpanded,
+  setReasoningExpanded,
 }: ReasoningDisclosureProps) {
   const reduceMotion = useReducedMotion();
-  const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
-  const open = manuallyToggled ?? streaming;
+  const persisted = isReasoningExpanded?.(messageKey) ?? false;
+  const [sessionOverride, setSessionOverride] = useState<boolean | null>(null);
+  useEffect(() => {
+    setSessionOverride(null);
+  }, [messageKey]);
+  const open = sessionOverride ?? persisted;
 
   return (
     <div className="flex w-full flex-col gap-1" data-testid="reasoning-row">
       <button
         type="button"
-        onClick={() => setManuallyToggled(!open)}
+        onClick={() => {
+          const next = !open;
+          setSessionOverride(next);
+          setReasoningExpanded?.(messageKey, next);
+        }}
+        aria-label={open ? "Collapse reasoning" : "Expand reasoning"}
         className={cn(
           "relative flex items-start gap-2.5 self-start text-left text-sm text-text-3",
           "transition-[transform,color] duration-100 ease-[cubic-bezier(0.23,1,0.32,1)]",

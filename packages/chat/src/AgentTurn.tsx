@@ -36,6 +36,8 @@ export interface AgentTurnProps {
     subjectKind: FeedbackSubjectKind,
   ) => 1 | -1 | null | undefined;
   resolveAttachmentUrl?: (blobId: string) => Promise<string>;
+  isReasoningExpanded?: (messageKey: string) => boolean;
+  setReasoningExpanded?: (messageKey: string, expanded: boolean) => void;
 }
 
 /**
@@ -61,6 +63,8 @@ export function AgentTurn({
   onRate,
   getRating,
   resolveAttachmentUrl,
+  isReasoningExpanded,
+  setReasoningExpanded,
 }: AgentTurnProps) {
   const isStreaming = message.status === "sending";
   const hasReasoning = (message.reasoning ?? "").trim() !== "";
@@ -88,6 +92,13 @@ export function AgentTurn({
             <ReasoningDisclosure
               reasoning={message.reasoning ?? ""}
               streaming={isStreaming && message.content === ""}
+              messageKey={message.feedbackId ?? message.id}
+              {...(isReasoningExpanded !== undefined
+                ? { isReasoningExpanded }
+                : {})}
+              {...(setReasoningExpanded !== undefined
+                ? { setReasoningExpanded }
+                : {})}
             />
           )}
           {hasTools && (

@@ -59,6 +59,12 @@ export {
 export { MessageBubble, type MessageBubbleProps } from "./MessageBubble";
 export { AgentTurn, type AgentTurnProps } from "./AgentTurn";
 export {
+  readReasoningExpanded,
+  writeReasoningExpanded,
+  clearReasoningExpanded,
+  type ReasoningExpandedMap,
+} from "./reasoning-expanded-prefs";
+export {
   ToolNarrative,
   type ToolNarrativeProps,
   type ToolMarkerRenderContext,

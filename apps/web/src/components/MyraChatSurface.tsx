@@ -32,6 +32,7 @@ import type { MyraSession } from "../hooks/use-myra-session";
 import { useActiveContext } from "../lib/active-context-store";
 import { resolveResumePayload } from "../lib/resume-payload";
 import { useAttachShortcut } from "../hooks/use-attach-shortcut";
+import { useMyraReasoningExpanded } from "../hooks/use-myra-reasoning-expanded";
 import { ActiveContextPills } from "./ActiveContextPills";
 import { ReviewGate } from "./ReviewGate";
 import { renderChatToolMarker } from "./ToolCallProviderMarker";
@@ -199,6 +200,7 @@ export function MyraChatSurface({
     : MYRA;
   const { compact: compactToolActivity } = useCompactToolActivity();
   const { style: toolSummaryStyle } = useToolSummaryStyle();
+  const reasoningExpandedPrefs = useMyraReasoningExpanded(session.messages);
   const summarize = (calls: ToolCall[]) =>
     summarizeToolCalls(calls, toolSummaryStyle);
 
@@ -541,6 +543,8 @@ export function MyraChatSurface({
       isQuietTool={isCatalogMetaTool}
       isExternalTool={isExternalIntegrationTool}
       renderToolMarker={renderChatToolMarker}
+      isReasoningExpanded={reasoningExpandedPrefs.isReasoningExpanded}
+      setReasoningExpanded={reasoningExpandedPrefs.setReasoningExpanded}
     />
   );
 }
