@@ -38,7 +38,7 @@ need in `capabilities.tools`.
 | `analytics.ts` | Dashboard list (may return unsupported marker) |
 | `interchange-tools.ts` / `tool-manifest.ts` | Sidecar package wiring |
 
-## Tool catalog (41 tools)
+## Tool catalog (42 tools)
 
 Side effects come from `LINEAR_HUB_TOOLS`. **Write** tools mutate Linear (or
 prepare mutations such as signed upload URLs) and are classified
@@ -115,7 +115,7 @@ through ReviewGate unless workflow grants use `allow`.
 
 ## Read vs write summary
 
-- **25 read tools** — GraphQL queries only; no Linear mutations.
+- **26 read tools** — GraphQL queries only; no Linear mutations.
 - **16 write tools** — create, update, save, delete, archive, link, upload-prep,
   and webhook mutations as listed above.
 

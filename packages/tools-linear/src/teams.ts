@@ -109,7 +109,8 @@ export async function getTeam(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(GetTeamArgsSchema, rawArgs, "linear_get_team");
-  const data = await fetchLinearGraphQL(config, GET_TEAM_QUERY, { id: args.id }, signal);
+  const teamId = await resolveTeamId(config, args.id, signal);
+  const data = await fetchLinearGraphQL(config, GET_TEAM_QUERY, { id: teamId }, signal);
   if (data.team === null || data.team === undefined) {
     throw new Error(`Linear team not found: ${args.id}`);
   }

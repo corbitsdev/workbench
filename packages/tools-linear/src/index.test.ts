@@ -1,6 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import { createToolRunner } from "@intx/agent";
 import { createLinearTools, LINEAR_HUB_TOOLS, type LinearFetch } from "./index";
+import { asConnection, makeRoutingFetchStub } from "./test-helpers";
 
 type FetchStub = LinearFetch & {
   mock: { calls: [string, RequestInit][] };
@@ -313,6 +314,44 @@ describe("linear_list_issues handler", () => {
     expect(JSON.parse(String(result.content))).toEqual(asConnection(nodes));
   });
 
+  it("returns empty issues for brief-shaped calls when the connection is null", async () => {
+    const fetcher = makeFetchStub({ data: { issues: null } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    const result = await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { enabledSources: ["linear"] },
+      },
+      new AbortController().signal,
+    );
+
+    expect(result.isError).toBeUndefined();
+    expect(JSON.parse(String(result.content))).toEqual({ issues: [] });
+  });
+
+  it("forwards orderBy as a PaginationOrderBy scalar", async () => {
+    const fetcher = makeFetchStub({ data: { issues: { nodes: [] } } });
+    const runner = createToolRunner(
+      createLinearTools({ apiKey: "k", fetcher }),
+    );
+
+    await runner.run(
+      {
+        id: "c1",
+        name: "linear_list_issues",
+        arguments: { orderBy: "updatedAt" },
+      },
+      new AbortController().signal,
+    );
+
+    const body = lastBody(fetcher);
+    expect(body.variables.orderBy).toBe("updatedAt");
+  });
+
   it("scopes to a team and caps first at the issue list maximum", async () => {
     const nodes = [{ id: "uuid-1", identifier: "ENG-1" }];
     const fetcher = mock((_input: string, init: RequestInit) => {
@@ -593,9 +632,10 @@ describe("linear_create_issue handler", () => {
       title: "Ship the write tool",
       url: "https://linear.app/x/issue/ENG-9",
     };
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: true, issue } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -617,7 +657,11 @@ describe("linear_create_issue handler", () => {
     expect(result.isError).toBeUndefined();
     expect(JSON.parse(String(result.content))).toEqual(issue);
 
-    const body = lastBody(fetcher);
+    const lastCall = fetcher.mock.calls.at(-1);
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      query: string;
+      variables: Record<string, unknown>;
+    };
     expect(body.query).toContain("issueCreate(input: $input)");
     expect(body.variables).toEqual({
       input: {
@@ -631,9 +675,10 @@ describe("linear_create_issue handler", () => {
 
   it("omits optional fields when not provided", async () => {
     const issue = { id: "uuid-1", identifier: "ENG-1", title: "T", url: "u" };
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: true, issue } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      { includes: "issueCreate", data: { issueCreate: { success: true, issue } } },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -647,7 +692,11 @@ describe("linear_create_issue handler", () => {
       new AbortController().signal,
     );
 
-    expect(lastBody(fetcher).variables).toEqual({
+    const lastCall = fetcher.mock.calls.at(-1);
+    const body = JSON.parse(String(lastCall?.[1].body)) as {
+      variables: Record<string, unknown>;
+    };
+    expect(body.variables).toEqual({
       input: { teamId: "team-uuid", title: "T" },
     });
   });
@@ -695,9 +744,13 @@ describe("linear_create_issue handler", () => {
   });
 
   it("errors when Linear rejects the create and returns no issue", async () => {
-    const fetcher = makeFetchStub({
-      data: { issueCreate: { success: false, issue: null } },
-    });
+    const fetcher = makeRoutingFetchStub([
+      { includes: "GetTeam", data: { team: { id: "team-uuid" } } },
+      {
+        includes: "issueCreate",
+        data: { issueCreate: { success: false, issue: null } },
+      },
+    ]);
     const runner = createToolRunner(
       createLinearTools({ apiKey: "k", fetcher }),
     );
@@ -706,14 +759,14 @@ describe("linear_create_issue handler", () => {
       {
         id: "c1",
         name: "linear_create_issue",
-        arguments: { teamId: "bad-team", title: "T" },
+        arguments: { teamId: "team-uuid", title: "T" },
       },
       new AbortController().signal,
     );
 
     expect(result.isError).toBe(true);
     expect(result.content).toContain("Linear did not return the issue from issueCreate");
-    expect(fetcher.mock.calls).toHaveLength(1);
+    expect(fetcher.mock.calls).toHaveLength(2);
   });
 });
 

@@ -14,6 +14,22 @@ import {
   parseArgs,
   type LinearToolsConfig,
 } from "./shared";
+import { resolveTeamId } from "./teams";
+
+function buildCycleFilter(
+  cycleType: string | null,
+): Record<string, unknown> | null {
+  if (cycleType === "current") {
+    return { isActive: { eq: true } };
+  }
+  if (cycleType === "previous") {
+    return { isPast: { eq: true } };
+  }
+  if (cycleType === "next") {
+    return { isFuture: { eq: true } };
+  }
+  return null;
+}
 
 const LIST_CYCLES_QUERY = `query ListCycles($teamId: String!, $first: Int!, $after: String, $filter: CycleFilter) {
   team(id: $teamId) {
@@ -41,17 +57,13 @@ export async function listCycles(
   const args = parseArgs(ListCyclesArgsSchema, rawArgs, "linear_list_cycles");
   const pagination = resolveListPagination(args, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
   const cycleType = optionalString(args.type);
-  const filter =
-    cycleType === "current" ||
-    cycleType === "previous" ||
-    cycleType === "next"
-      ? { isActive: { eq: cycleType === "current" } }
-      : null;
+  const filter = buildCycleFilter(cycleType);
+  const resolvedTeamId = await resolveTeamId(config, args.team, signal);
   const data = await fetchLinearGraphQL(
     config,
     LIST_CYCLES_QUERY,
     {
-      teamId: args.team,
+      teamId: resolvedTeamId,
       ...paginationVariables(pagination),
       ...(filter !== null ? { filter } : {}),
     },

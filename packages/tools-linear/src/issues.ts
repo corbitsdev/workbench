@@ -233,20 +233,24 @@ async function resolveWorkflowStateId(
   issueId: string,
   state: string,
   signal: AbortSignal,
+  teamIdOverride: string | null = null,
 ): Promise<string> {
   if (WORKFLOW_STATE_ID_PATTERN.test(state)) {
     return state;
   }
-  const issueData = await fetchLinearGraphQL(
-    config,
-    ISSUE_TEAM_QUERY,
-    { id: issueId },
-    signal,
-  );
-  if (!isRecord(issueData.issue) || !isRecord(issueData.issue.team)) {
-    throw new Error(`Linear issue not found: ${issueId}`);
+  let teamId = teamIdOverride;
+  if (teamId === null) {
+    const issueData = await fetchLinearGraphQL(
+      config,
+      ISSUE_TEAM_QUERY,
+      { id: issueId },
+      signal,
+    );
+    if (!isRecord(issueData.issue) || !isRecord(issueData.issue.team)) {
+      throw new Error(`Linear issue not found: ${issueId}`);
+    }
+    teamId = requireNonEmptyString(issueData.issue.team.id, "team.id");
   }
-  const teamId = requireNonEmptyString(issueData.issue.team.id, "team.id");
   const teamData = await fetchLinearGraphQL(
     config,
     TEAM_STATE_BY_NAME_QUERY,
@@ -310,14 +314,12 @@ function buildIssueFilter(
   return Object.keys(filter).length > 0 ? filter : null;
 }
 
-function buildOrderBy(
-  args: Record<string, unknown>,
-): Record<string, unknown> | null {
+function buildOrderBy(args: Record<string, unknown>): string | null {
   const field = optionalString(args.orderBy);
-  if (field !== "createdAt" && field !== "updatedAt") {
-    return null;
+  if (field === "createdAt" || field === "updatedAt") {
+    return field;
   }
-  return { [field]: "Descending" };
+  return null;
 }
 
 export async function listIssues(
@@ -345,8 +347,10 @@ export async function listIssues(
   const shapeResult = (connection: unknown): unknown => {
     const shaped = connectionResult(connection);
     if (!briefShaped) return shaped;
-    const record = shaped as { nodes: unknown };
-    return { issues: record.nodes };
+    if (!isRecord(shaped) || !Array.isArray(shaped.nodes)) {
+      return { issues: [] };
+    }
+    return { issues: shaped.nodes };
   };
 
   const variables: Record<string, unknown> = {
@@ -407,8 +411,9 @@ export async function createIssue(
   signal: AbortSignal,
 ): Promise<unknown> {
   const args = parseArgs(CreateIssueArgsSchema, rawArgs, "linear_create_issue");
+  const resolvedTeamId = await resolveTeamId(config, args.teamId, signal);
   const input: Record<string, unknown> = {
-    teamId: args.teamId,
+    teamId: resolvedTeamId,
     title: args.title,
   };
   if (args.description !== undefined) {
@@ -438,12 +443,18 @@ export async function updateIssue(
   if (args.description !== undefined) input.description = args.description;
   const priority = optionalPriority(args.priority);
   if (priority !== null) input.priority = priority;
+  let teamIdForState: string | null = null;
+  if (args.teamId !== undefined) {
+    teamIdForState = await resolveTeamId(config, args.teamId, signal);
+    input.teamId = teamIdForState;
+  }
   if (args.state !== undefined) {
     input.stateId = await resolveWorkflowStateId(
       config,
       args.id,
       args.state,
       signal,
+      teamIdForState,
     );
   }
   if (args.assignee !== undefined) {
@@ -451,9 +462,6 @@ export async function updateIssue(
   }
   if (args.project !== undefined) {
     input.projectId = args.project;
-  }
-  if (args.teamId !== undefined) {
-    input.teamId = args.teamId;
   }
   if (args.cycle !== undefined) {
     input.cycleId = args.cycle;

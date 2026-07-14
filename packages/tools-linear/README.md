@@ -1,9 +1,9 @@
 # @workbench/tools-linear
 
 Linear GraphQL tools for workbench agents. The hub registry is
-`LINEAR_HUB_TOOLS` in `src/hub-tools.ts` (**40** `linear_*` tools).
+`LINEAR_HUB_TOOLS` in `src/hub-tools.ts` (**42** `linear_*` tools).
 
-- **Read (24):** issues, comments, attachments (get), documents, projects,
+- **Read (26):** issues, comments, attachments (get), documents, projects,
   milestones, initiatives, releases, teams, users, cycles, labels (list),
   workflow states, search, views, webhooks (list), dashboards (list).
 - **Write (16):** issue lifecycle and relations; save comment/document/project/
