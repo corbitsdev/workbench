@@ -12,8 +12,6 @@ import { iconForPreviewFamily } from "./artifact-family-icon";
 
 interface ArtifactCardProps {
   artifact: GalleryArtifact;
-  /** 1-based position in the grid, used for the decorative code badge. */
-  index: number;
   /** Invoked when the card is activated (click / Enter / Space). */
   onOpen?: ((artifact: GalleryArtifact) => void) | undefined;
   experimental?: boolean | undefined;
@@ -30,15 +28,15 @@ function statusChipClass(status: GalleryArtifact["status"]): string {
   }
 }
 
-function indexBadgeClass(fill: string): string {
-  return /\bcream\b/.test(fill)
-    ? "text-charcoal-deep"
-    : "text-white drop-shadow-sm";
+// Draft is the default status every artifact starts in, so it carries no
+// signal on a card — only surface the badge for a status that means something
+// happened (approved/rejected).
+function shouldShowStatusBadge(status: GalleryArtifact["status"]): boolean {
+  return status !== "draft";
 }
 
 export function ArtifactCard({
   artifact,
-  index,
   onOpen,
   experimental = false,
 }: ArtifactCardProps) {
@@ -78,11 +76,13 @@ export function ArtifactCard({
             <FamilyIcon className="h-3 w-3 shrink-0 opacity-90" aria-hidden />
             <span className="truncate">{artifact.label}</span>
           </span>
-          <span
-            className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
-          >
-            {labelForArtifactStatus(artifact.status)}
-          </span>
+          {shouldShowStatusBadge(artifact.status) ? (
+            <span
+              className={`shrink-0 rounded-full px-2 py-[3px] text-[10px] font-semibold tracking-[0.02em] backdrop-blur-[6px] ${statusChipClass(artifact.status)}`}
+            >
+              {labelForArtifactStatus(artifact.status)}
+            </span>
+          ) : null}
         </div>
       ) : null}
       <div
@@ -101,14 +101,8 @@ export function ArtifactCard({
             <ArtifactViz kind={artifact.viz} />
           )}
         </div>
-        <span
-          className={`absolute bottom-[10px] right-3 font-mono text-[13px] font-bold ${indexBadgeClass(fill)}`}
-        >
-          {artifact.label[0]}
-          {index.toString().padStart(2, "0")}
-        </span>
       </div>
-      <div className="border-t border-border bg-surface px-[13px] py-[11px]">
+      <div className="flex min-h-[68px] flex-col justify-center border-t border-border bg-surface px-[13px] py-[11px]">
         <div className="flex items-center gap-2">
           {!experimental ? (
             <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.03em] text-text-3">
@@ -119,7 +113,7 @@ export function ArtifactCard({
           <div className="min-w-0 flex-1 truncate text-[13.5px] font-semibold text-text">
             {artifact.title}
           </div>
-          {!experimental ? (
+          {!experimental && shouldShowStatusBadge(artifact.status) ? (
             <span
               className={`shrink-0 rounded-sm px-1.5 py-0.5 text-[10px] font-medium ${statusChipClass(artifact.status)}`}
             >
@@ -127,9 +121,13 @@ export function ArtifactCard({
             </span>
           ) : null}
         </div>
-        <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">
-          <span>{artifact.from}</span>·<span>{artifact.time}</span>
-        </div>
+        {(artifact.from ?? artifact.time) ? (
+          <div className="mt-0.5 flex items-center gap-[7px] font-mono text-[11px] text-text-3">
+            {artifact.from ? <span>{artifact.from}</span> : null}
+            {artifact.from && artifact.time ? <span>·</span> : null}
+            {artifact.time ? <span>{artifact.time}</span> : null}
+          </div>
+        ) : null}
         {(artifact.provenanceTone ?? "origin") !== "unknown" && (
           <div className="mt-1">
             <span
