@@ -107,6 +107,7 @@ function baseCtx(
       memberPrincipalId: MEMBER,
       inboxAddress: `usr_member@attio.test`,
       tenantDomain: "attio.test",
+      email: "member@attio.test",
     },
     credential: { apiKey: "tok", baseURL: "", source: "member" },
     cutoff: new Date("2026-07-01T00:00:00.000Z"),

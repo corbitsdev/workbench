@@ -51,6 +51,7 @@ const member: InboxIntakeMember = {
   memberPrincipalId: "prn-1",
   inboxAddress: "usr_1@intake.test",
   tenantDomain: "intake.test",
+  email: "member@intake.test",
 };
 
 function granolaSource(

@@ -58,6 +58,7 @@ const member = {
   memberPrincipalId: MEMBER,
   inboxAddress: INBOX,
   tenantDomain: DOMAIN,
+  email: "member@intake.test",
 };
 
 function fetcherReturning(

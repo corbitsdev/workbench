@@ -49,16 +49,144 @@ function emptyResponses() {
 const CUTOFF = new Date("2026-07-12T00:00:00.000Z");
 const NOW = new Date("2026-07-13T00:00:00.000Z");
 
-test("tenant-key credential skips the viewer-scoped sync entirely (no member identity)", async () => {
+test("tenant-key credential with no member email skips the sync (nothing to scope)", async () => {
   calls.length = 0;
+  emptyResponses();
   const items = await fetchLinearInboxItems(
     TENANT_CRED,
     CUTOFF,
     25,
     new AbortController().signal,
+    null,
   );
   expect(items).toEqual([]);
   expect(calls.length).toBe(0);
+});
+
+describe("tenant-key email fallback", () => {
+  test("scopes assigned issues + comments by assignee email and skips notifications", async () => {
+    calls.length = 0;
+    respond = (query) => {
+      if (query.includes("InboxIntakeAssignedIssuesByEmail")) {
+        return {
+          issues: {
+            nodes: [
+              {
+                id: "iss-9",
+                identifier: "ENG-9",
+                title: "Assigned via tenant key",
+                url: "https://linear.app/x/issue/ENG-9",
+                createdAt: "2026-07-12T11:00:00.000Z",
+                updatedAt: "2026-07-12T11:00:00.000Z",
+                state: { name: "Todo" },
+              },
+            ],
+          },
+        };
+      }
+      return {
+        comments: {
+          nodes: [
+            {
+              id: "cmt-9",
+              createdAt: "2026-07-12T12:00:00.000Z",
+              body: "tenant-key comment",
+              issue: {
+                id: "iss-10",
+                identifier: "ENG-10",
+                title: "Commented issue",
+                url: "https://linear.app/x/issue/ENG-10",
+              },
+            },
+          ],
+        },
+      };
+    };
+
+    const items = await fetchLinearInboxItems(
+      TENANT_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      "assignee@corp.test",
+    );
+
+    // No notifications query issued (viewer-only); both email-scoped queries ran.
+    const queries = calls.map((c) => c.query);
+    expect(queries.some((q) => q.includes("InboxIntakeNotifications"))).toBe(
+      false,
+    );
+    expect(
+      queries.some((q) => q.includes("InboxIntakeAssignedIssuesByEmail")),
+    ).toBe(true);
+    expect(
+      queries.some((q) => q.includes("InboxIntakeAssignedCommentsByEmail")),
+    ).toBe(true);
+
+    // The assignee email is passed through the GraphQL filter, not guessed.
+    const issueCall = calls.find((c) =>
+      c.query.includes("InboxIntakeAssignedIssuesByEmail"),
+    );
+    expect(issueCall?.variables.filter).toMatchObject({
+      assignee: { email: { eq: "assignee@corp.test" } },
+    });
+    const commentCall = calls.find((c) =>
+      c.query.includes("InboxIntakeAssignedCommentsByEmail"),
+    );
+    expect(commentCall?.variables.filter).toMatchObject({
+      issue: { assignee: { email: { eq: "assignee@corp.test" } } },
+    });
+
+    expect(items.map((i) => i.externalId).sort()).toEqual([
+      "comment:cmt-9",
+      "issue:iss-9:1783854000",
+    ]);
+  });
+
+  test("tenant-key and OAuth path produce the SAME issue externalId (no double-delivery on switch)", async () => {
+    const issue = {
+      id: "iss-same",
+      identifier: "ENG-11",
+      title: "Same issue",
+      url: "https://linear.app/x/issue/ENG-11",
+      createdAt: "2026-07-12T11:00:00.000Z",
+      updatedAt: "2026-07-12T11:00:00.000Z",
+      state: { name: "Todo" },
+    };
+    respond = (query) => {
+      if (query.includes("InboxIntakeAssignedIssuesByEmail")) {
+        return { issues: { nodes: [issue] } };
+      }
+      if (query.includes("InboxIntakeAssignedIssues")) {
+        return { viewer: { assignedIssues: { nodes: [issue] } } };
+      }
+      if (query.includes("InboxIntakeNotifications")) {
+        return { viewer: { notifications: { nodes: [] } } };
+      }
+      if (query.includes("InboxIntakeAssignedCommentsByEmail")) {
+        return { comments: { nodes: [] } };
+      }
+      return { viewer: { assignedIssuesComments: { nodes: [] } } };
+    };
+
+    const oauth = await fetchLinearInboxItems(
+      MEMBER_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+    );
+    const tenant = await fetchLinearInboxItems(
+      TENANT_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      "assignee@corp.test",
+    );
+
+    const oauthIssue = oauth.find((i) => i.externalId.startsWith("issue:"));
+    const tenantIssue = tenant.find((i) => i.externalId.startsWith("issue:"));
+    expect(oauthIssue?.externalId).toBe(tenantIssue?.externalId);
+  });
 });
 
 describe("member OAuth credential", () => {
@@ -135,7 +263,7 @@ describe("member OAuth credential", () => {
     const ids = items.map((i) => i.externalId).sort();
     expect(ids).toEqual([
       "comment:cmt-1",
-      "issue:iss-2:created:1783854000",
+      "issue:iss-2:1783854000",
       "notification:notif-1",
     ]);
   });

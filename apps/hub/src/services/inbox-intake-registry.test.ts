@@ -53,6 +53,7 @@ const member: InboxIntakeMember = {
   memberPrincipalId: "prn-1",
   inboxAddress: "usr_1@intake.test",
   tenantDomain: "intake.test",
+  email: "member@intake.test",
 };
 
 function baseDeps() {
@@ -115,6 +116,26 @@ describe("member-scope dispatch", () => {
     const intake = createInboxIntake({ ...baseDeps(), registry: [] });
     await intake.tick();
     expect(writes.length).toBe(0);
+  });
+
+  test("a fetch-shaped source receives the member email as the scoping arg", async () => {
+    let receivedEmail: string | null | undefined = "unset";
+    const source = defineFetchInboxSource("granola", async () => []);
+    const intake = createInboxIntake({
+      ...baseDeps(),
+      mailboxTriage: { enqueue: () => {} },
+      registry: [source],
+      fetchers: {
+        granola: async (_c, _cut, _lim, _sig, memberEmail) => {
+          receivedEmail = memberEmail;
+          return [];
+        },
+      },
+    });
+
+    await intake.tick();
+
+    expect(receivedEmail).toBe("member@intake.test");
   });
 
   test("a fetch-shaped source uses the injected fetcher override", async () => {
