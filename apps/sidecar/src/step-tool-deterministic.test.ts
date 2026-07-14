@@ -365,6 +365,24 @@ describe("runDeterministicToolStep", () => {
     ).rejects.toThrow(/input field "reply"/);
   });
 
+  test("a non-optional argMap field that is an empty string on the input passes through verbatim", async () => {
+    stubHubFetch();
+    const { env } = await makeEnv();
+    const result = await runDeterministicToolStep({
+      env: env as never,
+      toolName: "write_file",
+      input: { path: "out.txt", reply: "" },
+      argMapJson: JSON.stringify({
+        content: { from: "reply" },
+        path: { from: "path" },
+      }),
+      signal: new AbortController().signal,
+    });
+    const tr = result.output as Record<string, unknown>;
+    expect(tr).toHaveProperty("callId");
+    expect(tr.isError).not.toBe(true);
+  });
+
   test("an optional argMap field absent from the input skips the tool call without throwing", async () => {
     stubHubFetch();
     const { env } = await makeEnv();

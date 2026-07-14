@@ -467,10 +467,11 @@ export type ArgMapReshapeResult =
  * Reshape the evaluated step input into tool arguments per the step's
  * `argMap`. The argMap JSON is parsed + validated through arktype at this
  * trust boundary. For each `[argName, spec]`: `{ from }` pulls a top-level
- * field off the evaluated input (a missing field fails loud, naming it,
- * UNLESS the spec sets `optional: true` — an absent or empty-string optional
- * field returns a skip result instead of throwing); `{ literal }` supplies
- * the constant.
+ * field off the evaluated input. Non-optional `{ from }`: absence is a
+ * missing key on the evaluated step input and fails loud, naming it — an
+ * empty string is a real value and passes through unchanged. Optional
+ * `{ from, optional: true }`: an absent key OR an empty-string value returns
+ * a skip result instead of throwing. `{ literal }` supplies the constant.
  */
 function reshapeWithArgMap(
   toolName: string,
@@ -502,19 +503,20 @@ function reshapeWithArgMap(
       toolArguments[argName] = spec.literal;
       continue;
     }
-    const rawValue =
-      inputRecord !== undefined && spec.from in inputRecord
-        ? inputRecord[spec.from]
-        : undefined;
-    const isAbsent =
-      rawValue === undefined || (typeof rawValue === "string" && rawValue === "");
-    if (isAbsent) {
-      if (spec.optional === true) {
+    const present = inputRecord !== undefined && spec.from in inputRecord;
+    const rawValue = present ? inputRecord[spec.from] : undefined;
+    if (spec.optional === true) {
+      const isEmptyString = typeof rawValue === "string" && rawValue === "";
+      if (!present || isEmptyString) {
         return {
           skip: true,
-          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional input field "${spec.from}", which is absent on the evaluated step input`,
+          reason: `deterministic step "${toolName}" argMap maps tool arg "${argName}" from optional input field "${spec.from}", which is absent or empty on the evaluated step input`,
         };
       }
+      toolArguments[argName] = rawValue;
+      continue;
+    }
+    if (!present) {
       throw new Error(
         `step-tool-harness: deterministic step "${toolName}" argMap maps tool arg "${argName}" from input field "${spec.from}", but that field is absent on the evaluated step input`,
       );
