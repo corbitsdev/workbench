@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { LINEAR_SCOPE_PREFERENCE_KEY } from "@workbench/shared";
 import type { MemberToolCredential } from "../../lib/member-tool-credential";
 
 // True module-boundary mock: @workbench/tools-linear owns the actual HTTP
@@ -378,5 +379,105 @@ describe("dedupe design: externalId stability across ticks", () => {
     );
 
     expect(before[0]?.externalId).not.toBe(after[0]?.externalId);
+  });
+});
+
+describe("inboxSource:linear:scope = all (CL-3580)", () => {
+  test("default (assigned) scope filters by assignee alone, no subscribers OR", async () => {
+    calls.length = 0;
+    emptyResponses();
+    await fetchLinearInboxItems(
+      MEMBER_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      undefined,
+      { [LINEAR_SCOPE_PREFERENCE_KEY]: "assigned" },
+    );
+    const issuesCall = calls.find((c) =>
+      c.query.includes("InboxIntakeAssignedIssues"),
+    );
+    expect(issuesCall?.variables.filter).toEqual({
+      assignee: { isMe: { eq: true } },
+      updatedAt: { gt: CUTOFF.toISOString() },
+    });
+  });
+
+  test("all scope ORs assignee with subscribers for the OAuth (viewer) issue query", async () => {
+    calls.length = 0;
+    emptyResponses();
+    await fetchLinearInboxItems(
+      MEMBER_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      undefined,
+      { [LINEAR_SCOPE_PREFERENCE_KEY]: "all" },
+    );
+    const issuesCall = calls.find((c) =>
+      c.query.includes("InboxIntakeAssignedIssues"),
+    );
+    expect(issuesCall?.variables.filter).toEqual({
+      or: [
+        { assignee: { isMe: { eq: true } } },
+        { subscribers: { isMe: { eq: true } } },
+      ],
+      updatedAt: { gt: CUTOFF.toISOString() },
+    });
+  });
+
+  test("all scope ORs assignee with subscribers, nested under issue, for the OAuth comments query", async () => {
+    calls.length = 0;
+    emptyResponses();
+    await fetchLinearInboxItems(
+      MEMBER_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      undefined,
+      { [LINEAR_SCOPE_PREFERENCE_KEY]: "all" },
+    );
+    const commentsCall = calls.find(
+      (c) =>
+        c.query.includes("InboxIntakeAssignedComments") &&
+        !c.query.includes("ByEmail"),
+    );
+    expect(commentsCall?.variables.filter).toEqual({
+      issue: {
+        or: [
+          { assignee: { isMe: { eq: true } } },
+          { subscribers: { isMe: { eq: true } } },
+        ],
+      },
+      createdAt: { gt: CUTOFF.toISOString() },
+    });
+  });
+
+  test("all scope broadens the tenant-key email-scoped issue query by subscriber email", async () => {
+    calls.length = 0;
+    respond = (query) => {
+      if (query.includes("InboxIntakeAssignedIssuesByEmail")) {
+        return { issues: { nodes: [] } };
+      }
+      return { comments: { nodes: [] } };
+    };
+    await fetchLinearInboxItems(
+      TENANT_CRED,
+      CUTOFF,
+      25,
+      new AbortController().signal,
+      "assignee@corp.test",
+      { [LINEAR_SCOPE_PREFERENCE_KEY]: "all" },
+    );
+    const issuesCall = calls.find((c) =>
+      c.query.includes("InboxIntakeAssignedIssuesByEmail"),
+    );
+    expect(issuesCall?.variables.filter).toEqual({
+      or: [
+        { assignee: { email: { eq: "assignee@corp.test" } } },
+        { subscribers: { email: { eq: "assignee@corp.test" } } },
+      ],
+      updatedAt: { gt: CUTOFF.toISOString() },
+    });
   });
 });

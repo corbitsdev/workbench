@@ -13,10 +13,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { pushSchema } from "drizzle-kit/api";
 
 const { createSlackWebhookRouter } = await import("./webhooks-slack");
+import { inboxSourcePreferenceKey } from "@workbench/shared";
 import { schema } from "../db";
 import type { HubDb } from "../db";
 import type { InboxIntakeMember } from "../services/inbox-source-registry";
 import type { SlackCredential } from "../lib/slack-api-client";
+import { mergeMemberPreferences } from "../lib/member-preferences";
 import { createEmailMemberResolver } from "../lib/slack-member-mapping";
 import { createSlackEventDedupe } from "../lib/slack-event-dedupe";
 
@@ -127,6 +129,13 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await client.exec(`DELETE FROM principal_mailbox;`);
+  await client.exec(`DELETE FROM member_preferences;`);
+  // Member default for `inboxSource:slack` is OFF (CL-3581); most tests in
+  // this file exercise mention delivery, so opt the fixture member in here
+  // and test the OFF-by-default / explicit-disable paths separately.
+  await mergeMemberPreferences(db, TENANT, MEMBER, {
+    [inboxSourcePreferenceKey("slack")]: true,
+  });
 });
 
 describe("url_verification", () => {
@@ -244,6 +253,60 @@ describe("mention routing + delivery", () => {
     });
     expect(res.status).toBe(200);
     expect((await mailboxRows()).rows.length).toBe(0);
+  });
+});
+
+describe("member-level inboxSource:slack gate (CL-3581)", () => {
+  test("a member with the preference disabled has the mention dropped", async () => {
+    await mergeMemberPreferences(db, TENANT, MEMBER, {
+      [inboxSourcePreferenceKey("slack")]: false,
+    });
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-pref-off",
+        text: `hey <@${SLACK_USER_ID}>`,
+      }),
+    );
+    const res = await makeRouter().request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    expect((await mailboxRows()).rows.length).toBe(0);
+  });
+
+  test("a member with no stored preference (default OFF) has the mention dropped", async () => {
+    await client.exec(`DELETE FROM member_preferences;`);
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-pref-unset",
+        text: `hey <@${SLACK_USER_ID}>`,
+      }),
+    );
+    const res = await makeRouter().request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    expect((await mailboxRows()).rows.length).toBe(0);
+  });
+
+  test("a member with the preference enabled has the mention delivered", async () => {
+    const body = JSON.stringify(
+      messagePayload({
+        eventId: "ev-pref-on",
+        text: `hey <@${SLACK_USER_ID}>`,
+      }),
+    );
+    const res = await makeRouter().request("/webhooks/slack", {
+      method: "POST",
+      headers: signedHeaders(body),
+      body,
+    });
+    expect(res.status).toBe(200);
+    expect((await mailboxRows()).rows.length).toBe(1);
   });
 });
 

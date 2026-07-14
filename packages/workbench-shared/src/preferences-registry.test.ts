@@ -294,13 +294,22 @@ describe("resolveAvailableBriefSources", () => {
 });
 
 describe("INBOX_SOURCE_CATALOG", () => {
-  test("mirrors BRIEF_SOURCE_CATALOG's keys, defaulting every source off", () => {
-    expect(INBOX_SOURCE_CATALOG.map((s) => s.key).sort()).toEqual(
-      BRIEF_SOURCE_CATALOG.map((s) => s.key).sort(),
-    );
+  test("includes every BRIEF_SOURCE_CATALOG key plus inbox-only sources, defaulting every source off", () => {
+    const inboxKeys = INBOX_SOURCE_CATALOG.map((s) => s.key);
+    for (const key of BRIEF_SOURCE_CATALOG.map((s) => s.key)) {
+      expect(inboxKeys).toContain(key);
+    }
     for (const source of INBOX_SOURCE_CATALOG) {
       expect(source.defaultEnabled).toBe(false);
     }
+  });
+
+  test("includes slack, an inbox-only source with no brief-source equivalent (CL-3581)", () => {
+    expect(BRIEF_SOURCE_CATALOG.map((s) => s.key)).not.toContain("slack");
+    const slack = INBOX_SOURCE_CATALOG.find((s) => s.key === "slack");
+    expect(slack?.description).toBe(
+      "Slack mentions of you land in your inbox.",
+    );
   });
 });
 
