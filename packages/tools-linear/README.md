@@ -1,9 +1,18 @@
 # @workbench/tools-linear
 
-Linear API tools for workbench agents.
+Linear GraphQL tools for workbench agents. The hub registry is
+`LINEAR_HUB_TOOLS` in `src/hub-tools.ts` (**40** `linear_*` tools).
 
-- Read-only: `linear_list_issues`, `linear_get_issue`, `linear_list_teams`,
-  `linear_list_users`.
-- Write (approval-gated): `linear_create_issue` creates a real Linear issue.
-  It is classified `sideEffect: "write"`, so the hub routes it through the human
-  ReviewGate before it runs — no custom gate or grant is added.
+- **Read (24):** issues, comments, attachments (get), documents, projects,
+  milestones, initiatives, releases, teams, users, cycles, labels (list),
+  workflow states, search, views, webhooks (list), dashboards (list).
+- **Write (16):** issue lifecycle and relations; save comment/document/project/
+  milestone/initiative/release; issue labels; attachment upload flow; webhook
+  save/delete.
+
+Writes use `sideEffect: "write"` on each hub entry so the hub classifies them for
+ReviewGate / grant `ask` in interactive sessions. See
+[docs/LINEAR_TOOLS.md](../../docs/LINEAR_TOOLS.md) for the full catalog and
+unsupported-operation matrix (no stub tools).
+
+Module layout and wiring notes: [AGENTS.md](./AGENTS.md).

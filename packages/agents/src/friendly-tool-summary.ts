@@ -201,10 +201,161 @@ const PHRASES: Record<string, FriendlyPhrase> = {
     const title = firstStringArg(args, ["title"]);
     return title === null
       ? "Creating a Linear issue"
-      : `Creating Linear issue "${title}"`;
+      : `Creating Linear issue "${truncate(title)}"`;
+  },
+  linear_update_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Updating a Linear issue"
+      : `Updating Linear issue ${id}`;
+  },
+  linear_archive_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Archiving a Linear issue"
+      : `Archiving Linear issue ${id}`;
+  },
+  linear_delete_issue: (args) => {
+    const id = firstStringArg(args, ["id", "issueId", "identifier"]);
+    return id === null
+      ? "Deleting a Linear issue"
+      : `Deleting Linear issue ${id}`;
+  },
+  linear_link_issues: "Linking Linear issues",
+  linear_list_comments: (args) => {
+    const id = firstStringArg(args, ["issueId", "id", "identifier"]);
+    return id === null
+      ? "Listing Linear comments"
+      : `Listing comments on Linear issue ${id}`;
+  },
+  linear_save_comment: (args) => {
+    const id = firstStringArg(args, ["issueId", "id"]);
+    return id === null
+      ? "Saving a Linear comment"
+      : `Saving a comment on Linear issue ${id}`;
+  },
+  linear_get_attachment: (args) => {
+    const id = firstStringArg(args, ["id"]);
+    return id === null
+      ? "Opening a Linear attachment"
+      : `Opening Linear attachment ${id}`;
+  },
+  linear_prepare_attachment_upload: (args) => {
+    const issue = firstStringArg(args, ["issue", "issueId"]);
+    return issue === null
+      ? "Preparing a Linear file upload"
+      : `Preparing a file upload for Linear issue ${issue}`;
+  },
+  linear_create_attachment_from_upload: (args) => {
+    const issue = firstStringArg(args, ["issue", "issueId"]);
+    return issue === null
+      ? "Attaching a file in Linear"
+      : `Attaching a file to Linear issue ${issue}`;
+  },
+  linear_list_documents: "Browsing Linear documents",
+  linear_get_document: (args) => {
+    const id = firstStringArg(args, ["id", "slug"]);
+    return id === null
+      ? "Opening a Linear document"
+      : `Opening Linear document ${truncate(id)}`;
+  },
+  linear_save_document: (args) => {
+    const title = firstStringArg(args, ["title"]);
+    return title === null
+      ? "Saving a Linear document"
+      : `Saving Linear document "${truncate(title)}"`;
+  },
+  linear_list_projects: "Listing Linear projects",
+  linear_get_project: (args) => {
+    const query = firstStringArg(args, ["query", "id", "slug"]);
+    return query === null
+      ? "Opening a Linear project"
+      : `Opening Linear project ${truncate(query)}`;
+  },
+  linear_save_project: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear project"
+      : `Saving Linear project "${truncate(name)}"`;
+  },
+  linear_list_milestones: (args) => {
+    const project = firstStringArg(args, ["project"]);
+    return project === null
+      ? "Listing Linear milestones"
+      : `Listing milestones for Linear project ${truncate(project)}`;
+  },
+  linear_save_milestone: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear milestone"
+      : `Saving Linear milestone "${truncate(name)}"`;
+  },
+  linear_list_initiatives: "Listing Linear initiatives",
+  linear_save_initiative: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear initiative"
+      : `Saving Linear initiative "${truncate(name)}"`;
+  },
+  linear_list_cycles: (args) => {
+    const team = firstStringArg(args, ["teamId", "team"]);
+    return team === null
+      ? "Listing Linear cycles"
+      : `Listing cycles for Linear team ${truncate(team)}`;
+  },
+  linear_list_releases: "Listing Linear releases",
+  linear_save_release: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Saving a Linear release"
+      : `Saving Linear release "${truncate(name)}"`;
   },
   linear_list_teams: "Listing Linear teams",
+  linear_get_team: (args) => {
+    const query = firstStringArg(args, ["query", "id", "key"]);
+    return query === null
+      ? "Opening a Linear team"
+      : `Opening Linear team ${truncate(query)}`;
+  },
   linear_list_users: "Listing Linear users",
+  linear_get_user: (args) => {
+    const query = firstStringArg(args, ["query", "id", "email"]);
+    return query === null
+      ? "Looking up a Linear user"
+      : `Looking up Linear user ${truncate(query)}`;
+  },
+  linear_list_issue_labels: "Listing Linear issue labels",
+  linear_create_issue_label: (args) => {
+    const name = firstStringArg(args, ["name"]);
+    return name === null
+      ? "Creating a Linear issue label"
+      : `Creating Linear label "${truncate(name)}"`;
+  },
+  linear_list_project_labels: "Listing Linear project labels",
+  linear_list_initiative_labels: "Listing Linear initiative labels",
+  linear_list_issue_statuses: (args) => {
+    const team = firstStringArg(args, ["team"]);
+    return team === null
+      ? "Listing Linear workflow states"
+      : `Listing workflow states for ${truncate(team)}`;
+  },
+  linear_get_issue_status: "Resolving a Linear workflow state",
+  linear_search: searching("Linear", ["query", "term"]),
+  linear_list_views: "Listing Linear views",
+  linear_list_dashboards: "Listing Linear dashboards",
+  linear_list_webhooks: "Listing Linear webhooks",
+  linear_save_webhook: (args) => {
+    const label = firstStringArg(args, ["label", "url"]);
+    return label === null
+      ? "Saving a Linear webhook"
+      : `Saving Linear webhook ${truncate(label)}`;
+  },
+  linear_delete_webhook: (args) => {
+    const id = firstStringArg(args, ["id"]);
+    return id === null
+      ? "Deleting a Linear webhook"
+      : `Deleting Linear webhook ${id}`;
+  },
 
   // Attio CRM — brand name in the phrase (not "CRM") so the UI reads naturally
   attio_query_records: (args) => {
