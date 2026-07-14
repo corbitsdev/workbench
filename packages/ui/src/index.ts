@@ -25,6 +25,29 @@ export {
   type ComparisonViewProps,
 } from "./comparison";
 export { PagePanel } from "./PagePanel";
+export {
+  DashboardSection,
+  type DashboardSectionProps,
+  type DashboardSectionVariant,
+} from "./DashboardSection";
+export {
+  StatGrid,
+  StatGridItem,
+  type StatGridProps,
+  type StatGridItemProps,
+  type StatGridColumns,
+} from "./StatGrid";
+export {
+  StatSparkline,
+  StatSparklineZeroBaseline,
+  type StatSparklineProps,
+} from "./StatSparkline";
+export {
+  RichEmptyState,
+  type RichEmptyStateProps,
+  type RichEmptyStateAction,
+  type RichEmptyStateActionVariant,
+} from "./RichEmptyState";
 export { LibraryPageHeader, LibrarySearchInput } from "./LibraryPageHeader";
 export {
   CatalogGlyph,

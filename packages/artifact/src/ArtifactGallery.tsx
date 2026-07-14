@@ -11,7 +11,7 @@
 //   - ArtifactGallery: the results grid/table + load-more.
 
 import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, FileStack } from "lucide-react";
 import {
   Menu,
   MenuContent,
@@ -19,6 +19,7 @@ import {
   MenuTrigger,
   DataTable,
   ViewToggle,
+  RichEmptyState,
   type DataTableColumn,
   type ViewMode,
 } from "@workbench/ui";
@@ -436,14 +437,25 @@ export function ArtifactGallery({
           </div>
         )}
         {!isLoading && !isError && tiles.length === 0 && !isSearching && (
-          <div className="py-10 text-[13px] text-text-3">
-            No artifacts yet. Start a job to generate collateral.
-          </div>
+          <RichEmptyState
+            className="mx-auto max-w-lg"
+            icon={<FileStack className="h-6 w-6" strokeWidth={1.75} />}
+            title="No artifacts yet"
+            description="Start a job to generate collateral."
+          />
         )}
         {!isLoading && !isError && tiles.length === 0 && isSearching && (
-          <div className="py-10 text-[13px] text-text-3">
-            No results for &ldquo;{query.trim()}&rdquo;.
-          </div>
+          <RichEmptyState
+            className="mx-auto max-w-lg"
+            icon={<FileStack className="h-6 w-6" strokeWidth={1.75} />}
+            title="No matching artifacts"
+            description={
+              <>
+                No results for &ldquo;{query.trim()}&rdquo;. Try a different search
+                or clear filters.
+              </>
+            }
+          />
         )}
         {viewMode === "rows" ? (
           <DataTable<ArtifactWithSession>
