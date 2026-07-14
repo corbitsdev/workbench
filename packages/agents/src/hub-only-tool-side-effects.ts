@@ -2,8 +2,7 @@ import type { ToolSideEffect } from "@workbench/tool-manifest";
 
 /**
  * Side effects for hub-backed tools with no `@workbench/tools-*` manifest row.
- * Keep in lockstep with `HUB_ONLY_TOOLS_NOT_IN_MANIFEST` in
- * `apps/hub/src/lib/known-tools-manifest-drift.test.ts`.
+ * `known-tools-manifest-drift.test.ts` derives its hub-only name list from this map.
  */
 export const HUB_ONLY_TOOL_SIDE_EFFECTS: Record<string, ToolSideEffect> = {
   task_create: "write",
