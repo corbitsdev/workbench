@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { type } from "arktype";
 import { getLogger } from "@intx/log";
 import { splitMailAddressList } from "@workbench/hub-agent";
@@ -10,7 +10,9 @@ import {
 } from "@workbench/shared";
 import { principalMailbox, type PrincipalMailboxRow } from "../db/schema";
 import type { HubDb } from "../db";
-import { keysetBefore, takePage, type KeysetCursor } from "./keyset";
+import { encodeMailboxListCursor } from "./mailbox-list-cursor";
+import { keysetBefore, type KeysetCursor } from "./keyset";
+import type { MailboxInboxView } from "@workbench/shared";
 import { extractConversationBodyFromRaw } from "./conversation-mail-body";
 import {
   attachFromDisplay,
@@ -25,12 +27,49 @@ export type MailboxScope = {
   principalId: string;
   limit: number;
   cursor?: KeysetCursor;
+  view?: MailboxInboxView;
 };
+
+function viewConditions(view: MailboxInboxView | undefined) {
+  switch (view ?? "all") {
+    case "unread":
+      return [
+        isNull(principalMailbox.trashedAt),
+        isNull(principalMailbox.archivedAt),
+        isNull(principalMailbox.readAt),
+      ];
+    case "archived":
+      return [
+        isNotNull(principalMailbox.archivedAt),
+        isNull(principalMailbox.trashedAt),
+      ];
+    case "trash":
+      return [isNotNull(principalMailbox.trashedAt)];
+    case "all":
+    default:
+      return [
+        isNull(principalMailbox.trashedAt),
+        isNull(principalMailbox.archivedAt),
+      ];
+  }
+}
 
 export type MailboxPage = {
   items: MailboxMessage[];
   nextCursor?: string;
 };
+
+function takeMailboxPage<T extends { createdAt: Date; id: string }>(
+  rows: T[],
+  limit: number,
+  view: MailboxInboxView,
+): { items: T[]; nextCursor?: string } {
+  if (rows.length <= limit) return { items: rows };
+  const items = rows.slice(0, limit);
+  const last = items[items.length - 1];
+  if (!last) return { items };
+  return { items, nextCursor: encodeMailboxListCursor(last, view) };
+}
 
 const SNIPPET_MAX_CHARS = 160;
 
@@ -134,6 +173,7 @@ export async function listUserMailbox(
     eq(principalMailbox.tenantId, scope.tenantId),
     eq(principalMailbox.principalId, scope.principalId),
     eq(principalMailbox.direction, "inbound"),
+    ...viewConditions(scope.view),
   ];
   if (scope.cursor) {
     const before = keysetBefore(
@@ -143,12 +183,13 @@ export async function listUserMailbox(
     );
     if (before) conditions.push(before);
   }
+  const view = scope.view ?? "all";
   const rows = await db.query.principalMailbox.findMany({
     where: and(...conditions),
     orderBy: [desc(principalMailbox.createdAt), desc(principalMailbox.id)],
     limit: scope.limit + 1,
   });
-  const page = takePage(rows, scope.limit);
+  const page = takeMailboxPage(rows, scope.limit, view);
   const baseItems = page.items.map(toMailboxMessage);
   const displays = await resolveSenderDisplayNames(
     db,
@@ -215,6 +256,7 @@ export async function markMailboxMessageRead(
         eq(principalMailbox.id, args.id),
         eq(principalMailbox.tenantId, args.tenantId),
         eq(principalMailbox.principalId, args.principalId),
+        eq(principalMailbox.direction, "inbound"),
       ),
     )
     .returning({ id: principalMailbox.id });

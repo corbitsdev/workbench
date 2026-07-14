@@ -399,6 +399,7 @@ describe("markMailboxMessageRead", () => {
     expect(sql).toContain("principal_id");
     expect(params).toContain("ten-1");
     expect(params).toContain("pri-alice");
+    expect(params).toContain("inbound");
     expect(params).toContain("5e0f8c9a-0000-4000-8000-000000000001");
   });
 

@@ -29,7 +29,7 @@ mock.module("../lib/api", () => ({
 
 const {
   unreadCount,
-  MAILBOX_QUERY_KEY,
+  mailboxQueryKey,
   MAILBOX_POLL_MS,
   MAILBOX_PAGE_LIMIT,
   useMailbox,
@@ -82,8 +82,9 @@ describe("unreadCount", () => {
 });
 
 describe("mailbox query constants", () => {
-  it("shares one query key so the page and bell read the same cache", () => {
-    expect(MAILBOX_QUERY_KEY).toEqual(["mailbox"]);
+  it("scopes mailbox cache keys by inbox view", () => {
+    expect(mailboxQueryKey("all")).toEqual(["mailbox", "all"]);
+    expect(mailboxQueryKey("trash")).toEqual(["mailbox", "trash"]);
   });
 
   it("polls the ambient bell surface on a bounded cadence", () => {
@@ -104,7 +105,7 @@ describe("useMailbox", () => {
       "1",
     ]);
     expect(apiCalls).toEqual([
-      { method: "GET", path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}` },
+      { method: "GET", path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}&view=all` },
     ]);
   });
 
@@ -133,10 +134,10 @@ describe("useMailbox", () => {
       "3",
     ]);
     expect(apiCalls).toEqual([
-      { method: "GET", path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}` },
+      { method: "GET", path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}&view=all` },
       {
         method: "GET",
-        path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}&cursor=cursor-a`,
+        path: `/me/inbox?limit=${MAILBOX_PAGE_LIMIT}&view=all&cursor=cursor-a`,
       },
     ]);
   });

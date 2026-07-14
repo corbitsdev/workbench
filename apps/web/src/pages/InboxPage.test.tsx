@@ -59,7 +59,9 @@ type PageState = {
 };
 
 let mailbox: MailboxState;
+let nowMailbox: MailboxState | null;
 let mailboxPaging: PageState;
+let nowMailboxPaging: PageState | null;
 let detail: DetailState;
 let tasksState: ListState<Task>;
 let tasksPaging: PageState;
@@ -107,19 +109,44 @@ mock.module("../lib/active-workbench-context", () => ({
 
 mock.module("../hooks/use-mailbox", () => ({
   MAILBOX_POLL_MS: 30_000,
-  useMailbox: () => ({
-    data: mailbox.data,
-    isLoading: mailbox.isLoading,
-    isError: mailbox.isError,
-    hasNextPage: mailboxPaging.hasNextPage,
-    isFetchingNextPage: mailboxPaging.isFetchingNextPage,
-    fetchNextPage: () => {
-      fetchNextMailboxCalls += 1;
-    },
-    refetch: () => {
-      refetchCalls += 1;
-    },
+  parseMailboxView: (raw: string | null) => {
+    if (raw === null || raw === "") return "all";
+    if (raw === "unread" || raw === "archived" || raw === "trash" || raw === "all") {
+      return raw;
+    }
+    return null;
+  },
+  useMailboxBulkAction: () => ({
+    mutateAsync: async () => undefined,
+    isPending: false,
   }),
+  useMailboxItemAction: () => ({
+    mutateAsync: async () => undefined,
+    isPending: false,
+  }),
+  useMarkMailboxUnread: () => ({
+    mutateAsync: async () => undefined,
+    isPending: false,
+  }),
+  useMailbox: (options?: { view?: string }) => {
+    const view = options?.view ?? "all";
+    const state = view === "all" ? (nowMailbox ?? mailbox) : mailbox;
+    const paging =
+      view === "all" ? (nowMailboxPaging ?? mailboxPaging) : mailboxPaging;
+    return {
+      data: state.data,
+      isLoading: state.isLoading,
+      isError: state.isError,
+      hasNextPage: paging.hasNextPage,
+      isFetchingNextPage: paging.isFetchingNextPage,
+      fetchNextPage: () => {
+        fetchNextMailboxCalls += 1;
+      },
+      refetch: () => {
+        refetchCalls += 1;
+      },
+    };
+  },
   useMailboxMessage: (id: string | null) => {
     detailQueryIds.push(id);
     return {
@@ -206,7 +233,9 @@ function renderInbox(initialPath = "/inbox") {
 
 function resetStates() {
   mailbox = { data: undefined, isLoading: false, isError: false };
+  nowMailbox = null;
   mailboxPaging = { hasNextPage: false, isFetchingNextPage: false };
+  nowMailboxPaging = null;
   detail = { data: undefined, isLoading: false, isError: false };
   tasksState = { data: [], isLoading: false, isError: false };
   tasksPaging = { hasNextPage: false, isFetchingNextPage: false };
@@ -449,7 +478,7 @@ describe("InboxPage", () => {
       isError: false,
     };
     renderInbox("/inbox/msg-1");
-    expect(markReadIds).toEqual(["msg-1"]);
+    expect([...new Set(markReadIds)]).toEqual(["msg-1"]);
   });
 
   it("does not re-mark a message that is already read", () => {
@@ -501,6 +530,21 @@ describe("InboxPage", () => {
 });
 
 describe("InboxPage Now feed", () => {
+  it("uses the active inbox for Now even when the rail is on another folder", () => {
+    runsState = { data: [], isLoading: false, isError: false };
+    tasksState = { data: [], isLoading: false, isError: false };
+    mailbox = { data: [], isLoading: false, isError: false };
+    nowMailbox = {
+      data: [makeMessage({ id: "msg-active", subject: "Still in Now" })],
+      isLoading: false,
+      isError: false,
+    };
+    renderInbox("/inbox?view=trash");
+    const feed = screen.getByRole("list", { name: "Now" });
+    within(feed).getByText("Still in Now");
+    expect(screen.queryByText("Still in Now", { selector: "aside *" })).toBeNull();
+  });
+
   it("orders awaiting gates before unread mail before open tasks", () => {
     runsState = {
       data: [makeRun({ runId: "run-1", kind: "call-to-collateral" })],

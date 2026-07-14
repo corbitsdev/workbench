@@ -5,14 +5,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import React from "react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import type { MailboxMessage, Task } from "@workbench/shared";
-import { unreadCount as realUnreadCount } from "../../hooks/use-mailbox";
-
 let bellData: MailboxMessage[] | undefined;
+let bellUnreadCount: number | undefined;
 let bellTaskData: Task[] | undefined;
 
 mock.module("../../hooks/use-mailbox", () => ({
   useMailbox: () => ({ data: bellData }),
-  unreadCount: realUnreadCount,
+  useMailboxUnreadCount: () => ({ data: bellUnreadCount }),
   MAILBOX_POLL_MS: 30_000,
 }));
 mock.module("../../hooks/use-mailbox-live", () => ({
@@ -72,9 +71,11 @@ function makeTask(over: Partial<Task>): Task {
 afterEach(() => {
   cleanup();
   bellData = undefined;
+  bellUnreadCount = undefined;
   bellTaskData = undefined;
 });
 bellData = undefined;
+bellUnreadCount = undefined;
 bellTaskData = undefined;
 
 describe("NotificationsBell", () => {
@@ -84,12 +85,14 @@ describe("NotificationsBell", () => {
       makeMessage({ id: "2", read: false }),
       makeMessage({ id: "3", read: true }),
     ];
+    bellUnreadCount = 2;
     renderBell();
     screen.getByRole("button", { name: /2 unread/i });
   });
 
   it("shows no unread indicator when everything is read", () => {
     bellData = [makeMessage({ id: "1", read: true })];
+    bellUnreadCount = 0;
     renderBell();
     expect(screen.queryByRole("button", { name: /unread/i })).toBeNull();
     // The bell itself is still present, just without an unread label.
