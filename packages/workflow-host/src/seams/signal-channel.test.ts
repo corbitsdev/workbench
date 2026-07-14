@@ -76,6 +76,33 @@ function makeIdGen(prefix: string): () => string {
   };
 }
 
+// Seeds a seq-1 RunStarted blob so `deliver()` has a non-empty log to append
+// to -- mirrors the runtime body's own first commit (repo-store.ts writes
+// the run's first event at seq 1, never seq 0).
+async function seedRunStarted(
+  store: ReturnType<typeof createRepoStore>,
+  repoId: RepoId,
+  runId: string,
+): Promise<void> {
+  const prefix = `runs/${runId}/events/`;
+  await store.writeTreePreservingPrefix(principal, repoId, REF, {
+    preservePrefix: prefix,
+    merge: async (existing) => {
+      const out: Record<string, string> = {};
+      for (const [filepath, contents] of existing) {
+        out[filepath] = new TextDecoder().decode(contents);
+      }
+      out[`${prefix}1.json`] = JSON.stringify({
+        type: "RunStarted",
+        seq: 1,
+        at: new Date().toISOString(),
+      });
+      return out;
+    },
+    message: `RunStarted seed for run ${runId}`,
+  });
+}
+
 describe("workflow-host signal channel", () => {
   test(
     "a live SignalReceived commit resolves a waiting awaitNext",
@@ -90,6 +117,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-live" };
       const runId = "r-live";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -177,6 +205,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-abort" };
       const runId = "r-abort";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -232,6 +261,7 @@ describe("workflow-host signal channel", () => {
       };
       const runId = "r-isolated";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -278,6 +308,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-relive" };
       const runId = "r-relive";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -353,6 +384,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-fifo" };
       const runId = "r-fifo";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -418,6 +450,7 @@ describe("workflow-host signal channel", () => {
       const repoId: RepoId = { kind: "agent-state", id: "deployment-dedup" };
       const runId = "r-dedup";
       const box = makeStateBox(runId);
+      await seedRunStarted(store, repoId, runId);
 
       const channel = createWorkflowHostSignalChannel({
         repoStore: store,
@@ -440,7 +473,62 @@ describe("workflow-host signal channel", () => {
         );
         const entries = await fs.promises.readdir(eventsDir);
         const matching = entries.filter((n) => /^\d+\.json$/.test(n));
-        expect(matching).toHaveLength(1);
+        // The seeded RunStarted at seq 1 plus a single delivered blob --
+        // the re-issued signalId must not add a second one.
+        expect(matching).toHaveLength(2);
+      } finally {
+        await channel.stop();
+      }
+    },
+    { timeout: 5000 },
+  );
+
+  test(
+    "deliver refuses to write when the run's events log is empty, and writes nothing",
+    async () => {
+      const dataDir = await makeTempDir("sigchan-cold-");
+      const store = createRepoStore({
+        dataDir,
+        signingKey,
+        handlers: { "agent-state": permissiveHandler("workflow-runs-cold") },
+        authorize: allowAll,
+      });
+      const repoId: RepoId = { kind: "agent-state", id: "deployment-cold" };
+      const runId = "r-cold";
+      const box = makeStateBox(runId);
+      // No seedRunStarted -- this run has never committed RunStarted, the
+      // exact race a reconciler's auto-delivered "intake" signal can hit
+      // against a cold-starting workflow child.
+
+      const channel = createWorkflowHostSignalChannel({
+        repoStore: store,
+        principal,
+        repoId,
+        ref: REF,
+        runId,
+        readState: () => box.state,
+        newId: makeIdGen("sig"),
+        clock: () => new Date(),
+      });
+      try {
+        await expect(
+          channel.deliver("intake", { ok: true }, "sig-cold"),
+        ).rejects.toThrow(/run log has no events yet/);
+
+        const eventsDir = path.join(
+          store.getRepoDir(repoId),
+          "runs",
+          runId,
+          "events",
+        );
+        const exists = await fs.promises
+          .access(eventsDir)
+          .then(() => true)
+          .catch(() => false);
+        if (exists) {
+          const entries = await fs.promises.readdir(eventsDir);
+          expect(entries.filter((n) => /^\d+\.json$/.test(n))).toHaveLength(0);
+        }
       } finally {
         await channel.stop();
       }
