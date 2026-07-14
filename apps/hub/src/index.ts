@@ -1261,7 +1261,7 @@ v1.route("/", createFileParseRouter(db));
 v1.route("/", createGammaTemplatesRouter(db));
 v1.route("/", createApprovalsRouter(db, approvalsEventBus));
 v1.route("/", createFeedbackRouter(db));
-v1.route("/", createMePreferencesRouter(db));
+v1.route("/", createMePreferencesRouter(db, grantStore));
 // Per-user OAuth connections (CL-3356). The PKCE verifier store is shared with
 // the public callback router below so an authorize on one request and its
 // callback on another find the same server-side verifier. `state` is signed
@@ -1624,6 +1624,7 @@ const listInboxMembers = async () => {
 
 const inboxIntake = createInboxIntake({
   db,
+  grantStore,
   listMembers: listInboxMembers,
   mailboxEventBus,
   mailboxTriage,

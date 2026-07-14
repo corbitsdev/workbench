@@ -26,7 +26,7 @@ mock.module("../lib/member-tool-credential", () => ({
 }));
 
 mock.module("../lib/capability-grants", () => ({
-  memberHoldsCapabilityGrant: async () => true,
+  isMemberSelfServiceCapabilityActive: async () => true,
 }));
 
 mock.module("../lib/member-preferences", () => ({
@@ -89,6 +89,7 @@ describe("inbox intake tick", () => {
     const enqueued: string[] = [];
     const intake = createInboxIntake({
       db,
+      grantStore: {} as never,
       listMembers: async () => [member],
       isTenantEnabled: async () => true,
       mailboxEventBus: {
@@ -120,6 +121,7 @@ describe("inbox intake tick", () => {
     const enqueued: string[] = [];
     const intake = createInboxIntake({
       db,
+      grantStore: {} as never,
       listMembers: async () => [member],
       isTenantEnabled: async () => true,
       mailboxTriage: { enqueue: (e) => enqueued.push(e.rowId) },
@@ -143,6 +145,7 @@ describe("inbox intake tick", () => {
   test("a disabled tenant lands nothing", async () => {
     const intake = createInboxIntake({
       db,
+      grantStore: {} as never,
       listMembers: async () => [member],
       isTenantEnabled: async () => false,
       fetchers: fetcherReturning([
@@ -156,6 +159,7 @@ describe("inbox intake tick", () => {
   test("a source with no wired fetcher is skipped without error", async () => {
     const intake = createInboxIntake({
       db,
+      grantStore: {} as never,
       listMembers: async () => [member],
       isTenantEnabled: async () => true,
       fetchers: {},

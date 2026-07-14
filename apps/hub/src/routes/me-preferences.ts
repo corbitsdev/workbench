@@ -1,6 +1,7 @@
 import { type } from "arktype";
 import { Hono } from "hono";
 import { describeRoute, resolver } from "hono-openapi";
+import type { GrantStore } from "@intx/authz";
 import {
   AvailableBriefSourcesResponseSchema,
   AvailableInboxSourcesResponseSchema,
@@ -16,7 +17,10 @@ import {
   validatePreferencePatch,
 } from "@workbench/shared";
 import { resolveCallerMember } from "../lib/tenant-provisioning";
-import { setPrincipalCapabilityGrant } from "../lib/capability-grants";
+import {
+  isCapabilityAllowedForPrincipal,
+  setPrincipalCapabilityGrant,
+} from "../lib/capability-grants";
 import { resolveAvailableProviderNames } from "../lib/tenant-tools";
 import {
   readMemberPreferences,
@@ -30,6 +34,7 @@ import type { HubDb } from "../db";
 // is the standalone fallback.
 export function createMePreferencesRouter(
   db: HubDb,
+  grantStore: GrantStore,
 ): Hono<{ Variables: { userId: string } }> {
   const app = new Hono<{ Variables: { userId: string } }>();
 
@@ -203,6 +208,20 @@ export function createMePreferencesRouter(
       const member = await resolveCallerMember(db, userId);
       if (!member) {
         return c.json({ error: "No provisioned membership" }, 409);
+      }
+
+      for (const cfg of OAUTH_PROVIDER_CATALOG) {
+        const key = inboxCapabilityPreferenceKey(cfg.providerName);
+        if (!(key in patch) || patch[key] === false) continue;
+        const allowed = await isCapabilityAllowedForPrincipal(
+          grantStore,
+          member.tenantId,
+          member.principalId,
+          cfg.providerName,
+        );
+        if (!allowed) {
+          return c.json({ error: "Capability not available" }, 403);
+        }
       }
 
       const merged = await mergeMemberPreferences(

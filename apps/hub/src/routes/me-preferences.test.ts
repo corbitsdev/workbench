@@ -41,8 +41,23 @@ mock.module("../lib/tenant-tools", () => ({
   resolveAvailableProviderNames,
 }));
 
+let capabilityAllowed = true;
+const capabilityGrantCalls: { provider: string; enabled: boolean }[] = [];
+mock.module("../lib/capability-grants", () => ({
+  isCapabilityAllowedForPrincipal: async () => capabilityAllowed,
+  setPrincipalCapabilityGrant: async (
+    _db: unknown,
+    args: { provider: string; enabled: boolean },
+  ) => {
+    capabilityGrantCalls.push({
+      provider: args.provider,
+      enabled: args.enabled,
+    });
+  },
+}));
+
 import { Hono } from "hono";
-import { createMePreferencesRouter } from "./me-preferences";
+const { createMePreferencesRouter } = await import("./me-preferences");
 
 function mountApp() {
   const v1 = new Hono<{ Variables: { userId: string } }>();
@@ -50,7 +65,12 @@ function mountApp() {
     c.set("userId", c.req.header("x-test-user-id") ?? "user-1");
     return next();
   });
-  v1.route("/", createMePreferencesRouter({} as unknown as HubDb));
+  v1.route(
+    "/",
+    createMePreferencesRouter({} as unknown as HubDb, {
+      authorize: async () => ({ effect: "allow" }),
+    } as never),
+  );
   const app = new Hono();
   app.route("/api/v1", v1);
   return app;
@@ -65,6 +85,20 @@ function patch(body: unknown): Request {
 }
 
 describe("PATCH /api/v1/me/preferences", () => {
+  it("returns 403 when enabling an inbox capability the owner has hidden", async () => {
+    member = { tenantId: "ten-1", principalId: "pri-1" };
+    capabilityAllowed = false;
+    mergeMemberPreferences.mockClear();
+    capabilityGrantCalls.length = 0;
+    const res = await mountApp().request(
+      patch({ "inbox.capability.linear": true }),
+    );
+    expect(res.status).toBe(403);
+    expect(mergeMemberPreferences).not.toHaveBeenCalled();
+    expect(capabilityGrantCalls).toEqual([]);
+    capabilityAllowed = true;
+  });
+
   it("merges a valid patch and returns the merged preferences", async () => {
     member = { tenantId: "ten-1", principalId: "pri-1" };
     mergeMemberPreferences.mockClear();

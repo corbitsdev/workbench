@@ -210,6 +210,27 @@ export async function memberHoldsCapabilityGrant(
   return row !== undefined;
 }
 
+// Self-service capability is active only when the owner ceiling allows the
+// provider AND the member holds their own per-principal opt-in grant (CL-3510).
+// Intake / preference enablement must use this — `memberHoldsCapabilityGrant`
+// alone ignores an owner member-role deny left on a stale per-principal allow.
+export async function isMemberSelfServiceCapabilityActive(
+  grantStore: GrantStore,
+  db: HubDb,
+  tenantId: string,
+  principalId: string,
+  provider: string,
+): Promise<boolean> {
+  const allowed = await isCapabilityAllowedForPrincipal(
+    grantStore,
+    tenantId,
+    principalId,
+    provider,
+  );
+  if (!allowed) return false;
+  return memberHoldsCapabilityGrant(db, tenantId, principalId, provider);
+}
+
 // The full connectable-provider catalog projected against a tenant's member-role
 // policy: each provider with its effective owner-gate state (`enabled` = not
 // denied). This is what the owner Capabilities surface renders.

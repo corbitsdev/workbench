@@ -21,6 +21,7 @@ import {
   isCapabilityAllowedForPrincipal,
   isCapabilityDeniedForTenant,
   listOwnerCapabilityStates,
+  isMemberSelfServiceCapabilityActive,
   memberHoldsCapabilityGrant,
   setCapabilityGrant,
   setPrincipalCapabilityGrant,
@@ -285,6 +286,72 @@ describe("setPrincipalCapabilityGrant / memberHoldsCapabilityGrant (CL-3510)", (
       });
     }
     expect((await principalRows(MEMBER, "linear")).rows.length).toBe(1);
+  });
+});
+
+describe("isMemberSelfServiceCapabilityActive (owner ceiling + opt-in)", () => {
+  const MEMBER = "prn-intake";
+
+  async function assignMemberRole(principalId: string) {
+    await client.query(
+      `insert into principal_role (principal_id, role_id) values ($1, $2)`,
+      [principalId, MEMBER_ROLE],
+    );
+  }
+
+  test("requires both owner allow-by-default and a per-principal allow", async () => {
+    await assignMemberRole(MEMBER);
+    const store = createGrantStore(db);
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(false);
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(true);
+  });
+
+  test("an owner member-role deny blocks intake even with a stale per-principal allow", async () => {
+    await assignMemberRole(MEMBER);
+    await setPrincipalCapabilityGrant(db, {
+      tenantId: TENANT,
+      principalId: MEMBER,
+      provider: "linear",
+      enabled: true,
+    });
+    await setCapabilityGrant(db, {
+      tenantId: TENANT,
+      roleId: MEMBER_ROLE,
+      provider: "linear",
+      enabled: false,
+    });
+    const store = createGrantStore(db);
+    expect(
+      await isMemberSelfServiceCapabilityActive(
+        store,
+        db,
+        TENANT,
+        MEMBER,
+        "linear",
+      ),
+    ).toBe(false);
   });
 });
 

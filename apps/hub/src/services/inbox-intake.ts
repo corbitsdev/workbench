@@ -1,3 +1,4 @@
+import type { GrantStore } from "@intx/authz";
 import { getLogger } from "@intx/log";
 import { fetchLinearGraphQL } from "@workbench/tools-linear";
 import {
@@ -7,7 +8,7 @@ import {
 import type { HubDb } from "../db";
 import { buildMailFrame, writeMailboxMessage } from "../lib/mailbox-write";
 import type { MailboxEventBus } from "../lib/mailbox-events";
-import { memberHoldsCapabilityGrant } from "../lib/capability-grants";
+import { isMemberSelfServiceCapabilityActive } from "../lib/capability-grants";
 import { readMemberPreferences } from "../lib/member-preferences";
 import {
   resolveMemberOrTenantToolCredential,
@@ -132,6 +133,8 @@ export const INBOX_SOURCE_FETCHERS: Readonly<
 
 export interface InboxIntakeDeps {
   db: HubDb;
+  /** Owner + per-principal capability gate (same store as me-connections). */
+  grantStore: GrantStore;
   /** Enumerate the members to poll (their inbox address + tenant domain). */
   listMembers: () => Promise<InboxIntakeMember[]>;
   mailboxEventBus?: MailboxEventBus;
@@ -185,13 +188,14 @@ export function createInboxIntake(deps: InboxIntakeDeps): InboxIntake {
     // (the CL-3510 per-principal grant); non-OAuth sources are governed by the
     // inbox-source toggle alone.
     if (findOAuthProviderConfig(sourceKey)) {
-      const granted = await memberHoldsCapabilityGrant(
+      const active = await isMemberSelfServiceCapabilityActive(
+        deps.grantStore,
         deps.db,
         member.tenantId,
         member.memberPrincipalId,
         sourceKey,
       );
-      if (!granted) return;
+      if (!active) return;
     }
 
     const cred = await resolveMemberOrTenantToolCredential(
